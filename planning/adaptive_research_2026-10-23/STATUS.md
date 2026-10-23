@@ -43,7 +43,8 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 | E3 evidence | DONE at c97093af: **every eye defect still reads** (AS 37 free cores, spur 13.0 × 0.3 mm free, CS 2 free cores, band as 8 wall-touching islands); terraces GONE on the wanaka front (910 → 178 islands, all ≤ 2.1 mm, class caution; A3's own prediction was wrong in the good direction); screw-hole islands gone; all exports succeed, no gouge finding. Zero control: final stock 1 387 of 1 428 islands touch a wall (strips, hex-side slivers, reachable fringe) + 41 untagged one-cell slivers at angled-wall feet; op 0 (6 mm) reads 627 untagged hole-rim slivers (the wall tag depends on depth per pass) and 84 real uncut hex holes (op 1 clears them). Headline still names a wall island on every rough. Adopt cost on wanaka 18.5 s (was 4.7). → A4 running (free islands first in the headline; op-independent wall tag). Was RUNNING: checks the fringe, wall strips (`touches_wall`), terraces, and that every eye defect still reads | `P15_E_evidence.md` §E3 |
 | A4 headline + wall tag | DONE, committed 04b24757 (not built): free islands sorted before wall islands in the finding and the narration ("N free islands … ; M more touch a wall"); wall tag = a neighbour within one cell (8-connected) stands above the target by more than the island's own peak height − one cell (the G-OVERCUTREF tolerance); `depth_per_pass_mm` removed from the target so the tag cannot read the op; sentry arm (i): the 6 mm and 3 mm cutters tag the same sliver. Adopt cost formula recorded (drop-cutter queries dominate), not optimised. Was RUNNING: free islands before wall-touching in the finding and narration; wall tag from the island's own height, 8-connected | `P15_A3_coverage_target.md` §A4 |
 | D5 verifier | DONE at 04b24757, all green, no fixes. **geodesic_curv: star 73 (S1 J58 M0 P14), pocket 63 (S1 J34 M12 C6 P10)** — mid-wrap splits gone, core clean; curv_morph 84/86 → morph DROPPED by C5's own rule. Remaining: joins (58 of 73 star entries; radial seam steps read 0.50–0.83), behind-island cascade on the pocket (640/763 wrap refusals are cascades: the law assumes a front curving about the seed). Page `g1_2d_renders_v4.html`. Was RUNNING: A4 + C5 gates, harness with the curv columns and the cascade diagnostic, C5's keep-or-drop rule for the morph | `P15_D_verify.md` §D5 |
-| C6 join + island spacing | RUNNING: (i) the seam join as a spiral transition under the spacing law (no radial step), (ii) spacing behind an island from the front's local centre of curvature (the source-tracking bend node), (iii) lattice-quantum experiment: harness run at half the planner cell to see whether the near-ceiling refusals (0.36–0.45) are measurement quantum | `P2_C2_geodesic_fixes.md` §C6 |
+| C6 join + island spacing | DONE, committed f5b3725c (not built, ~700 lines): transition join for CLOSED wraps (the wrap drifts out to the next level over its last part; inside ρ* = 22.78 mm the whole wrap drifts = the spiral form); local spacing with ρ measured from each point's source (seed or bend node); half-cell READ columns (the replay stays at the planner cell: `path.rs` cleanup sets its own cell — request for a pub(crate) cell parameter filed). **Key finding:** open arcs in a lobe (≈ 50 of the 58 star joins) cannot be joined within one stepover by any single-pass scheme under the swept-width measure: same-direction passes step a full stepover against the wall, alternating passes meet two stepovers at every second end (the level sets hit the walls obliquely), the half-pitch morph was dropped. The limit is the pass-load MEASURE (swept width), not the geometry: FreeCAD measures exact area per mm (R1 §3, target 0.989·s·D), under which the wall-end turn is a thin wedge and passes. Prediction: geodesic_curv_join 66–75 on the star (little gain). Was RUNNING: (i) the seam join as a spiral transition under the spacing law (no radial step), (ii) spacing behind an island from the front's local centre of curvature (the source-tracking bend node), (iii) lattice-quantum experiment: harness run at half the planner cell to see whether the near-ceiling refusals (0.36–0.45) are measurement quantum | `P2_C2_geodesic_fixes.md` §C6 |
+| D6 verifier | RUNNING 23:45: C6 gates, four exact-match controls, the quantum test (near-ceiling count at planner cell vs half cell) | `P15_D_verify.md` §D6 |
 | (old) GUI rebuild | was RUNNING 18:40 from the worktree (branch 3ae1da39); then install, gui_restart, E2 re-run of the Corne controls | |
 | (old) E evidence | was RUNNING 15:20: Phase 0 Corne columns through the two instruments in the GUI (zero control CP, positive control AS, CS), wanaka200 CP if time | `P15_E_evidence.md` |
 | (old) D verifier | was RUNNING 15:10: merge master into the branch, fmt, check, new sentries, folder sentries, viz --lib, mcp, clippy, magic-number scan, render harness | `P15_D_verify.md` (worktree) |
@@ -266,6 +267,25 @@ constant:
 Visible at the next gate: the gouge Caution path and `at_wall` are tested
 only synthetically (no live positive yet); the probe tolerance t ≈ 0.3 mm
 leaves a real wall cut up to t unflagged.
+
+## Ruling needed from the operator (morning): the engagement MEASURE at wall ends
+
+The geodesic growth pattern is accepted (G1) and the curvature-spaced wraps
+look right (page v4). The one open cost is one plunge per arc in every
+lobe. C6 shows this is not a geometry problem: the shipped pass-load rule
+measures SWEPT WIDTH, and at a wall end the turn from arc k to arc k+1
+sweeps up to two stepovers of width even though the material removed is
+a thin wedge. FreeCAD's rule measures AREA per mm of travel against a
+derived target (R1 §3) and accepts that turn. Options:
+1. Add the exact area-per-mm measure as a second, derived pass-load
+   quantity (target 0.98948·s·D from the crescent, R1 §3) and let the
+   candidate's wall-end turns be judged by it; keep swept width for
+   straight side cuts (they agree there). The look: the classic zigzag
+   lobes with no retract.
+2. Keep swept width only: one entry per arc stays (73 / 63 entries on
+   the development shapes), and the 3D arm is wired with that cost.
+The lead recommends 1, built as a research-flag measure first and shown
+on the 2D page before any shipped rule changes.
 
 ## Next for the geodesic candidate (C4, after D3): the morph join
 
