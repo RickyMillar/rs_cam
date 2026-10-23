@@ -50,7 +50,7 @@ Surface rule samples EMITTED moves at ≤ D/4 through the drop-cutter.
 | C7 area measure | DONE 00:50, committed 8deecf98 (not built): measure = standing stock in the step capsule outside the start disc × cell² per mm; same ceiling c·D; threaded `PassLoadMeasure` (shipped sites SweptWidth). **Result: the ruling's premise fails** — head-on steps exceed the ceiling in both measures; circular fronts read identically (area/mm = s + s(R − s/2)/ρ = the C3 swept-width formula). The measures differ only on slivers either side or a grazed lump. Columns geodesic_curv_area, agent_area, contour_spiral_area with both readings. | `P2_C2_geodesic_fixes.md` §C7 |
 | D7 verifier | DONE 01:30 at 8deecf98: all green, no fixes; shipped neutrality proven (byte parity, 14 adaptive3d sentries, both clippy configs); master reds unchanged. The area columns are NOT evidence: the per-mm reading is unbounded on short steps (raw up to 7.85 D), entries rose 1.3–4.8× under it → moved to EXTRA with a step-length floor (C8 first item). Was RUNNING 00:55: shipped neutrality of the threading (byte parity, 8 adaptive + 14 adaptive3d sentries, clippy with and without research), C7 tests, harness controls + area columns | `P15_D_verify.md` §D7 |
 | C8 link + lead-in | DONE 02:10, committed 71f4cf0b (not built): a lead-in tangent at the arc START cannot work against a wall (it would begin beyond the wall, or leave a growing corner wedge), so each band is entered MID-ARC: link along the cut arc, lead-in tangent at P, cut P→F, link back to P, cut P→E (the leftover wedge's bite grows from zero). Lead-in radius derived from the swept-width ceiling: ρ_L ≥ R + (h² − m²)/(2m) ≈ 25.7 mm on a straight band (the tool radius FAILS: 3.67 vs 2.18), ≈ 23–24 mm on curved fronts, checked on exact circles (worst width 2.1755 vs 2.1756); the span is long (12–32 mm), and inside ρ* there is no margin so no lead-in. Honest prediction: few star lobes fit → star 75–90, pocket 60–80 entries; one plunge per lobe NOT expected. Area columns parked (EXTRA, one-cell step floor). Was RUNNING 01:35: one-direction lobe arcs, keep-down return LINK through the just-cut band (existing link check, zero load), tangential LEAD-IN arc into the next band (radius derived from s and the ceiling); column geodesic_curv_lead; target one plunge per lobe | `P2_C2_geodesic_fixes.md` §C8 |
-| D8 verifier | RUNNING 02:15: C8 gates + harness, geodesic_curv_lead row | `P15_D_verify.md` §D8 |
+| D8 verifier | DONE 02:45 at 71f4cf0b: green after a test-only fix (match arms for LobeMorph::Lead in a C4 test); controls exact. **The lead-in never applied**: 0 lead-ins on both shapes, every band fell back to the seam (radius range "0.0 to 0.0"); geodesic_curv_lead = 82 / 73 entries only because of the core spiral. Open: find the guard that rejects every lead-in before reading this as evidence for or against the FreeCAD lead-in. Pocket mop still 2 steps over (0.4677). Was RUNNING 02:15: C8 gates + harness, geodesic_curv_lead row | `P15_D_verify.md` §D8 |
 | (old) GUI rebuild | was RUNNING 18:40 from the worktree (branch 3ae1da39); then install, gui_restart, E2 re-run of the Corne controls | |
 | (old) E evidence | was RUNNING 15:20: Phase 0 Corne columns through the two instruments in the GUI (zero control CP, positive control AS, CS), wanaka200 CP if time | `P15_E_evidence.md` |
 | (old) D verifier | was RUNNING 15:10: merge master into the branch, fmt, check, new sentries, folder sentries, viz --lib, mcp, clippy, magic-number scan, render harness | `P15_D_verify.md` (worktree) |
@@ -117,12 +117,17 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
   slivers. All on branch `adaptive-instruments` (7c75324d), gates green
   (P15_D_verify.md D2–D6). **ff of master blocked** by the peer's
   uncommitted registry change (they land it, then I merge + ff).
-- **Candidate (a) geodesic:** growth pattern accepted at G1; the
-  curvature-spaced wraps (`geodesic_curv`) are the state to look at:
+- **Candidate (a) geodesic (state at 02:50):** growth pattern accepted at
+  G1; the curvature-spaced wraps (`geodesic_curv`) are the state to look at:
   `g1_2d_renders_v4.html` (served at http://127.0.0.1:8766/g1_2d_renders_v4.html
   while the session runs). Star 73 entries (from 92), pocket 63 (from 88),
-  no mid-wrap splits, five like arms. The morph and the transition joins
-  were tried, measured and dropped by pre-set rules.
+  no mid-wrap splits, five like arms. Four join schemes were tried and
+  measured tonight (ramp C3, morph C4, transition C6, mid-arc lead-in C8):
+  none beat the plain seam under the swept-width rule; C7 showed the
+  exact-area measure gives the same answer on circular fronts and at
+  wall ends. The per-arc plunge in a lobe stands as the candidate's cost
+  until a derived join is found; the C8 lead-in code never applied (guard
+  to find). Verified record: P15_D_verify.md D2–D8, all on master.
 - **The measure ruling is WITHDRAWN (C7, 00:50):** the lead's premise was
   wrong. C7 built the exact area-per-mm measure and showed that at a
   wall-end turn the area per mm is over the ceiling too (a head-on step
