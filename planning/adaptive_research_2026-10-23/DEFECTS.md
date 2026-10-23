@@ -27,3 +27,12 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 - G-THINSTAND: no detector for thin standing material (G-SPUR) in the
   simulation triage; the Phase 0 agent's `phase0/tools/spurs.py` heightmap
   replay is the only measure.
+
+## Handed over by the geometry-selection lead (2026-10-23 15:35), adaptive/ owner = this research
+
+| Tag | Defect | Evidence |
+|---|---|---|
+| G-MOPLOAD | Sentry `a_clearing_cut_holds_the_pass_load_g_adaptpassload` red since 2026-10-20 (not S11): two "Residue mop" moves (2810, 6159) exceed the pass load by the exact oracle, peak 0.9404 vs bound 0.5460. A REAL kernel finding: the residue mop breaks the `adaptive/` invariant `step_within_pass_load`. The mop is the V1 mechanism, so this is on the research's path. Candidate commits before 10-20: b5dc7ed4, bd7cf9f4, b523905a. | peer's agent, `planning/geometry_selection_2026-10-16/PLAN.md` ~589-591 |
+| G-RAPIDLIFTPIN | Sentry `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift` red since 2026-10-20: a sim-only flag on move 6930; the exact oracle clears it by 0.2495 mm; the pin `SIM_ONLY_FLAGS=0` sees count 1. Needs a re-pin or a cause hunt. | same |
+
+`added_material_cuts_as_stock_s6` was fixed by the peer in 0e6788b2.

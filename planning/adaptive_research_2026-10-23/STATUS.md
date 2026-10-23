@@ -218,6 +218,8 @@ every corner look busy and potentially an artifact."
   band, N10 hole cores). ContourSpiral: links no (seam loop clusters), path
   yes except the seams, part partly (N7 band, 2 hole cores).
 
+## Handed over 15:35: G-MOPLOAD and G-RAPIDLIFTPIN (adaptive/ sentries red since 10-20, see DEFECTS.md). G-MOPLOAD is a real pass-load break in the residue mop (the V1 mechanism): queue it right after the G1 fixes; the Phase 2 candidate must not inherit the mop.
+
 ## Operator observation 2026-10-23 ~12:20 (Corne case, live GUI)
 
 "As it's milling down it leaves tall spurs of material. These could snap
