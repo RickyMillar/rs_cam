@@ -175,6 +175,10 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
 
 D12 measured how many refused joins a slanted-wall bound s/cos θ + (1+√2)·cell would admit: star 0–1, pocket 3–6 per column. The long refused joins (6.3–68.6 mm) are lobe changes and jumps across the island; they need routed keep-down links (FreeCAD's, R1 §4), not a longer turn. Operator: "if it makes sense, run with it." Heavy scallop tests approved by the operator (D12 not-run list).
 
+## Operator 2026-10-24: default cut direction
+
+"Are we defaulting this to milling both directions too? That is generally how I do it." → `geodesic_local_zigzag` (LocalLevel + Whole chaining + zigzag) made REQUIRED in C20, under the same rule as `geodesic_local_oneway`; the operator picks the default when both are measured.
+
 ## Queued optimisations (operator, 2026-10-24; after C19 and the Rust columns)
 
 - Where two fronts meet (the V behind an island, and where clipped march / harmonic pieces meet), merge the two segments into ONE clean arc through the middle instead of two arcs meeting in a corner. = C15 idea (c), the round union; its load bound is derived (r ≤ 2.68 mm on the pocket); the operator wants a smaller radius, from the machine's acceleration at the cut feed (F²/a, machine profile), capped by that bound.
