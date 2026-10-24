@@ -2509,3 +2509,24 @@ Notes:
 - The arm's Rough 1 has 123 Z values in its cuts, and the cut view shows
   concentric wraps round one seed.
 - The research arm here has no turns (C22 is pending).
+
+**D-FIX1, wanaka200 (operator-approved retry; outcome: no row).**
+
+- First retry, `timeout 900`, lane script, `cargo run --release` in the
+  fixture worktree:
+  - AgentSearch: rc 124 at 900 s. It generated in 11.5 s ("3D adaptive
+    toolpath complete moves=7665 … at 11.47 s", the lead's read), then
+    the closing simulation used the rest of the 900 s.
+  - geodesic_curv: stopped by the lead's order (rc 143 at 142 s).
+- The CLI has no G-code export without the simulation. `project` has no
+  no-sim flag. `rough-score --no-sim` writes no G-code. `run` plans one op
+  from a model file, not the project's flipped setup.
+- `project --resolution 1.0`: refused at once, for both arms (rc 1): "the
+  project simulation resolution is 1 mm, coarser than the 0.1 mm the rest
+  this project machines needs (the rest tool's TIP radius / 5)". The rule
+  reads the whole project (the R0.5 tool of setup 2), also when those ops
+  are skipped. Only a further edit of the copy (removing the rest ops)
+  would allow a coarser cell. That is outside the brief, so I did not do
+  it.
+- The page's wanaka200 row states this reason. Script:
+  `phase3/fix1/run_fix1_wanaka.sh` (its last form has `--resolution 1.0`).
