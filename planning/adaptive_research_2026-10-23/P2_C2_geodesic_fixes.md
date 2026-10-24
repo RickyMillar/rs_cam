@@ -2896,3 +2896,304 @@ Read in this order:
 4. Entries by location in the star arm to (5, 35) (x < 40, y < 47) in
    `geodesic_curv_oneway_whole` against `geodesic_curv_oneway`.
 5. Apply the keep-or-drop rule above to `geodesic_local_oneway`.
+
+## C20 — degenerate turn and the 3D departure rule (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base c60ed442
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`).
+`rustfmt --edition 2024 --check` is clean on the three Rust files. The C12
+block of `research_geodesic.rs` is not touched.
+
+Paths: `R` = `crates/rs_cam_core/src/adaptive/research_geodesic.rs`,
+`H` = `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`,
+`T` = `crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs`,
+`P` = `crates/rs_cam_core/src/adaptive/path.rs`. Line numbers are of the
+C20 tree. The SVG reader is in the session scratchpad (`c20/near3.py`,
+not in the repo); it calibrates the D12 renders on the island
+(centre (40, 30), radius 10).
+
+### Task 1: the degenerate unfed turn — CAUSE FOUND
+
+**What the two turns are.** The D12 renders near each turn (0.012 mm
+SVG precision):
+
+| Column | Arc before the turn (`prev`) | Arc after it (`w`) |
+|---|---|---|
+| pocket `local_oneway` | 3 points: (27.528, 25.000) (27.864, 24.503) (27.995, 24.289), about 0.83 mm | 64 points from (27.502, 25.037) up and left |
+| pocket `curv_oneway_whole` | 3 points: (27.025, 25.998) (27.436, 25.497) (27.502, 25.423) | 60 points from (27.001, 26.023) |
+
+- `prev` and `w` are two pieces of ONE level contour. Each turn's two ends
+  are the two crossings of one lattice cell: (27.5284, 25.0) on the bottom
+  edge and (27.5, 25.0387) on the left edge of the cell [27.5, 28] ×
+  [25, 25.5]; (27.0230, 26.0) and (27.0, 26.0260) of the cell [27, 27.5] ×
+  [26, 26.5].
+- That cell is not reachable. Its corner (28, 25.5) is 12.816 mm from the
+  island centre, and (27.5, 26.5) is 12.981 mm: both inside the island's
+  tool-centre disc (10 + R = 13 mm). So the contour loses that cell's
+  segment, and the level falls into a long arc and a short tail at the
+  island wall. `Chaining::Whole` cannot join them: the segment is not
+  there.
+- Climb order puts both starts at the gap. The one-way turn (start of
+  `prev` to start of `w`) is the missing segment itself: 35 to 48 µm,
+  along the level. So it engages nothing (swept 0; area 0.0833 = one
+  cell / D, the lattice floor) and its feed factor is 1.
+- It continues the line of `w`'s first segment: the angle between the turn
+  (126.3°) and `w`'s first segment (about 127.9°, ± 0.6° from the SVG
+  rounding) is about 1.6°.
+
+**Why no move carries it (elimination on the code).**
+
+- The readout reads one step on the turn in the cleaned segments (else
+  `apply_turn_feeds` skips it and prints no record). In the segments the
+  cut after the return links is `[S_prev, S_w, w1, ...]` (render span 916:
+  (27.527, 25.004) (27.502, 25.037) (27.141, 25.497) ...), and the link
+  before it ends at `S_prev`.
+- `segments_to_toolpath` maps a `Link` to one move and a `Cut` to one move
+  per point of `simplify_path_keeping_reversals(path, MIN_EMITTED_SEGMENT_MM)`
+  after the first (corner radius 0 in the harness). The simplifier never
+  drops the first point. Nothing else removes a point.
+- So the turn has no move on it only if the simplifier dropped `S_w`: `S_w`
+  lies within 1 µm of the chord from `S_prev` to a later point of `w`. The
+  1.6° kink over 0.048 mm and 0.58 mm puts `S_w` about 1.2 µm off the chord
+  `S_prev`–`w1` (at the edge of the SVG precision; a longer leaf chord on a
+  curving `w` gives a smaller distance at `S_w`). This is the C16 task 3
+  mechanism (the zigzag gap turn, measured there at 0.17 µm).
+- The run measures it. The `.c16.txt` line of each turn with no move on it
+  now names the emitted move that holds it and the distance of each turn
+  end from that move (`HoldingMove`). A distance under 1 µm confirms the
+  drop.
+
+**The fix (the readout rule, derived).** A turn with no emitted move on it
+is unfed only when it needs a reduced feed.
+
+- `turn_feed_factor` (R:6807) returns 1 exactly when the measured
+  engagement `max(w, a)` is at most the ceiling. The turn's feed is then
+  `F · 1 = F`.
+- Every clearing move is emitted at `F` (`segments_to_toolpath`), and
+  `apply_turn_feeds` only lowers feeds (`f.min(feed)`). So every move that
+  holds the turn carries at most `F`: the turn holds its feed by
+  construction.
+- So such a turn is counted in `TurnSummary::full_feed_unmatched` (R:6712),
+  not in `unfed` (R:6871). No constant enters.
+- Why not the other fix (attach the feed to the move that holds the turn):
+  that move can be much longer than the turn (here it runs on along `w`),
+  so the reduced feed would cover cut that does not need it. It would also
+  change the control toolpaths and hide the real defect of the pocket
+  zigzag control: its gap turn (42.0063, 49.0) → (42.4098, 48.5) needs
+  factor 0.7158, and it stays `without 1` under this rule. The fix for that
+  kind is the whole chaining (C16), not a feed on a merged move.
+
+**The limit.** A turn that needs a reduced feed and whose vertex the
+emitter drops stays at the full feed. The readout still counts it as
+unfed, and now names the move that holds it.
+
+**Code.**
+
+- R: `TurnSummary::full_feed_unmatched`; `TurnRecord::holding`;
+  `HoldingMove` (R:6750) and `holding_move` (R:6761); the count in
+  `apply_turn_feeds` (R:6836, doc); preset `C20_LOCAL_ZIGZAG` (R:2219,
+  `C16_LOCAL` with `ArcLink::Zigzag`).
+- R unit test `a_turn_whose_vertex_the_emitter_drops_is_unfed_only_when_it_needs_a_cut_feed`
+  (R:8356): a hand-made toolpath with the turn's end vertex dropped. At
+  swept 0 and one cell of area: fed 0, unfed 0, full-feed 1, and the
+  holding move has both turn ends on it (under 1 µm). At 2c: unfed 1. With
+  the vertex kept at 2c: fed 1, the turn's move carries `F · factor` and
+  the next move `F`.
+- H: the column `geodesic_local_zigzag` after `geodesic_curv_oneway_whole`;
+  in `c16_text`, the line `turns at the full feed (factor 1) with no move
+  on them, not unfed: N` (only when N > 0), the line kind (`unfed turn` or
+  `full-feed turn, no move on it`), and the holding move on each such line
+  (`holding_text`).
+
+**The zigzag gap turns (0.643 / 0.642 mm).** C16 task 3 found them to be
+the chaining gaps (one dropped segment splits one arc in two). The whole
+chaining keeps every segment of a reachable cell, so no zigzag turn
+bridges two pieces of one arc. `geodesic_local_zigzag` (LocalLevel +
+Whole + Zigzag) shows it in the run. A one-way or zigzag join across a
+masked cell (the kind above) can still occur; under the new rule it is
+not unfed when it engages nothing.
+
+### Task 2: the C12 3D oracle's departure exemption
+
+**The 2D walker's rule (P).**
+
+- P:655 `let departure = plunged_at.take();` in `replay_kept_segments`:
+  only the first cut after a straight plunge gets the departure. P:675: a
+  `Link` clears it. The research readout does the same
+  (`pass_load_readout`, `plunged_at.take()`).
+- P:544 `let departing = departure.is_some_and(|d| .. < r)`: a step is
+  exempt by where it starts.
+- P:551 `if was_departing && !departing`: the exempt departure stays a cut
+  of its own. So in the emitted plan the first cut after the plunge ends at
+  the first step that starts at `R` or more.
+
+**The test's rule (T:331 `departing_moves`).** From a vertical
+`EntryPlunge`, each move with XY travel is exempt while it starts within
+`R` of the plunge. The first move that starts at `R` or more ends the
+exemption until the next plunge. A helix or ramp entry, or a rapid with XY
+travel, also ends it; vertical moves do not change it. C18's
+`plunge_origin` (every move within `R` until the next entry) is removed.
+
+**The one difference (stated in the doc of `departing_moves`).** The
+emitted 3D path carries no mark of the end of a 2D cut. When the
+departure cut ends within `R` (a short cut) and a link (emitted as a cut,
+`links_as_cuts`) or another cut follows within `R` with no entry, the 2D
+readout judges that move and this test exempts it. That needs a cut
+shorter than `R` from its plunge with no entry after it.
+
+**The ignore.** The prediction below is 0 over in both modes, so the
+`evidence:` reason with its open condition goes. The test is not made
+plain `#[test]`: it runs 427 s (D12), and a 7-minute test in every
+`--features research,test-support` run breaks the operator's 3-minute
+rule. It is now `#[ignore = "heavy: ..."]` (T:641), the f152 kind for "a
+real assertion that takes minutes". The lead can drop the attribute if
+the operator wants it in the full gate.
+
+### Predictions (NOT results; the run decides)
+
+**2D harness.**
+
+- Plans, SVG geometry and PNGs: byte-identical for every column (no
+  planner change). New files: `<shape>_geodesic_local_zigzag.{txt,svg,png,c16.txt}`.
+- Files that change (readout only), and only these:
+  - `pocket_geodesic_local_oneway.txt` and `.svg` (caption):
+    `without 1` → `without 0`. Its `.c16.txt`: `turns without the reduced
+    feed: 0`, the new full-feed line `1`, and the line `full-feed turn, no
+    move on it: (27.5284, 25.0000) to (27.5000, 25.0387) ... held by the
+    emitted move (27.5284, 25.0000) to (x, y) ..., turn ends 0.000e0 and
+    < 1e-3 mm off it`.
+  - `pocket_geodesic_curv_oneway_whole.txt`, `.svg`, `.c16.txt`: the same
+    for (27.0230, 26.0000) → (27.0000, 26.0260).
+  - `star_geodesic_curv_zigzag.txt`, `.svg`, `.c16.txt`: its gap turn
+    (36.4094, 39.5) → (36.0045, 40.0) has factor 1 (swept 0.3147, area
+    0.3441, both under 0.3626), so `without 1` → `without 0`; its
+    `.c16.txt` names the holding move (both ends under 1 µm; C16 measured
+    B at 0.17 µm).
+  - `pocket_geodesic_curv_zigzag.c16.txt`: the `unfed turn` line gains the
+    holding move (both ends under 1 µm). Its `.txt` is unchanged
+    (`without 1`: factor 0.7158).
+  - `summary.txt`: the changes above and the two new blocks.
+- Every other `.txt`, `.c16.txt` and `.svg`: byte-identical to D12.
+- **`geodesic_local_oneway` under the D12 rule:** (1) 34 < 39, 41 < 54;
+  (2) star: the residue mop step only (excepted), pocket 0; (3)
+  `without 0` both shapes, every turn ≤ the bound; (4) pocket C 0,
+  cascades 5. Predicted verdict: **KEEP**.
+- **`geodesic_local_zigzag`:** `without 0` on both shapes; no turn of the
+  0.64 mm gap kind. Entries: star 30 to 45, pocket 40 to 60 (low
+  confidence). A full-feed line can appear at the island's masked cells.
+
+**C12 test (`--ignored`).**
+
+- Entry, vertical, waterline counts: unchanged per arm (those checks come
+  first).
+- `departing + perimeter band + judged` is unchanged per arm: control
+  798 + 870 + 1295 = 2963; `geodesic_curv` 5770 + 1665 + 2484 = 9919;
+  `geodesic_curv_split` 4488 + 2029 + 2902 = 9419.
+- `departing` falls in both modes (the starter spiral's 45 moves within R
+  stay exempt: they run on from the plunge; D12 starter probe). Judged
+  rises by most of the difference.
+- **0 over the exact bound in both modes** (medium confidence). The newly
+  judged moves are later moves that pass within R of an old plunge
+  hole. The 2D planner judged those steps too, on a grid with the hole
+  cut, and a cut hole lowers their engagement. If a sample is over, it is
+  a real 3D/2D difference to classify, not an exemption to widen.
+- Test result: green.
+
+### `geodesic_local_zigzag`: required column, the same rule (lead, 2026-10-24)
+
+The operator mills both directions by default, so zigzag is judged on the
+same base as one-way. The column and its `.c16.txt` are already built (H:
+the column after `geodesic_curv_oneway_whole`; `c16_text` writes a
+`.c16.txt` for every candidate (a) column). The pre-registered rule, as for
+`geodesic_local_oneway`:
+
+| Rule | Limit | Read from |
+|---|---|---|
+| 1. entries | star < 39, pocket < 54 | `entries (plunges)` |
+| 2. no non-turn step over 0.3626, mop excepted | 0 | `steps on no turn (emitted)` and the `over:` lines |
+| 3. every turn within its bound and fed | `without 0`; turn length ≤ 3.207 mm | `clearing turns (emitted)`; `arcs piece` |
+| 4. pocket: no residue-contour entry, few wrap cascades | C = 0, `clearing wrap` cascades ≤ 11 | `entries by producer`; the cascade block |
+
+Prediction (NOT a result): (3) holds (no chaining gap; a masked-cell
+join reads full feed, not unfed). (1) is the risk: `geodesic_curv_zigzag`
+read 50 / 66 against `geodesic_curv_oneway` 39 / 54, so zigzag pays more
+entries than one-way on the same base. A zigzag turn starts where the
+cutter stands; where the next arc's near end is past the bound, the join
+is a seam step or a link, not a turn. Predicted entries: star 30 to 45,
+pocket 40 to 60. Verdict: uncertain.
+
+**Which column is the default if both pass** (a recommendation; the
+operator decides). The criterion, read from the run in this order:
+
+1. Plunges: the column with fewer entries on both shapes. A plunge costs
+   a retract, a rapid and a plunge, and each is a new departure.
+2. Keep-down length: one-way returns along each arc it has just cut
+   (D12 `geodesic_local_oneway`: 2029 links, 975.3 mm on the pocket,
+   1129 / 967.4 mm on the star; most of it is return links, `return
+   links` in `arcs piece`). Zigzag has no return. That length is feed-rate
+   travel with no cut, about two thirds of the pocket's cut length (1488
+   mm).
+3. Load at the turns: the turn feed-factor quartiles. A lower factor is a
+   heavier turn, so the cutter runs slower over it. Both columns admit
+   the same bound and both feed down by the same rule, so the turns'
+   load is held either way. Only their time differs.
+
+If the entries are within a few of each other, I recommend
+`geodesic_local_zigzag` as the default. It saves about 1 m of keep-down
+travel per shape, which matches the operator's both-ways default. One-way
+keeps every arc a climb cut, at the cost of that return travel. If zigzag
+has clearly more entries (as at C14: +11 star, +12 pocket), one-way is the
+default, because a plunge costs more than its return travel.
+
+### Files changed by C20
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: as above.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the
+  column, the module doc, `c16_text`, `holding_text`.
+- `crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs`:
+  `departing_moves` in place of `plunge_origin`, its use in `read`, the
+  module doc, the ignore reason.
+- This note.
+
+### Commands for the verifier (C20)
+
+Before the run, copy D12's render dir (for the byte compare). Then, from
+the worktree, through the lane script, each with a `timeout`:
+
+```text
+cp -r target/tmp/adaptive_geodesic_2d_g1 <scratch>/d12_renders
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --all-targets --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_geodesic_arm_c12
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_geodesic_arm_c12 -- --ignored --nocapture
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test every_ignore_states_its_kind_f152
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+for f in <scratch>/d12_renders/*.txt <scratch>/d12_renders/*.svg <scratch>/d12_renders/*.png; do cmp -s "$f" target/tmp/adaptive_geodesic_2d_g1/"$(basename "$f")" || echo "DIFF $f"; done
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+timeout 3600 scripts/cargo_lane.sh clippy --workspace --all-targets --features rs_cam_core/heavy-tests,rs_cam_core/research,rs_cam_core/test-support -- -D warnings
+```
+
+The C12 test without `--ignored` must report 0 run, 1 ignored. With
+`--ignored` it is about 7 min (D12: 427 s): the operator's go-ahead is
+needed on the operator's PC. `path.rs`, `search.rs` and `adaptive3d/` are
+not changed, so the 2D pass-load sentries and the adaptive3d sentries are
+not needed; byte parity is run because `research_geodesic.rs` is in the
+research build of the 3D arm.
+
+Read in this order:
+
+1. The byte compare: only the files in the prediction list differ. Any
+   other difference is a defect: stop and report.
+2. The `.c16.txt` holding-move lines: both turn ends under 1e-3 mm
+   confirms the emitter's collinear drop.
+3. `geodesic_local_oneway` under the D12 rule.
+4. `geodesic_local_zigzag`: the four-rule table above, then the default
+   criterion (entries, keep-down mm, turn feed factors) against
+   `geodesic_local_oneway`.
+5. The C12 summary lines: the per-arm sums, `departing`, and the over
+   counts.
