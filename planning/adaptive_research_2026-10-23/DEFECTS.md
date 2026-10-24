@@ -53,3 +53,13 @@ Not defects but instrument gaps (ruling 2026-10-23: build before Phase 2):
 | G-RESLINKLOAD | In the research harness (geodesic morph columns on the 2D star) the shipped residue-contour cleanup emits a ~27 mm LINK from (48.00, 67.43) to (69.51, 51.19) that reads 0.55–0.97 of D against the 0.3626 pass-load ceiling (17 steps over). The cleanup is shipped `adaptive/path.rs` code; the candidate only changed what residue it meets. Check whether a shipped strategy can emit the same link class (the G-ADAPTLINKLOAD sentry covers links, not this cleanup path?). | P15_D_verify.md §D4 |
 
 | G-CELLREAD | The planner's pass-load read at its own cell (max(R/6, tolerance) = 0.5 mm here) under-reads the cut width: the research harness re-read the same raw plan at half the cell and the count of intrinsic refusals in the first quantum over the ceiling ROSE (star curv 5 → 19 of 108 → 184; pocket 56 → 134), so a plan read as legal at the planner cell can be over the ceiling at a finer read. Shipped measure; affects every 2D strategy. | P15_D_verify.md §D6 "quantum test" |
+
+## From the 3D arm oracle (C18, 2026-10-24; proposals, not yet confirmed on a shipped fixture)
+
+| Tag | Defect | Evidence |
+|---|---|---|
+| G-AIRCENTRE | The 3D lifter's air classifier (`adaptive3d/clearing.rs`, `clear_one_region`, `AIR_THRESHOLD_MM`) reads stock only at the cutter CENTRE. A cut whose centre runs over cleared stock while its disc still cuts reads as air; a run longer than the rapid crossover is demoted to a rapid, and the next cut meets the stock it left (starter spiral inside its plunge hole: 0.75 D, derived; measured 0.739–0.794). Fixed for the research arm only (disc read, `max_top_z_in_disc`); shipped impact unmeasured — the note names the instrument. | `P3_C18_3d_oracle.md`, `phase2/c18/assert_c18.py` |
+| G-3DSTARTERSLOT | The shipped AgentSearch 3D starter circle is a full-slot lap by design (exact 0.999 D). | `P3_C18_3d_oracle.md`, D11 addendum class (iv) control |
+| G-WATERLOAD | The shipped waterline cleanup (wall pass at ~R from the wall) reads 0.72–0.99 D exact. | D11 addendum class B, `P3_C18_3d_oracle.md` |
+| G-PERIMTAG | The 3D perimeter sweep (a slot through fresh stock before the 2D plan) carries no tag in the emitted path, so no test can judge or exempt it by intent. | `P3_C12_geodesic_3d_arm.md`, `P3_C18_3d_oracle.md` proposal 4 |
+| G-ISOCHAIN (to confirm) | `finish/scallop_isofield.rs::chain_segments` grows a chain at its tail only and drops a one-segment chain, so on an open arc met against the cell order a lone segment between two chains is lost (C16 comment). The shipped `iso_contour` uses the same chaining; whether the iso-scallop finish loses segments is unmeasured. | C16 diff (research-side split `iso_segments_where`) |
