@@ -1,4 +1,4 @@
-# C19: assert every number that farside_ideas_v5.html and
+# C19: assert every number that farside_ideas_v6.html and
 # P2_C19_march_arms.md quote (quotes_c19.json lists them).
 # Run: python3 -I assert_c19.py            (checks the stored results)
 #      python3 -I assert_c19.py --rerun    (runs run_c19.py and page_c19.py first)
@@ -60,7 +60,7 @@ F_CUT, F_LINK = 1500.0, 500.0
 res = json.load(open(os.path.join(HERE, "results_c19.json")))
 sw = json.load(open(os.path.join(PH2, "c17", "sweep.json")))
 QU = json.load(open(os.path.join(HERE, "quotes_c19.json")))
-page = htmlmod.unescape(open(os.path.join(ROOT, "farside_ideas_v5.html")).read())
+page = htmlmod.unescape(open(os.path.join(ROOT, "farside_ideas_v6.html")).read())
 note = open(os.path.join(ROOT, "P2_C19_march_arms.md")).read()
 
 # ── 2. the plans from the stored moves ────────────────────────────────
@@ -118,6 +118,10 @@ def plan_numbers(nm, src, mode):
             fac.append(f)
             o["turn_over"] += f < 1
             o["turn_time"] += L / (F_CUT * f)
+            # the planned turn length (stored) bounds the replayed path
+            Lp = float(m["L"][0])
+            check(L <= Lp + 1e-9, f"{nm} {src} {mode} turn path {L} over its planned length {Lp}")
+            o["turns_need_slanted"] = o.get("turns_need_slanted", 0) + (Lp > bound)
             continue
         e = m["e"]
         seg = 0.5 * (e[1:].astype(float) + e[:-1])
@@ -159,6 +163,7 @@ def plan_numbers(nm, src, mode):
                 acc[nm_][1] += int((mk & (w > lim)).sum())
                 if mk.any():
                     acc[nm_][2] = max(acc[nm_][2], float(w[mk].max()))
+    o.setdefault("turns_need_slanted", 0)
     o["refusals"] = refusals
     o["entries"] = 1 + o["plunges"] + refusals
     o["time_cut_feed_min"] = (o["engaged_mm"] + o["air_mm"]) / F_CUT + o["turn_time"]
@@ -229,7 +234,7 @@ for key in PLANS:
     x = res[key[0]][key[1]][key[2]]
     tot = x["plunge_seam"] + x["plunge_arc"] + x["plunge_lobe"] + x["plunge_jump"]
     check(tot == CALC[key]["plunges"] == x["plunges"], f"{key} plunge kinds sum {tot} vs {CALC[key]['plunges']}")
-CARD = "oneway_head_slanted"
+CARD = "oneway_head"
 for nm in ("star", "pocket"):
     for src in ("march", "a", "e"):
         CALC[(nm, src, CARD)]["overlay_max_mm"] = overlay(nm, src, CARD)
@@ -316,6 +321,8 @@ def value(key):
         if parts[2] in ("eng_vs_a", "e_eng_vs_a"):
             x = CALC[(nm, "e" if parts[2].startswith("e_") else "march", CARD)]
             return x["engaged_mm"] / a["engaged_mm"], True
+        if parts[2] == "sl_save_march":
+            return CALC[(nm, "march", CARD)]["plunges"] - CALC[(nm, "march", "oneway_head_slanted")]["plunges"], True
         x = CALC[(nm, parts[2][3:], CARD)]  # be_<src>: break-even seconds per entry
         return 60 * (x["time_cut_feed_min"] - a["time_cut_feed_min"]) / (a["entries"] - x["entries"]), True
     src = parts[1]

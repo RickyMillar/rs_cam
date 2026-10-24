@@ -247,6 +247,11 @@ class Build:
             Hd, body = (None, P) if q["ring"] else self.split_head(P)
             if self.join(i, E, P, Hd):
                 P = body
+            # the one-way return goes to where the piece leaves the wall,
+            # whether its head was the turn or not: the next turn starts
+            # there (with a head cut inside the piece, a return to the
+            # piece start would make every later turn one head longer)
+            self.ret_to = body[0].copy() if Hd is not None else P[0].copy()
         else:
             P = q["P"] if chained else q["P"][::-1]
         r, l_ = climb_share(self.pl.rp, P)
@@ -320,7 +325,7 @@ class Build:
         """After piece i (cut along P), cut the next pieces of the same curve
         through the curve's own air runs (or a shorter keep-down route), then
         in one-way mode return to where the chain began."""
-        start = P[0].copy()
+        start = self.ret_to
         fwd = self.forward(i, P)
         back = [P]
         while True:

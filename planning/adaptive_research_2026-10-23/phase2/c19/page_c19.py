@@ -1,4 +1,4 @@
-# C19: write farside_ideas_v5.html and P2_C19_march_arms.md from
+# C19: write farside_ideas_v6.html (v5 is frozen) and P2_C19_march_arms.md from
 # results_c19.json, paths_c19.npz, C17's sweep.json / sweep_paths.npz and the
 # D12 harness output. Every quoted number goes through q(); the list goes to
 # quotes_c19.json, and assert_c19.py recomputes each one.
@@ -19,7 +19,7 @@ sys.path.insert(0, HERE)
 import clip as cl  # noqa: E402
 from clip import R, S, D, CD, C_FRAC, TOL, CELL, TURN_BOUND, QUANTUM  # noqa: E402
 
-PAGE = os.path.join(ROOT, "farside_ideas_v5.html")
+PAGE = os.path.join(ROOT, "farside_ideas_v6.html")
 NOTE = os.path.join(ROOT, "P2_C19_march_arms.md")
 
 QUOTES = {}
@@ -180,23 +180,17 @@ def layers_plan(nm, src, mode):
 
 # ── text ───────────────────────────────────────────────────────────────
 
-MODES = [
-    ("oneway", "march, one-way, C14 turns (the brief as written)"),
-    ("oneway_head", "march, one-way, head as the turn, C14 bound"),
-    ("oneway_head_slanted", "march, one-way, head as the turn, C16 slanted bound"),
-    ("zigzag", "march, zigzag, C14 turns"),
+VARIANTS = [
+    ("oneway", "one-way, C14 straight turns (the brief as written)"),
+    ("oneway_head", "one-way, head as the turn, C14 bound"),
+    ("oneway_head_slanted", "one-way, head as the turn, C16 slanted bound"),
+    ("zigzag", "zigzag, C14 straight turns"),
 ]
-A_MODES = [
-    ("oneway", "C15 (a), one-way, C14 turns"),
-    ("oneway_head_slanted", "C15 (a), one-way, C16 slanted bound"),
-    ("zigzag", "C15 (a), zigzag, C14 turns"),
-]
-E_MODES = [
-    ("oneway", "C15 (e) harmonic, one-way, C14 turns"),
-    ("oneway_head_slanted", "C15 (e) harmonic, one-way, head as the turn, C16 slanted bound"),
-    ("zigzag", "C15 (e) harmonic, zigzag, C14 turns"),
-]
-CARD = "oneway_head_slanted"  # the plan the cards draw (march, (e) and (a))
+FAMILY = {"march": "march", "e": "C15 (e) harmonic", "a": "C15 (a)"}
+MODES = [(m, f"march, {t}") for m, t in VARIANTS]
+E_MODES = [(m, f"C15 (e) harmonic, {t}") for m, t in VARIANTS]
+A_MODES = [(m, f"C15 (a), {t}") for m, t in VARIANTS]
+CARD = "oneway_head"  # the plan the cards draw (march, (e) and (a)): no new bound
 
 
 def main():
@@ -434,7 +428,7 @@ def main():
     def dep_items(nm):
         x = res[nm]["march"]
         k = f"{nm}|march"
-        return f"""<li>{nm.capitalize()}, C14 turns: the head runs on the wall for {q(f'{k}|oneway|bp.head_mm_med', x['oneway']['by_place']['head_mm_med'], '.1f')} mm (median) and reads up to {BP(nm, 'march', 'oneway', 'head', 'max', '.3f')} D in {BP(nm, 'march', 'oneway', 'head', 'pieces', 'd')} pieces. With the head as the turn and the C14 bound {tb} mm, {P(nm, 'march', 'oneway_head', 'over_bound', 'd')} turns are over the bound and become plunges; C16's slanted bound s / cos θ + (1 + √2)·cell holds {P(nm, 'march', 'oneway_head', 'over_bound_fit', 'd')} of them. The angle θ between those turns and the normal of the piece is {q(f'{k}|oneway_head|theta_med', float(np.median([t['theta'] for t in x['oneway_head']['over_bound_list']])), '.0f')}° at the median ({q(f'{k}|oneway_head|theta_min', min(t['theta'] for t in x['oneway_head']['over_bound_list']), '.0f')}° to {q(f'{k}|oneway_head|theta_max', max(t['theta'] for t in x['oneway_head']['over_bound_list']), '.0f')}°). With the slanted bound: {P(nm, 'march', 'oneway_head_slanted', 'turns', 'd')} turns, {P(nm, 'march', 'oneway_head_slanted', 'over_bound', 'd')} over it, feed factor median {q(f'{k}|oneway_head_slanted|turn_factor_med', x['oneway_head_slanted']['turn_factor_q'][2], '.2f')}.</li>
+        return f"""<li>{nm.capitalize()}, C14 straight turns: the head runs on the wall for {q(f'{k}|oneway|bp.head_mm_med', x['oneway']['by_place']['head_mm_med'], '.1f')} mm (median) and reads up to {BP(nm, 'march', 'oneway', 'head', 'max', '.3f')} D in {BP(nm, 'march', 'oneway', 'head', 'pieces', 'd')} pieces, at full feed. With the head as the turn (C14 bound {tb} mm): {P(nm, 'march', CARD, 'turns', 'd')} turns, {P(nm, 'march', CARD, 'over_bound', 'd')} over the bound (each a plunge), feed factor median {q(f'{k}|{CARD}|turn_factor_med', x[CARD]['turn_factor_q'][2], '.2f')}; the head then reads up to {BP(nm, 'march', CARD, 'head', 'max', '.3f')} D only in pieces that a plunge enters ({BP(nm, 'march', CARD, 'head', 'pieces', 'd')} pieces).</li>
 <li>{nm.capitalize()}, departure: within R of arc after the piece leaves the wall the cut reads up to {BP(nm, 'march', CARD, 'departure', 'max', '.3f')} D ({BP(nm, 'march', CARD, 'departure', 'over', 'd')} samples over c in {BP(nm, 'march', CARD, 'departure', 'pieces', 'd')} pieces). The gap to the loop before is {BX(nm, 'march', CARD, 'dep_gap_med', '.2f')} mm (median). Past the departure, the interior reads at most {BP(nm, 'march', CARD, 'interior', 'max', '.3f')} D ({BP(nm, 'march', CARD, 'interior', 'over', 'd')} over).</li>"""
 
     H.append(f"""<h2>The wall departure overload</h2>
@@ -445,15 +439,35 @@ def main():
 </ul>
 <p><b>Two derived fixes</b> (the second is not built):</p>
 <ol>
-<li>The head is the turn: the turn runs from the previous departure along the head to this departure, its feed is cut by c / max(w, a) (C14), and its bound is C16's slanted bound, because the march meets the walls at an angle. Built as the plan of the cards.</li>
+<li>The head is the turn: the turn runs from the previous departure along the head to this departure, its feed is cut by c / max(w, a) (C14), and its bound is C14's. Built as the plan of the cards. The few turns over the bound are counted in the next section.</li>
 <li>The departure corner: extend the counted turn to the last sample over c within R after the departure. That adds {BX('star', 'march', CARD, 'ext_med', '.2f')} mm (star) and {BX('pocket', 'march', CARD, 'ext_med', '.2f')} mm (pocket) at the median; the longer turn stays within its bound in {BX('star', 'march', CARD, 'ext_fit', 'd')} of {BX('star', 'march', CARD, 'ext_n', 'd')} (star) and {BX('pocket', 'march', CARD, 'ext_fit', 'd')} of {BX('pocket', 'march', CARD, 'ext_n', 'd')} (pocket). The other way is a fillet. C15 (c)'s bound is for a corner where the cleared side is concave; at the departure the reading is over the gap, so the cleared side is convex and the C5 law gives a lower bound instead: ρ ≥ ρ(g) with s'(ρ(g)) = g. At the median gap that is {BX('star', 'march', CARD, 'dep_rho_med', '.1f')} mm (star) and {BX('pocket', 'march', CARD, 'dep_rho_med', '.1f')} mm (pocket), at most {BX('star', 'march', CARD, 'dep_rho_max', '.1f')} and {BX('pocket', 'march', CARD, 'dep_rho_max', '.1f')} mm. A fillet changes the march shape, so this note prefers fix 2 by the turn.</li>
 </ol>
+""")
+
+    def sl_row(nm, src):
+        k = f"{nm}|{src}"
+        return (f"<tr><td>{nm.capitalize()}</td><td>{FAMILY[src]}</td><td>{P(nm, src, CARD, 'turns', 'd')}</td>"
+                f"<td>{P(nm, src, CARD, 'over_bound', 'd')}</td><td>{P(nm, src, CARD, 'over_bound_fit', 'd')}</td>"
+                f"<td>{P(nm, src, CARD, 'plunges', 'd')}</td>"
+                f"<td>{P(nm, src, 'oneway_head_slanted', 'turns', 'd')}</td><td>{P(nm, src, 'oneway_head_slanted', 'turns_need_slanted', 'd')}</td>"
+                f"<td>{P(nm, src, 'oneway_head_slanted', 'plunges', 'd')}</td></tr>")
+
+    SLH = ("<tr><th>Shape</th><th>Family</th><th>Turns, C14 bound</th><th>Over the C14 bound (plunges)</th>"
+           "<th>Of those, within s / cos θ + (1 + √2)·cell</th><th>Plunges, C14 bound</th><th>Turns, slanted bound</th>"
+           "<th>Turns longer than the C14 bound (need the slanted bound)</th><th>Plunges, slanted bound</th></tr>")
+    H.append(f"""<h2>The slanted bound, per family (for a ruling)</h2>
+<p>The lead ruled C16's slanted bound s / cos θ + (1 + √2)·cell unnecessary for (a). The counts below are for one-way with the head as the turn, the same order and links for all three families. "Need" counts the turns of the slanted-bound plan that are longer than the C14 bound {tb} mm.</p>
+<div class="wide"><table class="all"><thead>{SLH}</thead><tbody>
+{sl_row('star', 'march')}{sl_row('star', 'e')}{sl_row('star', 'a')}
+{sl_row('pocket', 'march')}{sl_row('pocket', 'e')}{sl_row('pocket', 'a')}
+</tbody></table></div>
+<p>So the march needs the slanted bound for {P('star', 'march', 'oneway_head_slanted', 'turns_need_slanted', 'd')} turns (star) and {P('pocket', 'march', 'oneway_head_slanted', 'turns_need_slanted', 'd')} (pocket), the harmonic for {P('star', 'e', 'oneway_head_slanted', 'turns_need_slanted', 'd')} and {P('pocket', 'e', 'oneway_head_slanted', 'turns_need_slanted', 'd')}, and (a) for {P('star', 'a', 'oneway_head_slanted', 'turns_need_slanted', 'd')} and {P('pocket', 'a', 'oneway_head_slanted', 'turns_need_slanted', 'd')}. Without it each of those turns is a plunge. No family needs it for more than a few turns per shape.</p>
 """)
 
     def e_items(nm):
         return f"""<li>{nm.capitalize()}: loop {FE[nm]['first']} is the first loop with more than one cut piece; the stock splits at level {FE[nm]['splits']}; {FE[nm]['pieces']} pieces in {FE[nm]['lobes']} lobes. The pieces are {FE[nm]['clip_share']} of the loop length. {FE[nm]['dropped']} runs are too small to be pieces and {FE[nm]['merged']} gaps are merged (the march: {F[nm]['dropped']} and {F[nm]['merged']}): the thin cut breaks into many short runs.</li>
 <li>{nm.capitalize()}, time: {C17E(nm, 'time_cut_feed_min', '.2f')} min for the full (e) and {P(nm, 'e', CARD, 'time_cut_feed_min', '.2f')} min clipped (air at the cut feed); {P(nm, 'a', CARD, 'time_cut_feed_min', '.2f')} min for (a) with the same links. Entries {P(nm, 'e', CARD, 'entries', 'd')} = 1 + {P(nm, 'e', CARD, 'plunges', 'd')} plunges ({P(nm, 'e', CARD, 'plunge_seam', 'd')} core seams) + {P(nm, 'e', CARD, 'refusals', 'd')} refusals. Turns {P(nm, 'e', CARD, 'turns', 'd')}, of them {P(nm, 'e', CARD, 'turn_over', 'd')} over c: a thin cut gives a light turn.</li>
-<li>{nm.capitalize()}, engagement (one-way, slanted bound): engaged length {P(nm, 'e', CARD, 'engaged_mm', '.0f')} mm, against {P(nm, 'march', CARD, 'engaged_mm', '.0f')} for the march and {P(nm, 'a', CARD, 'engaged_mm', '.0f')} for (a). Median swept width of the engaged samples {P(nm, 'e', CARD, 'eng_w_med', '.3f')} D (march {P(nm, 'march', CARD, 'eng_w_med', '.3f')}, (a) {P(nm, 'a', CARD, 'eng_w_med', '.3f')}); mean width per piece, median {P(nm, 'e', CARD, 'piece_w_med', '.3f')} and smallest {P(nm, 'e', CARD, 'piece_w_min', '.3f')} D (march {P(nm, 'march', CARD, 'piece_w_med', '.3f')} / {P(nm, 'march', CARD, 'piece_w_min', '.3f')}, (a) {P(nm, 'a', CARD, 'piece_w_med', '.3f')} / {P(nm, 'a', CARD, 'piece_w_min', '.3f')}).</li>
+<li>{nm.capitalize()}, engagement (one-way, head as the turn): engaged length {P(nm, 'e', CARD, 'engaged_mm', '.0f')} mm, against {P(nm, 'march', CARD, 'engaged_mm', '.0f')} for the march and {P(nm, 'a', CARD, 'engaged_mm', '.0f')} for (a). Median swept width of the engaged samples {P(nm, 'e', CARD, 'eng_w_med', '.3f')} D (march {P(nm, 'march', CARD, 'eng_w_med', '.3f')}, (a) {P(nm, 'a', CARD, 'eng_w_med', '.3f')}); mean width per piece, median {P(nm, 'e', CARD, 'piece_w_med', '.3f')} and smallest {P(nm, 'e', CARD, 'piece_w_min', '.3f')} D (march {P(nm, 'march', CARD, 'piece_w_med', '.3f')} / {P(nm, 'march', CARD, 'piece_w_min', '.3f')}, (a) {P(nm, 'a', CARD, 'piece_w_med', '.3f')} / {P(nm, 'a', CARD, 'piece_w_min', '.3f')}).</li>
 <li>{nm.capitalize()}, load: head up to {BP(nm, 'e', CARD, 'head', 'max', '.3f')} D, departure up to {BP(nm, 'e', CARD, 'departure', 'max', '.3f')} D, interior at most {BP(nm, 'e', CARD, 'interior', 'max', '.3f')} D ({BP(nm, 'e', CARD, 'interior', 'over', 'd')} over). Coverage left {P(nm, 'e', CARD, 'residue_mm2', '.1f')} mm² ({P(nm, 'e', CARD, 'residue_unreachable_mm2', '.1f')} unreachable); the full (e) leaves {C17E(nm, 'residue_mm2', '.1f')} mm².</li>"""
 
     H.append(f"""<h2>The harmonic (e), clipped and split</h2>
@@ -472,10 +486,12 @@ def main():
 <li><b>The operator's reading is right.</b> The full march cuts every loop whole, so it runs again along all the wall that earlier loops cut. Clipped, split per lobe and linked one-way, the same loops (to {P('star', 'march', CARD, 'overlay_max_mm', '.1e')} mm) take {P('star', 'march', CARD, 'time_cut_feed_min', '.2f')} min against {C17('star', 'time_cut_feed_min', '.2f')} (star) and {P('pocket', 'march', CARD, 'time_cut_feed_min', '.2f')} min against {C17('pocket', 'time_cut_feed_min', '.2f')} (pocket), air at the cut feed.</li>
 <li><b>It is still slower than (a) with the same links:</b> {P('star', 'a', CARD, 'time_cut_feed_min', '.2f')} min (star) and {P('pocket', 'a', CARD, 'time_cut_feed_min', '.2f')} min (pocket). The march engages {P('star', 'march', CARD, 'engaged_mm', '.0f')} mm against {P('star', 'a', CARD, 'engaged_mm', '.0f')} mm (star) and {P('pocket', 'march', CARD, 'engaged_mm', '.0f')} against {P('pocket', 'a', CARD, 'engaged_mm', '.0f')} mm (pocket). No link removes that: it is the march's thinner passes.</li>
 <li><b>Plunges:</b> {P('star', 'march', CARD, 'plunges', 'd')} (star) and {P('pocket', 'march', CARD, 'plunges', 'd')} (pocket) against {P('star', 'a', CARD, 'plunges', 'd')} and {P('pocket', 'a', CARD, 'plunges', 'd')} for (a). The core rings give {P('star', 'march', CARD, 'plunge_seam', 'd')} and {P('pocket', 'march', CARD, 'plunge_seam', 'd')} of them (the seam step reads over c).</li>
-<li><b>Load:</b> the march needs C16's slanted bound to take its heads as turns (with the C14 bound: {P('star', 'march', 'oneway_head', 'plunges', 'd')} and {P('pocket', 'march', 'oneway_head', 'plunges', 'd')} plunges). Its departure corners still read up to {BP('star', 'march', CARD, 'departure', 'max', '.3f')} D (star) and {BP('pocket', 'march', CARD, 'departure', 'max', '.3f')} D (pocket). In the same replay the refusals are {P('star', 'march', CARD, 'refusals', 'd')} and {P('pocket', 'march', CARD, 'refusals', 'd')} for the march, {P('star', 'a', CARD, 'refusals', 'd')} and {P('pocket', 'a', CARD, 'refusals', 'd')} for (a); the entries are {P('star', 'march', CARD, 'entries', 'd')} and {P('pocket', 'march', CARD, 'entries', 'd')} against {P('star', 'a', CARD, 'entries', 'd')} and {P('pocket', 'a', CARD, 'entries', 'd')}. The Python replay over-reads the Rust one: for (a) + one-way, Rust has {RS('star', 'join_entries', 'd')} and {RS('pocket', 'join_entries', 'd')} join entries. So on entries the clipped march is not worse than (a); on time it is.</li>
+<li><b>Load:</b> with its heads as turns the march keeps the C14 bound (the slanted bound would save {q('star|ratio|sl_save_march', res['star']['march'][CARD]['plunges'] - res['star']['march']['oneway_head_slanted']['plunges'], 'd')} plunges on the star and {q('pocket|ratio|sl_save_march', res['pocket']['march'][CARD]['plunges'] - res['pocket']['march']['oneway_head_slanted']['plunges'], 'd')} on the pocket). Its departure corners still read up to {BP('star', 'march', CARD, 'departure', 'max', '.3f')} D (star) and {BP('pocket', 'march', CARD, 'departure', 'max', '.3f')} D (pocket). In the same replay the refusals are {P('star', 'march', CARD, 'refusals', 'd')} and {P('pocket', 'march', CARD, 'refusals', 'd')} for the march, {P('star', 'a', CARD, 'refusals', 'd')} and {P('pocket', 'a', CARD, 'refusals', 'd')} for (a); the entries are {P('star', 'march', CARD, 'entries', 'd')} and {P('pocket', 'march', CARD, 'entries', 'd')} against {P('star', 'a', CARD, 'entries', 'd')} and {P('pocket', 'a', CARD, 'entries', 'd')}. The Python replay over-reads the Rust one: for (a) + one-way, Rust has {RS('star', 'join_entries', 'd')} and {RS('pocket', 'join_entries', 'd')} join entries. So on entries the clipped march is not worse than (a); on time it is.</li>
 <li><b>Harmonic (e), clipped:</b> the fewest entries ({P('star', 'e', CARD, 'entries', 'd')} star, {P('pocket', 'e', CARD, 'entries', 'd')} pocket, against {P('star', 'a', CARD, 'entries', 'd')} and {P('pocket', 'a', CARD, 'entries', 'd')} for (a)) and the lightest load (pocket: {P('pocket', 'e', CARD, 'refusals', 'd')} refusals). But it takes {P('star', 'e', CARD, 'time_cut_feed_min', '.2f')} and {P('pocket', 'e', CARD, 'time_cut_feed_min', '.2f')} min against {P('star', 'a', CARD, 'time_cut_feed_min', '.2f')} and {P('pocket', 'a', CARD, 'time_cut_feed_min', '.2f')}: the clip cannot make a thin cut thick.</li>
-<li><b>Not a candidate for Rust as it stands.</b> If the operator wants the march shape, the next step is fix 2 (the departure as part of the turn) and a ruling on the slanted bound; it would still engage more length than (a).</li>
+<li><b>Not a candidate for Rust as it stands.</b> If the operator wants the march shape, the next step is fix 2 (the departure as part of the turn); it would still engage more length than (a).</li>
 </ul></div>
+<h2>Correction to v5</h2>
+<p>v5 said that with the C14 bound 51 (star) and 37 (pocket) of the march's head turns are over the bound. That was a defect of the C19 builder, not of the march: after a plunge the one-way return went back to the piece start, not to where the piece leaves the wall, so every later turn was one head longer and over the bound too. The return now goes to the departure point in every case. With the fix: {P('star', 'march', CARD, 'over_bound', 'd')} (star) and {P('pocket', 'march', CARD, 'over_bound', 'd')} (pocket). v5 stays as it was; this page and the note replace it.</p>
 <h2>Limits</h2>
 <ul>
 <li>The entry counts of this replay are higher than Rust's for the same family, on both sides of each break-even; the break-even values compare like with like, not with D12.</li>
@@ -517,7 +533,7 @@ code { font-size:13px; }"""
     N.append(f"""# P2 C19 — the streamline march and the harmonic (e), clipped and split per lobe (2026-10-24)
 
 Status: PROTOTYPE COMPLETE (Python only; no Rust edited, no cargo run, no
-commit). Page: `farside_ideas_v5.html`. Scripts: `phase2/c19/` (`clip.py`,
+commit). Page: `farside_ideas_v6.html` (v5 is frozen; §"Correction" says what changed). Scripts: `phase2/c19/` (`clip.py`,
 `build.py`, `run_c19.py`, `page_c19.py`, `assert_c19.py`). Run `run_c19.py`
 (about a minute), then `page_c19.py`, then `assert_c19.py`. `page_c19.py`
 writes this note and the page; `assert_c19.py` recomputes every quoted
@@ -553,8 +569,16 @@ turn bound s + (1 + √2)·cell = {tb} mm (cell 0.5 mm), c plus one cell
     for nm in ("star", "pocket"):
         N.append(f"\n{nm.capitalize()}:\n\n<!-- {nm}:begin -->\n" + table_md(tables[nm]) + f"\n<!-- {nm}:end -->\n")
     for sec in H[1:]:
-        if sec.startswith("<h2>The split") or sec.startswith("<h2>The wall") or sec.startswith("<h2>The harmonic") or sec.startswith("<h2>Verdict"):
+        if sec.startswith(("<h2>The split", "<h2>The wall", "<h2>The slanted", "<h2>The harmonic", "<h2>Verdict")):
             body = re.sub(r'<div class="grid">.*?</div></div>\n', "", sec, flags=re.S)
+
+            def md_table(m):
+                rows = re.findall(r"<tr>(.*?)</tr>", m.group(0), re.S)
+                cells = [re.findall(r"<t[hd]>(.*?)</t[hd]>", r_, re.S) for r_ in rows]
+                out = ["| " + " | ".join(cells[0]) + " |", "|" + "---|" * len(cells[0])]
+                out += ["| " + " | ".join(c_) + " |" for c_ in cells[1:]]
+                return "\n\n" + "\n".join(out) + "\n\n"
+            body = re.sub(r'<div class="wide"><table.*?</table></div>', md_table, body, flags=re.S)
             t = re.sub(r"<h2>(.*?)</h2>", lambda m: f"\n## {m.group(1)}\n", body)
             t = re.sub(r"<li>", "- ", t)
             t = re.sub(r"</li>", "", t)
