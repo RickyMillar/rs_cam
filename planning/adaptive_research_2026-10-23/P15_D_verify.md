@@ -2530,3 +2530,173 @@ Notes:
   it.
 - The page's wanaka200 row states this reason. Script:
   `phase3/fix1/run_fix1_wanaka.sh` (its last form has `--resolution 1.0`).
+
+## D14 at cdc9814e + uncommitted C22 and C23
+
+- C22: the 3D arm with turns, turn feeds and held links.
+  - Files: `adaptive3d/{mod,path,clearing}.rs`, the C12 block of
+    `research_geodesic.rs`, the C12 test.
+  - Note: `P3_C22_3d_turns.md`.
+- C23: the pocket v2 columns.
+  - Files: the rest of `research_geodesic.rs`, the 2D harness.
+  - Note: §C23 of `P2_C2_geodesic_fixes.md`.
+
+The run was the union of both command lists, in the main adaptive-head
+worktree. The D13 render dir was copied first. Lane script, a `timeout` on
+each command. The diff did not change during the run. Disk: 37 GB free.
+
+### Fix
+
+None. The two C22 reds are real; I did not patch them.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --all-targets`, plain and research | green, green |
+| 2 | `--lib adaptive::research_geodesic` (research) | green 23 passed, 2 ignored |
+| 2 | the same `-- --ignored` | red 0/2, the recorded reasons: `every transition is traced` (`transition_fallback: 1`, C6) and the G-MOPLOAD `ResidueMop` step 0.45244 |
+| 3 | `adaptive3d_emission_byte_parity`, plain and research | green 5/5, 5/5 |
+| 3 | the 13 adaptive3d sentries | green, all 13 |
+| 3 | `every_ignore_states_its_kind_f152` | green 2/2 |
+| 4 | `--test adaptive3d_geodesic_arm_c12 -- --nocapture` (the plain test) | **red**: `the_geodesic_arm_feeds_its_turns_down_at_the_level` panics at T:906 |
+| 4 | the same `-- --ignored --nocapture` (4 modes) | **red** at T:836 in mode 3 (`geodesic_local_oneway`), 598.88 s |
+| 5 | the 2D harness, release | green 1/1, 14.02 s; output in `phase2/d14_harness.txt` |
+| 6 | clippy core plain, core research, workspace full lint | green, green, green |
+
+### Controls against D13
+
+All 149 render files that the harness wrote again (`.txt`, `.svg`, `.png`,
+`.c16.txt`) are byte-equal to D13, except `summary.txt`. `summary.txt`
+gains the 8 new blocks (4 columns × 2 shapes) and loses no line.
+
+### C23: the rule
+
+| Item | oneway_v2 star | oneway_v2 pocket | zigzag_v2 star | zigzag_v2 pocket |
+|---|---|---|---|---|
+| Entries (base) | **35** (34) | 29 (41) | 38 (38) | 26 (44) |
+| S / L / J / M / C / W / P | 1/0/19/0/0/0/15 | 1/0/15/0/0/0/13 | 1/0/23/0/0/0/14 | 1/0/11/0/0/0/14 |
+| Turns emitted of planned; over the bound | 45 of 45; 3 | 48 of 48; 9 | 45 of 46; 2 | 53 of 53; 4 |
+| Turn length (mm) | 2.058 to 2.960 | 0.904 to 2.890 | 2.059 to 2.751 | 0.048 to 3.199 |
+| without | 0 | 0 | 0 | 0 |
+| Steps on no turn: max, over | 0.3565, 0 | 0.3582, 0 | 0.4509, 1: `residue mop cut (segment 163) (71.77, 80.74) → (71.28, 81.30)` | 0.3582, 0 |
+| Clearing-wrap cascades | 10 | 0 | 7 | 0 |
+| Return links | 1037 (408.8 mm) | 2235 (904.7 mm) | 0 | 2143 (866.9 mm) |
+| Keep-down links | 1054 (532.5 mm) | 2302 (1120.0 mm) | 59 (251.2 mm) | 2249 (998.1 mm) |
+| Cut length (mm) | 1186.4 | 1506.7 | 1173.0 | 1519.5 |
+
+| Rule | oneway_v2 | zigzag_v2 |
+|---|---|---|
+| 1. pocket < base, star ≤ base | pocket 29 < 41; **star 35 > 34** | pocket 26 < 44; star 38 ≤ 38 |
+| 2. no non-turn step over (mop excepted) | 0 / 0 | star: 1, the residue mop (excepted); pocket 0 |
+| 3. `without 0` | yes | yes |
+| 4. pocket C 0, cascades ≤ base | C 0, 0 ≤ 5 | C 0, 0 ≤ 10 |
+| **Verdict** | **DROP** (rule 1: the star has one more residue-mop entry, P 15 against 14) | **KEEP** |
+
+The star `zigzag_v2` equals its base (38 entries, 251.2 mm keep-down). On
+the pocket, `zigzag_v2` runs mostly one-way: 2143 return links, 866.9 mm.
+
+**Head-on-only columns (attribution, not under the rule):**
+
+| Column | Entries star / pocket | Pocket C, cascades | Pocket keep-down |
+|---|---|---|---|
+| oneway_headon | 35 / 35 | 0, 0 | 2050 (1082.2 mm) |
+| zigzag_headon | 38 / 34 | 0, 0 | 1950 (992.6 mm) |
+
+On the pocket, the head-on rule alone takes one-way 41 → 35 and zigzag
+44 → 34. The merged meeting line then takes them to 29 and 26.
+
+### C22: the 3D test
+
+The heavy test, per mode (counts in samples):
+
+| Item | AgentSearch | geodesic_curv | geodesic_curv_split | geodesic_local_oneway |
+|---|---|---|---|---|
+| moves | 657 | 2169 | 2157 | 4447 |
+| over the screen / the exact bound | 225 / 225 | 0 / 0 | 0 / 0 | 0 / 0 |
+| entry (D13) | 291 (291) | **1410** (1469) | **986** (1064) | 809 |
+| judged | 1460 | 2964 | 3541 | 6820 |
+| departing | 562 | 4978 | 3523 | 2331 |
+| turn samples (over the screen, sim peak) | 0 | 0 | 0 | 337 (0, 0.443) |
+| turns: planned / cut / reduced / lowest factor / longest | — | 0 | 0 | 86 / 86 / 84 / 0.310 / 2.984 mm (bound 3.207) |
+| turns: fed / unfed / full feed with no move | — | — | — | 82 / **3** / 1 |
+
+`geodesic_local_zigzag` is not reached: the test panics in
+`geodesic_local_oneway`. The `turn_faults`:
+
+```
+"3 turns unfed",
+"turn 42 (-11.9113, -17.8757) to (-9.1576, -17.8757) is counted fed, and no move carries factor 0.5099",
+"turn 43 (-9.1576, -17.8757) to (-6.6862, -17.8757) is counted fed, and no move carries factor 0.4780",
+"turn 44 (-6.6862, -17.8757) to (-4.3977, -17.8757) is counted fed, and no move carries factor 0.4086",
+"turn 45 (-4.3977, -17.8757) to (-2.1443, -17.8757) is counted fed, and no move carries factor 0.4275",
+"turn 56 (14.4668, -17.8757) to (15.9548, -17.8757) is counted fed, and no move carries factor 0.4485",
+"turn 61 (-11.4500, -2.7361) to (-11.9500, 0.1526) is counted fed, and no move carries factor 0.5770",
+```
+
+The plain test (one level, Z 4.5), `geodesic_local_oneway`: turns planned
+42, cut 42, reduced 42 (lowest 0.310), longest 2.984 mm; fed 39, **unfed
+3**. 69 entries, 2121 moves. It panics before its zigzag mode.
+
+**Reading (not measured).** Turns 42 to 45 lie end to end on one straight
+line (y = -17.8757, x -11.91 to -2.14), with turn 56 on the same line.
+That is C22's P3 risk: the 3D RDP (`cut_simplify_tolerance`, 0.1 mm)
+merges collinear turn moves, so no emitted move starts and ends on one
+turn, and the feed cannot attach. The turn samples read under the screen
+(sim peak 0.443), so the fault is the feed attachment, not an overload.
+The held links lower the entry samples of `geodesic_curv` (1469 → 1410)
+and of `geodesic_curv_split` (1064 → 986), with 0 over in both modes, as
+C22 predicted.
+
+**Consequence.** C22 is not green, so the Corne zigzag/oneway fixture runs
+(the lead's condition) are not started.
+
+### Files
+
+- `phase2/d14_harness.txt`, `phase2/d14_c12_test_output.txt`,
+  `phase2/d14_c12_plain_output.txt`.
+- Renders: `.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+  New: `<shape>_geodesic_local_{oneway,zigzag}_{v2,headon}.{txt,svg,png,c16.txt}`.
+
+### `git status --short` (worktree) at the end of D14
+
+The same six paths as at the start (C22 and C23 only).
+
+### D14 addendum: `wanaka200_mt1_c12_rough_only.toml` (no cargo)
+
+A NEW copy, `planning/multitool_2026-08-23/wanaka200_mt1_c12_rough_only.toml`,
+made from `wanaka200_mt1_c12_agent_search.toml` (the lead's order). It
+keeps only the roughing ops, so the resolution rule ("the rest tool's TIP
+radius / 5") no longer reads a skipped rest op. The original
+`wanaka200_mt1.toml` and the first copy are unchanged (md5 checked before
+and after).
+
+`diff wanaka200_mt1_c12_agent_search.toml wanaka200_mt1_c12_rough_only.toml`
+deletes three line ranges of the first copy and adds nothing (`diff` prints
+`242,318d241`, `418,653d340`, `763,1035d449`. The first range is the same cut
+as 241-317 below, because lines 241 and 318 are both `[[setups.toolpaths]]`):
+
+| Lines removed | Setup | Toolpaths removed (id, name, stock source) |
+|---|---|---|
+| 241-317 | 0 "Setup 1" | 0 "1 Pin Drill" (fresh) |
+| 418-653 | 0 "Setup 1" | 2 "3 Holes (6mm pilot)" (fresh; its migrated `floor` line goes with it), 3 "4 Rivers (back, V-bit)" (from_remaining_stock), 4 "5 Lakes (back, V-bit)" (from_remaining_stock) |
+| 763-1035 (to the end) | 1 "Setup 2 — front" | 8 "7 3D Finish tier-A (R2.0)", 10 "7b 3D Finish tier-B rest (R1.0)", 9 "8 Pencil detail (R0.5)" (all from_remaining_stock) |
+
+Kept:
+- `[job]`, the stock, the alignment pins, the post, the machine, all six
+  `[[tools]]`, all four `[[models]]`, and both `[[setups]]` headers.
+- Setup 0: id 1 "2 Back Rough", `stock_source = "fresh"`,
+  `clearing_strategy = "agent_search"`.
+- Setup 1: id 5 "6 3D Rough (front)", `stock_source = "fresh"`,
+  `clearing_strategy = "contour_parallel"`, as in the original.
+
+Neither kept op reads another op's stock (both are `fresh`), and nothing
+outside `[[setups]]` names a toolpath id. The file parses
+(`tomllib`): Setup 1 → ["2 Back Rough"], Setup 2 — front → ["6 3D Rough
+(front)"]. 449 lines (the first copy has 1035).
+
+**Not yet checked (needs a run):** whether the CLI now accepts
+`--resolution 1.0`. The six tools stay in the file. If the rule reads the
+tool list rather than the ops, the refusal stays. The first run will show
+it.
