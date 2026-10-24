@@ -107,7 +107,7 @@ def summarise(sh, cls, B, lobes):
         chain_links=cnt(lambda j: j["cls"] == "chain"),
         lobe_joins=cnt(lambda j: j["cls"] == "lobe"), lobe_links=cnt(lambda j: j["cls"] == "lobe" and j["kind"] == "link"),
         arc_joins=cnt(lambda j: j["cls"] == "arc"), arc_links=cnt(lambda j: j["cls"] == "arc" and j["kind"] == "link"),
-        turns=len(T), over_bound=len(over_b), outside=cnt(lambda j: j.get("outside")),
+        turns=len(T), turns_need_slanted=int(sum(t["length"] > TURN_BOUND for t in T)), over_bound=len(over_b), outside=cnt(lambda j: j.get("outside")),
         over_bound_fit=int(sum(1 for j in over_b if "slanted_bound" in j and j["turn_len"] <= j["slanted_bound"])),
         turn_len_min=float(tl.min()) if len(tl) else 0.0, turn_len_max=float(tl.max()) if len(tl) else 0.0,
         turn_over=int(sum(t["over"] for t in T)),
@@ -140,7 +140,6 @@ def summarise(sh, cls, B, lobes):
     curves = {(c["level"], c["curve"]): c for c in cls["curves"]}
     for p in pl.pieces:
         if p["kind"] == "cut":
-            flat[k + "|a"] = p["a"].astype(np.float64)
             src = B.pieces[p["src"]]
             dev = max(dev, on_curve(p["P"], curves[(src["level"], src["curve"])]["V"]))
     out["overlay_max_mm"] = dev
@@ -148,26 +147,32 @@ def summarise(sh, cls, B, lobes):
 
 
 def engagement(B):
-    """How thick the cut is. Over the engaged samples of the cut moves: the
-    median swept width (fraction of D); per cut move the median of its
-    engaged samples, then the median and the smallest over the moves; and
-    the mean width: area removed by the cuts over their engaged length."""
+    """How thick the cut is.
+    - eng_w_med: the median swept width (fraction of D) over the engaged
+      samples of the cut moves;
+    - per cut move, its mean width: the area it removes over its engaged
+      length (fraction of D); piece_w_med and piece_w_min are the median
+      and the smallest over the moves (a move with no engaged length is
+      left out);
+    - mean_width: the area of all cut moves over their engaged length."""
     allw, per = [], []
     area = eng = 0.0
     for p in B.pl.pieces:
         if p["kind"] != "cut":
             continue
         e = p["eng"]
-        area += float(p["a"].sum())
         ds = np.diff(p["s"])
-        eng += float((ds * 0.5 * (e[1:].astype(float) + e[:-1])).sum())
+        le = float((ds * 0.5 * (e[1:].astype(float) + e[:-1])).sum())
+        a = float(p["a"].sum())
+        area += a
+        eng += le
         if e.any():
-            w = p["w"][e] / D
-            allw.append(w)
-            per.append(float(np.median(w)))
+            allw.append(p["w"][e] / D)
+        if le > 0:
+            per.append(a / le / D)
     allw = np.concatenate(allw)
-    return dict(eng_w_med=float(np.median(allw)), piece_w_med_med=float(np.median(per)),
-                piece_w_med_min=float(min(per)), mean_width=area / eng / D, cut_area_mm2=area)
+    return dict(eng_w_med=float(np.median(allw)), piece_w_med=float(np.median(per)),
+                piece_w_min=float(min(per)), mean_width=area / eng / D, cut_area_mm2=area)
 
 
 def rho_for_gap(g):
@@ -310,6 +315,7 @@ def store(B, tag, flat):
             flat[k + "|src"] = np.array([src["level"], src["curve"], src["lobe"]])
         if p["kind"] == "turn":
             flat[k + "|f"] = np.array([p["feed_factor"]])
+            flat[k + "|L"] = np.array([p["turn_len"]])
 
 
 # plan variants: (link, head as turn)

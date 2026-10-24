@@ -102,6 +102,8 @@ def plan_numbers(nm, src, mode):
     o = dict(plunges=0, turns=0, turn_over=0, keepdown_mm=0.0, engaged_mm=0.0, air_mm=0.0, turn_time=0.0)
     fac = []
     refusals = 0
+    allw, per = [], []
+    area = engc = 0.0
     acc = {k: [0, 0, 0.0] for k in ("head", "departure", "interior", "end")}
     for n_, m in enumerate(mv):
         kind = m["kind"]
@@ -127,6 +129,13 @@ def plan_numbers(nm, src, mode):
         if kind == "cut":
             w = m["w"].astype(float)
             P = m["P"].astype(float)
+            a_ = float(m["a"].sum())
+            area += a_
+            engc += le
+            if e.any():
+                allw.append(w[e])
+            if le > 0:
+                per.append(a_ / le / D)
             # rings (the core loops) are closed cut moves: the counts leave them out
             if np.hypot(*(P[0] - P[-1])) <= 1e-9:
                 continue
@@ -156,6 +165,10 @@ def plan_numbers(nm, src, mode):
     o["time_link_feed_min"] = o["engaged_mm"] / F_CUT + o["air_mm"] / F_LINK + o["turn_time"]
     o["turn_factor_med"] = float(np.percentile(fac, 50)) if fac else 0.0
     o["place"] = acc
+    o["eng_w_med"] = float(np.median(np.concatenate(allw)))
+    o["piece_w_med"] = float(np.median(per))
+    o["piece_w_min"] = float(min(per))
+    o["mean_width"] = area / engc / D
     return o
 
 
@@ -187,7 +200,7 @@ def overlay(nm, src, mode):
         V = {}
         for k in d.files:
             n_, key, i, j = k.split("|")
-            if n_ == nm and key == "a":
+            if n_ == nm and key == src:
                 V.setdefault(int(i), []).append(d[k].astype(float))
         V = {(i, j): P for i, ps in V.items() for j, P in enumerate(ps)}
     dev = 0.0
@@ -218,7 +231,7 @@ for key in PLANS:
     check(tot == CALC[key]["plunges"] == x["plunges"], f"{key} plunge kinds sum {tot} vs {CALC[key]['plunges']}")
 CARD = "oneway_head_slanted"
 for nm in ("star", "pocket"):
-    for src in ("march", "a"):
+    for src in ("march", "a", "e"):
         CALC[(nm, src, CARD)]["overlay_max_mm"] = overlay(nm, src, CARD)
         check(CALC[(nm, src, CARD)]["overlay_max_mm"] <= 1e-6, f"{nm} {src} overlay")
         r = replay_residue(nm, src, CARD)
@@ -227,8 +240,8 @@ for nm in ("star", "pocket"):
 
 # ── 3. the split, by a fresh classification ───────────────────────────
 SPLIT = {}
-for nm in ("star", "pocket"):
-    cls = cl.classify(SH[nm], cl.march_levels(nm))
+for nm, src in [(n, s_) for n in ("star", "pocket") for s_ in ("march", "e")]:
+    cls = cl.classify(SH[nm], cl.march_levels(nm) if src == "march" else cl.a_levels(nm, SH[nm], src))
     lobes, _ = cl.lobe_tree(cls["labs"], cls["pieces"])
     ps = cls["pieces"]
     by = {}
@@ -236,7 +249,7 @@ for nm in ("star", "pocket"):
         by.setdefault((p["level"], p["curve"]), []).append(p)
     pm = float(sum(p["length"] for p in ps))
     cm = float(sum(c_["sv"][-1] for c_ in cls["curves"]))
-    SPLIT[nm] = dict(first_multi_level=min(k[0] for k, v in by.items() if len(v) > 1),
+    SPLIT[(nm, src)] = dict(first_multi_level=min(k[0] for k, v in by.items() if len(v) > 1),
                      split_levels=", ".join(str(v) for v in sorted(L["nodes"][-1][0] + 1 for L in lobes if len(L["children"]) >= 2)),
                      lobes_n=len(lobes), pieces_n=len(ps), share_min=min(p["share"] for p in ps),
                      merged_n=len(cls["merged"]), dropped_n=len(cls["dropped"]), pieces_mm=pm, curve_mm=cm,
@@ -296,11 +309,18 @@ def value(key):
         return h[parts[2]], True
     if parts[1] == "d12":
         return D12[nm][parts[2]], True
+    if parts[1] == "c17e":
+        return sw[nm]["c15_e"][parts[2]], True
     if parts[1] == "ratio":
-        return CALC[(nm, "march", CARD)]["engaged_mm"] / CALC[(nm, "a", CARD)]["engaged_mm"], True
+        a = CALC[(nm, "a", CARD)]
+        if parts[2] in ("eng_vs_a", "e_eng_vs_a"):
+            x = CALC[(nm, "e" if parts[2].startswith("e_") else "march", CARD)]
+            return x["engaged_mm"] / a["engaged_mm"], True
+        x = CALC[(nm, parts[2][3:], CARD)]  # be_<src>: break-even seconds per entry
+        return 60 * (x["time_cut_feed_min"] - a["time_cut_feed_min"]) / (a["entries"] - x["entries"]), True
     src = parts[1]
     if parts[2] == "split":
-        return SPLIT[nm][parts[3]], True
+        return SPLIT[(nm, src)][parts[3]], True
     mode, metric = parts[2], parts[3]
     x = res[nm][src][mode]
     cc = CALC.get((nm, src, mode), {})
@@ -340,9 +360,10 @@ for key, qv in QU.items():
 
 # the split facts in results_c19.json match the fresh run
 for nm in ("star", "pocket"):
-    sp = res[nm]["march"]["split"]
-    check(sp["first_multi_level"] == SPLIT[nm]["first_multi_level"], f"{nm} first split level")
-    check(len(sp["lobes"]) == SPLIT[nm]["lobes_n"], f"{nm} lobes")
+    for src in ("march", "e"):
+        sp = res[nm][src]["split"]
+        check(sp["first_multi_level"] == SPLIT[(nm, src)]["first_multi_level"], f"{nm} {src} first split level")
+        check(len(sp["lobes"]) == SPLIT[(nm, src)]["lobes_n"], f"{nm} {src} lobes")
 
 print(f"{len(QU)} quotes, {N_IND[0]} recomputed independently, {len(QU) - N_IND[0]} pipeline records checked by value")
 if FAILS:

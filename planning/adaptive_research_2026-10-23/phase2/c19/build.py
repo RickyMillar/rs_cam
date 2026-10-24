@@ -194,6 +194,7 @@ class Build:
             m = max(wmax, amax)
             f = C_FRAC / m if m > C_FRAC else 1.0
             t["feed_factor"] = f
+            t["turn_len"] = tlen
             self.turns.append(dict(A=X, B=T_end.copy(), length=tlen, swept=wmax, area=amax, factor=f,
                                    over=bool(m > C_FRAC), level=q["level"], lobe=q["lobe"], head=Hd is not None,
                                    head_mm=float(np.hypot(*np.diff(Hd, axis=0).T).sum()) if Hd is not None else 0.0))

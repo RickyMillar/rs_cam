@@ -191,7 +191,12 @@ A_MODES = [
     ("oneway_head_slanted", "C15 (a), one-way, C16 slanted bound"),
     ("zigzag", "C15 (a), zigzag, C14 turns"),
 ]
-CARD = "oneway_head_slanted"  # the plan the cards draw (march and (a))
+E_MODES = [
+    ("oneway", "C15 (e) harmonic, one-way, C14 turns"),
+    ("oneway_head_slanted", "C15 (e) harmonic, one-way, head as the turn, C16 slanted bound"),
+    ("zigzag", "C15 (e) harmonic, zigzag, C14 turns"),
+]
+CARD = "oneway_head_slanted"  # the plan the cards draw (march, (e) and (a))
 
 
 def main():
@@ -218,6 +223,9 @@ def main():
     def C17(nm, key, fmt):
         return q(f"{nm}|c17|{key}", sw[nm]["h_step"][key], fmt)
 
+    def C17E(nm, key, fmt):
+        return q(f"{nm}|c17e|{key}", sw[nm]["c15_e"][key], fmt)
+
     def RS(nm, key, fmt):
         return q(f"{nm}|d12|{key}", rs[nm][key], fmt)
 
@@ -238,6 +246,11 @@ def main():
         s_a = (f"The exact-distance arcs of C15 (a) with the same links: {P(nm, 'a', CARD, 'engaged_mm', '.0f')} mm of cut "
                f"against {P(nm, 'march', CARD, 'engaged_mm', '.0f')} mm for the march, because the march makes more and "
                f"thinner passes{' into the tips' if nm == 'star' else ''}.")
+        s_e = (f"C15's harmonic level lines with the same clip, split and links: the time falls from "
+               f"{C17E(nm, 'time_cut_feed_min', '.2f')} to {P(nm, 'e', CARD, 'time_cut_feed_min', '.2f')} min, but the cut is "
+               f"thin (median swept width {P(nm, 'e', CARD, 'eng_w_med', '.3f')} D), so it engages "
+               f"{q(f'{nm}|ratio|e_eng_vs_a', res[nm]['e'][CARD]['engaged_mm'] / res[nm]['a'][CARD]['engaged_mm'], '.2f')} "
+               f"times the length of (a).")
         cards[nm] = [
             ("Full march (C17)", s_full, svg(nm, layers_full(nm)), [
                 ("Engaged / air mm", f"{C17(nm, 'engaged_mm', '.0f')} / {C17(nm, 'air_mm', '.0f')}"),
@@ -248,6 +261,11 @@ def main():
                 ("Engaged / keep-down mm", f"{P(nm, 'march', CARD, 'engaged_mm', '.0f')} / {P(nm, 'march', CARD, 'keepdown_mm', '.0f')}"),
                 ("Plunges / turns", f"{P(nm, 'march', CARD, 'plunges', 'd')} / {P(nm, 'march', CARD, 'turns', 'd')}"),
                 ("Time, air at cut feed", P(nm, "march", CARD, "time_cut_feed_min", ".2f") + " min"),
+            ]),
+            ("Harmonic (e), clipped and split, one-way", s_e, svg(nm, layers_plan(nm, "e", CARD)), [
+                ("Engaged / keep-down mm", f"{P(nm, 'e', CARD, 'engaged_mm', '.0f')} / {P(nm, 'e', CARD, 'keepdown_mm', '.0f')}"),
+                ("Plunges / turns", f"{P(nm, 'e', CARD, 'plunges', 'd')} / {P(nm, 'e', CARD, 'turns', 'd')}"),
+                ("Time, air at cut feed", P(nm, "e", CARD, "time_cut_feed_min", ".2f") + " min"),
             ]),
             ("C15 (a), same linking", s_a, svg(nm, layers_plan(nm, "a", CARD)), [
                 ("Engaged / keep-down mm", f"{P(nm, 'a', CARD, 'engaged_mm', '.0f')} / {P(nm, 'a', CARD, 'keepdown_mm', '.0f')}"),
@@ -276,11 +294,15 @@ def main():
                 BP(nm, src, mode, "head", "max", ".3f"),
                 BP(nm, src, mode, "departure", "max", ".3f"),
                 f"{BP(nm, src, mode, 'interior', 'max', '.3f')} ({BP(nm, src, mode, 'interior', 'over', 'd')})",
-                f"{P(nm, src, mode, 'residue_mm2', '.1f')} ({P(nm, src, mode, 'residue_unreachable_mm2', '.1f')})"]
+                f"{P(nm, src, mode, 'residue_mm2', '.1f')} ({P(nm, src, mode, 'residue_unreachable_mm2', '.1f')})",
+                P(nm, src, mode, "eng_w_med", ".3f"),
+                f"{P(nm, src, mode, 'piece_w_med', '.3f')} / {P(nm, src, mode, 'piece_w_min', '.3f')}",
+                P(nm, src, mode, "mean_width", ".3f")]
 
     HEAD = ["Plan", "Entries", "Plunges = seam / turn over bound / lobe / in-lobe", "Refusals", "Turns (over c)",
             "Turn feed factor, median", "Keep-down mm", "Engaged mm", "Air mm", "Time, air at cut feed, min",
-            "Time, air at link feed, min", "Head max D", "Departure max D", "Interior max D (over)", "Coverage left mm² (unreachable)"]
+            "Time, air at link feed, min", "Head max D", "Departure max D", "Interior max D (over)", "Coverage left mm² (unreachable)",
+            "Swept width of engaged samples, median D", "Piece mean width, median / min D", "Mean width D"]
     tables = {}
     for nm in ("star", "pocket"):
         rows = []
@@ -289,9 +311,16 @@ def main():
                      C17(nm, "link_mm", ".0f"), C17(nm, "engaged_mm", ".0f"), C17(nm, "air_mm", ".0f"),
                      C17(nm, "time_cut_feed_min", ".2f"), C17(nm, "time_link_feed_min", ".2f"),
                      "—", "—", f"{C17(nm, 'cut_width_max', '.4f')} ({C17(nm, 'cut_width_over', 'd')})",
-                     f"{C17(nm, 'residue_mm2', '.1f')} ({C17(nm, 'residue_unreachable_mm2', '.1f')})"])
+                     f"{C17(nm, 'residue_mm2', '.1f')} ({C17(nm, 'residue_unreachable_mm2', '.1f')})", "—", "—", "—"])
+        rows.append(["C17 full harmonic (e) (sweep.json c15_e)", "—", f"{C17E(nm, 'retracts', 'd')} (FreeCAD rule)", "—", "—", "—",
+                     C17E(nm, "link_mm", ".0f"), C17E(nm, "engaged_mm", ".0f"), C17E(nm, "air_mm", ".0f"),
+                     C17E(nm, "time_cut_feed_min", ".2f"), C17E(nm, "time_link_feed_min", ".2f"),
+                     "—", "—", f"{C17E(nm, 'cut_width_max', '.4f')} ({C17E(nm, 'cut_width_over', 'd')})",
+                     f"{C17E(nm, 'residue_mm2', '.1f')} ({C17E(nm, 'residue_unreachable_mm2', '.1f')})", "—", "—", "—"])
         for mode, t in MODES:
             rows.append(row_plan(nm, "march", mode, t))
+        for mode, t in E_MODES:
+            rows.append(row_plan(nm, "e", mode, t))
         for mode, t in A_MODES:
             rows.append(row_plan(nm, "a", mode, t))
         rows.append(["(a) + one-way in Rust (D12, geodesic_local_oneway)",
@@ -299,7 +328,7 @@ def main():
                      f"{RS(nm, 'turns', 'd')} ({RS(nm, 'over_bound', 'd')} over the bound)", RS(nm, "factor_med", ".2f"),
                      RS(nm, "keepdown_mm", ".0f"), f"{RS(nm, 'cut_mm', '.0f')} (cut length)", "—",
                      RS(nm, "time_cut_feed_min", ".2f"), RS(nm, "time_link_feed_min", ".2f"), "—", "—",
-                     f"{RS(nm, 'no_turn_max', '.4f')} (any non-turn step)", "mop"])
+                     f"{RS(nm, 'no_turn_max', '.4f')} (any non-turn step)", "mop", "—", "—", "—"])
         tables[nm] = rows
 
     def table_html(rows):
@@ -332,14 +361,34 @@ def main():
             clip_share=q(f"{nm}|march|split|clip_share", sp["pieces_mm"] / sp["curve_mm"], "%"),
         )
 
+    FE = {}
+    for nm in ("star", "pocket"):
+        sp = res[nm]["e"]["split"]
+        FE[nm] = dict(
+            first=SP(nm, "e", "first_multi_level", "d"),
+            splits=q(f"{nm}|e|split|split_levels", ", ".join(str(v) for v in sp["split_levels"]), "s"),
+            lobes=q(f"{nm}|e|split|lobes_n", len(sp["lobes"]), "d"),
+            pieces=q(f"{nm}|e|split|pieces_n", sum(L["pieces"] for L in sp["lobes"]), "d"),
+            merged=q(f"{nm}|e|split|merged_n", len(sp["merged"]), "d"),
+            dropped=q(f"{nm}|e|split|dropped_n", len(sp["dropped"]), "d"),
+            clip_share=q(f"{nm}|e|split|clip_share", sp["pieces_mm"] / sp["curve_mm"], "%"),
+        )
+
+    def be(nm, src):
+        """Break-even time per entry (s): (time of the plan - time of (a)) /
+        (entries of (a) - entries of the plan), both from this replay."""
+        x, a = res[nm][src][CARD], res[nm]["a"][CARD]
+        return q(f"{nm}|ratio|be_{src}", 60 * (x["time_cut_feed_min"] - a["time_cut_feed_min"]) / (a["entries"] - x["entries"]), ".1f")
+
     sm, pm = res["star"]["march"], res["pocket"]["march"]
 
     # ── html ──
     H.append(f"""<h1>Clipped march arms</h1>
 <p class="sub">Agent C19, 2026-10-24. Page v5 after C17's <code>farside_ideas_v4.html</code>. Star and pocket fixtures in tool-centre space. Python prototype on C15's geometry and 0.1 mm replay and C17's march loops; no Rust. Tool R 3 mm, stepover 2 mm, c·D = {cD} mm (c = {cc}). Scripts: <code>phase2/c19/</code>; <code>assert_c19.py</code> checks every number on this page.</p>
 <p><b>The question (operator, 2026-10-24).</b> "The paths look great, is the issue that down both arms is one move? So the tool traverses both arms at the same time? If we could somehow clip the overlap and detect the split and traverse the paths differently the shape is perfect."</p>
-<p><b>The answer in one line.</b> Yes: when the loops are cut only where they remove stock and one arm at a time, the march shape stays exactly and its air falls from {C17('star', 'air_mm', '.0f')} mm to {P('star', 'march', CARD, 'air_mm', '.0f')} mm (star). But the march still engages {q('star|ratio|eng_vs_a', sm[CARD]['engaged_mm'] / res['star']['a'][CARD]['engaged_mm'], '.2f')} times the length of (a), and its pieces start with a head-on run along the wall.</p>
+<p><b>The answer in one line.</b> Yes: when the loops are cut only where they remove stock and one arm at a time, the march shape stays exactly and its air falls from {C17('star', 'air_mm', '.0f')} mm to {P('star', 'march', CARD, 'air_mm', '.0f')} mm (star). But the march still engages {q('star|ratio|eng_vs_a', sm[CARD]['engaged_mm'] / res['star']['a'][CARD]['engaged_mm'], '.2f')} times the length of (a), and its pieces start with a head-on run along the wall. The same clip on C15's harmonic loops (e) (operator's addition) gives the fewest entries of all plans here ({P('star', 'e', CARD, 'entries', 'd')} star, {P('pocket', 'e', CARD, 'entries', 'd')} pocket), but its cut is thin: it engages {q('star|ratio|e_eng_vs_a', res['star']['e'][CARD]['engaged_mm'] / res['star']['a'][CARD]['engaged_mm'], '.2f')} (star) and {q('pocket|ratio|e_eng_vs_a', res['pocket']['e'][CARD]['engaged_mm'] / res['pocket']['a'][CARD]['engaged_mm'], '.2f')} (pocket) times the length of (a).</p>
 <h2>What C19 did</h2>
+<p>The same five steps run on three families of curves: C17's march loops, C15's harmonic level lines (e) (closed loops, one or two per level) and C15's exact-distance wraps (a). A closed loop is cut counter-clockwise when it holds the entry, else clockwise, so the stock is always on the right.</p>
 <ol>
 <li><b>Clip.</b> C17's replay of each march loop in order; a sample is engaged when its area per mm over one pass step is more than one cell width (0.1 mm). Each engaged run is a cut piece. The pieces lie on the C17 loops: the largest distance of a cut point from its loop is {P('star', 'march', CARD, 'overlay_max_mm', '.1e')} mm (star) and {P('pocket', 'march', CARD, 'overlay_max_mm', '.1e')} mm (pocket). Three rules, each from the raster or the tool:
 <ul><li>a closed loop whose air lies only within R of arc before its seam is a ring (that air is the loop's own start);</li>
@@ -401,6 +450,22 @@ def main():
 </ol>
 """)
 
+    def e_items(nm):
+        return f"""<li>{nm.capitalize()}: loop {FE[nm]['first']} is the first loop with more than one cut piece; the stock splits at level {FE[nm]['splits']}; {FE[nm]['pieces']} pieces in {FE[nm]['lobes']} lobes. The pieces are {FE[nm]['clip_share']} of the loop length. {FE[nm]['dropped']} runs are too small to be pieces and {FE[nm]['merged']} gaps are merged (the march: {F[nm]['dropped']} and {F[nm]['merged']}): the thin cut breaks into many short runs.</li>
+<li>{nm.capitalize()}, time: {C17E(nm, 'time_cut_feed_min', '.2f')} min for the full (e) and {P(nm, 'e', CARD, 'time_cut_feed_min', '.2f')} min clipped (air at the cut feed); {P(nm, 'a', CARD, 'time_cut_feed_min', '.2f')} min for (a) with the same links. Entries {P(nm, 'e', CARD, 'entries', 'd')} = 1 + {P(nm, 'e', CARD, 'plunges', 'd')} plunges ({P(nm, 'e', CARD, 'plunge_seam', 'd')} core seams) + {P(nm, 'e', CARD, 'refusals', 'd')} refusals. Turns {P(nm, 'e', CARD, 'turns', 'd')}, of them {P(nm, 'e', CARD, 'turn_over', 'd')} over c: a thin cut gives a light turn.</li>
+<li>{nm.capitalize()}, engagement (one-way, slanted bound): engaged length {P(nm, 'e', CARD, 'engaged_mm', '.0f')} mm, against {P(nm, 'march', CARD, 'engaged_mm', '.0f')} for the march and {P(nm, 'a', CARD, 'engaged_mm', '.0f')} for (a). Median swept width of the engaged samples {P(nm, 'e', CARD, 'eng_w_med', '.3f')} D (march {P(nm, 'march', CARD, 'eng_w_med', '.3f')}, (a) {P(nm, 'a', CARD, 'eng_w_med', '.3f')}); mean width per piece, median {P(nm, 'e', CARD, 'piece_w_med', '.3f')} and smallest {P(nm, 'e', CARD, 'piece_w_min', '.3f')} D (march {P(nm, 'march', CARD, 'piece_w_med', '.3f')} / {P(nm, 'march', CARD, 'piece_w_min', '.3f')}, (a) {P(nm, 'a', CARD, 'piece_w_med', '.3f')} / {P(nm, 'a', CARD, 'piece_w_min', '.3f')}).</li>
+<li>{nm.capitalize()}, load: head up to {BP(nm, 'e', CARD, 'head', 'max', '.3f')} D, departure up to {BP(nm, 'e', CARD, 'departure', 'max', '.3f')} D, interior at most {BP(nm, 'e', CARD, 'interior', 'max', '.3f')} D ({BP(nm, 'e', CARD, 'interior', 'over', 'd')} over). Coverage left {P(nm, 'e', CARD, 'residue_mm2', '.1f')} mm² ({P(nm, 'e', CARD, 'residue_unreachable_mm2', '.1f')} unreachable); the full (e) leaves {C17E(nm, 'residue_mm2', '.1f')} mm².</li>"""
+
+    H.append(f"""<h2>The harmonic (e), clipped and split</h2>
+<p>The operator: "I think the same thing could be done with harmonic too." It can. The clip, the split, the order and the links run on the (e) loops with no change. What the clip cannot fix is the uneven gap of (e): a level line of the harmonic field lies close to the one before where the field is steep, so most of each loop cuts a thin strip. The clip removes the air, not the thin cut.</p>
+<ul>
+{e_items('star')}
+{e_items('pocket')}
+</ul>
+<p>On the pocket the clipped (e) leaves stock that the full (e) cuts: the runs too small to be pieces (one sample, or no cell) hold it.</p>
+<p><b>Which is faster depends on the cost of an entry.</b> With the counts of this replay, clipped (e) is faster than (a) with the same links only when one entry costs more than {be('star', 'e')} s (star) or {be('pocket', 'e')} s (pocket); the clipped march only when it costs more than {be('star', 'march')} s (star) or {be('pocket', 'march')} s (pocket). The cost of an entry (lift, travel, re-entry at the plunge feed) is not measured here.</p>
+""")
+
     star_t = res["star"]["march"][CARD]["time_cut_feed_min"]
     H.append(f"""<h2>Verdict</h2>
 <div class="verdict"><ul>
@@ -408,10 +473,12 @@ def main():
 <li><b>It is still slower than (a) with the same links:</b> {P('star', 'a', CARD, 'time_cut_feed_min', '.2f')} min (star) and {P('pocket', 'a', CARD, 'time_cut_feed_min', '.2f')} min (pocket). The march engages {P('star', 'march', CARD, 'engaged_mm', '.0f')} mm against {P('star', 'a', CARD, 'engaged_mm', '.0f')} mm (star) and {P('pocket', 'march', CARD, 'engaged_mm', '.0f')} against {P('pocket', 'a', CARD, 'engaged_mm', '.0f')} mm (pocket). No link removes that: it is the march's thinner passes.</li>
 <li><b>Plunges:</b> {P('star', 'march', CARD, 'plunges', 'd')} (star) and {P('pocket', 'march', CARD, 'plunges', 'd')} (pocket) against {P('star', 'a', CARD, 'plunges', 'd')} and {P('pocket', 'a', CARD, 'plunges', 'd')} for (a). The core rings give {P('star', 'march', CARD, 'plunge_seam', 'd')} and {P('pocket', 'march', CARD, 'plunge_seam', 'd')} of them (the seam step reads over c).</li>
 <li><b>Load:</b> the march needs C16's slanted bound to take its heads as turns (with the C14 bound: {P('star', 'march', 'oneway_head', 'plunges', 'd')} and {P('pocket', 'march', 'oneway_head', 'plunges', 'd')} plunges). Its departure corners still read up to {BP('star', 'march', CARD, 'departure', 'max', '.3f')} D (star) and {BP('pocket', 'march', CARD, 'departure', 'max', '.3f')} D (pocket). In the same replay the refusals are {P('star', 'march', CARD, 'refusals', 'd')} and {P('pocket', 'march', CARD, 'refusals', 'd')} for the march, {P('star', 'a', CARD, 'refusals', 'd')} and {P('pocket', 'a', CARD, 'refusals', 'd')} for (a); the entries are {P('star', 'march', CARD, 'entries', 'd')} and {P('pocket', 'march', CARD, 'entries', 'd')} against {P('star', 'a', CARD, 'entries', 'd')} and {P('pocket', 'a', CARD, 'entries', 'd')}. The Python replay over-reads the Rust one: for (a) + one-way, Rust has {RS('star', 'join_entries', 'd')} and {RS('pocket', 'join_entries', 'd')} join entries. So on entries the clipped march is not worse than (a); on time it is.</li>
+<li><b>Harmonic (e), clipped:</b> the fewest entries ({P('star', 'e', CARD, 'entries', 'd')} star, {P('pocket', 'e', CARD, 'entries', 'd')} pocket, against {P('star', 'a', CARD, 'entries', 'd')} and {P('pocket', 'a', CARD, 'entries', 'd')} for (a)) and the lightest load (pocket: {P('pocket', 'e', CARD, 'refusals', 'd')} refusals). But it takes {P('star', 'e', CARD, 'time_cut_feed_min', '.2f')} and {P('pocket', 'e', CARD, 'time_cut_feed_min', '.2f')} min against {P('star', 'a', CARD, 'time_cut_feed_min', '.2f')} and {P('pocket', 'a', CARD, 'time_cut_feed_min', '.2f')}: the clip cannot make a thin cut thick.</li>
 <li><b>Not a candidate for Rust as it stands.</b> If the operator wants the march shape, the next step is fix 2 (the departure as part of the turn) and a ruling on the slanted bound; it would still engage more length than (a).</li>
 </ul></div>
 <h2>Limits</h2>
 <ul>
+<li>The entry counts of this replay are higher than Rust's for the same family, on both sides of each break-even; the break-even values compare like with like, not with D12.</li>
 <li>Two shapes, one tool, one stepover. The replay is C15's 0.1 mm raster, not the planner, and it reads the (a) ends harder than the Rust replay does.</li>
 <li>Times are length over feed (cut feed {q('const|F_cut', inp['F_CUT'], '.0f')} mm/min, link feed {q('const|F_link', inp['F_LINK'], '.0f')} mm/min, turns at their reduced feed), with no acceleration; plunges are counted, not timed.</li>
 <li>The core rings keep C17's seam join; a spiral morph of the rings is not tried.</li>
@@ -424,7 +491,7 @@ body { background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-s
 main { max-width:1220px; margin:0 auto; padding:20px 16px 60px; }
 h1 { font-size:26px; margin:6px 0 4px; } h2 { font-size:19px; margin:30px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
 h3 { font-size:16px; margin:0 0 6px; } p, li { max-width:84ch; } p { margin:6px 0; } .sub { color:var(--muted); }
-.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:12px; margin-bottom:14px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); gap:12px; margin-bottom:14px; }
 .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
 .pane { width:100%; height:auto; display:block; margin:6px 0; background:#fff; }
 table { border-collapse:collapse; font-size:13px; } table.mini { width:100%; }
@@ -447,7 +514,7 @@ code { font-size:13px; }"""
         s = re.sub(r"<[^>]+>", "", s)
         return html.unescape(s)
 
-    N.append(f"""# P2 C19 — the streamline march, clipped and split per lobe (2026-10-24)
+    N.append(f"""# P2 C19 — the streamline march and the harmonic (e), clipped and split per lobe (2026-10-24)
 
 Status: PROTOTYPE COMPLETE (Python only; no Rust edited, no cargo run, no
 commit). Page: `farside_ideas_v5.html`. Scripts: `phase2/c19/` (`clip.py`,
@@ -486,7 +553,7 @@ turn bound s + (1 + √2)·cell = {tb} mm (cell 0.5 mm), c plus one cell
     for nm in ("star", "pocket"):
         N.append(f"\n{nm.capitalize()}:\n\n<!-- {nm}:begin -->\n" + table_md(tables[nm]) + f"\n<!-- {nm}:end -->\n")
     for sec in H[1:]:
-        if sec.startswith("<h2>The split") or sec.startswith("<h2>The wall") or sec.startswith("<h2>Verdict"):
+        if sec.startswith("<h2>The split") or sec.startswith("<h2>The wall") or sec.startswith("<h2>The harmonic") or sec.startswith("<h2>Verdict"):
             body = re.sub(r'<div class="grid">.*?</div></div>\n', "", sec, flags=re.S)
             t = re.sub(r"<h2>(.*?)</h2>", lambda m: f"\n## {m.group(1)}\n", body)
             t = re.sub(r"<li>", "- ", t)
