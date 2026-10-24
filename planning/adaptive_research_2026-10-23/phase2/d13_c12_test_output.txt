@@ -1,0 +1,9 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen)
+geodesic_curv: 2229 moves, 2700 judged at levels {45, 50, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.518), 0 over the exact bound 0.471 (exact peak 0.000); entry 1469, vertical 1695, departing 5439, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 1780 (632 over the screen)
+geodesic_curv_split: 2228 moves, 3107 judged at levels {45, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.441), 0 over the exact bound 0.471 (exact peak 0.000); entry 1064, vertical 1259, departing 4196, waterline 1301 (26 over the screen, exact peak 0.990), perimeter band 2116 (633 over the screen)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 461.53s
+

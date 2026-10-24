@@ -2272,3 +2272,168 @@ it stops at the feeds check).
 These are the shipped tests of the iso-field scallop (gouge, chord
 refinement, candidates). They pass at c60ed442. This is evidence that
 C16's split changes no shipped iso-scallop output that these tests cover.
+
+## D13 at c60ed442 + uncommitted C20
+
+C20 is uncommitted in three files:
+
+- `research_geodesic.rs`: `full_feed_unmatched`, `HoldingMove`, and the
+  preset `C20_LOCAL_ZIGZAG`.
+- The 2D harness: the column `geodesic_local_zigzag` and the holding-move
+  lines.
+- The C12 test: `departing_moves` (the 2D departure rule), and an ignore of
+  kind `heavy:`.
+
+Before the run, I copied the D12 render dir to the session scratchpad. Same
+lane script, own target dir, a `timeout` on each command. C20's diff did
+not change during the run. Disk: 38 GB free.
+
+### Fix (uncommitted, test code)
+
+- `research_geodesic.rs:8438`, C20's new unit test
+  `a_turn_whose_vertex_the_emitter_drops_is_unfed_only_when_it_needs_a_cut_feed`.
+  Clippy `manual_let_else` (`-D clippy::manual-let-else`) failed both
+  research clippy configs (`could not compile rs_cam_core (lib test)`).
+  - Before: `let (turn, after) = match fed.as_slice() { &[_, _, turn, after] => (turn, after), _ => panic!("four moves: {fed:?}"), };`
+  - After: `let &[_, _, turn, after] = fed.as_slice() else { panic!("four moves: {fed:?}") };`
+  - Why: this is the form that clippy suggests. The same binding and the
+    same panic message. No assertion changes.
+  - After the fix: fmt is green, both research clippy configs are green,
+    and the test passes (1/1). The fix is in test code only, so the
+    harness and the C12 numbers below stay valid.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green (also after the fix) |
+| 1 | `check -p rs_cam_core --all-targets --features research,test-support` | green |
+| 2 | `--features research,test-support --lib research_geodesic` | green 20 passed, 2 ignored |
+| 3 | `adaptive3d_emission_byte_parity`, plain and with research | green 5/5, 5/5 |
+| 4 | `--test adaptive3d_geodesic_arm_c12` (no `--ignored`) | 0 passed, 1 ignored, as C20 states |
+| 4 | the same with `-- --ignored --nocapture` | **green 1/1**, 461.53 s (486 s with the build); output in `phase2/d13_c12_test_output.txt` |
+| 5 | `every_ignore_states_its_kind_f152` | green 2/2 (the `heavy:` reason is accepted) |
+| 6 | the 2D harness, release | green 1/1, 11.98 s; output in `phase2/d13_harness.txt` |
+| 7 | `clippy -p rs_cam_core --all-targets -- -D warnings` | green |
+| 7 | `clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings` | red (`manual_let_else`) → green after the fix |
+| 7 | `clippy --workspace ... heavy-tests,research,test-support -- -D warnings` | red (the same) → green after the fix |
+
+### Byte compare against D12
+
+I compared 141 render files (`.txt`, `.svg`, `.png`, `.c16.txt`) that the
+harness wrote again. Exactly C20's predicted 11 files differ:
+
+- `pocket_geodesic_local_oneway.{txt,svg,c16.txt}`
+- `pocket_geodesic_curv_oneway_whole.{txt,svg,c16.txt}`
+- `star_geodesic_curv_zigzag.{txt,svg,c16.txt}`
+- `pocket_geodesic_curv_zigzag.c16.txt`
+- `summary.txt`
+
+Every `.png` is byte-equal. In each `.txt` the one changed line is
+`clearing turns (emitted): ... without 1` → `... without 0`. In each `.svg`
+only that caption line changes: 0 non-text lines differ. `summary.txt`
+loses only those three `without 1` lines and gains the two
+`geodesic_local_zigzag` blocks. Every other control file is byte-equal.
+
+### C20's cause: the holding move of each turn with no move on it
+
+Each such turn ends within 1 µm (the emitter's `MIN_EMITTED_SEGMENT_MM`) of
+the emitted move that holds it. That confirms the collinear drop.
+
+| Column | Turn | Length | Engagement (swept / area) | Holding move | Turn ends off the move (mm) | Kind |
+|---|---|---|---|---|---|---|
+| pocket local_oneway | (27.5284, 25.0000) → (27.5000, 25.0387) | 0.048 | 0.0000 / 0.0833 | (27.5284, 25.0000) → (27.1455, 25.5000) | 0 and 9.932e-4 | full feed |
+| pocket curv_oneway_whole | (27.0230, 26.0000) → (27.0000, 26.0260) | 0.035 | 0.0000 / 0.0833 | (27.0230, 26.0000) → (26.5551, 26.5000) | 0 and 9.190e-4 | full feed |
+| star curv_zigzag | (36.4094, 39.5000) → (36.0045, 40.0000) | 0.643 | 0.3147 / 0.3441 | (36.4094, 39.5000) → (36.0000, 40.0058) | 0 and 1.717e-4 | full feed |
+| pocket curv_zigzag | (42.0063, 49.0000) → (42.4098, 48.5000) | 0.642 | 0.4312 / 0.5067 | (42.0000, 49.0075) → (42.4098, 48.5000) | 2.202e-4 and 0 | **unfed** (needs factor < 1) |
+| pocket local_zigzag | (29.0600, 22.0000) → (29.0000, 22.1696) | 0.180 | 0.0786 / 0.1927 | (29.0600, 22.0000) → (28.8807, 22.5000) | 0 and 7.731e-4 | full feed |
+| pocket local_zigzag | (27.5284, 25.0000) → (27.5000, 25.0387) | 0.048 | 0.0000 / 0.0833 | (27.5284, 25.0000) → (27.1455, 25.5000) | 0 and 9.932e-4 | full feed |
+| pocket local_zigzag | (56.0000, 38.3673) → (56.4055, 40.9436) | 2.608 (2 steps) | 0.2165 / 0.2916 | (56.0000, 38.3673) → (56.4153, 41.0000) | 0 and 9.542e-4 | full feed |
+
+The largest distance is 9.932e-4 mm, 7 nm under the 1 µm drop tolerance.
+Each full-feed turn reads under the ceiling 0.3626, so its feed factor is
+1.
+
+`unfed` / `full_feed_unmatched` per column (every other candidate (a) column
+is 0 / 0):
+
+| Column | star | pocket |
+|---|---|---|
+| geodesic_curv_zigzag | 0 / 1 | **1** / 0 |
+| geodesic_curv_oneway_whole | 0 / 0 | 0 / 1 |
+| geodesic_local_oneway | 0 / 0 | 0 / 1 |
+| geodesic_local_zigzag | 0 / 0 | 0 / 3 |
+
+The pocket `geodesic_curv_zigzag` control stays `without 1`: its gap turn
+needs factor 0.7158, and the emitter dropped its vertex. That is C20's
+stated limit.
+
+### The rule on `geodesic_local_oneway` and `geodesic_local_zigzag`
+
+| Item | local_oneway star | local_oneway pocket | local_zigzag star | local_zigzag pocket |
+|---|---|---|---|---|
+| Entries | 34 | 41 | 38 | 44 |
+| S / L / J / M / C / W / P | 1/0/19/0/0/0/14 | 1/0/29/0/0/0/11 | 1/0/23/0/0/0/14 | 1/0/30/0/0/0/13 |
+| Turns emitted of planned; over the bound | 45 of 45; 3 | 50 of 50; 16 | **45 of 46**; 2 | 59 of 59; 7 |
+| Turn length (mm) | 2.058 to 2.960 | 0.048 to 2.987 | 2.059 to 2.751 | 0.048 to 2.987 |
+| Fed / without | 45 / 0 | 49 / 0 (1 full feed) | 45 / 0 | 56 / 0 (3 full feed) |
+| Turn feed factor Q1 / Q2 / Q3 | 0.414 / 0.448 / 0.487 | 0.371 / 0.401 / 0.458 | 0.424 / 0.445 / 0.481 | 0.389 / 0.429 / 0.516 |
+| Steps on no turn: max, over | 0.4638, 1 (residue mop, segment 1202) | 0.3574, 0 | 0.4509, 1 (residue mop, segment 163: (71.77, 80.74) → (71.28, 81.30)) | 0.3625, 0 |
+| Clearing-wrap cascades | 10 | 5 | 7 | 10 |
+| Return links | 1037 (408.8 mm) | 1954 (790.1 mm) | 0 | 0 |
+| Keep-down links | 1129 (967.4 mm) | 2029 (975.3 mm) | 59 (251.2 mm) | 111 (211.0 mm) |
+| Cut length (mm) | 1193.4 | 1488.2 | 1173.0 | 1443.1 |
+
+| Rule | local_oneway | local_zigzag |
+|---|---|---|
+| 1. entries < 39 star, < 54 pocket | 34, 41: yes | 38, 44: yes |
+| 2. no non-turn step over 0.3626, mop excepted | the only over is a residue mop step (0.4638): yes | the only over is a residue mop step (0.4509): yes |
+| 3. every turn ≤ 3.207 mm and `without 0` | max 2.960 / 2.987; 0 / 0: yes | max 2.751 / 2.987; 0 / 0: yes |
+| 4. pocket C = 0, wrap cascades ≤ 11 | C 0, 5: yes | C 0, 10: yes |
+| **Verdict** | **KEEP** | **KEEP** |
+
+Notes for the lead:
+
+- Star `local_zigzag` emits 45 of 46 planned turns. The readout does not
+  say where the 46th turn went. The rule does not read this count.
+- C20's default criterion, read from the run:
+  - Entries: zigzag has +4 on the star (38 against 34) and +3 on the pocket
+    (44 against 41).
+  - Keep-down travel: zigzag has 716 mm less on the star (251 against 967)
+    and 764 mm less on the pocket (211 against 975).
+  - Turn feed medians: 0.445 against 0.448 on the star, 0.429 against
+    0.401 on the pocket.
+  - C20's recommendation for entries "within a few of each other" is
+    zigzag. The operator decides.
+
+### C12 3D test with the 2D departure rule
+
+| Item | AgentSearch control | geodesic_curv | geodesic_curv_split |
+|---|---|---|---|
+| over the screen 0.546 (sim peak) | 225 (0.928) | **0** (0.518) | **0** (0.441) |
+| over the exact bound 0.471 (exact peak) | 225 (0.999) | **0** | **0** |
+| judged | 1460 (D12: 1295) | 2700 (D12: 2484) | 3107 (D12: 2902) |
+| departing | 562 (D12: 798) | 5439 (D12: 5770) | 4196 (D12: 4488) |
+| perimeter band | 941 (D12: 870) | 1780 (D12: 1665) | 2116 (D12: 2029) |
+| departing + band + judged | 2963 = D12 | 9919 = D12 | 9419 = D12 |
+| entry / vertical / waterline | 291 / 250 / 1301, as D12 | 1469 / 1695 / 1301, as D12 | 1064 / 1259 / 1301, as D12 |
+
+The new rule moves 331 (`geodesic_curv`) and 292 (split) samples out of
+`departing`. All of them read under the screen. The per-arm sums are
+exactly as C20 predicted. `departing` is still twice `judged` on the arm.
+The starter spiral's moves within R stay exempt, because they run on from
+the plunge (D12 starter probe).
+
+### Files
+
+- Renders: `.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+  New: `<shape>_geodesic_local_zigzag.{txt,svg,png,c16.txt}`.
+- New in `phase2/`: `d13_harness.txt`, `d13_c12_test_output.txt`.
+
+### `git status --short` (worktree) at the end of D13
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+ M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
+```
