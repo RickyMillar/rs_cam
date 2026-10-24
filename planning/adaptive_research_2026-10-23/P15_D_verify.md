@@ -2437,3 +2437,75 @@ the plunge (D12 starter probe).
  M crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ```
+
+## D-FIX1 at cdc9814e: first 3D fixture renders (Corne; wanaka200 stopped)
+
+**Build.** A clean detached worktree `.claude/worktrees/fixture-cdc9814e`
+at cdc9814e, with its own target dir. The main worktree holds C22's edits,
+so I did not use it. `cargo build --release -p rs_cam_cli --features
+rs_cam_core/research` through the lane script took 3 min 36 s. Binary
+`.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli`, mtime
+2026-10-24T16:13:21. Disk: 38 GB free before, 37 GB after. The lead
+removes the worktree and its target at the end of the night's fixture
+work.
+
+**Project files (new; the originals are untouched).**
+
+- `planning/corne_case_analysis_2026-09-18/corne_job_corrected_c12_agent_search.toml`:
+  lines 140 and 242 `clearing_strategy = "contour_parallel"` →
+  `"agent_search"` ("3D Rough 1" and "3D Rough 1 (copy)").
+- `planning/multitool_2026-08-23/wanaka200_mt1_c12_agent_search.toml`:
+  - Line 347: the same change on "2 Back Rough".
+  - Line 432: `depth = 12.0` → `floor = { from = "stock_top", depth = 12.0 }`.
+    This is beyond §8. The original does not load at HEAD (`retired
+    key setups[0].toolpaths[2].operation.params.depth`, R-B/F19), and this
+    is the migration that the error names. The op ("3 Holes") is skipped
+    in these runs.
+
+**Runs** (`phase3/fix1/run_fix1.sh`, the binary direct, `timeout 200` per
+run as the 3-minute stop):
+
+| Fixture | Arm | Args | Result |
+|---|---|---|---|
+| Corne | agent (no env) | `--setup 0 --skip 4` (Waterline 3) | rc 0, 4.5 s |
+| Corne | geodesic_curv | the same, `RS_CAM_RESEARCH_ADAPTIVE3D_ARM=geodesic_curv` | rc 0, 8.7 s |
+| wanaka200 | agent | `--setup 0 --skip 0,2,3,4` (Back Rough only) | **stopped at 200 s**, no output |
+| wanaka200 | geodesic_curv | the same, with the env | **stopped at 200 s**, no output |
+
+Both Corne runs pass `--emit-gcode program.nc --accept-unmodeled-tool-load`.
+Without the flag, the export refuses: the skipped toolpath 4 has a stale
+simulation. The flag is for the render only. The CLI prints "OVERRIDE USED"
+and the findings.
+
+**Renders** (`phase3/fix1/render_fix1.py`, from the exported G-code): per
+rough op, (a) the cutting moves coloured by Z, (b) the rapids with XY
+travel, (c) the entries.
+- An entry is a G1 move that only descends, after a G0 or a lift.
+- Keep-down links are G1 moves, so they are drawn as cuts. The G-code
+  does not mark them.
+- Page: `fixture3d_v1.html`.
+
+**Corne numbers** (the CLI totals of the two roughs; entries and cut XY per
+op from the G-code):
+
+| Item | AgentSearch | geodesic_curv |
+|---|---|---|
+| Cycle time | 2112 s | 2749 s |
+| Cutting / rapid distance | 38487 / 17531 mm | 65056 / 19141 mm |
+| Air cut, % of runtime | 55.2 | 56.5 |
+| Collisions (rapid) | 0 (0) | 0 (0) |
+| Moves: Rough 1 / copy | 4168 / 6060 | 10673 / 5931 |
+| Entries: Rough 1 / copy | 132 / 263 | 400 / 233 |
+| Cut XY mm: Rough 1 / copy | 15053 / 8003 | 35073 / 7908 |
+| Safety, islands > 0.8 mm: Rough 1 | 457, 6832.7 mm² | 928, 5249.9 mm² |
+| Safety, islands > 0.8 mm: copy | 1257, 3652.5 mm² | 1143, 3479.8 mm² |
+| Act on | DOC over the planned 3.00 mm on 2.6% of samples (peak 15.00 mm); high air cut on Rough 1 (45%) | high air cut on Rough 1 (47%) |
+| Export load advisories | DOC peak 12.0 against 9.0 (tp 1), 15.0 against 4.5 (tp 3) | none printed |
+| NOT MEASURED (tp 3, cell 0.300 mm) | 67% zero-engagement samples | 75% |
+
+Notes:
+- "3D Rough 1 (copy)" runs on the tool "End Mill" (a tool change in the
+  program; the advisory reads its engaged diameter as 3.00 mm).
+- The arm's Rough 1 has 123 Z values in its cuts, and the cut view shows
+  concentric wraps round one seed.
+- The research arm here has no turns (C22 is pending).

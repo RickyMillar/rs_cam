@@ -3197,3 +3197,332 @@ Read in this order:
    `geodesic_local_oneway`.
 5. The C12 summary lines: the per-arm sums, `departing`, and the over
    counts.
+
+## C23 — pocket far corner and island-side plunges (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base cdc9814e
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`).
+`rustfmt --edition 2024 --check` is clean on the two Rust files. C22 edits
+the C12 block of `research_geodesic.rs`, `adaptive3d/` and the C12 test at
+the same time; my hunks do not touch them, and no signature that the C12
+block calls changed (`geodesic_segments`, `cleaned`, `pass_load_readout`,
+`PartIndex`, `TurnRecord`, `TurnSummary`).
+
+Paths: `R` = `crates/rs_cam_core/src/adaptive/research_geodesic.rs`,
+`H` = `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`. The
+evidence scripts are in `phase2/c23/` (Python; they read the D13 renders in
+the worktree's `target/tmp/adaptive_geodesic_2d_g1/` and reuse the C15
+raster replay, `phase2/c15/march.py`, 0.1 mm cells).
+
+- `seq.py`: the SVG in draw order (= emission order): wraps, cuts, links,
+  rapids, entry rings, in world mm (the harness `View`: min x 5, max y 55,
+  scale 852/70).
+- `model.py`, `ends.py`: the replay of the planned wraps in cutting order,
+  with the planned turns; the swept width at each arc's start and end.
+- `per_entry.py`: the table of task 2. `levels.py`: the level of a wrap
+  from the exact geodesic distance (C15 `geom.geo`).
+- `lens.py`: the arc-end lens, closed form against a raster.
+- `v2.py`, `lensends.py`, `flip.py`: the v2 plan in the model.
+
+### The pre-registered rule (lead, written before the predictions)
+
+KEEP a v2 column (`geodesic_local_oneway_v2` against
+`geodesic_local_oneway`, `geodesic_local_zigzag_v2` against
+`geodesic_local_zigzag`) when ALL four hold, else DROP:
+
+1. Its pocket entries are below its base column (< 41 one-way, < 44
+   zigzag), and its star entries are not above the base (≤ 34, ≤ 38).
+2. No step that is not a turn is over the ceiling 0.3626 (the residue mop
+   excepted). Read: `steps on no turn (emitted)` and the `over:` lines.
+3. Every turn is fed: `turns with the reduced feed N, without 0`.
+4. Pocket C = 0, and `clearing wrap` cascades ≤ the base (5 one-way, 10
+   zigzag).
+
+The `_headon` columns are attribution columns; the rule does not judge
+them.
+
+### Problem 2: the plunges at the island's lower right — CAUSE FOUND
+
+**What each entry is.** In the one-way render the entries #7 to #17 (in
+emission order) lie on the grown island (12.0 to 13.7 mm from its centre).
+For each one, the cut before it stops 0.6 to 2.1 mm short of the end of a
+lower-lobe arc. The entry is at that arc's end, and the next segment is
+the keep-down return along the arc. The readout names the refused steps:
+the last wrap steps into the island, `clearing wrap`, intrinsic, read 0.45
+(for example (37.02, 16.50) → (37.06, 17.00) 0.4540; (38.91, 16.00) →
+(38.97, 16.50) 0.4506; (40.86, 16.00) → (40.91, 16.50) 0.4500).
+
+| Entry | At (mm) | Arc (wrap) | Cut stops before the arc end | Model reading at the end | Model run over c before the end | Lens (closed form), θ |
+|---|---|---|---|---|---|---|
+| #7 | (39.00, 16.91) | w11 | 1.51 mm | 0.674 | 1.7 mm | 0.672, +1.2° |
+| #8 | (40.91, 16.50) | w12 | 1.01 | 0.658 | 1.4 | 0.734, +8.8° |
+| #9 | (44.50, 17.31) | w14 | 1.50 | 0.613 | 1.7 | 0.757, +13.5° |
+| #10 | (47.35, 18.50) | w16 | 2.06 | 0.707 | 1.9 | 0.714, +11.3° |
+| #11 | (48.62, 19.50) | w17 | 0.78 | 0.585 | 1.1 | 0.776, +17.6° |
+| #12 | (49.79, 20.50) | w18 | 0.95 | 0.705 | 1.6 | 0.748, +14.8° |
+| #13 | (51.55, 23.00) | w20 | 1.71 | 0.634 | 1.1 | 0.799, +21.1° |
+| #14 | (52.17, 24.50) | w21 | 0.61 | 0.706 | 1.9 | 0.773, +17.3° |
+| #15 | (53.00, 25.83) | w22 | 0.94 | 0.595 | 1.7 | 0.752, +14.7° |
+| #16 | (53.50, 28.82) | w24 | 1.32 | 0.628 | 1.6 | 0.718, +11.7° |
+| #17 | (53.50, 31.92) | w26 | 2.05 | 0.636 | 1.7 | 0.752, +14.6° |
+
+(`per_entry.py`. "Model": the 0.1 mm raster replay of the planned wraps
+with every earlier wrap and turn cut. The planner reads the same steps at
+0.45 on its 0.5 mm lattice; the arc ends lie up to one cell diagonal short
+of the wall, so the planner does not see the full lens.)
+
+**The mechanism: the head-on arc end.**
+
+- Behind the island the levels are circle involutes (C15 (a)). An involute
+  meets its base circle square. So each lower-lobe arc runs into the grown
+  island head-on.
+- At a wall that an arc meets head-on, the arc one level before leaves a
+  lens of stock between its own end and the wall. The cutter that runs
+  into the wall on the next arc cuts that lens in its last 1 to 2 mm. The
+  closed form (R:`arc_end_lens`; derivation in its doc; the unit test
+  checks it against a raster within 0.0083): `(R + Δ/2 + h sin θ)/2R`,
+  `h = √(R² − Δ²/(4 cos² θ))`, with the cases where the discs do not meet.
+  Head-on (`θ = 0`) it is `(R + Δ/2)/2R`: 0.62 to 0.66 at Δ 1.5 to 1.9.
+  Every value of `Δ` reads over the ceiling.
+- The one-way climb puts the island at the END of every lower-lobe arc
+  (the stock is on the right of a travel from the bottom wall to the
+  island). The cutter returns along the arc from its end, so the walker
+  re-enters at the end of the refused piece: the entry.
+- On the upper side the climb puts the island at the START of every arc.
+  There the counted turn cuts the same lens (turn swept 0.78 to 0.97, all
+  fed, D13), and the upper side has 2 island entries against 11.
+- Only every second lower-lobe arc has an entry (w11, w12, w14, w16, ...).
+  The re-entry stamps `R` plus the helix radius at the end it plunges, which
+  cuts most of the next arc's lens.
+
+**The hypotheses the lead named, against the evidence.**
+
+- Turn over the bound at the convex wall: no. No join at the island's
+  lower right is over the bound, and none is `outside` (the `.c16.txt`
+  `over:` list has none there). The turns of the lower lobe lie at the
+  bottom wall (26.06 to 64.89, y 8), 1.49 to 2.89 mm.
+- The return link refused: a consequence, not the cause. The return starts
+  at the planned arc end, inside the lens that the refused steps left.
+- The one-way order puts the arc start at the island: the reverse. The
+  climb puts the arc END at the island on the lower side, and that is the
+  side with the entries.
+- Zigzag: every second lower-lobe arc ends at the island; the render shows
+  10 entries there (#6 to #15), and 8 more on the upper side (#18 to #25),
+  where the alternate arcs also end at the island.
+
+**Why the other walls pass.** The seed circles meet the bottom wall
+obliquely, `θ` −12° to −42° (the travel leans away from where the next
+arcs end). The closed form reads 0.41 to 0.53 there and the model 0.40 to
+0.51, and the zigzag render cuts every second lower-lobe arc into the
+bottom wall with no entry there. So the planner passes an oblique end and
+refuses a head-on one; the closed form ranks the two ends the same way.
+
+**The fix (derived; `ArcEnds::HeadOn`).** An arc starts at the end that
+reads the larger lens, and ends at the other.
+
+- Per open arc, the producer reads `arc_end_lens` at both ends
+  (R:`end_lens_at`): the travel over the last pass step, the wall normal
+  (R:`wall_normal`: an end within one cell diagonal of a ring of the
+  tool-centre region, the C14 `turn_bound` argument), the sign of `θ` from
+  the side where `T` grows (R:`right_growth`, the sum of
+  `climb_oriented`), and `Δ` from the level step.
+- When one end reads more than the other by more than `cell / D` (0.083,
+  the planner's reading quantum; a smaller difference is below what the
+  planner resolves), the arc starts at that end. Else the default holds:
+  climb for one-way, the end nearer the cutter for zigzag. On the star the
+  two ends of an arm's arc read alike (mirror walls), so the default holds
+  there.
+- Why it removes the plunge: the counted turn at the start cuts the lens
+  (as on the upper side today), and the arc ends at the oblique wall, where
+  the approach reads less.
+- The cost: on the one-way column the reversed arcs are cut conventional,
+  not climb. Within a lobe every arc still runs one way. The operator
+  rules on this.
+- Zigzag: an arc that the rule starts at the wall where the arc before
+  started cannot be reached by a turn from the cutter. Such a join takes
+  the one-way return and the turn from the start (`zigzag_returns`), when
+  that turn fits. So in a lobe with a head-on wall the zigzag column runs
+  one-way.
+- The order (one-way and the ruled zigzag arcs): the distance to a
+  candidate is from the end of the arc just cut or from its start (the
+  return), to the candidate's real start (the ruled start, or the climb
+  start). Before, the one-way pick measured from the arc's end to the
+  candidate's nearer end, though the cutter stands at the start after the
+  return.
+
+Model (`v2.py oneway 1 1`): every lower-lobe arc w8 to w28 starts at the
+island. The island turns are 1.44 to 2.47 mm. The bottom-wall ends read
+0.36 to 0.51 (the zigzag render passes these). The first 3 mm after the
+turn read up to 0.47 on w28 and 0.41 to 0.42 on w14, w23, w24: the same
+range as the upper-lobe starts today, of which #22 (0.43) refused.
+
+### Problem 1: the far top-right corner — CAUSE FOUND
+
+The corner lies behind the island, between the meeting line, the right
+wall and the top wall: levels 28 to 36 (`levels.py`). Under
+`MeetingRule::Split` each level there is two arcs: a lower branch L (right
+or bottom wall → meeting line) and an upper branch U (meeting line → top
+wall).
+
+**The order and the joins (one-way, `order.py`, entries #23 to #31).**
+
+- The order cuts the V of each level in turn: U28, L28, L29, U29, U30,
+  L30, L31, U31, ... (the nearest child is the other branch at the meeting
+  line). The climb starts every L at the right wall and every U at the
+  meeting line.
+- U → L at the top wall: the next L starts at the right wall, 32 to 45 mm
+  away: a link and an entry (#23, #24, #27, #30).
+- L → L along the right wall: the lower front sweeps along the right wall
+  and round the bottom-right corner, so consecutive L starts lie 3.8 to
+  16.9 mm apart (θ 53° to 66°, `.c16.txt`): over the bound, an entry (#25,
+  #28).
+- U ends at the top wall: the U arcs meet the top wall near square
+  (θ −16° to −25°, lens 0.45 to 0.54; model 0.42 to 0.52 over the last 0.3
+  to 1.2 mm), the head-on class of problem 2 (#26, #29).
+- #31 is the mop. Zigzag has the same three kinds (#27 to #31).
+
+**The meeting line itself is not the cause.** The V vertex holds the
+ceiling in every model (C15 (a): interior 0.3574 with 9 sharp V; this
+model with the merged V: interior 0.333 to 0.358). The cost of the split
+is the number of arcs and joins: two arcs per level, each with an end at
+the meeting line and the other at a different wall.
+
+**The fix: merge, then the head-on rule.**
+
+- The operator's queued idea ("merge the two segments at the meeting line
+  into one clean arc") is `MeetingRule::Through`: the contour runs through
+  the meeting-line cells, so each level is one arc from the top wall to
+  the right (or bottom) wall. It is the existing code path; with
+  `Spacing::LocalLevel` the kink reads concave (its centre lies in the
+  stock wedge), so the level steps do not change (`front_radius` gives `s`
+  there).
+- Alone, the merge does not help one-way: the climb starts each merged arc
+  at the right wall, where the starts are 3 to 17 mm apart.
+- With the head-on rule: the top-wall end reads 0.48 to 0.54, the
+  right-wall end 0.31 to 0.36 (`lensends.py`). So the merged arcs of levels
+  30 to 35 start at the top wall, where the ends lie 2.07 to 2.11 mm apart
+  (all turns), and end at the right wall, which reads ≤ 0.356 in the model.
+  Levels 28 and 29 (ends at the bottom-right corner) start at the bottom.
+- C15 (c) rounded the V with a fillet `r ≤ 2.68 mm` (the largest that holds
+  the gap at the vertex). A fillet is not built: any radius under that
+  bound holds, so a choice inside it would be a tuned shape, and the sharp
+  V holds the ceiling already. If the operator wants the corner rounded
+  for the machine, `r = 2.68 mm` is the derived value.
+
+Model of the corner (`v2.py`, levels 28 to 36): 3 joins over the bound (the
+entry into the region, levels 29 → 30 where the start side changes, and
+the last short arc) against 8 clearing entries now (#23 to #30).
+
+### Code (C23)
+
+- R: `ArcEnds { Default, HeadOn }` and `GeodesicOptions::ends` (G1 and C2
+  set `Default`; every earlier preset inherits it). Presets
+  `C23_ONEWAY_HEADON`, `C23_ZIGZAG_HEADON` (the KEEP columns plus the rule;
+  the attribution columns) and `C23_ONEWAY_V2`, `C23_ZIGZAG_V2` (plus
+  `MeetingRule::Through`).
+- R: `arc_end_lens`, `wall_normal`, `end_lens_at`; `climb_oriented` split
+  into `right_growth` (the same sum; byte-identical).
+- R `ordered_wraps`: under `HeadOn` (and arc links on) the ruled start per
+  open chain, the climb start for the pick, the pick distance from the end
+  or the start of the arc just cut, and the mark `Wrap::head_on`. With
+  `Default` every value is as before.
+- R `geodesic_segments` turn block: `via_return` (one-way always; zigzag
+  under `HeadOn` when the step from the cutter does not fit and the one
+  from the start does). With `Default` the decision is the old one.
+- R `ArcReport`: `head_on_set`, `head_on_reversed`, `zigzag_returns`.
+- R module doc: a section "The head-on arc end and the merged meeting
+  line (C23)".
+- R unit tests: `the_arc_end_lens_matches_a_raster_of_the_end` (21 cases,
+  both branches of the form; head-on equals `(R + Δ/2)/2R`),
+  `the_wall_normal_points_into_the_nearest_wall` (box wall, island, open),
+  `the_head_on_rule_keeps_every_turn_bounded_and_no_other_step_over`
+  (`C23_ONEWAY_HEADON` and `C23_ZIGZAG_V2` on the island pocket: the rule
+  sets some starts, every turn ≤ the bound, `unfed` 0, 0 clearing steps
+  over).
+- H: the four columns after `geodesic_local_zigzag`; the module doc; in
+  `c16_text`, the line `head-on rule piece i: ...`, printed only when a
+  count is non-zero, so every earlier `.c16.txt` is unchanged.
+
+### Predictions (NOT results; the run decides)
+
+- **Controls byte-identical**: every `.txt`, `.svg`, `.png` and `.c16.txt`
+  of D13 (`summary.txt` gains the four new blocks only). The KEEP columns
+  `geodesic_local_oneway` 34 / 41 and `geodesic_local_zigzag` 38 / 44 are
+  unchanged.
+- **Pocket `geodesic_local_oneway_v2`**: the 11 island entries (#7 to #17)
+  fall to 0 to 3; the corner's 8 clearing entries fall to about 3. Mop
+  entries can move (the island band). Entries 24 to 32. `head-on rule`:
+  about 25 to 35 arcs set, 20 to 30 against the climb (the lower lobe and
+  the corner). Return links stay about the same mm (the merged arcs are
+  longer, the lower lobe is unchanged in length).
+- **Pocket `geodesic_local_zigzag_v2`**: the island entries on both sides
+  (#6 to #15, #18 to #25) and the corner's fall; `zigzag_returns` 30 to 50
+  (most of the pocket runs one-way). Entries 22 to 32. Keep-down travel
+  rises toward the one-way column's (about 600 to 1000 mm).
+- **Pocket `_headon` (Split kept)**: the island entries fall as in v2; the
+  corner changes (the U arcs start at the top wall, the L arcs at the right
+  wall) but its over-bound L joins stay. One-way 28 to 36, zigzag 26 to 36.
+- **Star (all four)**: the arc ends of an arm read alike, so few arcs are
+  ruled. The one-way pick now measures to the climb start from the end or
+  the start of the last arc; that can change the order. Entries within ±4
+  of the base (34, 38). This is the risk for rule (1).
+- **Rule (2)** holds by construction (the replay admits nothing new).
+  **Rule (3)**: `without 0` expected; a turn at a masked island cell can
+  read as a full-feed turn, as at D13. **Rule (4)**: C 0 likely; wrap
+  cascades ≤ base likely (fewer refused wrap steps).
+- **Risk: `outside`.** The island turns of the reversed lower lobe join
+  ends on the grown island, 1.4 to 2.5 mm apart; in the model their chords
+  pass 12.998 to 13.317 mm from the island centre (the grown island is
+  r 13; the SVG holds 0.008 mm), so two of them touch the edge. The upper-lobe turns
+  of the same kind had 0 `outside` at D13. A join that is `outside` stays a
+  link (an entry); the `arcs piece` line counts it.
+- **Verdict (predicted): KEEP for one-way v2 (medium confidence), KEEP for
+  zigzag v2 (medium), with the star as the risk.** The look decides after
+  the rule; the reversed (conventional) arcs need the operator's word.
+
+### Commands for the verifier (C23; D13's 2D list)
+
+Before the run, copy D13's render dir (for the byte compare). Then, from
+the worktree, through the lane script, each with a `timeout`:
+
+```text
+cp -r target/tmp/adaptive_geodesic_2d_g1 <scratch>/d13_renders
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --all-targets --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+for f in <scratch>/d13_renders/*.txt <scratch>/d13_renders/*.svg <scratch>/d13_renders/*.png; do cmp -s "$f" target/tmp/adaptive_geodesic_2d_g1/"$(basename "$f")" || echo "DIFF $f"; done
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+```
+
+`path.rs`, `search.rs` and `adaptive3d/` are not changed by C23, so the
+pass-load sentries and the 3D sentries are not needed for C23 (C22's own
+list covers its files). The C12 test is not in this list.
+
+Read in this order:
+
+1. The byte compare: only `summary.txt` differs (by the four new blocks).
+   Any other difference is a defect of the threading: stop and report it.
+2. The three new unit tests.
+3. For each v2 column, shape by shape: `entries (plunges)`, `entries by
+   producer`, `arcs piece 0` (turns, over the bound, outside, return
+   links), `steps on no turn (emitted)`, `clearing turns (emitted)`
+   (`without`), the cascade block (`clearing wrap` cascades), and the
+   `.c16.txt` `head-on rule` line.
+4. The pocket entries by place against D13: the island's lower right
+   (x 36 to 55, y 15 to 33), the island's upper side, the corner
+   (x > 50, y > 34).
+5. Apply the rule above. Then the `_headon` columns for the attribution
+   (how much of the change is the rule alone, how much the merge).
+
+### Files changed by C23
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs` (outside the C12
+  block).
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`.
+- New: `phase2/c23/*.py` (the evidence scripts).
+- This note.

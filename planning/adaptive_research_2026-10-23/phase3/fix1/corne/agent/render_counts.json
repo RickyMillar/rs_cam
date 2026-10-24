@@ -1,0 +1,18 @@
+{
+ "3D Rough 1 [copy]": {
+  "lines": 6069,
+  "cut_moves": 5159,
+  "cut_xy_mm": 8003.3,
+  "rapid_xy_moves": 182,
+  "rapid_xy_mm": 5191.9,
+  "entries": 263
+ },
+ "3D Rough 1": {
+  "lines": 4171,
+  "cut_moves": 3531,
+  "cut_xy_mm": 15053.4,
+  "rapid_xy_moves": 48,
+  "rapid_xy_mm": 2153.2,
+  "entries": 132
+ }
+}
