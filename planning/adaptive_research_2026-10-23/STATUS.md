@@ -187,6 +187,12 @@ D12 measured how many refused joins a slanted-wall bound s/cos θ + (1+√2)·ce
 
 "Are we defaulting this to milling both directions too? That is generally how I do it." → `geodesic_local_zigzag` (LocalLevel + Whole chaining + zigzag) made REQUIRED in C20, under the same rule as `geodesic_local_oneway`; the operator picks the default when both are measured.
 
+## Operator 2026-10-24 (evening, then away for the night)
+
+- "(a) spacing + zigzag (both directions) + turns looks the closest" → `geodesic_local_zigzag` is the lead candidate.
+- "Likely want an optional waterline clearing path on it to clear up the edges with a quick skim." → queued as an optional research pass (engagement held to the ceiling or the stock left; NOTE the shipped waterline cleanup reads 0.72–0.99 D, G-WATERLOAD, so it is not a skim today).
+- "See what you can do without me." Lead's night plan: C22 + C23 → one verifier → commit; 3D fixture runs on Corne and wanaka200 only (each < 3 min; AgentSearch, zigzag, one-way); NO rivmap100 or other run over ~3 min without the operator; fixture pages per PLAN if the GUI can run the branch build; the edge skim brief once C23 frees research_geodesic.rs.
+
 ## Queued optimisations (operator, 2026-10-24; after C19 and the Rust columns)
 
 - Where two fronts meet (the V behind an island, and where clipped march / harmonic pieces meet), merge the two segments into ONE clean arc through the middle instead of two arcs meeting in a corner. = C15 idea (c), the round union; its load bound is derived (r ≤ 2.68 mm on the pocket); the operator wants a smaller radius, from the machine's acceleration at the cut feed (F²/a, machine profile), capped by that bound.
