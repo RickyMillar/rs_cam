@@ -171,6 +171,11 @@ Operator 15:05: "I think your plan is good." Then the continuous spiral form
   before commit `44af62dc` changed crate code, so it is not HEAD.
 - Each fixture page records the binary path, its mtime and the HEAD hash.
 
+## Queued optimisations (operator, 2026-10-24; after C19 and the Rust columns)
+
+- Where two fronts meet (the V behind an island, and where clipped march / harmonic pieces meet), merge the two segments into ONE clean arc through the middle instead of two arcs meeting in a corner. = C15 idea (c), the round union; its load bound is derived (r ≤ 2.68 mm on the pocket); the operator wants a smaller radius, from the machine's acceleration at the cut feed (F²/a, machine profile), capped by that bound.
+- C19 also covers harmonic (e) with the same clip → split → per-arm order (operator: "the same thing could be done with harmonic too").
+
 ## Open questions for the operator
 
 1. `TROCHOID_CAP_MULT_3D = 1.6` (`adaptive3d/clearing.rs`) and
