@@ -2016,3 +2016,235 @@ class A:
 3. A C12 filter that matches the 2D rules: per-step departure, vertical
    moves, and the wall pass at wall distance about R. Only after that
    does the bound say anything about class D.
+
+## D12 at c3d38bf4 + uncommitted C16 and C18
+
+Two independent uncommitted changes, verified together in one union run
+(`phase2/d12_harness.txt` for the 2D harness):
+
+- C16: `Spacing::LocalLevel`, `Chaining::Whole`, the columns
+  `geodesic_local`, `geodesic_local_oneway` and `geodesic_curv_oneway_whole`,
+  the `.c16.txt` readouts, and a pure split in the SHIPPED
+  `finish/scallop_isofield.rs` (`iso_segments_where`).
+- C18: the C12 oracle on the 2D rules (`tests/adaptive3d_geodesic_arm_c12.rs`)
+  and the research-only disc air read in `adaptive3d/clearing.rs`.
+
+I copied the D11 render dir to the session scratchpad before the run. Same
+lane script, own target dir, a `timeout` on each command. Disk: 39 GB free
+at the start and at the end.
+
+### Fix
+
+None. Two scratch probes (`tests/zz_d12_starter_probe.rs`) ran once and
+were deleted. Their source and output are in `phase2/`.
+
+### Results
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `fmt --all -- --check` | green |
+| 1 | `check -p rs_cam_core --all-targets`, plain and `--features research,test-support` | green, no warning |
+| 2 | `--features research,test-support --lib research_geodesic` | green 19 passed, 2 ignored (C16's two unit tests included) |
+| 2 | `--lib scallop_isofield` | green 3/3 |
+| 2 | `--lib adaptive` | green 143 passed, 7 ignored |
+| 3 | iso-field sentries (shipped file changed): `scallop_iso_field_config`, `a_scallop_iso_field_link_clears_standing_stock_d1`, `finish_resolution_policy_pr3` | green 2/2, 2/2, 10/10 |
+| 3 | `crease_own_region_pr6b` | red 2/3: `production_unified_finish_output_is_byte_identical` panics at :229, `Operation(NotSet { op: "Unified Finish", kind: Feeds, fields: ["feed_rate", "plunge_rate", "spindle_rpm"] })`. Generation stops at the feeds check before any generator runs, so the iso-field code is not reached. The test sets no feeds since 74af0f8e (S11, "the op refuses until it is set"). Master-side, not C16. As a result, this pin does not check `iso_contour` today |
+| 3 | `scallop_isofield_gouge_m4` (237 s) and `scallop_candidates_m4` (143 s), heavy | NOT RUN (over 3 min; the operator's go-ahead is needed) |
+| 4 | `adaptive3d_emission_byte_parity`, plain and with research | green 5/5, 5/5 |
+| 4 | the 13 adaptive3d sentries | green, all 13 |
+| 4 | `every_ignore_states_its_kind_f152` | green 2/2 |
+| 5 | `--test adaptive3d_geodesic_arm_c12 -- --ignored --nocapture` | **green 1/1** (427 s); output in `phase2/d12_c12_test_output.txt` |
+| 6 | the 2D harness, release | green 1/1, 11.42 s |
+| 7 | clippy: core plain, core research, workspace full lint | green, green, green |
+| 8 | `phase2/c18/assert_c18.py` | `C18: all claims hold` |
+
+### Controls (exact, against D11)
+
+All 30 control `.txt` files that the harness wrote again (15 columns × 2
+shapes) are byte-identical to the D11 copies. `summary.txt` differs only by
+the six new blocks (three columns × two shapes) and loses no line. The
+`.c16.txt` files are new.
+
+### C16: the new columns
+
+| Item | star local | star local_oneway | star oneway_whole | pocket local | pocket local_oneway | pocket oneway_whole |
+|---|---|---|---|---|---|---|
+| Entries | 78 | **34** | 30 | 68 | **41** | 46 |
+| S / L / J / M / C / W / P | 1/0/57/0/0/0/20 | 1/0/19/0/0/0/14 | 1/0/17/0/0/0/12 | 1/0/40/14/0/0/13 | 1/0/29/0/0/0/11 | 1/0/32/3/0/0/10 |
+| Levels | 19 | 19 | 19 | 36 | 36 | 32 |
+| Turns planned / over the bound | — | 45 / 3 | 46 / 3 | — | 50 / 16 | 44 / 14 |
+| Turn length (mm) | — | 2.058 to 2.960 | 2.046 to 3.192 | — | 0.048 to 2.987 | 0.035 to 2.967 |
+| Turns fed / without | — | 45 / 0 | 46 / 0 | — | 49 / **1** | 43 / **1** |
+| Steps on no turn: max, over | 0.3497, 0 | **0.4638, 1** (residue mop) | 0.3573, 0 | 0.3598, 0 | 0.3574, 0 | 0.3624, 0 |
+| Clearing-wrap cascades | 14 | 10 | 4 | 520 | 5 | 9 |
+| Keep-down links | 85 (309.6 mm) | 1129 (967.4 mm) | 1156 (572.4 mm) | 114 (272.6 mm) | 2029 (975.3 mm) | 1717 (993.3 mm) |
+| Cut length (mm) | 1007.1 | 1193.4 | 1195.5 | 1322.8 | 1488.2 | 1321.8 |
+
+C16's entry predictions: `geodesic_local` 68 to 73 / 55 to 65 (measured 78 /
+68: above both); `geodesic_local_oneway` 27 to 33 / 42 to 52 (34 / 41: both
+just outside); `geodesic_curv_oneway_whole` 27 to 33 / 46 to 54 (30 / 46:
+both in).
+
+**The star non-turn step over the ceiling** (`geodesic_local_oneway`): the
+only `over:` line, `residue mop cut (segment 1202) from (28.17, 81.05) to
+(27.53, 80.66), reading 0.4638`, class `residue mop` (1 of 157 mop steps).
+That is the G-MOPLOAD class, which rule (2) excepts. Every clearing class
+holds (clearing 0.3565, clearing link 0.1633, 0 over).
+
+**Levels (`.c16.txt`).** Star `LocalLevel`: 20 values, steps 1.375 →
+2.000 mm (C5: 1.437 → 2.000). Pocket `LocalLevel`: 37 values. The steps
+rise to 1.938, then fall to 1.438 between about 19.5 and 39.8 mm from the
+rim (the far side's radius sets the whole level), then rise to 2.000.
+`geodesic_curv`: 33 values, steps 1.437 → 2.000 by level 11.
+
+**The arm to (5, 35)** (all entry rings in x < 40, y < 47, read from the
+SVG renders at 8.52 px/mm; the mop included):
+
+| Column | Entries | In the arm | On the seam ray y = 50.5, left of the seed |
+|---|---|---|---|
+| geodesic_curv_oneway | 39 | 12 | 4 |
+| geodesic_curv_oneway_whole | 30 | 3 | 4 |
+| geodesic_local_oneway | 34 | 3 | 4 |
+
+`Chaining::Whole` takes 9 entries out of the arm. That is the whole star
+difference between `oneway` (39) and `oneway_whole` (30).
+
+**Unfed turns (`.c16.txt`, `unfed turn:`).**
+
+| Column | Unfed turn | Length | Matches C16 |
+|---|---|---|---|
+| star zigzag | (36.4094, 39.5000) → (36.0045, 40.0000) | 0.643 mm, swept 0.3147 | yes, the first star candidate |
+| pocket zigzag | (42.0063, 49.0000) → (42.4098, 48.5000) | 0.642 mm, swept 0.4312 | yes, the last pocket candidate |
+| pocket local_oneway | (27.5284, 25.0000) → (27.5000, 25.0387) | 0.048 mm, swept 0.0000 | a NEW kind: a turn of under one tenth of a cell |
+| pocket oneway_whole | (27.0230, 26.0000) → (27.0000, 26.0260) | 0.035 mm, swept 0.0000 | the same new kind |
+
+The two new unfed turns are 35 to 48 µm long and engage nothing (swept 0).
+They are not the chaining gap of task 3. Both sit near (27, 25.5) on the
+pocket, by the island's lower-left side. A turn that short can lie within
+the emitter's collinear-point tolerance of its neighbours, the same drop
+mechanism as task 3. That cause is not measured.
+
+**Slanted-wall turns (task 4).** The `.c16.txt` gives one line per join
+over 3.207 mm: the length, θ, and the slanted bound s / cos θ + (1 + √2)·cell.
+
+| Shape / column | Join (from → to) | Length mm | θ deg | Slanted bound mm | Fits |
+|---|---|---|---|---|---|
+| star curv_oneway | (32.67, 53.50) → (47.68, 67.50) | 20.526 | 55.6 | 4.751 | no |
+| star curv_oneway | (29.00, 81.37) → (62.59, 61.50) | 39.025 | 73.2 | 8.121 | no |
+| star curv_oneway | (71.92, 80.00) → (61.50, 38.32) | 42.963 | 61.1 | 5.348 | no |
+| star curv_oneway | (49.00, 17.45) → (36.41, 39.50) | 25.391 | 77.1 | 10.194 | no |
+| pocket curv_oneway | (36.16, 43.50) → (9.50, 50.30) | 27.513 | 60.6 | 5.280 | no |
+| pocket curv_oneway | (9.50, 50.30) → (16.63, 51.50) | 7.234 | 85.0 | 24.265 | yes |
+| pocket curv_oneway | (16.63, 51.50) → (37.53, 45.00) | 21.882 | 62.0 | 5.461 | no |
+| pocket curv_oneway | (44.52, 49.00) → (48.00, 40.84) | 8.877 | 49.9 | 4.311 | no |
+| pocket curv_oneway | (53.50, 38.43) → (23.00, 8.08) | 43.027 | 72.4 | 7.827 | no |
+| pocket curv_oneway | (23.00, 8.08) → (27.00, 8.35) | 4.010 | 50.7 | 4.366 | yes |
+| pocket curv_oneway | (64.50, 8.60) → (67.00, 11.16) | 3.574 | 53.4 | 4.558 | yes |
+| pocket curv_oneway | (69.00, 11.00) → (67.13, 32.00) | 21.080 | 60.4 | 5.257 | no |
+| pocket curv_oneway | (71.20, 45.50) → (13.50, 8.31) | 68.647 | 33.1 | 3.594 | no |
+| pocket curv_oneway | (13.50, 8.31) → (9.98, 11.00) | 4.434 | 82.6 | 16.681 | yes |
+| star local_oneway | (49.50, 16.00) → (60.55, 38.00) | 24.621 | 70.8 | 7.284 | no |
+| star local_oneway | (83.79, 38.00) → (65.00, 56.68) | 26.496 | 69.1 | 6.818 | no |
+| star local_oneway | (65.00, 56.68) → (65.50, 60.03) | 3.392 | 48.3 | 4.216 | yes |
+
+Summary per column: fits / joins over the bound.
+- star `curv_oneway`: 0 / 4. Pocket `curv_oneway`: 4 / 10.
+- star `local_oneway`: 1 / 3. Pocket `local_oneway`: 3 / 16 (lines in its `.c16.txt`).
+- star `curv_oneway_whole`: 0 / 3. Pocket `curv_oneway_whole`: 6 / 14.
+
+Every join that fits is 3.4 to 7.2 mm long. Every join that does not fit
+is 6.3 to 68.6 mm long. Most of those are jumps between arms or across
+the island, not wall turns.
+
+### C16 keep-or-drop (`geodesic_local_oneway`, the rule as written)
+
+| Rule | Limit | Measured | Holds |
+|---|---|---|---|
+| 1. entries < `geodesic_curv_oneway` | star < 39, pocket < 54 | star 34, pocket 41 | yes |
+| 2. no non-turn step over 0.3626, mop excepted | 0 | star 1 over (residue mop, 0.4638: excepted); pocket 0 | yes |
+| 3. every turn ≤ its bound and fed | `without 0` | star 0; pocket **1** (0.048 mm turn, swept 0) | **no** |
+| 4. pocket C = 0 and wrap cascades ≤ 11 | C 0, ≤ 11 | C 0, 5 | yes |
+| **Verdict** | | | **DROP** (rule 3, pocket) |
+
+The rule fails on one turn of 0.048 mm that engages nothing (swept 0, area
+0.0833). It holds on every other count. `geodesic_curv_oneway_whole` (not
+under the rule) has the same failure kind on the pocket.
+
+### C18: the C12 oracle on the 2D rules
+
+The C12 test is green when run by name (`-- --ignored`). Its summary lines
+(the counts are samples):
+
+| Item | AgentSearch control | geodesic_curv | geodesic_curv_split |
+|---|---|---|---|
+| moves | 657 | 2229 (D11: 2058) | 2228 (D11: 1941) |
+| judged | 1295 | 2484 | 2902 |
+| levels judged (Z × 10) | 45, 70, 75, 80, 105 | 45, 50, 70, 75, 80, 105 | 45, 70, 75, 80, 105 |
+| over the screen 0.546 (sim peak) | 225 (0.928) | **0** (0.518) | **0** (0.441) |
+| over the exact bound 0.471 (exact peak) | 225 (0.999) | **0** (0.000) | **0** (0.000) |
+| entry (not judged) | 291 | 1469 | 1064 |
+| vertical (not judged) | 250 | 1695 | 1259 |
+| departing (not judged) | 798 | **5770** | **4488** |
+| waterline (not judged): over the screen, exact peak | 1301: 28, 0.990 | 1301: 27, 0.990 | 1301: 26, 0.990 |
+| perimeter band (not judged): over the screen | 870: 632 | 1665: 632 | 2029: 633 |
+
+Per D11 class, `geodesic_curv` (D11 → D12):
+- A, vertical lifts: 22 over → 0 judged (in `vertical`).
+- B, wall band: 25 over → 0 judged (the waterline tag; 27 over the screen
+  there, exact peak 0.990).
+- C, plunge departure: 34 over → 0 judged (in `departing`).
+- (iv), all wraps: 47 over → 0 over the screen.
+
+The two modes have 0 samples over the exact bound 0.471, and 0 over the
+screen. So no judged sample needed an exact reading.
+
+**The starter, before and after** (scratch probe on the C18 path:
+`phase2/d12_starter_probe.rs.txt`, `phase2/d12_starter_probe_output.txt`):
+
+| | D11 (before C18) | D12 (after C18) |
+|---|---|---|
+| Plunges | one at the seed, then a demoted air run, then a SECOND plunge at (-19.71, -11.23) (move 57) | ONE plunge at the seed (-18.45, -8.88) (move 52; 1222 at Z 4.5); the next plunge within 5 mm is move 113, after the spiral ends |
+| The lap | moves 58 to 70 judged, exact 0.739 to 0.794 | one continuous spiral of 56 cut moves (53 to 108) |
+| Moves that start within R of the plunge | — | 45; exact max 0.999 at the first move; 13 over 0.471 (moves 53 to 66 at most, 0.999 → 0.473) |
+| Moves that start at R or more | the lap, 0.74 to 0.79 | 11; exact max 0.280 |
+
+The same numbers hold in both modes and at both levels. The 13 starter
+moves over 0.471 all start within R of the plunge. They are the
+plunge-departure class, which the 2D rule exempts. The C18 filter exempts
+them as `departing`.
+
+**Two limits for the un-ignore decision.** The ignore reason says
+"Un-ignore when the verifier reads 0 samples over the exact bound in both
+modes". That condition is now met, with two limits:
+
+1. **The `departing` count is large.** It is 5770 samples on
+   `geodesic_curv` against 2484 judged. The C18 rule exempts every move
+   whose start lies within R of the last vertical plunge, until the next
+   entry. The 2D walker exempts only the steps of the first path after the
+   plunge (`plunged_at.take()`, `adaptive/path.rs`). A later move of the
+   same 3D run that comes back within R of the plunge is exempt under C18
+   but judged in 2D. The run does not show how many samples that is.
+2. **A sample under the screen is not read exactly.** A sample at 0.546 or
+   less is never judged against 0.471 (C18 §2, "Limit").
+
+### Magic numbers (C16 + C18 diff)
+
+I did not scan the diff in this run.
+
+### Files
+
+- Renders: `.claude/worktrees/adaptive-head/target/tmp/adaptive_geodesic_2d_g1/`.
+  - New: `<shape>_{geodesic_local,geodesic_local_oneway,geodesic_curv_oneway_whole}.{txt,svg,png}`.
+  - New: `<shape>_<column>.c16.txt` for every candidate (a) column.
+- New in `phase2/`: `d12_harness.txt`, `d12_c12_test_output.txt`,
+  `d12_starter_probe.rs.txt`, `d12_starter_probe_output.txt`.
+
+### `git status --short` (worktree) at the end of D12
+
+```
+ M crates/rs_cam_core/src/adaptive/research_geodesic.rs
+ M crates/rs_cam_core/src/adaptive3d/clearing.rs
+ M crates/rs_cam_core/src/finish/scallop_isofield.rs
+ M crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+ M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
+```
