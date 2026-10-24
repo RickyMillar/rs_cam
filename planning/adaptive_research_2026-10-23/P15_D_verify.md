@@ -2248,3 +2248,27 @@ I did not scan the diff in this run.
  M crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
  M crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs
 ```
+
+### D12 addendum: the two heavy iso-scallop tests (operator approved)
+
+The aim: to confirm that C16's split of `iso_contour_where`
+(`iso_segments_where`) leaves the shipped iso-scallop output unchanged.
+The byte pin `crease_own_region_pr6b` cannot show this today (G-CREASEPIN:
+it stops at the feeds check).
+
+- Commit: c60ed442 (C16 and C18 committed). `crates/rs_cam_core/src/finish/`
+  has no uncommitted change. C20 started to edit `research_geodesic.rs` and
+  the 2D harness during the run. Neither one enters this build:
+  `adaptive::research_geodesic` is `#[cfg(feature = "research")]`, and the
+  harness requires `research`.
+- Features: `heavy-tests,test-support` only (their `[[test]]`
+  `required-features`), no `research`. Lane script, `timeout 900` each.
+
+| Test | Result | Wall time (build included) | Test time |
+|---|---|---|---|
+| `scallop_isofield_gouge_m4` | green, 2 passed, 3 ignored (instruments / evidence) | 222 s | 198.10 s |
+| `scallop_candidates_m4` | green, 3 passed, 4 ignored (evidence) | 139 s | 117.95 s |
+
+These are the shipped tests of the iso-field scallop (gouge, chord
+refinement, candidates). They pass at c60ed442. This is evidence that
+C16's split changes no shipped iso-scallop output that these tests cover.
