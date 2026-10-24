@@ -2587,3 +2587,312 @@ Read in this order:
    - `keep-down links` (count, mm) and `cut length`;
    - the cascade block.
 3. Apply the keep-or-drop rule above.
+
+## C16 — local-level spacing (a) under the one-way turns (2026-10-24)
+
+Status: CODE COMPLETE, NOT RUN (no cargo; no commit). Base c3d38bf4
+(worktree `.claude/worktrees/adaptive-head`, branch `adaptive-instruments`).
+`rustfmt --edition 2024 --check` is clean on the three Rust files. C18
+works in `adaptive3d/` and `tests/adaptive3d_geodesic_arm_c12.rs` at the
+same time; my hunks in `research_geodesic.rs` do not touch the C12 block.
+
+Paths: `R` = `crates/rs_cam_core/src/adaptive/research_geodesic.rs`,
+`S` = `crates/rs_cam_core/src/finish/scallop_isofield.rs`, `H` =
+`crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`. Line numbers
+are of the C16 tree. Prototype scripts (Python, scratchpad, not in the
+repo): an SVG reader of the D11 renders and an emulation of
+`iso_contour_where` + `chain_segments`.
+
+### Keep-or-drop rule (set before any prediction; the lead's rule)
+
+KEEP `geodesic_local_oneway` when ALL four hold, else DROP:
+
+1. Its entries are strictly below `geodesic_curv_oneway` on both shapes:
+   < 39 on the star, < 54 on the pocket.
+2. No non-turn step is over the ceiling 0.3626 (the G-MOPLOAD mop step
+   excepted). Read: `steps on no turn (emitted)` and the `over:` lines.
+3. Every turn is within its bound and fed: `turns with the reduced feed
+   N, without 0`, and the `arcs piece` turn length ≤ the bound.
+4. On the pocket: no residue-contour entry (C = 0), and wrap cascades ≤ 11
+   (the cascade line `clearing wrap: ... cascade N`).
+
+### The design
+
+**(1) `Spacing::LocalLevel`** (R:2008; C15 §5, idea (a)).
+`GeodesicField::use_level_spacing` (R:1085) keeps the source-tracked `T`
+from the seed and writes ONE value `T_k` per level, so the levels stay
+parallel level sets of one field. This differs from C6's
+`CurvatureLocal`, which solves a pass count `U` (non-parallel levels).
+
+- The rule per level: from `T_{k-1}`, the step `ΔT` is the largest for
+  which every point `p` of the trial level set `T_{k-1} + ΔT` lies within
+  `min(s, s'(ρ(p)))` of the cut.
+- The gap: `T` is a distance. A point of the trial level lies `ΔT·s`
+  along its shortest path from the level before, so its straight
+  distance to the cut is at most `ΔT·s`. The test
+  `ΔT·s ≤ min_p min(s, s'(ρ(p)))` (`level_gap`, R:1132) is the rule read
+  on the path length. It can space levels closer than needed behind a
+  wall; it never under-reads the gap.
+- `ρ(p)`: the circle through the level-set points at ± one pass step
+  (`pass_step_len` = 3 cells = 1.5 mm) of arc length (`front_radius`,
+  R:1191). Its sign comes from `T` one cell toward and one cell away from
+  the centre: a centre on the cleared side (lower `T`) is a convex front
+  and reads `ρ`; a concave or straight piece reads `s` (C15 "The level
+  rule"). Where a sample is off the reachable cells the piece is taken
+  as convex (the smaller spacing).
+- `s'(ρ)` is read at the trial (outer) level, which is the root form of
+  `law_next_radius` (`ρ' = ρ + s'(ρ')`). On a disc about the seed
+  `ρ = R + T`, so the rule gives the C5 levels (unit test 2 below).
+- Arc ends: a vertex with less than one pass step of its piece on one
+  side gives no reading, and a piece shorter than two pass steps gives
+  none. The kink at a meeting line is not read: the `Split` rule leaves
+  the shock cells out of the contour (`chains_at`, R:1354).
+- The bisection: `ΔT = 1` when it holds. Else halve `[0, 1]` until the
+  bracket is at most the op tolerance (0.1 mm, the precision of
+  `radius_at`), and take the lower end (the side that holds). That is 5
+  halvings at s 2 (bracket 0.0625 mm), so at most 6 contourings per
+  level. No new constant. The test is not monotone in `ΔT` in general,
+  so the bisection finds a value that holds within the tolerance of one
+  that fails.
+- The walk ends when the next level passes `max T` (the rule of
+  `curvature_levels`). A guard ends it if no step above the first
+  bracket holds (a radius under about 0.75 mm, which a three-point
+  reading over 1.5 mm spans cannot return).
+- The transition-join drift reads `LocalLevel` as `Curvature` (R:4622).
+  The re-seed and split fields keep `curvature_levels` (these plans are
+  not C16 columns).
+
+**(2) `Chaining`** (R:2014), the arm fix (below). `Chaining::TailOnly` is
+every column before C16. `Chaining::Whole` contours with
+`iso_segments_where` (S:474, split out of `iso_contour_where` S:456; a
+pure refactor, `iso_contour_where` is `chain_segments` of it) and chains
+with `chain_whole` (R:1599). `chain_whole` grows each chain at its tail
+and then at its head and keeps a chain of one segment. The field carries
+its chaining; re-seeded and zone fields keep their parent's.
+
+**(3) Presets** (R:2198 to 2216). `C16_LOCAL` = `C2` with `LocalLevel` and
+`Whole` (column `geodesic_local`, plain seam). `C16_LOCAL_ONEWAY` = that
+with `ArcLink::OneWay` (column `geodesic_local_oneway`). An attribution
+column `geodesic_curv_oneway_whole` (`C16_ONEWAY_WHOLE` = `C14_ONEWAY`
+with `Whole`) tells the chaining's effect from the spacing's. It is not
+under the rule.
+
+**(4) Readouts.** `FieldReport::level_values_mm`; `TurnRecord::fed`
+(R:6722); `ArcReport::over_bound_turns` with `OverBoundTurn` (R:4037,
+measure only). The harness writes them to a separate file
+`<shape>_<column>.c16.txt` for every candidate (a) column (`c16_text`,
+H:756). The `.txt` of every earlier column is unchanged.
+
+### Task 2: the lower-left star arm (the arm to (5, 35)) — CAUSE FOUND, research-side fix built
+
+**Cause.** The arm's wraps are not whole arcs. `chain_segments`
+(`geometry/marching_squares.rs`) grows each chain at its tail only and
+drops any chain of fewer than three points. `iso_contour_where` emits the
+segments in row-major cell order (world `y` up, then `x` up). On an arc
+that falls to the right (negative slope in world XY), the scan meets the
+cells against the arc's direction. Where the arc is steep (one cell per
+row), the chains come out two segments long, and the one segment between
+two chains is a two-point chain: dropped. `join_fragments` then cannot
+bridge the hole. Loops are not affected (a loop chains round to its
+start). The fault is in how the research producer uses the shared
+chainer, not in the field.
+
+**Why that arm.** With the seed at (49.5, 50.5), the arcs of the arm to
+(5, 35) run at slopes −1 to −2.5, so they fall to the right. Its mirror
+twin (the arm to (95, 35)) has arcs that rise to the right and loses no
+segment. The other arms are in between. The seed one cell off the mirror
+axis (G1-3) is not the cause: the fault is in the sign of the slope.
+
+**Evidence** (the D11 renders, `target/tmp/adaptive_geodesic_2d_g1/`):
+
+- Wrap pieces in the arm: almost all are 3 to 7 points long and about
+  1 mm long. Most of them are classed CLOSED, because the two ends of a
+  two-segment piece are 0.5 mm apart (≤ √2·cell). An example: the piece
+  (32.46, 49.00) (32.50, 48.67) (32.52, 48.50) is cut as a loop.
+- The holes: the fragment ends of one level are one cell row apart. On
+  the level `T = 7.0495` stepovers (level 8), the pieces end and start at
+  (32.20, 42.50) / (32.44, 42.00) and at (32.70, 41.50) / (32.97, 41.00):
+  one cell row is missing between each pair.
+- Gaps between fragment ends (≤ 0.75 mm) per render: star
+  `geodesic_curv` 20, `geodesic_a` 19, `geodesic_g1` 19 (18 of the 20 in
+  this arm, 2 in the arm to (79, 91) at (62.79, 61.25) and (64.19,
+  59.25), where the arcs also fall to the right). Pocket `geodesic_curv`
+  19 (the far side at x 66 to 71, and x 37 to 46 by y 44 to 49).
+- The emulation of `iso_contour_where` + `chain_segments` on the exact
+  field `(|x − seed| − R)/s` at level 8 gives the same pieces to 0.01 mm.
+  Example: (31.97, 43.00) (32.00, 42.94) (32.20, 42.50). On a strip of
+  the arm it drops 80 of 160 segments over five levels. On the mirror
+  strip it drops 6 (the end segments).
+- Entries by location, star `geodesic_curv_oneway` (39 entries):
+  clearing entries in the arm proper (y < 47) **11**. Its mirror twin has
+  1, the other arms 1, 1 and 3. Five more lie on the seam ray y = 50.5
+  to the left of the seed. These are the closed-wrap seam refusals that
+  every column has. In `geodesic_curv` the arm reads 13 clearing entries
+  against 11 in each other arm: the seam join already re-enters once per
+  arc, so the defect shows mostly under the one-way links.
+- The residue: the mop runs through the arm from (34.00, 54.50) to
+  (21.13, 44.19) and at its tip (14.5, 38.5). That is the stock that the
+  dropped segments and the half-cut "loops" leave.
+
+**Fix** (`Chaining::Whole`, opt-in for the C16 columns, so the controls
+are unchanged). Unit test 1 pins the drop and the fix.
+
+### Task 3: the unfed turn (zigzag, `without 1` on each shape) — CAUSE FOUND
+
+- **Which turn.** A zigzag "turn" that bridges one of the chaining gaps of
+  task 2. A dropped segment splits ONE arc into two pieces, and the
+  zigzag link joins them with a turn of one cell length along the arc
+  itself. Star candidates: (36.41, 39.50) → (36.00, 40.00) and its
+  mirror (62.59, 61.50) → (63.00, 61.00), both 0.643 mm, 1 step, factor
+  1.0000. Pocket candidates: the short turns at the pocket's gap points,
+  (69.56, 35.50) → (69.93, 35.00) 0.617 mm, (10.50, 50.57) → (10.23,
+  50.50) 0.284 mm, (13.50, 8.31) → (13.13, 8.50) 0.419 mm, (9.98, 11.00)
+  → (9.56, 11.50) 0.650 mm and (42.01, 49.00) → (42.41, 48.50) 0.642 mm.
+  Each is a gap of the list in task 2.
+- **Why it is unfed.** The turn is the missing contour segment, so the arc
+  continues on its line. Exact values (emulation, level 8): the turn is A
+  (36.409393, 39.5) → B (36.004510, 40.0). The arc goes on to C
+  (36.0, 40.005845), 7.4 µm on. Node (36, 40) lies 0.004 mm off the
+  level, so the contour crosses two edges of that node 7 µm apart. B
+  lies **0.17 µm** from the chord A–C. That is under the emitter's
+  `MIN_EMITTED_SEGMENT_MM` = 1 µm, so
+  `simplify_path_keeping_reversals` (`path.rs`) can drop B. Then the
+  emitted move is A → C, and C is not on the turn segment (7.4 µm past
+  B), so `apply_turn_feeds` finds no move. The drop happens only when B
+  is the inner point of the RDP leaf (B and C are 0.01 µm apart in their
+  distance to the higher chord). So of the two mirror turns only one is
+  unfed. This is D11's candidate (collinear-point merging in the
+  emission), confirmed in its mechanism.
+- **Fix.** Research-side: `Chaining::Whole` removes the gaps, so no turn
+  bridges a piece of one arc. The C16 columns carry it. The controls keep
+  the defect (byte parity). The new readout names the unfed turn
+  (`unfed turn:` lines in `.c16.txt`), so the verifier can confirm which
+  one.
+
+### Task 4: slanted-wall turns — MEASURE ONLY (the bound is not changed)
+
+- Readout: `.c16.txt`, `joins over the bound` and one `over:` line per
+  join longer than `s + (1 + √2)·cell` = 3.207 mm. Each line gives the
+  join, its length, `θ` and the slanted bound `s / cos θ + (1 + √2)·cell`.
+- `θ`: the angle between the join and the normal of the arc it goes onto,
+  read from that arc's chord over one pass step from its start. With
+  `θ = 0` (arcs square to the wall), the slanted bound is the C14 bound.
+- The values come from the run. `geodesic_curv_oneway` (4 star, 10 pocket
+  joins) is the control column for the table. `geodesic_local_oneway` and
+  `geodesic_curv_oneway_whole` print theirs too. The table to fill:
+
+| Shape / column | Join (from → to) | Length mm | θ deg | Slanted bound mm | Fits |
+|---|---|---|---|---|---|
+| (from the `.c16.txt` of the run) | | | | | |
+
+### Unit tests (C16, research module)
+
+1. `the_whole_chaining_keeps_the_segment_the_tail_chaining_drops`
+   (R:7623): three segments of one arc, listed in the order that loses
+   one. `chain_segments` keeps 2 of 3; `chain_whole` gives one arc of 4
+   points end to end. A square loop comes back as one closed loop of 4
+   points.
+2. `the_local_level_spacing_follows_the_law_on_a_disc` (R:7668): a
+   tool-centre disc of radius 20, the seed at the centre. Every step is at
+   most `s` and within `tolerance + cell` of `law_next_radius` from the
+   same level (the bisection bracket plus the contour's placement on the
+   lattice).
+
+### Predictions (NOT results; the run decides)
+
+- **Controls byte-identical.** All presets before C16 set
+  `Chaining::TailOnly`, the field's default, and `S` is a pure split. So
+  every control `.txt` is unchanged: `geodesic_a` 92/88, `geodesic_curv`
+  73/63, `reseed` 73/74, `split` 73/84, `oneway` 39/54, `zigzag` 50/66,
+  agent 25/31, contour_spiral 101/91. `summary.txt` differs only by the
+  three new column blocks. The `.c16.txt` files are new.
+- **Zigzag `.c16.txt`:** one `unfed turn:` line per shape. Star: one of
+  the two 0.643 mm turns above. Pocket: one of the five short turns above.
+- **Levels.** Star: about the C5 levels (19), each step within 0.1 mm
+  under the C5 step (the seed sees the whole star). Pocket: more levels
+  than `geodesic_curv`, with the far side's tighter radius setting the
+  step of the whole level. C15 read 35 exact levels against 32 at the
+  harness levels.
+- **`geodesic_curv_oneway_whole`:** star entries 27 to 33 (the arm to
+  (5, 35) falls from 11 clearing entries to about 1, as its twin). Pocket
+  46 to 54.
+- **`geodesic_local_oneway`:** star 27 to 33 (the spacing changes little
+  on the star). Pocket 42 to 52: the far-side wraps at their own radius
+  read under the ceiling (C15: interior 0.3574 against 0.4129 at the
+  harness levels), so fewer wrap refusals. Risk: more levels means more
+  arcs and joins. Each over-bound join is still a seam step.
+- **`geodesic_local`:** star 68 to 73 (the seam join re-enters once per
+  arc whatever the chaining). Pocket 55 to 65.
+- **The rule (predicted):** (1) likely on the star, uncertain on the
+  pocket. (2) holds by construction. (3) fed holds, because whole chains
+  leave no gap turn. (4) C = 0 likely; wrap cascades ≤ 11 uncertain.
+  Overall: uncertain, leaning KEEP.
+
+### Risks for the verifier
+
+- About 450 new lines that no compiler has seen.
+- Run time: about 6 contourings per level and about 35 levels per field,
+  each a full-lattice contour plus `chain_whole`. I expect seconds, not
+  minutes, in release.
+- `front_radius` treats a sample off the reachable cells as convex. Near
+  a wall that can read a straight piece as a tight one only if the three
+  points bend; a lone false reading sets the step of a whole level. If a
+  level step in `.c16.txt` is far under its neighbours, look for it.
+- `level_values_mm` is the first field only (the re-seed and split plans
+  print their first field).
+
+### Files changed by C16
+
+- `crates/rs_cam_core/src/finish/scallop_isofield.rs`:
+  `iso_segments_where` split out of `iso_contour_where` (no behaviour
+  change; `iso_contour_where` was added by candidate (a) and has no other
+  caller than `iso_contour`).
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`: module doc
+  section and derived constants; `Spacing::LocalLevel`, `Chaining`,
+  `GeodesicOptions::chaining` and three presets; `GeodesicField::chaining`,
+  `chains_at`, `use_level_spacing`, `level_gap`, `front_radius`,
+  `level_values_mm`; `chain_whole`, `point_at_length`; `FieldReport::
+  level_values_mm`; `OverBoundTurn` and `ArcReport::over_bound_turns`;
+  `TurnRecord::fed`; two unit tests.
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the
+  three columns, `c16_text` and the `.c16.txt` file, the module doc.
+- This note.
+
+### Commands for the verifier (C16)
+
+Before the run, copy D11's output dir (for the byte compare). Then, through
+`scripts/cargo_lane.sh`, each with a `timeout`, from the worktree:
+
+```text
+cp -r target/tmp/adaptive_geodesic_2d_g1 <scratch>/d11_renders
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --all-targets
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --all-targets --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core -q --lib scallop_isofield
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core -q --lib adaptive
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+for f in <scratch>/d11_renders/*.txt; do cmp "$f" target/tmp/adaptive_geodesic_2d_g1/"$(basename "$f")" || echo "DIFF $f"; done
+```
+
+`path.rs` and `search.rs` are not changed, so the pass-load sentries are
+not needed. Only `summary.txt` may differ, by the three new column blocks.
+
+Read in this order:
+
+1. **Controls (byte parity):** every D11 `.txt` but `summary.txt` must be
+   identical. A difference is a defect of the threading: stop and report.
+2. For each new column, shape by shape: `entries by producer`
+   (S/L/J/M/C/W/P); `arcs piece 0`; `clearing turns (emitted)` and
+   `without`; `steps on no turn (emitted)`; the cascade block
+   (`clearing wrap` cascades); the `.c16.txt` levels and steps.
+3. The zigzag `.c16.txt` (`unfed turn:`) for task 3; the
+   `geodesic_curv_oneway` `.c16.txt` (`over:` lines) for the task 4 table.
+4. Entries by location in the star arm to (5, 35) (x < 40, y < 47) in
+   `geodesic_curv_oneway_whole` against `geodesic_curv_oneway`.
+5. Apply the keep-or-drop rule above to `geodesic_local_oneway`.
