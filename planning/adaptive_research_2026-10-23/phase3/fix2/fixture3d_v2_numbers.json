@@ -86,6 +86,14 @@
       "cut_mm": 38623.7,
       "over_exact_pct": 8.06
      },
+     "thick": {
+      "total_mm": 3138.9,
+      "perimeter": null,
+      "body": 3132.7,
+      "waterline": 6.3,
+      "unplaced": 0,
+      "pct": 7.96
+     },
      "producers": {
       "perimeter": null,
       "body": 3149.4,
@@ -168,6 +176,14 @@
      "load_old": {
       "cut_mm": 33250.9,
       "over_exact_pct": 4.14
+     },
+     "thick": {
+      "total_mm": 1557.1,
+      "perimeter": 1293.0,
+      "body": 33.6,
+      "waterline": 230.4,
+      "unplaced": 0,
+      "pct": 4.74
      },
      "producers": {
       "perimeter": 1293.0,
@@ -252,6 +268,14 @@
       "cut_mm": 41791.9,
       "over_exact_pct": 3.3
      },
+     "thick": {
+      "total_mm": 1559.9,
+      "perimeter": 1293.0,
+      "body": 36.9,
+      "waterline": 229.9,
+      "unplaced": 0,
+      "pct": 4.39
+     },
      "producers": {
       "perimeter": 1293.0,
       "body": 47.1,
@@ -334,6 +358,14 @@
      "load_old": {
       "cut_mm": 43818.0,
       "over_exact_pct": 3.13
+     },
+     "thick": {
+      "total_mm": 1554.4,
+      "perimeter": 1293.0,
+      "body": 35.1,
+      "waterline": 226.3,
+      "unplaced": 0,
+      "pct": 4.31
      },
      "producers": {
       "perimeter": 1293.0,
@@ -418,6 +450,14 @@
       "cut_mm": 33250.9,
       "over_exact_pct": 4.14
      },
+     "thick": {
+      "total_mm": 1557.1,
+      "perimeter": 1293.0,
+      "body": 33.6,
+      "waterline": 230.4,
+      "unplaced": 0,
+      "pct": 4.74
+     },
      "producers": {
       "perimeter": 1293.0,
       "body": 43.2,
@@ -501,6 +541,14 @@
      "load_old": {
       "cut_mm": 13768.6,
       "over_exact_pct": 20.19
+     },
+     "thick": {
+      "total_mm": 2901.5,
+      "perimeter": 1422.3,
+      "body": 1223.1,
+      "waterline": 256.2,
+      "unplaced": 0,
+      "pct": 20.42
      },
      "producers": {
       "perimeter": 1423.5,
@@ -590,6 +638,14 @@
       "cut_mm": 52788.3,
       "over_exact_pct": 3.01
      },
+     "thick": {
+      "total_mm": 2822.0,
+      "perimeter": null,
+      "body": 2822.0,
+      "waterline": 0,
+      "unplaced": 0,
+      "pct": 4.84
+     },
      "producers": {
       "perimeter": null,
       "body": 6201.7,
@@ -664,6 +720,14 @@
      "load_old": {
       "cut_mm": 44745.5,
       "over_exact_pct": 3.59
+     },
+     "thick": {
+      "total_mm": 2516.6,
+      "perimeter": 2238.1,
+      "body": 263.8,
+      "waterline": 14.7,
+      "unplaced": 0,
+      "pct": 4.39
      },
      "producers": {
       "perimeter": 2245.6,
@@ -740,6 +804,14 @@
       "cut_mm": 44745.5,
       "over_exact_pct": 3.59
      },
+     "thick": {
+      "total_mm": 2516.6,
+      "perimeter": 2238.1,
+      "body": 263.8,
+      "waterline": 14.7,
+      "unplaced": 0,
+      "pct": 4.39
+     },
      "producers": {
       "perimeter": 2245.6,
       "body": 1871.1,
@@ -813,6 +885,14 @@
      "load_old": {
       "cut_mm": 23635.5,
       "over_exact_pct": 44.78
+     },
+     "thick": {
+      "total_mm": 14295.3,
+      "perimeter": 2241.3,
+      "body": 12040.3,
+      "waterline": 13.8,
+      "unplaced": 0,
+      "pct": 47.53
      },
      "producers": {
       "perimeter": 2249.8,

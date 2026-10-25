@@ -1153,3 +1153,288 @@ unchanged.
   there stands outside the region, and the lift drapes it up over the
   terrain (no gouge; some air). The guard admits it when its area is
   under the allowance.
+
+### 11.7 D19 RED: tool centres of the grown plan read the rim (2026-10-25)
+
+D19 step 3 (`d19/c12_plain.log`), plain test, `geodesic_local_oneway`:
+- 11 turn moves are off the level: Z 10.5 (the rim or the island top plus
+  the leave), 5.956, 6.279, and 4.82.
+- Against D18: turns 42 → 36, entries 68 → 119, moves 2123 → 3015.
+
+**The cause: the §11 premise holds only to one grid cell, and the margin
+m = 0.25 mm is smaller than that.**
+
+1. **The region is the tool-centre limit at the walls, but only to a
+   cell.** `cell_has_material` reads the drop-cutter heightmap at cell
+   centres (the planner grid, cell 0.5 mm; the heightmap and the stock share
+   it). Marching squares puts the boundary at the midpoints between an "in"
+   and an "out" centre, so the polygon boundary can lie up to cell/2 =
+   0.25 mm past the true limit. On a 45° staircase edge it lies 0.18 mm from
+   the out centre.
+2. **The lift reads the nearest cell.** `lift_to_level` →
+   `z_or_bbox_floor_at_world` → `world_cell` rounds to the nearest centre.
+   An out cell owns the square of half-width cell/2 round its centre. So a
+   planned centre within about 0.5 mm of the polygon boundary on the out
+   side's axis reads that cell. Here that cell's floor is the rim
+   (Z 10 + 0.5), and the point is lifted to 10.5. The partial values (5.956,
+   6.279) are the exact drop-cutter of the emitter's drape. There the centre
+   is inside the true forbidden band of the island's sloped facets.
+3. **The closing adds to it.** Growing by R − m and insetting by R fills
+   every reflex vertex of the marching-squares staircase. At a 45° turn the
+   fill is ρ(sec 22.5° − 1) = 2.75 × 0.082 = 0.23 mm. That pushes the 2D
+   tool-centre region back toward the out cells by about the margin. The
+   guard admits it, because the staircase fills are under cell × length.
+4. **The 2D plan steps to its region boundary by design.** The wall pass,
+   the arc ends and the turns stand there. So the outer pass of the grown
+   plan runs along the out cells and reads the rim wherever the staircase
+   or a tie of `round()` puts it in an out square.
+
+**Why the entries nearly double.** Each such point lifts a cut from Z 4.5
+to Z 10.5 and back. The lift's large-Z split (`dz` > max(1.1 · Depth/Pass,
+1) or slope > `PLUNGE_SLOPE_LIMIT`) puts an entry at each jump, and the
+air demotion and the plunge add more. About 25 excursions explain the +51
+entries and the +900 moves. The turn count falls (42 → 36) because the
+larger 2D domain changes the field's levels (more wraps along the band,
+other arc ends).
+
+**The premise, plainly.** It is right in kind and wrong in size. The
+region boundary is the tool-centre limit at a wall only to the grid's
+half cell, and the nearest-cell lift adds another half cell. A margin of
+`PERIMETER_INSET_MARGIN_MM` (0.25 mm, chosen for the boundary clip, O5b)
+does not cover one planner cell (0.5 mm). The waterline-load claim of 11.3
+(the waterline meets m + one cell) stands; the gouge-free claim needs the
+larger margin.
+
+**The proposed fix (not built): grow the shipped smoothed outline, not the
+raw region.**
+- In the research branch, first smooth the region exactly as
+  `planner_outlines` does (`SIMPLIFY_INSET` 0.3 inward, then RDP
+  `SIMPLIFY_TOLERANCE` 0.3; they move to module scope unchanged). Then grow
+  each smoothed polygon by R − m and split it into pieces.
+- The 2D tool-centre region is then the smoothed polygon inset by m: 0.55
+  to 0.85 mm inside the raw region boundary.
+  - That is beyond the out cells' nearest-read squares (at most 0.5 mm
+    from the boundary on an axis edge, about 0.43 mm on a diagonal).
+  - It is beyond the true limit by at least 0.30 mm, since the boundary is
+    within cell/2 of the true limit.
+  - The RDP removes the staircase, so the closing fills almost nothing
+    (the guard's excess falls to about 0).
+- No new constant: R, `m` and the two shipped smoothing values.
+- The waterline then meets (0.55…0.85) ± cell/2, which is 0.3 to 1.1 mm,
+  or at most 0.18 D. That is under c = 0.219 at s 1.2 and under 0.3626 at
+  s 2. The sweep is still not needed: the smoothed-and-grown 2D domain
+  reaches 0.3 to 0.6 mm further out than the sweep's centre locus did (the
+  sweep's centres were at R + 0.25 inside the raw region; the 2D centres
+  are now at 0.55 to 0.85 inside it).
+- An exact alternative is a post-check: drop (do not plan) any 2D point
+  whose nearest heightmap cell is out of the region. That needs the 2D
+  planner to read the 3D heightmap (`adaptive/`, not my files), so I do not
+  propose it.
+
+**Predictions with the fix (P):**
+- Plain C12 test: every turn move at Z 4.5. Entries about 68 to 80 (D18
+  68, plus the wraps of the 2–3 mm band along the walls). Turns about the
+  D18 count (±6).
+- Heavy C12 test: 0 over, judged in the band.
+- Corne: the guard keeps all 4 planned regions. The C30 perimeter over
+  length goes to 0, and the C31 cycle and plunge predictions of 11.4
+  stand.
+
+### 11.8 C31 part 1, the D19 fix: built (2026-10-25)
+
+No cargo, no commit; rustfmt is green. All changes are in
+`adaptive3d/clearing.rs`.
+
+- **The shipped smoothing, moved verbatim.**
+  - `SIMPLIFY_INSET` and `SIMPLIFY_TOLERANCE` (0.3, 0.3) move to module
+    scope with docs.
+  - The smoothing block of `planner_outlines` becomes
+    `fn smoothed_region(region, params_2d)`: the same text; a script diff
+    against HEAD is identical. `planner_outlines` calls it.
+- **`research_grown_outlines(ctx, region, params_2d, cell, (z, region))`**
+  now:
+  1. smooths the region with `smoothed_region`;
+  2. grows each smoothed polygon by `R − m` (`OffsetRingSet`,
+     untoleranced);
+  3. gives the grown polygons to `grown_planner_outlines` for the piece
+     split.
+- **The region keeps the shipped path** (smoothing and sweep) when the
+  first of these is true. The `info` line "C31 region opening" names it in
+  `decision`, beside `cell_mm`, `nominal_margin_mm`, `measured_margin_mm`,
+  the three areas, `excess_mm2` and `allowed_mm2`:
+  1. "no smoothed or grown outline".
+  2. "inside margin under one planner cell": `SIMPLIFY_INSET + m < cell`.
+     This is the lead's condition: the reach of an out cell's nearest read
+     plus the boundary error, about one cell.
+  3. "measured margin under one planner cell" (lead's correction; first
+     built as half a cell): the least distance between the smoothed and
+     the raw boundary, plus `m`, is under one cell.
+     The RDP can move the smoothed outline back out by up to its tolerance,
+     so the nominal inset is not a bound. Half a cell is the boundary error
+     of marching squares (the midpoint between an in and an out centre).
+     The nearest-read reach inside the raw polygon is at most cell/(2√2) on
+     a 45° edge, and 0 on an axis edge, so half a cell covers both. The
+     separation is exact for two boundaries that do not cross: they come
+     nearest at a vertex of one of them (`boundary_separation`).
+  4. "closing guard": the excess over one planner cell times the smoothed
+     boundary length.
+  5. Else "grown, no sweep".
+
+**The cells.** The planner cell is `max(R/6, tolerance)`, and the planner
+stock's `z_grid.cell_size` is that value.
+- Corne "3D Rough 1": R 3, tolerance 0.1, so the cell is **0.5 mm**.
+- C12 fixture: R 3, tolerance 0.1, so the cell is **0.5 mm**.
+- Condition 2 then reads 0.3 + 0.25 = 0.55 ≥ 0.5: **0.05 mm of room** on
+  both. A tolerance above 0.55 mm, or a tool radius above 3.3 mm at
+  tolerance ≤ R/6, makes it fail. Such a region falls back, by design.
+- Condition 3 at cell 0.5 reads `measured + 0.25 ≥ 0.25`, which always
+  holds (a distance is never negative). It binds only when cell/2 > m,
+  that is, a cell over 0.5 mm. The run prints `measured_margin_mm` per
+  region all the same.
+
+**Predictions (P).**
+- Corne: 4 decision lines, all "grown, no sweep". `measured_margin_mm`
+  about 0.35–0.55 (the RDP moves a staircase outline back out by up to its
+  half amplitude, about 0.1–0.2 mm).
+- C12 plain test: all turn moves at Z 4.5; entries about 68–80; turns
+  about D18's 42 ± 6.
+- Heavy test: 0 over in the band.
+- Byte parity: green (the smoothing moved verbatim; the research branch is
+  gated).
+
+**The D19 heavy-test red (`phase2/d19_c12_test_output.txt`, at the raw-grow build; explanation only, no code).**
+
+`geodesic_curv` reads 5 judged samples over the exact bound:
+- move 496 at (12.81, 15.62, 7.00) and (12.69, 15.88, 7.00): exact 0.999;
+- move 511 at (16.75, 13.21, 7.00): exact 0.755;
+- move 2126 at (28.77, 5.12, 4.50) and (28.64, 5.38, 4.50): exact 0.999.
+
+Against D18 (2298 moves, entry samples 1410, judged levels {4.5, 7.0, 7.5,
+8.0, 10.5}), D19 has 3081 moves, entry samples 2265, and judged samples at
+**Z 5.0, 7.1, 7.2, 7.3, 7.4, 7.8, 7.9 and 8.9**. Those Z values do not
+belong to any level. They are cuts that the raw-grow plan lifted off its
+level: the out-cell reads of 11.7, at the rim (10.5) and partial
+(drape) heights. The extra entry samples (+855) are the lift's large-Z
+splits round them.
+
+**What move 496 is (inferred; D19 kept no toolpath).** It is a level cut
+that meets stock an earlier pass of the 2D plan was meant to remove, but
+the lift raised.
+- The 2D replay held each pass to the ceiling on the 2D grid, where the
+  earlier passes had cut at the level.
+- In 3D a stretch of an earlier pass read an out cell or a raised drape
+  floor. The lift raised it (to 7.1–8.9, or 10.5). A short air run is
+  re-promoted and cut at the raised Z; a long one becomes a rapid with the
+  large-Z split round it.
+- The planner stamped what was emitted (G-PLANSIMGAP): the raised pass.
+  So the stock between the level and the raised Z stayed under that
+  stretch.
+- The next pass of the 2D plan that crosses it meets that stock across
+  its whole disc: full width (the exact reading's 0.999).
+- It may be only as thick as the lift (0.1–1.9 mm), because the exact
+  oracle counts any layer left between two heights as full-width stock
+  (C30.6). It is still a real 2D-rule breach: the 2D rule is radial.
+
+How the positions fit:
+- Move 2126 is 5.23 mm from the x = 34 wall. That is one stepover (2 mm)
+  inside the 2D boundary of the raw grow, which is about R + m = 3.25 mm
+  from the wall. So it is the pass after a lifted boundary stretch.
+- Move 496 (8.4 mm from the y = 24 wall, 15 mm from the island) is
+  further in. A wrap ends where the level set meets the 2D boundary, so a
+  lifted arc end leaves a stub of standing stock. The next wrap or a link
+  that cuts through the stub can stand some wraps inward of the boundary.
+  So "a cut that resumes after a rim lift and its split" fits, in the wide
+  sense: the standing stock comes from a lifted earlier pass.
+- I cannot name the exact earlier move without the toolpath.
+
+**Does the smoothed-grow fix remove it? Yes, if the cause is as above.**
+- With the fix, the 2D tool-centre region is at least 0.55 mm (nominal)
+  inside the raw region boundary. At cell 0.5 that is beyond any out
+  cell's nearest-read reach and beyond the true limit (11.7–11.8). The RDP
+  has removed the staircase, so the closing fills almost nothing.
+- So no planned point reads an out cell, the lift raises nothing, and no
+  stretch of the 2D plan is left unstamped.
+- What remains are the drape raises of the flat floor, which D18 also
+  had: its judged levels 7.5, 8.0 and 10.5, with 0 over.
+
+**Prediction for D19b (the smoothed-grow build; P):**
+- `geodesic_curv` and the other three geodesic modes: **0 over the exact
+  bound**.
+- Judged levels back to D18's set ({4.5, 7.0, 7.5, 8.0, 10.5}, perhaps a
+  stray drape level). No Z 7.1–7.4, 7.8, 7.9 or 8.9.
+- Entry samples close to D18's 1410 (within +10 %). Moves 2298 + the band
+  wraps: about 2400–2700.
+- Perimeter band 0 (no sweep). Waterline at most a few samples over the
+  screen (D19: 0; D18: 27).
+- If a sample is still over, the first check is whether its Z is a level
+  value and whether an earlier move at the same XY ran above the level. A
+  probe that prints the moves within R of the sample, with their Z, would
+  show it.
+
+**Correction (lead, before D19b): condition 3 now uses one planner cell.**
+- The threshold is `measured + m ≥ cell`, as in condition 2. At half a
+  cell it could never trip at cell 0.5 (`measured + 0.25 ≥ 0.25`), even
+  with a measured separation of 0: exactly the D19 case.
+- The one-cell reach is the boundary error (up to cell/2) plus the
+  nearest-read square (up to cell/2), as 11.7 diagnoses.
+- My earlier text above, which said half a cell covers both, is withdrawn.
+- The code is `measured_margin < cell`, and the `info` line says "measured
+  margin under one planner cell: shipped sweep".
+
+**Prediction with the one-cell condition (P, replaces the guard line of
+11.8's predictions):**
+- A region keeps the grow only if the smoothed outline stays at least
+  0.25 mm inside the raw boundary everywhere (0.25 + 0.25 ≥ 0.5).
+  - On axis and 45° wall stretches the smoothed outline is the 0.3 mm
+    inset, so they pass.
+  - Where the RDP replaces a staircase of another angle, or a staircase
+    circle (the C12 island, r 5 on the 0.5 mm grid; the Corne hex holes),
+    the chord can come back out by up to about half the staircase
+    amplitude. Then `measured` can be about 0.1–0.2 mm.
+- So it is likely (about 60 %) that the C12 region at both levels, and some
+  Corne regions, **fall back** to the smoothing and the sweep.
+- If the C12 region falls back, the heavy test now judges the geodesic
+  arms in the sweep band (the band exemption is the control's only), so
+  it reads the sweep slot over the bound and **fails** in every geodesic
+  mode. That would be the honest result: the grow did not apply there. The
+  `measured_margin_mm` in the D19b log tells which case it is.
+- If it falls back, the plain test is unchanged from D18: turn moves at
+  the level, entries about 68.
+- If the C12 region keeps the grow: 0 over, as predicted above.
+
+**The shortfall inset (lead, before D19b): built.** In
+`research_grown_outlines`:
+- After the smoothing, `measured_before` is the least distance between the
+  smoothed and the raw boundaries (`boundary_separation`), plus `m`.
+- If it is under one cell, every smoothed polygon is inset by the
+  shortfall `cell − measured_before`, once, region-wide (`offset_polygon`),
+  and the separation is measured again (`measured_after`).
+- The grow, the closing guard's areas and the boundary length are then
+  taken on the inset outline.
+- The decision order:
+  1. no smoothed or grown outline;
+  2. "the shortfall inset split the outline" (more polygons after the
+     inset than before);
+  3. the nominal margin under one cell;
+  4. "measured margin under one planner cell" on `measured_after`;
+  5. the closing guard;
+  6. else "grown, no sweep".
+- The `info` line prints `measured_before_mm`, `shortfall_inset_mm` and
+  `measured_after_mm`.
+- Why the inset is enough: the smoothed region lies inside the raw one
+  with boundary separation `d`. A point of its inset by `k` has a disc of
+  `k` inside the smoothed region, hence a disc of `k + d` inside the raw
+  region. So `measured_after ≥ measured_before + k = cell`, up to the
+  offset's flattening, which only cuts inward. The check confirms it.
+- No new constant.
+
+**Prediction (P), the lead's, which I share:**
+- Every region of C12 (both levels) and of Corne (4 planned) keeps the
+  grow: decision "grown, no sweep", `measured_after_mm` ≥ 0.5.
+- `shortfall_inset_mm` is 0 where the outline stays 0.25 inside, and about
+  0.05–0.15 on the C12 island and the Corne hex holes. No split is
+  expected: the necks are much wider than twice the shortfall.
+- So the D19b predictions of 11.8 stand:
+  - heavy test 0 over in all four geodesic modes, judged in the band;
+  - plain test turn moves at the level, entries about 68–80;
+  - judged levels back to D18's set.

@@ -3408,3 +3408,110 @@ rise by 542.6 mm (1026.1 + 317.1 → 1293.0 + 592.8), which is C30's
 - State: the lead's commit 2a4cf2a83 holds the intent-rule scripts, but a
   page render from before the rule change. The current page, numbers and
   spec are in the working tree, not committed.
+
+## D19 at f32401326 + uncommitted C31 part 1 — RED
+
+C31 part 1 (P3_C22_3d_turns.md §11.6) changes the research arm:
+- the 2D planner gets the region grown by R − m;
+- a closing guard decides per region;
+- no perimeter sweep is emitted.
+
+The C12 test now judges the geodesic modes in the perimeter band. Files:
+`adaptive3d/clearing.rs` and the C12 test. The 2D baseline is the D18
+render dir. Lane script, `timeout`, adaptive-head. The diff did not
+change during the run. Disk: 83 GB.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | byte parity, plain and research; fmt; clippy research and plain; the 13 adaptive3d sentries | green, all 18 commands (plans_every_slice_piece 3/3) |
+| 2 | the 2D harness | green 1/1; all 189 rewritten render files byte-equal to D18 |
+| 3 | the plain C12 test | **RED**, at T:969 (`the_geodesic_arm_feeds_its_turns_down_at_the_level`) |
+| 3 | the heavy C12 test | **RED**, at T:862, 154.56 s |
+
+**The plain test** fails in its first mode, geodesic_local_oneway:
+
+> geodesic_local_oneway: turn moves off the level Z 4.5: [move 1075: Z
+> 10.500 to 10.500, move 1157: Z 10.500 to 10.500, move 1159: Z 5.956 to
+> 5.956, move 1244: Z 10.500 to 10.500, move 1247: Z 10.500 to 10.500,
+> move 1338: Z 10.500 to 10.500, move 1340: Z 6.279 to 4.500, move 1432:
+> Z 4.500 to 4.820, move 1433: Z 4.820 to 4.500, move 1729: Z 10.500 to
+> 10.500, move 1799: Z 10.500 to 10.500]
+
+- 7 turn moves are at Z 10.5 (rim and island top Z 10 plus the 0.5
+  leave), and 4 are partly draped.
+- Against D18: turns planned 42 → 36, entries 68 → 119, moves 2123 →
+  3015. Turns are still fed 36, unfed 0.
+- My reading, not measured: in the grown region some turns lie where the
+  disc covers the wall, so the drop-cutter lifts them onto the rim.
+
+**The heavy test** fails in its first geodesic mode, geodesic_curv:
+
+> geodesic_curv: 5 judged samples read over the exact bound 0.471 (exact
+> peak 0.999); the first: move 496 ClearingCut at (12.81, 15.62, 7.00)
+> wall distance 8.38: sim radial 0.744, exact peak of the move 0.999
+
+| geodesic_curv | D18 | D19 |
+|---|---|---|
+| moves | 2298 | 3081 |
+| judged | 3099 | 7947 |
+| over the screen / the exact bound | 0 / 0 | **5 / 5** |
+| sim peak | 0.518 | 0.784 |
+| entry / departing samples | 1410 / 4689 | 2265 / 5025 |
+| perimeter band | 2494 samples, exempt | 0 samples (judged) |
+
+- The other modes did not run, because the test stops at the first
+  failing mode.
+- The AgentSearch control is unchanged (225/225).
+- The over sample is mid-pocket (8.38 mm from the wall), and the exact
+  peak 0.999 is a full-width cut.
+
+**Verdict.** C31 part 1 is not committable. No fixture run was started.
+Outputs: `phase2/d19_harness.txt`, `phase2/d19_c12_plain_output.txt`,
+`phase2/d19_c12_test_output.txt`.
+
+## C32 measure on the page: over 0.471 through stock at least one planner cell thick
+
+The lead's request, after §C32 of P3_C18_3d_oracle.md.
+
+**The measure** (`phase3/fix2/thick_measure.py`, generalised from
+`phase3/c32/c32.py`):
+- **The samples:** every cutting sample of the first rough op with intent
+  clearing_cut that the sim reads over 0.471, in every phase.
+- **The reading:** the exact swept width on the sample path densified to
+  0.1 mm, on a 0.05 mm lattice. Only earlier path points at Z ≤ sample Z +
+  0.5 mm (one planner cell) stamp. So only stock at least 0.5 mm thick
+  counts.
+- **The result:** the XY length of the samples still over 0.471, per
+  producer and in total.
+- **Check against C32:** the body part reproduces C32 exactly: wanaka200
+  zigzag 263.8 mm, contour_parallel 2822.0 mm.
+- **Cache:** results are cached in `phase3/fix2/thick_cache.json`, keyed by
+  the sim file's size and mtime. The first build takes about 5 min.
+
+| Fixture | Column | Over 0.471 (current) | Over 0.471, stock ≥ 0.5 mm: total = % of cut (perimeter / body / waterline mm) |
+|---|---|---|---|
+| Corne | contour_parallel | 8.01% | 3138.9 mm = 7.96% (— / 3132.7 / 6.3) |
+| Corne | geodesic zigzag (= pick) | 5.88% | 1557.1 mm = 4.74% (1293.0 / 33.6 / 230.4) |
+| Corne | geodesic zigzag_v2 | 5.44% | 1559.9 mm = 4.39% (1293.0 / 36.9 / 229.9) |
+| Corne | geodesic one-way | 5.34% | 1554.4 mm = 4.31% (1293.0 / 35.1 / 226.3) |
+| Corne | AgentSearch | 23.50% | 2901.5 mm = 20.42% (1422.3 / 1223.1 / 256.2) |
+| wanaka200 | contour_parallel | 10.65% | 2822.0 mm = 4.84% (— / 2822.0 / 0) |
+| wanaka200 | geodesic zigzag (= v2) | 7.22% | 2516.6 mm = 4.39% (2238.1 / 263.8 / 14.7) |
+| wanaka200 | AgentSearch | 48.02% | 14295.3 mm = 47.53% (2241.3 / 12040.3 / 13.8) |
+
+**Reading.**
+- On wanaka200, the thick measure removes most of the draped body skim:
+  zigzag body 1871.1 → 263.8 mm, contour_parallel 6201.7 → 2822.0 mm.
+- What remains for the geodesic arms is mostly the perimeter sweep, a
+  slot through fresh stock (wanaka 2238.1 mm, Corne 1293.0 mm). C31 aims
+  to remove that sweep.
+
+**The page.**
+- A new column on the spacing table, next to the current shares.
+- One sentence: a full-width skim of a thin layer is a light cut, and
+  this measure leaves it out.
+
+**Asserts.** `assert_fixture3d_v2.py` has its own implementation of the
+measure (it does not import `thick_measure.py`), and checks the table cells
+and the sentence: "all 637 checks hold" (about 4 min). One injected wrong
+value was caught; the page was restored.

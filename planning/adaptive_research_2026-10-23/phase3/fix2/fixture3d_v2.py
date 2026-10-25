@@ -46,6 +46,24 @@ import importlib.util as _ilu
 _ps_spec = _ilu.spec_from_file_location("producer_split", os.path.join(os.path.dirname(os.path.abspath(__file__)), "producer_split.py"))
 producer_split_mod = _ilu.module_from_spec(_ps_spec)
 _ps_spec.loader.exec_module(producer_split_mod)
+_tm_spec = _ilu.spec_from_file_location("thick_measure", os.path.join(os.path.dirname(os.path.abspath(__file__)), "thick_measure.py"))
+thick_measure_mod = _ilu.module_from_spec(_tm_spec)
+_tm_spec.loader.exec_module(thick_measure_mod)
+_THICK_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "thick_cache.json")
+
+
+def thick_cached(run_dir, simart_dir, tp_glob):
+    """C32's thick-stock measure, cached by the simulation file's size and
+    mtime (it takes seconds to a minute per column)."""
+    sim = os.path.join(simart_dir, "simulation.json")
+    key = f"{os.path.abspath(simart_dir)}|{tp_glob}|{os.path.getsize(sim)}|{os.path.getmtime(sim)}"
+    cache = json.load(open(_THICK_CACHE)) if os.path.exists(_THICK_CACHE) else {}
+    if key not in cache:
+        cache[key] = thick_measure_mod.thick_over(run_dir, simart_dir, tp_glob)
+        json.dump(cache, open(_THICK_CACHE, "w"), indent=1)
+    return cache[key]
+
+
 _ns_spec = _ilu.spec_from_file_location("normal_step", os.path.join(os.path.dirname(os.path.abspath(__file__)), "normal_step.py"))
 normal_step_mod = _ilu.module_from_spec(_ns_spec)
 _ns_spec.loader.exec_module(normal_step_mod)
@@ -416,6 +434,9 @@ def main():
                 fxn["arms"][a["label"]]["normal_step"] = normal_step_mod.normal_step(ops[a["label"]][img_op], mid, centre, eng)
                 fxn["arms"][a["label"]]["load"] = ld
                 fxn["arms"][a["label"]]["load_old"] = load_share_old(a["simart"], tpid)
+                th = thick_cached(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
+                th["pct"] = round(100 * th["total_mm"] / ld["cut_mm"], 2)
+                fxn["arms"][a["label"]]["thick"] = th
                 fxn["arms"][a["label"]]["producers"] = producer_split_mod.split(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
         numbers["fixtures"][fx["name"]] = fxn
         rows.append((fx, pick, cols, missing))
@@ -452,7 +473,8 @@ def main():
             rows += (f"<tr><td>{html.escape(lab)}</td><td>{ns['median']:.2f} mm</td>"
                      f"<td>{ns['p10']:.2f} to {ns['p90']:.2f} mm (n {ns['n']}; {ns['apart']} over {TOOL_D:.0f} mm set apart)</td>"
                      f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td>"
-                     f"<td>{pr_text(an['producers'])}</td></tr>")
+                     f"<td>{pr_text(an['producers'])}</td>"
+                     f"<td>{an['thick']['total_mm']:.0f} mm = {an['thick']['pct']:.2f}% ({pr_text(an['thick'])})</td></tr>")
             old_rows += (f"<tr><td>{html.escape(lab)}</td><td>{sp['median']:.2f} mm</td>"
                          f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over {TOOL_D:.0f} mm set apart)</td></tr>")
         ag = fxn["arms"]["AgentSearch"]
@@ -467,14 +489,19 @@ def main():
         s2 = (f"AgentSearch (secondary) is over the bound: {over:.2f}% of its cut length on '{f0}' reads over 0.471 in the simulation "
               f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)."
               if over > 0 else f"AgentSearch (secondary) is not over the bound: 0% of its cut length on '{f0}' reads over 0.471.")
+        thick_sentence = ("The last column is a second load measure (C32, phase3/c32): it reads the exact swept width of each sample "
+                          "over 0.471 again, counting only stock that stands at least one planner cell (0.5 mm) above the tool tip, so a "
+                          "full-width skim of a thin layer, which is a light cut, is left out; what remains is load through stock of real depth.")
         why = ("The rays read low because they start at the seed and over-sample the levels inside the radius where the law spaces "
                "levels closer than the stepover (25.45 mm at stepover 1.2, 22.7 mm at 2.0; P2_C2 section C24), and because they also "
                "cross the starter helix and, on one-way, the straight moves across the cut.")
         return (f'<h3 style="margin-top:12px">Pass spacing and load at {html.escape(fxn["mid_level"])} ({html.escape(f0)})</h3>'
                 f'<table><tr><th>arm</th><th>pass step along the normal, length-weighted median</th><th>10th to 90th percentile</th>'
                 f'<th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th>'
-                f'<th>over 0.471 by producer: perimeter / body / waterline</th></tr>{rows}</table>'
+                f'<th>over 0.471 by producer: perimeter / body / waterline</th>'
+                f'<th>over 0.471, only stock at least one planner cell (0.5 mm) thick (perimeter / body / waterline)</th></tr>{rows}</table>'
                 f'<p>{html.escape(s1)} {html.escape(s2)}</p>'
+                f'<p>{html.escape(thick_sentence)}</p>'
                 f'<p class="note">Spacing (C24\'s measure): the step along the normal between adjacent passes. From the midpoint of each '
                 f'pass move the normal is cast both ways; the distance to the nearest other pass move is one sample, weighted by the move length. '
                 f'A pass is a cut move of the level that the closing simulation reads over one sim cell / D (so a straight move across the cut, '

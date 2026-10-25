@@ -302,6 +302,89 @@ def load_old_check(simart_dir, tpid):
     return {"cut_mm": round(tot, 1), "over_exact_pct": round(100 * o1 / tot, 2)}
 
 
+def thick_check(run_dir, simart_dir, tp_glob):
+    """Own C32 thick measure: samples of the toolpath with intent clearing_cut
+    read by the sim over 0.471; for each, the earlier path (sample path
+    densified to 0.1 mm) at Z <= sample Z + 0.5 stamps discs of R; the
+    lattice (0.05 mm) points of the disc at the step midpoint that no such
+    point covers give the swept width across the step; the step counts when
+    that width is over 0.471. Per phase as producers_check."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
+    tpid = int(re.search(r"tp_(\d+)_", tp_glob).group(1))
+    n = tp["move_count"]
+    ents = sorted((e for e in tp["semantic_trace"]["items"] if e["kind"] == "entry"), key=lambda e: e["move_start"])
+    gen = {}
+    for an in tp["debug_trace"]["annotations"]:
+        mm = re.match(r"Pass (\d+) — ", an["label"])
+        if mm:
+            gen[int(mm.group(1))] = an["move_index"]
+    pairs = sorted((gen[e["params"]["values"]["pass_index"]], e["move_start"]) for e in ents)
+    fin = lambda g: next((f for gi, f in pairs if gi >= g), n)
+    lv = [fin(an["move_index"]) for an in tp["debug_trace"]["annotations"] if an["label"].startswith("Adaptive Z")]
+    wl = [fin(an["move_index"]) for an in tp["debug_trace"]["annotations"] if an["label"] == "Waterline cleanup"]
+    sl = any(s.get("kind") == "agent2d_region" for s in tp["debug_trace"]["spans"])
+    ph = [None] * n
+    for k, st in enumerate(lv):
+        en = lv[k + 1] if k + 1 < len(lv) else n
+        body = st
+        if sl:
+            inl = [e["move_start"] for e in ents if st <= e["move_start"] < wl[k]]
+            body = inl[1] if len(inl) > 1 else st
+        for m in range(st, en):
+            ph[m] = "perimeter" if m < body else ("body" if m < wl[k] else "waterline")
+    smp = [s for s in samples_of(simart_dir) if s["toolpath_id"] == tpid]
+    pos = np.array([s["position"] for s in smp])
+    dens, owner = [pos[:1]], [np.zeros(1, int)]
+    for k in range(1, len(pos)):
+        seg = pos[k] - pos[k - 1]
+        cnt = max(1, int(math.ceil(math.hypot(seg[0], seg[1]) / 0.1)))
+        f = (np.arange(1, cnt + 1) / cnt)[:, None]
+        dens.append(pos[k - 1] + f * seg)
+        owner.append(np.full(cnt, k))
+    dens = np.vstack(dens)
+    owner = np.concatenate(owner)
+    lat = np.arange(-3.0, 3.0 + 0.025, 0.05)
+    lx, ly = np.meshgrid(lat, lat)
+    disc = lx ** 2 + ly ** 2 <= 9.0
+    lx, ly = lx[disc], ly[disc]
+    cellsz = 9.0
+    bucket = {}
+    for i, (cx, cy) in enumerate(zip(np.floor(dens[:, 0] / cellsz).astype(int), np.floor(dens[:, 1] / cellsz).astype(int))):
+        bucket.setdefault((cx, cy), []).append(i)
+    bucket = {k: np.array(v) for k, v in bucket.items()}
+    acc = {"perimeter": 0.0, "body": 0.0, "waterline": 0.0, "unplaced": 0.0}
+    for k in range(1, len(smp)):
+        s = smp[k]
+        if not s["is_cutting"] or s["source_intent"] != "clearing_cut" or s["engagement"]["radial_woc_fraction"] <= 0.471:
+            continue
+        a, b = pos[k - 1, :2], pos[k, :2]
+        mid = (a + b) / 2
+        d = b - a
+        dl = max(math.hypot(d[0], d[1]), 1e-9)
+        nx, ny = -d[1] / dl, d[0] / dl
+        bx, by = int(math.floor(mid[0] / cellsz)), int(math.floor(mid[1] / cellsz))
+        idx = [bucket[(i, j)] for i in range(bx - 1, bx + 2) for j in range(by - 1, by + 2) if (i, j) in bucket]
+        pts = np.column_stack([mid[0] + lx, mid[1] + ly])
+        free = np.ones(len(pts), bool)
+        if idx:
+            idx = np.concatenate(idx)
+            idx = idx[(owner[idx] <= k - 1) & (dens[idx, 2] <= pos[k, 2] + 0.5)]
+            if len(idx):
+                dd, _ = cKDTree(dens[idx, :2]).query(pts, distance_upper_bound=3.0 + 1e-12)
+                free = ~(dd <= 3.0)
+        if not free.any():
+            continue
+        proj = lx[free] * nx + ly[free] * ny
+        if (proj.max() - proj.min()) / 6.0 > 0.471:
+            m = s["move_index"]
+            acc[(ph[m] if m < n else None) or "unplaced"] += math.hypot(d[0], d[1])
+    tot = sum(acc.values())
+    return {"total_mm": round(tot, 1), "perimeter": round(acc["perimeter"], 1) if sl else None,
+            "body": round(acc["body"], 1), "waterline": round(acc["waterline"], 1), "unplaced": round(acc["unplaced"], 1)}
+
+
 def main():
     spec = json.load(open(sys.argv[1]))
     for fx in spec["fixtures"]:
@@ -398,8 +481,13 @@ def main():
                 pr = producers_check(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
                 assert ga["producers"] == pr, (fx["name"], lab, ga["producers"], pr)
                 per = "—" if pr["perimeter"] is None else f"{pr['perimeter']:.0f}"
-                row += f"<td>{per} / {pr['body']:.0f} / {pr['waterline']:.0f} mm</td></tr>"
-                checks += 4
+                row += f"<td>{per} / {pr['body']:.0f} / {pr['waterline']:.0f} mm</td>"
+                th = thick_check(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
+                th["pct"] = round(100 * th["total_mm"] / ld["cut_mm"], 2)
+                assert ga["thick"] == th, (fx["name"], lab, ga["thick"], th)
+                tper = "—" if th["perimeter"] is None else f"{th['perimeter']:.0f}"
+                row += f"<td>{th['total_mm']:.0f} mm = {th['pct']:.2f}% ({tper} / {th['body']:.0f} / {th['waterline']:.0f} mm)</td></tr>"
+                checks += 4 + 6
                 assert row in page, (fx["name"], lab, row)
                 old = (f"<tr><td>{lab}</td><td>{sp['median']:.2f} mm</td>"
                        f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over 6 mm set apart)</td></tr>")
@@ -416,6 +504,8 @@ def main():
                            f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)"):
                 assert needle in page, (fx["name"], needle)
                 checks += 1
+    assert "counting only stock that stands at least one planner cell (0.5 mm) above the tool tip, so a full-width skim of a thin layer" in page
+    checks += 1
     # The C29 pick sentence (spec text): the generation times of '3D Rough 1'
     # (tp debug_trace), the scored plunges of plan A (the "C29 pick" log
     # lines) and the trace's plunges per level, re-derived here.
