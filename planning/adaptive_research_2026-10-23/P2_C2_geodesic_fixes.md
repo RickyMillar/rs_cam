@@ -3526,3 +3526,262 @@ Read in this order:
 - `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`.
 - New: `phase2/c23/*.py` (the evidence scripts).
 - This note.
+
+## C25 — zigzag turns lost to a lift and a plunge (2026-10-25)
+
+Status: DIAGNOSIS COMPLETE; NO CODE CHANGE (no cargo; no commit). Base
+31935b89. The fix is the C23 rule, which the 3D arm does not use yet. The
+change that applies it lies in C22's files, so it is a lead decision
+(below).
+
+Inputs: `phase3/fix2/turn_probe_output.txt` and D-FIX2 (`P15_D_verify.md`).
+In the one-level C12 test, `geodesic_local_zigzag` plans 46 turns and cuts
+27 as turns. For each of the 19 others, the turn's start is the target of a
+`Rapid` in the cleaned 2D plan, and 17 of the 19 start 11.27 to 12.01 mm
+from the island centre (the island of radius 5 grown by the 2R inset is
+r 11). The heavy test: 95 planned, 56 cut.
+
+### Which step drops them
+
+The candidates the lead named, in turn:
+
+- **The head-on rule (C23): no.** The 3D arm maps `geodesic_local_zigzag`
+  to `GeodesicOptions::C20_LOCAL_ZIGZAG` (`adaptive3d/mod.rs`,
+  `research_arm_override`; the C12 test lines 824 and 907). That preset has
+  `ends: ArcEnds::Default`, so the rule is off in every 3D run so far.
+- **The F-038 filter: no.** F-038 / F-038b in `adaptive3d/mod.rs` gate a
+  region by its forecast cut length and the keep-down link reach. The probe
+  sees the `Rapid` in the cleaned 2D plan of the slice, before any of that.
+- **The clip: no.** The turn's end is a cut point, and the turn is cut (as
+  the first step out of the plunge).
+- **The replay refusal: yes.** It is the C23 problem 2 mechanism, the
+  head-on arc end. A zigzag arc that ends square into the island (a circle
+  involute meets its base circle square) meets the lens of stock that the
+  arc one level before leaves at the wall (`arc_end_lens`, `(R + Δ/2)/2R`
+  head-on, over the ceiling for every Δ). The replay refuses the last 0.6
+  to 2.1 mm of the arc. The walker re-enters after the refused step, which
+  is the arc's end and so the zigzag turn's start. The turn is then the
+  first step out of a plunge: the 2D replay and the C20 3D departure rule
+  read it as a departure, not as a turn.
+
+**The same pattern in 2D, measured** (`phase2/c25/turnentry.py`: a turn
+whose start is an entry ring of the render, within 0.05 mm; the D14
+renders):
+
+| Column | Turns emitted | Entries | Turns that start at an entry | Where |
+|---|---|---|---|---|
+| pocket `geodesic_local_zigzag` | 59 | 44 | **20** | 19 on the grown island (13.03 to 13.56 mm from its centre, grown radius 13); 1 at the top wall of the far corner (head-on, C23 problem 1) |
+| pocket `geodesic_local_zigzag_headon` | 51 | 34 | 3 | the far corner (the split U arcs at the top wall) |
+| pocket `geodesic_local_zigzag_v2` | 53 | 26 | **0** | — |
+| star, all three | 45 | 38 | 0 | — |
+
+The C12 pocket has the same geometry: an island in a rectangle, the front
+round both sides, a meeting line behind. 17 of its 19 lost turns lie on the
+grown island, and the other 2 (24.7 and 27.7 mm out) match the 2D far-corner
+kind.
+
+### The fix
+
+- **The rule that removes the cause is `ArcEnds::HeadOn`, with the merged
+  meeting line: `GeodesicOptions::C23_ZIGZAG_V2`** (C23; KEEP at D14,
+  star 38 / pocket 26). Each arc starts at the end with the larger lens.
+  The counted turn cuts the lens there, at depth, under the turn rule
+  (length ≤ s + (1 + √2)·cell, feed reduced by the measured engagement).
+  The arc ends at the oblique wall, where the approach holds. Where the
+  step from the cutter does not fit, the zigzag join takes the keep-down
+  return through the band just cut and the turn from the arc's start: the
+  keep-down fallback the lead asked for.
+- **Why not a fix inside plain zigzag.** In plain zigzag the lens is
+  real stock between the accepted cut and the wall. A keep-down link from
+  the stop point to the turn start crosses it, and the replay refuses it,
+  as it should. A turn that leaves the arc before the wall leaves the lens
+  as residue (C23 §problem 2). An approach exemption would widen the
+  operator's turn ruling, so I do not build it.
+- **The change is one preset per place, in C22's files** (I do not edit
+  them; the lead decides):
+  - `adaptive3d/mod.rs`, `research_arm_override`: a new name, for example
+    `"geodesic_local_zigzag_v2" => Some(ClearingStrategy3d::Geodesic(GeodesicOptions::C23_ZIGZAG_V2))`.
+    Or map `geodesic_local_zigzag` to `C23_ZIGZAG_V2`, which changes the
+    meaning of that name.
+  - `tests/adaptive3d_geodesic_arm_c12.rs`: the same preset in the mode
+    lists at lines 824 and 907 (or a fifth mode).
+- **No change to `research_geodesic.rs`.** `C20_LOCAL_ZIGZAG` stays as it
+  is, so the 2D KEEP control `geodesic_local_zigzag` stays byte-identical.
+  The 2D `geodesic_local_zigzag_v2` (star 38 / pocket 26) does not change
+  at all. The rule reads the slice's own tool-centre region
+  (`geodesic_segments` builds it per call), so it applies in 3D slices with
+  no threading.
+
+### Predictions (NOT results; the run decides)
+
+For the C12 tests with the zigzag mode on `C23_ZIGZAG_V2`:
+
+- **One-level test:** the turns that start at a re-entry fall from 19 to
+  0 to 2 (2D pocket: 20 → 0). Planned turns 40 to 48 (the head-on lobes run
+  one-way, so some zigzag joins become return + turn; 2D pocket 59 → 53).
+  Cut turns = planned minus 0 to 2. Entries 68 → 45 to 58 (2D pocket
+  44 → 26). Keep-down length rises (the returns; 2D pocket 211 → 998 mm).
+  Unfed 0.
+- **Heavy test (two levels):** uncut 39 of 95 → 0 to 4. 0 over the
+  screen and the exact bound (the rule changes the order and the
+  orientation only; every step still goes through the replay).
+- **2D star and pocket:** no change (no code change): `zigzag_v2` 38 / 26,
+  and every other column byte-identical to D15.
+- **Risk:** the same as C23: a turn whose straight step touches the grown
+  island counts as `outside` and stays a link. The 2D v2 pocket had 0.
+
+### Commands for the verifier (after the lead's one-preset change)
+
+```text
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_geodesic_arm_c12 -- --nocapture
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_geodesic_arm_c12 -- --ignored --nocapture
+python3 planning/adaptive_research_2026-10-23/phase2/c25/turnentry.py pocket_geodesic_local_zigzag_v2 star_geodesic_local_zigzag_v2
+```
+
+Read the zigzag mode's turn line (planned, cut, fed, unfed), the entries,
+and the probe's `from=rapid_target` count if the probe runs again.
+
+### Files
+
+- New: `phase2/c25/turnentry.py` (reads the D14/D15 renders in the
+  worktree; it uses `phase2/c23/seq.py`).
+- This note.
+
+## C24 — tight pass spacing in 3D (Corne "3D Rough 1"): measured; no spacing fix (2026-10-25)
+
+Status: MEASURED. No Rust changed, no cargo, no commit. The cause is not
+in the `LocalLevel` code, so I built no fix (the lead's rule). Inputs: the
+D-FIX2 sim-artifact runs at 31935b89, `phase3/fix2/simart/corne/`
+(`program.nc`, `tp_1_3D_Rough_1.json`), read with the move mapping of
+`phase3/fix2/fixture3d_v2.py` (`load_op`). Scripts and their outputs:
+`phase3/c24/` (`load.py`, `rays.py`, `weighted.py`, `lengths.py`;
+`*_output.txt`). Each runs in seconds: `python3 weighted.py`, `python3
+rays.py geodesic_local_zigzag geodesic_local_oneway`, `python3 lengths.py`.
+
+### The premise is wrong: at s 1.2 the ceiling is lower, so ρ* is 25.4 mm, not 2.95 mm
+
+- The ceiling comes from the stepover (`PassLoad::swept_width`):
+  `c = (1 − cos(1.05·acos(1 − s/R)))/2`. At s 2 this is 0.3626, so
+  c·D = 2.1759 mm. At s 1.2 it is **c = 0.2189, c·D = 1.3132 mm**.
+- So `ρ* = s(2R − s)/(2(c·D − s))` = 1.2 × 4.8 / (2 × 0.1132) =
+  **25.45 mm**. The lead's 2.95 mm used the s 2 ceiling.
+- Inside 25.45 mm the law spaces the levels at `s'(ρ)`: 0.70 at ρ 3,
+  0.87 at 5, 1.05 at 10, 1.13 at 15, 1.17 at 20, 1.20 at 25. The 3D arm
+  builds its 2D params from the op stepover (`adaptive3d/clearing.rs`
+  `params_2d`), so the law applies as designed.
+- wanaka200 (s 2.0): ρ* = 22.7 mm, and its median 1.979 is the same
+  effect at a smaller scale.
+
+### The plan's own levels (Corne, Z 5.00, one slice piece, seed (51.05, 58.55))
+
+Method: the level sets are circles about the seed wherever the seed sees
+them (here, the whole piece). A wrap chord has both ends at one distance
+from the seed and a sagitta of at most 0.5 mm. The distances of these
+chords cluster into the levels (`weighted.py`).
+
+| Arm | Levels | Median step | Wrap-length-weighted median | Step − law: min / median / max |
+|---|---|---|---|---|
+| zigzag | 75 | 1.200 mm | 1.200 mm | −0.278 / −0.000 / 0.000 |
+| one-way | 76 | 1.200 mm | 1.200 mm | −0.278 / −0.000 / 0.000 |
+
+No step is over the law. The plan's median spacing is the stepover.
+
+### Counts per cause (74 steps, zigzag; one-way gives the same)
+
+| Cause (the lead's candidates and what I found) | Steps | Effect |
+|---|---|---|
+| At s (ρ ≥ ρ*) | 49 | none |
+| Inside ρ* = 25.45 mm, at the law (the law itself, at the s 1.2 ceiling) | 21 | steps 0.75 to 1.18 mm |
+| LocalLevel ΔT bisection (the lower end of a bracket ≤ the tolerance) | the same 21 | mean −0.050 mm under the law root (bracket 0.075 mm); 0 outside ρ*, where `ΔT = 1` holds at once |
+| 3-point ρ_local or a tight piece elsewhere on the level (the level's minimum read away from the arc) | 1 | the level at r 39.97: step 0.922 against the law's 1.200 (both arms) |
+| Reading noise of my clustering (it differs between the arms) | 1 + 2 or 3 | an under-step next to an over-step |
+| Per-slice-piece re-spacing | 0 | one piece holds all levels at Z 5.00 |
+| The 3D lift | 0 on spacing | XY is not moved; see the side finding on the RDP |
+
+With G-code alone I cannot tell whether the one coupled level (r 39.97)
+comes from a lattice misreading (`front_radius` takes a sample off the
+region as convex: the risk that C16 recorded) or from a truly tight piece
+of that level elsewhere in the slice. It is 1 level of 75.
+
+### Why the ray medians read 1.125 (zigzag) and 0.960 (one-way)
+
+The D-FIX2 rays start at the seed itself (the ring nearest the AgentSearch
+entry is the geodesic seed). So they over-sample the levels inside ρ*.
+The piece is only about 35 mm deep in three of the four directions.
+`rays.py` reproduces the D-FIX2 counts (179 and 216 gaps):
+
+- Zigzag: 105 of 179 gaps are inside ρ* (median 1.050, the law) and 74
+  are outside (median **1.200**). By kind: 131 are wrap-to-wrap at the
+  law. 25 involve a cut that is not a wrap: the starter helix gives the
+  0.09 mm minimum at t 2.85, and there are wall-pass and residue moves.
+  23 are wrap pairs that read ±0.13 to 0.20 mm around 1.2. Each pair sums
+  to 2.4 mm: the ray crosses one level mid-chord, where the chord lies
+  under the circle by its sagitta (see the RDP below).
+- One-way: 70 of 216 gaps involve a **straight move across the cut**.
+  Such a move has both ends on one level circle and a sagitta over
+  0.5 mm, for example (69.43, 94.05) → (88.10, 43.55): 53.8 mm, both
+  ends at r 39.97. These moves are fed moves through cleared stock.
+  The trace does not tag them as keep-down links, so the page reads
+  them as cuts. At Z 5.00 they are 1940 mm, or 22% of the one-way cut
+  length at that level. They are not passes, so they are not spacing.
+  They come from the C22/C23 return links, not from `LocalLevel`.
+
+### Where the cycle time goes (the first rough op, cut XY length, `lengths.py`)
+
+| Arm | Z 17 | Z 11 | Z 5 | Z 0.5 | Sum | Run total (both ops) |
+|---|---|---|---|---|---|---|
+| AgentSearch | 6646 | 2593 | 2603 | 2470 | 14312 mm | 2112 s |
+| geodesic zigzag | 13469 | 6571 | 6668 | 6608 | 33316 mm | 2745 s |
+| geodesic one-way | 16365 | 8774 | 8857 | 8765 | 42761 mm | 3068 s |
+
+- At Z 5.00 the zigzag wraps are 1804 mm inside ρ* and 3995 mm outside.
+  The other cuts are 869 mm.
+- The law adds about 2.2 levels inside ρ*: 20 levels from r 3 to 24.4,
+  against 17.8 at plain s. That is about 200 mm of 6668 mm at Z 5.00,
+  about 3%.
+- The gap to AgentSearch is the AgentSearch spacing, not the geodesic
+  spacing. AgentSearch spaces its passes at 2.55 mm, which is 2.1 times
+  its stepover of 1.2, and 20% of its cut length is over the bound
+  (D-FIX2). The geodesic arm spaces its passes at the stepover.
+
+### Proposed fix and predictions (NOT results)
+
+1. **Spacing: no change.** The plan is at the law. The spacing is not
+   too tight; the s 1.2 ceiling requires it. Predicted median level step:
+   **1.200 mm** (as measured). Predicted cycle time: **unchanged**,
+   2745 s (zigzag) and 3068 s (one-way).
+2. **Not recommended:** take the upper end of the bisection bracket. It
+   would put steps up to 0.075 mm over the rule. The gain is about 1
+   inner level per slice, under 1% of the cut length.
+3. **Not recommended:** plain s inside ρ*. Prediction: about −3% of the
+   wrap length at each level, which is about 2745 → 2700 s (−1.5%). It
+   breaks the ceiling inside ρ* by construction.
+4. **The page's measurement (the lead's call):**
+   - Measure the step between consecutive levels along the normal
+     (`weighted.py`), or weight the gaps by wrap length.
+   - Leave out the starter helix and moves that are not wraps.
+   - Read a one-way straight move across the cut as a link, not a pass.
+5. **The real lever is the op stepover** (an operator setting). The law
+   scales with it. Wider passes need a larger `s` (and then a higher
+   ceiling), not a change to the law.
+
+### Side findings (not mine to fix; for the lead)
+
+- **One-way straight moves across the cut:** 1940 mm per level at Z 5.00
+  (22% of that level's cut length) are fed through cleared stock. They
+  are probably most of the one-way runtime cost over zigzag (+323 s).
+  Owner: C22/C23 (the return links in 3D).
+- **The 3D RDP chords:** the 3D emission simplifies at
+  `cut_simplify_tolerance` = max(tolerance 0.1, `segment_merge_tolerance`
+  0.3) (`adaptive3d/mod.rs:259`). The wraps at r ≈ 60 come out as 7 to
+  12 mm chords with sagitta up to 0.29 mm. Example: (110.554, 78.550) →
+  (113.247, 67.050), 11.81 mm on r 62.78. Mid-chord, the next level then
+  meets up to s + 0.29 = 1.49 mm, against c·D = 1.313 mm. That is a load
+  matter (the C18 over-bound share), not a spacing matter. The planner
+  stamps the same chords (G-PLANSIMGAP).
+
+### Files (C24)
+
+- New: `phase3/c24/load.py`, `rays.py`, `weighted.py`, `lengths.py`, and
+  their `*_output.txt`.
+- This section. No Rust file changed.

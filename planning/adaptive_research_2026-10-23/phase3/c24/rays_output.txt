@@ -1,0 +1,18 @@
+geodesic_local_zigzag levels 72 step median 1.200 min 0.748 max 3.600
+  steps vs law: median dev -0.000 {'at the law (within the 0.075 bracket + 0.025 read)': 70, 'gap > s (a level missing in the slice or a lobe)': 1}
+  steps < s-0.1 (law inside rho*): 12 of 71
+  ray gaps n 179 median 1.125
+    131 wrap-wrap, at the law
+    25 involves a non-wrap cut (wall/residue/mop/turn/starter)
+    12 wrap-wrap, under the law
+    11 wrap-wrap, over s (skipped level)
+  ray gaps inside rho* 25.45: 105, median 1.050; outside: 74, median 1.200
+geodesic_local_oneway levels 70 step median 1.200 min 0.748 max 1.200
+  steps vs law: median dev -0.000 {'at the law (within the 0.075 bracket + 0.025 read)': 69}
+  steps < s-0.1 (law inside rho*): 12 of 69
+  ray gaps n 216 median 0.960
+    112 wrap-wrap, at the law
+    70 involves a straight move across the cut (both ends on one level, sagitta > 0.5 mm)
+    32 involves a non-wrap cut (wall/residue/mop/turn/starter)
+    2 wrap-wrap, under the law
+  ray gaps inside rho* 25.45: 108, median 1.050; outside: 108, median 0.850

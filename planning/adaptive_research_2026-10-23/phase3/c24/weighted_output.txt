@@ -1,0 +1,12 @@
+geodesic_local_zigzag levels 75 unweighted median 1.200 wrap-length-weighted median 1.200 steps under the law by >0.1: 1 steps < s-0.01: 23 of which inside rho* (law): 21
+  step minus law: min -0.278 median -0.000 max 0.000
+   off: r 39.97 step 0.922 law 1.200 len 102
+   off: r 86.77 step 1.104 law 1.200 len 31
+  inside rho*: n 21 mean step-law -0.0498
+  counts {'inside rho*, at the law': 21, 'at s': 49, 'under the law, outside the bracket': 2, 'over s+0.1 (reading: a level not found)': 2} total 74
+geodesic_local_oneway levels 76 unweighted median 1.200 wrap-length-weighted median 1.200 steps under the law by >0.1: 2 steps < s-0.01: 23 of which inside rho* (law): 21
+  step minus law: min -0.278 median -0.000 max 0.000
+   off: r 39.97 step 0.922 law 1.200 len 101
+   off: r 60.37 step 1.012 law 1.200 len 48
+  inside rho*: n 21 mean step-law -0.0498
+  counts {'inside rho*, at the law': 21, 'at s': 49, 'under the law, outside the bracket': 2, 'over s+0.1 (reading: a level not found)': 3} total 75

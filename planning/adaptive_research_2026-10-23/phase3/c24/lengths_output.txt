@@ -1,0 +1,8 @@
+agent cut xy by level {'Z 17.00': 6646, 'Z 11.00': 2593, 'Z 5.00': 2603, 'Z 0.50': 2470} all 14312
+geodesic_local_zigzag cut xy by level {'Z 17.00': 13469, 'Z 11.00': 6571, 'Z 5.00': 6668, 'Z 0.50': 6608} all 33316
+  Z5: {'other cut': 869, 'wrap inside rho*': 1804, 'wrap outside rho*': 3995}
+  inner levels 23 (0.00..24.40), plain spacing would give 17.8
+geodesic_local_oneway cut xy by level {'Z 17.00': 16365, 'Z 11.00': 8774, 'Z 5.00': 8857, 'Z 0.50': 8765} all 42761
+  Z5: {'other cut': 1087, 'wrap inside rho*': 1804, 'wrap outside rho*': 4026, 'straight move across the cut': 1940}
+  inner levels 23 (0.00..24.40), plain spacing would give 17.8
+rho* 25.44845437155232 cD 1.3131699378654376
