@@ -1,0 +1,39 @@
+Measurability:
+  NOT MEASURED  radial engagement on toolpath 3 — 83% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 13.000 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  air-cut % on toolpath 3 — 83% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 13.000 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  chip engagement on toolpath 3 — 83% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 13.000 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+
+Safety (2):
+  "3D Rough 1 (copy)": the rough leaves 1024 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1010 of them against a wall: 3449.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.87 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.5); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1014 more. 359 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1": the rough leaves 962 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 952 of them against a wall: 5103.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.3 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); 0.80 mm high, 0.30 mm wide, 0.1 mm2 at (82.2, -85.0); and 952 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Act on (1):
+  WARNING: high air cutting on '3D Rough 1' is 50% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  930.4s wasted around (114.6, -32.5, 2.7) — engagement 0.03
+  410.0s wasted around (69.9, -14.7, 4.0) — engagement 0.13
+  3.0s wasted around (104.1, -19.3, 8.2) — engagement 0.02
+  2.6s wasted around (104.1, -19.3, 8.2) — engagement 0.12
+  2.4s wasted around (73.9, -80.8, 5.7) — engagement 0.02
+  2.4s wasted around (87.8, -67.5, 6.7) — engagement 0.02
+  2.4s wasted around (105.8, -67.5, 6.7) — engagement 0.02
+  2.4s wasted around (122.3, -67.5, 6.7) — engagement 0.02
+  2.1s wasted around (73.9, -80.8, 6.8) — engagement 0.13
+  2.1s wasted around (62.0, -81.8, 11.6) — engagement 0.00
+  2.1s wasted around (62.0, -81.8, 6.8) — engagement 0.00
+  2.0s wasted around (145.7, -67.8, 18.9) — engagement 0.00
+  2.0s wasted around (6.9, -32.3, 18.9) — engagement 0.01
+  1.9s wasted around (24.8, -99.2, 8.2) — engagement 0.22
+  1.9s wasted around (18.9, -37.3, 6.8) — engagement 0.01
+  1.4s wasted around (24.8, -99.2, 10.4) — engagement 0.29
+  0.8s wasted around (24.8, -99.2, 13.3) — engagement 0.40
+  0.7s wasted around (62.3, -62.5, 2.3) — engagement 0.01
+  0.6s wasted around (35.3, -37.2, 2.3) — engagement 0.17
+  0.4s wasted around (69.8, -66.9, 2.3) — engagement 0.36
+  ... 1226 more not shown
+
+Counts: 278231 samples | 129221 flagged-air + 18287 flagged-low (per SAMPLE) | 19079 issue runs (COALESCED, the legacy "issue_count") | 1246 hotspots
+
+Error: Emit G-code: G-code export refused: a toolpath cuts into the model:
+Toolpath '3D Rough 1': The toolpath cuts into the model: 3 of 34016 sampled cutting positions go below the limit of the stock to leave (the model surface plus the leave, less the op tolerance). The deepest is 1.450 mm below that limit at X 55.935 Y -15.766: the tool tip is at Z 2.250, and the limit there is Z 3.700. The tip is 0.950 mm below the model surface less the op tolerance. A wall steeper than 45 degrees stands within the tool radius here, or no surface lies under the tool centre: the depths are the height of that wall above the tip, and the tool may touch only the side of the wall. Look at the move named here: a cut below the model surface is a planner defect, so report it. [Measured at generation on the emitted moves against the mesh of the toolpath model, tolerance 0.02 mm in Z; export refuses while this stands.]

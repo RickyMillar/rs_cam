@@ -55,6 +55,16 @@ def d2(a, b):
     return math.hypot(b[0] - a[0], b[1] - a[1])
 
 
+SIMART = {}   # run dir -> its simulation dir (from the spec)
+_SAMPLES = {}
+
+
+def samples_of(simart_dir):
+    if simart_dir not in _SAMPLES:
+        _SAMPLES[simart_dir] = json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]
+    return _SAMPLES[simart_dir]
+
+
 def derive_full(run_dir, tp_glob, comment):
     tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
     n = tp["move_count"]
@@ -93,11 +103,24 @@ def derive_full(run_dir, tp_glob, comment):
             lev[i] = nxt
         else:
             nxt = lev[i]
-    kind = ["rapid" if g == 0 else ("link" if i in link else "cut") for i, (g, a, b) in enumerate(mv)]
+    tpid = int(re.search(r"tp_(\d+)_", tp_glob).group(1))
+    first = {}
+    for sm in samples_of(SIMART[run_dir]):
+        if sm["toolpath_id"] == tpid:
+            first.setdefault(sm["move_index"], sm["source_intent"])
+    kind = []
+    for i, (g, a, b) in enumerate(mv):
+        if g == 0:
+            kind.append("rapid")
+        elif i in first:
+            kind.append("link" if first[i] == "linking" else "cut")
+        else:
+            kind.append("link" if i in link else "cut")
+    link = {i for i, k in enumerate(kind) if k == "link"}
     per_op = {
         "moves": n,
         "entries": sum(1 for e in top if "keep-down link" not in e["label"]),
-        "keepdown_links": sum(1 for e in top if "keep-down link" in e["label"]),
+        "keepdown_links": sum(1 for i, k in enumerate(kind) if k == "link" and (i == 0 or kind[i - 1] != "link")),
         "keepdown_mm": round(sum(d2(a, b) for (g, a, b), k in zip(mv, kind) if k == "link"), 1),
         "cut_xy_mm": round(sum(d2(a, b) for (g, a, b), k in zip(mv, kind) if k == "cut"), 1),
     }
@@ -159,11 +182,11 @@ def spacing_check(run_dir, tp_glob, comment, lab, centre):
 def load_check(simart_dir, tpid, cell):
     screen = 0.3626 + (0.5 + cell + 0.1) / 6.0
     prev, tot, o1, o2 = None, 0.0, 0.0, 0.0
-    for sm in json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]:
+    for sm in samples_of(simart_dir):
         p = sm["position"]
         ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
         prev = p
-        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["cut_kinematics"] == "linear":
+        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["cut_kinematics"] in ("linear", "arc"):
             r = sm["engagement"]["radial_woc_fraction"]
             tot += ln
             o1 += ln if r > 0.471 else 0.0
@@ -228,6 +251,9 @@ def normal_step_check(run_dir, tp_glob, comment, lab, centre, simart_dir, tpid):
 
 def main():
     spec = json.load(open(sys.argv[1]))
+    for fx in spec["fixtures"]:
+        for arm in fx["arms"]:
+            SIMART[arm["dir"]] = arm["simart"]
     got = json.load(open(os.path.join(HERE, "fixture3d_v2_numbers.json")))
     page = html.unescape(open(os.path.join(RES, "fixture3d_v2.html")).read())
     checks = 0

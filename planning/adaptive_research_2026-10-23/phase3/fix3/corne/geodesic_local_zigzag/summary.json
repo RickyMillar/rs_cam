@@ -1,0 +1,56 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 2,
+  "total_cutting_distance_mm": 60321.04819768414,
+  "total_rapid_distance_mm": 17999.188036496693,
+  "total_runtime_s": 2602.4220641314364,
+  "air_cut_pct_of_total_runtime": 59.932835900075574,
+  "air_cut_pct_of_cutting_time": 66.87028152726496,
+  "average_engagement": 0.15130042023473983,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 10953,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6034,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 59.932835900075574,
+    "headline": "WARNING: 59.9% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": "G-code export refused: a toolpath cuts into the model:\nToolpath '3D Rough 1': The toolpath cuts into the model: 3 of 34016 sampled cutting positions go below the limit of the stock to leave (the model surface plus the leave, less the op tolerance). The deepest is 1.450 mm below that limit at X 55.935 Y -15.766: the tool tip is at Z 2.250, and the limit there is Z 3.700. The tip is 0.950 mm below the model surface less the op tolerance. A wall steeper than 45 degrees stands within the tool radius here, or no surface lies under the tool centre: the depths are the height of that wall above the tip, and the tool may touch only the side of the wall. Look at the move named here: a cut below the model surface is a planner defect, so report it. [Measured at generation on the emitted moves against the mesh of the toolpath model, tolerance 0.02 mm in Z; export refuses while this stands.]",
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

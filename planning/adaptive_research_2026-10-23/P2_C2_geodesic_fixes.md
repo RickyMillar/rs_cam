@@ -4047,3 +4047,71 @@ is one of the two per piece). Risk (the lead's check): the 3D entries
 include F-038's dropped groups and the lift's air-run entries, which the
 2D count does not see. The `info` lines give the 2D counts per piece to
 compare with the trace's entry spans per level.
+
+### C28 built (2026-10-25; base 6ce373922; no cargo, no commit)
+
+`rustfmt --edition 2024 --check` is green on the four files.
+
+- `crates/rs_cam_core/src/adaptive/research_geodesic.rs`:
+  - `ArcPick { Off, Replay }`, `GeodesicOptions::pick` (G1 and C2 set
+    `Off`), the preset `C28_ZIGZAG_PICK`, and
+    `GeodesicOptions::pick_variants` (plan A, plan B).
+    `C23_ZIGZAG_V2` is unchanged.
+  - `ArcReport::pick: Option<PickRecord>`, `PickRecord`, `PickKept`,
+    `pick_score` (the `Rapid` count and the `Link` length of a cleaned
+    plan), `pick_kept` (fewer re-entries, then less keep-down, then A).
+  - `geodesic_segments` is the dispatcher (the same signature). With the
+    pick off it calls `plan_piece`, the old body under a new name. With
+    `Replay` it plans A and B, cleans both with `cleaned(..,
+    ReplayMeasure::SweptWidth, turns)`, keeps one, writes the record, and
+    logs one `tracing::info!` per piece ("C28 pick: ...": `bbox`,
+    `entries_a`, `keep_down_a_mm`, `entries_b`, `keep_down_b_mm`, `kept`).
+  - Unit test `the_pick_keeps_the_plan_the_replay_re_enters_less` (the
+    island pocket): the two variants are `C20_LOCAL_ZIGZAG` and
+    `C23_ZIGZAG_V2`; the record equals the two cleaned scores; the kept
+    plan's segments and turns equal that variant's; and three
+    `pick_kept` cases (a tie keeps A; less keep-down keeps B; fewer
+    entries win over keep-down).
+- `crates/rs_cam_core/tests/adaptive_geodesic_2d_renders_g1.rs`: the column
+  `geodesic_local_zigzag_pick`, the module doc, and in `c16_text` the line
+  `pick piece i: zigzag re-entries N (keep-down X mm), zigzag_v2
+  re-entries M (keep-down Y mm); kept <variant>` (only when the pick is
+  set).
+- `crates/rs_cam_core/src/adaptive3d/mod.rs`: the arm name
+  `geodesic_local_zigzag_pick` in `research_arm_override`, and its doc.
+- `crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs`: the mode in
+  the plain test `the_geodesic_arm_feeds_its_turns_down_at_the_level`, and
+  its doc.
+
+Byte parity: every existing preset has `pick: Off`, so `geodesic_segments`
+calls `plan_piece`, the old body, unchanged. Every earlier render, `.txt`
+and `.c16.txt` must stay byte-identical (`summary.txt` gains the new
+blocks). The pick column's plan per piece equals one of the two existing
+columns' plans.
+
+### Commands for the verifier (C28)
+
+From the worktree, through the lane script, each with a `timeout`. Copy the
+render dir first for the byte compare.
+
+```text
+timeout 600 scripts/cargo_lane.sh fmt --all -- --check
+timeout 1800 scripts/cargo_lane.sh check -p rs_cam_core --all-targets --features research,test-support
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --lib research_geodesic
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_emission_byte_parity
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support -q --test adaptive3d_geodesic_arm_c12 -- --nocapture
+timeout 1800 scripts/cargo_lane.sh test -p rs_cam_core --features research,test-support --release \
+    --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets -- -D warnings
+timeout 1800 scripts/cargo_lane.sh clippy -p rs_cam_core --all-targets --features research,test-support -- -D warnings
+```
+
+Read: the byte compare; the `pick piece` lines (star: kept zigzag, a tie;
+pocket: kept zigzag_v2); the pick column's `.txt` against
+`geodesic_local_zigzag` (star) and `geodesic_local_zigzag_v2` (pocket),
+equal except the column name; the plain C12 test's pick line (kept
+zigzag_v2, 48 entries). For the Corne fixture run with the arm
+`geodesic_local_zigzag_pick`, the `C28 pick` lines in `stdout.txt` give
+the 2D re-entries per slice piece, to compare with the trace's entry spans
+per level.

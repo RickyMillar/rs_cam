@@ -603,3 +603,85 @@ The §6 list. The changed lines are the C12 test (plain and `--ignored`),
 byte parity both ways, the 13 adaptive3d sentries, and both clippy
 configs. Also run `adaptive3d_plan_matches_merged_path_g_plansimgap`:
 the emitter and the planner now read `emission_chord_tolerance`.
+
+## 10b. C26b: the gouge at Corne X 55.935 Y -15.766 is a held link (2026-10-25)
+
+D16c (`phase3/fix3/corne/`, at 6ce373922) refused the export of
+`geodesic_local_zigzag` and `geodesic_local_zigzag_v2`. The deepest point
+is 1.450 mm below the leave at X 55.935 Y -15.766: the tip is at Z 2.250
+and the limit is Z 3.700. At 4cceca914 the export was clean.
+
+### The move (from the sim samples in `simulation.json`, zigzag_v2)
+
+| Move | From → to | What it is |
+|---|---|---|
+| 9772–9774 | a curve at Z 4.0 to (55.51, -15.84) | a cut |
+| 9775–9777 | rise to Z 4.5, traverse to (54.868, -15.7655), plunge to Z 0.5 | the shipped F-038b keep-down entry (trace item 814, "Pass 806 keep-down link", moves 9775–9777) |
+| **9778** | (54.868, -15.7655, **0.5**) → (≈56.97, -15.7655, **≈4.0**) | **the gouge**: one straight move that climbs 3.5 mm over 2.1 mm. At x 55.935 it is at Z 2.25 (the sample line gives z = 0.5 + 1.64·(x − 54.868)) |
+| 9779–9780 | (56.97 → 61.27, -15.7655) at Z 4.0 | collinear moves of 2.13 mm each |
+
+Moves 9778–9780 are three equal steps of 2.13 mm on one straight line at
+the constant y of the entry, with no RDP merge of the collinear 9779/9780.
+That is the drape of a two-point 3D `Link` (`drape_path_to_leave` at ≤ R:
+6.4 mm in 3 steps). A cut would have been RDP-merged. So it is **a C26
+held link**: a 2D `Link` from the entry point to (61.27, -15.7655), which
+C26 emitted as one `Adaptive3dSegment::Link`. The level is Z 0.5, and the
+link crosses terrain whose surface plus leave is Z 4.0. Under C22 the same
+link was a cut lifted at the planner cell. The lift's large-Z split
+(slope 3.5 / 0.5 > `PLUNGE_SLOPE_LIMIT` 0.3) put a rapid at the wall, so
+the toolpath retracted there. C26 removed that split for links. The
+lead's suspicion is right.
+
+### A real cut, not a side-of-wall reading
+
+- At the move start (x 54.868) the tool stood at Z 0.5 within the limit.
+- At x 55.935 the drop-cutter limit is Z 3.7. So within 1.07 mm of travel
+  the model under the tool disc rose by more than 3 mm. The disc, at tip
+  Z 2.25, reaches into that higher material by up to the 1.07 mm the
+  centre moved toward it.
+- The flat bottom of the end mill is below the material inside the disc:
+  the cutter body overlaps the model.
+- It is not only a side contact at exactly R: the move starts where the
+  wall is outside the disc and drives the disc into it while it climbs.
+
+### The fix (C26b; `clearing.rs` `clear_one_region`, and `HeldLinks` in the C12 block)
+
+- `HeldLinks::next` now returns, for a held link, the path from the
+  cutter position to the link end, subdivided at the planner cell.
+  `HeldLinks` holds the cell again (`HeldLinks::new(params)`).
+- `clear_one_region` lifts every point of that path (`lift`, the one
+  level floor `level_floor_z`).
+  - **All points at the level** (`p.z <= z_level`): one
+    `Adaptive3dSegment::Link` to the lifted end, tagged `Linking`, as in
+    C26. This keeps the tag for every link that stays down.
+  - **Any point above the level** (the link crosses terrain): the C22
+    path. It goes out as a `Cut` held at depth (`engaged.fill(true)` is
+    back, under `held`). So the lift's large-Z split retracts it at the
+    wall, as at 4cceca914. These moves are `ClearingCut` (untagged), and
+    only such wall-crossing links take this path.
+- Shipped arms: `held_links` is `None` and `held` is `false`, so the
+  emission is byte-identical, as in C22.
+
+### Predictions (P)
+
+- Corne zigzag and zigzag_v2: the export is clean. The refused move
+  becomes the C22 path (a retract at the wall), which exported cleanly at
+  4cceca914. One-way: still clean.
+- The link tag: most held links stay down, so most of the 1940 mm (Z 5.00
+  one-way) stays tagged `Linking`. Only links that cross terrain above
+  their level go back to `ClearingCut`.
+- Heavy C12 test: unchanged from C26. On the pocket every link's lifted
+  points are at the level (a flat floor; the 2D region is inset 2R from
+  the walls), so every held link stays a `Link`. 0 over holds.
+- Byte parity green (shipped paths unchanged).
+- Residual risk: a link whose lifted points read the level from the
+  heightmap but where the emitter's exact drop-cutter drape rises between
+  samples. That drape then lifts the link, as it lifts every 3D keep-down
+  link; the guard measures it.
+
+### Files
+
+`crates/rs_cam_core/src/adaptive3d/clearing.rs` and
+`crates/rs_cam_core/src/adaptive/research_geodesic.rs` (the `HeldLinks`
+item in the C12 block only; C23's uncommitted C28 edits are not touched).
+No cargo, no commit; rustfmt is green.

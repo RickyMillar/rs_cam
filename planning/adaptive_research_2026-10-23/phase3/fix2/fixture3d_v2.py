@@ -109,7 +109,27 @@ def top_level(spans):
     return out
 
 
-def load_op(run_dir, tp_glob, op_comment):
+_SIM = {}
+
+
+def sim_samples(simart_dir):
+    """The samples of one run's simulation.json, loaded once."""
+    if simart_dir not in _SIM:
+        _SIM[simart_dir] = json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]
+    return _SIM[simart_dir]
+
+
+def move_intents(simart_dir, toolpath_id):
+    """The source intent of each move index of one toolpath: the intent of
+    its first simulation sample."""
+    out = {}
+    for sm in sim_samples(simart_dir):
+        if sm["toolpath_id"] == toolpath_id and sm["move_index"] not in out:
+            out[sm["move_index"]] = sm["source_intent"]
+    return out
+
+
+def load_op(run_dir, tp_glob, op_comment, simart_dir):
     tpf = sorted(glob.glob(os.path.join(run_dir, tp_glob)))
     if len(tpf) != 1:
         raise SystemExit(f"{run_dir}: {tp_glob} matches {tpf}")
@@ -142,6 +162,15 @@ def load_op(run_dir, tp_glob, op_comment):
                 cls[i] = "link"
         if not link and last_g0 is not None:
             rings.append((last_g0, gm[last_g0][2]))
+    # Link tags from the per-move intent (C26 emits held links as Linking
+    # moves; the trace has no span for them): a fed move whose sample intent
+    # is "linking" is a link, any other fed move with a sample is a cut; a
+    # move with no sample keeps the class of the trace spans above.
+    tpid = int(re.search(r"tp_(\d+)_", tp_glob).group(1))
+    intents = move_intents(simart_dir, tpid)
+    for i, (g, a, b) in enumerate(gm):
+        if g != 0 and i in intents:
+            cls[i] = "link" if intents[i] == "linking" else "cut"
     for i, (g, a, b) in enumerate(gm):
         if g == 0:
             cls[i] = "rapid"
@@ -186,7 +215,7 @@ def op_numbers(d):
     return {
         "moves": len(gm),
         "entries": d["entries_plunge"],
-        "keepdown_links": d["entries_keepdown"],
+        "keepdown_links": sum(1 for i, c in enumerate(cls) if c == "link" and (i == 0 or cls[i - 1] != "link")),
         "keepdown_mm": round(sum(xy(a, b) for (g, a, b), c in zip(gm, cls) if c == "link"), 1),
         "cut_xy_mm": round(sum(xy(a, b) for (g, a, b), c in zip(gm, cls) if c == "cut"), 1),
     }
@@ -273,15 +302,15 @@ def load_share(simart_dir, toolpath_id, sim_cell, tol=0.1, planner_cell=0.5, d=T
     reads over C18's exact bound (0.471) and over C18's screen for the run's
     sim cell (ceiling + (planner cell + sim cell + tolerance)/D). Cut length:
     the XY distance from the previous sample, summed over the cutting samples
-    with linear kinematics (plunge, helix and ramp samples left out)."""
+    with linear or arc kinematics (plunge, helix and ramp samples left out)."""
     screen = C18_CEILING + (planner_cell + sim_cell + tol) / d
-    smp = json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]
+    smp = sim_samples(simart_dir)
     prev, tot, o1, o2 = None, 0.0, 0.0, 0.0
     for sm in smp:
         p = sm["position"]
         ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
         prev = p
-        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["cut_kinematics"] != "linear":
+        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["cut_kinematics"] not in ("linear", "arc"):
             continue
         r = sm["engagement"]["radial_woc_fraction"]
         tot += ln
@@ -308,7 +337,7 @@ def main():
     for fx in spec["fixtures"]:
         arms = [a for a in fx["arms"] if os.path.exists(os.path.join(a["dir"], "summary.json"))]
         missing = [a for a in fx["arms"] if a not in arms]
-        ops = {a["label"]: [load_op(a["dir"], o["tp_glob"], o["comment"]) for o in fx["ops"]] for a in arms}
+        ops = {a["label"]: [load_op(a["dir"], o["tp_glob"], o["comment"], a["simart"]) for o in fx["ops"]] for a in arms}
         img_op = 0
         common = None
         for a in arms:
@@ -426,8 +455,8 @@ def main():
                 f'A pass is a cut move of the level that the closing simulation reads over one sim cell / D (so a straight move across the cut, '
                 f'which runs through cleared stock, is not a pass); moves within R + 0.05 mm of the starter centre '
                 f'({fxn["centre"][0]}, {fxn["centre"][1]}) are left out (the starter helix); a step over one tool diameter is set apart. '
-                f'Load: the closing simulation of the --sim-artifact run (byte-equal program.nc), the radial width of cut of each linear cutting '
-                f'sample, weighted by its XY length. 0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); '
+                f'Load: the closing simulation of the --sim-artifact run (byte-equal program.nc), the radial width of cut of each fed cutting sample with linear or arc kinematics (plunge, helix and ramp left out), each '
+                f'weighted by its XY length. 0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); '
                 f'at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. The screen adds the sim cell '
                 f'(Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>'
                 f'<details><summary>The first measure (4 rays from the seed), kept for reference</summary>'

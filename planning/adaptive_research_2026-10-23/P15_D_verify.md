@@ -2972,3 +2972,165 @@ length than zigzag, and the cycle time rises by 209 s.
 The assert script `phase3/fix2/assert_fixture3d_v2.py` re-derives the
 normal step with its own code: "all 351 checks hold". An injected wrong
 v2 cycle time was caught; the page was restored.
+
+## D16c at 4cceca914 + uncommitted C26 (G-RDPLOAD chord cap; held links as Link)
+
+C26 (P3_C22_3d_turns.md §10) changes two things in the research arm:
+- The chord tolerance is capped at the load margin c·D − s: 0.1132 mm
+  on Corne instead of 0.3, and unchanged at 0.1 in the C12 test.
+- The held return links are emitted as `Adaptive3dSegment::Link`
+  (tagged Linking).
+
+The gates ran in the lead's order, through the lane script with a
+`timeout`, in adaptive-head. The diff did not change during the run.
+Disk: 86 GB.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `adaptive3d_emission_byte_parity`, plain and research | green 5/5, 5/5 |
+| 2 | `adaptive3d_plan_matches_merged_path_g_plansimgap` + the 12 other adaptive3d sentries | green, all 13 (plansimgap 2/2) |
+| 3 | the plain C12 test | green 1/1 |
+| 3 | the heavy C12 test, `--ignored` | green 1/1, 946.09 s; output in `phase2/d16c_c12_test_output.txt` |
+| 4 | `fmt --all -- --check`, research clippy | green, green |
+
+The turn counts equal D16a (plain) and D16b (heavy) in every mode:
+- Plain: oneway 42/42/0, zigzag 46/27/19, zigzag_v2 46/46/0.
+- Heavy: oneway 86/86/0, zigzag 95/56/39, zigzag_v2 92/91/1.
+- Every mode: fed = cut, unfed 0.
+
+Every geodesic mode reads 0 over the screen and 0 over the exact bound.
+The entry samples are unchanged. Moves and judged samples rise slightly,
+and departing samples fall, as expected now that held links are `Link`s.
+The heavy test, D16b → D16c:
+
+| Mode | Moves | Judged | Departing |
+|---|---|---|---|
+| geodesic_curv | 2169 → 2298 | 2964 → 3099 | 4978 → 4689 |
+| geodesic_local_zigzag_v2 | 4651 → 4719 | 7020 → 7043 | 1903 → 1624 |
+
+The AgentSearch control is identical to D16b.
+
+**Doc nit (the lead's, recorded; it does not block).** §10 and the doc of
+`Adaptive3dParams::emission_chord_tolerance` say the model gouge guard
+"stays safe" because it reads the uncapped `chord_tolerance`. The
+opposite holds: the uncapped value is the larger tolerance, so the guard
+is MORE lenient than the emitted path needs. On Corne the difference is
+0.3 − 0.1132 = 0.187 mm.
+
+### D16c addendum: the Corne re-runs at 6ce373922 (C26 committed)
+
+The fixture worktree moved to 6ce373922 (clean). The release CLI with
+research was rebuilt (17:43:35). Script `phase3/fix3/run_fix3.sh`: the
+D-FIX2 flags plus `--sim-artifact`, `timeout 900`. Outputs in
+`phase3/fix3/corne/<arm>/`.
+
+| Arm | rc | Time | Result |
+|---|---|---|---|
+| geodesic_local_zigzag | **1** | 10 s | export REFUSED: the toolpath cuts into the model |
+| geodesic_local_zigzag_v2 | **1** | 10 s | export REFUSED: the same point |
+| geodesic_local_oneway | 0 | 10 s | cycle 2823 s (was 3068), cutting 70128 mm |
+
+The refusal (zigzag; zigzag_v2 reads "1 of 40288"):
+
+> Toolpath '3D Rough 1': The toolpath cuts into the model: 3 of 34016
+> sampled cutting positions go below the limit of the stock to leave (the
+> model surface plus the leave, less the op tolerance). The deepest is
+> 1.450 mm below that limit at X 55.935 Y -15.766: the tool tip is at Z
+> 2.250, and the limit there is Z 3.700. The tip is 0.950 mm below the
+> model surface less the op tolerance. A wall steeper than 45 degrees
+> stands within the tool radius here, or no surface lies under the tool
+> centre: the depths are the height of that wall above the tip, and the
+> tool may touch only the side of the wall. Look at the move named here: a
+> cut below the model surface is a planner defect, so report it.
+
+At 4cceca914, zigzag_v2 exported cleanly with the same file and flags.
+So C26 brings this in. The guard's text allows a side-of-wall reading;
+it is not classified.
+
+**C22's prediction 1: the over-0.471 share.** Measured on "3D Rough 1",
+over all fed linear and arc cutting samples (plunge, helix and ramp left
+out), length-weighted. The runs wrote `simulation.json` before the export
+refusal.
+
+| Arm | Before C26 | After C26 | Over-bound length |
+|---|---|---|---|
+| zigzag | 4.59% | 4.15% | 1521 → 1376 mm |
+| zigzag_v2 | 3.66% | 3.31% | 1524 → 1378 mm |
+| oneway | 3.48% | 3.13% | 1520 → 1373 mm |
+
+The prediction (zigzag about 1.5 to 3%) is NOT met. The over-bound
+length falls about 10%. The linking samples read 0 over in every arm.
+
+**C22's prediction 2: link spans for the straight returns.**
+- The links show as move intent. The `linking` length of the sim samples
+  (linear plus arc) rises: zigzag 1894 → 2445 mm, zigzag_v2 2293 →
+  11079 mm, oneway 2858 → 13177 mm.
+- `semantic_trace.items` has no new kind: the same "Pass N keep-down
+  link" entry spans, fewer of them (1035 → 1012, 1271 → 939,
+  1324 → 928).
+
+**A correction to fixture3d_v2.html (not yet applied).**
+- The page's load rule counted `linear` kinematics only. The emitter
+  also fits arcs: before C26, about 8 to 9 m of the zigzag_v2 and
+  one-way cut were arcs.
+- So the page's shares for zigzag_v2 (4.53%) and oneway (4.39%) are too
+  high. Over linear plus arc they are 3.66% and 3.48%. For zigzag the
+  difference is small (4.60 against 4.59%).
+- The rule must count every fed cutting sample except plunge, helix and
+  ramp.
+- The page's link tags must read the move intent rather than the trace
+  spans.
+
+### D16c-fix3: RED for the fixtures (the lead's ruling)
+
+C26 (6ce373922) stays committed on the research branch. It is RED for the
+fixtures: on Corne, the export of both zigzag arms is refused (the gouge
+above). C22 is finding the move at X 55.935 Y -15.766. D17 (C28) is held
+until one combined brief comes.
+
+**The page update** (`fixture3d_v2.html`; the lead's answers (a) and (b)):
+- **The zigzag arms at 6ce373922 stay off the page.** The zigzag and
+  zigzag_v2 columns stay at 31935b89 and 4cceca914. One sentence on the
+  page says C26 broke their export.
+- **The new column** "geodesic_local_oneway (C26)" at 6ce373922
+  (`phase3/fix3/corne/geodesic_local_oneway`).
+- **The load rule for EVERY column:** every fed cutting sample with
+  linear or arc kinematics (plunge, helix and ramp left out). One sentence
+  states the correction of the earlier linear-only shares.
+- **Link tags:** from the per-move intent (the `source_intent` of the
+  move's first sample in `simulation.json`). A move with no sample keeps
+  its trace-span tag. A keep-down link count is a run of consecutive link
+  moves. On every pre-C26 run the intent tags give the same keep-down
+  counts as the old span tags.
+- **Asserts:** `assert_fixture3d_v2.py` reads the intents and the load
+  rule with its own code: "all 402 checks hold". One injected wrong number
+  (the C26 one-way keep-down length) was caught; the page was restored.
+
+| Corne column | Commit | Over 0.471 (was, linear-only) | Over the screen | Cycle time | Entries, 3D Rough 1 | Keep-down, 3D Rough 1 | Normal step |
+|---|---|---|---|---|---|---|---|
+| AgentSearch | cdc9814e | 20.19% (20.19%) | 18.08% | 2112 s | 48 | 136, 741 mm | 2.68 mm |
+| geodesic_local_zigzag | 31935b89 | 4.59% (4.60%) | 4.32% | 2745 s | 56 | 1035, 2026 mm | 1.166 mm |
+| geodesic_local_oneway | 31935b89 | 3.48% (4.39%) | 3.28% | 3068 s | 91 | 1324, 3021 mm | 1.200 mm |
+| geodesic_local_zigzag_v2 | 4cceca914 | 3.66% (4.53%) | 3.44% | 2954 s | 67 | 1271, 2450 mm | 1.200 mm |
+| geodesic_local_oneway (C26) | 6ce373922 | 3.13% | 2.92% | 2823 s | 91 | 1156, 13477 mm | 1.131 mm |
+
+wanaka200 under the corrected rule: AgentSearch 44.78% (screen 11.83%),
+zigzag and zigzag_v2 3.59% (screen 3.56%).
+
+**The remaining load (no new diagnosis; candidates only).** The C26
+tolerance cap cut the over length by only about 10% (zigzag 1521 →
+1376 mm), so the remaining ~4% over 0.471 has another cause. Top
+candidates from the C26 sim of "3D Rough 1":
+1. **A producer shared by both arms.** zigzag and one-way have the same
+   over length (1376 against 1373 mm) and the same top cells. The
+   candidate is the shipped perimeter sweep and waterline cleanup. The
+   page counts them; the C18 test leaves them out.
+2. **The levels.** Z 11 and Z 5 hold 750 of the 1376 mm (55%), and
+   Z 17 holds 219 mm.
+3. **Moves between level planes.** Z 4.0 and Z 18.3, draped moves, hold
+   337 mm (24%).
+4. **The place.** It is spread: no 10 mm cell holds more than 17 mm; the
+   top cells are the strip y −20 to −10 at x 120 to 140 and at x 20 to 30.
+5. **The producer tag.** The trace tags every over sample with the
+   operation item only (intent clearing_cut, never linking), so it cannot
+   name the producer more finely.

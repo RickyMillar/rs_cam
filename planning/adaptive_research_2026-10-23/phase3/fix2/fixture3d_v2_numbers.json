@@ -1,6 +1,6 @@
 {
  "binary": "/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli",
- "binary_mtime": "2026-10-25T17:11:57",
+ "binary_mtime": "2026-10-25T17:43:35",
  "fixtures": {
   "corne": {
    "levels_shown": [
@@ -77,10 +77,10 @@
       "p90": 4.781
      },
      "load": {
-      "cut_mm": 13688.0,
+      "cut_mm": 13768.6,
       "over_exact_pct": 20.19,
       "screen": 0.5126,
-      "over_screen_pct": 18.1
+      "over_screen_pct": 18.08
      }
     },
     "geodesic_local_zigzag": {
@@ -150,8 +150,8 @@
       "p90": 1.42
      },
      "load": {
-      "cut_mm": 33087.9,
-      "over_exact_pct": 4.6,
+      "cut_mm": 33139.5,
+      "over_exact_pct": 4.59,
       "screen": 0.5126,
       "over_screen_pct": 4.32
      }
@@ -223,10 +223,10 @@
       "p90": 1.331
      },
      "load": {
-      "cut_mm": 34607.4,
-      "over_exact_pct": 4.39,
+      "cut_mm": 43614.2,
+      "over_exact_pct": 3.48,
       "screen": 0.5126,
-      "over_screen_pct": 4.13
+      "over_screen_pct": 3.28
      }
     },
     "geodesic_local_zigzag_v2": {
@@ -296,10 +296,83 @@
       "p90": 1.352
      },
      "load": {
-      "cut_mm": 33606.6,
-      "over_exact_pct": 4.53,
+      "cut_mm": 41641.7,
+      "over_exact_pct": 3.66,
       "screen": 0.5126,
-      "over_screen_pct": 4.27
+      "over_screen_pct": 3.44
+     }
+    },
+    "geodesic_local_oneway (C26)": {
+     "commit": "6ce373922",
+     "cycle_time_s": 2823,
+     "cutting_mm": 70128,
+     "rapid_mm": 21317,
+     "air_cut_pct": 61.5,
+     "collisions": 0,
+     "rapid_collisions": 0,
+     "sim_resolution": {
+      "mm": 0.3,
+      "mode": "auto",
+      "source": "project",
+      "project_mm": 0.3
+     },
+     "ops": {
+      "3D Rough 1": {
+       "moves": 11925,
+       "entries": 91,
+       "keepdown_links": 1156,
+       "keepdown_mm": 13476.7,
+       "cut_xy_mm": 29301.4
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 6034,
+       "entries": 176,
+       "keepdown_links": 0,
+       "keepdown_mm": 0,
+       "cut_xy_mm": 7060.3
+      }
+     },
+     "images": {
+      "Z 17.00": {
+       "entries": 23,
+       "keepdown_mm": 5508.7,
+       "cut_mm": 11564.0
+      },
+      "Z 5.00": {
+       "entries": 13,
+       "keepdown_mm": 2735.8,
+       "cut_mm": 5718.4
+      },
+      "Z 0.50": {
+       "entries": 42,
+       "keepdown_mm": 2503.2,
+       "cut_mm": 6183.5
+      }
+     },
+     "findings": [
+      "\"3D Rough 1 (copy)\": the rough leaves 1022 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1010 of them against a wall: 3449.9 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.98 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1012 more. 360 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 976 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 966 of them against a wall: 5101.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.3 mm2 at (28.8, -16.6); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); and 966 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "WARNING: high air cutting on '3D Rough 1' is 54% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+     ],
+     "spacing": {
+      "n": 159,
+      "apart": 4,
+      "median": 1.124,
+      "min": 0.051,
+      "max": 5.024
+     },
+     "normal_step": {
+      "n": 1800,
+      "apart": 226,
+      "median": 1.131,
+      "p10": 0.591,
+      "p90": 2.385
+     },
+     "load": {
+      "cut_mm": 43801.1,
+      "over_exact_pct": 3.13,
+      "screen": 0.5126,
+      "over_screen_pct": 2.92
      }
     }
    },
@@ -374,10 +447,10 @@
       "p90": 4.49
      },
      "load": {
-      "cut_mm": 23576.5,
-      "over_exact_pct": 44.81,
+      "cut_mm": 23635.5,
+      "over_exact_pct": 44.78,
       "screen": 0.6293,
-      "over_screen_pct": 11.84
+      "over_screen_pct": 11.83
      }
     },
     "geodesic_local_zigzag": {
@@ -439,10 +512,10 @@
       "p90": 3.852
      },
      "load": {
-      "cut_mm": 44735.1,
+      "cut_mm": 44745.5,
       "over_exact_pct": 3.59,
       "screen": 0.6293,
-      "over_screen_pct": 3.57
+      "over_screen_pct": 3.56
      }
     },
     "geodesic_local_zigzag_v2": {
@@ -504,10 +577,10 @@
       "p90": 3.852
      },
      "load": {
-      "cut_mm": 44735.1,
+      "cut_mm": 44745.5,
       "over_exact_pct": 3.59,
       "screen": 0.6293,
-      "over_screen_pct": 3.57
+      "over_screen_pct": 3.56
      }
     }
    },
