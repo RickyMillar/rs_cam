@@ -1,0 +1,16 @@
+75:pub const ADVISORY_CAP_PER_TOOLPATH: usize = 10;
+d18 edit:  1 file changed, 1 insertion(+), 1 deletion(-)
+d18 build rc=0
+d18 run rc=0 11s
+d18 program.nc byte-equal to /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix5/corne/geodesic_local_zigzag_pick
+d18 reverted: []
+75:pub const ADVISORY_CAP_PER_TOOLPATH: usize = 10;
+d20 edit:  1 file changed, 1 insertion(+), 1 deletion(-)
+d20 build rc=0
+d20 run rc=0 12s
+d20 program.nc byte-equal to /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/corne/geodesic_local_zigzag_pick
+d20 reverted: []
+clean rebuild rc=0 at b37cad1a4
+git status --short: []
+0.1.0b37cad1a4
+D20BDONE

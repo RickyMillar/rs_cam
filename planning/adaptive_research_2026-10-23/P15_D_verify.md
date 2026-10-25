@@ -3692,3 +3692,140 @@ split print 4 and 2 attribution samples: holds.
 
 **Verdict.** Green. Outputs: `phase2/d19e_c12_plain_output.txt`,
 `phase2/d19e_c12_test_output.txt`. No harness and no fixture run.
+
+## D20: the fixtures at b37cad1a4 (C31 part 1), geodesic_local_zigzag_pick
+
+Fixture worktree checked out at b37cad1a4; release CLI with research
+rebuilt (08:30; the binary's stamp string reads `0.1.0b37cad1a4`).
+`phase3/fix7/run_fix7.sh`: `RUST_LOG=info`, `--sim-artifact`, the D-FIX
+flags, timeout 900, lane script. Corne: `corne_job_corrected_c12_agent_search.toml`,
+setup 0, `--skip 4` (rc 0, 12 s). wanaka200: `wanaka200_mt1_c12_rough_only.toml`,
+setup 0, `--resolution 1.0` (rc 0, 63 s). Numbers:
+`phase3/fix7/d20_numbers.py` (the page's `load_op` / `op_numbers`,
+`producer_split.split`, `thick_measure.thick_over`, the CLI bar lines).
+References: Corne D18 = `fix5` (f32401326); wanaka200 = the zigzag
+`--sim-artifact` run at 31935b89 (`fix2/simart`), which the lead names as
+D18 (22 / 3950 s). Opening lines: `phase3/fix7/corne_openings.txt`,
+`wanaka_openings.txt`.
+
+**C31 openings.**
+- Corne: 4 of 4 "grown, no sweep". Z 17.0 region 1: before 0.258,
+  shortfall 0.252, after 0.510. Z 11.0, 5.0, 0.5 region 2: 0.276, 0.234,
+  0.510.
+- wanaka200: 3 "grown, no sweep" (Z 19.54, 14.08, 8.62, region 1:
+  before 0.550, no inset). Two shipped sweeps at Z 4.0:
+  - region 1: `measured_before_mm=0.250 shortfall_inset_mm=0.260
+    measured_after_mm=0.509 region_area_mm2=2580.5 centre_area_mm2=77602.8
+    target_area_mm2=1157.2 excess_mm2=76445.52 allowed_mm2=864.92
+    decision="closing guard: shipped sweep"`. The centre area is 30 times
+    the region area.
+  - region 3: `measured_before_mm=0.253 shortfall_inset_mm=0.257
+    measured_after_mm=0.510 region_area_mm2=159.9 centre_area_mm2=108.1
+    target_area_mm2=107.0 excess_mm2=1.12 allowed_mm2=31.31
+    decision="the shortfall inset split the outline: shipped sweep"`.
+
+| | Corne D18 | Corne D20 | wanaka D18 | wanaka D20 |
+|---|---|---|---|---|
+| plunges, first rough op | 56 | 60 | 22 | 20 |
+| cycle time | 2607 s | 2760 s | 3950 s | 4832 s |
+| keep-down links | 1050 (2371 mm) | 1239 (1702 mm) | 3402 (3423 mm) | 3982 (3349 mm) |
+| moves, first rough op | 10918 | 11724 | 20853 | 25573 |
+| cutting | 60483 mm | 64712 mm | 90906 mm | 100294 mm |
+| over 0.471: perimeter / body / waterline | 1293.0 / 43.2 / 592.8 | 1.3 / 423.6 / 37.1 | 2245.6 / 1871.1 / 20.1 | 12.3 / 1701.4 / 19.5 |
+| thick over 0.471: total (per / body / wl) | 1557.1 (1293.0 / 33.6 / 230.4) | 300.3 (0 / 268.0 / 32.3) | 2516.6 (2238.1 / 263.8 / 14.7) | 372.7 (5.0 / 353.2 / 14.6) |
+| collisions (feed / rapid / failed checks) | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+
+The producer split calls the span from a level start to its second entry
+"perimeter" when the trace has `agent2d_region` spans. Where C31 emits no
+sweep, that span is the start of the body. On wanaka the Z 4.0 regions do
+ship the sweep.
+
+**Coverage bar.** Corne 3D Rough 1: D18 961 islands (11 free), 5106.2
+mm²; D20 1024 (6 free), 4095.6 mm². The D18 free island (16.50 mm high,
+1400.9 mm² at (28.8, -16.6)) is gone. Two listed free islands of 0.80 mm
+at (6.0, -45.7) and (6.0, -37.9) are not in the D18 list. Listed wall
+islands in D20: 22.50 mm 3273.9 mm² at (14.1, -109.3) (also listed in
+the zigzag_v2 column at 13667775d), 14.77 mm at (45.6, -7.3), 14.50 mm
+412.1 mm² at (24.9, -100.3), 11.70 mm at (109.5, -7.9). The copy op: D18
+1024 (14 free), 3449.4 mm²; D20 1027 (8 free), 2582.2 mm². The CLI lists
+10 islands per op, free first; the D18 list shows no wall island, so a
+full new-island check is not possible from the CLI text. wanaka200: no
+standing-island line in D18 or D20.
+
+**Gouge bar.** No gouge, "deeper than commanded" or "fed link cuts
+stock" line in any of the four runs. No export refusal (the stale-trace
+override as before); machine-safety errors 0.
+
+## D20b: the full standing-island diff — STOPPED, no path without new code
+
+Brief: the full island list of Corne "3D Rough 1", D18 (`fix5`) against
+D20 (`fix7`), from the in-repo island walk, not from the CLI's list.
+Search at b37cad1a4 (`rg` over the crates, tests and CLI):
+- `standing_islands::measure_rough_coverage` and
+  `ProjectSession::rough_coverage_for_run` / `rough_coverage_reading`
+  return the full `RoughCoverage.islands`.
+- Their only outputs are the triage advisory
+  (`stock/sim_triage.rs:1143`, capped by `ADVISORY_CAP_PER_TOOLPATH = 10`,
+  `sim_triage.rs:75`), the MCP narration (the tallest island only) and the
+  viz state. The CLI `project` command writes no island file;
+  `summary.json` and `simulation.json` hold no island list.
+- The tests (`a_rough_island_above_the_stock_to_leave_is_flagged_g_roughcov.rs`)
+  build their own stock and do not load a project.
+So no existing path prints the full list. No code was written; the lead
+decides on a path.
+
+### D20b, run (lead-approved option b)
+
+`phase3/fix7/run_d20b.sh` in the fixture worktree only: per commit, a
+checkout, then `sed` of `ADVISORY_CAP_PER_TOOLPATH: usize = 10` → `100000`
+(`stock/sim_triage.rs:75`), a release build, the Corne D20 run
+(zigzag_pick, RUST_LOG=info, --sim-artifact, setup 0, --skip 4), then
+`git checkout -- crates/rs_cam_core/src/stock/sim_triage.rs`.
+- f32401326: rc 0, 11 s; program.nc byte-equal to `fix5`.
+- b37cad1a4: rc 0, 12 s; program.nc byte-equal to `fix7`.
+- After both: clean rebuild at b37cad1a4 (stamp `0.1.0b37cad1a4`);
+  `git status --short` of the fixture worktree is empty.
+Parser and diff: `phase3/fix7/d20b_islands.py` (it asserts the parsed
+count and wall count equal the CLI's header and that no list is cut).
+Lists: `phase3/fix7/islands_d18.json`, `islands_d20.json` (both rough
+ops). Match rule: an island of the other run within 0.3 mm (one cell)
+plus 0.05 mm print rounding in X and in Y, and in height.
+
+**3D Rough 1.** D18 961 (950 wall), 5106.2 mm²; D20 1024 (1018 wall),
+4095.6 mm².
+- In D20, not in D18: 153 islands, 462.9 mm², 2 free. Of these, one is
+  large: **14.50 mm high, 2.38 mm wide, 412.1 mm² at (24.9, -100.3), at a
+  wall**; D18 has no island within 8 mm of it of more than 49.0 mm²
+  (3.50 mm, 49.0 mm² at (27.6, -93.7)). The rest: 117 wall slivers of
+  3.50 mm high (one step plus a little), each 4.4 mm² or less; 33 wall
+  islands of lower height; the two free ones are 0.80 mm high (2.5 mm² at
+  (6.0, -45.7), 0.2 mm² at (6.0, -37.9)).
+- In D18, not in D20: 90 islands, 1482.5 mm², 7 free; the large one is
+  the free 16.50 mm, 1400.9 mm² island at (28.8, -16.6).
+- **The 22.50 mm / 3273.9 mm² wall island at (14.1, -109.3) is in D18**,
+  with the same height, width, area and XY.
+
+**3D Rough 1 (copy)** (for information): D20 adds 68 islands (693.4 mm²),
+D18 has 64 not in D20 (698.2 mm²). The 16.51 mm, 678.0 mm² wall island is
+in both with its peak point moved from (5.4, -13.9) to (20.4, -102.4), so
+the XY rule counts it on both sides. The three free 3.50 mm islands of D18
+at (28.5, -91.0), (19.8, -85.6), (54.3, -85.6) are gone.
+
+### D20b, the copy op at (24.9, -100.3) (from the lists, no new run)
+
+The lists give each island's peak XY, height, width and area, not its
+footprint, so "inside" cannot be tested exactly.
+- D18 copy op: the nearest islands to (24.9, -100.3) are 0.82 mm high,
+  0.1 mm² at (19.5, -99.7) (5.4 mm away, free) and 3.17 mm, 0.3 mm² at
+  (28.5, -93.7) (7.5 mm, wall).
+- D20 copy op: the 16.51 mm, 5.07 mm wide, 678.0 mm² wall island has its
+  peak at (20.4, -102.4), 5.0 mm away. The next is 1.48 mm, 0.1 mm² at
+  (24.3, -91.0) (9.3 mm).
+- The 678.0 mm² island has the same height, width and area in both runs
+  (D18 peak (5.4, -13.9)). So the 412.1 mm² rough-1 island does not stand
+  as a separate copy-op island, and it adds no area to the 678.0 mm²
+  island.
+- Observation: the D20 copy op lists 14.5 mm, 2.38 mm wide, 424.0 mm² at
+  (141.3, -71.8); D18 has 14.5 mm, 4.54 mm wide, 1285.6 mm² there. The
+  height and width equal those of the new rough-1 island; I did not
+  examine why.

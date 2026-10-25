@@ -670,3 +670,117 @@ Both runs use a 1.0 mm sim cell. Scripts and output are in `phase3/c32/`
 - The slope is along the path, not the terrain gradient across the
   passes.
 - Corne's body rise of 10.6 mm under the D9 rule was not analysed.
+
+## C33. Corne after C31: which body moves carry the thick over-load (2026-10-26)
+
+Read-only analysis. No production code, no cargo. Data:
+- D20 `phase3/fix7/corne/geodesic_local_zigzag_pick/` (b37cad1a4, no
+  perimeter sweep in the research arm);
+- D18 `phase3/fix5/corne/geodesic_local_zigzag_pick/`, for question 3.
+
+Scripts and output are in `phase3/c33/` (`run_c33.sh`, `c33_output.txt`,
+about 30 s):
+- `partmap.py` rasterises the part top from the project's STL, on a 0.2 mm
+  grid with no transform. The STL bbox x 5.31-148.07 sits inside the
+  stock bbox x 0.31-153.07 with a 5 mm margin.
+- `c33.py` reads each body sample.
+- `report33.py` makes the tables.
+
+### C33.1 The method
+
+- **The body:** from the level's first move to its waterline annotation.
+  After C31 there is no sweep, so the "perimeter" of `producer_split`
+  (1.3 mm) is the starter and is counted here as body.
+- **The samples:** clearing_cut samples the simulation reads over 0.471:
+  425.0 mm.
+- **The readings,** on the densified sample path, with C32's lattice:
+  - **strict:** stock above the tip;
+  - **thick:** stock at least 0.5 mm (one planner cell) above the tip, as
+    `thick_measure.py`. It reproduces the lead's **268.0 mm**;
+  - **same-level:** every earlier pass of the level counts as cut, at any
+    height (C32).
+- **Wall distance:** from the cutter centre to the nearest part cell whose
+  top stands above the tip. The tip Z is binned down to 0.5 mm. Island:
+  that cell's connected part component is not the largest.
+- **D18 cover:** the share of the thick-uncut lattice points in the disc
+  that D18's sweep of the same level covered (a disc of R round each
+  sweep point with Z ≤ tip + 0.5).
+- **Move class** comes from the trace:
+  - the run is from the last entry to the next;
+  - "run end" means the next non-cut move is a `linking` lift within 2
+    moves.
+
+### C33.2 Answers
+
+**4. Sim artefact: none in the 268 mm.**
+- Of the 425.0 mm body over 0.471, the strict exact reads 422.5 mm over.
+  Sim-only: 2.5 mm (0.6 %), C30's class.
+- Every thick-over sample is also strict-over, so the 268.0 mm holds no
+  artefact.
+
+**2. Where: every thick-over sample is at the outer part's wall.**
+- Length-weighted wall distance: p10 3.23, p50 3.65, p90 4.25, max
+  6.05 mm.
+- At a wall (≤ R + leave + 0.5 = 4.0 mm): 209.1 mm. Wall band (4.0-6.5):
+  57.6 mm. Near an island: 1.3 mm. In the open (> 6.5 mm): 0.
+- The median 3.65 mm is the grown outline's own centre locus: the region
+  boundary at about R + leave, plus the margin m = 0.25. So **no meeting
+  line or open-field wrap carries thick load**.
+
+**1. Which moves.** By cause (mm thick over 0.471):
+
+| Cause | Z 17 | Z 11 | Z 5 | Z 0.5 | Sum | At a wall | D18 sweep covered ≥ half | Draped (helix) | Wall dist. median |
+|---|---|---|---|---|---|---|---|---|---|
+| Outline wrap on the case-top shoulder, draped below a higher same-level pass | 101.2 | 0 | 0 | 6.9 | **108.1** | 106.2 | 77.1 | 77.2 | 3.37 |
+| Outline wrap at the level, below a higher same-level pass | 72.8 | 2.4 | 2.4 | 0 | **77.5** | 50.8 | 41.6 | 22.6 | 3.86 |
+| Fresh: first cut of that stock at the level (wrap ends at the outline) | 13.2 | 11.8 | 11.8 | 11.7 | **48.5** | 18.2 | 5.9 | 0 | 4.25 |
+| Hex-hole dip: a short run down to Z 0.5 between links at Z 4 | 0 | 0 | 0 | 33.9 | **33.9** | 33.9 | 0.7 | 0.7 | 3.35 |
+| Sum | 187.2 | 14.2 | 14.2 | 52.5 | **268.0** | 209.1 | 125.3 | 100.5 | 3.65 |
+
+The brief's classes, measured (mm; Z 17 / 11 / 5 / 0.5):
+
+| Brief class | mm | What the trace shows |
+|---|---|---|
+| First wrap against the grown outline | 185.6 (step rows above) | Z 17: the outermost wrap rides the case-top shoulder. The wraps inside it ran over the case top, higher. The same-level reading falls to ≤ 0.471 (C32's step). The layer from the tip up to the lowest higher pass within R is 0.59 mm median (p10 0.51, p90 1.00), at tip Z 17.11 median. |
+| Arc ends / hooks (short last move, then a lift) | 84.8 (44.6 / 0.5 / 0.5 / 39.2) | These are the same rows. At Z 17 the lift splits the shoulder wrap into short runs (pieces of 3-5 moves between keep-down links). At Z 0.5 they are the hole dips. The trace does not show C31 §11.12's sideways hop. G-ARCENDHOOK is on the curv modes; these are G1 zigzag moves. |
+| Turns / first moves after a keep-down link | 46.9 (33.0 / 5.8 / 1.0 / 7.0) | Mostly the start of the same shoulder runs at Z 17. At Z 11, one 0.3 mm sample per wrap where the wrap meets the outline at y -68.26 (fresh, thick 0.70-0.77). |
+| Keep-down links | 0 | Their samples are `linking`; the D-FIX6 rule leaves them out. |
+| Lobe starts after a plunge | 4.6 (4.3 / 0.3 / 0 / 0) | |
+| Meeting line | 0 | No thick-over sample is more than 6.05 mm from a wall. |
+| Inside a run | 28.4 (2.0 / 7.5 / 12.6 / 6.2) | |
+
+**3. Did D18's sweep cut that stock?** Measured as the share of each
+sample's thick-uncut stock that D18's sweep covered:
+- ≥ 0.9: 94.0 mm (Z 17: 93.3);
+- 0.5-0.9: 31.3 mm;
+- < 0.5: 142.7 mm.
+
+So the sweep took most of the Z 17 shoulder stock (77 of 108 mm covered
+by half or more). It did not take the fresh wrap ends at Z 11, 5 and 0.5
+(5.9 of 48.5 mm), nor the hex-hole dips (0.7 of 33.9 mm). In D18 the dips
+were the "plunge departure" rows (31.3 mm at Z 0.5, C30), exempt then.
+After C31 the descent into a hole is a keep-down link, not a vertical
+plunge, so the departure exemption no longer applies to them.
+
+### C33.3 Reading
+
+- **There is one dominant place:** the outermost wrap of the grown
+  outline, at the outer wall. 185.6 of the 268.0 mm are that wrap
+  meeting a step that the inner wraps left above it. Most of it is at
+  Z 17 (174.0 mm), where the outline runs on the case-top shoulder. There
+  the inner wraps ride over the case top about 0.5-1.0 mm higher than the
+  outline wrap.
+- The step is just over the thick threshold: median 0.59 mm against
+  0.5. A threshold of one planner cell counts it, and a 1.0 mm threshold
+  would count about the p90 tail only.
+- The other classes:
+  - wrap ends at the outline (fresh): 48.5 mm, 12 mm per level;
+  - the hex-hole dips: 33.9 mm at Z 0.5. They are not new; D18 exempted
+    them as plunge departures.
+- **Why the C12 heavy test does not see it:** the C12 fixture has
+  vertical walls and a flat floor. No wrap of a level runs higher than
+  its neighbour there, and no descent into a hole exists. Corne's Z 17
+  level cuts 1 mm below the case top, so the outline sits on a slope
+  that the drape follows.
+- **No fix proposal.** The cause is one place, but two mechanisms: a
+  draping step on the shoulder, and fresh wrap ends.

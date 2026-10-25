@@ -1751,3 +1751,136 @@ Prediction for D19e (P):
   `geodesic_local_zigzag` (the C29 pick keeps A on the C12 pocket, and in
   D19c the plain test's pick equalled zigzag).
 - The two far-side modes print 4 and 2 attribution samples, as in D19d.
+
+### 11.13 C34: wanaka200 Z 4.0 region 1, a grown centre area 30 times the region (2026-10-26)
+
+D20 (`phase3/fix7/wanaka200/geodesic_local_zigzag_pick/stdout.txt`, at
+b37cad1a4), the "C31 region opening" lines:
+
+| z | region | region area | centre area | target area | measured before / after | decision |
+|---|---|---|---|---|---|---|
+| 19.54, 14.08, 8.62 | 1 | 40099.9 | 39631.1 | 39631.1 | 0.550 / 0.550 | grown, no sweep |
+| 4.0 | 1 | **2580.5** | **77602.8** | 1157.2 | 0.250 / 0.509 | closing guard: shipped sweep |
+| 4.0 | 3 | 159.9 | 108.1 | 107.0 | 0.253 / 0.510 | the shortfall inset split the outline: shipped sweep |
+
+**What region 1 is.** At the three upper levels the region is the full
+square of the model's footprint (40099.9 mm², about 200.25 mm a side). At
+Z 4.0 it is 2580.5 mm². The fit that matches every number is the same
+square with a hole of about 37519 mm² (40099.9 − 2580.5): **a frame ring
+about 3.2 mm wide round the footprint**. The terrain stands above Z 4.0 +
+leave over the rest, so the level holds only the ring at the edge.
+
+**Why the target is under half the region: expected, not a defect.** The
+target is the outline after the smoothing inset (0.3, plus the RDP), the
+shortfall inset (0.26) and the margin (0.25): about 0.81 mm off each of the
+ring's two sides. Over a centre line of about 790 mm that removes
+2 × 0.81 × 790 ≈ 1280 mm², leaving about 1300 mm² (read 1157; the RDP
+takes a little more). A 3.2 mm band loses half its area to 0.81 mm a side.
+
+**Why the centre area is 30 times the region: the hole became a filled
+polygon in the grow.** The number splits exactly into two parts:
+`77602.8 = 39631.1 + 37971.7`.
+- 39631.1 is to 0.1 mm² the centre area of the upper levels, that is, the
+  **filled** square (no hole) taken through the grow and the inset.
+- 37971.7 is the hole as a filled island. The hole of the inset outline
+  (about 37519 + 0.81 × 780 ≈ 38150 mm²), grown OUTWARD by R − m
+  (+2.75 × 780 ≈ +2150) and then inset by R (−3 × 780 ≈ −2340), gives
+  about 37960 mm².
+
+So after the grow, the exterior has no hole and the hole's ring is a
+separate positive polygon that the grow offset as a boundary (outward),
+not as a hole (which would have shrunk by 2.75). A grow of the wrong sign
+would shrink the exterior, so it is ruled out. A plain lost hole would
+read about 39 600 mm², so that is ruled out too. What fits is an
+**orientation or classification fault of the hole ring in the grow
+stage**.
+
+Where it can happen, from the code:
+- `research_grown_outlines` grows with
+  `OffsetRingSet::from_polygon(s).offset(-(R − m))` (the cascade,
+  `RingGroup::offset`, cavalier `Shape`). `Shape::from_plines` classes each
+  ring by its own orientation (CCW a boundary, CW a hole). A hole ring that
+  reaches it counter-clockwise is offset as an island: outward for a
+  negative distance. The output then has it as a second CCW boundary,
+  which `to_polygons` returns as its own polygon. Every number fits that.
+- The same outline goes through `offset_polygon(s, m)` for the target,
+  and the target is correct (1157). Both paths repair a self-intersecting
+  polygon first (`repaired`, a geo boolean union), and both build the hole
+  polyline the same way. So the fault would have to be in the cascade's
+  negative (outward) offset of a polygon with a hole, or in a ring that
+  only the cascade's input sees: the outline after the RDP has a hole
+  whose winding the RDP can flip, if it drops enough of a thin ring.
+- Reading alone does not decide between these. **My guard is not the
+  defect.** It read a true excess and refused, as it should: the output is
+  safe. But a ring-shaped region can never take the grow while this
+  stands.
+
+**Region 3: expected.** A 160 mm² region whose shortfall inset cuts a
+neck: one region becomes two, and the split condition sends it to the
+shipped sweep, as designed.
+
+**The probe (built; test file only; not run): `c34_frame_ring_grow_probe`**
+in `tests/adaptive3d_geodesic_arm_c12.rs`.
+- It is `#[ignore = "instrument: …"]`, asserts nothing, and runs in
+  milliseconds.
+- It builds the same frame ring (a square of 40100 mm² with a CW square
+  hole of 37520 mm²) and runs the steps of `research_grown_outlines` less
+  the RDP: the 0.3 inset, the 0.26 shortfall inset, the grow by R − m
+  (through `OffsetRingSet` and, for comparison, through the single-shot
+  `offset_polygon(·, −(R − m))`), the centre (inset by R), and the target.
+- It prints each stage's polygons, with the exterior's and each hole's
+  signed areas.
+- Command (operator PC, a few seconds after the build):
+  `scripts/cargo_lane.sh test -p rs_cam_core -q --features research,test-support --test adaptive3d_geodesic_arm_c12 -- --ignored --nocapture c34_frame_ring_grow_probe`
+
+**Reading the probe, and the fix it would pick (research arm only):**
+- If the `OffsetRingSet` grow returns the hole as a second positive
+  polygon and the single-shot grow returns one polygon with a smaller hole,
+  the cascade's outward offset with holes is at fault (a `polygon.rs`
+  defect, outside my files; file it). The research fix is to grow with the
+  single-shot `offset_polygon(s, −(R − m))`, which flattens its arcs once,
+  and that is enough for a shape the planner insets once.
+- If both grows are right on the synthetic ring, the fault needs the real
+  ring: the RDP of a staircase hole, or a self-intersection repair. The
+  next probe is then a research-only dump of the region and the outline
+  at each stage, for a ring region whose excess exceeds its allowance.
+  That is a production (research-gated) change, so I would ask first.
+
+**C34 probe result (D9, `phase3/c34_probe_output.txt`, rc 0): the second
+outcome. The cascade is right on the synthetic ring.**
+
+| Stage | Exterior | Hole | Area |
+|---|---|---|---|
+| region | 40100.0 | −37520.0 | 2580.0 |
+| inset 0.3 (no RDP) | 39860.1 | −37752.7 | 2107.3 |
+| shortfall inset 0.26 | 39652.7 | −37954.9 | 1697.8 |
+| grown R − m, `OffsetRingSet` | 41866.8 | −35842.4 | 6024.4 |
+| grown R − m, `offset_polygon` | 41866.8 | −35842.4 | 6024.4 |
+| centre (grown inset R) | 39453.8 | −38142.4 | 1311.4 |
+| target (inset m) | 39453.8 | −38149.6 | 1304.2 |
+
+- Both grows keep the hole as a hole, with the same numbers. The centre
+  equals the target to 7.2 mm² (against an allowance of about 0.5 × 1580
+  ≈ 790 mm²). So on a clean frame ring with a CW hole the whole chain is
+  right, and the guard reads it right.
+- So G-CASCADEHOLE is **not** filed: the probe does not show a fault of
+  the shared cascade in `polygon.rs`.
+- The D20 fault needs the real ring. What the synthetic probe leaves out:
+  - the marching-squares staircase of both rings;
+  - the RDP at 0.3 on a ring that is only 3.2 mm wide (it can bring the
+    two rings within 0.3 of each other, or make a ring cross itself, and
+    then `repaired()`, the geo union, rebuilds the polygon);
+  - the stock corner, where the frame's exterior is the centre boundary.
+  One of those turns the hole into a boundary before or during the grow.
+  The target path, on the same outline, stays right, so the trigger is
+  in what the outward offset does with that ring.
+- Next step (parked until after G2, lead 2026-10-26): a research-gated
+  dump of the region and of the outline at each stage, for every region
+  whose closing guard refuses (excess over its own allowance), or gated by
+  an env flag. No "factor of ten": that would be a new constant. That is one JSON
+  file per such region under the run's output, through the existing
+  `RegionOpening` record or the debug trace. It is a production
+  (research-gated) change. Until then, ring regions fall back to the
+  shipped sweep; the output is safe.
+
+Parked as G-RINGGROW in `DEFECTS.md` (lead, 2026-10-26).
