@@ -3394,3 +3394,17 @@ rise by 542.6 mm (1026.1 + 317.1 → 1293.0 + 592.8), which is C30's
   5.88 against 8.01% (Corne) and 7.22 against 10.65% (wanaka200).
 - The geodesic zigzag cuts 0.83 times (Corne) and 0.98 times (wanaka200)
   the contour_parallel cut length.
+
+**Old and new side by side (the lead, 22:32).**
+- The page now has one table per part, "Load rule change: over 0.471, old
+  rule against new rule". The old rule is linear and arc samples of any
+  intent; the new rule is the cut intent of any kinematics. The table gives
+  both shares and both cut lengths for every column, and the change in
+  points.
+- The generator keeps the old rule as `load_share_old`; the assert
+  re-derives both with its own code: "all 576 checks hold". One injected
+  wrong change was caught; the page was restored.
+- The page holds no "linear or arc" rule text.
+- State: the lead's commit 2a4cf2a83 holds the intent-rule scripts, but a
+  page render from before the rule change. The current page, numbers and
+  spec are in the working tree, not committed.

@@ -82,6 +82,10 @@
       "screen": 0.5126,
       "over_screen_pct": 7.19
      },
+     "load_old": {
+      "cut_mm": 38623.7,
+      "over_exact_pct": 8.06
+     },
      "producers": {
       "perimeter": null,
       "body": 3149.4,
@@ -160,6 +164,10 @@
       "over_exact_pct": 5.88,
       "screen": 0.5126,
       "over_screen_pct": 5.56
+     },
+     "load_old": {
+      "cut_mm": 33250.9,
+      "over_exact_pct": 4.14
      },
      "producers": {
       "perimeter": 1293.0,
@@ -240,6 +248,10 @@
       "screen": 0.5126,
       "over_screen_pct": 5.15
      },
+     "load_old": {
+      "cut_mm": 41791.9,
+      "over_exact_pct": 3.3
+     },
      "producers": {
       "perimeter": 1293.0,
       "body": 47.1,
@@ -318,6 +330,10 @@
       "over_exact_pct": 5.34,
       "screen": 0.5126,
       "over_screen_pct": 5.05
+     },
+     "load_old": {
+      "cut_mm": 43818.0,
+      "over_exact_pct": 3.13
      },
      "producers": {
       "perimeter": 1293.0,
@@ -398,6 +414,10 @@
       "screen": 0.5126,
       "over_screen_pct": 5.56
      },
+     "load_old": {
+      "cut_mm": 33250.9,
+      "over_exact_pct": 4.14
+     },
      "producers": {
       "perimeter": 1293.0,
       "body": 43.2,
@@ -477,6 +497,10 @@
       "over_exact_pct": 23.5,
       "screen": 0.5126,
       "over_screen_pct": 21.41
+     },
+     "load_old": {
+      "cut_mm": 13768.6,
+      "over_exact_pct": 20.19
      },
      "producers": {
       "perimeter": 1423.5,
@@ -562,6 +586,10 @@
       "screen": 0.6293,
       "over_screen_pct": 8.91
      },
+     "load_old": {
+      "cut_mm": 52788.3,
+      "over_exact_pct": 3.01
+     },
      "producers": {
       "perimeter": null,
       "body": 6201.7,
@@ -632,6 +660,10 @@
       "over_exact_pct": 7.22,
       "screen": 0.6293,
       "over_screen_pct": 6.18
+     },
+     "load_old": {
+      "cut_mm": 44745.5,
+      "over_exact_pct": 3.59
      },
      "producers": {
       "perimeter": 2245.6,
@@ -704,6 +736,10 @@
       "screen": 0.6293,
       "over_screen_pct": 6.18
      },
+     "load_old": {
+      "cut_mm": 44745.5,
+      "over_exact_pct": 3.59
+     },
      "producers": {
       "perimeter": 2245.6,
       "body": 1871.1,
@@ -773,6 +809,10 @@
       "over_exact_pct": 48.02,
       "screen": 0.6293,
       "over_screen_pct": 16.96
+     },
+     "load_old": {
+      "cut_mm": 23635.5,
+      "over_exact_pct": 44.78
      },
      "producers": {
       "perimeter": 2249.8,
