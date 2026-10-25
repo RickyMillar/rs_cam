@@ -441,3 +441,8 @@ passes) before Phase 2 candidates are judged.
   finished. The GUI restarted at 11:56 on the same binary (gui pid 84659).
 - The worktree `.claude/worktrees/adaptive-head` (own target, ~4 GB) stays
   until Phase 0 ends; delete it with its target dir afterwards.
+
+## Operator rulings 2026-10-25 (afternoon)
+
+- Perimeter sweep (75 % of the geodesic over-bound load on Corne): replace it in the geodesic RESEARCH ARM ONLY; shipped output stays byte-identical. C31 (C22) designs it.
+- Speed: "dont worry too much honestly about the speed. they are different things. i use contour paralell mostly not agent search. really i think agent was broken." The page's main control becomes contour_parallel (D-FIX6); AgentSearch is secondary. Report load-held quality first, cycle time second.
