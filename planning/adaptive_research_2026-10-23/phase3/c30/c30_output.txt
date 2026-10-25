@@ -1,0 +1,367 @@
+zz_pick bounds {'exact_s2': 0.471, 'screen_s2': 0.5126, 'exact_s1.2': 0.3272, 'screen_s1.2': 0.3689}
+zz_pick levels [(17.0, 0), (11.0, 4092), (5.0, 5971), (0.5, 7872)] waterline starts [3889, 5747, 7645, 10511] body starts {17.0: 127, 11.0: 4172, 5.0: 6051, 0.5: 7980}
+zz_pick linear+arc cut mm 33250.9
+
+zz_pick over exact_s2=0.4710: 1375.8 mm = 4.14% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1012.0 helix/plunge samples)
+   waterline cleanup                 317.1 mm   (+2442.0 helix/plunge samples)
+   plunge departure                   31.3 mm   (+104.0 helix/plunge samples)
+   starter                             1.3 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9779.0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 240.7}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 56.0}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'starter': 0.3, 'waterline cleanup': 9.0}
+
+zz_pick over screen_s2=0.5126: 1282.3 mm = 3.86% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1009.0 helix/plunge samples)
+   waterline cleanup                 226.5 mm   (+2118.0 helix/plunge samples)
+   plunge departure                   29.4 mm   (+104.0 helix/plunge samples)
+   starter                             0.3 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9770.0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+5.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 184.5}
+   level 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 21.9}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.4, 'waterline cleanup': 8.7}
+
+zz_pick over exact_s1.2=0.3272: 1453.9 mm = 4.37% of linear+arc cut
+   perimeter sweep                  1026.3 mm   (+1022.0 helix/plunge samples)
+   waterline cleanup                 374.9 mm   (+2669.0 helix/plunge samples)
+   plunge departure                   35.9 mm   (+116.0 helix/plunge samples)
+   starter                            14.4 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                2.3 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+10591.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 4.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.7}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.5, 'starter': 3.2, 'waterline cleanup': 12.8}
+
+zz_pick over screen_s1.2=0.3689: 1444.5 mm = 4.34% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1020.0 helix/plunge samples)
+   waterline cleanup                 373.1 mm   (+2644.0 helix/plunge samples)
+   plunge departure                   33.5 mm   (+106.0 helix/plunge samples)
+   starter                            10.0 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                1.7 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9947.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 1.7, 'perimeter sweep': 123.6, 'plunge departure': 0.9, 'starter': 2.8, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 267.1}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 82.4}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 32.6, 'starter': 1.9, 'waterline cleanup': 12.2}
+zz_pick samples to read 4996
+zz_pick done 8.0 s
+zz_pick
+  sim > 0.471: total 1375.8 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 317.1, 'plunge departure': 31.3, 'starter': 1.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 240.7}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 56.0}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'starter': 0.3, 'waterline cleanup': 9.0}
+  sim > screen 0.5126: total 1282.3 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 226.5, 'plunge departure': 29.4, 'starter': 0.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 184.5}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 21.9}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.4, 'waterline cleanup': 8.7}
+  sim > 0.471 AND exact > 0.471: total 1368.6 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 311.3, 'plunge departure': 31.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 237.8}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 53.3}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'waterline cleanup': 8.7}
+  sim > 0.471, exact <= 0.471 (sim-only): total 7.1 mm; {'waterline cleanup': 5.8, 'starter': 1.3}
+     Z 17.0 {'starter': 0.5}
+     Z 11.0 {'starter': 0.3, 'waterline cleanup': 2.9}
+     Z 5.0 {'starter': 0.3, 'waterline cleanup': 2.7}
+     Z 0.5 {'starter': 0.3, 'waterline cleanup': 0.3}
+  sim > 0.3272 (s 1.2 exact bound): total 1453.9 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 374.9, 'plunge departure': 35.9, 'starter': 14.4, 'body wraps/turns/mop': 2.3}
+     Z 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 4.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.7}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.5, 'starter': 3.2, 'waterline cleanup': 12.8}
+  sim > 0.3272 AND exact > 0.3272: total 1447.3 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 369.1, 'plunge departure': 35.6, 'starter': 13.8, 'body wraps/turns/mop': 2.3}
+     Z 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 3.8, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 264.8}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 80.4}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.2, 'starter': 3.2, 'waterline cleanup': 12.6}
+  perimeter sweep: n 3502, sim median 0.900 max 0.955; exact median 1.000 min 0.952 max 1.000
+  plunge departure: n 121, sim median 0.919 max 0.954; exact median 0.994 min 0.539 max 1.000
+  starter: n 5, sim median 0.498 max 0.518; exact median 0.435 min 0.435 max 0.457
+  waterline cleanup: n 1089, sim median 0.850 max 0.955; exact median 1.000 min 0.026 max 1.000
+zigzag bounds {'exact_s2': 0.471, 'screen_s2': 0.5126, 'exact_s1.2': 0.3272, 'screen_s1.2': 0.3689}
+zigzag levels [(17.0, 0), (11.0, 4092), (5.0, 5971), (0.5, 7872)] waterline starts [3889, 5747, 7645, 10511] body starts {17.0: 127, 11.0: 4172, 5.0: 6051, 0.5: 7980}
+zigzag linear+arc cut mm 33250.9
+
+zigzag over exact_s2=0.4710: 1375.8 mm = 4.14% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1012.0 helix/plunge samples)
+   waterline cleanup                 317.1 mm   (+2442.0 helix/plunge samples)
+   plunge departure                   31.3 mm   (+104.0 helix/plunge samples)
+   starter                             1.3 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9779.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 240.7}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 56.0}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'starter': 0.3, 'waterline cleanup': 9.0}
+
+zigzag over screen_s2=0.5126: 1282.3 mm = 3.86% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1009.0 helix/plunge samples)
+   waterline cleanup                 226.5 mm   (+2118.0 helix/plunge samples)
+   plunge departure                   29.4 mm   (+104.0 helix/plunge samples)
+   starter                             0.3 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9770.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+5.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 184.5}
+   level 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 21.9}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.4, 'waterline cleanup': 8.7}
+
+zigzag over exact_s1.2=0.3272: 1453.9 mm = 4.37% of linear+arc cut
+   perimeter sweep                  1026.3 mm   (+1022.0 helix/plunge samples)
+   waterline cleanup                 374.9 mm   (+2669.0 helix/plunge samples)
+   plunge departure                   35.9 mm   (+116.0 helix/plunge samples)
+   starter                            14.4 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                2.3 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+10591.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 4.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.7}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.5, 'starter': 3.2, 'waterline cleanup': 12.8}
+
+zigzag over screen_s1.2=0.3689: 1444.5 mm = 4.34% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1020.0 helix/plunge samples)
+   waterline cleanup                 373.1 mm   (+2644.0 helix/plunge samples)
+   plunge departure                   33.5 mm   (+106.0 helix/plunge samples)
+   starter                            10.0 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                1.7 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+9947.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+6.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 1.7, 'perimeter sweep': 123.6, 'plunge departure': 0.9, 'starter': 2.8, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 267.1}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 82.4}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 32.6, 'starter': 1.9, 'waterline cleanup': 12.2}
+zigzag samples to read 4996
+zigzag done 8.3 s
+zigzag
+  sim > 0.471: total 1375.8 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 317.1, 'plunge departure': 31.3, 'starter': 1.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 240.7}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 56.0}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'starter': 0.3, 'waterline cleanup': 9.0}
+  sim > screen 0.5126: total 1282.3 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 226.5, 'plunge departure': 29.4, 'starter': 0.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 184.5}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 21.9}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.4, 'waterline cleanup': 8.7}
+  sim > 0.471 AND exact > 0.471: total 1368.6 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 311.3, 'plunge departure': 31.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 237.8}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 53.3}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 31.3, 'waterline cleanup': 8.7}
+  sim > 0.471, exact <= 0.471 (sim-only): total 7.1 mm; {'waterline cleanup': 5.8, 'starter': 1.3}
+     Z 17.0 {'starter': 0.5}
+     Z 11.0 {'starter': 0.3, 'waterline cleanup': 2.9}
+     Z 5.0 {'starter': 0.3, 'waterline cleanup': 2.7}
+     Z 0.5 {'starter': 0.3, 'waterline cleanup': 0.3}
+  sim > 0.3272 (s 1.2 exact bound): total 1453.9 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 374.9, 'plunge departure': 35.9, 'starter': 14.4, 'body wraps/turns/mop': 2.3}
+     Z 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 4.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.7}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.5, 'starter': 3.2, 'waterline cleanup': 12.8}
+  sim > 0.3272 AND exact > 0.3272: total 1447.3 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 369.1, 'plunge departure': 35.6, 'starter': 13.8, 'body wraps/turns/mop': 2.3}
+     Z 17.0 {'body wraps/turns/mop': 2.3, 'perimeter sweep': 123.8, 'plunge departure': 1.4, 'starter': 3.8, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 264.8}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 80.4}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 34.2, 'starter': 3.2, 'waterline cleanup': 12.6}
+  perimeter sweep: n 3502, sim median 0.900 max 0.955; exact median 1.000 min 0.952 max 1.000
+  plunge departure: n 121, sim median 0.919 max 0.954; exact median 0.994 min 0.539 max 1.000
+  starter: n 5, sim median 0.498 max 0.518; exact median 0.435 min 0.435 max 0.457
+  waterline cleanup: n 1089, sim median 0.850 max 0.955; exact median 1.000 min 0.026 max 1.000
+oneway bounds {'exact_s2': 0.471, 'screen_s2': 0.5126, 'exact_s1.2': 0.3272, 'screen_s1.2': 0.3689}
+oneway levels [(17.0, 0), (11.0, 5528), (5.0, 7494), (0.5, 9441)] waterline starts [5323, 7270, 9214, 12540] body starts {17.0: 127, 11.0: 5608, 5.0: 7574, 0.5: 9549}
+oneway linear+arc cut mm 43818.0
+
+oneway over exact_s2=0.4710: 1372.7 mm = 3.13% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1012.0 helix/plunge samples)
+   waterline cleanup                 313.2 mm   (+2440.0 helix/plunge samples)
+   plunge departure                   32.1 mm   (+124.0 helix/plunge samples)
+   starter                             1.3 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+10112.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+4.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 238.8}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 53.9}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 32.1, 'starter': 0.3, 'waterline cleanup': 9.0}
+
+oneway over screen_s2=0.5126: 1279.0 mm = 2.92% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1009.0 helix/plunge samples)
+   waterline cleanup                 222.7 mm   (+2117.0 helix/plunge samples)
+   plunge departure                   29.9 mm   (+123.0 helix/plunge samples)
+   starter                             0.3 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+10101.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+4.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 182.7}
+   level 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 19.9}
+   level 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.9, 'waterline cleanup': 8.7}
+
+oneway over exact_s1.2=0.3272: 1452.4 mm = 3.31% of linear+arc cut
+   perimeter sweep                  1026.3 mm   (+1022.0 helix/plunge samples)
+   waterline cleanup                 374.8 mm   (+2668.0 helix/plunge samples)
+   plunge departure                   36.1 mm   (+126.0 helix/plunge samples)
+   starter                            14.4 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.6 mm   (+3.0 helix/plunge samples)
+   keep-down link (traverse)           0.3 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+11046.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+4.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 0.6, 'perimeter sweep': 123.8, 'plunge departure': 0.5, 'starter': 4.3, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.9}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+   level 0.5 {'keep-down link (traverse)': 0.3, 'perimeter sweep': 287.5, 'plunge departure': 35.6, 'starter': 3.2, 'waterline cleanup': 12.5}
+
+oneway over screen_s1.2=0.3689: 1443.7 mm = 3.29% of linear+arc cut
+   perimeter sweep                  1026.1 mm   (+1020.0 helix/plunge samples)
+   waterline cleanup                 372.9 mm   (+2643.0 helix/plunge samples)
+   plunge departure                   34.4 mm   (+125.0 helix/plunge samples)
+   starter                            10.0 mm   (+0 helix/plunge samples)
+   keep-down link (traverse)           0.3 mm   (+0 helix/plunge samples)
+   body wraps/turns/mop                0.0 mm   (+3.0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+10375.0 helix/plunge samples)
+   draped (dz) body cut                0.0 mm   (+4.0 helix/plunge samples)
+   level 17.0 {'perimeter sweep': 123.6, 'plunge departure': 0.3, 'starter': 2.8, 'waterline cleanup': 11.4}
+   level 11.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 267.3}
+   level 5.0 {'perimeter sweep': 307.5, 'starter': 2.7, 'waterline cleanup': 82.4}
+   level 0.5 {'keep-down link (traverse)': 0.3, 'perimeter sweep': 287.5, 'plunge departure': 34.1, 'starter': 1.9, 'waterline cleanup': 11.8}
+oneway samples to read 4990
+oneway done 9.1 s
+oneway
+  sim > 0.471: total 1372.7 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 313.2, 'plunge departure': 32.1, 'starter': 1.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.5, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 238.8}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 0.3, 'waterline cleanup': 53.9}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 32.1, 'starter': 0.3, 'waterline cleanup': 9.0}
+  sim > screen 0.5126: total 1279.0 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 222.7, 'plunge departure': 29.9, 'starter': 0.3}
+     Z 17.0 {'perimeter sweep': 123.6, 'starter': 0.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 182.7}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 19.9}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 29.9, 'waterline cleanup': 8.7}
+  sim > 0.471 AND exact > 0.471: total 1365.5 mm; {'perimeter sweep': 1026.1, 'waterline cleanup': 307.4, 'plunge departure': 32.1}
+     Z 17.0 {'perimeter sweep': 123.6, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'waterline cleanup': 236.0}
+     Z 5.0 {'perimeter sweep': 307.5, 'waterline cleanup': 51.3}
+     Z 0.5 {'perimeter sweep': 287.5, 'plunge departure': 32.1, 'waterline cleanup': 8.7}
+  sim > 0.471, exact <= 0.471 (sim-only): total 7.1 mm; {'waterline cleanup': 5.8, 'starter': 1.3}
+     Z 17.0 {'starter': 0.5}
+     Z 11.0 {'starter': 0.3, 'waterline cleanup': 2.9}
+     Z 5.0 {'starter': 0.3, 'waterline cleanup': 2.7}
+     Z 0.5 {'starter': 0.3, 'waterline cleanup': 0.3}
+  sim > 0.3272 (s 1.2 exact bound): total 1452.4 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 374.8, 'plunge departure': 36.1, 'starter': 14.4, 'body wraps/turns/mop': 0.6, 'keep-down link (traverse)': 0.3}
+     Z 17.0 {'body wraps/turns/mop': 0.6, 'perimeter sweep': 123.8, 'plunge departure': 0.5, 'starter': 4.3, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 267.9}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 83.0}
+     Z 0.5 {'keep-down link (traverse)': 0.3, 'perimeter sweep': 287.5, 'plunge departure': 35.6, 'starter': 3.2, 'waterline cleanup': 12.5}
+  sim > 0.3272 AND exact > 0.3272: total 1445.8 mm; {'perimeter sweep': 1026.3, 'waterline cleanup': 369.0, 'plunge departure': 35.8, 'starter': 13.8, 'body wraps/turns/mop': 0.6, 'keep-down link (traverse)': 0.3}
+     Z 17.0 {'body wraps/turns/mop': 0.6, 'perimeter sweep': 123.8, 'plunge departure': 0.5, 'starter': 3.8, 'waterline cleanup': 11.4}
+     Z 11.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 265.1}
+     Z 5.0 {'perimeter sweep': 307.5, 'starter': 3.4, 'waterline cleanup': 80.4}
+     Z 0.5 {'keep-down link (traverse)': 0.3, 'perimeter sweep': 287.5, 'plunge departure': 35.4, 'starter': 3.2, 'waterline cleanup': 12.2}
+  perimeter sweep: n 3502, sim median 0.900 max 0.955; exact median 1.000 min 0.952 max 1.000
+  plunge departure: n 124, sim median 0.920 max 0.955; exact median 0.994 min 0.539 max 1.000
+  starter: n 5, sim median 0.498 max 0.518; exact median 0.435 min 0.435 max 0.457
+  waterline cleanup: n 1076, sim median 0.850 max 0.955; exact median 1.000 min 0.018 max 1.000
+agent bounds {'exact_s2': 0.471, 'screen_s2': 0.5126, 'exact_s1.2': 0.3272, 'screen_s1.2': 0.3689}
+agent levels [(17.0, 0), (11.0, 1348), (5.0, 2150), (0.5, 2961)] waterline starts [1175, 1960, 2769, 3780] body starts {17.0: 52, 11.0: 1379, 5.0: 2181, 0.5: 3018}
+agent linear+arc cut mm 13768.6
+
+agent over exact_s2=0.4710: 2779.8 mm = 20.19% of linear+arc cut
+   perimeter sweep                  1146.5 mm   (+1028.0 helix/plunge samples)
+   body wraps/turns/mop             1111.1 mm   (+0 helix/plunge samples)
+   waterline cleanup                 364.2 mm   (+2643.0 helix/plunge samples)
+   plunge departure                  135.6 mm   (+1.0 helix/plunge samples)
+   starter                            22.4 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+2197.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 365.4, 'perimeter sweep': 154.2, 'plunge departure': 51.8, 'starter': 5.2, 'waterline cleanup': 8.0}
+   level 11.0 {'body wraps/turns/mop': 272.0, 'perimeter sweep': 336.4, 'plunge departure': 14.5, 'starter': 5.7, 'waterline cleanup': 274.9}
+   level 5.0 {'body wraps/turns/mop': 267.2, 'perimeter sweep': 336.4, 'plunge departure': 14.5, 'starter': 5.7, 'waterline cleanup': 58.2}
+   level 0.5 {'body wraps/turns/mop': 206.4, 'perimeter sweep': 319.6, 'plunge departure': 54.8, 'starter': 5.7, 'waterline cleanup': 23.1}
+
+agent over screen_s2=0.5126: 2489.6 mm = 18.08% of linear+arc cut
+   perimeter sweep                  1146.5 mm   (+1026.0 helix/plunge samples)
+   body wraps/turns/mop              925.4 mm   (+0 helix/plunge samples)
+   waterline cleanup                 283.4 mm   (+2350.0 helix/plunge samples)
+   plunge departure                  111.8 mm   (+0 helix/plunge samples)
+   starter                            22.4 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+2197.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 281.0, 'perimeter sweep': 154.2, 'plunge departure': 40.6, 'starter': 5.2, 'waterline cleanup': 6.8}
+   level 11.0 {'body wraps/turns/mop': 234.0, 'perimeter sweep': 336.4, 'plunge departure': 12.7, 'starter': 5.7, 'waterline cleanup': 224.5}
+   level 5.0 {'body wraps/turns/mop': 230.1, 'perimeter sweep': 336.4, 'plunge departure': 13.0, 'starter': 5.7, 'waterline cleanup': 29.9}
+   level 0.5 {'body wraps/turns/mop': 180.3, 'perimeter sweep': 319.6, 'plunge departure': 45.5, 'starter': 5.7, 'waterline cleanup': 22.2}
+
+agent over exact_s1.2=0.3272: 5571.4 mm = 40.46% of linear+arc cut
+   body wraps/turns/mop             3670.3 mm   (+0 helix/plunge samples)
+   perimeter sweep                  1146.5 mm   (+1032.0 helix/plunge samples)
+   waterline cleanup                 430.8 mm   (+2859.0 helix/plunge samples)
+   plunge departure                  301.5 mm   (+21.0 helix/plunge samples)
+   starter                            22.4 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+2393.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 1499.5, 'perimeter sweep': 154.2, 'plunge departure': 128.0, 'starter': 5.2, 'waterline cleanup': 18.0}
+   level 11.0 {'body wraps/turns/mop': 788.7, 'perimeter sweep': 336.4, 'plunge departure': 17.8, 'starter': 5.7, 'waterline cleanup': 302.2}
+   level 5.0 {'body wraps/turns/mop': 810.3, 'perimeter sweep': 336.4, 'plunge departure': 18.4, 'starter': 5.7, 'waterline cleanup': 85.5}
+   level 0.5 {'body wraps/turns/mop': 571.8, 'perimeter sweep': 319.6, 'plunge departure': 137.2, 'starter': 5.7, 'waterline cleanup': 25.2}
+
+agent over screen_s1.2=0.3689: 4924.1 mm = 35.76% of linear+arc cut
+   body wraps/turns/mop             3071.2 mm   (+0 helix/plunge samples)
+   perimeter sweep                  1146.5 mm   (+1031.0 helix/plunge samples)
+   waterline cleanup                 424.2 mm   (+2829.0 helix/plunge samples)
+   plunge departure                  259.9 mm   (+21.0 helix/plunge samples)
+   starter                            22.4 mm   (+0 helix/plunge samples)
+   vertical (entry, lift)              0.0 mm   (+2245.0 helix/plunge samples)
+   level 17.0 {'body wraps/turns/mop': 1320.0, 'perimeter sweep': 154.2, 'plunge departure': 110.4, 'starter': 5.2, 'waterline cleanup': 12.7}
+   level 11.0 {'body wraps/turns/mop': 646.2, 'perimeter sweep': 336.4, 'plunge departure': 16.3, 'starter': 5.7, 'waterline cleanup': 301.6}
+   level 5.0 {'body wraps/turns/mop': 668.3, 'perimeter sweep': 336.4, 'plunge departure': 16.6, 'starter': 5.7, 'waterline cleanup': 84.9}
+   level 0.5 {'body wraps/turns/mop': 436.7, 'perimeter sweep': 319.6, 'plunge departure': 116.6, 'starter': 5.7, 'waterline cleanup': 25.0}
+agent samples to read 18792
+agent done 33.2 s
+agent
+  sim > 0.471: total 2779.8 mm; {'perimeter sweep': 1146.5, 'body wraps/turns/mop': 1111.1, 'waterline cleanup': 364.2, 'plunge departure': 135.6, 'starter': 22.4}
+     Z 17.0 {'body wraps/turns/mop': 365.4, 'perimeter sweep': 154.2, 'plunge departure': 51.8, 'starter': 5.2, 'waterline cleanup': 8.0}
+     Z 11.0 {'body wraps/turns/mop': 272.0, 'perimeter sweep': 336.4, 'plunge departure': 14.5, 'starter': 5.7, 'waterline cleanup': 274.9}
+     Z 5.0 {'body wraps/turns/mop': 267.2, 'perimeter sweep': 336.4, 'plunge departure': 14.5, 'starter': 5.7, 'waterline cleanup': 58.2}
+     Z 0.5 {'body wraps/turns/mop': 206.4, 'perimeter sweep': 319.6, 'plunge departure': 54.8, 'starter': 5.7, 'waterline cleanup': 23.1}
+  sim > screen 0.5126: total 2489.6 mm; {'perimeter sweep': 1146.5, 'body wraps/turns/mop': 925.4, 'waterline cleanup': 283.4, 'plunge departure': 111.8, 'starter': 22.4}
+     Z 17.0 {'body wraps/turns/mop': 281.0, 'perimeter sweep': 154.2, 'plunge departure': 40.6, 'starter': 5.2, 'waterline cleanup': 6.8}
+     Z 11.0 {'body wraps/turns/mop': 234.0, 'perimeter sweep': 336.4, 'plunge departure': 12.7, 'starter': 5.7, 'waterline cleanup': 224.5}
+     Z 5.0 {'body wraps/turns/mop': 230.1, 'perimeter sweep': 336.4, 'plunge departure': 13.0, 'starter': 5.7, 'waterline cleanup': 29.9}
+     Z 0.5 {'body wraps/turns/mop': 180.3, 'perimeter sweep': 319.6, 'plunge departure': 45.5, 'starter': 5.7, 'waterline cleanup': 22.2}
+  sim > 0.471 AND exact > 0.471: total 2722.3 mm; {'perimeter sweep': 1145.6, 'body wraps/turns/mop': 1072.5, 'waterline cleanup': 353.2, 'plunge departure': 128.6, 'starter': 22.4}
+     Z 17.0 {'body wraps/turns/mop': 350.0, 'perimeter sweep': 154.2, 'plunge departure': 46.6, 'starter': 5.2, 'waterline cleanup': 2.9}
+     Z 11.0 {'body wraps/turns/mop': 263.2, 'perimeter sweep': 336.1, 'plunge departure': 14.2, 'starter': 5.7, 'waterline cleanup': 271.9}
+     Z 5.0 {'body wraps/turns/mop': 259.0, 'perimeter sweep': 336.1, 'plunge departure': 14.2, 'starter': 5.7, 'waterline cleanup': 55.3}
+     Z 0.5 {'body wraps/turns/mop': 200.3, 'perimeter sweep': 319.3, 'plunge departure': 53.6, 'starter': 5.7, 'waterline cleanup': 23.1}
+  sim > 0.471, exact <= 0.471 (sim-only): total 57.5 mm; {'body wraps/turns/mop': 38.7, 'waterline cleanup': 11.0, 'plunge departure': 7.0, 'perimeter sweep': 0.9}
+     Z 17.0 {'body wraps/turns/mop': 15.4, 'plunge departure': 5.2, 'waterline cleanup': 5.0}
+     Z 11.0 {'body wraps/turns/mop': 8.8, 'perimeter sweep': 0.3, 'plunge departure': 0.3, 'waterline cleanup': 3.0}
+     Z 5.0 {'body wraps/turns/mop': 8.2, 'perimeter sweep': 0.3, 'plunge departure': 0.3, 'waterline cleanup': 3.0}
+     Z 0.5 {'body wraps/turns/mop': 6.2, 'perimeter sweep': 0.3, 'plunge departure': 1.2}
+  sim > 0.3272 (s 1.2 exact bound): total 5571.4 mm; {'body wraps/turns/mop': 3670.3, 'perimeter sweep': 1146.5, 'waterline cleanup': 430.8, 'plunge departure': 301.5, 'starter': 22.4}
+     Z 17.0 {'body wraps/turns/mop': 1499.5, 'perimeter sweep': 154.2, 'plunge departure': 128.0, 'starter': 5.2, 'waterline cleanup': 18.0}
+     Z 11.0 {'body wraps/turns/mop': 788.7, 'perimeter sweep': 336.4, 'plunge departure': 17.8, 'starter': 5.7, 'waterline cleanup': 302.2}
+     Z 5.0 {'body wraps/turns/mop': 810.3, 'perimeter sweep': 336.4, 'plunge departure': 18.4, 'starter': 5.7, 'waterline cleanup': 85.5}
+     Z 0.5 {'body wraps/turns/mop': 571.8, 'perimeter sweep': 319.6, 'plunge departure': 137.2, 'starter': 5.7, 'waterline cleanup': 25.2}
+  sim > 0.3272 AND exact > 0.3272: total 5498.3 mm; {'body wraps/turns/mop': 3620.2, 'perimeter sweep': 1145.6, 'waterline cleanup': 416.0, 'plunge departure': 294.0, 'starter': 22.4}
+     Z 17.0 {'body wraps/turns/mop': 1482.8, 'perimeter sweep': 154.2, 'plunge departure': 122.4, 'starter': 5.2, 'waterline cleanup': 8.8}
+     Z 11.0 {'body wraps/turns/mop': 775.4, 'perimeter sweep': 336.1, 'plunge departure': 17.8, 'starter': 5.7, 'waterline cleanup': 299.5}
+     Z 5.0 {'body wraps/turns/mop': 798.5, 'perimeter sweep': 336.1, 'plunge departure': 18.4, 'starter': 5.7, 'waterline cleanup': 82.8}
+     Z 0.5 {'body wraps/turns/mop': 563.5, 'perimeter sweep': 319.3, 'plunge departure': 135.4, 'starter': 5.7, 'waterline cleanup': 24.9}
+  body wraps/turns/mop: n 3783, sim median 0.800 max 0.955; exact median 0.881 min 0.000 max 1.000
+  perimeter sweep: n 3865, sim median 0.900 max 0.955; exact median 1.000 min 0.068 max 1.000
+  plunge departure: n 462, sim median 0.666 max 0.951; exact median 0.682 min 0.108 max 1.000
+  starter: n 78, sim median 0.919 max 0.946; exact median 0.995 min 0.688 max 0.995
+  waterline cleanup: n 1265, sim median 0.850 max 0.953; exact median 0.997 min 0.081 max 1.000

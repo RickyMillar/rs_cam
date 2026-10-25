@@ -361,3 +361,167 @@ Compare them with section 4.
   isolated. The first read after this run: whether each wrap follows a 3D
   entry that is not a 2D entry (proposal 1's instrument, on the arm).
 - The shipped impact of G-AIRCENTRE is not measured.
+
+## C30. Corne "3D Rough 1": which producer cuts over the bound (2026-10-25)
+
+Measurement only. No code change, no cargo. Data: the D18 run
+`phase3/fix5/corne/geodesic_local_zigzag_pick/`, the D17 runs
+`phase3/fix4/corne/geodesic_local_{zigzag,oneway}/`, and the AgentSearch
+control `phase3/fix2/simart/corne/agent/` (the D-FIX2 rerun with
+`--sim-artifact`; `fix1/corne/agent` has no `simulation.json`). Scripts and
+output: `phase3/c30/` (`run_c30.sh` runs all four; `c30_output.txt`; 70 s).
+
+### C30.1 The method
+
+- **The length.** The measure of `fixture3d_v2.load_share`: the XY length
+  from the previous sample, summed over the cutting samples of toolpath 1
+  with `linear` or `arc` kinematics. It gives the lead's number exactly:
+  1375.8 mm over 0.471 on `geodesic_local_zigzag_pick`, 4.14 % of
+  33250.9 mm.
+- **The level.** The `Adaptive Z` annotations (generator move indices),
+  mapped to final move indices through the `Pass N` annotations and the
+  semantic `entry` items (same `pass_index`).
+- **The phase**, in the planner's order per level (C22 §10d):
+  1. Perimeter sweep: the level's first entry run. It is one closed loop
+     at every level: 456.7 mm, closed to 0.5 mm, at Z 17; 370.6 mm,
+     closed to 0.62 mm, at Z 11, 5 and 0.5.
+  2. The region body: from the level's second entry (the starter plunge)
+     to the first waterline entry.
+  3. The waterline cleanup: from the `Waterline cleanup` annotation to the
+     next level.
+- **The producer, in this order:**
+  - vertical (no XY step, or `plunge` kinematics): entries, peck
+    retracts, link lifts;
+  - perimeter sweep;
+  - waterline cleanup;
+  - starter: the run of the body's first entry;
+  - keep-down link traverse: body samples with `linking` intent;
+  - plunge departure: a move that starts within R of the last vertical
+    plunge (C18 rule C);
+  - draped: a body sample with |dz| > 0.01 mm;
+  - the rest of the body: wraps, turns and mop. The trace does not
+    separate these three, but section C30.2 shows that the geodesic
+    body has nothing over 0.471.
+- **The bounds** (`attribute.py` derives them):
+  - The lead's bounds: exact 0.471 and screen 0.5126. These are for
+    s 2.0, with the 0.3 mm sim cell.
+  - Corne's own stepover is 1.2. Its ceiling is
+    (1 - cos(1.05 · acos(1 - 1.2/3))) / 2 = 0.2188. So its exact bound is
+    0.2188 + 0.65/6 = 0.3272, and its screen is 0.2188 + 0.9/6 = 0.3689.
+    The 0.471 bound under-counts on Corne (D-FIX2 says so too).
+- **The exact oracle** (`exact.py`): C18's `exact_width_at` in numpy, on
+  the sample path. The earlier samples of the toolpath at or below the
+  sample's Z + 0.01 are stamped as discs of R. They are 0.3 mm apart, so
+  the cusp is 0.004 mm. The lattice pitch is 0.05 mm. `from` is the
+  previous sample. The oracle reads every linear or arc sample over
+  0.3272.
+
+### C30.2 Per producer: XY length over 0.471 (sim), all four levels
+
+| Producer | zigzag_pick (D18) | zigzag (D17) | oneway (D17) | AgentSearch |
+|---|---|---|---|---|
+| perimeter sweep | 1026.1 | 1026.1 | 1026.1 | 1146.5 |
+| waterline cleanup | 317.1 | 317.1 | 313.2 | 364.2 |
+| plunge departure (2D-exempt) | 31.3 | 31.3 | 32.1 | 135.6 |
+| starter | 1.3 | 1.3 | 1.3 | 22.4 |
+| body: wraps / turns / mop / agent passes | **0.0** | **0.0** | **0.0** | **1111.1** |
+| keep-down link traverse, draped body | 0.0 | 0.0 | 0.0 | 0.0 |
+| total | 1375.8 (4.14 %) | 1375.8 | 1372.7 | 2779.8 (20.2 % of 13768.6) |
+
+The `zigzag_pick` and D17 `zigzag` numbers are identical, because the two
+`program.nc` files are byte-identical (D18). One-way differs only in the
+waterline (-3.9 mm) and the departures (+0.8 mm). That explains the
+"within 3 mm".
+
+**The geodesic body has no linear or arc sample over 0.471.** The
+producer that every geodesic arm shares is the shipped slice:
+- the perimeter sweep: 74.6 % of the over length;
+- the waterline cleanup: 23.0 %;
+- the plunge departures, which the 2D rule exempts: 2.3 %.
+
+The perimeter sweep, the waterline cleanup and the departures carry
+1646 mm (59 %) of the AgentSearch over length. The other 1111 mm (40 %) is the agent passes themselves.
+
+### C30.3 Per level, `geodesic_local_zigzag_pick` (mm over 0.471)
+
+| Level | Perimeter sweep | Waterline cleanup | Departure | Starter | Body |
+|---|---|---|---|---|---|
+| Z 17 | 123.6 | 11.4 | 0 | 0.5 | 0 |
+| Z 11 | 307.5 | 240.7 | 0 | 0.3 | 0 |
+| Z 5 | 307.5 | 56.0 | 0 | 0.3 | 0 |
+| Z 0.5 | 287.5 | 9.0 | 31.3 | 0.3 | 0 |
+
+AgentSearch, the same columns:
+- Z 17: 154.2 / 8.0 / 51.8 / 5.2 / 365.4
+- Z 11: 336.4 / 274.9 / 14.5 / 5.7 / 272.0
+- Z 5: 336.4 / 58.2 / 14.5 / 5.7 / 267.2
+- Z 0.5: 319.6 / 23.1 / 54.8 / 5.7 / 206.4
+
+Notes on the three shipped producers:
+
+- **The perimeter sweep** is a full slot by design. It is a loop through
+  fresh stock at the full level depth (6 mm at Corne Depth/Pass 6). Its
+  exact width is 0.952-1.000, median 1.000. Another 267 mm of it (all
+  levels) reads over 0.471 on `helix` kinematics samples (draped, Z
+  changing), which the page's measure leaves out.
+- **The waterline cleanup**:
+  - Most of it is at Z 11, on the first contour (start (20.3, -106.2)):
+    169.2 of its 317.3 mm is over, exact > 0.513 on 169.0 mm.
+  - At Z 11, Z 5 and Z 0.5, region 1 is skipped by F-038 (C22 §10d). The
+    waterline traces every mesh contour at the Z (`path.rs`, the F9
+    note), so it can cut a contour whose band no clearing pass planned.
+    This is a hypothesis for the Z 11 share; C30 did not map the contour
+    to the region.
+  - Its exact median is 1.000. Another 276 mm is over on `helix`
+    samples.
+- **The plunge departures at Z 0.5**: 0.3 mm single samples just after
+  the keep-down plunges into the hex holes (exact 0.54-1.00). C18 rule C
+  exempts them.
+
+At Corne's own bound (exact 0.3272), the geodesic body reads 2.3 mm (Z 17)
+and the starter 13.8 mm (exact 0.435-0.457). The AgentSearch body reads
+3620 mm. The perimeter and waterline numbers barely change, because they
+are slots.
+
+### C30.4 Which share is a sim-cell artefact
+
+| Run | Sim > 0.471 | Exact also > 0.471 | Sim-only (artefact) | Sim > screen 0.5126 |
+|---|---|---|---|---|
+| zigzag_pick / zigzag | 1375.8 | 1368.6 | **7.1 mm (0.5 %)**: waterline 5.8, starter 1.3 | 1282.3 |
+| oneway | 1372.7 | 1365.5 | 7.1 mm (0.5 %) | 1279.0 |
+| AgentSearch | 2779.8 | 2722.3 | **57.5 mm (2.1 %)**: body 38.7, waterline 11.0, departure 7.0, perimeter 0.9 | 2489.6 |
+
+- **The cell-aware screen is not an artefact filter here.** The screen
+  drops 93.5 mm of `zigzag_pick` (the band 0.471 < sim ≤ 0.5126). The
+  exact oracle reads 92.4 mm of that band over 0.5126 too. The simulation
+  under-reads those samples (blended partial dexels), so they are real.
+  For AgentSearch the band is 290.2 mm, and the exact reads 201.3 mm of it
+  over 0.5126.
+- **Over the screen, the sim almost never over-reads.** Of the 1282.3 mm
+  over 0.5126, the exact reads only 6.1 mm at 0.471 or less (AgentSearch:
+  37.4 of 2489.6).
+- So on Corne the artefact share of the 0.471 over length is 0.5 % for
+  the geodesic arms and 2.1 % for AgentSearch. The rest is real swept
+  width on the exact geometry. Of the geodesic arms' real share, all is
+  the shipped perimeter sweep, the waterline cleanup, and the exempt
+  departures.
+
+### C30.5 Why the C12 heavy test reads 0 and Corne does not
+
+The C18 oracle exempts the perimeter sweep (by band) and the waterline
+cleanup (by tag). It also exempts the plunge departures (rule C). On
+Corne those three are 1374.5 of the 1375.8 mm. The 1.3 mm left is the
+starter, and the exact oracle reads it at 0.435-0.457, under 0.471. So the
+C12 oracle and Corne agree: the geodesic clearing holds 0.471. The
+remaining load is in the shipped slice (G-PERIMTAG, G-WATERLOAD).
+
+### C30.6 Limits
+
+- The exact oracle is a 2D column reading at the sample's Z. It counts a
+  thin layer left between two drape heights as full-width stock.
+- The `helix`-kinematics samples (draped, Z changing) are left out of the
+  length, as in the page measure. They add 543 mm over 0.471, all in
+  the perimeter sweep (267.0) and the waterline (275.8).
+- The body cannot be split into wraps, turns and mop from the trace.
+  This matters only for AgentSearch, because the geodesic body has 0 mm
+  over 0.471.
