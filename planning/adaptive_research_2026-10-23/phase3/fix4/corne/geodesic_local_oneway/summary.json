@@ -1,0 +1,58 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 2,
+  "total_cutting_distance_mm": 72262.16788077148,
+  "total_rapid_distance_mm": 21357.297911102385,
+  "total_runtime_s": 2933.983548065454,
+  "air_cut_pct_of_total_runtime": 62.5333621217397,
+  "air_cut_pct_of_cutting_time": 70.19825732270051,
+  "average_engagement": 0.1364994598232588,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 12947,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6034,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 62.5333621217397,
+    "headline": "WARNING: 62.5% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [
+      "G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.\n  toolpath 4: chipload: simulation trace is stale — re-run simulation\n  toolpath 4: power: simulation trace is stale — re-run simulation\n  toolpath 4: deflection: simulation trace is stale — re-run simulation\n  toolpath 4: depth of cut: simulation trace is stale — re-run simulation"
+    ],
+    "feeds_cautions": []
+  }
+}

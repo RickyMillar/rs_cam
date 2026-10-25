@@ -3134,3 +3134,77 @@ candidates from the C26 sim of "3D Rough 1":
 5. **The producer tag.** The trace tags every over sample with the
    operation item only (intent clearing_cut, never linking), so it cannot
    name the producer more finely.
+
+## D17 at 6ce373922 + uncommitted C26b and C28
+
+- C26b (C22): `adaptive3d/clearing.rs` and `HeldLinks` in
+  `research_geodesic.rs`; P3_C22_3d_turns.md §10b.
+- C28 (C23): the pick (`geodesic_local_zigzag_pick`); end of §C28 in
+  P2_C2_geodesic_fixes.md.
+
+The 2D baseline is the D15 render dir (D16 ran no harness). Lane script,
+`timeout` on each command, adaptive-head. The diff did not change during
+the run. Disk: 85 GB.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | byte parity, plain and research; fmt; research clippy; the 13 adaptive3d sentries | green: 5/5, 5/5, clean, clean, 13/13 (plansimgap 2/2) |
+| 2 | `--lib research_geodesic`; `the_pick_keeps_the_plan_the_replay_re_enters_less` | green 24 passed, 2 ignored; green 1/1 |
+| 3 | the 2D harness, release | green 1/1 (14.87 s); output in `phase2/d17_harness.txt` |
+| 4 | the plain C12 test | green 1/1 |
+| 4 | the heavy C12 test | green 1/1 (961.37 s); equals D16c on every printed count; output in `phase2/d17_c12_test_output.txt` |
+
+**2D byte compare against D15.** All 181 render files that the harness
+wrote again are byte-equal, except `summary.txt`. That file only adds the
+two `geodesic_local_zigzag_pick` blocks and loses no line.
+
+**The pick column** (verbatim `.c16.txt` lines):
+- Star: 38 = S1 J23 P14. "pick piece 0: zigzag re-entries 38 (keep-down
+  251.2 mm), zigzag_v2 re-entries 38 (keep-down 251.2 mm); kept zigzag".
+  Pick A: holds.
+- Pocket: 26 = S1 J11 P14. "pick piece 0: zigzag re-entries 44 (keep-down
+  211.0 mm), zigzag_v2 re-entries 26 (keep-down 998.1 mm); kept
+  zigzag_v2". Pick B: holds.
+- Star: the one non-turn over is the known mop step, 0.4509; `without 0`.
+- Pocket: 0 over; `without 0`.
+
+**The plain C12 test.** The pick mode keeps zigzag_v2: 46/46/0, reduced 45
+(lowest 0.310), longest 2.932 mm, fed 46, unfed 0, 2362 moves, 48 entries.
+That is identical to the zigzag_v2 line. The other modes equal D16c.
+
+### D17 fixture runs at 13667775d (C26b + C28 committed) and the page
+
+**Runs.** The fixture worktree moved to 13667775d (clean). The release CLI
+with research was rebuilt (18:23:12). Script `phase3/fix4/run_fix4.sh`:
+Corne, the D-FIX2 flags plus `--sim-artifact`, `timeout 900`.
+
+**All four export:** rc 0, and no "cuts into the model" line.
+
+| Arm | Time | Cycle | Cutting | Entries, 3D Rough 1 (Z 17 / 11 / 5 / 0.5) | Keep-down, 3D Rough 1 | Over 0.471 (screen) | Normal step |
+|---|---|---|---|---|---|---|---|
+| zigzag | 9 s | 2607 s | 60483 mm | 56 (10 / 6 / 6 / 34) | 1050, 2371 mm | 4.14% (3.86%) | 1.136 mm |
+| zigzag_v2 | 10 s | 2815 s | 69545 mm | 67 (14 / 8 / 8 / 37) | 1413, 8085 mm | 3.30% (3.07%) | 1.131 mm |
+| oneway | 11 s | 2934 s | 72262 mm | 91 (23 / 13 / 13 / 42) | 1487, 9605 mm | 3.13% (2.92%) | 1.131 mm |
+| zigzag_pick | 12 s | 2815 s | 69545 mm | 67 (14 / 8 / 8 / 37) | 1413, 8085 mm | 3.30% (3.07%) | 1.131 mm |
+
+**The pick against the 3D entries.**
+- `zigzag_pick`'s `program.nc` is byte-identical to zigzag_v2.
+- Its four "C28 pick" lines (stdout; one per slice piece, one per level)
+  all read `kept=B`:
+  - Z 17: entries_a 91 (keep-down 401.2 mm), entries_b 87 (2427.2 mm).
+  - Z 11, Z 5 and Z 0.5: entries_a 107 (110.7 mm), entries_b 80
+    (2235.8 mm).
+- In 3D, plan B plunges MORE than plan A at every level: 14 / 8 / 8 / 37
+  against 10 / 6 / 6 / 34.
+- So C23's prediction ("plain zigzag at every level, 56 entries") is NOT
+  met. The pick's 2D re-entry count does not predict the 3D plunges:
+  most 2D re-entries become 3D keep-down links. Link runs per level:
+  zigzag 648 / 62 / 293 / 47; zigzag_v2 778 / 106 / 406 / 123.
+
+**The page** `fixture3d_v2.html`:
+- The Corne section is AgentSearch (cdc9814e) plus the four columns at
+  13667775d. The earlier Corne geodesic columns are in this record.
+- Two sentences: C26b removes the C26 export refusal; the pick result.
+- The asserts read "all 402 checks hold". One injected wrong number (the
+  zigzag cycle time) was caught; the page was restored.
+- The previous spec is kept as `phase3/fix2/spec_d16c.json`.

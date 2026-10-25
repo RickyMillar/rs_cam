@@ -1,6 +1,6 @@
 {
  "binary": "/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli",
- "binary_mtime": "2026-10-25T17:43:35",
+ "binary_mtime": "2026-10-25T18:23:12",
  "fixtures": {
   "corne": {
    "levels_shown": [
@@ -84,11 +84,11 @@
      }
     },
     "geodesic_local_zigzag": {
-     "commit": "31935b89",
-     "cycle_time_s": 2745,
-     "cutting_mm": 65025,
-     "rapid_mm": 18013,
-     "air_cut_pct": 57.8,
+     "commit": "13667775d",
+     "cycle_time_s": 2607,
+     "cutting_mm": 60483,
+     "rapid_mm": 18003,
+     "air_cut_pct": 60.0,
      "collisions": 0,
      "rapid_collisions": 0,
      "sim_resolution": {
@@ -99,142 +99,69 @@
      },
      "ops": {
       "3D Rough 1": {
-       "moves": 10592,
+       "moves": 10918,
        "entries": 56,
-       "keepdown_links": 1035,
-       "keepdown_mm": 2026.1,
-       "cut_xy_mm": 33316.2
+       "keepdown_links": 1050,
+       "keepdown_mm": 2371.3,
+       "cut_xy_mm": 29940.6
       },
       "3D Rough 1 [copy]": {
-       "moves": 5690,
+       "moves": 6034,
        "entries": 176,
        "keepdown_links": 0,
        "keepdown_mm": 0,
-       "cut_xy_mm": 7051.5
+       "cut_xy_mm": 7060.3
       }
      },
      "images": {
       "Z 17.00": {
        "entries": 10,
-       "keepdown_mm": 1391.9,
-       "cut_mm": 13468.9
+       "keepdown_mm": 1505.6,
+       "cut_mm": 11970.5
       },
       "Z 5.00": {
        "entries": 6,
-       "keepdown_mm": 322.5,
-       "cut_mm": 6668.0
+       "keepdown_mm": 441.4,
+       "cut_mm": 5774.2
       },
       "Z 0.50": {
        "entries": 34,
-       "keepdown_mm": 49.2,
-       "cut_mm": 6608.3
+       "keepdown_mm": 47.0,
+       "cut_mm": 6340.4
       }
      },
      "findings": [
-      "\"3D Rough 1 (copy)\": the rough leaves 1139 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1125 of them against a wall: 3468.6 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.7 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.16 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 1.04 mm high, 0.30 mm wide, 0.5 mm2 at (89.7, -5.2); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1129 more. 373 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
-      "\"3D Rough 1\": the rough leaves 966 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 951 of them against a wall: 5108.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1400.8 mm2 at (28.8, -16.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.2); 0.95 mm high, 0.30 mm wide, 0.2 mm2 at (89.4, -4.9); 0.92 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 956 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1 (copy)\": the rough leaves 1024 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1010 of them against a wall: 3449.4 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1014 more. 359 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 961 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 950 of them against a wall: 5106.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1400.9 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); and 951 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
       "WARNING: high air cutting on '3D Rough 1' is 50% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
      ],
      "spacing": {
-      "n": 179,
-      "apart": 0,
-      "median": 1.125,
-      "min": 0.092,
-      "max": 3.937
+      "n": 160,
+      "apart": 3,
+      "median": 1.124,
+      "min": 0.051,
+      "max": 4.554
      },
      "normal_step": {
-      "n": 1974,
-      "apart": 126,
-      "median": 1.166,
-      "p10": 1.006,
-      "p90": 1.42
+      "n": 1887,
+      "apart": 209,
+      "median": 1.136,
+      "p10": 0.664,
+      "p90": 2.542
      },
      "load": {
-      "cut_mm": 33139.5,
-      "over_exact_pct": 4.59,
+      "cut_mm": 33250.9,
+      "over_exact_pct": 4.14,
       "screen": 0.5126,
-      "over_screen_pct": 4.32
-     }
-    },
-    "geodesic_local_oneway": {
-     "commit": "31935b89",
-     "cycle_time_s": 3068,
-     "cutting_mm": 76743,
-     "rapid_mm": 21402,
-     "air_cut_pct": 60.4,
-     "collisions": 0,
-     "rapid_collisions": 0,
-     "sim_resolution": {
-      "mm": 0.3,
-      "mode": "auto",
-      "source": "project",
-      "project_mm": 0.3
-     },
-     "ops": {
-      "3D Rough 1": {
-       "moves": 12432,
-       "entries": 91,
-       "keepdown_links": 1324,
-       "keepdown_mm": 3021.2,
-       "cut_xy_mm": 42760.6
-      },
-      "3D Rough 1 [copy]": {
-       "moves": 5690,
-       "entries": 176,
-       "keepdown_links": 0,
-       "keepdown_mm": 0,
-       "cut_xy_mm": 7051.5
-      }
-     },
-     "images": {
-      "Z 17.00": {
-       "entries": 23,
-       "keepdown_mm": 1984.3,
-       "cut_mm": 16364.8
-      },
-      "Z 5.00": {
-       "entries": 13,
-       "keepdown_mm": 447.6,
-       "cut_mm": 8856.8
-      },
-      "Z 0.50": {
-       "entries": 42,
-       "keepdown_mm": 209.7,
-       "cut_mm": 8765.5
-      }
-     },
-     "findings": [
-      "\"3D Rough 1 (copy)\": the rough leaves 1122 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1110 of them against a wall: 3467.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.7 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.18 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -4.6); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1112 more. 372 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
-      "\"3D Rough 1\": the rough leaves 964 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 951 of them against a wall: 5089.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.9 mm2 at (28.8, -16.6); 1.01 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.98 mm high, 0.30 mm wide, 0.4 mm2 at (89.7, -5.2); 0.93 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -4.6); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 954 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
-      "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
-     ],
-     "spacing": {
-      "n": 216,
-      "apart": 0,
-      "median": 0.96,
-      "min": 0.069,
-      "max": 5.159
-     },
-     "normal_step": {
-      "n": 1916,
-      "apart": 134,
-      "median": 1.2,
-      "p10": 1.028,
-      "p90": 1.331
-     },
-     "load": {
-      "cut_mm": 43614.2,
-      "over_exact_pct": 3.48,
-      "screen": 0.5126,
-      "over_screen_pct": 3.28
+      "over_screen_pct": 3.86
      }
     },
     "geodesic_local_zigzag_v2": {
-     "commit": "4cceca914",
-     "cycle_time_s": 2954,
-     "cutting_mm": 74059,
-     "rapid_mm": 18970,
-     "air_cut_pct": 60.5,
+     "commit": "13667775d",
+     "cycle_time_s": 2815,
+     "cutting_mm": 69545,
+     "rapid_mm": 18925,
+     "air_cut_pct": 62.6,
      "collisions": 0,
      "rapid_collisions": 0,
      "sim_resolution": {
@@ -245,69 +172,69 @@
      },
      "ops": {
       "3D Rough 1": {
-       "moves": 12020,
+       "moves": 12430,
        "entries": 67,
-       "keepdown_links": 1271,
-       "keepdown_mm": 2449.7,
-       "cut_xy_mm": 41281.3
+       "keepdown_links": 1413,
+       "keepdown_mm": 8084.5,
+       "cut_xy_mm": 32651.6
       },
       "3D Rough 1 [copy]": {
-       "moves": 5690,
+       "moves": 6034,
        "entries": 176,
        "keepdown_links": 0,
        "keepdown_mm": 0,
-       "cut_xy_mm": 7051.5
+       "cut_xy_mm": 7060.3
       }
      },
      "images": {
       "Z 17.00": {
        "entries": 14,
-       "keepdown_mm": 1824.2,
-       "cut_mm": 15317.8
+       "keepdown_mm": 3015.6,
+       "cut_mm": 12744.5
       },
       "Z 5.00": {
        "entries": 8,
-       "keepdown_mm": 314.1,
-       "cut_mm": 8713.9
+       "keepdown_mm": 2515.0,
+       "cut_mm": 5746.9
       },
       "Z 0.50": {
        "entries": 37,
-       "keepdown_mm": 48.3,
-       "cut_mm": 8619.7
+       "keepdown_mm": 101.7,
+       "cut_mm": 8297.7
       }
      },
      "findings": [
-      "\"3D Rough 1 (copy)\": the rough leaves 1117 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1108 of them against a wall: 3462.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.16 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 1.03 mm high, 0.30 mm wide, 0.5 mm2 at (89.7, -5.2); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 16.50 mm high, 3.90 mm wide, 103.1 mm2 at (85.5, -3.1) at a wall; and 1107 more. 370 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
-      "\"3D Rough 1\": the rough leaves 963 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 952 of them against a wall: 5042.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1401.5 mm2 at (28.8, -16.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.95 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.2); 0.95 mm high, 0.30 mm wide, 0.2 mm2 at (89.4, -4.9); 0.92 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); and 953 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1 (copy)\": the rough leaves 1005 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 996 of them against a wall: 3443.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 16.66 mm high, 0.30 mm wide, 0.5 mm2 at (110.4, -9.7) at a wall; and 995 more. 358 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 956 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 949 of them against a wall: 5040.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1401.3 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 22.50 mm high, 9.47 mm wide, 3273.9 mm2 at (14.1, -109.3) at a wall; 14.55 mm high, 0.30 mm wide, 0.2 mm2 at (45.6, -7.3) at a wall; 11.69 mm high, 0.30 mm wide, 0.2 mm2 at (109.5, -7.9) at a wall; and 946 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
       "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
      ],
      "spacing": {
-      "n": 215,
-      "apart": 0,
-      "median": 0.975,
-      "min": 0.088,
-      "max": 4.105
+      "n": 158,
+      "apart": 4,
+      "median": 1.125,
+      "min": 0.051,
+      "max": 5.024
      },
      "normal_step": {
-      "n": 1932,
-      "apart": 130,
-      "median": 1.2,
-      "p10": 1.022,
-      "p90": 1.352
+      "n": 1852,
+      "apart": 226,
+      "median": 1.131,
+      "p10": 0.646,
+      "p90": 2.236
      },
      "load": {
-      "cut_mm": 41641.7,
-      "over_exact_pct": 3.66,
+      "cut_mm": 41791.9,
+      "over_exact_pct": 3.3,
       "screen": 0.5126,
-      "over_screen_pct": 3.44
+      "over_screen_pct": 3.07
      }
     },
-    "geodesic_local_oneway (C26)": {
-     "commit": "6ce373922",
-     "cycle_time_s": 2823,
-     "cutting_mm": 70128,
-     "rapid_mm": 21317,
-     "air_cut_pct": 61.5,
+    "geodesic_local_oneway": {
+     "commit": "13667775d",
+     "cycle_time_s": 2934,
+     "cutting_mm": 72262,
+     "rapid_mm": 21357,
+     "air_cut_pct": 62.5,
      "collisions": 0,
      "rapid_collisions": 0,
      "sim_resolution": {
@@ -318,11 +245,11 @@
      },
      "ops": {
       "3D Rough 1": {
-       "moves": 11925,
+       "moves": 12947,
        "entries": 91,
-       "keepdown_links": 1156,
-       "keepdown_mm": 13476.7,
-       "cut_xy_mm": 29301.4
+       "keepdown_links": 1487,
+       "keepdown_mm": 9604.8,
+       "cut_xy_mm": 33165.0
       },
       "3D Rough 1 [copy]": {
        "moves": 6034,
@@ -335,24 +262,24 @@
      "images": {
       "Z 17.00": {
        "entries": 23,
-       "keepdown_mm": 5508.7,
-       "cut_mm": 11564.0
+       "keepdown_mm": 3912.9,
+       "cut_mm": 13150.4
       },
       "Z 5.00": {
        "entries": 13,
-       "keepdown_mm": 2735.8,
+       "keepdown_mm": 2759.9,
        "cut_mm": 5718.4
       },
       "Z 0.50": {
        "entries": 42,
-       "keepdown_mm": 2503.2,
-       "cut_mm": 6183.5
+       "keepdown_mm": 202.9,
+       "cut_mm": 8460.8
       }
      },
      "findings": [
-      "\"3D Rough 1 (copy)\": the rough leaves 1022 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1010 of them against a wall: 3449.9 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.98 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1012 more. 360 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
-      "\"3D Rough 1\": the rough leaves 976 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 966 of them against a wall: 5101.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.3 mm2 at (28.8, -16.6); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); and 966 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
-      "WARNING: high air cutting on '3D Rough 1' is 54% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+      "\"3D Rough 1 (copy)\": the rough leaves 1009 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 997 of them against a wall: 3447.9 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.98 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 999 more. 360 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 958 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 948 of them against a wall: 5086.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.3 mm2 at (28.8, -16.6); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); and 948 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
      ],
      "spacing": {
       "n": 159,
@@ -369,10 +296,83 @@
       "p90": 2.385
      },
      "load": {
-      "cut_mm": 43801.1,
+      "cut_mm": 43818.0,
       "over_exact_pct": 3.13,
       "screen": 0.5126,
       "over_screen_pct": 2.92
+     }
+    },
+    "geodesic_local_zigzag_pick": {
+     "commit": "13667775d",
+     "cycle_time_s": 2815,
+     "cutting_mm": 69545,
+     "rapid_mm": 18925,
+     "air_cut_pct": 62.6,
+     "collisions": 0,
+     "rapid_collisions": 0,
+     "sim_resolution": {
+      "mm": 0.3,
+      "mode": "auto",
+      "source": "project",
+      "project_mm": 0.3
+     },
+     "ops": {
+      "3D Rough 1": {
+       "moves": 12430,
+       "entries": 67,
+       "keepdown_links": 1413,
+       "keepdown_mm": 8084.5,
+       "cut_xy_mm": 32651.6
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 6034,
+       "entries": 176,
+       "keepdown_links": 0,
+       "keepdown_mm": 0,
+       "cut_xy_mm": 7060.3
+      }
+     },
+     "images": {
+      "Z 17.00": {
+       "entries": 14,
+       "keepdown_mm": 3015.6,
+       "cut_mm": 12744.5
+      },
+      "Z 5.00": {
+       "entries": 8,
+       "keepdown_mm": 2515.0,
+       "cut_mm": 5746.9
+      },
+      "Z 0.50": {
+       "entries": 37,
+       "keepdown_mm": 101.7,
+       "cut_mm": 8297.7
+      }
+     },
+     "findings": [
+      "\"3D Rough 1 (copy)\": the rough leaves 1005 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 996 of them against a wall: 3443.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 16.66 mm high, 0.30 mm wide, 0.5 mm2 at (110.4, -9.7) at a wall; and 995 more. 358 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 956 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 949 of them against a wall: 5040.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1401.3 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 22.50 mm high, 9.47 mm wide, 3273.9 mm2 at (14.1, -109.3) at a wall; 14.55 mm high, 0.30 mm wide, 0.2 mm2 at (45.6, -7.3) at a wall; 11.69 mm high, 0.30 mm wide, 0.2 mm2 at (109.5, -7.9) at a wall; and 946 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+     ],
+     "spacing": {
+      "n": 158,
+      "apart": 4,
+      "median": 1.125,
+      "min": 0.051,
+      "max": 5.024
+     },
+     "normal_step": {
+      "n": 1852,
+      "apart": 226,
+      "median": 1.131,
+      "p10": 0.646,
+      "p90": 2.236
+     },
+     "load": {
+      "cut_mm": 41791.9,
+      "over_exact_pct": 3.3,
+      "screen": 0.5126,
+      "over_screen_pct": 3.07
      }
     }
    },
