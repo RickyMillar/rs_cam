@@ -1,0 +1,99 @@
+{
+ "title": "Geodesic roughing G2",
+ "header": "Branch adaptive-instruments. Four columns per part: contour_parallel (the operator's main control), the geodesic zigzag_pick before C31 (D18, with the shipped perimeter sweep), the same arm after C31 (D20, b37cad1a4: the research arm grows each region and cuts no perimeter sweep), and AgentSearch (secondary control). Rough ops only. No ranking and no aggregate score.",
+ "fixtures": [
+  {
+   "name": "corne",
+   "title": "Corne (corne_job_corrected_c12_agent_search.toml; contour_parallel from its _contour_parallel copy)",
+   "note": "Two rough ops: '3D Rough 1' (6 mm flat) and '3D Rough 1 (copy)'. Sim cell 0.3 mm. First rough op stepover 1.2 mm.",
+   "ops": [
+    {
+     "tp_glob": "tp_1_*.json",
+     "comment": "3D Rough 1"
+    },
+    {
+     "tp_glob": "tp_3_*.json",
+     "comment": "3D Rough 1 [copy]"
+    }
+   ],
+   "arms": [
+    {
+     "label": "contour_parallel",
+     "role": "main control",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/corne/contour_parallel",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/corne/contour_parallel",
+     "commit": "f32401326"
+    },
+    {
+     "label": "zigzag_pick D18",
+     "role": "before C31",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix5/corne/geodesic_local_zigzag_pick",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix5/corne/geodesic_local_zigzag_pick",
+     "commit": "f32401326"
+    },
+    {
+     "label": "zigzag_pick D20",
+     "role": "after C31",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/corne/geodesic_local_zigzag_pick",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/corne/geodesic_local_zigzag_pick",
+     "commit": "b37cad1a4",
+     "openings": true,
+     "islands": true,
+     "c33": true
+    },
+    {
+     "label": "AgentSearch",
+     "role": "secondary control",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix1/corne/agent",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/corne/agent",
+     "commit": "cdc9814e"
+    }
+   ]
+  },
+  {
+   "name": "wanaka200",
+   "title": "wanaka200 (wanaka200_mt1_c12_rough_only.toml, setup 0, '2 Back Rough'; contour_parallel from its _contour_parallel copy)",
+   "note": "One rough op. Sim cell 1.0 mm. Stepover 2.0 mm.",
+   "ops": [
+    {
+     "tp_glob": "tp_1_*.json",
+     "comment": "2 Back Rough"
+    }
+   ],
+   "arms": [
+    {
+     "label": "contour_parallel",
+     "role": "main control",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/wanaka200/contour_parallel",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/wanaka200/contour_parallel",
+     "commit": "f32401326"
+    },
+    {
+     "label": "zigzag_pick D18",
+     "role": "before C31 (the zigzag run at 31935b89, as D20 used)",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/geodesic_local_zigzag",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/geodesic_local_zigzag",
+     "commit": "31935b89"
+    },
+    {
+     "label": "zigzag_pick D20",
+     "role": "after C31",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/wanaka200/geodesic_local_zigzag_pick",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/wanaka200/geodesic_local_zigzag_pick",
+     "commit": "b37cad1a4",
+     "openings": true,
+     "opening_tags": {
+      "4.00/1": "G-RINGGROW, DEFECTS.md"
+     }
+    },
+    {
+     "label": "AgentSearch",
+     "role": "secondary control",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/agent",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/agent",
+     "commit": "31935b89"
+    }
+   ]
+  }
+ ]
+}

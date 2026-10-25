@@ -1,0 +1,1 @@
+layer Z 17.0: samples 588, with a higher pass within R 588; median 0.59 mm, p10 0.51, p90 1.00; tip Z median 17.11

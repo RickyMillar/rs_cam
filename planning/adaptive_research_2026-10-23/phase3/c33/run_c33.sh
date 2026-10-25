@@ -5,3 +5,4 @@ cd "$(dirname "$0")"
 python3 -I partmap.py
 python3 -I c33.py
 python3 -I report33.py | tee c33_output.txt
+python3 -I layer33.py | tee c33_layer.txt
