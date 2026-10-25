@@ -121,7 +121,9 @@ for k, x in enumerate(S):
     strict = width(k, p[2] + 0.01)
     # every earlier pass of the same level counts as cut, at any drape height
     loose = width(k, p[2] + 0.01, level_first_sample[lz])
+    # the same reading with only stock at least 0.5 mm thick counted
+    thick = width(k, p[2] + 0.5)
     th = step_thickness(k, p[2], level_first_sample[lz]) if strict > BOUND and loose <= BOUND else None
-    rows.append(dict(k=k, m=m, lz=lz, z=p[2], kin=x['cut_kinematics'], ln=ln, dz=dz, r=r, strict=strict, loose=loose, th=th))
+    rows.append(dict(k=k, m=m, lz=lz, z=p[2], kin=x['cut_kinematics'], ln=ln, dz=dz, r=r, strict=strict, loose=loose, thick=thick, th=th))
 print(tag, 'sim cell', sim_cell, 'levels', levels, 'body over-0.471 samples', len(rows), 'mm', round(sum(r['ln'] for r in rows), 1))
 pickle.dump(dict(rows=rows, levels=levels, sim_cell=sim_cell), open(os.path.join(os.path.dirname(os.path.abspath(__file__)), f'c32_{tag}.pkl'), 'wb'))

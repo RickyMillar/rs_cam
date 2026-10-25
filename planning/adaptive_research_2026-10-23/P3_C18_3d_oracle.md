@@ -525,3 +525,148 @@ remaining load is in the shipped slice (G-PERIMTAG, G-WATERLOAD).
 - The body cannot be split into wraps, turns and mop from the trace.
   This matters only for AgentSearch, because the geodesic body has 0 mm
   over 0.471.
+
+## C32. wanaka200 "2 Back Rough": the draped body cuts over 0.471 (2026-10-25)
+
+Measurement only. No code change, no cargo. Data:
+- geodesic zigzag: `phase3/fix2/simart/wanaka200/geodesic_local_zigzag/`
+  (31935b89);
+- contour_parallel: `phase3/fix6/wanaka200/contour_parallel/` (f32401326).
+
+Both runs use a 1.0 mm sim cell. Scripts and output are in `phase3/c32/`
+(`run_c32.sh` runs both; `c32_output.txt`; about 1 min).
+
+### C32.1 The method
+
+- **The samples:** the D-FIX6 rule. Cutting samples of toolpath 1 with
+  `source_intent == clearing_cut`, any kinematics, in the body phase
+  (`fix2/producer_split.py::phases`), read over 0.471 by the simulation.
+  It reproduces the lead's numbers exactly: zigzag 1871.1 mm,
+  contour_parallel 6201.7 mm.
+- **The exact width (strict):** C18's `exact_width_at`. The path is the
+  sample path, densified to 0.1 mm, because the 1.0 mm sample step would
+  leave 0.04 mm cusps beside the path. A disc of R is stamped at every
+  earlier point with Z ≤ the sample's Z + 0.01. The lattice pitch is
+  0.05 mm.
+- **The exact width (same level):** as strict, but every earlier point of
+  the same level counts as cut at any Z.
+- **The mechanism of an over sample:**
+  - **0, sim-only:** strict ≤ 0.471.
+  - **A, step:** strict > 0.471 and same-level ≤ 0.471. The uncut stock in
+    the disc is only stock that an earlier pass of the same level left,
+    because that pass ran higher (draped).
+  - **B, fresh:** same-level > 0.471. No earlier pass of the level cut
+    that stock at any height.
+- **The layer thickness of A:** for each lattice point that only a higher
+  same-level pass covers (every 7th point), the lowest such pass Z within
+  R, minus the sample Z. The script reports the median per sample.
+- **Slope:** the path slope |dz| / XY step of the sample. **Drape:** the
+  sample Z above its level Z.
+
+### C32.2 Is it real? Mostly yes; the sim artefact is small
+
+| | geodesic zigzag | contour_parallel |
+|---|---|---|
+| body over 0.471 (sim) | 1871.1 mm (helix 1839.8, linear+arc 31.4) | 6201.7 mm (helix 4619.4, linear+arc 1582.2) |
+| 0, sim-only (exact ≤ 0.471) | **41.4 mm (2.2 %)** | **186.9 mm (3.0 %)** |
+| A, step left by a higher same-level pass | 1828.2 mm | 5362.5 mm |
+| B, fresh stock | 1.5 mm | 652.2 mm |
+| sim over the screen 0.6293 | 1292.5 mm, of which exact > 0.471: 1281.5 | 5190.0 mm, of which exact > 0.471: 5082.2 |
+
+- Even at the 1.0 mm cell, the simulation over-reads only 2-3 % of the
+  over length. The exact geometry confirms the rest.
+- The cell-aware screen (0.629) is not an artefact filter. On zigzag it
+  removes 578.6 mm, and the exact reads 548.2 mm of that over 0.471.
+- Medians, A: zigzag sim 0.687, exact 0.997, same-level 0.337;
+  contour_parallel sim 0.667, exact 1.000, same-level 0.333. With the
+  higher passes counted, the width falls to s/D = 0.333, the commanded
+  stepover. So the 2D plan holds its XY spacing. The over width is the
+  height step between neighbouring passes.
+
+### C32.3 The mechanism: lead's candidate (a), a thin step on a slope
+
+- **Candidate (a): a wrap draped down a slope meets the stock above the
+  previous pass's floor.** This is mechanism A: 97.7 % of the zigzag
+  over length and 86.5 % of contour_parallel.
+  - Each 2D pass is lifted point by point to its floor (the surface plus
+    the leave). Two neighbours about one stepover apart on a slope stand
+    at different Z.
+  - The lower pass then meets, across its whole disc, the layer between
+    its own floor and the higher neighbour's floor. The swept-width
+    reading (2D rule and simulation alike) counts that layer at full
+    width, whatever its thickness.
+- **Candidate (b): the cutter side meets terrain.** It is ruled out by
+  construction. The lifted Z is the drop-cutter height plus the leave, so
+  no terrain stands above the cutter floor under its disc. The exact
+  reading counts only material above the sample Z, which is stock.
+- **Mechanism B (fresh):** it is not a draping effect. For
+  contour_parallel it is 182-188 mm per upper level, about the length of
+  a first loop through fresh stock: a slot (exact 1.000, same-level
+  1.000). For zigzag it is 1.5 mm.
+
+**The step is thin.** Layer thickness of A, as mm of cut per bin:
+
+| Layer | zigzag | contour_parallel |
+|---|---|---|
+| ≤ 0.25 mm | 1551.0 | 3017.2 |
+| 0.25-0.5 mm | 153.1 | 423.8 |
+| 0.5-1 mm | 82.5 | 154.3 |
+| 1-2 mm | 23.5 | 178.6 |
+| > 2 mm | 16.4 | 1585.3 |
+
+- Zigzag: 85 % of the step length is a layer of 0.25 mm or less. It is a
+  full-width skim at very small axial depth.
+- contour_parallel: 1585 mm is a step over 2 mm thick. Its flat passes
+  at the level run beside neighbours that draped more than 2 mm higher
+  ("at level": 1194.7 mm in class A).
+- The same exact reading with only stock of at least one planner cell
+  (0.5 mm) thickness counted: zigzag 263.8 mm (Z 8.6: 255.1; Z 4.0: 8.7),
+  contour_parallel 2822.0 mm.
+
+### C32.4 By level, slope and drape (mm over 0.471, sim; 0 / A / B)
+
+| | zigzag | contour_parallel |
+|---|---|---|
+| Z 19.5 | 0 / 0 / 0 | 0 / 560.0 / 187.8 |
+| Z 14.1 | 0 / 0 / 0 | 0 / 566.0 / 181.8 |
+| Z 8.6 | 41.4 / 1821.0 / 0 | 186.9 / 4190.0 / 163.5 |
+| Z 4.0 | 0 / 7.2 / 1.5 | 0 / 46.4 / 119.2 |
+| path slope flat | 0 / 29.0 / 0 | 2.3 / 1184.5 / 386.0 |
+| slope ≤ 0.1 | 40.3 / 1616.9 / 1.0 | 161.3 / 3156.7 / 211.1 |
+| slope 0.1-0.3 | 0.8 / 146.6 / 0 | 8.7 / 716.7 / 43.0 |
+| slope 0.3-1 | 0 / 12.9 / 0.6 | 11.7 / 261.1 / 9.7 |
+| slope > 1 | 0.3 / 22.8 / 0 | 2.8 / 43.5 / 2.4 |
+| drape: at the level | 0 / 52.3 / 0 | 1.9 / 1194.7 / 369.5 |
+| drape ≤ 1 mm | 10.1 / 436.2 / 0 | 36.6 / 1052.4 / 1.8 |
+| drape 1-3 mm | 24.0 / 792.5 / 0 | 130.6 / 2289.8 / 62.9 |
+| drape > 3 mm | 7.2 / 547.2 / 1.5 | 17.9 / 825.6 / 218.0 |
+
+- The zigzag over length is almost all at Z 8.6, the level that drapes
+  over the terrain.
+- Most of it is on gentle paths: slope ≤ 0.1 along the path, 1617 mm. A
+  path along the contour can be nearly level, while the terrain falls
+  across it, between the passes.
+
+### C32.5 What it means for the bound
+
+- The 2D rule (and the oracle) read a radial width at the sample's own
+  floor. In 3D a pass also meets the layer that a higher neighbour left
+  above that floor, and the reading counts that layer at full width.
+  Most such layers on wanaka200 are less than 0.25 mm thick (zigzag).
+- So most of the geodesic zigzag's draped over length is real contact,
+  but a full-width skim of small depth, not an overload of the 2D kind.
+- A load bound that is fair on terrain needs the axial depth of the
+  stock it counts: for example, the exact width over stock thicker than
+  one planner cell (zigzag 263.8 mm; contour_parallel 2822.0 mm). That is
+  a proposal for the lead, not a rule.
+- contour_parallel carries real thick steps too: 1585 mm over 2 mm, and
+  652 mm of fresh slots.
+
+### C32.6 Limits
+
+- The layer thickness reads every 7th lattice point. It is the lowest
+  higher-pass Z within R, minus the sample Z: the top of the layer that
+  pass left, not a full 3D stock model.
+- The slope is along the path, not the terrain gradient across the
+  passes.
+- Corne's body rise of 10.6 mm under the D9 rule was not analysed.
