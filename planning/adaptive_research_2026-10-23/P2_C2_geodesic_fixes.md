@@ -4115,3 +4115,162 @@ zigzag_v2, 48 entries). For the Corne fixture run with the arm
 `geodesic_local_zigzag_pick`, the `C28 pick` lines in `stdout.txt` give
 the 2D re-entries per slice piece, to compare with the trace's entry spans
 per level.
+
+## C29 — score the pick by what the 3D output plunges (2026-10-25)
+
+Status: DESIGN (no code; no cargo; no commit). Base 13667775d (C26b and
+C28). Data: D17's Corne runs, `phase3/fix4/corne/geodesic_local_zigzag{,_v2,_pick}/`.
+Script: `phase3/c29/spans.py` (it loads the op with the page's loader,
+`fix2/fixture3d_v2.py` `load_op`, which now reads the move intents from
+`simulation.json`; note: the C27 scripts call the older three-argument
+`load_op` and need the run dir as a fourth argument to run again).
+
+### What the 3D stage does with a 2D re-entry (the shipped code, read)
+
+A 2D `Rapid` of the slice plan goes through, in order:
+
+1. **F-038** (`clear_one_region`): a group (a `Rapid` and its cuts up to the
+   next `Rapid`) whose cut length, links included for the research arm, is
+   under `min_region_cut_length_mm` is dropped, and its entry with it.
+2. **`LevelSink`** (G-PHANTOMSTAMP): an entry that a later entry follows
+   with no cut or link between is replaced (`replaced_entries`).
+3. **The lift**: a run of a cut through cleared stock longer than the air
+   crossover becomes an entry of its own (a 3D-only entry).
+4. **`plan_entry`**: the entry becomes `RapidWithFloor`. It carries a
+   `StayDownProof` (the conservative stock ceiling of the swept disc from
+   the planner cursor) only when the XY jump from the cursor is at most
+   `stay_down_mm` (`resolved_stay_down_mm`: `max_stay_down_distance_mm`,
+   else `2R · LINK_MAX_DISTANCE_OVER_D`).
+5. **The emitter** (`segments_to_toolpath`, F-038b `try_emit_stay_down_link`):
+   the entry is a keep-down link only if the emitted previous position is
+   within `STAY_DOWN_FROM_XY_EPS_MM` of the proof's `from`, the jump is
+   within `stay_down_mm`, and `link_z` (the highest of the drop-cutter
+   terrain along the line plus the leave, the stock ceiling plus the
+   clearance, both ends and the descent floor) is at most `safe_z` and at
+   most `to.z` plus the cutter length. Else it retracts, rapids and enters:
+   the trace's "plunge entry" span, whether or not the column below holds
+   stock.
+
+### Measured on D17 (`spans.py`; every top-level entry span of "3D Rough 1", with the XY jump from the tool position before the span to the one after it)
+
+| Level | zigzag (A): plunge (jump > 48 / ≤ 48), keep-down (all ≤ 48) | zigzag_v2 (B): plunge (> 48 / ≤ 48), keep-down |
+|---|---|---|
+| Z 17.00 | 10 (8 / 2), 529 | 14 (12 / 2), 693 |
+| Z 11.00 | 6 (5 / 1), 82 | 8 (7 / 1), 63 |
+| Z 5.00 | 6 (5 / 1), 78 | 8 (7 / 1), 59 |
+| Z 0.50 | 34 (11 / 23), 349 | 37 (14 / 23), 443 |
+
+`stay_down_mm` on Corne = 48 mm (6 mm tool, the default 8 × D; the two
+counts split there exactly).
+
+- **Every keep-down span has a jump of at most 48 mm**, in both arms.
+- **Plunges with a jump of at most 48 mm exist (27 in each arm), and they
+  are the SAME spans in both arms** (the same positions, `spans.py` list):
+  the first entry of each level ((26.00, 12.72) from (20.00, 3.1),
+  11.3 mm; the cursor is at the level above, so no proof matches) and
+  the Z 0.50 grid of small regions, 18 to 42 mm apart (their link Z or the
+  proof's `from` fails; they are not the geodesic piece's choice).
+- So on D17 the difference A − B is exactly the difference in plunges with
+  a jump over 48 mm: 8 − 12, 5 − 7, 5 − 7, 11 − 14.
+- **The 2D counts do not see this.** The C28 lines: Z 17 A 91 / B 87,
+  Z 11, 5, 0.5 A 107 / B 80. Of A's 107 at Z 11, 82 become keep-down
+  links, 6 plunges, and 19 leave in steps 1 and 2 (A has 88 spans at
+  Z 11; B has 71 of its 80). The 2D count weighs each re-entry alike; the
+  3D stage turns every one within 48 mm into a link.
+
+### Option (b), a 2D score with the 3D link rule: not exact
+
+The best 2D rule is: simulate steps 1 and 2 on the cleaned 2D plan, then
+count the surviving re-entries whose jump from the previous kept position
+is over `stay_down_mm`, plus 1 for the piece's first entry. It cannot be
+exact:
+
+- Step 3 (the lift's air-run entries) and the guards of step 5 (`link_z`
+  against `safe_z` and the cutter length, the proof's `from` match) read
+  the 3D stock and the mesh, which the 2D producer does not have.
+- `min_region_cut_length_mm` and `stay_down_mm` are 3D parameters
+  (`Adaptive3dParams`); `geodesic_segments` gets `AdaptiveParams` only.
+  The rule would need them threaded into the producer.
+- On D17 it would pick right (the 3D-only plunges are the same in both
+  arms), but that is this fixture, not a rule. And I cannot compute the
+  2D jumps of D17 without a planner run, so "exact on D17" is not
+  measured either; only the 3D side is.
+
+### Option (a), the 3D score: exact by construction — RECOMMENDED
+
+Score each variant by the entries the 3D stage itself makes, on scratch
+state.
+
+- **Where:** `clear_one_region` (`adaptive3d/clearing.rs`, C22's file).
+  The region body after the 2D plan (the cleanup, F-038, the turn split,
+  the lift, the sink with its stamping, the held links) becomes one
+  function over the 2D plan and a `LevelEmission`. Under
+  `ArcPick::Replay` the region:
+  1. gets both 2D plans (a new C12-block door, `slice_variants`, that
+     returns plan A and plan B as `SlicePlan`s, the pick off for each:
+     `GeodesicOptions::pick_variants`);
+  2. runs the region body for A on a scratch copy of the level state (the
+     planner stock `TriDexelStock`, the cursor, the level's segment list,
+     the planner engagement list, the level metrics and counters, the
+     research turn records), and the same for B;
+  3. scores each scratch result: the entries (`Rapid`, `RapidWithFloor`)
+     the region added that the emitter will NOT turn into a keep-down
+     link. The test is the emitter's own: `try_emit_stay_down_link` is
+     split into a pure `stay_down_link_z(from, to, descend, ceiling, mesh,
+     index, cutter, stay_down_mm, clearance, leave, safe_z) -> Option<f64>`
+     and the emission. The scorer calls the pure part with the proof's
+     `from`, the draped entry (`drape_point`) and `descent_start_z`, as the
+     emitter does. The emitter calls the same function, so the two cannot
+     drift (shipped bytes unchanged: the same arithmetic, moved).
+  4. keeps the variant with fewer plunges; on a tie the one with less
+     keep-down length (held links plus stay-down links, XY); on a tie of
+     both, A. It moves the winner's scratch state into the real level
+     state, so nothing is planned a third time.
+- **The one approximation:** the emitter also needs its previous emitted
+  position within `STAY_DOWN_FROM_XY_EPS_MM` (0.05 mm) of the proof's
+  `from`. The scorer assumes it (the drape and the RDP keep a cut's end
+  point, `path.rs` says so). The `info` line prints the scored plunges per
+  region, so the run checks it against the trace's plunge spans per level.
+- **No new constant:** every threshold is the emitter's own value.
+- **The 2D producer:** `geodesic_segments` keeps the C28 2D pick for the 2D
+  harness. I agree that the 2D harness stays on the 2D score: the 2D
+  harness has no 3D stage, and its "entries (plunges)" are exactly the 2D
+  re-entries (D17: star 38 = 38, pocket 44 / 26 as the 2D runs read). In
+  the 3D arm, `ArcPick::Replay` is read by `clear_one_region`, and the
+  slice door asks for the plans with the pick off, so the 2D pick does not
+  run there.
+
+**Cost in planning time.** Per region of the research arm under the pick:
+two 2D plans and two cleanups (as C28, less the third cleanup), two runs
+of the 3D region body (lift, stamping, held links) on scratch state, one
+stock copy per variant, and one mesh probe (10 drop-cutter samples) per
+entry within 48 mm. So about 2 × the region's planning time of one
+variant, plus the stock copies. On Corne the zigzag arm plans in about
+10 s (D-FIX2), so the pick takes about 20 to 25 s. C28's pick (three
+cleanups, no 3D body twice) was not timed at D17. The stock copy is the planner `TriDexelStock` of the
+op; its size is the op's grid, copied twice per region.
+
+### Predictions (NOT results)
+
+| Case | Kept (3D score) | Plunges | Cycle |
+|---|---|---|---|
+| Corne "3D Rough 1", each level | A (A 10/6/6/34 against B 14/8/8/37) | 56 (= zigzag) | 2607 s (D17 zigzag; v2 and the C28 pick: 2815 s) |
+| C12 plain test (one piece) | B (D16a: 48 against 68 entries) | 48 | — |
+| 2D harness | unchanged (C28's 2D score) | star 38, pocket 26 | — |
+
+The scored plunges per region (`info`) must equal the trace's plunge spans
+of that region's level minus the level's shared ones (the first entry; on
+Corne Z 0.50 the 23 small-region plunges).
+
+### Who edits what
+
+- C12 block of `research_geodesic.rs` (C22's): `slice_variants`.
+- `adaptive3d/clearing.rs` (C22's): the region body split, the scratch
+  runs, the score and the commit.
+- `adaptive3d/path.rs` (shipped emitter): `stay_down_link_z` split out of
+  `try_emit_stay_down_link`, the same arithmetic (byte parity holds).
+- Mine: nothing in `research_geodesic.rs` outside the C12 block except the
+  doc of `ArcPick::Replay` (the 3D arm scores in 3D).
+
+The lead's ruling decides who builds it; the clearing.rs and path.rs
+parts touch C22's work and the shipped emitter.
