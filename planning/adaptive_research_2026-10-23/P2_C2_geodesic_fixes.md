@@ -3785,3 +3785,163 @@ The piece is only about 35 mm deep in three of the four directions.
 - New: `phase3/c24/load.py`, `rays.py`, `weighted.py`, `lengths.py`, and
   their `*_output.txt`.
 - This section. No Rust file changed.
+
+## C27 — why zigzag_v2 is worse on Corne (2026-10-25)
+
+Status: MEASURED; NO CODE CHANGE (no cargo; no commit). Data: the D16b
+Corne runs, `phase3/fix2/corne/geodesic_local_zigzag{,_v2}/` (both at
+4cceca914 for v2 and 31935b89 for zigzag; `program.nc` and
+`tp_1_3D_Rough_1.json`), op "3D Rough 1". Scripts in `phase3/c27/`; each
+loads the op with the page's own loader (`fix2/fixture3d_v2.py`
+`load_op`: move i = G-code line i + 1, the level from Z, the classes from
+the semantic trace).
+
+### Per level (`perlevel.py`, `arcs.py`)
+
+| Level | Entries zigzag / v2 | "Cut" mm zigzag / v2 | Keep-down mm zigzag / v2 | G2/G3 moves in v2 (count, arc length) |
+|---|---|---|---|---|
+| Z 17.00 | 10 / 14 | 13469 / 15318 | 1392 / 1824 | 231, 1949 mm |
+| Z 11.00 | 6 / 8 | 6571 / 8630 | 262 / 263 | 50, 2061 mm |
+| Z 5.00 | 6 / 8 | 6668 / 8714 | 322 / 314 | 50, 2061 mm |
+| Z 0.50 | 34 / 37 | 6608 / 8620 | 49 / 48 | 135, 2018 mm |
+| Sum | 56 / 67 | 33316 / 41281 | 2026 / 2450 | 466, 8089 mm (zigzag: 17, 53 mm) |
+
+The "cut" column is the page's class: every fed move that no trace span
+tags as a keep-down link, measured by its chord.
+
+### Where the extra cut length comes from: the keep-down returns
+
+- **The swept area is the same.** The disc R 3 along the fed cut moves
+  covers the same area in both arms at every level, within 1 mm²
+  (`cover.py`: 13926 / 13925, 9465 / 9465, 9355 / 9355, 8605 / 8605 mm²).
+- **The arcs are the same.** Fed G1 cut length of one arm that runs more
+  than 0.3 mm from every G1 cut move of the other arm: 124 to 228 mm per
+  level each way (`newgeom.py`). These are the joins that differ, not the
+  wraps.
+- **The extra length is G2/G3 moves.** In v2 these are the one-way returns:
+  each runs from an arc's end back to its start (for example moves 8020 to
+  8028 at Z 5.00: the turn (99.56, 43.55) → (100.81, 43.55), the arc up to
+  (89.47, 93.55), then one G2 back to (100.81, 43.55), then the next turn).
+  At 4cceca914 the 3D arm held each 2D return `Link` as a `Cut` (C22), so
+  the arc fitter joined a return into one G2 and the trace tags it as a
+  clearing cut. Their arc length is 8089 mm. The cut difference is
+  7965 mm (C26 now emits them as keep-down links; they stay travel at the
+  level and still cost time).
+- **The page images draw each G2 as its chord.** The diagonal blue lines
+  in `corne_geodesic_local_zigzag_v2_*.png` are these returns, not cuts
+  across the stock.
+- So the +209 s of cycle time is mostly the return travel: 8089 mm over
+  209 s is 2320 mm/min, a feed rate, not extra machining.
+
+### Where the extra entries come from
+
+Rings matched between the arms within 1.5 mm (`rings.py`):
+
+| Level | Rings only in v2 | Rings only in zigzag | Net |
+|---|---|---|---|
+| Z 17.00 | 5 | 1 | +4 |
+| Z 11.00 | 3 | 1 | +2 |
+| Z 5.00 | 5 | 3 | +2 |
+| Z 0.50 | 5 | 2 | +3 |
+
+- Every v2-only ring lies on a wall: (99.56, 43.55) at three levels (the
+  bottom wall of the right-hand region), (15.55, 66.48) and (15.05, 35.73)
+  (the left wall), (33.26, 91.45), (103.77, 90.00) and (133.52, 89.39)
+  (the top wall), and at Z 17 (62.14, 14.05), (54.05, 12.55),
+  (109.04, 31.55), (144.05, 31.71) and (149.05, 50.12).
+- Each is the start of an arc. The next fed move runs from it into the
+  arc (0.9 to 3.8 mm), or it is the first turn of a lobe. No v2-only ring
+  lies on a return (none mid-arc), so no return was refused.
+- **By cause:**
+  - **The head-on rule: all 11 net.** It moves the start of an arc to the
+    end with the larger lens. Where the cutter does not stand at that end
+    when the lobe begins, the lobe begins with a link that the replay
+    refuses, and an entry. Plain zigzag starts each lobe at the end
+    nearer the cutter.
+  - **The keep-down return fallback: 0 entries, all the extra length.** It
+    is the rule's consequence in zigzag: an arc that starts at the wall
+    where the arc before started is reached only by the return.
+  - **The merged meeting line (`Through`): no measured effect.** The cut
+    geometry differs by at most 228 mm per level, and all of it is at
+    joins. The Corne slices at Z 17, 11 and 5 have no island (the images
+    `corne_*_{0,1}.png`), so no two fronts meet behind one. Z 0.50 holds a
+    grid of small features with an entry each in both arms (34 and 37).
+  - **Something else: none found.**
+
+### Why Corne differs from the C12 fixture and the 2D pocket
+
+- **The premise of the rule does not hold on Corne.** The rule reorients an
+  arc so that it does not END at a head-on wall, because there the replay
+  refuses the approach (C23: 11 one-way entries at the pocket island; C25:
+  19 lost zigzag turns at the C12 island). On Corne the old zigzag ends
+  arcs head-on at the bottom wall of the right-hand region (y 43.55, arcs
+  nearly square to it) and at the top wall, and it has NO entry there
+  (its rings at Z 5: (51.0, 58.5) the starter, (76.5, 32.6), (83.4, 96.5),
+  (15.1, 52.9), (137.9, 45.0), (26.0, 12.7)). The replay passes those
+  ends. So the rule pays the returns and the lobe-start entries and gains
+  nothing.
+- **What differs (measured and derived, not run):**
+  - The islands: the C12 fixture and the 2D pocket each have a convex
+    island, and every refused end there is on the island (C23 table, C25
+    probe: 17 of 19). Behind an island the levels are involutes, square to
+    it; a convex wall curves away from the end disc of the arc before, so
+    the lens is larger than at a straight wall. The Corne slices at Z 17,
+    11 and 5 are one outline with no island.
+  - The stepover: Corne's op has s 1.2 (ceiling 0.219), the fixtures s 2.0.
+    The depth of the lens along the travel at the arc's middle line is
+    `R − √(R² − Δ²)`: 0.25 mm at Δ 1.2, 0.68 mm at Δ 1.9. The planner's
+    arc ends lie up to one cell diagonal (0.71 mm) short of the wall. I
+    did not derive whether that shortfall hides a 0.25 mm lens from the
+    planner's reading; it is a candidate, not a result.
+  - Not the cause: the outline pieces per slice (the swept areas are the
+    same, and the extra entries are lobe starts on one outline), and the
+    case wall shape as such (Corne's walls are straight; the closed form
+    of `arc_end_lens` reads 0.6 head-on at Δ 1.2 on a straight wall, so
+    it predicts a refusal that the planner does not make).
+- So the closed form of the lens is a correct geometric reading but not a
+  correct predictor of the planner's refusal on every part. The rule acts
+  on the prediction; it should act on the refusal.
+
+### Proposal: a rule for when each variant applies
+
+**Plan both, keep the one the replay prefers, per outline piece.** The
+producer plans the piece with plain zigzag and with zigzag_v2. It walks
+both through the replay model it already has (`ReplayModel`, C9). It keeps
+the plan with fewer re-entries. On a tie it keeps the one with less
+keep-down length (the returns). No constant enters: both quantities are
+counts and lengths of the producer's own plans. The rule acts on the
+refusal itself, not on the closed form.
+
+- Why per piece: a slice can hold an island piece and a plain piece; each
+  takes its own variant.
+- Cost: two plans and two replays per piece (the 2D harness runs about
+  14 s for every column; one piece takes a fraction of that).
+- A narrower form (reorient only the arcs whose default end the replay
+  refuses, then plan again) needs a second planning pass with the refused
+  arcs marked. It keeps zigzag everywhere the replay passes. I recommend
+  the per-piece choice first; it is simpler, and it gives the bound for
+  the narrower form.
+
+**Predictions (NOT results):**
+
+| Case | Variant kept | Entries | Keep-down / returns | Cycle |
+|---|---|---|---|---|
+| Corne "3D Rough 1", each of the 4 levels | plain zigzag (v2 has more entries at every level) | 56 (= zigzag) | 2026 mm (= zigzag) | 2745 s (= zigzag; cut 33316 mm) |
+| wanaka200 back rough | either (the plans are byte-identical) | 22 | 3423 mm | 3950 s |
+| C12 one-level test | zigzag_v2 (48 against 68) | 48 | as v2 | — |
+| C12 heavy test | zigzag_v2 at both levels | as v2 (not cut 1) | as v2 | — |
+| 2D star | tie on entries and keep-down (38, 251.2 mm): plain zigzag, byte-equal to v2 | 38 | 251.2 mm | — |
+| 2D pocket | zigzag_v2 (26 against 44) | 26 | 998.1 mm | — |
+
+The 2D `zigzag_v2` star 38 / pocket 26 do not get worse. Risk: the
+producer's replay count can differ from the 3D lift's entries (F-038 drops
+short groups; the 3D lift adds entries at air runs). On Corne the 2D
+counts per piece are not in the trace, so the per-level choice above
+assumes they follow the 3D entries. The run decides.
+
+### Files
+
+- New: `phase3/c27/perlevel.py`, `retrace.py`, `retrace2.py`, `returns.py`,
+  `cover.py`, `rays.py`, `newgeom.py`, `arcs.py`, `rings.py`, `diag.py`,
+  `zoom3d.py`.
+- This note.
