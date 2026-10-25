@@ -787,3 +787,94 @@ This is an estimate from the types and the box; the run measures it.
   plus the copies (Corne: about 20–25 s).
 - The approximation that can make the score wrong: the emitter's 0.05 mm
   `from` match. The per-region lines show it if it happens.
+
+## 10d. C29 on Corne (D18): which plunges the pick scores (2026-10-25)
+
+Data: `phase3/fix5/corne/geodesic_local_zigzag_pick/` (D18 at f32401326):
+`stdout.txt` (the C29 lines), `tp_1_3D_Rough_1.json` (the debug spans and
+the semantic entries). No code changed; no cargo.
+
+### (1) Region 1 of Z 11, 5 and 0.5: the pick does not run there
+
+The debug spans `agent2d_region "region 1/2 @ Z 11.000"` (and the same at
+Z 5 and Z 0.5) carry `forecast_cut_length_mm 0.0` and `skipped_f038 1`.
+The F-038 forecast in `clear_one_region` found less than
+`min_region_cut_length_mm` (15 mm) of cut and returned before the
+perimeter sweep. That is the only early return before the pick. So the
+region has no perimeter, no 2D plan, no entries and no pick line. The two
+variants are not identical there: the region is never planned. The
+forecast reads the region polygon and an agent dry run, not the variant,
+so the skip is the same for A and B.
+
+### (2) The trace plunges that are outside the score
+
+The semantic trace of D18 counts **7 / 7 / 7 / 35** plunge entries at
+Z 17 / 11 / 5 / 0.5. These are the entries with style "plunge entry"; the
+lead's 10/6/6/34 are D17's span counts. The C29 lines score
+**4 / 5 / 5 / 4**. I ordered each level's plunges by move index and
+placed them by phase:
+
+| Level | Before the body | Body (scored) | After the body: waterline cleanup | Sum |
+|---|---|---|---|---|
+| Z 17 | 1: move 0, (20.0, -106.3): the op's first entry, the perimeter sweep's start | **4**: moves 127, 1783, 3424, 3524 | 2: moves 3889, 3969 (2 contours) | 7 |
+| Z 11 | 0 (the perimeter entry is a keep-down link) | **5**: 4172, 5551, 5704, 5714, 5739 | 2: 5747, 5848 | 7 |
+| Z 5 | 0 | **5**: 6051, 7435, 7588, 7598, 7627 | 2: 7645, 7751 | 7 |
+| Z 0.5 | 0 | **4**: 7980, 10166, 10401, 10409 | 31: 10511 … (31 contours; the grid of small regions D17 saw) | 35 |
+
+Each level's waterline starts at (20.3, -106.2) and goes on at
+(26.3, -96.6), as `waterline_cleanup` traces its contours after the
+regions.
+
+- The scored plunges equal the trace's body plunges at every level
+  (4/5/5/4). So the score's one approximation, the 0.05 mm `from` match,
+  held everywhere.
+- Outside the score:
+  - the op's first entry (the perimeter sweep of Z 17);
+  - every waterline-cleanup entry (2/2/2/31);
+  - the F-038-skipped regions (they have none).
+
+### (3) Can any of those differ between A and B?
+
+| Outside item | Same for A and B? | Why |
+|---|---|---|
+| F-038 forecast skip | yes | It reads the region polygon and an agent dry run, before the pick. |
+| Level's first entry / perimeter sweep entries | yes | They are emitted on the real state before the pick, from the cursor and stock of the regions before. |
+| **The first entry after the body** (the next region's perimeter entry, or the waterline's first entry for the last region) | **no** | Its keep-down test reads the cursor where the body ended (`plan_entry`: the proof needs the jump ≤ `stay_down_mm`; `corridor_ceiling_z` reads the stock) and the emitter's `stay_down_link_z`. A and B end at different points. It can be a plunge after A and a link after B, or the other way. At most 1 plunge per region. |
+| Waterline entries after the first | mostly yes, not exactly | The contours come from the mesh and Z, so they are the same. But the lift demotes a waterline run through air to an entry, and the rapid floors read the stock the body left. A sliver near the wall that one variant leaves and the other clears can add or remove an air split. Expected rare: the perimeter sweep and both bodies clear the same band. |
+| The next level | yes, at the second order | The next level's regions and 2D plans read the material grid at that level, which the body of this level does not change below its own floor. Its first entry reads the cursor where this level's waterline ended, and the waterline is the same for both. |
+
+**The real gap.** The score leaves out the exit transition of the region
+(0 or 1 plunge) and, at the second order, the waterline's air splits.
+
+- The pick can choose wrongly only when the two bodies differ by at most
+  1 plunge (or tie on plunges and the exit flips the keep-down order).
+- On D18 the margins were 4, 2, 2 and 3 plunges (A 4/5/5/4 against B
+  8/7/7/7), so D18's choice of A is safe.
+- The C12 plain test has one region per level, and D16a's margin between
+  the two variants was 20 entries (68 against 48), so it is not at risk
+  either.
+
+**The proposed fix (not built).** Score the exit too. For each variant,
+after its body, probe one keep-down link from the variant's scratch
+cursor to the next entry point, with the same code the sink and the
+emitter use:
+
+- `plan_entry` on the scratch stock gives the proof and the floor;
+  `stay_down_link_z` on the draped point decides the link.
+- A refused link adds 1 to that variant's plunges.
+- The next entry point is known before the region runs:
+  - another region follows in the level: the first vertex of its inset
+    exterior `offset_polygon(next_region, R + 0.25)` (the perimeter
+    sweep's own start; `clear_z_level_agent_2d_slice` has the ordered
+    region list);
+  - the last region of the level: the first point of the level's first
+    waterline contour. `waterline_cleanup` traces its contours from the
+    mesh and Z only, so `path.rs` can trace them before the level's
+    regions and pass the first start point in. That is one reordering in
+    the shipped level loop, so byte parity is the check. A
+    research-only alternative: compute the same first contour inside
+    the pick, at the cost of one extra waterline trace per level.
+- No new constant. The waterline's air splits stay outside the score; they
+  are second order, and an exact score would need the pick at level scope
+  (the waterline run twice and stock copies per level). I do not
+  recommend that.
