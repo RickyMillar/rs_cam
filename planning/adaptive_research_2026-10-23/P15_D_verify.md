@@ -2757,3 +2757,81 @@ planned turns, of which 56 are cut. The other 39 are examined in D-FIX2.
 
 Files: `phase2/d15_harness.txt`, `phase2/d15_c12_test_output.txt`,
 `phase2/d15_c12_plain_output.txt`.
+
+## D-FIX2 at 31935b89: Corne zigzag and oneway, wanaka200 rough-only, fixture3d_v2.html
+
+**Build.** The fixture worktree moved to 31935b89 (detached, clean).
+`cargo build --release -p rs_cam_cli --features rs_cam_core/research`
+through the lane script. Binary
+`.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli`, mtime
+2026-10-25T13:40:24. Disk: 89 GB free before and after the runs.
+
+**Runs** (`phase3/fix2/run_fix2.sh`; lane script, `cargo run --release`,
+`timeout 900` each; all rc 0):
+
+| Fixture | Arm | Args | Time |
+|---|---|---|---|
+| Corne | geodesic_local_zigzag | `--setup 0 --skip 4`, the D-FIX1 flags | 9 s |
+| Corne | geodesic_local_oneway | the same | 10 s |
+| wanaka200 rough-only | AgentSearch | `--setup 0 --resolution 1.0` | 26 s |
+| wanaka200 rough-only | geodesic_local_zigzag | the same | 49 s |
+
+The CLI accepted `--resolution 1.0` on `wanaka200_mt1_c12_rough_only.toml`
+with no refusal (`summary.json`: `{"mm": 1.0, "mode": "fixed", "source":
+"override", "project_mm": 0.5}`). The Corne AgentSearch control is the
+D-FIX1 run at cdc9814e. C22 and C23 do not change the AgentSearch output
+(byte parity, D14 and D15).
+
+**Page** `fixture3d_v2.html` (v1 kept):
+- One Z level per image: the first, a middle and the last level that
+  every arm cuts, the same for every column. Corne "3D Rough 1": Z 17.00,
+  5.00, 0.50. wanaka200 "2 Back Rough": Z 19.54, 8.62, 4.00.
+- The 2D colours. One frame and scale per fixture. One sentence per image.
+  A numbers table per column, and the CLI hard bars in a fold.
+- Generator: `phase3/fix2/fixture3d_v2.py` plus `spec.json`. Assert
+  script: `phase3/fix2/assert_fixture3d_v2.py`. It has its own parser, does
+  not import the generator, and re-derives every number from the raw files:
+  "all 158 checks hold". One injected wrong number (a cycle time) was
+  caught; the page was restored.
+
+How the page reads the data:
+- Link tags: the `semantic_trace` entry spans of each `tp_*.json`
+  (top-level "plunge entry" and "keep-down link" spans). A move index maps
+  to G-code line i + 1 of the op section, with a checked surplus of 1 or 2.
+- Turns carry no tag in the trace, so they draw blue with the cuts. The
+  page says so.
+- Levels: the trace's `depth_level` items carry no move range (null in
+  every run), so a move takes its level from Z.
+  - The G-code Z frame offset is the one that puts the most flat fed XY
+    moves on the label planes: Corne -23.0, wanaka200 -25.0. The script
+    stops if the top plane holds no flat move.
+  - A fed move is at the highest plane at or below its Z. A G0 takes the
+    level of the next fed move.
+
+**Numbers** (CLI totals of the rough ops; per op from the trace and the
+G-code):
+
+| Item | Corne AgentSearch | Corne zigzag | Corne oneway | wanaka200 AgentSearch | wanaka200 zigzag |
+|---|---|---|---|---|---|
+| Commit | cdc9814e | 31935b89 | 31935b89 | 31935b89 | 31935b89 |
+| Cycle time | 2112 s | 2745 s | 3068 s | 1339 s | 3950 s |
+| Cutting distance | 38487 mm | 65025 mm | 76743 mm | 38108 mm | 90906 mm |
+| Entries, first rough op | 48 | 56 | 91 | 32 | 22 |
+| Keep-down links, first rough op | 136, 741 mm | 1035, 2026 mm | 1324, 3021 mm | 510, 1728 mm | 3402, 3423 mm |
+| Entries, Corne copy op | 182 | 176 | 176 | — | — |
+| Sim cell | 0.3 mm (auto) | 0.3 mm (auto) | 0.3 mm (auto) | 1.0 mm (override) | 1.0 mm (override) |
+
+**The planned zigzag turns that are not cut** (heavy C12 test: 95 planned,
+56 cut). A temporary `eprintln` in `plan_one_outline` (fixture worktree,
+debug test build only; reverted with `git checkout`; the tree is clean and
+the release binary is unchanged) ran on the one-level C12 test (46
+planned, 27 cut).
+- All 19 uncut turns show the same thing: the turn's START is the target
+  of a `Rapid` in the cleaned 2D plan, and its end is a cut point.
+- So the plan lifts the cutter at the arc end, re-enters (a plunge) at
+  the turn start, and cuts the turn as the first step out of that plunge.
+  The replay counts that step as a departure, not a turn.
+- 17 of the 19 start 11.27 to 12.01 mm from the island centre (the
+  island side). The other 2 start at 24.7 and 27.7 mm.
+- The heavy test's 39 were not probed one by one. Output:
+  `phase3/fix2/turn_probe_output.txt`.

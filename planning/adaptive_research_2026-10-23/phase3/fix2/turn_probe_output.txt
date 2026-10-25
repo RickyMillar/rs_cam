@@ -1,0 +1,28 @@
+
+running 1 test
+geodesic_local_oneway turns: planned 42, cut 42, with a reduced factor 42 (lowest 0.310), longest 2.984 mm (bound 3.207); fed 42, unfed 0, full feed with no move 0
+geodesic_local_oneway: 2117 moves, 68 entries
+D15PROBE uncut turn (-3.8500,-11.3757)->(-1.9508,-11.3757) len 1.899: from=rapid_target to=cut
+D15PROBE uncut turn (-0.0682,-11.8757)->(1.5500,-11.5203) len 1.657: from=rapid_target to=cut
+D15PROBE uncut turn (3.0500,-10.9559)->(4.5500,-10.4869) len 1.572: from=rapid_target to=cut
+D15PROBE uncut turn (6.0500,-10.2229)->(7.0500,-9.0282) len 1.558: from=rapid_target to=cut
+D15PROBE uncut turn (8.0500,-7.8841)->(9.1593,-6.8757) len 1.499: from=rapid_target to=cut
+D15PROBE uncut turn (10.0500,-5.6737)->(10.9281,-4.3757) len 1.567: from=rapid_target to=cut
+D15PROBE uncut turn (11.4569,-2.8757)->(11.5500,-1.2271) len 1.651: from=rapid_target to=cut
+D15PROBE uncut turn (11.5500,0.2953)->(11.5500,1.7953) len 1.500: from=rapid_target to=cut
+D15PROBE uncut turn (-10.9500,3.8971)->(-10.1932,5.6243) len 1.886: from=rapid_target to=cut
+D15PROBE uncut turn (-8.9500,7.1442)->(-7.9500,8.5811) len 1.751: from=rapid_target to=cut
+D15PROBE uncut turn (-6.7582,9.6243)->(-5.4500,10.5271) len 1.589: from=rapid_target to=cut
+D15PROBE uncut turn (-4.0208,11.1243)->(-2.5099,11.1243) len 1.511: from=rapid_target to=cut
+D15PROBE uncut turn (-1.0621,11.6243)->(0.4581,11.6243) len 1.520: from=rapid_target to=cut
+D15PROBE uncut turn (1.9589,11.6243)->(3.4789,11.1243) len 1.600: from=rapid_target to=cut
+D15PROBE uncut turn (4.9709,10.6243)->(6.4525,10.1243) len 1.564: from=rapid_target to=cut
+D15PROBE uncut turn (7.5500,8.9185)->(8.5500,7.7603) len 1.530: from=rapid_target to=cut
+D15PROBE uncut turn (9.5500,6.7222)->(10.6629,5.6243) len 1.563: from=rapid_target to=cut
+D15PROBE uncut turn (17.3086,17.6243)->(19.3308,17.6243) len 2.022: from=rapid_target to=cut
+D15PROBE uncut turn (21.3395,17.6243)->(23.4020,17.6243) len 2.063: from=rapid_target to=cut
+geodesic_local_zigzag turns: planned 46, cut 27, with a reduced factor 23 (lowest 0.376), longest 3.145 mm (bound 3.207); fed 27, unfed 0, full feed with no move 0
+geodesic_local_zigzag: 831 moves, 68 entries
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 7.05s
+

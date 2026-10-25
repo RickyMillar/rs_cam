@@ -1,0 +1,38 @@
+Safety (1):
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7326 (run move 7326): (105.5, 31.1, 30.000) -> (105.5, 31.1, 14.580)
+
+Act on (1):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  515.6s wasted around (46.5, 221.5, 10.4) — engagement 0.36
+  4.7s wasted around (23.0, 28.0, 16.1) — engagement 0.10
+  4.7s wasted around (26.6, 179.1, 16.1) — engagement 0.08
+  4.3s wasted around (89.0, 221.4, 16.1) — engagement 0.01
+  4.1s wasted around (213.6, 31.1, 14.6) — engagement 0.14
+  3.9s wasted around (199.1, 42.1, 13.1) — engagement 0.04
+  3.9s wasted around (26.6, 179.1, 14.6) — engagement 0.12
+  3.7s wasted around (23.0, 28.0, 14.6) — engagement 0.14
+  3.7s wasted around (108.5, 218.1, 16.1) — engagement 0.09
+  3.6s wasted around (171.0, 214.6, 11.4) — engagement 0.13
+  ... 533 more not shown
+
+Counts: 44357 samples | 13811 flagged-air + 502 flagged-low (per SAMPLE) | 6984 issue runs (COALESCED, the legacy "issue_count") | 543 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 10.9200 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 5: chipload: simulation trace is stale — re-run simulation
+  toolpath 5: power: simulation trace is stale — re-run simulation
+  toolpath 5: deflection: simulation trace is stale — re-run simulation
+  toolpath 5: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 38108mm  |  Rapid: 3603mm  |  Time: 1339s
+Air cutting: 36.0% of total runtime  |  Avg engagement: 0.38  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [!] #1 2 Back Rough (3D Adaptive) — 7652 moves, 1 collisions
+      kinematics: 100% of commanded (99% feed-bound → +16% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 1 rapid-through-stock collisions
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/agent
