@@ -3285,3 +3285,71 @@ The sentence gives both level counts with their methods:
 
 The asserts re-derive both counts and the scored 4/5/5/4: "all 410 checks
 hold". One injected wrong count was caught; the page was restored.
+
+## D-FIX6: contour_parallel as the main control (operator ruling)
+
+The operator roughs mostly with contour_parallel and considers AgentSearch
+broken. So contour_parallel becomes the page's first column, and
+AgentSearch moves to the right as a secondary column.
+
+**New copies (the originals are untouched).**
+- `planning/corne_case_analysis_2026-09-18/corne_job_corrected_c12_contour_parallel.toml`:
+  the c12 copy with lines 140 and 242 back to `contour_parallel`. It is
+  byte-identical to the original `corne_job_corrected.toml`.
+- `planning/multitool_2026-08-23/wanaka200_mt1_c12_rough_only_contour_parallel.toml`:
+  the rough-only copy with line 270 ("2 Back Rough") `agent_search` →
+  `contour_parallel`. Same tool, stepover, depth and leave. "6 3D Rough
+  (front)" was already contour_parallel.
+
+**Runs** (`phase3/fix6/run_fix6.sh`): fixture worktree at f32401326,
+binary 19:05:46, no arm variable, D-FIX2 flags plus `--sim-artifact`,
+`timeout 900`. Both export (rc 0, no refusal).
+- Corne: 4 s, cycle 2022 s, cutting 58238 mm, rapid 21069 mm.
+- wanaka200: 44 s, cycle 5750 s, cutting 88747 mm, rapid 158535 mm.
+
+**The producer split** (`phase3/fix2/producer_split.py`): C30's phases
+from `phase3/c30/attribute.py`, generalised to any toolpath file.
+- Agent-slice arms: perimeter from the level start to the level's second
+  entry, then the body, then the waterline.
+- contour_parallel has no `agent2d_region` spans and no perimeter sweep,
+  so its body runs from the level start to the waterline, and the page
+  shows "—" for its perimeter.
+- The port reproduces C30's `c30_output.txt` exactly: zigzag_pick 1026.1
+  / 32.6 / 317.1 mm; AgentSearch 1146.5 / 1269.1 / 364.2 mm.
+
+| Fixture | Column | Commit | Cycle | Entries | Keep-down | Normal step | Over 0.471 | Over 0.471: perimeter / body / waterline (mm) |
+|---|---|---|---|---|---|---|---|---|
+| Corne | contour_parallel | f32401326 | 2022 s | 73 | 176, 768 mm | 1.125 | 8.06% | — / 3103.5 / 9.5 |
+| Corne | geodesic_local_zigzag | 13667775d | 2607 s | 56 | 1050, 2371 mm | 1.136 | 4.14% | 1026.1 / 32.6 / 317.1 |
+| Corne | geodesic_local_zigzag_v2 | 13667775d | 2815 s | 67 | 1413, 8085 mm | 1.131 | 3.30% | 1026.1 / 34.5 / 317.1 |
+| Corne | geodesic_local_oneway | 13667775d | 2934 s | 91 | 1487, 9605 mm | 1.131 | 3.13% | 1026.1 / 33.4 / 313.2 |
+| Corne | geodesic_local_zigzag_pick | f32401326 | 2607 s | 56 | 1050, 2371 mm | 1.136 | 4.14% | 1026.1 / 32.6 / 317.1 |
+| Corne | AgentSearch | cdc9814e | 2112 s | 48 | 136, 741 mm | 2.68 | 20.19% | 1146.5 / 1269.1 / 364.2 |
+| wanaka200 | contour_parallel | f32401326 | 5750 s | 964 | 982, 14856 mm | 2.000 | 3.01% | — / 1586.9 / 0 |
+| wanaka200 | geodesic_local_zigzag | 31935b89 | 3950 s | 22 | 3402, 3423 mm | 2.008 | 3.59% | 1564.9 / 31.4 / 10.6 |
+| wanaka200 | geodesic_local_zigzag_v2 | 4cceca914 | 3950 s | 22 | 3402, 3423 mm | 2.008 | 3.59% | 1564.9 / 31.4 / 10.6 |
+| wanaka200 | AgentSearch | 31935b89 | 1339 s | 32 | 510, 1728 mm | 3.628 | 44.78% | 1564.9 / 9008.7 / 9.6 |
+
+The entries and keep-down are for the first rough op. Over 0.471 counts
+every fed linear and arc sample.
+
+**Reading.**
+- contour_parallel spaces its passes like the geodesic zigzag: 1.125
+  against 1.136 mm on Corne, 2.000 against 2.008 mm on wanaka200.
+- The geodesic zigzag cuts 0.86 times (Corne) and 0.85 times (wanaka200)
+  the contour_parallel length.
+- On Corne, contour_parallel reads 8.06% over 0.471, all in its body. The
+  geodesic arm's over length is in the shared perimeter sweep and
+  waterline; its body is 32.6 mm.
+- On wanaka200, contour_parallel makes 964 plunges and runs 5750 s.
+
+**The page.**
+- contour_parallel is the first column for both parts, and AgentSearch is
+  the last.
+- The spacing table gains the producer-split column.
+- The spacing sentence now compares the geodesic zigzag with
+  contour_parallel, and states AgentSearch's over-bound share as secondary.
+- `assert_fixture3d_v2.py` re-derives the producer split with its own
+  phase code, plus the new sentence numbers: "all 546 checks hold". One
+  injected wrong producer number was caught; the page was restored. The
+  previous spec is kept as `phase3/fix2/spec_d18.json`.

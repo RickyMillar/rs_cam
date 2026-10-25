@@ -43,6 +43,9 @@ import glob
 
 import importlib.util as _ilu
 
+_ps_spec = _ilu.spec_from_file_location("producer_split", os.path.join(os.path.dirname(os.path.abspath(__file__)), "producer_split.py"))
+producer_split_mod = _ilu.module_from_spec(_ps_spec)
+_ps_spec.loader.exec_module(producer_split_mod)
 _ns_spec = _ilu.spec_from_file_location("normal_step", os.path.join(os.path.dirname(os.path.abspath(__file__)), "normal_step.py"))
 normal_step_mod = _ilu.module_from_spec(_ns_spec)
 _ns_spec.loader.exec_module(normal_step_mod)
@@ -302,7 +305,7 @@ def load_share(simart_dir, toolpath_id, sim_cell, tol=0.1, planner_cell=0.5, d=T
     reads over C18's exact bound (0.471) and over C18's screen for the run's
     sim cell (ceiling + (planner cell + sim cell + tolerance)/D). Cut length:
     the XY distance from the previous sample, summed over the cutting samples
-    with linear or arc kinematics (plunge, helix and ramp samples left out)."""
+    whose intent is clearing_cut, of any kinematics (entry and link samples left out)."""
     screen = C18_CEILING + (planner_cell + sim_cell + tol) / d
     smp = sim_samples(simart_dir)
     prev, tot, o1, o2 = None, 0.0, 0.0, 0.0
@@ -310,7 +313,7 @@ def load_share(simart_dir, toolpath_id, sim_cell, tol=0.1, planner_cell=0.5, d=T
         p = sm["position"]
         ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
         prev = p
-        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["cut_kinematics"] not in ("linear", "arc"):
+        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["source_intent"] != "clearing_cut":
             continue
         r = sm["engagement"]["radial_woc_fraction"]
         tot += ln
@@ -397,6 +400,7 @@ def main():
                 fxn["arms"][a["label"]]["spacing"] = sp
                 fxn["arms"][a["label"]]["normal_step"] = normal_step_mod.normal_step(ops[a["label"]][img_op], mid, centre, eng)
                 fxn["arms"][a["label"]]["load"] = ld
+                fxn["arms"][a["label"]]["producers"] = producer_split_mod.split(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
         numbers["fixtures"][fx["name"]] = fxn
         rows.append((fx, pick, cols, missing))
     json.dump(numbers, open(f"{RES}/phase3/fix2/fixture3d_v2_numbers.json", "w"), indent=1)
@@ -423,39 +427,44 @@ def main():
         if "mid_level" not in fxn:
             return ""
         rows, old_rows = "", ""
+
+        def pr_text(pr):
+            per = "—" if pr["perimeter"] is None else f"{pr['perimeter']:.0f}"
+            return f"{per} / {pr['body']:.0f} / {pr['waterline']:.0f} mm"
         for lab, an in fxn["arms"].items():
             ns, sp, ld = an["normal_step"], an["spacing"], an["load"]
             rows += (f"<tr><td>{html.escape(lab)}</td><td>{ns['median']:.2f} mm</td>"
                      f"<td>{ns['p10']:.2f} to {ns['p90']:.2f} mm (n {ns['n']}; {ns['apart']} over {TOOL_D:.0f} mm set apart)</td>"
-                     f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
+                     f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td>"
+                     f"<td>{pr_text(an['producers'])}</td></tr>")
             old_rows += (f"<tr><td>{html.escape(lab)}</td><td>{sp['median']:.2f} mm</td>"
                          f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over {TOOL_D:.0f} mm set apart)</td></tr>")
         ag = fxn["arms"]["AgentSearch"]
         gz = fxn["arms"]["geodesic_local_zigzag"]
-        ratio_sp = ag["normal_step"]["median"] / gz["normal_step"]["median"]
+        cp = fxn["arms"]["contour_parallel"]
         f0 = fx["ops"][0]["comment"]
-        ratio_cut = gz["load"]["cut_mm"] / ag["load"]["cut_mm"]
+        s1 = (f"Against the main control: contour_parallel puts its passes {cp['normal_step']['median']:.2f} mm apart and the geodesic zigzag "
+              f"{gz['normal_step']['median']:.2f} mm (stepover {fx['stepover_first_op']:.1f} mm); the geodesic zigzag cuts "
+              f"{gz['load']['cut_mm'] / cp['load']['cut_mm']:.2f} times the contour_parallel length on '{f0}', and "
+              f"{gz['load']['over_exact_pct']:.2f}% of it reads over 0.471 against {cp['load']['over_exact_pct']:.2f}% for contour_parallel.")
         over = ag["load"]["over_exact_pct"]
-        s1 = (f"The cycle-time gap comes mostly from this spacing: the geodesic arm puts its passes about one stepover apart "
-              f"({gz['normal_step']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm), AgentSearch "
-              f"{ag['normal_step']['median']:.2f} mm apart ({ratio_sp:.2f} times wider), and the geodesic arm cuts "
-              f"{ratio_cut:.2f} times the length on '{f0}'.")
-        s2 = (f"AgentSearch is over the bound: {over:.2f}% of its cut length on '{f0}' reads over 0.471 in the simulation "
+        s2 = (f"AgentSearch (secondary) is over the bound: {over:.2f}% of its cut length on '{f0}' reads over 0.471 in the simulation "
               f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)."
-              if over > 0 else f"AgentSearch is not over the bound: 0% of its cut length on '{f0}' reads over 0.471.")
+              if over > 0 else f"AgentSearch (secondary) is not over the bound: 0% of its cut length on '{f0}' reads over 0.471.")
         why = ("The rays read low because they start at the seed and over-sample the levels inside the radius where the law spaces "
                "levels closer than the stepover (25.45 mm at stepover 1.2, 22.7 mm at 2.0; P2_C2 section C24), and because they also "
                "cross the starter helix and, on one-way, the straight moves across the cut.")
         return (f'<h3 style="margin-top:12px">Pass spacing and load at {html.escape(fxn["mid_level"])} ({html.escape(f0)})</h3>'
                 f'<table><tr><th>arm</th><th>pass step along the normal, length-weighted median</th><th>10th to 90th percentile</th>'
-                f'<th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th></tr>{rows}</table>'
+                f'<th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th>'
+                f'<th>over 0.471 by producer: perimeter / body / waterline</th></tr>{rows}</table>'
                 f'<p>{html.escape(s1)} {html.escape(s2)}</p>'
                 f'<p class="note">Spacing (C24\'s measure): the step along the normal between adjacent passes. From the midpoint of each '
                 f'pass move the normal is cast both ways; the distance to the nearest other pass move is one sample, weighted by the move length. '
                 f'A pass is a cut move of the level that the closing simulation reads over one sim cell / D (so a straight move across the cut, '
                 f'which runs through cleared stock, is not a pass); moves within R + 0.05 mm of the starter centre '
                 f'({fxn["centre"][0]}, {fxn["centre"][1]}) are left out (the starter helix); a step over one tool diameter is set apart. '
-                f'Load: the closing simulation of the --sim-artifact run (byte-equal program.nc), the radial width of cut of each fed cutting sample with linear or arc kinematics (plunge, helix and ramp left out), each '
+                f'Producer split (C30, phase3/c30): perimeter sweep (agent-slice arms only; contour_parallel has none, so —), region body, waterline cleanup, by the trace annotations. Load: the closing simulation of the --sim-artifact run (byte-equal program.nc), the radial width of cut of each cutting sample whose intent is a cut (clearing_cut, of any kinematics; entry and link samples left out), each '
                 f'weighted by its XY length. 0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); '
                 f'at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. The screen adds the sim cell '
                 f'(Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>'

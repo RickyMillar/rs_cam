@@ -878,3 +878,213 @@ emitter use:
   are second order, and an exact score would need the pick at level scope
   (the waterline run twice and stock copies per level). I do not
   recommend that.
+
+## 11. C31 design: open each region of the research arm under the 2D rule (2026-10-25)
+
+DESIGN ONLY. No Rust changed, no cargo, no commit. The operator ruled:
+replace the perimeter sweep in the geodesic research arm only; the shipped
+output stays byte-identical. Inputs: C30 (`P3_C18_3d_oracle.md`), D18
+(`phase3/fix5/corne/geodesic_local_zigzag_pick/`). Measurement script:
+`phase3/c31/band.py`, output `phase3/c31/band_output.txt`
+(`python3 -I band.py ../fix5/corne/geodesic_local_zigzag_pick`, a few
+minutes; it uses C30's phases and stamps discs of R on a 0.1 mm lattice).
+
+### 11.1 What the region polygon and the sweep are (code, read)
+
+- **The region.** `build_material_bool_grid` marks a cell when the stock
+  stands above `max(drop-cutter surface + leave, z_level)`. The surface is
+  the drop-cutter heightmap (tool-centre Z). So the region's boundary is
+  of one of two kinds:
+  - **At a wall that stands above the level:** the boundary is the
+    tool-centre limit, about R (+ leave) from the wall. That is the
+    waterline's own locus.
+  - **At the stock edge, or where an earlier pass cut to the floor:** the
+    boundary is where the material ends (material space).
+- **The 2D planner insets the region again.** The outline is smoothed
+  (`SIMPLIFY_INSET` 0.3 + RDP 0.3), and the 2D planner treats it as a
+  material outline and insets it by R. So its cutter centres stay at least
+  2R + 0.3…0.6 from a wall, and their edges at least R + 0.3…0.6.
+- **The sweep.** One loop per inset ring at `R + 0.25` inside the region
+  (`PERIMETER_INSET_MARGIN_MM`), cut BEFORE the 2D plan, at the full level
+  depth, through fresh stock: a full slot (C30: exact 0.95–1.00, 1026 mm
+  over 0.471). Its centre locus is the 2D plan's own outermost locus,
+  0.05–0.35 mm further out. Its own comment says why it exists: the agent
+  walk "doesn't reliably sweep the full machinable boundary". The 0.25 mm
+  margin keeps it inside the containment boundary (O5b).
+- **The waterline cleanup** (after the regions) runs at the wall locus, so
+  at a wall it meets the band from the leave to the edge of the sweep or of
+  the 2D plan: R + 0.25 or more. That is a half slot (G-WATERLOAD).
+
+### 11.2 Measured: what fails if the research arm skips the sweep (Corne D18)
+
+Per level: the sweep's band (discs of R round its samples). The part of it
+that the body does not cut is what the arm leaves without the sweep.
+
+| Level | Sweep (mm) | Band cut by the sweep only (not the body) | ... and not the waterline | Sweep → nearest body sample (median / p95 / max mm) | Sweep → nearest waterline (median mm) |
+|---|---|---|---|---|---|
+| Z 17 | 456.8 | 33.1 mm² (mean 0.07 mm wide) | 15.4 mm² (0.03) | 0.12 / 0.23 / 1.32 | 0.51 |
+| Z 11 | 374.8 | 184.1 mm² (0.49) | 0.0 | 0.47 / 1.40 / 5.48 | 3.28 |
+| Z 5 | 374.8 | 159.4 mm² (0.43) | 0.0 | 0.32 / 1.39 / 5.48 | 3.28 |
+| Z 0.5 | 374.8 | 148.9 mm² (0.40) | 144.5 mm² (0.39) | 0.20 / 1.30 / 5.48 | 7.90 |
+
+What this means for each item the brief asks about:
+- **The uncut band.** The body's outer pass runs 0.12–0.47 mm (median)
+  inside the sweep locus, and up to 5.5 mm inside it at corners. Without
+  the sweep a ring of mean width 0.4–0.5 mm (Z 11, 5, 0.5) stays, up to
+  about 2.5 mm wide at the corners.
+  - At Z 11 and Z 5 the waterline then cuts that ring too, so its load
+    grows by the ring width.
+  - At Z 0.5 nothing cuts it: 145 mm², 0.39 mm mean, standing up to the
+    level depth.
+  - So the plain skip (candidate 1 as it stands) leaves stock or loads the
+    waterline. It is not enough.
+- **The centre clip.** The sweep is the only producer at a fixed 0.25 mm
+  margin. A replacement must keep its centres inside the region by the
+  same margin (O5b).
+- **Wall stock.** The band [leave, R + 0.25] from a wall is the
+  waterline's in every case; the sweep does not touch it.
+- **The waterline after it** (C30's 0.471 measure, split by the distance
+  of each waterline sample to the sweep):
+
+| Level | Waterline linear/arc | Over 0.471 at a planned region's wall (≤ R + 1.25 mm from the sweep) | Over 0.471 elsewhere |
+|---|---|---|---|
+| Z 17 | 446.0 mm | 11.4 | 0.0 |
+| Z 11 | 663.1 mm | 71.4 | **169.2** |
+| Z 5 | 663.5 mm | 49.1 | 6.9 |
+| Z 0.5 | 418.9 mm | 2.4 | 6.6 |
+| sum | | **134.3** | **182.7** |
+
+"Elsewhere" is a waterline contour no clearing plan reached: in practice
+the F-038-skipped region 1 of Z 11 / 5 / 0.5 (C22 §10d). Its first
+contour starts at (20.3, -106.2), where the level's first waterline
+entry is. The waterline traces every mesh contour at the Z (C30, the F9
+note), so there it cuts a full slot alone.
+
+**The C12 fixture.** I could not measure it (no artefact; a run is
+needed). From the code: the pocket and the island are vertical walls, so
+both of their boundaries are of the wall kind. The heavy oracle exempts
+the sweep's distance band and the waterline by tag, so it would hide the
+same two slots.
+
+### 11.3 The candidates
+
+1. **Skip the sweep; the field's outer wraps open the band.** Measured
+   above: not enough as it stands. The 2D plan's outer reach is the
+   smoothed outline inset by R, 0.05–0.35 mm short of the sweep and short
+   by up to 5.5 mm at corners.
+2. **A ring at the sweep locus, cut from inside, after the body.** Its
+   engagement is the gap above:
+   - median 0.2–0.5 mm, under c·D 1.313;
+   - p95 1.3–1.4 mm, at the ceiling;
+   - corners up to about R + 2.5, over it.
+   To hold the corners it would need inner rings (mostly air, and the lift
+   turns long air runs into entries) or a 3D load reading per step. It
+   also does nothing for the waterline's half slot.
+3. **RECOMMENDED: plan the research arm's slice on the region's own
+   tool-centre limit.** This is candidate 1, made complete.
+   - For the research arm only, `planner_outlines` gives the 2D planner
+     the region grown outward by `R − m`, where `m` is
+     `PERIMETER_INSET_MARGIN_MM`. The grow is the one `inset_piece_outlines`
+     already uses: `OffsetRingSet::from_polygon(..).offset(-(R − m))`,
+     arcs kept, untoleranced flattening. No smoothing inset and no RDP.
+     The 2D tool-centre region (the grown outline inset by R) is then the
+     region inset by `m`: the sweep's own margin, kept for O5b.
+   - The geodesic field and the 2D cleanup (residue contours, wall pass,
+     mop) then open the whole band, out to `m` from the region boundary,
+     **under the 2D pass-load rule**: the replay holds every step, and the
+     wall pass of the cleanup is the ring of candidate 2, now cut by the
+     planner that measures it. The research arm emits no perimeter sweep.
+   - At a wall the 2D grid now holds the real material: the grown band
+     is the stock between the region boundary and the wall. So the
+     waterline meets only `m` plus one planner cell
+     ((0.25 + 0.5) / 6 = 0.125 D, under c 0.219 at s 1.2).
+   - **The closing guard.** Growing and then insetting by R closes gaps of
+     the region narrower than 2R: a tool centre could then be planned
+     where the region has none (over a narrow ridge). Per region, compare
+     the area of the 2D tool-centre region (the grown outline inset by R)
+     with the region inset by `m`. If it is larger by more than one
+     planner cell times the region's perimeter, plan that region as now
+     (smoothing and sweep). That is the shipped path. No new constant:
+     R, `m` and the planner cell are existing values.
+   - **The cost at a material boundary** (the stock edge; Corne Z 17).
+     There the 2D grid assumes material for `R − m` beyond the real edge,
+     so it plans about `(R − m)/s` more wraps that cut partly air. It is
+     pessimistic, not unsafe: the real engagement is less than the planned
+     one. A later refinement can grow only along wall stretches (boundary
+     points within R + leave + one cell of a mesh waterline contour); I do
+     not propose it now.
+4. **Part 2: the waterline as a skim held to the ceiling, else to the
+   stock left** (the operator's earlier ask; research arm only, in
+   `waterline_cleanup`).
+   - Before each waterline step, read the standing width ahead on the
+     planner stock: the 3D form of the 2D swept width. In the disc of R at
+     the step end, take the cells whose stock top is over `p.z +
+     AIR_THRESHOLD_MM` (the lift's own threshold), and their extent across
+     the travel direction, over D.
+   - At or under the 2D ceiling `c` (`PassLoad::swept_width`), the step is
+     cut. Over it, the step is not cut: the run ends, and the stock there
+     is left, counted and printed per level (length and the largest width
+     left).
+   - After part 1, every planned wall meets ≤ 0.125 D, so the skim cuts
+     there. What it leaves is the waterline of the F-038-skipped regions:
+     F-038's own rule ("material left for finishing passes") extended to
+     the wall of a region it did not open. The next op (the rest rough on
+     Corne) and the finish see it.
+   - No new constant.
+
+### 11.4 Predictions (P; C30's measure, 0.471, Corne "3D Rough 1", zigzag_pick)
+
+| Item | D18 | Part 1 (3.) | Parts 1 + 2 |
+|---|---|---|---|
+| Perimeter sweep over | 1026.1 mm | 0 (no sweep) | 0 |
+| Waterline over, planned walls | 134.3 | ≈ 0 (meets ≤ 0.125 D) | ≈ 0 |
+| Waterline over, elsewhere | 182.7 | 182.7 (unchanged) | 0 (left as stock instead: about 330 mm of wall at Z 11 / 5 / 0.5, measured by the run) |
+| Departures (2D-exempt) and starter | 32.6 | about the same | about the same |
+| **Total over** | **1375.8 (4.1 %)** | **≈ 215 (≈ 0.6 %)** | **≈ 35 (≈ 0.1 %)** |
+
+- **Plunges (56 at D18).**
+  - Part 1: −1, because Z 17 loses the sweep's entry, the op's first.
+    The body's first entry is the starter plunge at every level already;
+    at Z 11 / 5 / 0.5 the sweep's entry was a keep-down link.
+  - Part 1 also lets the 2D replay re-enter in the new band. The pocket
+    of D16a planned turns at walls without new entries, so I expect 0 to
+    +6. Part 1: **55 to 61**.
+  - Part 2 removes the waterline's entries on fully left contours (the
+    first contour of Z 11 / 5 / 0.5: −3) and can add 2 per left span
+    inside a contour. **About 52 to 60.** Low confidence.
+- **Cycle (2607 s at D18).**
+  - Removed: the sweep slots, about 1580 mm on `linear` plus their
+    `helix` (draped) parts, at the modulated (slot) feed.
+  - Added: about `(R + 0.3 − m)/s` ≈ 2.5–2.8 wraps per level along the
+    boundary, about 1000–1250 mm per level, plus about 1000 mm of
+    part-air wraps at Z 17 (stock edge).
+  - Net **2600 to 2700 s** (−0.3 % to +3.5 %); low confidence.
+  - The over-the-bound share falls by about 4 points, and the plan keeps
+    the 2D rule everywhere it cuts.
+- **C12 heavy test.**
+  - The arm modes have no sweep, so the perimeter band count of the
+    research modes falls to about the band's body samples. Those samples
+    are then judged under the 2D rule.
+  - The test should keep the band exemption for the AgentSearch control
+    only. That is one change to its `in_perimeter_band` use.
+  - Prediction: 0 over still; judged +10 to 20 %.
+- **Byte parity.** The grow, the closing guard, the skipped sweep and the
+  skim are all behind `is_research_arm` (or `WithinPassLoad`). The shipped
+  `planner_outlines`, sweep and `waterline_cleanup` keep their code path.
+- **Coverage (`triage.coverage`).** Part 1 cuts at least as far out as the
+  sweep did (to `m` from the region, against the sweep's edge at `m`), so
+  it leaves nothing new. Part 2 leaves the skipped-region wall stock that
+  the waterline cut before. The next op takes it on Corne. The verifier
+  must read the hard bar.
+
+### 11.5 What I would change (on the lead's go)
+
+- `adaptive3d/clearing.rs`:
+  - `planner_outlines` gets a research branch (the grow and the closing
+    guard).
+  - `clear_one_region` skips the sweep when the research grow applies to
+    the region.
+- `adaptive3d/path.rs` and `clearing.rs`: `waterline_cleanup` gets the
+  research skim, with a per-level count line.
+- The C12 test: the band exemption for the control only.
+- No change in `research_geodesic.rs`.

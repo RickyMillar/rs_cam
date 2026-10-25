@@ -1,0 +1,25 @@
+run ../fix5/corne/geodesic_local_zigzag_pick
+Z 17.0: sweep 1573 samples, 456.8 mm; sweep band 2738 mm2
+  band cut by the sweep alone (not the body): 33.1 mm2 = mean width 0.072 mm over the sweep length
+  band cut by the sweep alone (not the body, not the waterline): 15.4 mm2 = mean width 0.034 mm
+  sweep sample to nearest body sample (mm): median 0.12, p95 0.23, max 1.32; share within 0.3 mm: 0.964
+  sweep sample to nearest waterline sample (mm): median 0.51, p95 0.84, max 1.15
+  waterline linear/arc: 446.0 mm, over 0.471: 11.4 mm; at a planned region (<= R + 1.25 mm from the sweep): 99.0 mm, over 11.4 mm; elsewhere: 347.0 mm, over 0.0 mm
+Z 11.0: sweep 1291 samples, 374.8 mm; sweep band 2238 mm2
+  band cut by the sweep alone (not the body): 184.1 mm2 = mean width 0.491 mm over the sweep length
+  band cut by the sweep alone (not the body, not the waterline): 0.0 mm2 = mean width 0.000 mm
+  sweep sample to nearest body sample (mm): median 0.47, p95 1.40, max 5.48; share within 0.3 mm: 0.390
+  sweep sample to nearest waterline sample (mm): median 3.28, p95 3.50, max 3.77
+  waterline linear/arc: 663.1 mm, over 0.471: 240.7 mm; at a planned region (<= R + 1.25 mm from the sweep): 345.6 mm, over 71.4 mm; elsewhere: 317.6 mm, over 169.2 mm
+Z 5.0: sweep 1291 samples, 374.8 mm; sweep band 2238 mm2
+  band cut by the sweep alone (not the body): 159.4 mm2 = mean width 0.425 mm over the sweep length
+  band cut by the sweep alone (not the body, not the waterline): 0.0 mm2 = mean width 0.000 mm
+  sweep sample to nearest body sample (mm): median 0.32, p95 1.39, max 5.48; share within 0.3 mm: 0.493
+  sweep sample to nearest waterline sample (mm): median 3.28, p95 3.50, max 3.77
+  waterline linear/arc: 663.5 mm, over 0.471: 56.0 mm; at a planned region (<= R + 1.25 mm from the sweep): 347.0 mm, over 49.1 mm; elsewhere: 316.6 mm, over 6.9 mm
+Z 0.5: sweep 1462 samples, 374.8 mm; sweep band 2239 mm2
+  band cut by the sweep alone (not the body): 148.9 mm2 = mean width 0.397 mm over the sweep length
+  band cut by the sweep alone (not the body, not the waterline): 144.5 mm2 = mean width 0.386 mm
+  sweep sample to nearest body sample (mm): median 0.20, p95 1.30, max 5.48; share within 0.3 mm: 0.529
+  sweep sample to nearest waterline sample (mm): median 7.90, p95 12.97, max 13.93
+  waterline linear/arc: 418.9 mm, over 0.471: 9.0 mm; at a planned region (<= R + 1.25 mm from the sweep): 28.7 mm, over 2.4 mm; elsewhere: 390.2 mm, over 6.6 mm

@@ -186,7 +186,7 @@ def load_check(simart_dir, tpid, cell):
         p = sm["position"]
         ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
         prev = p
-        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["cut_kinematics"] in ("linear", "arc"):
+        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["source_intent"] == "clearing_cut":
             r = sm["engagement"]["radial_woc_fraction"]
             tot += ln
             o1 += ln if r > 0.471 else 0.0
@@ -247,6 +247,47 @@ def normal_step_check(run_dir, tp_glob, comment, lab, centre, simart_dir, tpid):
                 return v
         return out[-1][0]
     return {"n": len(out), "apart": apart, "median": round(q(0.5), 3), "p10": round(q(0.1), 3), "p90": round(q(0.9), 3)}
+
+
+def producers_check(run_dir, simart_dir, tp_glob):
+    """Own producer split: per move, the phase from the trace annotations
+    (level start, waterline start, and for agent-slice arms the level's
+    second entry as the body start); the over-0.471 XY length of fed linear
+    and arc samples per phase."""
+    tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
+    tpid = int(re.search(r"tp_(\d+)_", tp_glob).group(1))
+    n = tp["move_count"]
+    ents = sorted((e for e in tp["semantic_trace"]["items"] if e["kind"] == "entry"), key=lambda e: e["move_start"])
+    gen = {}
+    for a in tp["debug_trace"]["annotations"]:
+        m = re.match(r"Pass (\d+) — ", a["label"])
+        if m:
+            gen[int(m.group(1))] = a["move_index"]
+    pairs = sorted((gen[e["params"]["values"]["pass_index"]], e["move_start"]) for e in ents)
+    fin = lambda g: next((f for gi, f in pairs if gi >= g), n)
+    lv = [fin(a["move_index"]) for a in tp["debug_trace"]["annotations"] if a["label"].startswith("Adaptive Z")]
+    wl = [fin(a["move_index"]) for a in tp["debug_trace"]["annotations"] if a["label"] == "Waterline cleanup"]
+    sl = any(s.get("kind") == "agent2d_region" for s in tp["debug_trace"]["spans"])
+    ph = [None] * n
+    for k, st in enumerate(lv):
+        en = lv[k + 1] if k + 1 < len(lv) else n
+        body = st
+        if sl:
+            inl = [e["move_start"] for e in ents if st <= e["move_start"] < wl[k]]
+            body = inl[1] if len(inl) > 1 else st
+        for m in range(st, en):
+            ph[m] = "perimeter" if m < body else ("body" if m < wl[k] else "waterline")
+    acc = {"perimeter": 0.0, "body": 0.0, "waterline": 0.0, "unplaced": 0.0}
+    prev = None
+    for sm in samples_of(simart_dir):
+        p = sm["position"]
+        ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
+        prev = p
+        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["source_intent"] == "clearing_cut" \
+                and sm["engagement"]["radial_woc_fraction"] > 0.471:
+            acc[(ph[sm["move_index"]] if sm["move_index"] < n else None) or "unplaced"] += ln
+    return {"perimeter": round(acc["perimeter"], 1) if sl else None, "body": round(acc["body"], 1),
+            "waterline": round(acc["waterline"], 1), "unplaced": round(acc["unplaced"], 1)}
 
 
 def main():
@@ -334,18 +375,25 @@ def main():
                 checks += len(ns)
                 row = (f"<tr><td>{lab}</td><td>{ns['median']:.2f} mm</td>"
                        f"<td>{ns['p10']:.2f} to {ns['p90']:.2f} mm (n {ns['n']}; {ns['apart']} over 6 mm set apart)</td>"
-                       f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
+                       f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td>")
+                pr = producers_check(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
+                assert ga["producers"] == pr, (fx["name"], lab, ga["producers"], pr)
+                per = "—" if pr["perimeter"] is None else f"{pr['perimeter']:.0f}"
+                row += f"<td>{per} / {pr['body']:.0f} / {pr['waterline']:.0f} mm</td></tr>"
+                checks += 4
                 assert row in page, (fx["name"], lab, row)
                 old = (f"<tr><td>{lab}</td><td>{sp['median']:.2f} mm</td>"
                        f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over 6 mm set apart)</td></tr>")
                 assert old in page, (fx["name"], lab, old)
                 checks += 2
             ag, gz = gf["arms"]["AgentSearch"], gf["arms"]["geodesic_local_zigzag"]
-            for needle in (f"({gz['normal_step']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm)",
-                           f"AgentSearch {ag['normal_step']['median']:.2f} mm apart ({ag['normal_step']['median'] / gz['normal_step']['median']:.2f} times wider)",
-                           f"cuts {gz['load']['cut_mm'] / ag['load']['cut_mm']:.2f} times the length",
-                           (f"AgentSearch is over the bound: {ag['load']['over_exact_pct']:.2f}% of its cut length"
-                            if ag['load']['over_exact_pct'] > 0 else "AgentSearch is not over the bound"),
+            cp = gf["arms"]["contour_parallel"]
+            for needle in (f"contour_parallel puts its passes {cp['normal_step']['median']:.2f} mm apart and the geodesic zigzag "
+                           f"{gz['normal_step']['median']:.2f} mm (stepover {fx['stepover_first_op']:.1f} mm)",
+                           f"the geodesic zigzag cuts {gz['load']['cut_mm'] / cp['load']['cut_mm']:.2f} times the contour_parallel length",
+                           f"{gz['load']['over_exact_pct']:.2f}% of it reads over 0.471 against {cp['load']['over_exact_pct']:.2f}% for contour_parallel",
+                           (f"AgentSearch (secondary) is over the bound: {ag['load']['over_exact_pct']:.2f}% of its cut length"
+                            if ag['load']['over_exact_pct'] > 0 else "AgentSearch (secondary) is not over the bound"),
                            f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)"):
                 assert needle in page, (fx["name"], needle)
                 checks += 1
