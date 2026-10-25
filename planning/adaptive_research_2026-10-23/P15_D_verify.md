@@ -3267,3 +3267,21 @@ cutting 60483 mm. Its `program.nc` is byte-identical to D17's zigzag
   pick/zigzag plan identity: "all 408 checks hold". One injected wrong
   number (the pick generation time) was caught; the page was restored.
   The previous spec is kept as `phase3/fix2/spec_d17.json`.
+
+**D18 page correction (the lead, after C22's §10d).** The pick sentence
+now says:
+- the score covers the region bodies: 4/5/5/4 equal the body plunges per
+  level;
+- the plunges outside the score are the op's first entry, the waterline
+  cleanup (2/2/2/31, cited from §10d) and the F-038-skipped regions;
+- the first entry after each region body is not scored (G-PICKEXIT).
+
+The sentence gives both level counts with their methods:
+- **7/7/7/35:** the trace's plunge-entry items, placed by move order. Each
+  level runs from its first cut move to the next level's first cut move,
+  at moves 2, 4095, 5974 and 7875. This reproduces §10d.
+- **10/6/6/34:** the page's red rings, placed by the Z of the move after
+  the entry's last rapid.
+
+The asserts re-derive both counts and the scored 4/5/5/4: "all 410 checks
+hold". One injected wrong count was caught; the page was restored.

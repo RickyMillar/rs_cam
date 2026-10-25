@@ -376,10 +376,21 @@ def main():
             if g0:
                 per[lev[g0[-1]]] = per.get(lev[g0[-1]], 0) + 1
         trace = [per.get(k, 0) for k in ("Z 17.00", "Z 11.00", "Z 5.00", "Z 0.50")]
+        # The trace's plunge-entry items, placed by move order: each level runs
+        # from its first cut move to the next level's first cut move.
+        names = ("Z 17.00", "Z 11.00", "Z 5.00", "Z 0.50")
+        kind_cut = [i for i, (g, a, b) in enumerate(mv) if g != 0]
+        firsts = [min(i for i in kind_cut if lev[i] == k) for k in names]
+        items_pe = [e for e in tp["semantic_trace"]["items"] if e["kind"] == "entry" and "plunge entry" in e["label"]]
+        order = [0, 0, 0, 0]
+        for e in items_pe:
+            order[sum(1 for x in firsts[1:] if e["move_start"] >= x)] += 1
         assert kept == ["A", "A", "A", "A"], kept
         for needle in (f"generating '3D Rough 1' in {gen(pk['dir']):.2f} s against {gen(zz['dir']):.2f} s for zigzag",
-                       f"({scored[0]}, {scored[1]}, {scored[2]} and {scored[3]} plunges for A)",
-                       f"({trace[0]}, {trace[1]}, {trace[2]} and {trace[3]})",
+                       f"its {scored[0]}, {scored[1]}, {scored[2]} and {scored[3]} plunges for A equal the body plunges",
+                       f"{order[0]}, {order[1]}, {order[2]} and {order[3]} (the trace's plunge-entry items, placed by move order",
+                       f"{trace[0]}, {trace[1]}, {trace[2]} and {trace[3]} (this page's red rings",
+                       "G-PICKEXIT in DEFECTS.md",
                        f"({sum(trace)} plunges, "):
             assert needle in page, (fx["name"], "pick sentence", needle)
             checks += 1
