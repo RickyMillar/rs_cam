@@ -1,0 +1,31 @@
+
+running 2 tests
+igeodesic_local_oneway turns: planned 36, cut 36, not cut 0, with a reduced factor 35 (lowest 0.314), longest 2.914 mm (bound 3.207); fed 36, unfed 0, full feed with no move 0
+geodesic_local_oneway: 3015 moves, 119 entries
+
+thread 'the_geodesic_arm_feeds_its_turns_down_at_the_level' (2553144) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:969:9:
+geodesic_local_oneway: turn moves off the level Z 4.5: [
+    "move 1075: Z 10.500 to 10.500",
+    "move 1157: Z 10.500 to 10.500",
+    "move 1159: Z 5.956 to 5.956",
+    "move 1244: Z 10.500 to 10.500",
+    "move 1247: Z 10.500 to 10.500",
+    "move 1338: Z 10.500 to 10.500",
+    "move 1340: Z 6.279 to 4.500",
+    "move 1432: Z 4.500 to 4.820",
+    "move 1433: Z 4.820 to 4.500",
+    "move 1729: Z 10.500 to 10.500",
+    "move 1799: Z 10.500 to 10.500",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ 1/2
+the_geodesic_arm_feeds_its_turns_down_at_the_level --- FAILED
+
+failures:
+
+failures:
+    the_geodesic_arm_feeds_its_turns_down_at_the_level
+
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.61s
+
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`

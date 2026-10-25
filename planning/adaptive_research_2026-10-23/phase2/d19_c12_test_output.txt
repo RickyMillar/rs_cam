@@ -1,0 +1,25 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv: 3081 moves, 7947 judged at levels {45, 50, 70, 71, 72, 73, 74, 75, 78, 79, 80, 89, 105} (Z x 10), 5 over the screen 0.546 (sim peak 0.784), 5 over the exact bound 0.471 (exact peak 0.999); entry 2265, vertical 2334, departing 5025, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+  geodesic_curv screened: move 496 ClearingCut at (12.81, 15.62, 7.00) wall distance 8.38: sim radial 0.744, exact peak of the move 0.999
+  geodesic_curv screened: move 496 ClearingCut at (12.69, 15.88, 7.00) wall distance 8.12: sim radial 0.744, exact peak of the move 0.999
+  geodesic_curv screened: move 511 ClearingCut at (16.75, 13.21, 7.00) wall distance 10.79: sim radial 0.586, exact peak of the move 0.755
+  geodesic_curv screened: move 2126 ClearingCut at (28.77, 5.12, 4.50) wall distance 5.23: sim radial 0.784, exact peak of the move 0.999
+  geodesic_curv screened: move 2126 ClearingCut at (28.64, 5.38, 4.50) wall distance 5.36: sim radial 0.784, exact peak of the move 0.999
+
+thread 'the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels' (2555584) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:862:9:
+geodesic_curv: 5 judged samples read over the exact bound 0.471 (exact peak 0.999); the first: move 496 ClearingCut at (12.81, 15.62, 7.00) wall distance 8.38: sim radial 0.744, exact peak of the move 0.999
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels --- FAILED
+
+failures:
+
+failures:
+    the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 154.56s
+
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`
