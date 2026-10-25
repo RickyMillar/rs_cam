@@ -1,6 +1,6 @@
 {
  "binary": "/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli",
- "binary_mtime": "2026-10-25T13:40:24",
+ "binary_mtime": "2026-10-25T13:50:30",
  "fixtures": {
   "corne": {
    "levels_shown": [
@@ -61,7 +61,20 @@
       "\"3D Rough 1\": the rough leaves 457 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 404 of them against a wall: 6832.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1478.2 mm2 at (28.8, -16.6); 16.50 mm high, 7.59 mm wide, 51.5 mm2 at (105.3, -24.7); 15.75 mm high, 7.50 mm wide, 50.4 mm2 at (18.6, -55.6); 8.12 mm high, 0.30 mm wide, 0.3 mm2 at (82.2, -64.9); 6.66 mm high, 0.30 mm wide, 0.4 mm2 at (135.0, -22.9); 6.25 mm high, 7.12 mm wide, 49.0 mm2 at (122.1, -41.5); 6.25 mm high, 0.90 mm wide, 5.8 mm2 at (135.3, -31.9); 4.50 mm high, 1.04 mm wide, 2.8 mm2 at (146.4, -64.6); 4.50 mm high, 0.30 mm wide, 0.6 mm2 at (146.4, -17.5); 4.16 mm high, 1.04 mm wide, 7.6 mm2 at (22.2, -22.9); and 447 more. 12 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
       "crosses standing material deeper than this pass was planned to cut: 2.6% of cutting samples remove more than the commanded 3.00 mm depth per pass by over 0.300 mm, peaking at 15.00 mm",
       "WARNING: high air cutting on '3D Rough 1' is 45% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
-     ]
+     ],
+     "spacing": {
+      "n": 60,
+      "apart": 2,
+      "median": 2.554,
+      "min": 0.258,
+      "max": 5.944
+     },
+     "load": {
+      "cut_mm": 13688.0,
+      "over_exact_pct": 20.19,
+      "screen": 0.5126,
+      "over_screen_pct": 18.1
+     }
     },
     "geodesic_local_zigzag": {
      "commit": "31935b89",
@@ -114,7 +127,20 @@
       "\"3D Rough 1 (copy)\": the rough leaves 1139 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1125 of them against a wall: 3468.6 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.7 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.16 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 1.04 mm high, 0.30 mm wide, 0.5 mm2 at (89.7, -5.2); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1129 more. 373 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
       "\"3D Rough 1\": the rough leaves 966 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 951 of them against a wall: 5108.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1400.8 mm2 at (28.8, -16.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.2); 0.95 mm high, 0.30 mm wide, 0.2 mm2 at (89.4, -4.9); 0.92 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 956 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
       "WARNING: high air cutting on '3D Rough 1' is 50% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
-     ]
+     ],
+     "spacing": {
+      "n": 179,
+      "apart": 0,
+      "median": 1.125,
+      "min": 0.092,
+      "max": 3.937
+     },
+     "load": {
+      "cut_mm": 33087.9,
+      "over_exact_pct": 4.6,
+      "screen": 0.5126,
+      "over_screen_pct": 4.32
+     }
     },
     "geodesic_local_oneway": {
      "commit": "31935b89",
@@ -167,9 +193,27 @@
       "\"3D Rough 1 (copy)\": the rough leaves 1122 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1110 of them against a wall: 3467.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.7 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.18 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -4.6); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1112 more. 372 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
       "\"3D Rough 1\": the rough leaves 964 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 951 of them against a wall: 5089.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1397.9 mm2 at (28.8, -16.6); 1.01 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.98 mm high, 0.30 mm wide, 0.4 mm2 at (89.7, -5.2); 0.93 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -4.6); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 954 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
       "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
-     ]
+     ],
+     "spacing": {
+      "n": 216,
+      "apart": 0,
+      "median": 0.96,
+      "min": 0.069,
+      "max": 5.159
+     },
+     "load": {
+      "cut_mm": 34607.4,
+      "over_exact_pct": 4.39,
+      "screen": 0.5126,
+      "over_screen_pct": 4.13
+     }
     }
-   }
+   },
+   "centre": [
+    51.05,
+    58.55
+   ],
+   "mid_level": "Z 5.00"
   },
   "wanaka200": {
    "levels_shown": [
@@ -220,7 +264,20 @@
      },
      "findings": [
       "Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. \u2014 Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's \"Auto-place keyed pins\" places the first pattern."
-     ]
+     ],
+     "spacing": {
+      "n": 97,
+      "apart": 5,
+      "median": 3.538,
+      "min": 0.124,
+      "max": 5.97
+     },
+     "load": {
+      "cut_mm": 23576.5,
+      "over_exact_pct": 44.81,
+      "screen": 0.6293,
+      "over_screen_pct": 11.84
+     }
     },
     "geodesic_local_zigzag": {
      "commit": "31935b89",
@@ -265,9 +322,27 @@
      "findings": [
       "Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. \u2014 Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's \"Auto-place keyed pins\" places the first pattern.",
       "WARNING: high air cutting on '2 Back Rough' is 45% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
-     ]
+     ],
+     "spacing": {
+      "n": 207,
+      "apart": 0,
+      "median": 1.979,
+      "min": 0.05,
+      "max": 6.0
+     },
+     "load": {
+      "cut_mm": 44735.1,
+      "over_exact_pct": 3.59,
+      "screen": 0.6293,
+      "over_screen_pct": 3.57
+     }
     }
-   }
+   },
+   "centre": [
+    119.55,
+    124.624
+   ],
+   "mid_level": "Z 8.62"
   }
  }
 }

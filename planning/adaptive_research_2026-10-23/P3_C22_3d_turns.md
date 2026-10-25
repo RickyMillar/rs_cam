@@ -407,3 +407,60 @@ What the CLI prints, and where each number is:
 - `apply_slice_turn_feeds` calls `holding_move` once per turn with no move
   on it, and that scans the whole toolpath. A run with many such turns is
   slower; the count says how many.
+
+## 9. D14 fix: the turn feed survives the segment merge (2026-10-25)
+
+D14 (`phase2/d14_c12_plain_output.txt`, `phase2/d14_c12_test_output.txt`)
+found two faults. No cargo ran for this fix; rustfmt is green.
+
+**Fault 1: 3 turns unfed (plain test and heavy test).** The cause is my
+P3 risk. The emitter and the planner stamp simplify each `Cut` with the
+ONE RDP rule (`Adaptive3dGeometry::chord_tolerance`). A 2D `Cut` holds a
+turn and the steps next to it. Turns 42-45 run end to end on
+y = -17.8757, so the RDP drops the shared vertices, and the merged move
+lies on no single turn.
+
+Fix: `research_geodesic::split_at_turns` (R:7839, in the C12 block).
+`plan_one_outline` calls it on the F-038-filtered plan when the turn list
+is not empty (C:2475). It splits each `Cut` where a run of steps on one
+turn starts or ends. So each turn is a `Cut` of its own, and the steps
+between two turns are one `Cut`. The RDP keeps the two ends of every
+`Cut`, so no emitted move can join a turn move with a move of another turn
+or of no turn. Properties:
+
+- No second RDP. The ONE function still runs, per `Cut`, in the emitter
+  and in the planner mirror.
+- G-PLANSIMGAP holds. The split is on the 2D plan, before the lift, so the
+  planner stamps exactly the segments the emitter emits (merge before
+  stamp, as before).
+- The points and their order do not change. Only the RDP can no longer
+  merge across a split point.
+- Only research plans with turns are split. The shipped arms and
+  `geodesic_curv` / `geodesic_curv_split` are untouched.
+
+**Fault 2: 6 turns "counted fed, and no move carries factor" (heavy test
+only).** This is a fault of the test's attribution, not of the feed:
+
+- `turn_moves` gave each move only to the FIRST record it lies on
+  (`position`).
+- The pocket walls are vertical, so Z 7 and Z 4.5 plan the same turns.
+  The faulted turns 42-45, 56 and 61 have indices past the first level's
+  43 turns.
+- `apply_slice_turn_feeds` writes the feed on the move for every record
+  it lies on (XY rule, `min` of the feeds) and marks each record fed. The
+  test then credited the move only to the first-level record.
+
+The plain test (one level) shows no such fault, which agrees with this
+cause.
+
+Test change (`tests/adaptive3d_geodesic_arm_c12.rs`): `turn_moves` (T:303)
+returns every record a move lies on. `turn_faults` (T:342) requires the
+move's feed to be at most the SMALLEST `F · factor` of those records, and
+credits it to each of them. This is not looser: each record still needs
+its own move at or under its own reduced feed, and a move on two records
+is now held to the lower feed (before, only to the first record's).
+
+**P (D15).** Plain test: `unfed 0`, and the run passes. Heavy test: no
+`turn_faults` in modes 3 and 4. Risk: a turn whose 2D steps the lift
+demotes or splits (air, large Z) still has no move; the count then says
+so.

@@ -2835,3 +2835,57 @@ planned, 27 cut).
   island side). The other 2 start at 24.7 and 27.7 mm.
 - The heavy test's 39 were not probed one by one. Output:
   `phase3/fix2/turn_probe_output.txt`.
+
+### D-FIX2 addendum: pass spacing and load (the lead's row)
+
+**The reruns for the load.** The five page runs ran again with
+`--sim-artifact` (`phase3/fix2/run_simart.sh`; lane script, `timeout 900`;
+all rc 0, about 13:47 to 13:51).
+- Each `program.nc` is byte-equal to its page run, so the plans did not
+  change. The assert script checks this too.
+- The CLI was rebuilt at 13:50:30 from the same 31935b89 source, because
+  the probe revert touched an mtime. The page header says so.
+- `simulation.json` is 60 MB to 401 MB per run, under `phase3/fix2/simart/`.
+- **My process fault:** the runs ended at about 13:51, and I did not check
+  them until the lead asked at 16:37.
+
+**Spacing.** Rule:
+- 4 axis rays (0, 90, 180, 270 deg) from the centre: the geodesic zigzag
+  entry ring nearest the AgentSearch first entry ring at the middle level.
+  Corne (51.05, 58.55), wanaka200 (119.55, 124.624).
+- Each ray is cut against the blue cut moves of the first rough op at the
+  middle level. Crossings within 0.05 mm are one pass. A gap over one tool
+  diameter (6 mm) is set apart.
+- The four diagonal rays give the same medians within 0.07 mm.
+
+**Load.** The share of the first rough op's cut length (the linear cutting
+samples, weighted by XY length) whose sim radial width of cut is over 0.471
+(C18's exact bound for s 2.0, R 3), and over C18's screen for the run's sim
+cell: 0.3626 + (0.5 + cell + 0.1)/6.
+
+| Fixture, level | Arm | Spacing median (range, n, gaps set apart) | Over 0.471 | Over the screen |
+|---|---|---|---|---|
+| Corne Z 5.00, stepover 1.2 | AgentSearch | 2.554 mm (0.258-5.944, 60, 2) | 20.19% | 18.10% (0.513) |
+| | geodesic_local_zigzag | 1.125 mm (0.092-3.937, 179, 0) | 4.60% | 4.32% |
+| | geodesic_local_oneway | 0.960 mm (0.069-5.159, 216, 0) | 4.39% | 4.13% |
+| wanaka200 Z 8.62, stepover 2.0 | AgentSearch | 3.538 mm (0.124-5.970, 97, 5) | 44.81% | 11.84% (0.629) |
+| | geodesic_local_zigzag | 1.979 mm (0.050-6.000, 207, 0) | 3.59% | 3.57% |
+
+**Reading.**
+- The geodesic arm spaces its passes at about the stepover. AgentSearch
+  spaces them 2.27 times (Corne) and 1.79 times (wanaka200) wider.
+- The geodesic arm cuts 2.42 times and 1.90 times the length on the first
+  rough op. The page states that the cycle-time gap comes mostly from this
+  spacing.
+- AgentSearch is over the bound on both fixtures.
+
+**Limits (stated on the page).**
+- Corne's first rough op has stepover 1.2, not 2.0, so its ceiling is
+  lower than 0.3626, and 0.471 under-counts there.
+- The wanaka200 sim cell is 1.0 mm. Its 44.81% over 0.471 includes cell
+  blending; the cell-aware screen gives 11.84%.
+
+**Check.** `assert_fixture3d_v2.py` now re-derives the centre, the spacing
+and the load with its own code, and checks the plan identity of each rerun:
+"all 225 checks hold". One injected wrong spacing median was caught; the
+page was restored.

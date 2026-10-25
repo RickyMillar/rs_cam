@@ -55,7 +55,7 @@ def d2(a, b):
     return math.hypot(b[0] - a[0], b[1] - a[1])
 
 
-def derive(run_dir, tp_glob, comment):
+def derive_full(run_dir, tp_glob, comment):
     tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
     n = tp["move_count"]
     cmds = op_lines(os.path.join(run_dir, "program.nc"), comment)
@@ -110,7 +110,66 @@ def derive(run_dir, tp_glob, comment):
             "cut_mm": round(sum(d2(a, b) for i, ((g, a, b), k) in enumerate(zip(mv, kind))
                                 if k == "cut" and lev[i] == lab and d2(a, b) >= 1e-9), 1),
         }
-    return per_op, at
+    return per_op, at, lev, link
+
+
+def derive(run_dir, tp_glob, comment):
+    per, at, lev, link = derive_full(run_dir, tp_glob, comment)
+    return per, at
+
+
+def spacing_check(run_dir, tp_glob, comment, lab, centre):
+    """Own ray spacing: 4 axis rays from `centre`, the cut moves (fed, XY
+    travel, not in a keep-down-link span) at `lab`, crossings within 0.05 mm
+    merged, gaps over 6 mm set apart."""
+    tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
+    n = tp["move_count"]
+    mv = moves_of(op_lines(os.path.join(run_dir, "program.nc"), comment))[1:n + 1]
+    per, at, lev, link = derive_full(run_dir, tp_glob, comment)
+    kept, apart = [], 0
+    for ux, uy in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+        ts = []
+        for i, (g, a, b) in enumerate(mv):
+            if g == 0 or i in link or lev[i] != lab:
+                continue
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            den = ux * ey - uy * ex
+            if abs(den) < 1e-12:
+                continue
+            wx, wy = a[0] - centre[0], a[1] - centre[1]
+            t, u = (wx * ey - wy * ex) / den, (wx * uy - wy * ux) / den
+            if t > 0 and 0 <= u <= 1:
+                ts.append(t)
+        ts.sort()
+        ps = []
+        for t in ts:
+            if not ps or t - ps[-1] > 0.05:
+                ps.append(t)
+        for t0, t1 in zip(ps, ps[1:]):
+            if t1 - t0 <= 6.0:
+                kept.append(t1 - t0)
+            else:
+                apart += 1
+    kept.sort()
+    m = len(kept)
+    med = kept[m // 2] if m % 2 else 0.5 * (kept[m // 2 - 1] + kept[m // 2])
+    return {"n": m, "apart": apart, "median": round(med, 3), "min": round(kept[0], 3), "max": round(kept[-1], 3)}
+
+
+def load_check(simart_dir, tpid, cell):
+    screen = 0.3626 + (0.5 + cell + 0.1) / 6.0
+    prev, tot, o1, o2 = None, 0.0, 0.0, 0.0
+    for sm in json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]:
+        p = sm["position"]
+        ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
+        prev = p
+        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["cut_kinematics"] == "linear":
+            r = sm["engagement"]["radial_woc_fraction"]
+            tot += ln
+            o1 += ln if r > 0.471 else 0.0
+            o2 += ln if r > screen else 0.0
+    return {"cut_mm": round(tot, 1), "over_exact_pct": round(100 * o1 / tot, 2),
+            "screen": round(screen, 4), "over_screen_pct": round(100 * o2 / tot, 2)}
 
 
 def main():
@@ -155,6 +214,54 @@ def main():
                         f"{im['keepdown_mm']:.0f} mm of orange keep-down travel at depth, "
                         f"{im['cut_mm']:.0f} mm of blue cutting.")
                 assert sent in page, (fx["name"], arm["label"], sent)
+                checks += 1
+        if "mid_level" in gf:
+            mid = gf["mid_level"]
+            arms = {a["label"]: a for a in fx["arms"]}
+
+            def rings_at(a):
+                tp = json.load(open(glob.glob(os.path.join(a["dir"], fx["ops"][0]["tp_glob"]))[0]))
+                n = tp["move_count"]
+                mv = moves_of(op_lines(os.path.join(a["dir"], "program.nc"), fx["ops"][0]["comment"]))[1:n + 1]
+                _, _, lev, _ = derive_full(a["dir"], fx["ops"][0]["tp_glob"], fx["ops"][0]["comment"])
+                ent = [it for it in tp["semantic_trace"]["items"] if it["kind"] == "entry"]
+                top = [e for e in ent if not any(o is not e and o["move_start"] <= e["move_start"] and e["move_end"] <= o["move_end"]
+                       and o["move_end"] - o["move_start"] > e["move_end"] - e["move_start"] for o in ent)]
+                out = []
+                for e in top:
+                    if "keep-down link" in e["label"]:
+                        continue
+                    g0 = [i for i in range(e["move_start"], min(e["move_end"], n - 1) + 1) if mv[i][0] == 0]
+                    if g0 and lev[g0[-1]] == mid:
+                        out.append((g0[-1], mv[g0[-1]][2]))
+                return [p for i, p in sorted(out)]
+            a0 = rings_at(arms["AgentSearch"])[0]
+            c = min(rings_at(arms["geodesic_local_zigzag"]), key=lambda p: (p[0] - a0[0]) ** 2 + (p[1] - a0[1]) ** 2)
+            assert [round(c[0], 3), round(c[1], 3)] == gf["centre"], (fx["name"], c, gf["centre"])
+            checks += 1
+            tpid = int(re.search(r"tp_(\d+)_", fx["ops"][0]["tp_glob"]).group(1))
+            for lab, ga in gf["arms"].items():
+                a = arms[lab]
+                sp = spacing_check(a["dir"], fx["ops"][0]["tp_glob"], fx["ops"][0]["comment"], mid, c)
+                assert ga["spacing"] == sp, (fx["name"], lab, ga["spacing"], sp)
+                assert open(os.path.join(a["simart"], "program.nc"), "rb").read() == open(os.path.join(a["dir"], "program.nc"), "rb").read(), (lab, "rerun plan differs")
+                cell = json.load(open(os.path.join(a["simart"], "summary.json")))["simulation_resolution"]["mm"]
+                ld = load_check(a["simart"], tpid, cell)
+                assert ga["load"] == ld, (fx["name"], lab, ga["load"], ld)
+                checks += len(sp) + len(ld) + 1
+                row = (f"<tr><td>{lab}</td><td>{sp['median']:.2f} mm</td>"
+                       f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over 6 mm set apart)</td>"
+                       f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
+                assert row in page, (fx["name"], lab, row)
+                checks += 1
+            ag, gz = gf["arms"]["AgentSearch"], gf["arms"]["geodesic_local_zigzag"]
+            for needle in (f"({gz['spacing']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm)",
+                           f"AgentSearch {ag['spacing']['median']:.2f} mm apart ({ag['spacing']['median'] / gz['spacing']['median']:.2f} times wider)",
+                           f"cuts {gz['load']['cut_mm'] / ag['load']['cut_mm']:.2f} times the length",
+                           (f"AgentSearch is over the bound: {ag['load']['over_exact_pct']:.2f}% of its cut length"
+                            if ag['load']['over_exact_pct'] > 0 else "AgentSearch is not over the bound"),
+                           f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)"):
+                assert needle in page, (fx["name"], needle)
                 checks += 1
     print(f"fixture3d_v2: all {checks} checks hold")
 

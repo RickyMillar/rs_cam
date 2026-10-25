@@ -213,6 +213,78 @@ def draw(d, lab, frame, path, title):
             "cut_mm": round(sum(xy(a, b) for a, b in seg["cut"]), 1)}
 
 
+TOOL_D = 6.0  # both fixtures' first rough op: a 6 mm flat end mill (the project files)
+MERGE = 0.05  # crossings closer than this along a ray are one pass
+
+
+def ray_spacing(d, lab, centre):
+    """Radial spacing of adjacent cut passes at level `lab` along 4 rays
+    (0, 90, 180, 270 deg) from `centre`: the blue cut segments of the level,
+    cut by each half-line; crossings within MERGE are one pass; a spacing
+    over one tool diameter is a region edge, an island or an uncut band and
+    is counted apart. Returns the kept spacings (pooled) and the count set
+    apart."""
+    kept, apart = [], 0
+    for ux, uy in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+        ts = []
+        for i, ((g, a, b), c) in enumerate(zip(d["moves"], d["cls"])):
+            if c != "cut" or d["lev"][i] != lab:
+                continue
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            den = ux * ey - uy * ex
+            if abs(den) < 1e-12:
+                continue
+            wx, wy = a[0] - centre[0], a[1] - centre[1]
+            t = (wx * ey - wy * ex) / den   # along the ray
+            u = (wx * uy - wy * ux) / den   # along the segment
+            if t > 0 and 0 <= u <= 1:
+                ts.append(t)
+        ts.sort()
+        passes = []
+        for t in ts:
+            if not passes or t - passes[-1] > MERGE:
+                passes.append(t)
+        for t0, t1 in zip(passes, passes[1:]):
+            if t1 - t0 <= TOOL_D:
+                kept.append(t1 - t0)
+            else:
+                apart += 1
+    return kept, apart
+
+
+def median(v):
+    v = sorted(v)
+    n = len(v)
+    return (v[n // 2] if n % 2 else 0.5 * (v[n // 2 - 1] + v[n // 2])) if n else None
+
+
+C18_CEILING = 0.3626  # the pass ceiling at s 2, R 3 (P3_C18_3d_oracle.md section 2)
+C18_EXACT = 0.471     # C18's exact bound: ceiling + (planner cell + tolerance + pitch)/D
+
+
+def load_share(simart_dir, toolpath_id, sim_cell, tol=0.1, planner_cell=0.5, d=TOOL_D):
+    """Share of the cut length of one toolpath that the closing simulation
+    reads over C18's exact bound (0.471) and over C18's screen for the run's
+    sim cell (ceiling + (planner cell + sim cell + tolerance)/D). Cut length:
+    the XY distance from the previous sample, summed over the cutting samples
+    with linear kinematics (plunge, helix and ramp samples left out)."""
+    screen = C18_CEILING + (planner_cell + sim_cell + tol) / d
+    smp = json.load(open(os.path.join(simart_dir, "simulation.json")))["trace"]["samples"]
+    prev, tot, o1, o2 = None, 0.0, 0.0, 0.0
+    for sm in smp:
+        p = sm["position"]
+        ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
+        prev = p
+        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["cut_kinematics"] != "linear":
+            continue
+        r = sm["engagement"]["radial_woc_fraction"]
+        tot += ln
+        o1 += ln * (r > C18_EXACT)
+        o2 += ln * (r > screen)
+    return {"cut_mm": round(tot, 1), "over_exact_pct": round(100 * o1 / tot, 2),
+            "screen": round(screen, 4), "over_screen_pct": round(100 * o2 / tot, 2)}
+
+
 def findings(run_dir):
     err = open(os.path.join(run_dir, "stderr.txt")).read()
     out = [ln.strip() for ln in err.splitlines() if "island(s) standing" in ln]
@@ -270,6 +342,24 @@ def main():
                 imgs.append((rel, lab, sent))
             fxn["arms"][a["label"]] = an
             cols.append((a, an, imgs))
+        mid = pick[1] if len(pick) == 3 else None
+        if mid is not None and "AgentSearch" in ops and "geodesic_local_zigzag" in ops:
+            ag = ops["AgentSearch"][img_op]
+            gz = ops["geodesic_local_zigzag"][img_op]
+            a0 = [p for i, p in ag["rings"] if ag["lev"][i] == mid][0]
+            centre = min((p for i, p in gz["rings"] if gz["lev"][i] == mid),
+                         key=lambda p: (p[0] - a0[0]) ** 2 + (p[1] - a0[1]) ** 2)
+            fxn["centre"] = [round(centre[0], 3), round(centre[1], 3)]
+            fxn["mid_level"] = mid
+            for a in arms:
+                kept, apart = ray_spacing(ops[a["label"]][img_op], mid, centre)
+                sp = {"n": len(kept), "apart": apart, "median": round(median(kept), 3),
+                      "min": round(min(kept), 3), "max": round(max(kept), 3)}
+                tpid = int(re.search(r"tp_(\d+)_", fx["ops"][0]["tp_glob"]).group(1))
+                cell = json.load(open(os.path.join(a["simart"], "summary.json")))["simulation_resolution"]["mm"]
+                ld = load_share(a["simart"], tpid, cell)
+                fxn["arms"][a["label"]]["spacing"] = sp
+                fxn["arms"][a["label"]]["load"] = ld
         numbers["fixtures"][fx["name"]] = fxn
         rows.append((fx, pick, cols, missing))
     json.dump(numbers, open(f"{RES}/phase3/fix2/fixture3d_v2_numbers.json", "w"), indent=1)
@@ -291,13 +381,46 @@ def main():
 <tr><td>sim cell</td><td>{html.escape(json.dumps(res))}</td></tr></table>
 <details><summary>Hard bars printed by the CLI</summary><ul>{bars}</ul></details></div>'''
 
+    def spacing_html(fx):
+        fxn = numbers["fixtures"][fx["name"]]
+        if "mid_level" not in fxn:
+            return ""
+        rows = ""
+        for lab, an in fxn["arms"].items():
+            sp, ld = an["spacing"], an["load"]
+            rows += (f"<tr><td>{html.escape(lab)}</td><td>{sp['median']:.2f} mm</td>"
+                     f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over {TOOL_D:.0f} mm set apart)</td>"
+                     f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
+        ag = fxn["arms"]["AgentSearch"]
+        gz = fxn["arms"]["geodesic_local_zigzag"]
+        ratio_sp = ag["spacing"]["median"] / gz["spacing"]["median"]
+        f0 = fx["ops"][0]["comment"]
+        ratio_cut = gz["load"]["cut_mm"] / ag["load"]["cut_mm"]
+        over = ag["load"]["over_exact_pct"]
+        s1 = (f"The cycle-time gap comes mostly from this spacing: the geodesic arm puts its passes about one stepover apart "
+              f"({gz['spacing']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm), AgentSearch "
+              f"{ag['spacing']['median']:.2f} mm apart ({ratio_sp:.2f} times wider), and the geodesic arm cuts "
+              f"{ratio_cut:.2f} times the length on '{f0}'.")
+        s2 = (f"AgentSearch is over the bound: {over:.2f}% of its cut length on '{f0}' reads over 0.471 in the simulation "
+              f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)."
+              if over > 0 else f"AgentSearch is not over the bound: 0% of its cut length on '{f0}' reads over 0.471.")
+        q = "\u2019"
+        return (f'<h3 style="margin-top:12px">Pass spacing and load at {html.escape(fxn["mid_level"])} ({html.escape(f0)})</h3>'
+                f'<table><tr><th>arm</th><th>pass spacing, median</th><th>range</th><th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th></tr>{rows}</table>'
+                f'<p>{html.escape(s1)} {html.escape(s2)}</p>'
+                f'<p class="note">Spacing: 4 rays (0, 90, 180, 270 deg) from ({fxn["centre"][0]}, {fxn["centre"][1]}), the geodesic entry ring nearest the AgentSearch first entry ring at this level; '
+                f'the blue cut segments of the level are cut by each ray, crossings within {MERGE} mm are one pass, a gap over one tool diameter is set apart. '
+                f'Load: the closing simulation of the --sim-artifact rerun (byte-equal program.nc), the radial width of cut of each linear cutting sample, weighted by its XY length. '
+                f'0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. '
+                f'The screen adds the sim cell (Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>')
+
     body = ""
     for fx, pick, cols, missing in rows:
         miss = "".join(f'<p class="note">{html.escape(m["label"])}: not run ({html.escape(m.get("why", "no output"))}).</p>' for m in missing)
         body += (f'<section><h2>{html.escape(fx["title"])}</h2><p class="note">{html.escape(fx["note"])} '
                  f'Levels shown (the same for every column): {", ".join(map(html.escape, pick))}.</p>{miss}'
                  f'<div class="grid" style="grid-template-columns:repeat({max(len(cols),1)},minmax(0,1fr))">'
-                 + "".join(col_html(fx, a, an, imgs) for a, an, imgs in cols) + "</div></section>")
+                 + "".join(col_html(fx, a, an, imgs) for a, an, imgs in cols) + "</div>" + spacing_html(fx) + "</section>")
     page = f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fixture 3D v2</title><style>
 :root{{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#ddd;--card:#fafafa}}
