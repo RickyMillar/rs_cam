@@ -349,6 +349,42 @@ def main():
                            f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)"):
                 assert needle in page, (fx["name"], needle)
                 checks += 1
+    # The C29 pick sentence (spec text): the generation times of '3D Rough 1'
+    # (tp debug_trace), the scored plunges of plan A (the "C29 pick" log
+    # lines) and the trace's plunges per level, re-derived here.
+    for fx in spec["fixtures"]:
+        arms = {a["label"]: a for a in fx["arms"]}
+        if fx["name"] != "corne" or "geodesic_local_zigzag_pick" not in arms:
+            continue
+        pk, zz = arms["geodesic_local_zigzag_pick"], arms["geodesic_local_zigzag"]
+        gen = lambda d: json.load(open(glob.glob(os.path.join(d, "tp_1_*.json"))[0]))["debug_trace"]["summary"]["total_elapsed_us"] / 1e6
+        log = re.sub(r"\x1b\[[0-9;]*m", "", open(os.path.join(pk["dir"], "stdout.txt")).read())
+        scored = [int(m) for m in re.findall(r"C29 pick \(3D score\).*?plunges_a=(\d+)", log)]
+        kept = re.findall(r"C29 pick \(3D score\).*?kept=\"?([AB])", log)
+        _, _, lev, _ = derive_full(pk["dir"], "tp_1_*.json", "3D Rough 1")
+        tp = json.load(open(glob.glob(os.path.join(pk["dir"], "tp_1_*.json"))[0]))
+        n = tp["move_count"]
+        mv = moves_of(op_lines(os.path.join(pk["dir"], "program.nc"), "3D Rough 1"))[1:n + 1]
+        ent = [it for it in tp["semantic_trace"]["items"] if it["kind"] == "entry"]
+        top = [e for e in ent if not any(o is not e and o["move_start"] <= e["move_start"] and e["move_end"] <= o["move_end"]
+               and o["move_end"] - o["move_start"] > e["move_end"] - e["move_start"] for o in ent)]
+        per = {}
+        for e in top:
+            if "keep-down link" in e["label"]:
+                continue
+            g0 = [i for i in range(e["move_start"], min(e["move_end"], n - 1) + 1) if mv[i][0] == 0]
+            if g0:
+                per[lev[g0[-1]]] = per.get(lev[g0[-1]], 0) + 1
+        trace = [per.get(k, 0) for k in ("Z 17.00", "Z 11.00", "Z 5.00", "Z 0.50")]
+        assert kept == ["A", "A", "A", "A"], kept
+        for needle in (f"generating '3D Rough 1' in {gen(pk['dir']):.2f} s against {gen(zz['dir']):.2f} s for zigzag",
+                       f"({scored[0]}, {scored[1]}, {scored[2]} and {scored[3]} plunges for A)",
+                       f"({trace[0]}, {trace[1]}, {trace[2]} and {trace[3]})",
+                       f"({sum(trace)} plunges, "):
+            assert needle in page, (fx["name"], "pick sentence", needle)
+            checks += 1
+        assert open(os.path.join(pk["dir"], "program.nc"), "rb").read() == open(os.path.join(zz["dir"], "program.nc"), "rb").read(), "pick != zigzag"
+        checks += 2
     print(f"fixture3d_v2: all {checks} checks hold")
 
 

@@ -3208,3 +3208,62 @@ Corne, the D-FIX2 flags plus `--sim-artifact`, `timeout 900`.
 - The asserts read "all 402 checks hold". One injected wrong number (the
   zigzag cycle time) was caught; the page was restored.
 - The previous spec is kept as `phase3/fix2/spec_d16c.json`.
+
+## D18 at 13667775d + uncommitted C29 (the 3D-scored pick; SHIPPED path.rs touched)
+
+C29 (P3_C22_3d_turns.md §10c):
+- `try_emit_stay_down_link` is split into a pure `stay_down_link_z`
+  (the SHIPPED `adaptive3d/path.rs`).
+- The region body in `clearing.rs` moves into `plan_and_emit_region`.
+- `research_geodesic.rs` changes too.
+
+The 2D baseline is the D17 render dir. Lane script, `timeout` on each
+command, adaptive-head. The diff did not change during the run. Disk:
+84 GB.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | byte parity, plain and research | green 5/5, 5/5 |
+| 1 | `adaptive3d_keep_down_link_f038b`; `adaptive3d_plan_matches_merged_path_g_plansimgap` | green 4/4; green 2/2 |
+| 1 | all 13 adaptive3d sentries | green |
+| 1 | fmt; clippy research; clippy plain | green, green, green |
+| 2 | the 2D harness, release | green 1/1 (14.90 s). All 189 rewritten render files are byte-equal to D17, `summary.txt` included. Output in `phase2/d18_harness.txt` |
+| 3 | the plain C12 test | green 1/1. The pick keeps B: 46/46/0, fed 46, unfed 0, 2362 moves, 48 entries (zigzag: 68). The other modes equal D17 |
+| 3 | the heavy C12 test | green 1/1 (941.79 s). Every control and mode summary line is text-identical to D17. Output in `phase2/d18_c12_test_output.txt` |
+
+### D18 fixture run at f32401326 (C29 committed) and the page
+
+**Run.** The fixture worktree moved to f32401326 (clean). The release CLI
+with research was rebuilt (19:05:46). Script `phase3/fix5/run_fix5.sh`:
+Corne `geodesic_local_zigzag_pick`, `RUST_LOG=info`, the D-FIX2 flags plus
+`--sim-artifact`, `timeout 900`. rc 0, exports, 12 s wall. Cycle 2607 s,
+cutting 60483 mm. Its `program.nc` is byte-identical to D17's zigzag
+(13667775d).
+
+**C23's prediction holds:** A at every level, plunges 10/6/6/34 = 56,
+2607 s.
+
+| Level | C29 line: plunges A (keep-down mm) / B (mm), kept | Trace plunges, "3D Rough 1" |
+|---|---|---|
+| Z 17 (region 1 of 1) | 4 (1016.1) / 8 (2223.9), A | 10 |
+| Z 11 (region 2 of 2) | 5 (477.6) / 7 (2739.3), A | 6 |
+| Z 5 (region 2 of 2) | 5 (429.8) / 7 (2665.5), A | 6 |
+| Z 0.5 (region 2 of 2) | 4 (436.4) / 7 (632.3), A | 34 |
+
+- **The score is partial.** It scores one region per level, and at Z 11,
+  Z 5 and Z 0.5 only region 2 of 2. So it is below the level's plunges
+  (4 of 34 at Z 0.5). Here A wins both counts, so the pick is right.
+- **Generation of "3D Rough 1"** (tp `debug_trace` `total_elapsed_us`):
+  the pick 4.33 s against D17 zigzag 2.33 s (+2.0 s, +86%). D17's
+  2D-scored pick took 4.36 s. The copy op is about 3.0 s in all three.
+
+**The page.**
+- The Corne zigzag_pick column is now the f32401326 run. The other Corne
+  geodesic columns stay at 13667775d.
+- One sentence states the pick result, the generation time, and the
+  scored-against-trace plunges. One sentence states the C28 result.
+- `assert_fixture3d_v2.py` now also re-derives the numbers of that
+  sentence (`debug_trace`, the C29 log lines, the trace plunges) and the
+  pick/zigzag plan identity: "all 408 checks hold". One injected wrong
+  number (the pick generation time) was caught; the page was restored.
+  The previous spec is kept as `phase3/fix2/spec_d17.json`.

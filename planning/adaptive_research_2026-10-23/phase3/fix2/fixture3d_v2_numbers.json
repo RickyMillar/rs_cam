@@ -1,6 +1,6 @@
 {
  "binary": "/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli",
- "binary_mtime": "2026-10-25T18:23:12",
+ "binary_mtime": "2026-10-25T19:05:46",
  "fixtures": {
   "corne": {
    "levels_shown": [
@@ -303,11 +303,11 @@
      }
     },
     "geodesic_local_zigzag_pick": {
-     "commit": "13667775d",
-     "cycle_time_s": 2815,
-     "cutting_mm": 69545,
-     "rapid_mm": 18925,
-     "air_cut_pct": 62.6,
+     "commit": "f32401326",
+     "cycle_time_s": 2607,
+     "cutting_mm": 60483,
+     "rapid_mm": 18003,
+     "air_cut_pct": 60.0,
      "collisions": 0,
      "rapid_collisions": 0,
      "sim_resolution": {
@@ -318,11 +318,11 @@
      },
      "ops": {
       "3D Rough 1": {
-       "moves": 12430,
-       "entries": 67,
-       "keepdown_links": 1413,
-       "keepdown_mm": 8084.5,
-       "cut_xy_mm": 32651.6
+       "moves": 10918,
+       "entries": 56,
+       "keepdown_links": 1050,
+       "keepdown_mm": 2371.3,
+       "cut_xy_mm": 29940.6
       },
       "3D Rough 1 [copy]": {
        "moves": 6034,
@@ -334,45 +334,45 @@
      },
      "images": {
       "Z 17.00": {
-       "entries": 14,
-       "keepdown_mm": 3015.6,
-       "cut_mm": 12744.5
+       "entries": 10,
+       "keepdown_mm": 1505.6,
+       "cut_mm": 11970.5
       },
       "Z 5.00": {
-       "entries": 8,
-       "keepdown_mm": 2515.0,
-       "cut_mm": 5746.9
+       "entries": 6,
+       "keepdown_mm": 441.4,
+       "cut_mm": 5774.2
       },
       "Z 0.50": {
-       "entries": 37,
-       "keepdown_mm": 101.7,
-       "cut_mm": 8297.7
+       "entries": 34,
+       "keepdown_mm": 47.0,
+       "cut_mm": 6340.4
       }
      },
      "findings": [
-      "\"3D Rough 1 (copy)\": the rough leaves 1005 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 996 of them against a wall: 3443.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 16.66 mm high, 0.30 mm wide, 0.5 mm2 at (110.4, -9.7) at a wall; and 995 more. 358 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
-      "\"3D Rough 1\": the rough leaves 956 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 949 of them against a wall: 5040.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1401.3 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 22.50 mm high, 9.47 mm wide, 3273.9 mm2 at (14.1, -109.3) at a wall; 14.55 mm high, 0.30 mm wide, 0.2 mm2 at (45.6, -7.3) at a wall; 11.69 mm high, 0.30 mm wide, 0.2 mm2 at (109.5, -7.9) at a wall; and 946 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
-      "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+      "\"3D Rough 1 (copy)\": the rough leaves 1024 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1010 of them against a wall: 3449.4 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.60 mm wide, 3.8 mm2 at (28.5, -91.0); 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 3.0 mm2 at (54.3, -85.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (90.0, -5.5); 0.99 mm high, 0.30 mm wide, 0.4 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -5.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); and 1014 more. 359 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 961 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 950 of them against a wall: 5106.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1400.9 mm2 at (28.8, -16.6); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (27.6, -10.0); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.8, -80.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (85.5, -80.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (82.5, -84.7); and 951 more. 6 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "WARNING: high air cutting on '3D Rough 1' is 50% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
      ],
      "spacing": {
-      "n": 158,
-      "apart": 4,
-      "median": 1.125,
+      "n": 160,
+      "apart": 3,
+      "median": 1.124,
       "min": 0.051,
-      "max": 5.024
+      "max": 4.554
      },
      "normal_step": {
-      "n": 1852,
-      "apart": 226,
-      "median": 1.131,
-      "p10": 0.646,
-      "p90": 2.236
+      "n": 1887,
+      "apart": 209,
+      "median": 1.136,
+      "p10": 0.664,
+      "p90": 2.542
      },
      "load": {
-      "cut_mm": 41791.9,
-      "over_exact_pct": 3.3,
+      "cut_mm": 33250.9,
+      "over_exact_pct": 4.14,
       "screen": 0.5126,
-      "over_screen_pct": 3.07
+      "over_screen_pct": 3.86
      }
     }
    },

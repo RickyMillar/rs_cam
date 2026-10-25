@@ -1,0 +1,88 @@
+{
+ "header": "Branch adaptive-instruments. Corne geodesic columns (zigzag, zigzag_v2, one-way, zigzag_pick) are at 13667775d, run once each with --sim-artifact in the fixture worktree; the binary in the line below is that build. The Corne AgentSearch control is the D-FIX1 run at cdc9814e (byte parity: AgentSearch output is the same at every later commit), with its --sim-artifact rerun at 31935b89 (byte-equal program.nc). wanaka200 columns: AgentSearch and zigzag at 31935b89, zigzag_v2 at 4cceca914. The 31935b89 --sim-artifact reruns used a rebuild from the same source; each rerun's program.nc is byte-equal to its page run. Rough ops only. No ranking.",
+ "method": "Correction (D16c): the earlier version of this page counted only straight (linear) cutting samples in the load share and left out the fitted arcs, so its shares for zigzag_v2 (4.53%) and one-way (4.39%) on Corne were too high; every share below now counts linear and arc samples. Corne geodesic columns are at 13667775d (C26b: held links that cross terrain fall back to the lifted path, which removes the C26 export refusal; C28: the per-piece zigzag pick); the earlier Corne columns (31935b89, 4cceca914, 6ce373922) are in P15_D_verify.md. The pick kept plan B (zigzag_v2) at all four Corne levels because it reads fewer 2D re-entries (87 against 91 at Z 17, 80 against 107 at the other levels), but in 3D zigzag_v2 plunges more than zigzag (67 against 56 on '3D Rough 1'), so the 2D count does not predict the 3D entries. Source of the link tags: the per-move intent of the closing simulation of each run (simulation.json, the source_intent of the move's first sample; a move with no sample keeps the trace span tag). A keep-down link count is a run of consecutive link moves. Entry rings and depth levels come from the semantic_trace of each run's tp_*.json ('plunge entry' spans, 'Global Z' labels), matched to the exported G-code by move index (move i = command line i+1 of the op's section). G2/G3 arcs are drawn and measured as chords. Turns carry no tag in the trace, so they are drawn blue with the cuts. Corne: images show '3D Rough 1' only; the table gives both rough ops. Corne exports used --accept-unmodeled-tool-load (the skipped 'Waterline 3' has a stale sim). wanaka200 runs use wanaka200_mt1_c12_rough_only.toml: the c12 copy with 7 non-rough ops removed (1 Pin Drill, 3 Holes, 4 Rivers, 5 Lakes, 7 tier-A R2.0, 7b tier-B rest R1.0, 8 Pencil R0.5) so the 0.1 mm rest rule does not apply; the earlier c12 copy also carries the Drill depth to floor migration (R-B/F19). wanaka200 sim cell 1.0 mm (coarsened for time).",
+ "turn_note": "Planned zigzag turns that are not cut (heavy C12 test: 95 planned, 56 cut): in the one-level C12 test (46 planned, 27 cut) a temporary probe found that each of the 19 is a plunge. The cleaned plan lifts the cutter at the end of the arc and re-enters at the turn's start, so the turn runs as the first step out of that plunge (most of them at the island side); the heavy test's 39 were not probed one by one.",
+ "fixtures": [
+  {
+   "name": "corne",
+   "title": "Corne (corne_job_corrected_c12_agent_search.toml)",
+   "note": "Two rough ops: '3D Rough 1' (6 mm flat) and '3D Rough 1 (copy)' (End Mill).",
+   "ops": [
+    {
+     "tp_glob": "tp_1_*.json",
+     "comment": "3D Rough 1"
+    },
+    {
+     "tp_glob": "tp_3_*.json",
+     "comment": "3D Rough 1 [copy]"
+    }
+   ],
+   "arms": [
+    {
+     "label": "AgentSearch",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix1/corne/agent",
+     "commit": "cdc9814e",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/corne/agent"
+    },
+    {
+     "label": "geodesic_local_zigzag",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag",
+     "commit": "13667775d"
+    },
+    {
+     "label": "geodesic_local_zigzag_v2",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag_v2",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag_v2",
+     "commit": "13667775d"
+    },
+    {
+     "label": "geodesic_local_oneway",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_oneway",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_oneway",
+     "commit": "13667775d"
+    },
+    {
+     "label": "geodesic_local_zigzag_pick",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag_pick",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix4/corne/geodesic_local_zigzag_pick",
+     "commit": "13667775d"
+    }
+   ],
+   "stepover_first_op": 1.2
+  },
+  {
+   "name": "wanaka200",
+   "title": "wanaka200 (wanaka200_mt1_c12_rough_only.toml, setup 0, '2 Back Rough')",
+   "note": "Sim cell 1.0 mm.",
+   "ops": [
+    {
+     "tp_glob": "tp_1_*.json",
+     "comment": "2 Back Rough"
+    }
+   ],
+   "arms": [
+    {
+     "label": "AgentSearch",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/agent",
+     "commit": "31935b89",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/agent"
+    },
+    {
+     "label": "geodesic_local_zigzag",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/geodesic_local_zigzag",
+     "commit": "31935b89",
+     "why": "pending",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/geodesic_local_zigzag"
+    },
+    {
+     "label": "geodesic_local_zigzag_v2",
+     "dir": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/geodesic_local_zigzag_v2",
+     "simart": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/geodesic_local_zigzag_v2",
+     "commit": "4cceca914"
+    }
+   ],
+   "stepover_first_op": 2.0
+  }
+ ]
+}
