@@ -1,0 +1,9 @@
+
+running 2 tests
+igeodesic_local_oneway turns: planned 42, cut 42, with a reduced factor 42 (lowest 0.310), longest 2.984 mm (bound 3.207); fed 42, unfed 0, full feed with no move 0
+geodesic_local_oneway: 2117 moves, 68 entries
+geodesic_local_zigzag turns: planned 46, cut 27, with a reduced factor 23 (lowest 0.376), longest 3.145 mm (bound 3.207); fed 27, unfed 0, full feed with no move 0
+geodesic_local_zigzag: 831 moves, 68 entries
+.
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.00s
+

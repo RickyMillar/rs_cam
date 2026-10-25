@@ -1,0 +1,21 @@
+
+running 2 tests
+igeodesic_local_oneway turns: planned 42, cut 42, with a reduced factor 42 (lowest 0.310), longest 2.984 mm (bound 3.207); fed 39, unfed 3, full feed with no move 0
+geodesic_local_oneway: 2121 moves, 69 entries
+
+thread 'the_geodesic_arm_feeds_its_turns_down_at_the_level' (2959979) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:906:9:
+geodesic_local_oneway: the turns break the 2D rule: [
+    "3 turns unfed",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ 1/2
+the_geodesic_arm_feeds_its_turns_down_at_the_level --- FAILED
+
+failures:
+
+failures:
+    the_geodesic_arm_feeds_its_turns_down_at_the_level
+
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.35s
+
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`

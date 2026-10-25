@@ -1,0 +1,32 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv: 2169 moves, 2964 judged at levels {45, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.518), 0 over the exact bound 0.471 (exact peak 0.000); entry 1410, vertical 1566, departing 4978, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 2294 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv turns: planned 0, cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+geodesic_curv_split: 2157 moves, 3541 judged at levels {45, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.441), 0 over the exact bound 0.471 (exact peak 0.000); entry 986, vertical 1121, departing 3523, waterline 1301 (26 over the screen, exact peak 0.990), perimeter band 2575 (633 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv_split turns: planned 0, cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+geodesic_local_oneway: 4447 moves, 6820 judged at levels {45, 50, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.367), 0 over the exact bound 0.471 (exact peak 0.000); entry 809, vertical 947, departing 2331, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 2460 (634 over the screen), turn 337 (0 over the screen, sim peak 0.443)
+geodesic_local_oneway turns: planned 86, cut 86, with a reduced factor 84 (lowest 0.310), longest 2.984 mm (bound 3.207); fed 82, unfed 3, full feed with no move 1
+
+thread 'the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels' (3000606) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:836:9:
+geodesic_local_oneway: the turns break the 2D rule: [
+    "3 turns unfed",
+    "turn 42 (-11.9113, -17.8757) to (-9.1576, -17.8757) is counted fed, and no move carries factor 0.5099",
+    "turn 43 (-9.1576, -17.8757) to (-6.6862, -17.8757) is counted fed, and no move carries factor 0.4780",
+    "turn 44 (-6.6862, -17.8757) to (-4.3977, -17.8757) is counted fed, and no move carries factor 0.4086",
+    "turn 45 (-4.3977, -17.8757) to (-2.1443, -17.8757) is counted fed, and no move carries factor 0.4275",
+    "turn 56 (14.4668, -17.8757) to (15.9548, -17.8757) is counted fed, and no move carries factor 0.4485",
+    "turn 61 (-11.4500, -2.7361) to (-11.9500, 0.1526) is counted fed, and no move carries factor 0.5770",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels --- FAILED
+
+failures:
+
+failures:
+    the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 598.88s
+
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`
