@@ -3945,3 +3945,105 @@ assumes they follow the 3D entries. The run decides.
   `cover.py`, `rays.py`, `newgeom.py`, `arcs.py`, `rings.py`, `diag.py`,
   `zoom3d.py`.
 - This note.
+
+## C28 — per piece, keep the zigzag variant that the replay prefers (2026-10-25)
+
+Status: DESIGN (written while D16c runs; no code until the lead's "go").
+The lead approved the C27 proposal. Read first: `P3_C22_3d_turns.md` §10
+(C26: `HeldLinks` only flags a link; `clear_one_region` emits it as a 3D
+keep-down link; the research chord tolerance). C28 does not touch either:
+it chooses between two 2D plans before any of that runs.
+
+### The rule
+
+For each outline piece the producer plans the piece twice:
+
+- A: plain zigzag, `GeodesicOptions::C20_LOCAL_ZIGZAG` (Split, `ArcEnds::Default`);
+- B: zigzag_v2, `GeodesicOptions::C23_ZIGZAG_V2` (Through, `ArcEnds::HeadOn`).
+
+It runs each plan through the cleanup the run itself applies, `cleaned(..,
+ReplayMeasure::SweptWidth, turns)`. That is the replay of the 2D run and of
+the 3D slice (`slice_cleanup` calls the same function with the same
+measure and the plan's own turns). Then it keeps:
+
+1. the plan with fewer re-entries: the `AdaptiveSegment::Rapid` segments of
+   the cleaned plan (each is a lift and a plunge; the starter is common to
+   both, so it does not change the order);
+2. on a tie, the plan with less keep-down length: the sum of the
+   `AdaptiveSegment::Link` lengths of the cleaned plan, each from the
+   position before it;
+3. on a tie of both, A (plain zigzag: no returns).
+
+No constant enters: two counts and two lengths of the producer's own plans,
+and a fixed order. The kept plan's segments and turns are exactly the
+variant's (`geodesic_segments` of A or of B), so per piece the pick column
+plans byte-for-byte as one of the two existing columns.
+
+Why the cleanup and not `ReplayModel` (C9), the model named in C27: the
+model has no turn exemption (it predates C14), so it would refuse every
+turn over the ceiling and miscount both plans. The cleanup is the real
+replay, with the turn list.
+
+### Code plan (after "go"; my functions only)
+
+`R` = `research_geodesic.rs`. Nothing in the C12 block, the spacing
+functions (C24) or C22's files changes.
+
+- `ArcPick { Off (default), Replay }` and `GeodesicOptions::pick`; G1 and
+  C2 set `Off`, so every existing preset keeps its plan.
+  `C23_ZIGZAG_V2` is not changed.
+- Preset `C28_ZIGZAG_PICK` = `C20_LOCAL_ZIGZAG` with `pick: ArcPick::Replay`.
+  Its two variants are fixed by the rule: A = the options with `pick:
+  Off`; B = A with `ends: HeadOn` and `meeting: Through`. For
+  `C28_ZIGZAG_PICK`, A is `C20_LOCAL_ZIGZAG` and B is `C23_ZIGZAG_V2`
+  (a unit test pins both identities).
+- `geodesic_segments` becomes a dispatcher with the same signature (the C12
+  block's `slice_segments` and the 2D run call it unchanged). With
+  `pick: Off` it calls the old body, renamed `plan_piece`, so the plan is
+  the old one. With `Replay` it plans A and B with `plan_piece`, cleans and
+  scores both, and returns the kept `Produced`. If one variant does not
+  apply (`None`), the other is kept; a cancel is passed on.
+- The record: `PickRecord { entries_a, keep_down_a_mm, entries_b,
+  keep_down_b_mm, kept: PickKept }` in `ArcReport::pick: Option<..>` of the
+  kept plan (ArcReport has a `Default`, so no literal changes).
+- The 3D readout (the lead's check of 2D re-entries against 3D entries):
+  one `tracing::info!` per piece from the dispatcher: the piece's bounding
+  box, both entry counts, both keep-down lengths and the kept variant. The
+  CLI's subscriber prints `info` by default (`rs_cam_cli` `main.rs`), so a
+  fixture run's `stdout.txt` holds one line per slice piece. The 2D harness
+  sets no subscriber; it prints the record instead.
+- The harness: the column `geodesic_local_zigzag_pick` after the C23
+  columns. In `c16_text`, one line per piece only when `pick` is set:
+  `pick piece i: zigzag re-entries N (keep-down X mm), zigzag_v2 re-entries
+  M (keep-down Y mm); kept <variant>`. Every earlier `.c16.txt` stays
+  byte-identical.
+- The 3D arm's name (C22's file, the lead's change): add
+  `"geodesic_local_zigzag_pick" => GeodesicOptions::C28_ZIGZAG_PICK` in
+  `adaptive3d/mod.rs` `research_arm_override`, and the mode in the C12 test
+  if wanted.
+- Unit test: on the island pocket, `C28_ZIGZAG_PICK` keeps the variant
+  with the lower count, its segments equal that variant's
+  `geodesic_segments` output, and the record's counts equal the Rapid
+  counts of the two cleaned plans.
+
+Cost: two plans and two cleanups per piece, then the caller's own cleanup
+of the kept plan (three cleanups in all). The 2D harness takes about 14 s
+for all columns now; the pick column adds about three zigzag columns'
+time. In 3D the arm's planning time per slice rises by about three times
+(Corne zigzag: 10 s → about 30 s).
+
+### Predictions (NOT results)
+
+| Case | Kept | Entries | Keep-down |
+|---|---|---|---|
+| 2D star (one piece) | A (tie: the two plans are byte-equal, D14) | 38, the `.txt` equal to `geodesic_local_zigzag` | 251.2 mm |
+| 2D pocket (one piece) | B (v2: 26 against 44) | 26, the `.txt` equal to `geodesic_local_zigzag_v2` except the column name | 998.1 mm |
+| Corne "3D Rough 1" (after the 3D name is added) | A at every level and piece where v2 has more re-entries (C27: every level) | 56 | 2026 mm (C26 tags the links; the length is the same) |
+| wanaka200 back rough | A (tie; the plans are byte-equal) | 22 | 3423 mm |
+| C12 plain test | B | 48 | as v2 |
+
+So the 2D zigzag_v2 star 38 / pocket 26 do not get worse (the pick column
+is one of the two per piece). Risk (the lead's check): the 3D entries
+include F-038's dropped groups and the lift's air-run entries, which the
+2D count does not see. The `info` lines give the 2D counts per piece to
+compare with the trace's entry spans per level.

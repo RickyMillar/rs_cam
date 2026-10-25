@@ -1,0 +1,17 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv: 2298 moves, 3099 judged at levels {45, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.518), 0 over the exact bound 0.471 (exact peak 0.000); entry 1410, vertical 1566, departing 4689, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 2494 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+geodesic_curv_split: 2275 moves, 3716 judged at levels {45, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.441), 0 over the exact bound 0.471 (exact peak 0.000); entry 986, vertical 1121, departing 3109, waterline 1301 (26 over the screen, exact peak 0.990), perimeter band 2866 (633 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv_split turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+geodesic_local_oneway: 4453 moves, 6847 judged at levels {45, 50, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.367), 0 over the exact bound 0.471 (exact peak 0.000); entry 792, vertical 920, departing 2269, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 2482 (634 over the screen), turn 366 (0 over the screen, sim peak 0.443)
+geodesic_local_oneway turns: planned 86, cut 86, not cut 0, with a reduced factor 84 (lowest 0.310), longest 2.984 mm (bound 3.207); fed 86, unfed 0, full feed with no move 0
+geodesic_local_zigzag: 1942 moves, 3136 judged at levels {45, 50, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.377), 0 over the exact bound 0.471 (exact peak 0.000); entry 836, vertical 854, departing 2356, waterline 1301 (27 over the screen, exact peak 0.990), perimeter band 2053 (634 over the screen), turn 271 (0 over the screen, sim peak 0.423)
+geodesic_local_zigzag turns: planned 95, cut 56, not cut 39, with a reduced factor 48 (lowest 0.375), longest 3.163 mm (bound 3.207); fed 56, unfed 0, full feed with no move 0
+geodesic_local_zigzag_v2: 4719 moves, 7043 judged at levels {45, 50, 70, 75, 80, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.377), 0 over the exact bound 0.471 (exact peak 0.000); entry 611, vertical 534, departing 1624, waterline 1301 (26 over the screen, exact peak 0.990), perimeter band 3333 (634 over the screen), turn 366 (0 over the screen, sim peak 0.083)
+geodesic_local_zigzag_v2 turns: planned 92, cut 91, not cut 1, with a reduced factor 89 (lowest 0.310), longest 2.932 mm (bound 3.207); fed 91, unfed 0, full feed with no move 0
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 946.09s
+
