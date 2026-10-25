@@ -5,8 +5,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("fx", os.path.join(HERE, "..", "fix2", "fixture3d_v2.py"))
 fx = importlib.util.module_from_spec(spec); spec.loader.exec_module(fx)
 BASE = os.path.join(HERE, "..", "fix2", "corne")
+# The shared loader reads each move's intent from the run's simulation.json
+# (its fourth argument). The C27 runs: zigzag at 31935b89 (D-FIX2; its
+# sim-artifact rerun under fix2/simart has a byte-equal program.nc) and
+# zigzag_v2 at 4cceca914 (D16b, run with --sim-artifact in place).
+SIMART = {
+    "geodesic_local_zigzag": os.path.join(HERE, "..", "fix2", "simart", "corne", "geodesic_local_zigzag"),
+    "geodesic_local_zigzag_v2": os.path.join(BASE, "geodesic_local_zigzag_v2"),
+}
 def per_level(arm):
-    d = fx.load_op(os.path.join(BASE, arm), "tp_1_*.json", "3D Rough 1")
+    d = fx.load_op(os.path.join(BASE, arm), "tp_1_*.json", "3D Rough 1", SIMART[arm])
     rows = collections.OrderedDict((l, [0, 0.0, 0.0, 0]) for l in d["levels"])
     for (g, a, b), c, l in zip(d["moves"], d["cls"], d["lev"]):
         if l is None: continue

@@ -4122,8 +4122,9 @@ Status: DESIGN (no code; no cargo; no commit). Base 13667775d (C26b and
 C28). Data: D17's Corne runs, `phase3/fix4/corne/geodesic_local_zigzag{,_v2,_pick}/`.
 Script: `phase3/c29/spans.py` (it loads the op with the page's loader,
 `fix2/fixture3d_v2.py` `load_op`, which now reads the move intents from
-`simulation.json`; note: the C27 scripts call the older three-argument
-`load_op` and need the run dir as a fourth argument to run again).
+`simulation.json`. The C27 scripts were fixed on 2026-10-25 to pass
+it: `perlevel.py` maps each C27 arm to its sim-artifact run, and every
+§C27 number reproduces on the 4cceca914 and 31935b89 outputs).
 
 ### What the 3D stage does with a 2D re-entry (the shipped code, read)
 
