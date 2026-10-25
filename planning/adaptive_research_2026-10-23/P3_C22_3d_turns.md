@@ -685,3 +685,105 @@ lead's suspicion is right.
 `crates/rs_cam_core/src/adaptive/research_geodesic.rs` (the `HeldLinks`
 item in the C12 block only; C23's uncommitted C28 edits are not touched).
 No cargo, no commit; rustfmt is green.
+
+## 10c. C29 build: the 3D arm's pick scored by the 3D stage (2026-10-25)
+
+Built to C23's design (`P2_C2_geodesic_fixes.md` §C29, option (a)). Base
+13667775d, worktree `adaptive-head`. No cargo ran and nothing is
+committed. `rustfmt --edition 2024 --check` is green on the three changed
+Rust files. In `research_geodesic.rs` only the C12 block changed.
+
+### Changes
+
+- **`adaptive3d/path.rs` (shipped emitter).** `try_emit_stay_down_link`
+  is split. The new `pub(super) fn stay_down_link_z(from, to,
+  descend_to_z, stock_ceiling, mesh, index, cutter, stay_down_mm,
+  clearance, leave, safe_z) -> Option<f64>` holds steps 1–5 (the distance
+  test, the 10-sample mesh probe, `link_z`, the `safe_z` and
+  cutter-length guards), with the same arithmetic in the same order. The
+  emitter calls it and then emits steps (a)–(c) as before; `xy_dist` is
+  computed again with the same expression. `Adaptive3dSegment` gains
+  `#[derive(Clone)]` (for the scratch copy of a pending entry). The
+  `ClearZLevelContext` initialiser gains the cfg-research field
+  `stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0)`,
+  the value the emitter reads.
+- **`adaptive3d/clearing.rs`.**
+  - `clear_one_region` keeps the forecast and the perimeter sweep, which
+    both variants share. The body after them is now
+    `plan_and_emit_region(ctx, plan, emission, region_polygon,
+    region_idx, strategy, piece_debug, cancel)`: the 2D plan per outline,
+    the eng lookup, the held links and the lift loop, moved verbatim.
+  - `plan_one_outline` and `research_slice_segments` take the slice
+    generator `strategy` instead of reading `ctx.clearing_strategy`; the
+    shipped call passes `ctx.clearing_strategy`.
+  - The lift closure is now `lift_to_level`, with the same arithmetic.
+  - Research only:
+    - `research_pick_variants` gives `(Geodesic(A), Geodesic(B))` when
+      the options have `ArcPick::Replay`.
+    - `RegionScratch::run` copies the level state (the planner stock,
+      the cursor, the level's segment tail from the pending entry, the
+      metrics, the counters) and runs `plan_and_emit_region` on the
+      copy, with no debug context.
+    - `RegionScratch::score` counts plunges and keep-down length with
+      the emitter's own test (`stay_down_link_z` on the proof's `from`,
+      `drape_point` of the entry and `descent_start_z`).
+    - `pick_region_plan` keeps fewer plunges; on a tie, less keep-down;
+      on a tie of both, A. It commits the winner's copy into the level
+      state, drops the loser's turn records from `ctx.research_turns`,
+      and prints one `info` line per region: "C29 pick (3D score)",
+      with z, region, plunges_a, keep_down_a_mm, plunges_b,
+      keep_down_b_mm and kept.
+- **`research_geodesic.rs`, C12 block.** `slice_variants(options) ->
+  Option<(GeodesicOptions, GeodesicOptions)>` is
+  `options.pick_variants()` when `pick == ArcPick::Replay`. Each variant
+  then plans through `slice_segments` with the pick off, so the 2D pick
+  of `geodesic_segments` does not run in 3D. The 2D harness keeps its 2D
+  pick.
+
+**The design's "both plans" door.** `slice_variants` gives the two
+generators, not two plans. Each variant's 2D plan is made inside its own
+scratch run of `plan_and_emit_region` (outline by outline, with the
+cleanup, F-038, the turn split and the turn records). So the region body
+stays one function that takes a generator, and no plan is made a third
+time.
+
+### Byte parity (by construction)
+
+- Shipped arms: `research_pick_variants` does not exist without
+  `research`, and with it it gives `None` for every shipped arm.
+- The moved body is the same text and gets the same arguments.
+- `stay_down_link_z` returns `None` exactly where the emitter returned
+  `false`, with the same `link_z`.
+- So `adaptive3d_emission_byte_parity` stays green with and without
+  `research`.
+
+### Memory (Corne)
+
+The planner stock is the Z grid at the planner cell (`max(R/6, tol)` =
+0.5 mm) over the stock box (152.8 × 111.2 mm, the sim artefact box): about
+306 × 223 = 68 k rays.
+
+- Each ray is a `SmallVec<[DexelSegment; 1]>` (about 24 B) plus a 4 B
+  `conservative_top`, so about 1.9 MB per copy (more if the planner stock
+  has its X/Y grids: about +0.7 MB at 46 Z cells).
+- Two copies per region, alive with the level's own, so about 4–5 MB
+  extra at the peak. They are freed at the end of the region.
+- The copies are per region, not per level, as the brief asks.
+
+This is an estimate from the types and the box; the run measures it.
+
+### Predictions (P)
+
+| Case | Kept | Plunges | Cycle |
+|---|---|---|---|
+| Corne "3D Rough 1", `geodesic_local_zigzag_pick` | A at every level (`info`: A 10/6/6/34 against B 14/8/8/37, as D17's spans) | 56 (= zigzag) | about 2607 s (D17 zigzag) |
+| C12 plain test, `geodesic_local_zigzag_pick` | B | 48 (as zigzag_v2) | — |
+
+- The `info` plunges per region equal the trace's plunge spans of that
+  level, less the shared ones: the first entry, whose proof cannot match;
+  on Corne Z 0.50, the 23 small-region plunges are counted in each
+  region's own line.
+- Planning time of the pick arm: about 2 × one variant's planning time
+  plus the copies (Corne: about 20–25 s).
+- The approximation that can make the score wrong: the emitter's 0.05 mm
+  `from` match. The per-region lines show it if it happens.
