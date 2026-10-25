@@ -2700,3 +2700,60 @@ outside `[[setups]]` names a toolpath id. The file parses
 `--resolution 1.0`. The six tools stay in the file. If the rule reads the
 tool list rather than the ops, the refusal stays. The first run will show
 it.
+
+## D15 at cdc9814e + uncommitted C22 fix (committed after the run as 31935b89)
+
+The C22 fix (P3_C22_3d_turns.md §9):
+- `split_at_turns` (`research_geodesic.rs:7839`), called in
+  `adaptive3d/clearing.rs:2475`;
+- the new test attribution (`turn_moves` / `turn_faults`: every record
+  that a move lies on; the feed must be at most the lowest F·factor).
+
+The steps ran in the lead's order, through the lane script with a
+`timeout`. The D14 render dir was copied first.
+- The run did not start at first: the disk had 3.8 GB free. The lead
+  freed the main checkout's `target/debug/deps` files older than one day
+  (92.5 GB). The run then had 89 GB free.
+- The diff did not change during the run. No fix.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | `--test adaptive3d_geodesic_arm_c12 -- --nocapture` (the plain test) | **green** 1/1 (7.00 s) |
+| 2 | the same `-- --ignored --nocapture` (4 modes) | **green** 1/1 (738.67 s) |
+| 3 | `adaptive3d_emission_byte_parity`, plain and research | green 5/5, 5/5 |
+| 4 | clippy research, clippy plain, `fmt --all -- --check` | green, green, green |
+| 5 | the 13 adaptive3d sentries | green, all 13 |
+| 6 | the 2D harness, release | green 1/1 (13.87 s); output in `phase2/d15_harness.txt` |
+
+**2D byte compare against D14:** all 181 render files that the harness
+wrote again are byte-equal, `summary.txt` included. The split runs only in
+3D, as the lead required.
+
+**The plain test** (one level, Z 4.5):
+
+| Mode | Turns planned / cut / reduced (lowest factor) | Longest (bound 3.207) | Fed / unfed / full feed with no move | Entries, moves |
+|---|---|---|---|---|
+| geodesic_local_oneway | 42 / 42 / 42 (0.310) | 2.984 mm | 42 / 0 / 0 | 68, 2117 |
+| geodesic_local_zigzag | 46 / 27 / 23 (0.376) | 3.145 mm | 27 / 0 / 0 | 68, 831 |
+
+**The heavy test** (two levels; counts in samples):
+
+| Item | AgentSearch | geodesic_curv | geodesic_curv_split | geodesic_local_oneway | geodesic_local_zigzag |
+|---|---|---|---|---|---|
+| moves | 657 | 2169 | 2157 | 4427 | 1868 |
+| over the screen / the exact bound | 225 / 225 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| sim peak (judged) | 0.928 | 0.518 | 0.441 | 0.367 | 0.377 |
+| entry | 291 | 1410 | 986 | 792 | 836 |
+| judged | 1460 | 2964 | 3541 | 6824 | 3100 |
+| turn samples (over the screen, sim peak) | 0 | 0 | 0 | 366 (0, 0.443) | 271 (0, 0.423) |
+| turns planned / cut / reduced (lowest) | — | 0 | 0 | 86 / 86 / 84 (0.310) | **95 / 56** / 48 (0.375) |
+| longest turn (bound 3.207) | — | — | — | 2.984 mm | 3.163 mm |
+| fed / unfed / full feed with no move | — | — | — | 86 / 0 / 0 | 56 / 0 / 0 |
+
+The control, `geodesic_curv` and `geodesic_curv_split` are the same as D14
+on every count. `geodesic_local_oneway` changes from D14 (fed 82, unfed 3)
+to fed 86, unfed 0. `geodesic_local_zigzag` runs for the first time: 95
+planned turns, of which 56 are cut. The other 39 are examined in D-FIX2.
+
+Files: `phase2/d15_harness.txt`, `phase2/d15_c12_test_output.txt`,
+`phase2/d15_c12_plain_output.txt`.
