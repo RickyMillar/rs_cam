@@ -290,6 +290,18 @@ def producers_check(run_dir, simart_dir, tp_glob):
             "waterline": round(acc["waterline"], 1), "unplaced": round(acc["unplaced"], 1)}
 
 
+def load_old_check(simart_dir, tpid):
+    prev, tot, o1 = None, 0.0, 0.0
+    for sm in samples_of(simart_dir):
+        p = sm["position"]
+        ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
+        prev = p
+        if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["cut_kinematics"] in ("linear", "arc"):
+            tot += ln
+            o1 += ln if sm["engagement"]["radial_woc_fraction"] > 0.471 else 0.0
+    return {"cut_mm": round(tot, 1), "over_exact_pct": round(100 * o1 / tot, 2)}
+
+
 def main():
     spec = json.load(open(sys.argv[1]))
     for fx in spec["fixtures"]:
@@ -369,6 +381,13 @@ def main():
                 cell = json.load(open(os.path.join(a["simart"], "summary.json")))["simulation_resolution"]["mm"]
                 ld = load_check(a["simart"], tpid, cell)
                 assert ga["load"] == ld, (fx["name"], lab, ga["load"], ld)
+                lo = load_old_check(a["simart"], tpid)
+                assert ga["load_old"] == lo, (fx["name"], lab, ga["load_old"], lo)
+                side = (f"<tr><td>{lab}</td><td>{lo['over_exact_pct']:.2f}% of {lo['cut_mm']:.0f} mm</td>"
+                        f"<td>{ld['over_exact_pct']:.2f}% of {ld['cut_mm']:.0f} mm</td>"
+                        f"<td>{ld['over_exact_pct'] - lo['over_exact_pct']:+.2f} points</td></tr>")
+                assert side in page, (fx["name"], lab, side)
+                checks += 3
                 checks += len(sp) + len(ld) + 1
                 ns = normal_step_check(a["dir"], fx["ops"][0]["tp_glob"], fx["ops"][0]["comment"], mid, c, a["simart"], tpid)
                 assert ga["normal_step"] == ns, (fx["name"], lab, ga["normal_step"], ns)

@@ -1088,3 +1088,68 @@ same two slots.
   research skim, with a per-level count line.
 - The C12 test: the band exemption for the control only.
 - No change in `research_geodesic.rs`.
+
+### 11.6 C31 part 1: built (2026-10-25)
+
+Base f32401326. No cargo, no commit; rustfmt is green. Part 2 (the held
+waterline skim) is not built: it waits for the Corne measurement of part 1,
+as the lead ruled. Its design stays in 11.3 (4.).
+
+**`adaptive3d/clearing.rs`:**
+- `PERIMETER_INSET_MARGIN_MM` (0.25) moves from a local of the sweep to
+  the module, with its doc. It is the same value; the forecast's own local
+  copy is not touched.
+- New `research_grown_outlines(ctx, region, cell, (z, region))`
+  (cfg research):
+  - It returns `None` unless `is_research_arm`.
+  - It grows the region by `R − m` (`OffsetRingSet::from_polygon(..)
+    .offset(-(R − m))`, untoleranced flattening: the grow
+    `inset_piece_outlines` uses).
+  - The closing guard: it keeps the grown outline only when the area of
+    the grown outline inset by R is at most the area of the region inset
+    by `m`, plus one planner cell times the region's boundary length
+    (exterior and holes). The cell is the planner stock's
+    `z_grid.cell_size`.
+  - It prints one `info` line per decision ("C31 region opening": z,
+    region, the three areas, the excess, the allowance, and the decision
+    "grown, no sweep" or "closing guard: shipped sweep").
+- `clear_one_region`:
+  - It computes the decision before the sweep. With the grown outline,
+    the sweep's ring list is empty, so no sweep is cut.
+  - The outlines are `grown_planner_outlines(grown, R)` (each grown
+    polygon split by `inset_piece_outlines`, no smoothing), else the
+    shipped `planner_outlines`.
+  - The forecast (F-038) still runs first. A skipped region gets no guard
+    line.
+- `plan_and_emit_region`, `RegionScratch::run` and `pick_region_plan` now
+  take the outline list in place of the region polygon. The polygon was
+  used only to make that list, so the shipped path makes the same list
+  from the same call.
+
+**`tests/adaptive3d_geodesic_arm_c12.rs`:** `read(.., band_exempt)`. The
+band exemption is `true` for the AgentSearch control only, so the four
+geodesic modes are judged in the perimeter band (stricter).
+
+**Byte parity.** Without `research` `grown` is `None`. With `research` it
+is `None` for every shipped arm (`is_research_arm`). The sweep and
+`planner_outlines` are then called as before. The constant moved
+unchanged.
+
+**Predictions (P):**
+- **Guard decisions on Corne "3D Rough 1"** (`geodesic_local_zigzag_pick`):
+  4 lines, one per level for the planned region; region 1 of Z 11 / 5 /
+  0.5 is skipped by F-038 before the guard. **0 fallbacks.** Corne's walls
+  and islands give tool-centre gaps whose rounding radius is R (the
+  dilated model), and a closing at `R − m` < R does not fill them. The
+  staircase notches of the marching squares add about cell/4 × length,
+  under the allowance of cell × length.
+- C30's measure: perimeter 1026 → 0 mm; total about 215 mm over 0.471.
+  Plunges 55–61; cycle 2600–2700 s (11.4).
+- C12 heavy test: 0 over in all four geodesic modes, now judged in the
+  band. C12 plain test: unchanged verdicts. The turn moves stay at the
+  level, and the larger 2D domain can plan more turns.
+- Limit: a sharp reflex corner of the region (two forbidden discs that
+  meet) is filled by the closing over a small area. A tool centre planned
+  there stands outside the region, and the lift drapes it up over the
+  terrain (no gouge; some air). The guard admits it when its area is
+  under the allowance.

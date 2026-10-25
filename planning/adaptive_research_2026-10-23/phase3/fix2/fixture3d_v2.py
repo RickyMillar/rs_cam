@@ -323,6 +323,21 @@ def load_share(simart_dir, toolpath_id, sim_cell, tol=0.1, planner_cell=0.5, d=T
             "screen": round(screen, 4), "over_screen_pct": round(100 * o2 / tot, 2)}
 
 
+def load_share_old(simart_dir, toolpath_id):
+    """The load rule before D-FIX6 (kept for the side-by-side table): every
+    fed cutting sample with linear or arc kinematics, any intent."""
+    prev, tot, o1 = None, 0.0, 0.0
+    for sm in sim_samples(simart_dir):
+        p = sm["position"]
+        ln = math.hypot(p[0] - prev[0], p[1] - prev[1]) if prev else 0.0
+        prev = p
+        if sm["toolpath_id"] != toolpath_id or not sm["is_cutting"] or sm["cut_kinematics"] not in ("linear", "arc"):
+            continue
+        tot += ln
+        o1 += ln * (sm["engagement"]["radial_woc_fraction"] > C18_EXACT)
+    return {"cut_mm": round(tot, 1), "over_exact_pct": round(100 * o1 / tot, 2)}
+
+
 def findings(run_dir):
     err = open(os.path.join(run_dir, "stderr.txt")).read()
     out = [ln.strip() for ln in err.splitlines() if "island(s) standing" in ln]
@@ -400,6 +415,7 @@ def main():
                 fxn["arms"][a["label"]]["spacing"] = sp
                 fxn["arms"][a["label"]]["normal_step"] = normal_step_mod.normal_step(ops[a["label"]][img_op], mid, centre, eng)
                 fxn["arms"][a["label"]]["load"] = ld
+                fxn["arms"][a["label"]]["load_old"] = load_share_old(a["simart"], tpid)
                 fxn["arms"][a["label"]]["producers"] = producer_split_mod.split(a["dir"], a["simart"], fx["ops"][0]["tp_glob"])
         numbers["fixtures"][fx["name"]] = fxn
         rows.append((fx, pick, cols, missing))
@@ -468,6 +484,13 @@ def main():
                 f'weighted by its XY length. 0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); '
                 f'at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. The screen adds the sim cell '
                 f'(Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>'
+                f'<h3 style="margin-top:12px">Load rule change: over 0.471, old rule against new rule ({html.escape(f0)})</h3>'
+                f'<table><tr><th>arm</th><th>old: linear and arc samples, any intent</th><th>new: cut intent, any kinematics</th><th>change</th></tr>'
+                + "".join(f"<tr><td>{html.escape(lab)}</td><td>{an['load_old']['over_exact_pct']:.2f}% of {an['load_old']['cut_mm']:.0f} mm</td>"
+                          f"<td>{an['load']['over_exact_pct']:.2f}% of {an['load']['cut_mm']:.0f} mm</td>"
+                          f"<td>{an['load']['over_exact_pct'] - an['load_old']['over_exact_pct']:+.2f} points</td></tr>"
+                          for lab, an in fxn["arms"].items())
+                + '</table>'
                 f'<details><summary>The first measure (4 rays from the seed), kept for reference</summary>'
                 f'<table><tr><th>arm</th><th>ray spacing, median</th><th>range</th></tr>{old_rows}</table>'
                 f'<p>{html.escape(why)}</p></details>')

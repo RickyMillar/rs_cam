@@ -3353,3 +3353,44 @@ every fed linear and arc sample.
   phase code, plus the new sentence numbers: "all 546 checks hold". One
   injected wrong producer number was caught; the page was restored. The
   previous spec is kept as `phase3/fix2/spec_d18.json`.
+
+### D-FIX6 addendum: the load rule by intent (the lead, from C30)
+
+**The rule.**
+- The load shares and the producer split now count every cutting sample
+  whose intent is a cut (`source_intent == "clearing_cut"`), of any
+  kinematics.
+- So the draped helix-kinematics cut samples are in. Entry samples
+  (`entry_plunge`) and link samples (`linking`) are out.
+- In all ten sim artifacts the cutting intents are only `clearing_cut`,
+  `entry_plunge` and `linking`.
+- One sentence on the page states the rule. The earlier correction
+  sentence now refers to it.
+
+**Applied in:** `fixture3d_v2.py` (`load_share`), `producer_split.py`, and
+the assert's own `load_check` and `producers_check`. "All 546 checks
+hold".
+
+**Check against C30.** On Corne zigzag, perimeter + waterline over 0.471
+rise by 542.6 mm (1026.1 + 317.1 → 1293.0 + 592.8), which is C30's
+543 mm. The body also rises by 10.6 mm (32.6 → 43.2).
+
+| Fixture | Column | Over 0.471 (was) | Over the screen | Perimeter / body / waterline (mm) |
+|---|---|---|---|---|
+| Corne | contour_parallel | 8.01% (8.06%) | 7.19% | — / 3149.4 / 9.5 |
+| Corne | geodesic zigzag (= pick) | 5.88% (4.14%) | 5.56% | 1293.0 / 43.2 / 592.8 |
+| Corne | geodesic zigzag_v2 | 5.44% (3.30%) | 5.15% | 1293.0 / 47.1 / 592.9 |
+| Corne | geodesic one-way | 5.34% (3.13%) | 5.05% | 1293.0 / 43.6 / 588.7 |
+| Corne | AgentSearch | 23.50% (20.19%) | 21.41% | 1423.5 / 1269.2 / 645.4 |
+| wanaka200 | contour_parallel | 10.65% (3.01%) | 8.91% | — / 6201.7 / 0 |
+| wanaka200 | geodesic zigzag and zigzag_v2 | 7.22% (3.59%) | 6.18% | 2245.6 / 1871.1 / 20.1 |
+| wanaka200 | AgentSearch | 48.02% (44.78%) | 16.96% | 2249.8 / 12171.9 / 19.2 |
+
+**Reading.**
+- On wanaka200 (terrain) the draped helix samples matter most:
+  contour_parallel goes from 3.01 to 10.65%, and the geodesic zigzag body
+  from 31.4 to 1871.1 mm.
+- The geodesic zigzag still reads below contour_parallel on both parts:
+  5.88 against 8.01% (Corne) and 7.22 against 10.65% (wanaka200).
+- The geodesic zigzag cuts 0.83 times (Corne) and 0.98 times (wanaka200)
+  the contour_parallel cut length.
