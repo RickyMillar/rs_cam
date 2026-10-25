@@ -3515,3 +3515,180 @@ The lead's request, after §C32 of P3_C18_3d_oracle.md.
 measure (it does not import `thick_measure.py`), and checks the table cells
 and the sentence: "all 637 checks hold" (about 4 min). One injected wrong
 value was caught; the page was restored.
+
+## D19b at f32401326 + uncommitted C31 with the §11.8 fix — RED
+
+The fix in `adaptive3d/clearing.rs` (P3_C22_3d_turns.md §11.8): smooth,
+then a shortfall inset so that measured + m ≥ cell, then grow, then the
+guard. The C12 test is as in D19. Same steps and order as D19, with
+`RUST_LOG=info` on the C12 runs.
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | byte parity, plain and research; fmt; both clippy; the 13 adaptive3d sentries | green, all 18 |
+| 2 | the 2D harness | green; all 189 rewritten render files byte-equal to D18 |
+| 3 | the plain C12 test | green 1/1. Every turn move at Z 4.5. Every printed count identical to D18: oneway 42/42/0, 2123 moves, 68 entries; zigzag 46/27/19, 870, 68; v2 = pick 46/46/0, 2362, 48 |
+| 3 | the heavy C12 test | **RED** at T:862 (336 s) |
+
+The heavy test fails in its first geodesic mode:
+
+> geodesic_curv: 632 judged samples read over the exact bound 0.471 (exact
+> peak 1.000); the first: move 6 ClearingCut at (28.00, -15.25, 7.00) wall
+> distance 6.00: sim radial 0.833, exact peak of the move 1.000
+
+| geodesic_curv | D18 | D19 | D19b |
+|---|---|---|---|
+| moves | 2298 | 3081 | **2298** |
+| entry / departing samples | 1410 / 4689 | 2265 / 5025 | **1410 / 4689** |
+| judged levels | 45 to 105 with 50 | without 50 | with 50 |
+| perimeter band | 2494, exempt | 0 (judged) | 0 (judged) |
+| over the exact bound | 0 | 5 | **632** (sim peak 0.918, exact 1.000) |
+
+**Reading.**
+- The plan is the D18 plan, perimeter sweep included, so the closing
+  guard falls back to the old path on this fixture.
+- Because C31 now judges the band in the geodesic modes, the old sweep (a
+  full-width slot; move 6 at wall distance 6.00 lies in the old band
+  [5.5, 7.46]) fails.
+- C22's prediction "every C12 region keeps the grow" does not hold here.
+
+**The C31 lines.** The "C31 region opening" lines are `tracing::info!`
+events (`clearing.rs:2720`). The C12 test installs no tracing subscriber,
+so `RUST_LOG=info` prints nothing in the test logs (0 lines). The decision
+per region cannot be read from the tests.
+
+**Verdict.** C31 is not committable as is. No fixture run was started.
+Outputs: `phase2/d19b_harness.txt`, `phase2/d19b_c12_plain_output.txt`,
+`phase2/d19b_c12_test_output.txt`.
+
+**D19b probe (evidence only; not a fixture result).** CLI release with
+research, built in adaptive-head (uncommitted C31 + §11.8). Corne
+`corne_job_corrected_c12_agent_search.toml`, setup 0, `--skip 4`, the
+D-FIX flags, `RS_CAM_RESEARCH_ADAPTIVE3D_ARM=geodesic_local_zigzag_pick`,
+`RUST_LOG=info`, no `--sim-artifact`. rc 0, 208 s with the build. Output
+in `phase3/d19b_probe/`. The "C31 region opening" lines (stdout):
+
+| z | region | measured_before | shortfall_inset | measured_after | excess / allowed mm² | decision |
+|---|---|---|---|---|---|---|
+| 17.0 | 1 | 0.258 | 0.242 | 0.500 | 2.02 / 238.36 | "grown, no sweep" |
+| 11.0 | 2 | 0.276 | 0.224 | 0.500 | 1.98 / 198.35 | "measured margin under one planner cell: shipped sweep" |
+| 5.0 | 2 | 0.276 | 0.224 | 0.500 | 1.98 / 198.35 | the same |
+| 0.5 | 2 | 0.276 | 0.224 | 0.500 | 1.98 / 198.35 | the same |
+
+All four lines have cell_mm 0.5 and nominal_margin_mm 0.550. In each, the
+shortfall inset is exactly cell − measured_before. So measured_after lands
+on the cell boundary (prints 0.500). At Z 17 that gives "grown"; at the
+other three levels it gives "under one planner cell". My reading, not
+checked in code: the guard's comparison at the boundary (strict or
+without a tolerance, or the float rounding) decides.
+
+## D19c at f32401326 + uncommitted C31 with the §11.9 fix — RED (heavy)
+
+The fix (P3_C22_3d_turns.md §11.9): the shortfall inset adds
+`FlattenPolicy::UNTOLERANCED_MM`; the region decisions go into
+`Research3d.openings`; the C12 tests print one line per opening, and the
+heavy test asserts "grown, no sweep" per region. Same steps as D19b.
+The diff did not change during the run. Disk: 82 GB.
+
+| Step | Result |
+|---|---|
+| 1: parity plain and research, fmt, clippy research and plain, 13 sentries | green, all 18 |
+| 2: the 2D harness | green 1/1; 189 rewritten render files, all byte-equal to D18 |
+| 3: the plain C12 test | green 1/1 (21.19 s) |
+| 3: the heavy C12 test | **RED** at T:913 (150.48 s), the exact-bound assert in geodesic_curv |
+
+**Openings.** Every opening reads "grown, no sweep":
+
+| test / mode | Z | before | shortfall | after | excess / allowed mm² |
+|---|---|---|---|---|---|
+| plain, all four modes | 4.50 | 0.2669 | 0.2431 | 0.5100 | 0.74 / 129.89 |
+| heavy, geodesic_curv | 7.00 | 0.2669 | 0.2431 | 0.5100 | 0.74 / 129.89 |
+| heavy, geodesic_curv | 4.50 | 0.2609 | 0.2491 | 0.5100 | 0.96 / 130.67 |
+
+**Plain counts** (D18 in brackets): oneway 2575 moves, 49 entries (2123,
+68), turns 35/35/0; zigzag 954, 47 (870, 68), turns 45/29/16; v2 3122, 28,
+turns 42/42/0; pick = zigzag 954, 47 (2362, 48).
+
+**Heavy, geodesic_curv:** 2578 moves; 7013 judged at Z 4.5, 7.0, 7.5,
+8.0, 10.0, 10.5; perimeter band 0. 4 over the screen 0.546 and the exact
+bound 0.471 (sim peak 0.833, exact peak 0.975):
+- move 435 at (-2.50, -8.59, 7.00), wall 3.95: sim 0.685, exact 0.707
+- move 533 at (12.93, 5.52, 7.00), wall 9.06: sim 0.815, exact 0.957
+- move 1711 at (-2.57, -8.88, 4.50), wall 4.24: sim 0.667, exact 0.775
+- move 1805 at (17.82, 12.12, 4.50), wall 11.88: sim 0.833, exact 0.975
+
+The test stops at the first failing mode, so the later geodesic modes of
+the heavy test did not run.
+
+**Against C22's prediction.**
+- every region "grown, no sweep": holds;
+- before 0.25–0.35, shortfall 0.16–0.26, after 0.500–0.510: hold (after
+  is at the top end, 0.5100);
+- heavy 0 over: **fails** (4 over);
+- plain entries 68–80: **fails**, the counts are lower (28–49).
+
+**Verdict.** RED. Not committable as is. No fixture run started.
+Outputs: `phase2/d19c_harness.txt`, `phase2/d19c_c12_plain_output.txt`,
+`phase2/d19c_c12_test_output.txt`.
+
+## D19d: the heavy C12 test with C22's probe — RED (G-ARCENDHOOK)
+
+Production diff as in D19c; only the C12 test changed (the probe, and the
+failures are collected over all five geodesic modes). One mechanical fix
+for clippy `doc_lazy_continuation` at the `probe()` doc comment (C12 test
+lines 842–843): a blank `///` line between the list and "It names the
+pass ...". Then fmt and clippy (research, heavy-tests, test-support) green.
+The heavy test: rc 101 at T:1035 (181.62 s). Output:
+`phase2/d19d_c12_test_output.txt`. The run ended at 07:52; I did not
+report it to the lead until 08:20.
+
+| mode | moves | over the exact bound | exact peak |
+|---|---|---|---|
+| geodesic_curv | 2578 | **4** | 0.975 |
+| geodesic_curv_split | 2410 | **2** | 0.775 |
+| geodesic_local_oneway | 5266 | 0 | — |
+| geodesic_local_zigzag | 2000 | 0 | — |
+| geodesic_local_zigzag_v2 | 6357 | 0 | — |
+
+Every opening in every mode reads "grown, no sweep" (Z 7.00 and Z 4.50,
+the same values as D19c).
+
+## D19e: the final check of C31 part 1 — GREEN
+
+Production diff as in D19c (clearing.rs, mod.rs, path.rs checked against
+the D19c start diff). Only the C12 test changed: the heavy test asserts
+the exact bound on the G1 arms only, adds `geodesic_local_zigzag_pick`,
+and prints `geodesic_curv` / `geodesic_curv_split` as "attribution only
+(G-ARCENDHOOK)". Lane script, `timeout`, adaptive-head. Disk 82 GB.
+
+| Step | Result |
+|---|---|
+| 1: fmt; clippy all targets research+heavy-tests+test-support; clippy plain all targets | green, all 3 |
+| 2: the plain C12 test | green 1/1 (20.46 s); every number as in D19c |
+| 3: the heavy C12 test | green 1/1 (194.68 s; 215 s with the build) |
+
+**Heavy, per mode** ("entry" is the count of judged entry samples):
+
+| mode | moves | over the exact bound | exact peak | entry samples | turns planned / cut / not cut / fed |
+|---|---|---|---|---|---|
+| geodesic_curv (attribution only) | 2578 | 4 | 0.975 | 1433 | 0 |
+| geodesic_curv_split (attribution only) | 2410 | 2 | 0.775 | 1066 | 0 |
+| geodesic_local_oneway | 5266 | 0 | 0.000 | 665 | 71 / 71 / 0 / 71 |
+| geodesic_local_zigzag | 2000 | 0 | 0.000 | 641 | 92 / 61 / 31 / 61 |
+| geodesic_local_zigzag_v2 | 6357 | 0 | 0.000 | 439 | 84 / 83 / 1 / 83 |
+| geodesic_local_zigzag_pick | 2000 | 0 | 0.000 | 641 | 92 / 61 / 31 / 61 |
+
+Every mode prints two openings, both "grown, no sweep": Z 7.00 (before
+0.2669, shortfall 0.2431, after 0.5100, excess 0.74 of 129.89 mm²) and
+Z 4.50 (0.2609, 0.2491, 0.5100, 0.96 of 130.67 mm²).
+
+**Plain, per mode:** oneway 2575 moves, 49 entries, turns 35/35/0;
+zigzag 954, 47, 45/29/16; v2 3122, 28, 42/42/0; pick = zigzag. One
+opening each, Z 4.50, "grown, no sweep" (0.2669 / 0.2431 / 0.5100).
+
+**Against C22's prediction.** Heavy green: holds. zigzag_pick reads
+like zigzag: holds (every heavy and plain number is equal). curv and
+split print 4 and 2 attribution samples: holds.
+
+**Verdict.** Green. Outputs: `phase2/d19e_c12_plain_output.txt`,
+`phase2/d19e_c12_test_output.txt`. No harness and no fixture run.

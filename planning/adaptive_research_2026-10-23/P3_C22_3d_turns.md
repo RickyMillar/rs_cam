@@ -1438,3 +1438,316 @@ How the positions fit:
   - heavy test 0 over in all four geodesic modes, judged in the band;
   - plain test turn moves at the level, entries about 68–80;
   - judged levels back to D18's set.
+
+### 11.9 D19b: every C12 region fell back; which condition, and the record (2026-10-25)
+
+D19b: the plain test equals D18 exactly, and the heavy test fails
+`geodesic_curv` with 632 samples over (exact 1.000, move 6, wall distance
+6.00: the old sweep band). So every C12 region kept the shipped sweep. My
+prediction that every region keeps the grow was wrong. The `info` lines
+do not print in a test binary (no tracing subscriber).
+
+**(2) Which condition refuses (read from the code and the fixture; best
+estimate).**
+
+| Condition | C12 reading | Trips? |
+|---|---|---|
+| 1. no smoothed or grown outline | the pocket region smooths and grows | no |
+| 2. shortfall inset split | an inset of 0.15–0.25 mm cuts no neck (the narrowest part of the region is the pocket band round the island, about 13 mm) | no |
+| 3. nominal margin | 0.3 + 0.25 = 0.55 ≥ 0.5 | no |
+| **4. measured margin after the inset** | **about 0.490–0.4999 against 0.5** | **yes** |
+| 5. closing guard | the pocket's corners are convex from the region; the island hole is a disc of radius about 8.3 > R − m = 2.75. Excess about 0 against an allowance of about 0.5 × 260 = 130 mm² | no |
+
+Why condition 4 trips, by construction:
+- **Before the inset.** The pocket walls are axis edges, so the smoothed
+  outline stands 0.3 mm inside there. The island hole is a marching-squares
+  staircase circle. Its 0.3 mm grow, then the RDP at 0.3 mm, gives chords
+  whose midpoints come back toward the island by up to their sagitta, and
+  the raw staircase notches stand out toward them. So `measured_before` is
+  about 0.25–0.35 (separation 0.0–0.1, plus m).
+- **The inset.** The shortfall is 0.15–0.25. After the inset, the separation
+  is at least the old separation plus the inset (11.8): exactly
+  `cell − m`, so `measured_after` is exactly the cell, in theory.
+- **The flattening.** `offset_polygon` flattens each arc join "on the
+  input side of the true offset", up to `FlattenPolicy::UNTOLERANCED_MM`
+  (0.010 mm; `polygon.rs` P6.0). For an inset, the input side is outward,
+  toward the raw boundary. So the inset outline stands up to 10 µm less
+  inside than asked, and `measured_after` lands a few µm under 0.5. The
+  strict test `measured_after < cell` then refuses.
+- My 11.8 note said the flattening "only cuts inward". That is wrong for
+  an inset, and it is withdrawn.
+
+**The closing guard is not comparing the wrong pair.** Since the shortfall
+inset, both of its areas come from the same inset outline S′: the grown
+outline (S′ grown by R − m) inset by R, against S′ inset by m. So it
+measures the closing of S′ only, which is what it is for. It never compares
+against the raw region inset by m. Its allowance (cell × S′'s boundary
+length) is large here, so it is not the refusal.
+
+**The fix (built with the record, below).** The shortfall inset adds the
+flattening budget: `shortfall = cell − measured_before +
+FlattenPolicy::UNTOLERANCED_MM` (an existing constant). Then
+`measured_after ≥ cell` holds with the flattening error inside it. The
+condition stays strict.
+
+**(1) The decision is now in the research record the tests read.**
+- `adaptive3d/mod.rs`, cfg research:
+  - new `pub struct RegionOpening` (z_level, region, cell_mm,
+    nominal_margin_mm, measured_before_mm, shortfall_inset_mm,
+    measured_after_mm, excess_mm2, allowed_mm2, `decision: &'static
+    str`);
+  - new `pub struct Research3d { turns, openings }`;
+  - `adaptive_3d_research_output_with_cancel` now returns
+    `(Adaptive3dOutput, Research3d)`, and `research_turn_feeds` fills both.
+- `adaptive3d/clearing.rs`: `ClearZLevelContext::research_openings`
+  (RefCell, cfg research). `research_grown_outlines` pushes one record per
+  decision; the `info` line stays.
+- `adaptive3d/path.rs`: the context initialiser and
+  `Adaptive3dSegmentsResult::research_openings` (the hand-over).
+- `tests/adaptive3d_geodesic_arm_c12.rs`:
+  - `plan` returns `(out, turns, openings)`.
+  - Both tests print one line per opening: decision, cell, nominal,
+    measured before, the shortfall inset, measured after, and the closing
+    excess and allowance.
+  - The heavy test asserts, per geodesic mode and before the load
+    assertion: at least one opening, and every opening "grown, no sweep"
+    or "no smoothed or grown outline". A region too thin to smooth also
+    has an empty sweep ring. The assertion prints the refused lines.
+
+**Prediction for D19c (P):**
+- The C12 lines read: "grown, no sweep" at both levels, measured before
+  about 0.25–0.35, shortfall about 0.16–0.26, measured after 0.500–0.510.
+- Then the D19b predictions of 11.8 apply: 0 over; judged levels close to
+  D18's set; entries about 68–80 in the plain test.
+- If the record shows another condition, it names it with the numbers.
+
+### 11.10 D19c: 4 moves over in the heavy test (`geodesic_curv`); diagnosis (2026-10-26)
+
+D19c (`phase2/d19c_c12_test_output.txt`): every opening is "grown, no
+sweep" (measured after 0.5100; the flattening budget works). The heavy
+test fails `geodesic_curv` with 4 judged moves over both bounds:
+
+| Move | At | Distance to | Sim / exact |
+|---|---|---|---|
+| 435 | (-2.50, -8.59, 7.00) | island edge 3.95 (r 8.95 from the island centre) | 0.685 / 0.707 |
+| 533 | (12.93, 5.52, 7.00) | r 14.06; y wall 18.5 | 0.815 / 0.957 |
+| 1711 | (-2.57, -8.88, 4.50) | island edge 4.24 (r 9.24) | 0.667 / 0.775 |
+| 1805 | (17.82, 12.12, 4.50) | r 21.6; y wall 11.9 | 0.833 / 0.975 |
+
+The test kept no toolpath, so the producer of each move is not read from
+data yet. What the output does show:
+
+- **Q3: the pairs.** 1711 − 435 = 1276 and 1805 − 533 = 1272: the Z 4.5
+  plan repeats the Z 7 plan move for move, about 1274 moves later. 435 and
+  1711 stand at the same XY, so they are the same pass of the 2D plan at
+  both levels. 533 and 1805 are about the same move of the plan (533 +
+  1274 ≈ 1807), on a long pass whose over sample sits at other XY on the
+  two levels. So there are **two causes, each repeated per level**, and
+  both lie in the plan and its 3D emission. They are not stock carried from
+  the level above.
+- **A new judged level.** D19c judges samples at Z 10.0
+  (`{45, 70, 75, 80, 100, 105}`); D18 had none (`{45, 70, 75, 80, 105}`).
+  Z 10.0 is a draped floor: a drop-cutter height of 9.5 plus the 0.5
+  leave. Only a centre whose disc lies on a sloped facet near the top of
+  the island (or of a pocket wall) reads it. So **the grown 2D domain now
+  puts tool centres in the drape ring of the walls.**
+- **Q2: did the shipped sweep cut this stock before?**
+  - 435 / 1711 (r 8.95–9.24) lie in the old island sweep's swath: its
+    centre ring at r ≈ 8.0 + 3.25 = 11.3 cut r 8.3–14.3. Yes, the sweep
+    cut it before.
+  - 533 (r 14.06) is at the outer edge of that swath. Before, the sweep
+    cut its inner part; the 2D plan's passes started outside.
+  - 1805 (r 21.6, 11.9 from the y wall) lies outside every old sweep swath.
+
+**H1, the island pair (435 / 1711): a 2D pass in the drape ring, lifted.
+Medium-high confidence.**
+- The premise of 11.3 is wrong a second time, in a way 11.7 missed. The
+  region polygon is not the tool-centre limit at the level. It is where
+  stock stands above `max(drop-cutter + leave, z_level)`
+  (`build_material_bool_grid`), so its boundary is where that floor
+  reaches the stock top (here Z 10). At a sloped facet (the island's edge
+  slopes over one mesh step, r 5.0–5.7; the pocket walls over 34.0–34.5)
+  the region holds a **drape ring** of centres whose floor lies between the
+  level and the stock top: the island ring is r ≈ 8.0–8.7.
+- The grown 2D domain starts 0.51 mm inside the region boundary (r ≈
+  8.56), so it ends inside that ring. The old domain started at r ≥ 11 and
+  never did.
+- A 2D pass in the ring is lifted (the drape) to its contact Z. Its disc's
+  outer part then stands above the level over flat floor, so it leaves a
+  layer of level stock that the 2D grid holds cut. The next pass outward
+  (r ≈ 8.6 + s ≈ 10.6; the oracle's reading at r 8.95–9.24 is on that
+  pass's disc) meets that layer across its disc: exact 0.71–0.78. The
+  oracle counts any layer as full width (C30.6), and the 2D rule is radial,
+  so it is a real breach.
+
+**H2, the long pass (533 / 1805, 0.96–0.98): not explained yet. Low
+confidence.**
+- A near-full slot far from the walls means a pass met stock on both
+  sides of its disc, that is, stock that no earlier move cut.
+- Candidates:
+  - (a) the same H1 layer reached by a later pass that crosses the ring
+    band (a link or a wrap end that turns back across it);
+  - (b) the meeting line behind the island, where the two fronts of
+    `geodesic_curv` (C5, meeting "split") meet. The larger domain moves
+    the seed and the meeting line, and a cascade there is a known
+    full-width producer (C5).
+- I cannot tell (a) from (b) without the moves.
+
+**The probe (built; test code only, no production change):**
+`tests/adaptive3d_geodesic_arm_c12.rs`.
+- Each move over the exact bound gets a `probe`:
+  - the 12 moves before it and the 2 after it, with intent, kind (rapid
+    or feed), end point and XY length;
+  - every earlier feed move whose XY segment passes within R of the
+    sample, counted as at the level, above it, or across or below it,
+    with the last eight listed.
+  This names the pass (wrap, seam, link: `Linking`, lobe start after an
+  entry) and shows whether the passes that should have cut the stock ran
+  lifted (H1: "above it").
+- The heavy test now runs every mode and reports all failures together at
+  the end (openings, the two levels, over, turn faults, turns planned),
+  each with its probes. The other four geodesic modes therefore give
+  their numbers too.
+
+**The proposed fix, for H1 (not built; it needs the probe to confirm H1):
+grow from the level's flat floor, not from the material region.**
+- In `research_grown_outlines`, the base is the region's cells whose floor
+  is the level: `surface + leave ≤ z_level`, the cells that do not drape.
+  It is built as the region is (bool grid, marching squares,
+  containment), then intersected with the region. Then come the smoothing,
+  the shortfall inset (cell − m against this base) and the grow by R − m.
+- The 2D centres then stand at least one cell inside the flat floor, so no
+  planned centre drapes. The drape ring stays the waterline's, as it was
+  before C31.
+- Guard: when the flat base is smaller than the region by more than one
+  cell times the region's boundary length (terrain: most of a level
+  drapes), the region keeps the shipped path.
+- No new constant: the cell, R, `m`, and the two smoothing values. On the
+  C12 pocket the base differs from the region only by the two drape rings
+  (about 0.7 × 260 ≈ 180 mm² against an allowance of about 130 mm²).
+  **So the guard as stated would refuse C12.** The allowance must instead
+  read the ring against the slope's own width. That is not settled. I want
+  the probe run before choosing it.
+
+**Request:** run the heavy test once (D19d) with the probe. It costs no
+production change. It answers Q1 for all 4 moves and H2's (a) against
+(b). I will then fix by evidence.
+
+### 11.11 The H1 guard on paper: the drape-ring allowance (2026-10-26; no code until D19d)
+
+The lead's stop rule: the build after D19d is the last C31 round before G2.
+If it is not green on the heavy test, C31 part 1 is dropped and G2 runs
+with the shipped perimeter sweep. The fix must be small and inside the
+research arm.
+
+**What the guard must decide.** With the H1 fix, the 2D plan is grown
+from the level's flat floor F (the region cells whose floor is the level:
+surface + leave ≤ z_level). The drape ring D = region − F (centres whose
+floor lies between the level and the stock top) is then left to the
+waterline cleanup, as before C31. So the region may take the grown path
+only when the waterline can cut that ring under the ceiling. Otherwise
+(terrain, where most of a level drapes) it keeps the shipped path.
+
+**The waterline's load at a wall, with the fix.** The waterline centre runs
+on the level's tool-centre limit (the mesh contour at z, offset by the
+cutter): that is the boundary of F. On its two sides it meets:
+- toward the pocket, the band between its path and the 2D plan's outer
+  pass. The 2D centres stand at least one cell inside F (the margin
+  condition of 11.8), so this band is about one cell wide, or less with the
+  quantum;
+- toward the wall, the stock over the drape ring, whose width in centre
+  space is the ring's width `w` (the slope's horizontal extent, read
+  through the grid).
+So its swept width is at most `w + cell`.
+
+**The allowance (derived; no new constant).** Hold the waterline to the
+2D ceiling:
+
+`w_max + cell ≤ c·D`, that is, `w_max ≤ c·D − cell`,
+
+with `c` the replay's own ceiling (`PassLoad::swept_width(s, R, cell)`),
+D = 2R, and the cell the planner cell. `w_max` is measured, not assumed:
+it is the largest distance from a vertex of the region boundary to the
+boundary of F (the `boundary_separation` reading taken as a maximum
+instead of a minimum). The mesh step enters only through what the
+measurement reads (a facet that slopes over one mesh step gives a ring of
+about that step, √2 steps on a diagonal), so the guard needs no mesh
+input.
+
+| Fixture | s, R | c·D | cell | allowance `c·D − cell` | expected `w_max` |
+|---|---|---|---|---|---|
+| C12 (island and pocket slopes over one 0.5 mm mesh step) | 2, 3 | 2.176 | 0.5 | **1.68 mm** | about 0.7 + up to one cell of quantum: 0.7–1.2 → passes |
+| Corne "3D Rough 1" (near-vertical walls) | 1.2, 3 | 1.313 | 0.5 | **0.81 mm** | about the cell quantum, 0.25–0.5 → passes, with a thin margin |
+| Terrain (rivmap, wanaka) | — | — | — | — | tens of mm → shipped path, by design |
+
+Notes:
+- This replaces the area form of 11.10 (`cell × length`), which compared
+  the ring area with a quantum allowance and would have refused C12
+  (about 180 mm² against 130). The width form compares the ring with the
+  load the one tool that cuts it may carry.
+- It also replaces the waterline-load claim of 11.3. With F as the base,
+  the waterline meets `w + cell`, not `m + cell`, and the guard holds
+  exactly that to the ceiling.
+- The existing conditions stay: the margin (now on F), the shortfall inset,
+  the split, and the closing guard (on the smoothed F).
+
+**The build after D19d, if the probe confirms H1** (the passes that should
+have cut the over stock read "above it", that is, lifted):
+1. `research_grown_outlines`: build F as the region is built (the bool
+   grid with the extra test `surface + leave ≤ z_level`, marching squares,
+   containment), intersected with the region polygon. Then smooth, inset
+   and grow from F.
+2. The new condition "drape ring wider than c·D − cell: shipped sweep",
+   recorded with `w_max_mm` in `RegionOpening`.
+3. Nothing else changes.
+
+If the probe instead shows H2 (b), the meeting line, the H1 fix does not
+cover moves 533 and 1805. Then, by the stop rule, I report that C31 part 1
+cannot be made green in one round.
+
+### 11.12 D19d: H1 not confirmed; the arc-end hook; the assertion scoped (2026-10-26)
+
+D19d (`phase2/d19d_c12_test_output.txt`, the heavy C12 test with the
+probe), read by the lead:
+- **The G1 arms are green.** `geodesic_local_oneway`,
+  `geodesic_local_zigzag` and `geodesic_local_zigzag_v2` read 0 over the
+  exact bound and perimeter band 0, and every region opens "grown, no
+  sweep". Their turns over the screen are the known, fed turns.
+- **Only the far-side modes fail:** `geodesic_curv` 4 over (peak 0.975),
+  and `geodesic_curv_split` 2 over (the 435 / 1711 pair, its moves 404 and
+  1587).
+- **H1 is not confirmed.** Probe 435: 3 earlier feed moves within R at the
+  level, 0 above it. No lifted pass stood there.
+- **Each over move is the last segment of an arc.** It is a short sideways
+  hop (1.0–2.0 mm) off the arc's line into stock, and a lift follows at
+  once:
+  - 435: (-3.31, -8.38) to (-2.34, -8.63);
+  - 533: (12.04, 6.17) to (13.11, 5.40);
+  - 1805: (15.99, 12.12) to (18.02, 12.12).
+  That is an arc-end hook of the plain-seam arm (no turns): the seam step
+  of `geodesic_curv` that leaves the arc toward the next wrap's start,
+  which the 3D emission cuts and then lifts out of. Before C31 the
+  perimeter sweep had removed that stock (435 / 1711 lie in its old
+  swath), so the hook read under the bound.
+
+Decision (the lead; stop rule, smallest change):
+1. The H1 flat-floor fix is **not built**. §11.11 stays as a parked design.
+2. `tests/adaptive3d_geodesic_arm_c12.rs`:
+   - The heavy test asserts the exact bound on the G1 arms only: the three
+     arc-link modes and `geodesic_local_zigzag_pick`, which joins the heavy
+     modes.
+   - `geodesic_curv` and `geodesic_curv_split` still run and print their
+     over samples and probes, as attribution, with no assertion on their
+     over count. Their other checks stay.
+   - The module doc says so, with the reason and the defect tag; the
+     `heavy:` reason now names seven plans (about 16 min in debug).
+3. `DEFECTS.md`: G-ARCENDHOOK (parked; research arms only, not shipped).
+4. No other change. C31 part 1 stays as built (11.6–11.9). The probe
+   stays in the test.
+
+Prediction for D19e (P):
+- The heavy test is green.
+- The G1 arms read as in D19d; `geodesic_local_zigzag_pick` reads like
+  `geodesic_local_zigzag` (the C29 pick keeps A on the C12 pocket, and in
+  D19c the plain test's pick equalled zigzag).
+- The two far-side modes print 4 and 2 attribution samples, as in D19d.

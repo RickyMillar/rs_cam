@@ -1,0 +1,180 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_curv opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_curv: 2578 moves, 7013 judged at levels {45, 70, 75, 80, 100, 105} (Z x 10), 4 over the screen 0.546 (sim peak 0.833), 4 over the exact bound 0.471 (exact peak 0.975); entry 1433, vertical 1503, departing 4157, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+  geodesic_curv screened: move 435 ClearingCut at (-2.50, -8.59, 7.00) wall distance 3.95: sim radial 0.685, exact peak of the move 0.707
+  geodesic_curv screened: move 533 ClearingCut at (12.93, 5.52, 7.00) wall distance 9.06: sim radial 0.815, exact peak of the move 0.957
+  geodesic_curv screened: move 1711 ClearingCut at (-2.57, -8.88, 4.50) wall distance 4.24: sim radial 0.667, exact peak of the move 0.775
+  geodesic_curv screened: move 1805 ClearingCut at (17.82, 12.12, 4.50) wall distance 11.88: sim radial 0.833, exact peak of the move 0.975
+  geodesic_curv probe move 435 at (-2.50, -8.59, 7.00):
+    423 ClearingCut feed 1000 to (-10.457, -20.166, 7.000) xy 1.001
+    424 Linking feed 1000 to (-10.457, -20.166, 10.500) xy 0.000
+    425 Linking feed 1000 to (-8.457, -20.268, 10.500) xy 2.003
+    426 EntryPlunge feed 500 to (-8.457, -20.268, 7.500) xy 0.000
+    427 Retract rapid to (-8.457, -20.268, 8.000) xy 0.000
+    428 EntryPlunge feed 500 to (-8.457, -20.268, 7.000) xy 0.000
+    429 ClearingCut feed 1000 to (-6.457, -18.135, 7.000) xy 2.924
+    430 ClearingCut feed 1000 to (-5.017, -15.883, 7.000) xy 2.673
+    431 ClearingCut feed 1000 to (-4.337, -14.383, 7.000) xy 1.647
+    432 ClearingCut feed 1000 to (-3.713, -12.383, 7.000) xy 2.095
+    433 ClearingCut feed 1000 to (-3.377, -10.383, 7.000) xy 2.028
+    434 ClearingCut feed 1000 to (-3.311, -8.383, 7.000) xy 2.001
+    435 << ClearingCut feed 1000 to (-2.335, -8.633, 7.000) xy 1.008
+    436 Linking feed 1000 to (-2.335, -8.633, 10.500) xy 0.000
+    437 Linking feed 1000 to (-1.358, -8.883, 10.500) xy 1.008
+    earlier feed moves within R: 3 at the level, 0 above it, 0 across or below it; the last eight:
+      418 ClearingCut (-5.31, -7.38, 7.00) to (-5.31, -10.38, 7.00)
+      433 ClearingCut (-3.71, -12.38, 7.00) to (-3.38, -10.38, 7.00)
+      434 ClearingCut (-3.38, -10.38, 7.00) to (-3.31, -8.38, 7.00)
+
+  geodesic_curv probe move 533 at (12.93, 5.52, 7.00):
+    521 Linking feed 1000 to (7.618, 20.117, 10.500) xy 2.007
+    522 EntryPlunge feed 500 to (7.618, 20.117, 7.500) xy 0.000
+    523 Retract rapid to (7.618, 20.117, 8.000) xy 0.000
+    524 EntryPlunge feed 500 to (7.618, 20.117, 7.000) xy 0.000
+    525 ClearingCut feed 1000 to (8.097, 19.617, 7.000) xy 0.692
+    526 Linking feed 1000 to (8.097, 19.617, 10.500) xy 0.000
+    527 Linking feed 1000 to (12.441, 9.617, 10.500) xy 10.903
+    528 EntryPlunge feed 500 to (12.441, 9.617, 7.500) xy 0.000
+    529 Retract rapid to (12.441, 9.617, 8.000) xy 0.000
+    530 EntryPlunge feed 500 to (12.441, 9.617, 7.000) xy 0.000
+    531 ClearingCut feed 1000 to (12.346, 7.617, 7.000) xy 2.002
+    532 ClearingCut feed 1000 to (12.043, 6.170, 7.000) xy 1.478
+    533 << ClearingCut feed 1000 to (13.106, 5.395, 7.000) xy 1.316
+    534 Linking feed 1000 to (13.106, 5.395, 10.500) xy 0.000
+    535 Linking feed 1000 to (29.639, -1.883, 10.500) xy 18.063
+    earlier feed moves within R: 2 at the level, 1 above it, 0 across or below it; the last eight:
+      506 Linking (13.04, -18.90, 10.50) to (10.21, 7.09, 10.50)
+      531 ClearingCut (12.44, 9.62, 7.00) to (12.35, 7.62, 7.00)
+      532 ClearingCut (12.35, 7.62, 7.00) to (12.04, 6.17, 7.00)
+
+  geodesic_curv probe move 1711 at (-2.57, -8.88, 4.50):
+    1699 ClearingCut feed 1000 to (-10.451, -20.160, 4.500) xy 1.001
+    1700 Linking feed 1000 to (-10.451, -20.160, 7.999) xy 0.000
+    1701 Linking feed 1000 to (-8.451, -20.262, 7.999) xy 2.003
+    1702 EntryPlunge feed 500 to (-8.451, -20.262, 4.999) xy 0.000
+    1703 Retract rapid to (-8.451, -20.262, 5.499) xy 0.000
+    1704 EntryPlunge feed 500 to (-8.451, -20.262, 4.500) xy 0.000
+    1705 ClearingCut feed 1000 to (-6.451, -18.129, 4.500) xy 2.924
+    1706 ClearingCut feed 1000 to (-5.011, -15.877, 4.500) xy 2.673
+    1707 ClearingCut feed 1000 to (-4.331, -14.377, 4.500) xy 1.647
+    1708 ClearingCut feed 1000 to (-3.707, -12.377, 4.500) xy 2.095
+    1709 ClearingCut feed 1000 to (-3.430, -10.877, 4.500) xy 1.525
+    1710 ClearingCut feed 1000 to (-3.297, -8.877, 4.500) xy 2.004
+    1711 << ClearingCut feed 1000 to (-2.324, -8.877, 4.500) xy 0.973
+    1712 Linking feed 1000 to (-2.324, -8.877, 8.000) xy 0.000
+    1713 Linking feed 1000 to (-1.352, -8.877, 8.000) xy 0.973
+    earlier feed moves within R: 3 at the level, 29 above it, 1 across or below it; the last eight:
+      1347 Linking (-4.00, -7.08, 7.50) to (-4.00, -7.08, 10.50)
+      1348 Linking (-4.00, -7.08, 10.50) to (-18.45, -8.88, 10.50)
+      1691 Linking (3.87, 18.12, 10.50) to (-5.25, -7.88, 10.50)
+      1692 Linking (-5.25, -7.88, 10.50) to (-5.25, -7.88, 7.50)
+      1693 EntryPlunge (-5.25, -7.88, 7.50) to (-5.25, -7.88, 4.50)
+      1694 ClearingCut (-5.25, -7.88, 4.50) to (-5.37, -10.88, 4.50)
+      1709 ClearingCut (-3.71, -12.38, 4.50) to (-3.43, -10.88, 4.50)
+      1710 ClearingCut (-3.43, -10.88, 4.50) to (-3.30, -8.88, 4.50)
+
+  geodesic_curv probe move 1805 at (17.82, 12.12, 4.50):
+    1793 Linking feed 1000 to (14.050, 11.623, 7.500) xy 0.000
+    1794 EntryPlunge feed 500 to (14.050, 11.623, 4.500) xy 0.000
+    1795 ClearingCut feed 1000 to (13.102, 15.123, 4.500) xy 3.626
+    1796 Linking feed 1000 to (13.102, 15.123, 7.500) xy 0.000
+    1797 Linking feed 1000 to (13.049, 15.257, 7.500) xy 0.143
+    1798 EntryPlunge feed 500 to (13.049, 15.257, 4.500) xy 0.000
+    1799 ClearingCut feed 1000 to (13.102, 15.123, 4.500) xy 0.143
+    1800 Linking feed 1000 to (13.102, 15.123, 7.500) xy 0.000
+    1801 Linking feed 1000 to (15.198, 15.123, 7.500) xy 2.096
+    1802 EntryPlunge feed 500 to (15.198, 15.123, 4.500) xy 0.000
+    1803 ClearingCut feed 1000 to (16.075, 11.623, 4.500) xy 3.608
+    1804 ClearingCut feed 1000 to (15.994, 12.123, 4.500) xy 0.507
+    1805 << ClearingCut feed 1000 to (18.022, 12.123, 4.500) xy 2.028
+    1806 Linking feed 1000 to (18.022, 12.123, 7.500) xy 0.000
+    1807 Linking feed 1000 to (18.095, 11.623, 7.500) xy 0.505
+    earlier feed moves within R: 2 at the level, 31 above it, 0 across or below it; the last eight:
+      886 EntryPlunge (16.07, 10.26, 7.50) to (16.07, 10.26, 7.00)
+      887 Linking (16.07, 10.26, 7.00) to (13.45, 11.71, 7.00)
+      1178 Linking (21.49, 13.81, 7.00) to (19.30, 12.21, 7.00)
+      1179 Linking (19.30, 12.21, 7.00) to (17.11, 10.61, 7.00)
+      1180 Linking (17.11, 10.61, 7.00) to (14.93, 9.00, 7.00)
+      1792 Linking (28.65, 1.12, 10.50) to (14.05, 11.62, 10.50)
+      1803 ClearingCut (15.20, 15.12, 4.50) to (16.08, 11.62, 4.50)
+      1804 ClearingCut (16.08, 11.62, 4.50) to (15.99, 12.12, 4.50)
+
+  geodesic_curv: 4 samples over the exact bound, attribution only (G-ARCENDHOOK)
+geodesic_curv_split opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_curv_split opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_curv_split: 2410 moves, 6934 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 2 over the screen 0.546 (sim peak 0.685), 2 over the exact bound 0.471 (exact peak 0.775); entry 1066, vertical 1197, departing 3996, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv_split turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+  geodesic_curv_split screened: move 404 ClearingCut at (-2.50, -8.59, 7.00) wall distance 3.95: sim radial 0.685, exact peak of the move 0.707
+  geodesic_curv_split screened: move 1587 ClearingCut at (-2.57, -8.88, 4.50) wall distance 4.24: sim radial 0.667, exact peak of the move 0.775
+  geodesic_curv_split probe move 404 at (-2.50, -8.59, 7.00):
+    392 ClearingCut feed 1000 to (-10.457, -20.166, 7.000) xy 1.001
+    393 Linking feed 1000 to (-10.457, -20.166, 10.500) xy 0.000
+    394 Linking feed 1000 to (-8.457, -20.268, 10.500) xy 2.003
+    395 EntryPlunge feed 500 to (-8.457, -20.268, 7.500) xy 0.000
+    396 Retract rapid to (-8.457, -20.268, 8.000) xy 0.000
+    397 EntryPlunge feed 500 to (-8.457, -20.268, 7.000) xy 0.000
+    398 ClearingCut feed 1000 to (-6.457, -18.135, 7.000) xy 2.924
+    399 ClearingCut feed 1000 to (-5.017, -15.883, 7.000) xy 2.673
+    400 ClearingCut feed 1000 to (-4.337, -14.383, 7.000) xy 1.647
+    401 ClearingCut feed 1000 to (-3.713, -12.383, 7.000) xy 2.095
+    402 ClearingCut feed 1000 to (-3.377, -10.383, 7.000) xy 2.028
+    403 ClearingCut feed 1000 to (-3.311, -8.383, 7.000) xy 2.001
+    404 << ClearingCut feed 1000 to (-2.335, -8.633, 7.000) xy 1.008
+    405 Linking feed 1000 to (-2.335, -8.633, 10.500) xy 0.000
+    406 Linking feed 1000 to (-1.358, -8.883, 10.500) xy 1.008
+    earlier feed moves within R: 3 at the level, 0 above it, 0 across or below it; the last eight:
+      387 ClearingCut (-5.31, -7.38, 7.00) to (-5.31, -10.38, 7.00)
+      402 ClearingCut (-3.71, -12.38, 7.00) to (-3.38, -10.38, 7.00)
+      403 ClearingCut (-3.38, -10.38, 7.00) to (-3.31, -8.38, 7.00)
+
+  geodesic_curv_split probe move 1587 at (-2.57, -8.88, 4.50):
+    1575 ClearingCut feed 1000 to (-10.451, -20.160, 4.500) xy 1.001
+    1576 Linking feed 1000 to (-10.451, -20.160, 7.999) xy 0.000
+    1577 Linking feed 1000 to (-8.451, -20.262, 7.999) xy 2.003
+    1578 EntryPlunge feed 500 to (-8.451, -20.262, 4.999) xy 0.000
+    1579 Retract rapid to (-8.451, -20.262, 5.499) xy 0.000
+    1580 EntryPlunge feed 500 to (-8.451, -20.262, 4.500) xy 0.000
+    1581 ClearingCut feed 1000 to (-6.451, -18.129, 4.500) xy 2.924
+    1582 ClearingCut feed 1000 to (-5.011, -15.877, 4.500) xy 2.673
+    1583 ClearingCut feed 1000 to (-4.331, -14.377, 4.500) xy 1.647
+    1584 ClearingCut feed 1000 to (-3.707, -12.377, 4.500) xy 2.095
+    1585 ClearingCut feed 1000 to (-3.430, -10.877, 4.500) xy 1.525
+    1586 ClearingCut feed 1000 to (-3.297, -8.877, 4.500) xy 2.004
+    1587 << ClearingCut feed 1000 to (-2.324, -8.877, 4.500) xy 0.973
+    1588 Linking feed 1000 to (-2.324, -8.877, 8.000) xy 0.000
+    1589 Linking feed 1000 to (-1.352, -8.877, 8.000) xy 0.973
+    earlier feed moves within R: 3 at the level, 29 above it, 1 across or below it; the last eight:
+      1223 Linking (-4.00, -7.08, 7.50) to (-4.00, -7.08, 10.50)
+      1224 Linking (-4.00, -7.08, 10.50) to (-18.45, -8.88, 10.50)
+      1567 Linking (2.64, 19.12, 10.50) to (-5.25, -7.88, 10.50)
+      1568 Linking (-5.25, -7.88, 10.50) to (-5.25, -7.88, 7.50)
+      1569 EntryPlunge (-5.25, -7.88, 7.50) to (-5.25, -7.88, 4.50)
+      1570 ClearingCut (-5.25, -7.88, 4.50) to (-5.37, -10.88, 4.50)
+      1585 ClearingCut (-3.71, -12.38, 4.50) to (-3.43, -10.88, 4.50)
+      1586 ClearingCut (-3.43, -10.88, 4.50) to (-3.30, -8.88, 4.50)
+
+  geodesic_curv_split: 2 samples over the exact bound, attribution only (G-ARCENDHOOK)
+geodesic_local_oneway opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_oneway opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_oneway: 5266 moves, 12461 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.464), 0 over the exact bound 0.471 (exact peak 0.000); entry 665, vertical 580, departing 1605, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 295 (59 over the screen, sim peak 0.873)
+geodesic_local_oneway turns: planned 71, cut 71, not cut 0, with a reduced factor 70 (lowest 0.327), longest 2.757 mm (bound 3.207); fed 71, unfed 0, full feed with no move 0
+geodesic_local_zigzag opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag: 2000 moves, 6839 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 641, vertical 552, departing 1360, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 306 (38 over the screen, sim peak 0.833)
+geodesic_local_zigzag turns: planned 92, cut 61, not cut 31, with a reduced factor 53 (lowest 0.336), longest 3.199 mm (bound 3.207); fed 61, unfed 0, full feed with no move 0
+geodesic_local_zigzag_v2 opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_v2 opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag_v2: 6357 moves, 14093 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.388), 0 over the exact bound 0.471 (exact peak 0.000); entry 439, vertical 397, departing 862, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 323 (80 over the screen, sim peak 0.873)
+geodesic_local_zigzag_v2 turns: planned 84, cut 83, not cut 1, with a reduced factor 81 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 83, unfed 0, full feed with no move 0
+geodesic_local_zigzag_pick opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag_pick: 2000 moves, 6839 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 641, vertical 552, departing 1360, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 306 (38 over the screen, sim peak 0.833)
+geodesic_local_zigzag_pick turns: planned 92, cut 61, not cut 31, with a reduced factor 53 (lowest 0.336), longest 3.199 mm (bound 3.207); fed 61, unfed 0, full feed with no move 0
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 194.68s
+
