@@ -41,6 +41,12 @@ import sys
 import time
 import glob
 
+import importlib.util as _ilu
+
+_ns_spec = _ilu.spec_from_file_location("normal_step", os.path.join(os.path.dirname(os.path.abspath(__file__)), "normal_step.py"))
+normal_step_mod = _ilu.module_from_spec(_ns_spec)
+_ns_spec.loader.exec_module(normal_step_mod)
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -358,7 +364,9 @@ def main():
                 tpid = int(re.search(r"tp_(\d+)_", fx["ops"][0]["tp_glob"]).group(1))
                 cell = json.load(open(os.path.join(a["simart"], "summary.json")))["simulation_resolution"]["mm"]
                 ld = load_share(a["simart"], tpid, cell)
+                eng = normal_step_mod.engaged_moves(a["simart"], tpid)
                 fxn["arms"][a["label"]]["spacing"] = sp
+                fxn["arms"][a["label"]]["normal_step"] = normal_step_mod.normal_step(ops[a["label"]][img_op], mid, centre, eng)
                 fxn["arms"][a["label"]]["load"] = ld
         numbers["fixtures"][fx["name"]] = fxn
         rows.append((fx, pick, cols, missing))
@@ -385,34 +393,46 @@ def main():
         fxn = numbers["fixtures"][fx["name"]]
         if "mid_level" not in fxn:
             return ""
-        rows = ""
+        rows, old_rows = "", ""
         for lab, an in fxn["arms"].items():
-            sp, ld = an["spacing"], an["load"]
-            rows += (f"<tr><td>{html.escape(lab)}</td><td>{sp['median']:.2f} mm</td>"
-                     f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over {TOOL_D:.0f} mm set apart)</td>"
+            ns, sp, ld = an["normal_step"], an["spacing"], an["load"]
+            rows += (f"<tr><td>{html.escape(lab)}</td><td>{ns['median']:.2f} mm</td>"
+                     f"<td>{ns['p10']:.2f} to {ns['p90']:.2f} mm (n {ns['n']}; {ns['apart']} over {TOOL_D:.0f} mm set apart)</td>"
                      f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
+            old_rows += (f"<tr><td>{html.escape(lab)}</td><td>{sp['median']:.2f} mm</td>"
+                         f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over {TOOL_D:.0f} mm set apart)</td></tr>")
         ag = fxn["arms"]["AgentSearch"]
         gz = fxn["arms"]["geodesic_local_zigzag"]
-        ratio_sp = ag["spacing"]["median"] / gz["spacing"]["median"]
+        ratio_sp = ag["normal_step"]["median"] / gz["normal_step"]["median"]
         f0 = fx["ops"][0]["comment"]
         ratio_cut = gz["load"]["cut_mm"] / ag["load"]["cut_mm"]
         over = ag["load"]["over_exact_pct"]
         s1 = (f"The cycle-time gap comes mostly from this spacing: the geodesic arm puts its passes about one stepover apart "
-              f"({gz['spacing']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm), AgentSearch "
-              f"{ag['spacing']['median']:.2f} mm apart ({ratio_sp:.2f} times wider), and the geodesic arm cuts "
+              f"({gz['normal_step']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm), AgentSearch "
+              f"{ag['normal_step']['median']:.2f} mm apart ({ratio_sp:.2f} times wider), and the geodesic arm cuts "
               f"{ratio_cut:.2f} times the length on '{f0}'.")
         s2 = (f"AgentSearch is over the bound: {over:.2f}% of its cut length on '{f0}' reads over 0.471 in the simulation "
               f"({ag['load']['over_screen_pct']:.2f}% over the screen {ag['load']['screen']:.3f} for its sim cell)."
               if over > 0 else f"AgentSearch is not over the bound: 0% of its cut length on '{f0}' reads over 0.471.")
-        q = "\u2019"
+        why = ("The rays read low because they start at the seed and over-sample the levels inside the radius where the law spaces "
+               "levels closer than the stepover (25.45 mm at stepover 1.2, 22.7 mm at 2.0; P2_C2 section C24), and because they also "
+               "cross the starter helix and, on one-way, the straight moves across the cut.")
         return (f'<h3 style="margin-top:12px">Pass spacing and load at {html.escape(fxn["mid_level"])} ({html.escape(f0)})</h3>'
-                f'<table><tr><th>arm</th><th>pass spacing, median</th><th>range</th><th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th></tr>{rows}</table>'
+                f'<table><tr><th>arm</th><th>pass step along the normal, length-weighted median</th><th>10th to 90th percentile</th>'
+                f'<th>cut length over 0.471</th><th>over the C18 screen for this sim cell</th></tr>{rows}</table>'
                 f'<p>{html.escape(s1)} {html.escape(s2)}</p>'
-                f'<p class="note">Spacing: 4 rays (0, 90, 180, 270 deg) from ({fxn["centre"][0]}, {fxn["centre"][1]}), the geodesic entry ring nearest the AgentSearch first entry ring at this level; '
-                f'the blue cut segments of the level are cut by each ray, crossings within {MERGE} mm are one pass, a gap over one tool diameter is set apart. '
-                f'Load: the closing simulation of the --sim-artifact rerun (byte-equal program.nc), the radial width of cut of each linear cutting sample, weighted by its XY length. '
-                f'0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. '
-                f'The screen adds the sim cell (Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>')
+                f'<p class="note">Spacing (C24\'s measure): the step along the normal between adjacent passes. From the midpoint of each '
+                f'pass move the normal is cast both ways; the distance to the nearest other pass move is one sample, weighted by the move length. '
+                f'A pass is a cut move of the level that the closing simulation reads over one sim cell / D (so a straight move across the cut, '
+                f'which runs through cleared stock, is not a pass); moves within R + 0.05 mm of the starter centre '
+                f'({fxn["centre"][0]}, {fxn["centre"][1]}) are left out (the starter helix); a step over one tool diameter is set apart. '
+                f'Load: the closing simulation of the --sim-artifact run (byte-equal program.nc), the radial width of cut of each linear cutting '
+                f'sample, weighted by its XY length. 0.471 is the C18 exact bound for stepover 2.0 on a 3 mm radius (P3_C18_3d_oracle.md); '
+                f'at the Corne stepover of 1.2 the ceiling is lower, so 0.471 under-counts there. The screen adds the sim cell '
+                f'(Corne 0.3 mm, wanaka200 1.0 mm), because the simulation blends partly covered cells.</p>'
+                f'<details><summary>The first measure (4 rays from the seed), kept for reference</summary>'
+                f'<table><tr><th>arm</th><th>ray spacing, median</th><th>range</th></tr>{old_rows}</table>'
+                f'<p>{html.escape(why)}</p></details>')
 
     body = ""
     for fx, pick, cols, missing in rows:

@@ -1,0 +1,34 @@
+Act on (2):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+  WARNING: high air cutting on '2 Back Rough' is 45% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  1458.8s wasted around (216.5, 36.6, 10.7) — engagement 0.16
+  3.8s wasted around (152.5, 221.5, 9.1) — engagement 0.01
+  3.8s wasted around (107.6, 28.1, 16.1) — engagement 0.10
+  3.7s wasted around (97.6, 218.6, 18.7) — engagement 0.00
+  3.7s wasted around (97.5, 218.6, 20.0) — engagement 0.00
+  3.7s wasted around (41.1, 221.4, 16.1) — engagement 0.00
+  3.7s wasted around (195.9, 221.4, 16.1) — engagement 0.00
+  3.7s wasted around (23.1, 136.0, 16.1) — engagement 0.11
+  3.3s wasted around (216.9, 210.2, 16.1) — engagement 0.12
+  3.3s wasted around (92.7, 221.4, 16.1) — engagement 0.00
+  ... 3415 more not shown
+
+Counts: 103873 samples | 46756 flagged-air + 3068 flagged-low (per SAMPLE) | 17393 issue runs (COALESCED, the legacy "issue_count") | 3425 hotspots
+
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 5: chipload: simulation trace is stale — re-run simulation
+  toolpath 5: power: simulation trace is stale — re-run simulation
+  toolpath 5: deflection: simulation trace is stale — re-run simulation
+  toolpath 5: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 90906mm  |  Rapid: 3301mm  |  Time: 3950s
+Air cutting: 45.2% of total runtime  |  Avg engagement: 0.26  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 20853 moves, 0 collisions
+      kinematics: 100% of commanded (98% feed-bound → +16% at ×1.30, 2% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 45.2% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/wanaka200/geodesic_local_zigzag_v2

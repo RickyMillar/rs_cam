@@ -464,3 +464,142 @@ is now held to the lower feed (before, only to the first record's).
 `turn_faults` in modes 3 and 4. Risk: a turn whose 2D steps the lift
 demotes or splits (air, large Z) still has no move; the count then says
 so.
+
+## 10. C26: the chord tolerance of the research arm (G-RDPLOAD) and keep-down links tagged as links (2026-10-25)
+
+Base 4cceca914 (worktree `adaptive-head`). No cargo ran and nothing is
+committed. `rustfmt --edition 2024 --check` is green on the four changed
+Rust files. Inputs: `P2_C2_geodesic_fixes.md` §C24, and G-RDPLOAD in
+`DEFECTS.md`. In `research_geodesic.rs` only the C12 block changed; C23's
+functions are not touched.
+
+### (1) G-RDPLOAD: a chord tolerance from the load margin
+
+**The rule.** For the research arm:
+
+`t_arm = min(chord_tolerance(tolerance, segment_merge), c·D − min(s, D))`
+
+with `MIN_EMITTED_SEGMENT_MM` as the floor of the margin.
+
+- `c·D` is the replay's own ceiling: `PassLoad::swept_width(s, R,
+  cell).ceiling` times D.
+- `min(s, D)` is the swept width of a straight pass at the level step.
+- So the margin is the room between the straight pass and `c·D`.
+- A chord a sagitta `h` inside its walked arc leaves `h` that the 2D plan
+  held cut. The next pass meets `s + h` at mid-chord, so `h ≤ c·D − s`
+  keeps that pass at or under `c·D`.
+- No new constant.
+
+| Fixture | s, R | c·D | margin | chord_tolerance | t_arm | chord at r 60 (2√(2rh − h²)) |
+|---|---|---|---|---|---|---|
+| Corne | 1.2, 3 | 1.3132 | 0.1132 | max(0.1, 0.3) = 0.3 | **0.1132** | 11.98 → 7.37 mm |
+| C12 test | 2.0, 3 | 2.1759 | 0.1759 | 0.1 (no merge) | 0.1 (unchanged) | — |
+
+**Where.** `Adaptive3dParams::emission_chord_tolerance` (`adaptive3d/mod.rs`,
+new `impl Adaptive3dParams`):
+
+- Shipped arms: `geometry.cut_simplify_tolerance()`, unchanged.
+- Research arm (`ClearingStrategy3d::Geodesic`, cfg `research`): that
+  value `.min(research_geodesic::slice_load_margin(s, R, tolerance))`.
+  `slice_load_margin` is in the C12 block.
+- The rule stays ONE function, `Adaptive3dGeometry::chord_tolerance`. The
+  cap only lowers it, so the model gouge guard, which reads the uncapped
+  rule (G-ROUGHGOUGE), stays safe.
+
+**Readers.** All four readers of the old value move to the accessor, so
+the planner and the emitter keep one value (G-PLANSIMGAP):
+
+- `adaptive3d/path.rs`: `ClearZLevelContext::cut_tolerance` (planner
+  stamp), the two `waterline_cleanup` calls, and the emitter's
+  `simplify_path_3d` in `segments_to_toolpath`.
+- `adaptive3d/CLAUDE.md` names the accessor; the file is still 40 lines.
+
+**Limit.** The margin is the straight-pass room. Inside the curvature
+law's radius ρ* (25.45 mm on Corne) the law spaces the passes to read
+`c·D` already, so a sagitta up to `t_arm` can still read over by up to
+`t_arm` there. Chords at small ρ are short for a given sagitta. The
+exact route is the lead's other option, the 2D rule run again on the
+simplified path; it would turn a sagitta into a refused step (a re-entry)
+instead of a smaller chord, so I did not take it.
+
+**The shipped arms (estimate, not changed):**
+
+- AgentSearch on Corne uses the same 0.3 mm chord tolerance. Its passes
+  are 2.55 mm apart (C24: 2.1 × s, 20 % of its cut over the bound), so
+  the spacing already exceeds `c·D` by about 1.24 mm. A sagitta of up to
+  0.3 mm adds to that; it is second to the spacing. Its 20 % would fall
+  only a little with a capped tolerance. The run would have to measure it.
+- The 2D shipped emission (`WithinPassLoad`) keeps the walked line: its
+  RDP tolerance is `MIN_EMITTED_SEGMENT_MM`, 1 µm (`adaptive/path.rs`
+  `segments_to_toolpath`). So G-RDPLOAD does not apply there. Only the
+  historical branch (`RetractedByCaller`, `simplify_path(params.tolerance)`)
+  leaves sagittas up to the operation tolerance, and no shipped 2D emission
+  takes that branch under the 2D rule.
+
+### (2) The 2D keep-down links are emitted as 3D keep-down links
+
+**Cause.** C22 held each 2D `Link` as a `Cut`, which the emitter tags
+`MoveIntent::ClearingCut`. The semantic trace and the pages read those
+moves as cut: C24 counts 1940 mm at Corne Z 5.00, 22 % of the one-way cut
+length.
+
+**Fix.** `HeldLinks` (C12 block) now only flags a `Link` that comes after
+a known position; it no longer converts it. `clear_one_region`
+(`adaptive3d/clearing.rs`) emits each flagged link as
+`Adaptive3dSegment::Link(lift(end))` and goes to the next segment.
+
+- That is the existing 3D keep-down link: the emitter drapes it to the
+  leave (`drape_path_to_leave`, sampled at ≤ R, no RDP) and tags each move
+  `MoveIntent::Linking`.
+- `spans_from_move_intents` makes that a `LinkBridge` span ("link").
+- The planner stamp mirrors it (`stamp_emitted_segment`, the `Link` arm,
+  G-PHANTOMSTAMP), and `LevelSink::emit` commits a pending entry before it
+  and clips it (`centre_clip`), as for every link.
+- The air fill of C22 (`engaged.fill(true)`) is gone. The cut path of
+  `clear_one_region` is now the shipped text again.
+- The F-038 filter still counts link length (`link_length`), so its
+  decisions do not change.
+
+What is lost: the lift's large-Z split no longer applies to a held link.
+The 2D replay holds a link inside the tool-centre region of the level,
+where the floor is the level. The drape follows the surface plus the
+leave, as for every 3D keep-down link.
+
+### Predictions (P)
+
+- **Byte parity** (`adaptive3d_emission_byte_parity`, with and without
+  `research`): green. For a shipped arm `emission_chord_tolerance` returns
+  `cut_simplify_tolerance()` exactly, and `held_links` is `None`.
+- **Heavy C12 test, 0 over: holds.**
+  - The fixture has no merge, so `t_arm` = 0.1, as before: (1) changes
+    nothing there.
+  - (2) changes the held links from `ClearingCut` to `Linking`. The oracle
+    does not exempt `Linking` (only the entry intents), so it still judges
+    those samples. They cut the band just cut (the 2D replay held each
+    link within the load), so they add no sample over.
+  - The geometry is the same straight line; the drape now samples at R
+    instead of the planner cell, so the move counts differ.
+  - The turn rule is unchanged (turns are cuts, not links).
+- **Plain C12 test:** unchanged verdict. Turn moves stay at the level, and
+  the turn split (D14) is unchanged.
+- **Corne D-FIX2 sim share over the bound (zigzag 4.6 %):**
+  - (1) removes the mid-chord excess on the wraps outside ρ*: mid-chord
+    reads fall from up to 1.49 mm to at most 1.313 mm.
+  - (2) moves the link length out of the cut class. The links cut air,
+    so the over count does not change but the cut denominator falls (by
+    the link share: about 22 % of the one-way cut at Z 5.00, less for
+    zigzag).
+  - Net: zigzag 4.6 % → about 1.5 to 3 %. The rest is the ρ* limit above
+    and the shipped waterline / perimeter passes. One-way: the share can
+    read higher than before on the smaller denominator, unless (1) removes
+    most of the over samples. Confidence: low; the D-FIX2 run decides.
+- **Cycle time:** (1) gives about 1.6 times the moves on the large wraps
+  (7.4 mm chords for 11.8 mm). That adds time only through the per-move
+  acceleration model. (2) gives the same path length.
+
+### Verifier commands (C26)
+
+The §6 list. The changed lines are the C12 test (plain and `--ignored`),
+byte parity both ways, the 13 adaptive3d sentries, and both clippy
+configs. Also run `adaptive3d_plan_matches_merged_path_g_plansimgap`:
+the emitter and the planner now read `emission_chord_tolerance`.

@@ -1,6 +1,6 @@
 {
  "binary": "/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/target/release/rs_cam_cli",
- "binary_mtime": "2026-10-25T13:50:30",
+ "binary_mtime": "2026-10-25T17:11:57",
  "fixtures": {
   "corne": {
    "levels_shown": [
@@ -69,6 +69,13 @@
       "min": 0.258,
       "max": 5.944
      },
+     "normal_step": {
+      "n": 866,
+      "apart": 366,
+      "median": 2.68,
+      "p10": 2.349,
+      "p90": 4.781
+     },
      "load": {
       "cut_mm": 13688.0,
       "over_exact_pct": 20.19,
@@ -134,6 +141,13 @@
       "median": 1.125,
       "min": 0.092,
       "max": 3.937
+     },
+     "normal_step": {
+      "n": 1974,
+      "apart": 126,
+      "median": 1.166,
+      "p10": 1.006,
+      "p90": 1.42
      },
      "load": {
       "cut_mm": 33087.9,
@@ -201,11 +215,91 @@
       "min": 0.069,
       "max": 5.159
      },
+     "normal_step": {
+      "n": 1916,
+      "apart": 134,
+      "median": 1.2,
+      "p10": 1.028,
+      "p90": 1.331
+     },
      "load": {
       "cut_mm": 34607.4,
       "over_exact_pct": 4.39,
       "screen": 0.5126,
       "over_screen_pct": 4.13
+     }
+    },
+    "geodesic_local_zigzag_v2": {
+     "commit": "4cceca914",
+     "cycle_time_s": 2954,
+     "cutting_mm": 74059,
+     "rapid_mm": 18970,
+     "air_cut_pct": 60.5,
+     "collisions": 0,
+     "rapid_collisions": 0,
+     "sim_resolution": {
+      "mm": 0.3,
+      "mode": "auto",
+      "source": "project",
+      "project_mm": 0.3
+     },
+     "ops": {
+      "3D Rough 1": {
+       "moves": 12020,
+       "entries": 67,
+       "keepdown_links": 1271,
+       "keepdown_mm": 2449.7,
+       "cut_xy_mm": 41281.3
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 5690,
+       "entries": 176,
+       "keepdown_links": 0,
+       "keepdown_mm": 0,
+       "cut_xy_mm": 7051.5
+      }
+     },
+     "images": {
+      "Z 17.00": {
+       "entries": 14,
+       "keepdown_mm": 1824.2,
+       "cut_mm": 15317.8
+      },
+      "Z 5.00": {
+       "entries": 8,
+       "keepdown_mm": 314.1,
+       "cut_mm": 8713.9
+      },
+      "Z 0.50": {
+       "entries": 37,
+       "keepdown_mm": 48.3,
+       "cut_mm": 8619.7
+      }
+     },
+     "findings": [
+      "\"3D Rough 1 (copy)\": the rough leaves 1117 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1108 of them against a wall: 3462.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.40 mm wide, 3.1 mm2 at (19.8, -85.6); 3.50 mm high, 1.40 mm wide, 2.9 mm2 at (54.3, -85.6); 1.16 mm high, 0.30 mm wide, 0.4 mm2 at (27.3, -10.0); 1.03 mm high, 0.30 mm wide, 0.5 mm2 at (89.7, -5.2); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (44.4, -8.5); 0.86 mm high, 0.30 mm wide, 0.2 mm2 at (45.9, -8.2); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (19.5, -99.7); 16.50 mm high, 3.90 mm wide, 103.1 mm2 at (85.5, -3.1) at a wall; and 1107 more. 370 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.",
+      "\"3D Rough 1\": the rough leaves 963 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 952 of them against a wall: 5042.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 16.50 mm high, 7.59 mm wide, 1401.5 mm2 at (28.8, -16.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.95 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.2); 0.95 mm high, 0.30 mm wide, 0.2 mm2 at (89.4, -4.9); 0.92 mm high, 0.30 mm wide, 0.1 mm2 at (27.0, -10.3); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (44.4, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -76.0); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (46.5, -94.0); and 953 more. 8 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.",
+      "WARNING: high air cutting on '3D Rough 1' is 56% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+     ],
+     "spacing": {
+      "n": 215,
+      "apart": 0,
+      "median": 0.975,
+      "min": 0.088,
+      "max": 4.105
+     },
+     "normal_step": {
+      "n": 1932,
+      "apart": 130,
+      "median": 1.2,
+      "p10": 1.022,
+      "p90": 1.352
+     },
+     "load": {
+      "cut_mm": 33606.6,
+      "over_exact_pct": 4.53,
+      "screen": 0.5126,
+      "over_screen_pct": 4.27
      }
     }
    },
@@ -272,6 +366,13 @@
       "min": 0.124,
       "max": 5.97
      },
+     "normal_step": {
+      "n": 2736,
+      "apart": 1250,
+      "median": 3.628,
+      "p10": 3.405,
+      "p90": 4.49
+     },
      "load": {
       "cut_mm": 23576.5,
       "over_exact_pct": 44.81,
@@ -329,6 +430,78 @@
       "median": 1.979,
       "min": 0.05,
       "max": 6.0
+     },
+     "normal_step": {
+      "n": 4452,
+      "apart": 352,
+      "median": 2.008,
+      "p10": 1.884,
+      "p90": 3.852
+     },
+     "load": {
+      "cut_mm": 44735.1,
+      "over_exact_pct": 3.59,
+      "screen": 0.6293,
+      "over_screen_pct": 3.57
+     }
+    },
+    "geodesic_local_zigzag_v2": {
+     "commit": "4cceca914",
+     "cycle_time_s": 3950,
+     "cutting_mm": 90906,
+     "rapid_mm": 3301,
+     "air_cut_pct": 45.2,
+     "collisions": 0,
+     "rapid_collisions": 0,
+     "sim_resolution": {
+      "mm": 1.0,
+      "mode": "fixed",
+      "source": "override",
+      "project_mm": 0.5
+     },
+     "ops": {
+      "2 Back Rough": {
+       "moves": 20853,
+       "entries": 22,
+       "keepdown_links": 3402,
+       "keepdown_mm": 3422.8,
+       "cut_xy_mm": 58467.4
+      }
+     },
+     "images": {
+      "Z 19.54": {
+       "entries": 5,
+       "keepdown_mm": 1062.2,
+       "cut_mm": 19717.9
+      },
+      "Z 8.62": {
+       "entries": 5,
+       "keepdown_mm": 388.8,
+       "cut_mm": 18791.0
+      },
+      "Z 4.00": {
+       "entries": 7,
+       "keepdown_mm": 0,
+       "cut_mm": 131.8
+      }
+     },
+     "findings": [
+      "Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. \u2014 Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's \"Auto-place keyed pins\" places the first pattern.",
+      "WARNING: high air cutting on '2 Back Rough' is 45% air-cut of total runtime \u2014 Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops."
+     ],
+     "spacing": {
+      "n": 207,
+      "apart": 0,
+      "median": 1.979,
+      "min": 0.05,
+      "max": 6.0
+     },
+     "normal_step": {
+      "n": 4452,
+      "apart": 352,
+      "median": 2.008,
+      "p10": 1.884,
+      "p90": 3.852
      },
      "load": {
       "cut_mm": 44735.1,

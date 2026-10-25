@@ -172,6 +172,60 @@ def load_check(simart_dir, tpid, cell):
             "screen": round(screen, 4), "over_screen_pct": round(100 * o2 / tot, 2)}
 
 
+def normal_step_check(run_dir, tp_glob, comment, lab, centre, simart_dir, tpid):
+    """Own normal step: pass moves = cut moves at `lab` (not keep-down link)
+    with a sim sample over one sim cell / 6 mm, none within 3.05 mm of the
+    centre; from each midpoint the normal both ways, nearest other pass
+    move (not itself or a sequence neighbour) beyond 0.05 mm and within 6 mm;
+    a side with none is set apart; length-weighted median and 10th / 90th percentiles."""
+    sim = json.load(open(os.path.join(simart_dir, "simulation.json")))
+    floor = sim["resolution_mm"] / 6.0
+    eng = {sm["move_index"] for sm in sim["trace"]["samples"]
+           if sm["toolpath_id"] == tpid and sm["is_cutting"] and sm["engagement"]["radial_woc_fraction"] > floor}
+    tp = json.load(open(glob.glob(os.path.join(run_dir, tp_glob))[0]))
+    n = tp["move_count"]
+    mv = moves_of(op_lines(os.path.join(run_dir, "program.nc"), comment))[1:n + 1]
+    _, _, lev, link = derive_full(run_dir, tp_glob, comment)
+    seg = [(i, a, b) for i, (g, a, b) in enumerate(mv)
+           if g != 0 and i not in link and lev[i] == lab and i in eng and d2(a, b) >= 1e-6
+           and min(d2(a, centre), d2(b, centre)) > 3.05]
+    out, apart = [], 0
+    for i, a, b in seg:
+        L = d2(a, b)
+        tx, ty = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        for nx, ny in ((-ty, tx), (ty, -tx)):
+            best = None
+            for j, p, q in seg:
+                if abs(j - i) <= 1:
+                    continue
+                if min(p[0], q[0]) > mx + 6 or max(p[0], q[0]) < mx - 6 or min(p[1], q[1]) > my + 6 or max(p[1], q[1]) < my - 6:
+                    continue
+                ex, ey = q[0] - p[0], q[1] - p[1]
+                den = nx * ey - ny * ex
+                if abs(den) < 1e-12:
+                    continue
+                t = ((p[0] - mx) * ey - (p[1] - my) * ex) / den
+                u = ((p[0] - mx) * ny - (p[1] - my) * nx) / den
+                if 0.05 < t <= 6.0 and 0 <= u <= 1 and (best is None or t < best):
+                    best = t
+            if best is None:
+                apart += 1
+            else:
+                out.append((best, L))
+    out.sort()
+    tot = sum(w for _, w in out)
+
+    def q(f):
+        acc = 0.0
+        for v, w in out:
+            acc += w
+            if acc >= f * tot:
+                return v
+        return out[-1][0]
+    return {"n": len(out), "apart": apart, "median": round(q(0.5), 3), "p10": round(q(0.1), 3), "p90": round(q(0.9), 3)}
+
+
 def main():
     spec = json.load(open(sys.argv[1]))
     got = json.load(open(os.path.join(HERE, "fixture3d_v2_numbers.json")))
@@ -249,14 +303,20 @@ def main():
                 ld = load_check(a["simart"], tpid, cell)
                 assert ga["load"] == ld, (fx["name"], lab, ga["load"], ld)
                 checks += len(sp) + len(ld) + 1
-                row = (f"<tr><td>{lab}</td><td>{sp['median']:.2f} mm</td>"
-                       f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over 6 mm set apart)</td>"
+                ns = normal_step_check(a["dir"], fx["ops"][0]["tp_glob"], fx["ops"][0]["comment"], mid, c, a["simart"], tpid)
+                assert ga["normal_step"] == ns, (fx["name"], lab, ga["normal_step"], ns)
+                checks += len(ns)
+                row = (f"<tr><td>{lab}</td><td>{ns['median']:.2f} mm</td>"
+                       f"<td>{ns['p10']:.2f} to {ns['p90']:.2f} mm (n {ns['n']}; {ns['apart']} over 6 mm set apart)</td>"
                        f"<td>{ld['over_exact_pct']:.2f}%</td><td>{ld['over_screen_pct']:.2f}% (screen {ld['screen']:.3f})</td></tr>")
                 assert row in page, (fx["name"], lab, row)
-                checks += 1
+                old = (f"<tr><td>{lab}</td><td>{sp['median']:.2f} mm</td>"
+                       f"<td>{sp['min']:.2f} to {sp['max']:.2f} mm (n {sp['n']}; {sp['apart']} gaps over 6 mm set apart)</td></tr>")
+                assert old in page, (fx["name"], lab, old)
+                checks += 2
             ag, gz = gf["arms"]["AgentSearch"], gf["arms"]["geodesic_local_zigzag"]
-            for needle in (f"({gz['spacing']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm)",
-                           f"AgentSearch {ag['spacing']['median']:.2f} mm apart ({ag['spacing']['median'] / gz['spacing']['median']:.2f} times wider)",
+            for needle in (f"({gz['normal_step']['median']:.2f} mm against a stepover of {fx['stepover_first_op']:.1f} mm)",
+                           f"AgentSearch {ag['normal_step']['median']:.2f} mm apart ({ag['normal_step']['median'] / gz['normal_step']['median']:.2f} times wider)",
                            f"cuts {gz['load']['cut_mm'] / ag['load']['cut_mm']:.2f} times the length",
                            (f"AgentSearch is over the bound: {ag['load']['over_exact_pct']:.2f}% of its cut length"
                             if ag['load']['over_exact_pct'] > 0 else "AgentSearch is not over the bound"),

@@ -2889,3 +2889,86 @@ cell: 0.3626 + (0.5 + cell + 0.1)/6.
 and the load with its own code, and checks the plan identity of each rerun:
 "all 225 checks hold". One injected wrong spacing median was caught; the
 page was restored.
+
+## D16 at 31935b89 + C25b (committed as 4cceca914); C24 measured, no code
+
+### D16a: the plain C12 test (C25b in the worktree; `research_geodesic.rs` unchanged)
+
+Green: 1 passed, 1 ignored. Output in `phase2/d16a_c12_plain_output.txt`.
+
+| Mode | Turns planned / cut / not cut | Reduced (lowest factor) | Longest (bound 3.207) | Fed / unfed | Moves | Entries |
+|---|---|---|---|---|---|---|
+| geodesic_local_oneway | 42 / 42 / 0 | 42 (0.310) | 2.984 mm | 42 / 0 | 2117 | 68 |
+| geodesic_local_zigzag | 46 / 27 / 19 | 23 (0.376) | 3.145 mm | 27 / 0 | 831 | 68 |
+| geodesic_local_zigzag_v2 | 46 / 46 / 0 | 45 (0.310) | 2.932 mm | 46 / 0 | 2314 | 48 |
+
+C25's predictions for zigzag_v2 all hold: not cut 19 → 0 (prediction 0
+to 2), entries 68 → 48 (prediction 45 to 58), unfed 0.
+
+### D16b steps 1 and 2 (adaptive-head; the diff did not change during the run)
+
+| Step | Command | Result |
+|---|---|---|
+| 1 | the heavy C12 test, `--ignored`, 6 modes | **green** 1/1, 940.70 s; output in `phase2/d16b_c12_test_output.txt` |
+| 2 | `adaptive3d_emission_byte_parity`, plain and research | green 5/5, 5/5 |
+| 2 | `fmt --all -- --check` | green |
+| 2 | research clippy | green |
+
+The heavy test, `geodesic_local_zigzag_v2`:
+- 4651 moves, judged 7020, entry 611.
+- 0 over the screen 0.546 (sim peak 0.377) and 0 over the exact bound
+  0.471.
+- Turn samples 366, 0 over the screen.
+- Turns: planned 92, cut 91, **not cut 1** (C25: 0 to 4). Reduced 89
+  (lowest 0.310), longest 2.932 mm. Fed 91, unfed 0. No turn faults.
+
+Every other mode and the control equal D15 on every printed count.
+
+### D16b step 4: the fixture runs at 4cceca914
+
+- The fixture worktree moved to 4cceca914 (clean). Release CLI with
+  research rebuilt; binary 2026-10-25 17:11:57. Script:
+  `phase3/fix2/run_v2.sh`. The D-FIX2 flags plus `--sim-artifact`,
+  `timeout 900`. Both rc 0.
+- Corne zigzag_v2: 10 s. Both roughs: cutting 74059 mm, rapid
+  18970 mm, time 2954 s. Its plan differs from zigzag.
+- wanaka200 rough-only zigzag_v2: 52 s. Cutting 90906 mm, time 3950 s.
+  Its `program.nc` is byte-identical to the D-FIX2 zigzag run. The arm
+  name is accepted (no unknown-value warning). So the head-on rule and the
+  merged meeting line change nothing on that back rough. The cause is not
+  checked.
+
+### D16b step 5: the page
+
+`fixture3d_v2.html` gains the zigzag_v2 column (commit in the column
+head). The spacing table now uses C24's measure, `phase3/fix2/normal_step.py`:
+- **The step:** the step along the normal between adjacent passes. From
+  each pass midpoint, the normal is cast both ways to the nearest other
+  pass within 6 mm. The samples are length-weighted (median and the 10th
+  and 90th percentiles). A side with no pass within 6 mm is set apart.
+- **A pass:** a cut move of the level that the closing simulation reads
+  over one sim cell / D. A straight move across the cut runs through
+  cleared stock, so it drops out.
+- **The starter helix:** moves within R + 0.05 mm of the starter centre
+  are left out.
+- **Check against C24:** the measure reproduces C24 on Corne (one-way
+  1.200, zigzag 1.166; C24: 1.200 and 1.200).
+- **The old ray medians** stay in a fold, with the sentence on why they
+  read low.
+
+| Fixture, level | Arm | Normal step, median (p10 to p90) | Over 0.471 | Cycle time | Entries, first rough op | Keep-down, first rough op |
+|---|---|---|---|---|---|---|
+| Corne Z 5.00, s 1.2 | AgentSearch | 2.680 (2.349 to 4.781) | 20.19% | 2112 s | 48 | 136, 741 mm |
+| | geodesic_local_zigzag | 1.166 (1.006 to 1.420) | 4.60% | 2745 s | 56 | 1035, 2026 mm |
+| | geodesic_local_oneway | 1.200 (1.028 to 1.331) | 4.39% | 3068 s | 91 | 1324, 3021 mm |
+| | geodesic_local_zigzag_v2 | 1.200 (1.022 to 1.352) | 4.53% | 2954 s | 67 | 1271, 2450 mm |
+| wanaka200 Z 8.62, s 2.0 | AgentSearch | 3.628 (3.405 to 4.490) | 44.81% | 1339 s | 32 | 510, 1728 mm |
+| | geodesic_local_zigzag | 2.008 (1.884 to 3.852) | 3.59% | 3950 s | 22 | 3402, 3423 mm |
+| | geodesic_local_zigzag_v2 | 2.008 (1.884 to 3.852) | 3.59% | 3950 s | 22 | 3402, 3423 mm |
+
+On Corne, zigzag_v2 has more entries, more cut length and more keep-down
+length than zigzag, and the cycle time rises by 209 s.
+
+The assert script `phase3/fix2/assert_fixture3d_v2.py` re-derives the
+normal step with its own code: "all 351 checks hold". An injected wrong
+v2 cycle time was caught; the page was restored.
