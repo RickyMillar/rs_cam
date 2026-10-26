@@ -3194,3 +3194,38 @@ Moves, not samples: one long move over one place reads 4 samples where two short
 - **Test results:** both heavy tests are green through the lane (51.5 s): the draped-step test (0 over on six arms) and the shelf test. Both clippy commands are clean.
 
 **G-FACESLAB (the shared overs, a pre-existing 2D/3D mismatch at faces):** the DEFECTS row draft went to the lead.
+
+### 16.12 D30: the wanaka near-A over-load, and the Corne rapid collision (2026-10-27; read only)
+
+Script: `phase3/fix21/c22/nearA_kind.py`. It splits `load_split.py`'s "near A's steps" length by the move each over sample lies on:
+- 'on a step': the move climbs or drops by the path rule A replaced;
+- 'after a step': a level move right after such a step;
+- 'level': any other move.
+
+**1. The wanaka near-A over-load, D26 → D30 (mm over 0.471):**
+
+| | on a step | after a step | level | total |
+|---|---|---|---|---|
+| wanaka D26 | 114.9 | 79.2 | 1340.6 | 1534.7 |
+| wanaka D30 | 153.8 | 258.3 | 1628.6 | 2040.6 |
+| Corne D26 | 14.9 | 74.0 | 548.6 | 637.5 |
+| Corne D30 | 21.5 | 82.3 | 459.1 | 562.9 |
+
+- The steps themselves add little (+39 mm on wanaka): the width read holds them.
+- The rise is the cut AFTER a step (+179) and the level passes near the steps (+288).
+- **D30 ran BEFORE the §16.11 descent fix.** The width read then dropped a cell as swept by XY alone, so a descent's own floor stock did not count. That is exactly the "after a step" load: a descent cut at feed into stock that the next level move then meets (the shelf test's move 866). wanaka's terrain at Z 8.62 is mostly descents and climbs.
+- The 'level' share was already 1340.6 mm in D26: the G-FACESLAB mismatch on terrain (the 2D plan reads the terrain faces as stock in its slab, and the drape lifts the cut). A does not cause that part.
+- **P for D31 (the descent fix):** wanaka 'after a step' falls back toward D26 (about 80–130 mm) and the near-A total toward 1600–1800 mm. The remaining excess over D26 + 5 % is G-FACESLAB's level share plus the slots. If 'after a step' stays above 200 mm, the width read still misses load after a descent, and I report it with the probes.
+
+**2. The Corne rapid collision at (91.3, −1.13):**
+- The probe gives floor_top 17.451 / 17.119 / 17.073 at Z 11 / 5 / 0.5. The rapid ends at floor_top + 0.5.
+- Near the entry, the Z-17 level is NOT one draped cut. It is a run of width-split micro-steps (sim moves 1930–1949): five lift-overs within 3 mm.
+  - Each one plunges from 23.5 to the frame-top drape (17.62, 17.73, 17.72, 18.02, 18.57 at 2.1, 1.6, 1.4, 2.2 and 2.7 mm from the entry) and cuts a zero- or sub-millimetre move.
+  - Then 1950 cuts on at Z 18.45–18.50 (2.7 mm away, inside the tool disc of the Z-11 entry).
+- So the simulated stock inside the entry's disc stands to about 18.0–18.5 (the frame top's drape), but the planner reads at most 17.45 there.
+- 17.45 is the part surface (16.95) plus the leave. That is `lift_to_level`'s surface-heightmap height, not the drop-cutter drape the emitter and the stamp use (`drape_point`, `drape_path_to_leave`).
+- **My reading, not proven:** somewhere at this place the planner stamps at the surface-heightmap height and the emitter cuts at the higher tool-aware drape. Then the planner believes cut what the tool never reached. Two candidates:
+  - a piece of the Z-17 path that the sink stamps but the emitter does not emit as cut, for example a zero-length `Cut` (moves 1934, 1938 and 1946 have no XY length);
+  - the heightmap lift of a point that the stamp's drape does not raise, for example a single-point piece.
+- **The probe I would add (needs code):** at the Start entry, the planner cell with the highest top inside the disc, its XY, and the Z-17 stamps that covered that cell. D31 then names the stamp.
+- **Separately, the micro-steps are poor output:** five lift-overs in 3 mm. The width read splits them. A step that splits by width there is a climb onto the frame top with stock beside it. After the fix, these may become fewer or more; D31 shows which.
