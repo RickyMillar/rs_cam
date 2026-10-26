@@ -2904,3 +2904,18 @@ P: about 70 of the 72 have an end outside the clip and no move within the turn b
 1. **The record:** count a turn as cut only when its segment survives the clip, so a clipped turn is "clipped", not "unfed". Give the summary a `clipped` count.
 2. **The cause:** the research arm should not plan beyond the containment. Clip the C31 grown outline to the centre boundary as well as to the stock box (C38 item B), so that the 2D plan, its turns and its held links all lie where the 3D stage may emit them. This is C12's code (C31 call site / research_clip), so it is for C12 and the lead.
 3. **C12's chain match (§13.2) is not the fix here.** It finds moves that a merge changed, but a clipped turn has no move at all.
+
+**Built (2026-10-26, on top of D26; not compiled):**
+- `SliceTurns.ends_inside`: one `(start inside, end inside)` per record. `SliceTurns::add` takes `inside`; clearing.rs passes `CentreClip::contains`, or "always inside" with no boundary.
+- In `apply_slice_turn_feeds`, a record with no move found and neither end inside is `clipped`: it is counted in `TurnSummary::clipped` and left out of `turns` and `unfed`. A clipped turn whose middle crosses into the clip still gets its feed, because it stays in the match.
+- One "C22 turn not fed" line per turn that is not fed, with `why` (clipped / unfed / full feed, no move):
+  - from / to;
+  - from_inside / to_inside;
+  - the factor;
+  - the nearest move's distances (`HoldingMove`).
+- The summary line gains `clipped=`.
+- No move changes. With no boundary (the C12 pocket) every end is inside, so the record is as before.
+- **Open item (agreed with C12):** in a later build, drop `kind=slots`
+  from the "C22 turn summary" line. The exact match reads C12's merged
+  slot steps as unfed. Until then, a reader takes slot counts from the
+  "C38 slot chains" line only.

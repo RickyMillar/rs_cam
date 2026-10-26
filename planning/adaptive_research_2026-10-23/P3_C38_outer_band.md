@@ -1738,3 +1738,80 @@ rewrite. In this build:
 - `boundary_reach` and `ResearchClip` take only geometry (the strategy
   test sits at the call site);
 - the chain feed match takes `FeedChain`s, not `SliceTurns`.
+
+### 13.9 As built (2026-10-26, on 2c32340ab; uncommitted, rustfmt clean, not compiled)
+
+All of it is research only; the shipped paths are unchanged.
+
+**`adaptive3d/research_outer_band.rs`:**
+- `corridor_opening` and `closed_steps` are restored from `6aefca969`
+  unchanged.
+- `boundary_reach(boundary, R)` is geometry only. The research arm and
+  Global test moved to its call in `path.rs` (§13.8).
+- `clip_to_centre_reach(grown, Option<&CentreClip>, R, m)` (§13.7).
+- `FeedChain { pts, factors }`, `slot_chains(&SliceTurns)`,
+  `apply_chain_feeds(tp, chains, tolerance, feed_rate)` and
+  `ChainFeedSummary`.
+  - `slot_chains` keeps the slot records whose ends are not both outside
+    the clip, and splits them into chains where a record does not start
+    at the end of the previous one.
+  - `apply_chain_feeds` is §13.2. Its four tests:
+    1. every point of the move at the tolerance spacing within `d` of
+       one chain;
+    2. the chain's way;
+    3. an uncovered step;
+    4. chains taken in plan order (a monotone cursor).
+
+    Here `d` = `emission_chord_tolerance()` + 1e-6. It only lowers a feed.
+  - The summary counts:
+    - chains, steps, reduced, fed and unfed;
+    - moves lowered;
+    - `matched_out_of_run`: a match after a cutting move that is not on
+      the chain, inside the chain's run. This replaces §13.2's
+      `matched_before_own`, which the toolpath data cannot tell apart:
+      no record gives a move its piece.
+    - the lowest factor and the longest lowered move;
+    - the chain list and the tolerance, for the test.
+
+**`adaptive3d/clearing.rs`:**
+- `research_slice_segments`: `.or_else(corridor_opening)`.
+- The `research_grown_outlines` call: `.and_then(clip_to_centre_reach(..,
+  ctx.centre_clip, ctx.tool_radius, PERIMETER_INSET_MARGIN_MM))` after the
+  box clip.
+
+**`adaptive3d/centre_clip.rs`:** the `#[cfg(feature = "research")]`
+accessor `polygons()`.
+
+**`adaptive3d/path.rs`:** the strategy test at the `boundary_reach` call.
+
+**`adaptive3d/mod.rs` (C22's `research_turn_feeds`, as agreed):**
+- a new parameter `chord_tolerance`, passed
+  `params.emission_chord_tolerance()` at its one call;
+- `slot_chains` + `apply_chain_feeds` before C22's
+  `apply_slice_turn_feeds`;
+- the info line `C38 slot chains`;
+- the `Research3d.slot_chains` field;
+- the re-exports `ChainFeedSummary` and `FeedChain`. `Research3d` is
+  public, so its field type must be reachable.
+
+**`tests/adaptive3d_geodesic_arm_c12.rs`:** a new heavy (ignored) test,
+`the_corridor_slots_run_at_the_reduced_feed`.
+- The fixture is a straight channel `2R + 2·(SIMPLIFY_INSET + cell) + s`
+  = 9.6 mm wide and 60 mm long, at two levels.
+- It asserts:
+  - chains > 0 and reduced > 0 (non-vacuity);
+  - unfed = 0 and matched_out_of_run = 0;
+  - on the simulation, no sample over the screen bound at the full feed
+    on a move that lies within the tolerance of a chain. The test finds
+    those moves by its own distance code, not by the feed.
+
+**D27 commands, beside C22's:**
+- byte parity plain and research;
+- the 13 adaptive3d sentries, which include the shipped `centre_clip`
+  sentry `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`;
+- `--test adaptive3d_geodesic_arm_c12` plain, and with
+  `-- --ignored the_corridor_slots_run_at_the_reduced_feed`;
+- both clippy configurations;
+- the Corne spiral_pick and wanaka200 fixture runs with the fix13 flags,
+  read against §13.5 and §13.7. Grep the `C38 slot chains` and
+  `C22 turn summary` lines.
