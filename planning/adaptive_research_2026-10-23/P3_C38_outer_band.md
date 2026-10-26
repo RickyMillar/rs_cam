@@ -1474,3 +1474,166 @@ it.
   about half the band (455 against 999).
 
 I pre-register nothing yet, as asked.
+
+## 13. Design (A): G-b plus a FED slot along the strip (2026-10-26; for approval, no code until D26 reports)
+
+### 13.1 The plan is the removed corridor opening, unchanged
+
+The plan is the D23 `corridor_opening` (git `6aefca969`,
+`research_outer_band.rs`):
+- the gate: the 2D tool-centre region has no centre clearance of R;
+- the loops of the tool-centre region at `k · s`;
+- each step at most `s`, and each step a `Slot` in `SlicePlan::slots`.
+
+It comes back as it was. Only the feed match (§13.2) and the records
+(§13.3) are new. The replay admits slot steps as turns (each step is at
+most `s` < `turn_bound`), as in D23. The D23 strip result (band 455,
+2940 over-c samples at full feed) is the measured base of the plan.
+
+### 13.2 The feed match: a move gets the slot feed by its distance to the slot chain
+
+**The defect (§10.1).** `apply_slice_turn_feeds` lowers a `Linear` move
+only when its start and its target lie within 1e-6 mm of ONE recorded
+segment. The 3D RDP merges collinear slot steps, so a merged move spans
+several steps and matches none.
+
+**The match for slots** (a new function beside it, research only; turns
+keep the exact match, which §10.9 shows works):
+
+- **The chain.** The slot records of one loop, in plan order, form a
+  polyline: the loop's chain. Each record keeps its level `z`, its loop
+  id, and its feed factor `c / max(w, area)` from its measured
+  engagement.
+- **The tolerance.** `d = Adaptive3dParams::emission_chord_tolerance()`,
+  the one RDP tolerance that simplified the slot `Cut` (research arm:
+  capped at the load margin, C26). Nothing else moves a cut in XY between
+  the plan and the toolpath:
+  - the lift and the drape change Z only;
+  - the boundary clip cuts a segment at a point on it.
+
+  So `d` is derived: the RDP tolerance plus the 1e-6 mm same-point
+  tolerance of the turn match. No typed number.
+- **Why `d` holds after the merge (both ways).** RDP keeps original
+  vertices `v_i`, `v_j` and drops the vertices between them only if each
+  lies within `d` of the segment `v_i v_j`.
+  - The tube of radius `d` round a segment is convex, so the whole
+    sub-chain from `v_i` to `v_j` lies within `d` of the segment.
+  - The sub-chain is continuous from `v_i` to `v_j`, so its projection
+    onto the segment covers the segment. So every point of the merged
+    segment lies within `d` of the chain.
+  - In 3D the distance is in 3D; the XY distance is no larger.
+- **The test for a move.** A `Linear` fed move `[a, b]` at level `z`
+  (within the drape of the record) gets the slot feed when all four hold:
+  1. `a`, `b` and the points of `[a, b]` at the planner cell's spacing
+     all lie within `d` of ONE chain;
+  2. the move runs the chain's way: the dot product of `b − a` with the
+     chain's tangent at the projection of the move's midpoint is
+     positive;
+  3. each slot step that the move covers (its projection interval on the
+     chain) is not yet consumed;
+  4. the move is at the record's level.
+
+  Its feed becomes `min(f, F · min factor over the covered steps)`, and
+  the covered steps are marked consumed.
+- **Why it cannot lower a non-slot move.**
+  - Plan order: a piece's corridor plan puts its slot loops FIRST, and
+    the cleanup's residue contours, wall pass and mop come after them
+    in the same piece's plan.
+  - The toolpath keeps the plan order (no rapid reorder, `adaptive/CLAUDE.md`).
+  - So, at the slot's level, the slot's own moves are the first that
+    satisfy (1) and (2), and they consume every step (3).
+  - A later move that retraces the slot (the wall pass runs along the
+    loop k = 0) finds its steps consumed and keeps its feed.
+  - A move of an EARLIER piece or region of the same level could
+    satisfy (1) only if its piece's tool-centre region comes within `d`
+    of this piece's boundary. Pieces come from `inset_piece_outlines` and
+    are disjoint, so this needs two pieces closer than `d` (0.3 mm or
+    less) at a neck.
+  - The match counts such cases (`matched_before_own`: a chain step
+    whose first match is not in the run of moves that follows the
+    loop's `Rapid`), and the test asserts 0. So no non-slot move is
+    lowered, or the run says so.
+- **It can only lower.** The feed is `min(f, …)`, as for turns. A slot
+  step whose factor is 1 (it held the ceiling) leaves the feed as it is.
+  Arc fitting runs after this in the dressups and keeps a feed change as
+  a move boundary. The D23 and D24 sims show reduced turn feeds surviving
+  the dressups.
+
+### 13.3 The slot summary line and the heavy-test assert
+
+- **The log line.** One `info` line per op in `adaptive3d/mod.rs`, where
+  `apply_slice_turn_feeds` hands back `(turns, slots)`. C22's turn line is
+  there already (D24); the slot line sits beside it:
+  `C38 slots: loops, planned steps, cut, fed, unfed, matched_before_own, reduced, lowest factor, longest merged move`.
+  `unfed` counts the steps with a factor under 1 that no move carries.
+- **The heavy C12 test assert** (`tests/adaptive3d_geodesic_arm_c12.rs`,
+  heavy mode):
+  - It needs a corridor case. A straight channel between two walls,
+    `2R + 2·(SIMPLIFY_INSET + one cell)` + `s` wide in material space,
+    so the 2D centre region is about `s` wide and the seed does not fit.
+  - It asserts that the slot summary has `planned > 0` (non-vacuity),
+    `unfed = 0` and `matched_before_own = 0`.
+  - On the simulation, every sample with radial engagement over `c +`
+    the discretisation tolerance, on a move within `d` of a slot chain at
+    its level, runs at `F · factor` or below.
+  - The test finds those moves independently, by the same distance rule
+    on the printed chains. It does not use the feed, so the assert is not
+    circular.
+
+### 13.4 Does (A) need G-b?
+
+**Yes, or an equivalent gate.** Without G-b the F-038 forecast runs. It
+insets the region by `R + 0.25` and dry-runs the agent on the raw region,
+which insets by R again. Both read 0 on a strip about 3 mm wide in centre
+space, so the strip is skipped BEFORE any planner sees it, and the slot
+never runs.
+
+Two gates let it through:
+- **G-b** (built, D22–D24 green): no forecast for the research arm, and
+  the region is judged on its own plan. With the slot, the strip plans
+  about 578 mm per level (D23), far over 15 mm, so it stays.
+- **A forecast on the grown outline** (G-a, §3.1): the same answer for
+  the strip, plus a second plan per region (the dry run) and a second
+  code path.
+
+**G-b is the simpler of the two.**
+
+"F-038 skip plus the slot as the strip's planner" means planning the
+strip outside the region machinery, which is option (B) of §12.4. It
+would need its own boundary, entry and G-CLIPAIR handling. So (A) keeps
+G-b.
+
+**G-b's side effect is on the copy op.** Its sub-tool corridors open too.
+D23 pick copy op: 1463.3 s, against C35's 1305.2 s, with 12 corridor
+openings of 120–129 mm. §13.5 pre-registers that cost.
+
+### 13.5 Pre-registration (Corne, spiral_pick, against D26 = D24 + G-CLIPAIR + C40)
+
+D26 has not reported, so each bound below is relative to D26, or to a
+measured D23/D24 anchor.
+
+| Measure | Prediction for (A) on D26 | Anchor |
+|---|---|---|
+| 3–9 mm band | ≤ min(D26, 455) | D23's slot (455) without G-CLIPAIR; G-CLIPAIR only adds cuts |
+| op 1 runtime | ≤ D26 op 1 − 300 s | the nibble against the fed slot: D24 1871.7 against D23 about 1504 (−368 s) |
+| op-1 planar reversals in the outer strip at Z 11/5/0.5 | ≤ 10 % of D26's | D24: 1600 (the nibble). A loop reverses only at piece ends (D23: 4 pieces per level) |
+| op-1 planar reversals inside the silhouette | D26 ± 10 % | D24 274, C35 280: the slot does not act there |
+| op-1 descents in the outer strip (audit, by sample place) | ≤ 0.6 × D26's | D24 403, C35 165: one entry per loop, not one per nibble group |
+| slot feed | over-c strip samples at full feed: 0 (D23: 2940); slot summary unfed 0, matched_before_own 0 | §10.1 |
+| copy op runtime | ≤ D26 copy op + 10 % | D23 pick copy 1463.3 with slots, D24 1533.6 with the nibble |
+| hard bars | no new bar against D26 (fed link, export refusal, collision) | — |
+| wanaka200 | cycle D26 ± 2 %; openings as P-W1–W3 | §3.6, §10.6 |
+| shipped | byte parity and the 13 sentries green | — |
+
+**Falsifiers:**
+- If the over-c strip samples at full feed are not 0, the match is wrong.
+- If the band is over 455, the slot does not reach what it reached in
+  D23. Read §10.3: the free-edge part stays with C31.
+- If the op 1 runtime does not fall by 300 s, the nibble's cost was not
+  the strip's planner.
+
+### 13.6 Housekeeping
+
+The sample `.npz` files under `phase3/c38/*_why/` are regenerated by each
+folder's `extract.py`. They stay out of the commit set from now on. Each
+analysis folder's scripts name the `simulation.json` they read.
