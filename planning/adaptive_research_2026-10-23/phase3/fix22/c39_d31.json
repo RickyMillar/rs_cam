@@ -1,0 +1,36 @@
+{
+ "corne D31 cut_feed": {
+  "program_plunge_feed_s": 381.7,
+  "summary_runtime_s": 1542.2,
+  "summary_cutting_s": 1455.4,
+  "summary_rapid_s": 86.8,
+  "per_kinematics_sum_s": 1455.4,
+  "samples_s": 1542.2,
+  "program_s": 1543.5,
+  "program_fed_s": 1455.4,
+  "program_rapid_s": 88.1,
+  "samples_retimed_at_program_feed_s": 1542.2,
+  "fed_moves_compared": 14120,
+  "sample_feed_below_program": 2101,
+  "sample_feed_above_program": 1018,
+  "program_over_sample_feed_median": 1.0,
+  "runtime_by_intent_present": false
+ },
+ "wanaka200 D31 cut_feed": {
+  "program_plunge_feed_s": 928.7,
+  "summary_runtime_s": 2694.3,
+  "summary_cutting_s": 2604.9,
+  "summary_rapid_s": 89.4,
+  "per_kinematics_sum_s": 5446.3,
+  "samples_s": 5463.2,
+  "program_s": 2234.7,
+  "program_fed_s": 2216.7,
+  "program_rapid_s": 18.0,
+  "samples_retimed_at_program_feed_s": 2233.6,
+  "fed_moves_compared": 16223,
+  "sample_feed_below_program": 12559,
+  "sample_feed_above_program": 180,
+  "program_over_sample_feed_median": 3.979,
+  "runtime_by_intent_present": true
+ }
+}

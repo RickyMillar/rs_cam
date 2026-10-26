@@ -4591,3 +4591,52 @@ refused 1327 / 12; wanaka tried 2501, taken 1, refused 2260).
   refused. Band, Corne 3–9 mm: 453 (D29 453).
 - Disk: 72 → 40 GB free during D30 (the fixture worktree target is 36 GB
   after the viz build). Fixture worktree restored: clean 3181ae54f.
+
+## D31: D30 + C22 §16.11 (width-read descent fix, shelf test) — gates green (known tabs red); fixtures fix22 (cut_feed)
+
+Before the build: `cargo clean -p rs_cam_viz` in the fixture worktree
+(lane) removed 1814 files, 25.7 GiB; target 36 → 10 GB; free 40 → 65 GB.
+`d31/tree_vs_3181ae54f.patch` (md5 e01c11b6a08943450a984d06ee022a07) on a
+clean 3181ae54f: 29 files (550+/64−) + the a_feed_cap test. No edit.
+
+- Green: fmt; clippy plain / research / workspace; parity 5/5, 5/5;
+  research_geodesic 26 / 2; harness byte-equal to D30; plain C12 and heavy
+  C12 identical to D30; f152; 13 adaptive3d sentries; dressup sentries
+  except the known pre-existing tabs_sit_on_straight_sides_p5 (9 / 1); slot
+  test (as D30). cli and viz skipped (brief).
+- Draped-step A test green: 0 over in six arms; "made 0 (by width 0)".
+- Shelf test `the_width_read_splits_a_wide_draped_step` green: oneway
+  "made 37 (by width 37), avoided 24", base 2786 moves / 5 over (0.990) →
+  2732 / 5 over (0.990); spiral_pick "made 69 (by width 69), avoided 57",
+  base 1141 / 7 over (0.994) → 1090 / **9 over samples** (0.988). The test
+  asserts on over moves, not samples.
+
+**Fixtures** (cut_feed; `fix22/run_fix22.sh`):
+
+| | Corne D26 | Corne D30 | Corne D31 | wanaka D26 | wanaka D30 | wanaka D31 |
+|---|---|---|---|---|---|---|
+| cycle | 3247 s | 2996 s | 3011 s | 3513 s | 2693 s | 2694 s |
+| over 0.471 (mm) | 780.8 | 1069.6 | 1065.9 | 2225.3 | 2858.2 | 2856.0 |
+| thick over | 399.1 | 661.6 | 661.8 | 463.3 | 537.3 | 538.1 |
+| lift-over descents (entries.py) | 1112 | 745 | 802 | 2016 | 1160 | 1163 |
+| descents (audit) | 1164 | 788 | 845 | 2035 | 1154 | 1156 |
+| plunge entries | 65 | 62 | 62 | 20 | 19 | 19 |
+| plunge share | 34.8 % | 23.4 % | 24.7 % | 48.4 % | 41.5 % | 41.6 % |
+| planar turns > 30° | 3027 | 1500 | 1382 | 186 | 924 | 912 |
+
+- Load split D30 → D31: Corne near A 562.9 → 559.2, slots 344.7 → 344.7,
+  turns 26.5, other 135.5; wanaka near A 2040.6 → 2038.4, others equal.
+- Step split: Corne "made=1630 width_split=1630 avoided=897
+  max_ap_avoided_mm=6.000" (D30 1439 / 1439 / 1088); wanaka "made=2505
+  width_split=2007 avoided=2262 max_ap_avoided_mm=5.460" (D30 2493 / 1995 /
+  2274). Route: Corne tried 1760 / 24, taken 2 / 0; wanaka tried 2507,
+  taken 1.
+- Feed check as D30: Corne 0 above the cap; strip over 0.369 at F ≥ 3999
+  87, over 0.219 105; wanaka 0 real breaks (the same 3 false-match samples).
+- Feed caps, slot chains, turn summaries: as D30.
+- Probe at (91.3, −1.13): as D30 (floor_top 17.451 / 17.119 / 17.073).
+  **The 3 rapid-through-stock collisions remain** (moves 4849 / 7856 /
+  10938, → 17.951 / 17.619 / 17.573).
+- Hard bars: rapid collisions 3; no fed-link or deeper-than line;
+  depth-of-cut advisories 13.0 mm (Corne), 9.18 mm (wanaka); no refusal.
+- Fixture worktree restored: clean 3181ae54f.

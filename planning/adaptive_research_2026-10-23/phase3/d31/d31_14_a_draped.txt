@@ -1,0 +1,18 @@
+
+running 1 test
+geodesic_local_oneway one level: step split made 0 (by width 0), avoided 5, max ap avoided 5.500 mm; route tried 0
+geodesic_local_oneway: 2565 moves, 6226 judged at levels {45, 46, 47, 48, 49, 50, 51, 54, 58, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.453), 0 over the exact bound 0.471 (exact peak 0.000); entry 528, vertical 479, departing 793, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 144 (29 over the screen, sim peak 0.873)
+geodesic_local_zigzag one level: step split made 0 (by width 0), avoided 8, max ap avoided 5.500 mm; route tried 0
+geodesic_local_zigzag: 940 moves, 3426 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 54, 57, 58, 60, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 468, vertical 432, departing 686, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 146 (17 over the screen, sim peak 0.827)
+geodesic_local_zigzag_v2 one level: step split made 0 (by width 0), avoided 3, max ap avoided 5.500 mm; route tried 0
+geodesic_local_zigzag_v2: 3116 moves, 6998 judged at levels {45, 46, 48, 49, 51, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.388), 0 over the exact bound 0.471 (exact peak 0.000); entry 300, vertical 251, departing 409, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 161 (40 over the screen, sim peak 0.873)
+geodesic_local_zigzag_pick one level: step split made 0 (by width 0), avoided 11, max ap avoided 5.500 mm; route tried 0
+geodesic_local_zigzag_pick: 940 moves, 3426 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 54, 57, 58, 60, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 468, vertical 432, departing 686, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 146 (17 over the screen, sim peak 0.827)
+geodesic_local_spiral_pick one level: step split made 0 (by width 0), avoided 11, max ap avoided 5.500 mm; route tried 0
+geodesic_local_spiral_pick: 969 moves, 3611 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 54, 57, 58, 60, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 420, vertical 384, departing 651, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 146 (17 over the screen, sim peak 0.827)
+geodesic_local_spiral_headon one level: step split made 0 (by width 0), avoided 3, max ap avoided 5.500 mm; route tried 0
+geodesic_local_spiral_headon: 3145 moves, 7183 judged at levels {45, 46, 48, 49, 51, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.388), 0 over the exact bound 0.471 (exact peak 0.000); entry 252, vertical 203, departing 374, waterline 651 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 161 (40 over the screen, sim peak 0.873)
+steps split by the width read over the arms: 0
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 36.02s
+

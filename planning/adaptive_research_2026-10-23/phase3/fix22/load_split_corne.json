@@ -1,0 +1,18 @@
+{
+ "fix21/a_only/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1069.6,
+  "near A's steps": 562.9,
+  "other": 135.5,
+  "slot moves": 344.7,
+  "turn moves": 26.5
+ },
+ "fix22/cut_feed/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1065.9,
+  "near A's steps": 559.2,
+  "other": 135.5,
+  "slot moves": 344.7,
+  "turn moves": 26.5
+ }
+}
