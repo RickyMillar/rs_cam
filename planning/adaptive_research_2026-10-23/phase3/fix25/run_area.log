@@ -1,0 +1,12 @@
+fix25/body_cp/corne tp 1: 197087 samples, 2057 read, 4 s
+fix25/body_cp/corne tp 5: 67830 samples, 4795 read, 6 s
+fix25/body_cp_field/corne tp 1: 15375 samples, 4760 read, 1 s
+fix25/body_cp_field/corne tp 5: 194576 samples, 11583 read, 6 s
+fix25/cp_alone/corne tp 1: 174529 samples, 11655 read, 7 s
+fix25/body_cp/wanaka200 tp 1: 162656 samples, 5456 read, 8 s
+fix25/body_cp/wanaka200 tp 7: 161984 samples, 361 read, 19 s
+fix25/body_cp_field/wanaka200 tp 1: 41428 samples, 369 read, 6 s
+fix25/body_cp_field/wanaka200 tp 7: 327440 samples, 9913 read, 23 s
+fix25/cp_alone_0.6/wanaka200 tp 1: 416863 samples, 11258 read, 22 s
+fix25/cp_alone/wanaka200 tp 1: 253303 samples, 6578 read, 21 s
+AREADONE

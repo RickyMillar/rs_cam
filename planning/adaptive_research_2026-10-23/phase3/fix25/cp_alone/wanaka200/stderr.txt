@@ -1,0 +1,128 @@
+Safety (86):
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 315 (run move 315): (215.2, 30.0, 30.000) -> (215.2, 30.0, 20.040)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4239 (run move 4239): (24.5, 34.0, 30.000) -> (24.5, 34.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4323 (run move 4323): (24.5, 37.0, 30.000) -> (24.5, 37.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4451 (run move 4451): (24.5, 39.0, 30.000) -> (24.5, 39.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4526 (run move 4526): (24.5, 40.0, 30.000) -> (24.5, 40.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4605 (run move 4605): (24.5, 41.0, 30.000) -> (24.5, 41.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4675 (run move 4675): (24.5, 42.0, 30.000) -> (24.5, 42.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4737 (run move 4737): (24.5, 43.0, 30.000) -> (24.5, 43.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4782 (run move 4782): (24.5, 44.0, 30.000) -> (24.5, 44.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4881 (run move 4881): (24.5, 46.0, 30.000) -> (24.5, 46.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4922 (run move 4922): (24.5, 47.0, 30.000) -> (24.5, 47.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 4987 (run move 4987): (24.5, 50.0, 30.000) -> (24.5, 50.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5015 (run move 5015): (24.5, 51.0, 30.000) -> (24.5, 51.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5060 (run move 5060): (24.5, 53.0, 30.000) -> (24.5, 53.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5106 (run move 5106): (215.5, 54.0, 30.000) -> (215.5, 54.0, 9.692)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5192 (run move 5192): (24.5, 57.0, 30.000) -> (24.5, 57.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5311 (run move 5311): (24.5, 59.0, 30.000) -> (24.5, 59.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5451 (run move 5451): (24.5, 61.0, 30.000) -> (24.5, 61.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5516 (run move 5516): (24.5, 62.0, 30.000) -> (24.5, 62.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5573 (run move 5573): (24.5, 63.0, 30.000) -> (24.5, 63.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5777 (run move 5777): (24.5, 67.0, 30.000) -> (24.5, 67.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 5807 (run move 5807): (24.5, 68.0, 30.000) -> (24.5, 68.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6065 (run move 6065): (24.5, 74.0, 30.000) -> (24.5, 74.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6287 (run move 6287): (24.5, 78.0, 30.000) -> (24.5, 78.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6357 (run move 6357): (24.5, 79.0, 30.000) -> (24.5, 79.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6372 (run move 6372): (215.5, 79.0, 30.000) -> (215.5, 79.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6407 (run move 6407): (215.5, 80.0, 30.000) -> (215.5, 80.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6432 (run move 6432): (24.5, 81.0, 30.000) -> (24.5, 81.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6447 (run move 6447): (215.5, 81.0, 30.000) -> (215.5, 81.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6479 (run move 6479): (215.5, 82.0, 30.000) -> (215.5, 82.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6501 (run move 6501): (24.5, 83.0, 30.000) -> (24.5, 83.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6511 (run move 6511): (215.5, 83.0, 30.000) -> (215.5, 83.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6541 (run move 6541): (24.5, 84.0, 30.000) -> (24.5, 84.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6551 (run move 6551): (215.5, 84.0, 30.000) -> (215.5, 84.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6580 (run move 6580): (24.5, 85.0, 30.000) -> (24.5, 85.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6599 (run move 6599): (215.5, 85.0, 30.000) -> (215.5, 85.0, 10.610)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6614 (run move 6614): (24.5, 86.0, 30.000) -> (24.5, 86.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6650 (run move 6650): (24.5, 87.0, 30.000) -> (24.5, 87.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6700 (run move 6700): (24.5, 89.0, 30.000) -> (24.5, 89.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6735 (run move 6735): (24.5, 90.0, 30.000) -> (24.5, 90.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 6901 (run move 6901): (24.5, 95.0, 30.000) -> (24.5, 95.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7246 (run move 7246): (24.5, 104.0, 30.000) -> (24.5, 104.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7552 (run move 7552): (24.5, 109.0, 30.000) -> (24.5, 109.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7574 (run move 7574): (215.5, 109.0, 30.000) -> (215.5, 109.0, 9.948)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7618 (run move 7618): (24.5, 110.0, 30.000) -> (24.5, 110.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7722 (run move 7722): (24.5, 112.0, 30.000) -> (24.5, 112.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7780 (run move 7780): (24.5, 113.0, 30.000) -> (24.5, 113.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 7988 (run move 7988): (215.5, 117.0, 30.000) -> (215.5, 117.0, 9.723)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8079 (run move 8079): (24.5, 119.0, 30.000) -> (24.5, 119.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8089 (run move 8089): (215.5, 119.0, 30.000) -> (215.5, 119.0, 9.723)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8118 (run move 8118): (24.5, 120.0, 30.000) -> (24.5, 120.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8142 (run move 8142): (215.5, 120.0, 30.000) -> (215.5, 120.0, 9.723)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8217 (run move 8217): (24.5, 122.0, 30.000) -> (24.5, 122.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8438 (run move 8438): (24.5, 127.0, 30.000) -> (24.5, 127.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8522 (run move 8522): (24.5, 129.0, 30.000) -> (24.5, 129.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8556 (run move 8556): (24.5, 130.0, 30.000) -> (24.5, 130.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8656 (run move 8656): (24.5, 133.0, 30.000) -> (24.5, 133.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8690 (run move 8690): (24.5, 134.0, 30.000) -> (24.5, 134.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8728 (run move 8728): (24.5, 135.0, 30.000) -> (24.5, 135.0, 12.430)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8902 (run move 8902): (24.5, 139.0, 30.000) -> (24.5, 139.0, 11.475)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 8912 (run move 8912): (215.5, 139.0, 30.000) -> (215.5, 139.0, 10.821)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 10085 (run move 10085): (24.5, 162.0, 30.000) -> (24.5, 162.0, 11.123)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 10331 (run move 10331): (215.5, 168.0, 30.000) -> (215.5, 168.0, 10.821)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 10659 (run move 10659): (215.5, 178.0, 30.000) -> (215.5, 178.0, 10.821)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 10691 (run move 10691): (24.5, 179.0, 30.000) -> (24.5, 179.0, 10.754)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 10756 (run move 10756): (24.5, 180.0, 30.000) -> (24.5, 180.0, 10.754)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 11059 (run move 11059): (24.5, 187.0, 30.000) -> (24.5, 187.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 11462 (run move 11462): (24.5, 200.0, 30.000) -> (24.5, 200.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 11485 (run move 11485): (24.5, 201.0, 30.000) -> (24.5, 201.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 11505 (run move 11505): (24.5, 202.0, 30.000) -> (24.5, 202.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12119 (run move 12119): (23.5, 217.5, 30.000) -> (23.5, 217.5, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12133 (run move 12133): (23.5, 218.0, 30.000) -> (23.5, 218.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12193 (run move 12193): (90.0, 219.5, 30.000) -> (90.0, 219.5, 10.271)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13233 (run move 13233): (23.0, 50.5, 30.000) -> (23.0, 50.5, 12.415)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13238 (run move 13238): (217.0, 54.0, 30.000) -> (217.0, 54.0, 9.155)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13243 (run move 13243): (23.0, 55.0, 30.000) -> (23.0, 55.0, 12.411)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13257 (run move 13257): (23.0, 58.5, 30.000) -> (23.0, 58.5, 12.398)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13362 (run move 13362): (217.0, 83.5, 30.000) -> (217.0, 83.5, 9.817)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13406 (run move 13406): (23.0, 94.5, 30.000) -> (23.0, 94.5, 12.417)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13422 (run move 13422): (23.0, 95.0, 30.000) -> (23.0, 95.0, 12.417)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13433 (run move 13433): (23.0, 95.5, 30.000) -> (23.0, 95.5, 12.405)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13444 (run move 13444): (23.0, 96.0, 30.000) -> (23.0, 96.0, 12.405)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13454 (run move 13454): (23.0, 96.5, 30.000) -> (23.0, 96.5, 12.413)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13526 (run move 13526): (217.0, 107.0, 30.000) -> (217.0, 107.0, 9.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13743 (run move 13743): (23.0, 130.5, 30.000) -> (23.0, 130.5, 12.418)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13984 (run move 13984): (23.0, 189.0, 30.000) -> (23.0, 189.0, 10.418)
+
+Act on (1):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  561.6s wasted around (141.6, 55.8, 10.7) — engagement 0.20
+  5.5s wasted around (216.0, 40.5, 16.1) — engagement 0.00
+  5.5s wasted around (217.0, 38.0, 16.1) — engagement 0.01
+  5.4s wasted around (216.5, 39.0, 16.1) — engagement 0.01
+  5.4s wasted around (217.0, 75.0, 16.1) — engagement 0.01
+  5.3s wasted around (216.0, 180.5, 16.1) — engagement 0.03
+  5.1s wasted around (187.0, 221.5, 16.1) — engagement 0.00
+  4.9s wasted around (170.2, 220.5, 12.6) — engagement 0.01
+  4.7s wasted around (69.5, 180.5, 9.3) — engagement 0.00
+  4.6s wasted around (53.8, 206.0, 25.5) — engagement 0.02
+  ... 1600 more not shown
+
+Counts: 253303 samples | 34455 flagged-air + 1090 flagged-low (per SAMPLE) | 6402 issue runs (COALESCED, the legacy "issue_count") | 1610 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 16.5498 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 0: chipload: not applicable to this operation — drill cycle — no continuous engagement
+  toolpath 0: power: not applicable to this operation — drill cycle — no continuous engagement
+  toolpath 0: deflection: not applicable to this operation — drill cycle — no continuous engagement
+  toolpath 0: depth of cut: not applicable to this operation — drill cycle — no continuous engagement
+  toolpath 0: gantry push: not applicable to this operation — drill cycle — no continuous engagement
+  toolpath 5: chipload: simulation trace is stale — re-run simulation
+  toolpath 5: power: simulation trace is stale — re-run simulation
+  toolpath 5: deflection: simulation trace is stale — re-run simulation
+  toolpath 5: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 88747mm  |  Rapid: 158535mm  |  Time: 5750s
+Air cutting: 34.2% of total runtime  |  Avg engagement: 0.18  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [!] #1 2 Back Rough (3D Adaptive) — 14180 moves, 86 collisions
+      kinematics: 100% of commanded (99% feed-bound → +21% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 86 rapid-through-stock collisions
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix25/cp_alone/wanaka200

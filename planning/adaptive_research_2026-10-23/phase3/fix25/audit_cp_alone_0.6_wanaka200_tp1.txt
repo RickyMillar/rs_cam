@@ -1,0 +1,9 @@
+== ../fix25/cp_alone_0.6/wanaka200 '2 Back Rough': 14180 moves; sim cell 0.6 mm, sample step 0.6 mm, volume quantum 0.216 mm3
+1. descent events into stock (a vertical fed descent at one XY, pecks included, that removes > quantum): 1223 (drop median 1.744 mm, max 17.728 mm, 800.9 s); labels {'entry_plunge / plunge entry': 775, 'entry_plunge / keep-down link': 162, 'linking / keep-down link': 286}
+   moves: descents into stock (fed, Z down, removes > quantum) 4268; vertical 1690 (removed 11347.8 mm3, drop median 1.676 mm, max 5.96 mm)
+   labels of the vertical descents (intent / span style): {'entry_plunge / plunge entry': 1088, 'entry_plunge / keep-down link': 602}
+   planar junctions (both moves travel in XY) 4819; planar reversals 293; planar histogram [236, 510, 960, 809, 653, 540, 818, 268, 25]
+2. junctions at feed 8802; reversals (turn > 90 deg) 1119; turns of exactly 90 deg 1471; Z reversals 2552
+   turn histogram (deg, bins (lo, hi]): (0,1] 675, (1,5] 510, (5,15] 960, (15,30] 811, (30,45] 667, (45,60] 851, (60,90] 3209, (90,135] 1091, (135,180] 28
+3. MRR time histogram (mm3/s): [0,1e-09) 2576.7 s, [1e-09,25) 827.1 s, [25,50) 285.7 s, [50,100) 195.6 s, [100,200) 2506.4 s, [200,400) 70.5 s, [400,800) 164.7 s, [800,1600) 16.6 s, [1600,inf) 2.6 s; p50 19.5, p95 191.1, p99 556.2, max 4892.7; nominal 182.0: 957.9 s over, 192.4 s over 2x
+4. time split (s): {'cut': 3580.5, 'fed in air': 885.4, 'lift feed': 279.6, 'plunge feed': 949.1, 'rapid': 951.2}; sum 6645.8 of sim runtime 5776.8

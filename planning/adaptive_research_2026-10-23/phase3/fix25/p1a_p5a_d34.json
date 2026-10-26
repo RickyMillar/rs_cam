@@ -1,0 +1,49 @@
+{
+ "corne body_cp op1 P1a": {
+  "strip_read": 0,
+  "strip_L_over_mm": 0.0,
+  "strip_width_over_mm": 0.0
+ },
+ "corne body_cp_field op1 P1a": {
+  "strip_read": 0,
+  "strip_L_over_mm": 0.0,
+  "strip_width_over_mm": 0.0
+ },
+ "corne cp_alone op1 P1a": {
+  "strip_read": 3856,
+  "strip_L_over_mm": 963.8,
+  "strip_width_over_mm": 1135.4
+ },
+ "corne body_cp tp5 P5a": {
+  "edge_read": 4780,
+  "edge_L_over_mm": 1096.9,
+  "cp_alone_op1_edge_L_over_mm": 1456.9,
+  "cp_alone_edge_read": 5580,
+  "tolerance_mm": 291.4,
+  "holds": false
+ },
+ "corne body_cp_field tp5 P5a": {
+  "edge_read": 5763,
+  "edge_L_over_mm": 1193.1,
+  "cp_alone_op1_edge_L_over_mm": 1456.9,
+  "cp_alone_edge_read": 5580,
+  "tolerance_mm": 291.4,
+  "holds": true
+ },
+ "wanaka200 body_cp tp7 P5a": {
+  "edge_read": 16,
+  "edge_L_over_mm": 0.4,
+  "cp_alone_op1_edge_L_over_mm": 1117.1,
+  "cp_alone_edge_read": 2130,
+  "tolerance_mm": 223.4,
+  "holds": false
+ },
+ "wanaka200 body_cp_field tp7 P5a": {
+  "edge_read": 1754,
+  "edge_L_over_mm": 866.3,
+  "cp_alone_op1_edge_L_over_mm": 1117.1,
+  "cp_alone_edge_read": 2130,
+  "tolerance_mm": 223.4,
+  "holds": false
+ }
+}

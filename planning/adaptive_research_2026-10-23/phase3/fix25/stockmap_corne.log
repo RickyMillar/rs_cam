@@ -1,0 +1,6 @@
+corne D34 body_cp op1: grid (445, 611), samples 197087, area > 0.8 mm above target 7154.9 mm2, max 22.50 mm
+corne D34 body_cp job: grid (445, 611), samples 383297, area > 0.8 mm above target 3167.4 mm2, max 22.50 mm
+corne D34 body_cp_field op1: grid (445, 611), samples 15375, area > 0.8 mm above target 16773.4 mm2, max 22.50 mm
+corne D34 body_cp_field job: grid (445, 611), samples 303790, area > 0.8 mm above target 3143.5 mm2, max 22.50 mm
+corne D34 cp_alone op1: grid (445, 611), samples 174529, area > 0.8 mm above target 3573.2 mm2, max 22.50 mm
+corne D34 cp_alone job: grid (445, 611), samples 270071, area > 0.8 mm above target 3009.0 mm2, max 22.50 mm

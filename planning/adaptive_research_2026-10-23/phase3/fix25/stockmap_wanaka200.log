@@ -1,0 +1,7 @@
+wanaka200 D34 body_cp op1: grid (1000, 960), samples 162656, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+wanaka200 D34 body_cp job: grid (1000, 960), samples 324640, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+wanaka200 D34 body_cp_field op1: grid (1000, 960), samples 41428, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+wanaka200 D34 body_cp_field job: grid (1000, 960), samples 368868, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+wanaka200 D34 cp_alone_0.6 op1: grid (1000, 960), samples 416863, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+wanaka200 D34 cp_alone_0.6 job: grid (1000, 960), samples 416863, area > 0.8 mm above target 60000.0 mm2, max 24.50 mm
+SMDONE

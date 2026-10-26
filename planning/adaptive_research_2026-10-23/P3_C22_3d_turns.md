@@ -3599,3 +3599,40 @@ All four tests pass: `the_slab_field_holds_the_load_on_a_sloped_floor`, `the_sla
 - Move 373 (§18.7, the open case) is no longer over, so the probe the lead approved is not needed for it. The per-strip read changed its verdict. I have not added the probe.
 - The shelf-end corner class (ruling (c)) is empty under the area judge.
 - **For the fixtures:** the field's cost on terrain is the real question now. P for D34 (research arm, field on against off on one tree): the area over-load falls on both fixtures, and wanaka's cycle rises by less than the 2.1× the slope shows in moves. If the cycle with the field reaches D26's 3513 s, I report it.
+
+### 18.9 D34 (early): the field ON makes Corne op 1 plan almost nothing (read only, 2026-10-27)
+
+Source: `phase3/fix25/body_cp_field/corne/stdout_plain.txt` against `phase3/fix25/body_cp/corne/stdout_plain.txt` (the "dropped short cut groups" and "piece left to the rest pass" lines).
+
+**The F-038 forecast is not the cause:**
+- With the field OFF, region 1 at Z 11/5/0.5 (1379 mm²) is skipped by the same forecast (forecast 0.0, why="F-038 forecast"). It is a strip the arm leaves to the rest pass (C38 §16).
+- With the field ON, Z 11 has THREE regions, not two: 1514.8 + 1418.5 + 8408.4 mm². The extra strip (region 2) exists because Z 17 cut almost nothing, so more stock stands at Z 11. Both strips get forecast 0, as region 1 does with the field off.
+- The large region (8408 mm²) is NOT skipped: it opens ("grown, no sweep") and is planned.
+
+**The cause is the plan itself, fragmented, and then the F-038 group filter:**
+
+| Z, region | field OFF: groups dropped / planned | field ON: groups dropped / planned (C22a replay rounds) |
+|---|---|---|
+| 17, 1 | 16 / 52, 11 / 49 | 5230 / 4966 (6), 7914 / 5911 (10) |
+| 11, body | 34 / 73, 23 / 51 | 370 / 163, 3754 / 3437 (4) |
+| 5, body | 34 / 73, 23 / 51 | 680 / 166, 4888 / 4563 (4) |
+
+- With the field the 2D plan of the body region breaks into about 100× more cut groups (4966 against 52 at Z 17). Nearly all are under the 15 mm group bar.
+- The C22a replay then cascades. Each round drops short groups; the replay no longer stamps their cuts; under the field the next steps read that stock and are refused; more groups go short. The dropped count passes the planned count (7914 > 5911, 10 rounds).
+- So op 1 keeps almost nothing (845 moves), and the CP rest op does the work (7017 moves). That is why the field run's cycle looks better.
+
+**Why the plan fragments (my reading; not proven):**
+- Under the field, a read counts EVERY cell in the disc with stock above the tip: also the cells the 2D grid holds as AIR, outside the plan's polygon (§17.7: "any state").
+- On the Corne case at Z 17 those are the cells round the case's raised features: stock between the feature (plus leave) and the stock top Z 23. The 3D drape lifts the passes over them, and the plan does not own them. Every step that comes near such a feature reads them at up to full depth and is refused, so the walk splits into fragments.
+- On the test fixtures (one pocket, one island, one shelf, a slope) the plan's polygon covers almost all the stock the discs meet, so the tests did not show this.
+
+**Proposed fix (needs approval):**
+1. **Read only the plan's own cells.** Under the field, a cell counts in a read only if it is in the plan's lattice (state MATERIAL, FRINGE or CLEARED: inside the polygon) AND its top stands above the reading tip. An AIR cell (outside the plan's polygon) is never read.
+   - This keeps §17's two cases: the wedge a lifted pass leaves inside the region, and the shelf band (the research arm's grown outline, C31, puts the band inside the polygon).
+   - It drops the stock the plan cannot own: other regions, and features the drape lifts over.
+   - The stamp still lowers the tops of all cells, so a later read stays true.
+2. **A sentry for "the field never makes the arm skip a body region":** a fixture with raised features inside the pocket (a few islands of different heights above the level). Assert that with the field on:
+   - the planned cut length of each body region is not under the field-off plan's by more than the F-038 bar;
+   - no region the field-off run plans is left to the rest pass.
+3. **A research counter to confirm the reading before the fix ships:** per level, the steps the walk refuses under the field, split by whether the read crossed the ceiling with or without its AIR cells. If the AIR share is not the cause, (1) is wrong and I say so.
+4. **The cascade:** under the field the C22a replay should not keep dropping. Item (1) should remove most fragments. If the cascade stays, the replay's rounds need a bound tied to the planned groups. That is a separate proposal, after (3).

@@ -4731,3 +4731,184 @@ fixtures, exact-unfed read with the chain line: Corne op 1 exact unfed
 wanaka (default) 497 / 1800 / 1468 / 70. The chain line pools slot and
 departure records; Corne op 1's slots read unfed 0, so the 422 left after
 both matches are most likely departures.
+
+## D34: D33 + C22 §18.8 slab field (`RS_CAM_RESEARCH_SLAB_FIELD`) + C38 §16 body-only and left pieces — gates green (known tabs red); fixtures fix25
+
+`d34/tree_vs_3181ae54f.patch` (md5 49cc98912cf7a808abaca306f603e1f9) on a
+clean 3181ae54f, plus the new `adaptive/slab_field.rs` and the a_feed_cap
+test. No edit.
+- Green: fmt (the first try timed out at 120 s in the lane queue; the retry
+  at 900 s is green); clippy ×3; parity; `--lib adaptive::` 90 / 2 ignored;
+  harness; plain C12; heavy C12 (G1 0 over); f152; the sentries but the
+  known tabs red (1 fail at :444, from 74af0f8e1); cli 92. The channel test
+  reads "0 moves, 0 entries". The slab-field tests and both Part A tests are
+  green. No new red.
+
+**Fixtures** (`phase3/fix25/run_fix25.sh`, research arm
+geodesic_local_spiral_pick, router CutFeed). Job files: C38 §16's
+`*_body_cp_edges.toml` (op 1, then the CP rest op: tp 5 Corne, tp 7 wanaka;
+Corne also the copy op tp 3). CP alone: `phase0/projects/<part>_contour_parallel.toml`.
+wanaka200 runs at `--resolution 0.6` (G-RESTRES: the rest op refuses 1.0).
+So wanaka numbers do not compare with D26-D33 at 1.0. cp_alone wanaka also
+ran at 1.0 (= fix6). Run (A), the CP rest op skipped, was not run; the
+op-1 numbers come from the (B) runs' toolpath 1.
+
+Cycle per op (the sim's toolpath summary, s):
+
+| | op 1 | CP rest op | copy op | total |
+|---|---|---|---|---|
+| Corne body_cp | 1401.1 | 481.1 | 1511.9 | 3394.1 |
+| Corne body_cp_field | 134.9 | 1235.6 | 1034.5 | 2405.0 |
+| Corne cp_alone | 973.2 | — | 590.5 | 1563.6 |
+| Corne cp_alone, fix6's job file, D34 tree (`cp_fix6job`) | 973.2 | — | 1049.0 | 2022.1 |
+| wanaka body_cp (0.6) | 3438.1 | 2161.2 | — | 5599.3 |
+| wanaka body_cp_field (0.6) | 1676.4 | 4989.3 | — | 6665.7 |
+| wanaka cp_alone (0.6 / 1.0) | 5776.8 / 5750.3 | — | — | |
+
+- **Why Corne CP alone moved from 2022 s to 1564 s: the job file.** fix6 ran
+  `corne_case_analysis_2026-09-18/corne_job_corrected_c12_contour_parallel.toml`;
+  fix25 ran `phase0/projects/corne_contour_parallel.toml`. Both programs are
+  byte-identical (program.nc == fix6), and the toolpath JSONs differ only in
+  timings. The fix6 job file on the D34 tree gives 2022.1 s again, so the
+  tree and the feed caps do not cause it. Only the copy op changes: its
+  program time at its own F is 1051.3 s in both (c39_d34), but the sim times
+  it at 590.5 s under the phase0 file. Under that file every copy-op cut
+  sample has 2429 mm/min. Under fix6's file 12335 helix samples have 375 mm/min, and boosts go to 3073 / 4000. The two files
+  differ in the stock box (152.8 × 111.2 against 153.1 × 169.3, origin_x),
+  machine `aggressiveness = 0.85`, `entry_clearance_mm`, and the waterline
+  op enabled = false. Which field moves the sim feed is not isolated.
+- Wanaka: the sim's time is above the program time (c39_d34: body_cp op 1
+  3438 against 2864 s; cp_alone 5777 against 4314 s); on Corne they agree.
+
+Area load (C18's L, `fix25/rescore.py`, a copy of fix24's; mm of XY path
+with L > 0.471; old width count beside it):
+
+| | read | old count | area over | peak L |
+|---|---|---|---|---|
+| Corne body_cp op 1 | 2057 | 542.7 | 63.6 | 0.925 |
+| Corne body_cp CP rest | 4795 | 1429.3 | 1098.0 | 1.408 |
+| Corne field op 1 | 4760 | 995.8 | 942.4 | 1.25 |
+| Corne field CP rest | 11583 | 3235.8 | 1999.5 | 1.192 |
+| Corne cp_alone op 1 | 11655 | 3158.9 | 2226.0 | 1.031 |
+| wanaka body_cp op 1 | 5456 | 3237.0 | 69.3 | 0.667 |
+| wanaka body_cp CP rest | 361 | 159.7 | 0.4 | 0.527 |
+| wanaka field op 1 | 369 | 153.7 | 143.7 | 3.195 |
+| wanaka field CP rest | 9913 | 5183.3 | 2147.3 | 2.302 |
+| wanaka cp_alone 0.6 / 1.0 | 11258 / 6578 | 6669.5 / 6201.7 | 2177.3 / 2133.1 | 2.62 / 2.493 |
+
+Audit per op (`fix25/audit_d34.py`: fix11/audit.py plus one change, a
+later op's section has no move-0 line; entries `entries_d34.py`):
+
+| | descents | plunge entries | plunge share | planar turns > 30° | reversals |
+|---|---|---|---|---|---|
+| Corne body_cp op 1 | 1050 | 53 | 33.0 % | 953 | 528 |
+| Corne field op 1 | 28 | 9 | 13.2 % | 414 | 142 |
+| Corne cp_alone op 1 | 41 | 73 | 2.8 % | 5373 | 503 |
+| Corne body_cp CP rest | 34 | — | 2.1 % | 751 | 208 |
+| Corne field CP rest | 123 | — | 1.7 % | 2353 | 375 |
+| wanaka body_cp op 1 | 2086 | 16 | 39.2 % | 331 | 1816 |
+| wanaka field op 1 | 283 | 27 | 59.5 % | 468 | 770 |
+| wanaka cp_alone 0.6 op 1 | 1223 | 964 | 16.4 % | 2304 | 1119 |
+| wanaka body_cp CP rest | 398 | — | 2.1 % | 281 | 554 |
+| wanaka field CP rest | 792 | — | 2.9 % | 12354 | 863 |
+
+Bands (Corne, `stockmap_d34.py` + `bands_d34.py`, the fix9 / R4 method;
+the script gives R4's D20 row (3–9 mm 1951) and fix9's CP (63) again;
+"job" = every setup-0 op, each with its own tool radius):
+
+| | outside 0–1.5 | outside 3–9 | inside 6+ | whole box |
+|---|---|---|---|---|
+| body_cp after op 1 | 658 | 2077 | 808 | 7155 |
+| body_cp after the job | 228 | 75 | 94 | 3167 |
+| field after op 1 | 660 | 2077 | 8627 | 16773 |
+| field after the job | 228 | 75 | 80 | 3144 |
+| cp_alone after op 1 / job | 202 / 196 | 63 / 63 | 645 / 93 | 3573 / 3009 |
+
+The wanaka band is not measured: the fix9 band table is Corne-only, and my
+wanaka stock map reads the whole box as standing (the frame needs C18's
+wanaka method). `body_cp/wanaka200` and `cp_alone_0.6/wanaka200`
+simulation.json are kept for it.
+
+Left pieces ("C38 piece left to the rest pass", op 1):
+- Corne body_cp: Z 11 / 5 / 0.5, region 1, 1379.2 mm² each, why="F-038 forecast".
+- Corne field: Z 11 / 5 / 0.5 regions 1 and 2 (1514.8 + 1418.5 / 1395.8 /
+  1387.8 mm²), F-038 forecast; Z 0.5 region 3 9302.4 mm² why="no field" (×2).
+- wanaka body_cp: Z 4.0 region 1 1867.8 mm² "no field" (×2), region 2
+  191.6 mm² F-038 forecast. wanaka field: none.
+
+Feed check (`feed_check_d34.py`, a copy of fix21's): capped moves above
+the cap 0 in all four research runs (Corne body_cp 129 lines / 118 moves;
+wanaka 74 / 73; wanaka field 3 / 2; Corne field 0 lines). Corne op-1 strip
+samples: 0 in both columns.
+
+Turn summaries: Corne body_cp op 1 turns planned 222 / cut 132 / fed 132;
+departures cut 2454, fed 124, unfed 771; feed chains 2454 steps, fed 2427,
+unfed 9. Corne field op 1 turns 173 / cut 0. wanaka body_cp departures cut
+1977, fed 366, unfed 436; chains fed 1964, unfed 4. wanaka field turns
+183 / cut 3; chains fed 1580, unfed 119.
+
+Hard bars:
+- Rapid collisions: research runs 0 (D33 Corne 2); cp_alone wanaka 20 at
+  0.6 and 86 at 1.0 (= fix6).
+- Fed-link lines: wanaka field CP rest op (link move 22909, 6.57 mm);
+  cp_alone Corne (op 1 6.50 mm, copy op 3.38 mm); cp_alone wanaka 0.6
+  (11.98 mm). None in body_cp.
+- Deeper-than lines: Corne body_cp 8.8 % at DPP 6.00 (peak 12.0, the CP
+  rest op) and 4.0 % at 3.00 (peak 14.5, the copy op); Corne field 4.1 % at
+  6.00 (peak 12.0); wanaka field 11.4 % at 5.46 (peak 16.77). None in
+  wanaka body_cp or cp_alone. No refusal (the stale-sim override as before).
+
+**P (C38 §16.3–16.6, read on the (B) runs, field off):**
+- P1a: Corne op 1 strip L-over 0 mm (0 strip reads). **Holds.**
+- P2a: Corne 63.6 mm against C35 86.1 (window 71.1–101.1): **outside, low**
+  (less load). wanaka 69.3 against 25.1 (window 10.1–40.1): **fails high**
+  (at 0.6; cp_alone moves 2133 → 2177 from 1.0 to 0.6). Old count: Corne
+  542.7 in ±15 % of 486.3 holds; wanaka 3237.0 against 2234.8 fails.
+- P3: band after op 1, 3–9 mm 2077 against C35 1951 (+6.5 %). **Holds.**
+- P4: band after (B) 75 ≤ CP alone 63 + 100. **Holds** (field also 75).
+- P5a (`p1a_p5a_d34.py`): Corne CP rest edge L-over 1096.9 against CP
+  alone 1456.9 (±291.4): **outside, low**. wanaka 0.4 against 1117.1:
+  **fails**; wanaka op 1 cuts the edges itself (op 1 removes 592061 mm³,
+  CP alone 594137), so the rest op has 16 edge reads.
+- P6: Corne plunge share 33.0 % > D33 28.6 %: **fails**; turns 953 ≤ 1094
+  holds. wanaka 39.2 % ≤ 48.0 % and 331 ≤ 370: **holds**.
+- P7: Corne 3394 > D33 3165: **fails** (the copy op, now contour_parallel,
+  takes 1512 s); wanaka 5599 > 3403: **fails** (the CP rest op 2161 s, of
+  which 1279 s rapid; op 1 alone 3438 s ≈ D33).
+- P8: rapid collisions better than D33; Corne CP rest op has a deeper-than
+  line that CP alone has not: **fails on Corne**; wanaka holds.
+- P9: Corne op 1 left-piece lines at Z 11 / 5 / 0.5, F-038 forecast; op-1
+  strip samples 0. **Holds.**
+- P10: the left-piece polygons are not logged, so I read the outside 3–9 mm
+  band as the proxy: after (B) 75 against CP alone 63 (all in 6–9 mm).
+  **Fails by 12 mm²** on the proxy.
+
+**C22 §18.8 P (field on against off):** the area over-load rises on both
+fixtures (Corne op 1 63.6 → 942.4, op 1 + CP rest 1161.6 → 2941.9; wanaka
+op 1 69.3 → 143.7, op 1 + CP rest 69.7 → 2291.0): **fails**. wanaka cycle
+×1.19 (< 2.1×) holds, but the field cycle is 6666 s, above D26's 3513 s
+(0.6 mm; field-off is 5599 s at 0.6).
+
+**The field-on finding in full (both fixtures).** With
+`RS_CAM_RESEARCH_SLAB_FIELD=on`, op 1 plans almost nothing, and the CP rest
+op does the roughing:
+- Corne op 1: 845 moves (field off 12621), 46565 mm³ removed (off
+  219140), 134.9 s. After op 1 one island stands, 14464.8 mm², 22.5 mm
+  high; the band inside the silhouette 6+ mm is 8627 mm² (off 808). The CP
+  rest op then makes 7017 moves (off 1783), removes 227604 mm³ and takes
+  1235.6 s. That is why the field total (2405 s) is below the field-off
+  total (3394 s).
+- wanaka op 1: 5505 moves (off 19092), 43754 mm³ removed (off 592061),
+  1676.4 s, of which 997.9 s plunge feed and 63.0 s cut. The CP rest op
+  makes 25855 moves, removes 551024 mm³, and takes 4989.3 s.
+- The mechanism is the one in C22 §18.9: "F-038: dropped short cut groups"
+  cascades. Corne Z 17 region 1: dropped 7914 of 5911 planned groups (off
+  16 of 52); Z 5 4888 of 4563. wanaka Z 4.0 region 1: 36324 of 34255;
+  Z 8.62 21833 of 19305 (off: only Z 4.0 region 3, 16 of 18). The F-038
+  forecast skips the extra Corne strips (forecast 0.0 mm).
+
+Simulation files: per the lead's rule, deleted after the npz and the
+analysis: body_cp/corne, body_cp_field/corne, body_cp_field/wanaka200,
+cp_alone/wanaka200. Kept: body_cp/wanaka200 and cp_alone_0.6/wanaka200
+(the wanaka band), cp_alone/corne and cp_fix6job/corne (the open
+job-file field). Fixture worktree restored: clean 3181ae54f.

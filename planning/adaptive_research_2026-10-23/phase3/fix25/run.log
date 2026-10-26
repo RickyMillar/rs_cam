@@ -1,0 +1,27 @@
+tree = 3181ae54f + D34
+body_cp corne rc=0 209s; Toolpaths: 3  |  Cutting: 79560mm  |  Rapid: 32148mm  |  Time: 3394s
+  disk free 62G
+tree = 3181ae54f + D34
+body_cp wanaka200 rc=1 1s; 
+  disk free 62G
+tree = 3181ae54f + D34
+body_cp_field corne rc=0 30s; Toolpaths: 3  |  Cutting: 61140mm  |  Rapid: 28245mm  |  Time: 2405s
+  disk free 62G
+tree = 3181ae54f + D34
+body_cp_field wanaka200 rc=1 1s; 
+  disk free 62G
+tree = 3181ae54f + D34
+cp_alone corne rc=0 4s; Toolpaths: 2  |  Cutting: 58238mm  |  Rapid: 21069mm  |  Time: 1564s
+  disk free 62G
+tree = 3181ae54f + D34
+cp_alone wanaka200 rc=0 45s; Toolpaths: 1  |  Cutting: 88747mm  |  Rapid: 158535mm  |  Time: 5750s
+  disk free 61G
+tree = 3181ae54f + D34
+body_cp wanaka200 rc=0 92s; Toolpaths: 2  |  Cutting: 101030mm  |  Rapid: 87074mm  |  Time: 5599s
+  disk free 61G
+tree = 3181ae54f + D34
+body_cp_field wanaka200 rc=0 206s; Toolpaths: 2  |  Cutting: 93390mm  |  Rapid: 118469mm  |  Time: 6666s
+  disk free 60G
+tree = 3181ae54f + D34
+cp_alone_0.6 wanaka200 rc=0 52s; Toolpaths: 1  |  Cutting: 88747mm  |  Rapid: 158535mm  |  Time: 5777s
+  disk free 60G
