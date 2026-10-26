@@ -409,3 +409,79 @@ One step per item, each parity-checked against CP:
   no further work on it. The pick doubles the plan work per piece.
 - **Q9.** What do the GUI and MCP call the strategy, and which
   parameters are visible? The research presets have none visible.
+
+## 6. The Python measurements: duplicates, new instruments, homes
+
+(Operator addition, 2026-10-27.) `phase0/`, `phase2/` and `phase3/` hold
+258 `.py` files. They read the CLI's artefacts (`simulation.json` from
+`--sim-artifact`, `program.nc`, `tp_*.json`, `summary.json`, stdout log
+lines) and re-derive quantities from them. Below, each family is classed
+as a DUPLICATE (the Rust already computes it), NEW (worth an instrument
+in the app and the CLI), or RESEARCH-ONLY (it joins research log lines;
+it retires with the research).
+
+### 6.1 What the Rust already gives (read before a script is written)
+
+| Quantity | Rust source |
+|---|---|
+| Per-sample radial width, axial engagement, Z descent, removed volume, segment time, feed, intent | `SimulationCutSample` (`M/stock/simulation_cut.rs:63,151,164,169,183`) |
+| Runtime by intent | `runtime_by_intent: CycleTimeBreakdown` (`M/stock/simulation_cut.rs:505`), from `machine/kinematics.rs` (trapezoid, junction deviation) |
+| Standing stock over the plan's floor, islands, height, width, wall tag | `StandingField`, `standing_islands` (`M/stock/standing_islands.rs:57,218`); target from `adaptive3d::intended_floor_grid` (G-ROUGHCOV A3/A4) |
+| Fed links through stock | `link_cut_observation` (`M/stock/sim_triage.rs:1640`) |
+| Rapid collisions, gouge, deeper-than lines | the rapid check sentries in `M/stock/CLAUDE.md`; `compute/model_gouge.rs` |
+| Power, chip load, deflection, histograms | `tool_load/` (`power.rs:287`, `distribution.rs`) |
+| Stock heightmap images | CLI sweep (`rs_cam_cli/src/sweep.rs:345`); MCP `inspect_stock`, `screenshot_simulation` |
+
+### 6.2 The script families
+
+| Family (example scripts) | What it computes | Class | Recommended home |
+|---|---|---|---|
+| Stock rebuild and target: `fix9/stockmap.py`, `stockmap_d22…d30.py`, `fix9/render.py` stock maps, `fix18/lowtravel.py` step 2 | re-stamps a flat end mill along the trace samples on a coarse grid; target = closing of the part heightmap by a disc of R, plus the leave | DUPLICATE. The dexel stock and `intended_floor_grid` (an exact erosion) already exist. The Python rebuild is less exact: flat end mill only, sample spacing 0.3 / 1.0 mm. | Export the `StandingField` of each rough checkpoint from the CLI (one flag, JSON or NPY grid) and from MCP. Scripts then read it and stop stamping. |
+| Distance bands of standing stock: `fix15/bands_d25.py` (R4 §1.5 table) | standing stock over 0.8 mm, split by distance from the hole-filled silhouette | NEW. It found G-OUTERBAND's size; no Rust reading splits by distance. The 0.8 mm has no derivation (R4 §3.2 item 6). | `stock/standing_islands.rs`: a band split of `StandingField` by the distance to the silhouette (`boundary::silhouette`), with the bar of the coverage finding (leave + one cell) in place of 0.8. Report it in the coverage finding ("inside the part" bar, "outer band" information, R4 §3.2 item 6). |
+| Thin spurs: `phase0/tools/spurs.py` | tall thin material on a re-stamped heightmap | DUPLICATE since G-THINSTAND (A, A3, A4): islands with inscribed width and height | none; retire |
+| Label-free kinematic audit: `fix11/audit.py` | from `program.nc`: vertical fed descents that remove stock, Z reversals, planar turn angles and reversals (> 90°), MRR by time, time split by motion (rapid / plunge feed / lift feed / cut / fed in air). Thresholds derived from the post's 3 decimals and the dexel volume quantum. | NEW. `runtime_by_intent` splits by LABEL; the audit splits by motion, which is the point (R4 §3.2 items 1-4). | (1) The descent count and the time split: a `stock/sim_triage.rs` observation over the trace samples, by predicate only, published measured or abstained, every strategy. (2) Turn angles, reversals and Z reversals: `machine/kinematics.rs`, beside the junction model the cycle time already walks; shown in `compute/toolpath_stats.rs` and `narrate_toolpath`. (3) The MRR histogram: `tool_load/distribution.rs`, which owns the histograms and their populations. Read the post-dressup `Toolpath` moves, not the G-code text: the export writes the moves as given. |
+| Entry selection by span: `fix9/entries.py`, `entries_fix12.py`, `entries_d25.json` | entry spans by span style, their descent depth and removed volume | DUPLICATE of the audit's descent predicate, but label-based | retire for the audit's descent observation plus the C40 cause on the span (§1 row 15) |
+| C40 joins: `fix15/c40_join.py`, `turn_place.py`, `parta_place.py` | joins research log lines to sim samples by XY | RESEARCH-ONLY. The join exists because the cause is in a log line, not in the trace. | none; with the cause on the entry span (§4 step 0) the join is a field read |
+| Width and load oracles: `fix24/area_oracle.py`, `rescore.py`, `c32/thick_measure.py`, and the Rust test oracles `exact_width_at` (`tests/adaptive3d_geodesic_arm_c12.rs`) and `print_exact_width_along_move` (`M/adaptive/CLAUDE.md`) | the exact width and the per-strip load L at a 0.05 mm lattice | NEW as a measure; DUPLICATE as code (three oracles in two languages, and `thick_measure` is an older form that L supersedes) | The dexel stamp already finds the fresh cells of each disc for its radial width (`dexel_stock/stamping.rs`, perp extent). Make it also keep the deepest fresh depth per lateral strip and write L per sample with the one D5 function (C22 §18.3 item 4). Then the sim gives L itself, the triage counts "length over the bound", and the Python oracle remains a cross-check only. Merge the two Rust test oracles into one `test-support` module. |
+| Load splits by producer: `fix21/load_split.py`, `fix23/why/why.py`, `nearA_*.py`, `d31_rise.py`, `drape_left.py` | over-bound length by move kind, by place, by an earlier higher pass | RESEARCH-ONLY as written (keyed to research log lines). One part is NEW: "over-bound length per producer" | Once the length over the bound is in the sim (row above), split it by the span's producer in `tool_load/distribution.rs`. That gives CP its own split (§4 step 0 item 5) with no script. |
+| Feed checks: `fix21/feed_check.py`, `strip_feed.py`, `slotfeed.py`, `turnfeed.py` | program F against the planner's lowered feed | RESEARCH-ONLY. After §3 D6 the cap is on the move. | the sentry `a_feed_cap_binds_every_feed_stage_c38` already holds "feed ≤ cap" in Rust; retire the scripts |
+| Held-link and peak probes: `held_links.py`, `peak_move.py`, `op1_deep.py`, `clipair_base.py`, `links.py` | which move cut what, at which depth | DUPLICATE in part: `link_cut_observation` names the worst link move; the deep-sample count is G-AXIALDOC's `crosses_standing_material` | none new; the triage findings carry the worst move |
+| Cycle-time port: `phase2/c21/model.py`, `run_c21.py` | a Python port of `machine/kinematics.rs` and the adaptive3d entry emitter | DUPLICATE (the port reproduces Phase 0 runtimes within 0.06 %) | none; the CLI's cycle time with the label-free time split (audit row) answers the same question. Fixture files need per-axis Z rates for it to be right (`STATUS.md` C21) |
+| Keep-down route prototype: `fix18/lowtravel.py` | a Dijkstra over free cells on a re-stamped stock | DUPLICATE since `keep_down_route.rs` | none; a "routable entries" count can come from the Rust router in a dry-run mode, if the operator wants it (§4 step 6) |
+| Renders: `fix9/render.py` plane, drape and crop images; `fix17/fixture3d_v5.py` pages | strict-plane, drape and 10 mm crop images per column | NEW in part: a strict-plane filter (moves on one Z level) and a fixed crop for side-by-side columns | the GUI toolpath view and MCP `screenshot_toolpath`: a "this Z level only" filter. The comparison pages stay research tooling. |
+| 2D prototypes and harness readers: `phase2/c13`, `c15`, `c17`, `c19`, `zone.py`, `sweep.py` | exact-geometry prototypes of design ideas | RESEARCH-ONLY | stay as evidence |
+| Page asserts: `assert_*.py`, `make_readme.py` | assert each number a page quotes | RESEARCH-ONLY (the operator's rule for explanation pages) | stay |
+
+### 6.3 What to port, in order
+
+These are Step 0 of §4 (no output change). They give the operator the
+readings in the GUI, MCP and CLI.
+
+1. **The label-free descent and time split** (from `audit.py`) as a
+   `sim_triage` observation. Every strategy. It is the reading that would
+   have shown the 1195 Corne plunges at once (R4 §3.2 item 1).
+2. **L per sample in the sim**, from the dexel stamp, with the one D5
+   function, and "length over the bound" per op and per producer in
+   `tool_load`. It replaces `area_oracle.py`, `rescore.py`,
+   `load_split.py` and `thick_measure.py` for routine counts.
+3. **The `StandingField` export and its distance-band split.** It replaces
+   the stock rebuilds and `bands_*.py`.
+4. **Turn angles, reversals and Z reversals** beside the cycle model, in
+   `toolpath_stats` and `narrate_toolpath`. It measures the operator's
+   "smoother in acceleration" report (R4 §0 item 5).
+5. **The entry cause on the span** (§1 row 15). It retires every XY join
+   script.
+
+Sentries: one per observation, each with a planted case and a vacuity
+check (the `gate_population_vacuity_xvac` pattern in `M/tool_load/CLAUDE.md`).
+
+**Rule for future research (proposal):** a script may read the Rust
+outputs above. It does not re-stamp stock, re-parse G-code for a quantity
+the trace holds, or join log lines by XY. A new quantity starts as a
+script, and it moves into Rust when a decision rests on it. The old
+scripts stay as the evidence of what was measured then. The planning
+rule says delete, not archive, for obsolete material only.
+
+**Operator decisions:** Q10. Which of items 1–5 does the GUI show, and
+which only the CLI and MCP give? Q11. Is the 0.8 mm band threshold replaced
+by the coverage bar (leave + one cell)?
