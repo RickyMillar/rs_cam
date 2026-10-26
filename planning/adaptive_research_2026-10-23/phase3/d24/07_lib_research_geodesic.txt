@@ -1,0 +1,35 @@
+   Compiling rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/crates/rs_cam_core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.45s
+     Running unittests src/lib.rs (target/debug/deps/rs_cam_core-33fd51138443a11d)
+
+running 27 tests
+test adaptive::research_geodesic::tests::every_emitted_step_holds_the_pass_load ... ignored, G-MOPLOAD: one shipped ResidueMop step reads 0.4524 over the 0.3626 ceiling (D11, 2026-10-24; 0.3669 at D2, the drift is between D2 and ea468814); the candidate's own steps hold. Un-ignore when the mop holds the pass load (DEFECTS.md)
+test adaptive::research_geodesic::tests::the_curvature_spacing_law_puts_each_tight_pass_on_the_ceiling ... ok
+test adaptive::research_geodesic::tests::a_turn_whose_vertex_the_emitter_drops_is_unfed_only_when_it_needs_a_cut_feed ... ok
+test adaptive::research_geodesic::tests::the_lead_in_radius_holds_the_ceiling_on_a_straight_band ... ok
+test adaptive::research_geodesic::tests::the_transition_join_nests_its_sectors_on_a_disc ... ignored, C6 transition join: D6 read nesting failures at levels 2, 9 and 12 and an unapplied edge transition at level 16; the join is not a default column and no C6 variant beat geodesic_curv (P15_D_verify.md D6). Fix or drop with the engagement-measure ruling
+test adaptive::research_geodesic::tests::the_turn_feed_holds_the_steady_removal_and_the_lateral_force ... ok
+test adaptive::research_geodesic::tests::the_pivot_frame_lead_in_holds_the_ceiling_on_curved_fronts ... ok
+test adaptive::research_geodesic::tests::the_wall_normal_points_into_the_nearest_wall ... ok
+test adaptive::research_geodesic::tests::the_whole_chaining_keeps_the_segment_the_tail_chaining_drops ... ok
+test adaptive::research_geodesic::tests::two_slivers_read_wide_in_swept_width_and_narrow_in_area ... ok
+test adaptive::research_geodesic::tests::a_head_on_step_up_a_wall_is_over_the_ceiling_in_both_measures ... ok
+test adaptive::research_geodesic::tests::a_straight_side_cut_reads_alike_in_both_measures ... ok
+test adaptive::research_geodesic::tests::a_link_over_a_dropped_group_is_refused_after_the_filter ... ok
+test adaptive::research_geodesic::tests::the_lobe_morph_on_a_rectangle_lobe_holds_one_stepover ... ok
+test adaptive::research_geodesic::tests::the_field_on_a_disc_is_the_euclidean_distance ... ok
+test adaptive::research_geodesic::tests::the_arc_end_lens_matches_a_raster_of_the_end ... ok
+test adaptive::research_geodesic::tests::the_core_spiral_on_a_disc_is_one_piece_with_monotone_radius ... ok
+test adaptive::research_geodesic::tests::the_five_arm_axes_of_the_star_read_alike ... ok
+test adaptive::research_geodesic::tests::the_local_level_spacing_follows_the_law_on_a_disc ... ok
+test adaptive::research_geodesic::tests::the_field_goes_round_an_island ... ok
+test adaptive::research_geodesic::tests::the_reseeded_field_grows_from_the_cleared_area ... ok
+test adaptive::research_geodesic::tests::the_star_shape_test_rejects_a_level_set_behind_an_island ... ok
+test adaptive::research_geodesic::tests::the_far_side_zone_lies_behind_the_island ... ok
+test adaptive::research_geodesic::tests::a_clearing_turn_is_bounded_and_fed_down_and_no_other_step_passes ... ok
+test adaptive::research_geodesic::tests::every_wrap_lies_inside_the_tool_centre_region ... ok
+test adaptive::research_geodesic::tests::the_head_on_rule_keeps_every_turn_bounded_and_no_other_step_over ... ok
+test adaptive::research_geodesic::tests::the_pick_keeps_the_plan_the_replay_re_enters_less ... ok
+
+test result: ok. 25 passed; 0 failed; 2 ignored; 0 measured; 2733 filtered out; finished in 3.05s
+

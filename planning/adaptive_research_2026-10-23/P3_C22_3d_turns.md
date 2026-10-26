@@ -2805,3 +2805,23 @@ replay after the filter shows up as more `Reentry2d`.
   - If `LargeZ` is under 50 % on either fixture, my reading of §12.8 and §13.9 is wrong.
   - If `Other` is over 1 %, the join by XY is not exact, and I report it before reading any split.
 - **What the result decides:** if `LargeZ` dominates as predicted, the next item is the 3D stage's split rule, not the 2D joins. The candidates are a large-Z split that rides the drape at feed when the stock above it is cut, and a slope threshold from the tool and the ruled pass load in place of the fixed 0.3. That is a design for after C40, not part of it.
+
+### 15.4 Built (2026-10-26; not compiled until D9 runs it)
+
+- **mod.rs:** `EntryCause`, `EntryCauseRecord`, `EntryKind`,
+  `EntryRecord` and `Research3d.entries`. `entry_records` holds the join
+  by exact XY (`xy_key`, 1e-6 mm) and the run rule:
+  - an entry is a run of entry-intent moves, with the peck's retracts at the same XY;
+  - its kind comes from the last XY traverse before it: a feed is a lift-over, a rapid is a plunge.
+  It logs one "C40 entry" line per entry, and one "C40 entry summary" line per op.
+- **clearing.rs:** `record_entry_cause` before each `sink.emit(.. Rapid ..)`:
+  - the sweep's 2 sites;
+  - the cut branch: the air-run flush, the large-Z split (`LargeZHeld` when `held`) and the final air flush;
+  - the 2D Rapid arm: `Start` when it is the first `Rapid` of its outline's plan, else `Reentry2d`;
+  - the 2D Link arm.
+  The pick rolls the records back.
+- **No change to C12's `RecordMark`.** The G-b judge rolls back before
+  the emission, so no cause record of the skipped region exists yet. The
+  sweep's records come before the mark, as the sweep's entries do.
+- **Tests:** the C12 plain and heavy tests print `entry_line`, and assert
+  that no entry is Other.

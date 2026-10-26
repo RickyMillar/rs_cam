@@ -4151,3 +4151,70 @@ diff 3cc257c1f 6aefca969` equals `d23/applied.diff` for the tracked files,
 and its research_outer_band.rs equals the patch's (index lines aside). So
 every D23 run (fix13, the override rerun, mrcl0) is the 6aefca969 code; no
 rerun is needed. The fixture worktree is now at 6aefca969, clean.
+
+## D24: C22a (replay after the F-038 filter, held-link counter), corridor-slot removal, turn summary — gates green; fixtures
+
+Fixture worktree clean at 6aefca969; `git apply` of
+`phase3/d24/tree_vs_6aefca969.patch` (md5 8438961ef5587949212b5095ec19c63f;
+7 tracked files, 455+/229−; `d24/applied.diff`, unchanged to step 12).
+Outputs `phase3/d24/`.
+
+| Step | Result |
+|---|---|
+| 1–4 fmt, clippy core plain / research, workspace clippy | green |
+| 5, 6 parity plain, research | green 5/5 each |
+| 7 `--lib adaptive::research_geodesic` | green 25, 2 ignored (`a_link_over_a_dropped_group_is_refused_after_the_filter` ok) |
+| 8 2D harness | green; 189 files byte-equal to D23 |
+| 9 plain C12 | green 2/2; every old line identical to D23; 5 new lines, each "0 held links over standing stock" |
+| 10 heavy C12 | green (222.57 s); output identical to D23 |
+| 11 f152; 12 the 13 sentries | green |
+
+Step 9 new lines ("with the group filter at 15 mm"): oneway 5077 moves /
+117 entries; zigzag 1908 / 117; zigzag_v2 6228 / 61; spiral_pick 1958 /
+105; spiral_headon 6278 / 49; all "0 held links over standing stock".
+
+**Step 13** (`phase3/fix14/run_fix14.sh`, the D24 build, spiral_pick, the
+debug filter, `--sim-artifact`): Corne rc 0, 209 s, **export not refused**;
+wanaka200 rc 0, 73 s. Scripts: copies of the fix13 scripts
+(`entries_d24.py`, `stockmap_d24.py`, `bands_d24.py`, `c39_d24.py`,
+`peaks_d24.py`) and `held_links.py` (kept plan only).
+
+- C22a replayed: Corne 40 lines (20 per plan); rounds 1 to **3** (P ≤ 2
+  fails: Z 17 r1 3; Z 11 r1 3; Z 5 / 0.5 r1 3; copy op Z 14.01, 8.01,
+  5.01 r1 3). wanaka 10 lines, rounds 1–2.
+- C22a held link over standing stock: Corne 0. **wanaka 66 lines, 33 in
+  the kept plan** (P 0 fails): Z 19.54 12, Z 14.08 12, Z 8.62 9;
+  stock_above 1.28 to 16.38 mm (multiples of 5.46 at x 219.3, x 20.8, y
+  25.874, y 223.874). The wanaka sim prints no fed-link line.
+- C22 turn summary (kind="turns" only; no slot line): Corne op 1
+  planned 225, cut 140, fed 140, unfed 0, full_feed_unmatched 0, reduced
+  137, lowest 0.280, longest 2.356 mm; copy op planned 10, cut 0.
+- Hard bars, Corne: **fed link** "3D Rough 1": link move 6921 removes
+  10.50 mm at (149.7, -78.7, 11.00); 2 of 39900 link samples on 2 link
+  moves over 6.30 mm (beyond the mesh bbox). Deep-cut line: 4.0 %, peaking
+  at 15.56 mm. Depth-of-cut advisories: op 1 peak 18.0 (limit 9), copy op
+  15.56 (limit 4.5). Collisions 0. wanaka: no bar line.
+- Peaks: op 1 samples at 12 mm or more 81 (D23 pick 526); new peak 18.0
+  mm on 8 samples at Z 5.0 (7 in the outer strip, 1 beyond the bbox).
+  Copy op peak 15.56 mm at (2.78, -75.21, 0.5), beyond the bbox, 2.5 mm
+  inside the stock's -X edge; the x 151 peak is gone (0 samples over 3.3
+  mm at x > 150). Copy-op deflection proxy: the same sample, move 5379.
+- Bands, Corne, D23 pick → D24: 3–9 mm 455 → **999**; 0–1.5 443 → 543;
+  1.5–3 230 → 365; whole box 4793 → 5650 mm².
+
+| | D23 pick | D24 pick |
+|---|---|---|
+| Corne descents (audit) | 1062 | 1291 |
+| Corne lift-over descents (entries.py) | 1010 | 1194 |
+| Corne plunge entries | 67 | 65 |
+| Corne planar turns > 30° | 1096 | 3007 (reversals 1968; 135–180° 1639) |
+| Corne plunge share, program clock | 32.3 % | 36.9 % |
+| Corne cycle time | 2932 s | 3405 s |
+| wanaka descents (audit) | 2031 | 2031 |
+| wanaka plunge entries | 20 | 20 |
+| wanaka planar turns > 30° | 177 | 180 |
+| wanaka plunge share, program clock | 51.9 % | 51.9 % |
+| wanaka cycle time | 3367 s | 3365 s |
+
+After the runs: `git checkout -- .`; `git status --short` empty at
+6aefca969.

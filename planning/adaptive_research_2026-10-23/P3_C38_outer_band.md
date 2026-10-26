@@ -1263,3 +1263,51 @@ boundary, R, the planner cell and the level floor.
 
 Falsifier: if P-CA1 fails while (a) is in, the deep copy cuts are not the
 planner's blind band, and the mechanism of §10.7 is wrong.
+
+### 11.4 As built (2026-10-26; uncommitted in adaptive-head, rustfmt clean, not built)
+
+The changes are research-only and apply only when the arm is `Geodesic`
+AND the ordering is Global. By Area is unchanged: `boundary_reach` gives
+`None`, and the shipped clear runs.
+- **`adaptive3d/research_outer_band.rs`:**
+  - `boundary_reach(params, boundary, R)`: the boundary grown by R
+    (`offset_polygon(boundary, −R)`), or `None`.
+  - `ResearchClip { inside, rows, cols, tool_radius, cell_size }` and
+    `restrict_regions(grid, padded_rows, padded_cols)`. On the padded
+    grid, cell `(r+1, c+1)` is stock cell `(r, c)`.
+    - (b) It clears every material cell whose centre is outside the
+      boundary, and collects those cells as the band.
+    - (c) It sets every inside cell within R of a band cell (a disc of
+      R, on the cell centres).
+- **`adaptive3d/path.rs`, the boundary clear:** the cell test is now
+  `inside = boundary.contains_point(p)`. With a reach, the research
+  branch keeps a cell when it is inside the boundary OR inside the
+  reach, and it records `inside` per cell. After the loop it builds the
+  `ResearchClip`.
+  - Shipped, `kept = inside`, the same predicate as before.
+  - The ctx literal gains `research_clip`, after C22's
+    `research_entry_causes`.
+- **`adaptive3d/clearing.rs`:**
+  - the `research_clip` ctx field;
+  - in `detect_and_order_regions`, right after `build_material_bool_grid`,
+    a research block that calls `restrict_regions` on the grid.
+  - `level_gate` is unchanged. It counts the band as material, so a level
+    whose only stock is the band is still planned, and (c) plans it from
+    inside.
+- **The border clear is not touched.** With `world_stock_xy_bbox` (the
+  Corne projects pass it), the cells between the mesh bbox and the stock
+  box keep their stock already (F-027). So the copy op's band at
+  x 150.9–152.56 reaches the boundary clear, which now keeps it.
+
+**D25 verify:**
+- the D24 gates;
+- byte parity plain and research (P-CA6);
+- the 13 sentries;
+- the Corne spiral_pick and headon runs and wanaka200, with the fix13
+  flags (`RUST_LOG=info,rs_cam_core::adaptive3d::clearing=debug`,
+  `--sim-artifact`);
+- then `d23_why/peak_move.py`, `clipair_base.py` and `op1_deep.py` on
+  the new samples (`extract.py` with the new run paths), against
+  P-CA1–P-CA7 (§11.3 / §11.1b).
+
+Read P-CA3 against D24's count.

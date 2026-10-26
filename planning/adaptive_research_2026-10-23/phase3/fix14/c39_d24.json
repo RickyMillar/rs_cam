@@ -1,0 +1,36 @@
+{
+ "corne spiral_pick D24": {
+  "program_plunge_feed_s": 691.4,
+  "summary_runtime_s": 1871.7,
+  "summary_cutting_s": 1770.6,
+  "summary_rapid_s": 101.1,
+  "per_kinematics_sum_s": 1770.6,
+  "samples_s": 1871.7,
+  "program_s": 1873.0,
+  "program_fed_s": 1770.6,
+  "program_rapid_s": 102.4,
+  "samples_retimed_at_program_feed_s": 1871.7,
+  "fed_moves_compared": 16096,
+  "sample_feed_below_program": 1793,
+  "sample_feed_above_program": 251,
+  "program_over_sample_feed_median": 1.0,
+  "runtime_by_intent_present": false
+ },
+ "wanaka200 spiral_pick D24": {
+  "program_plunge_feed_s": 1416.7,
+  "summary_runtime_s": 3364.6,
+  "summary_cutting_s": 3258.1,
+  "summary_rapid_s": 106.5,
+  "per_kinematics_sum_s": 6007.4,
+  "samples_s": 6025.2,
+  "program_s": 2732.0,
+  "program_fed_s": 2713.0,
+  "program_rapid_s": 18.9,
+  "samples_retimed_at_program_feed_s": 2730.9,
+  "fed_moves_compared": 18068,
+  "sample_feed_below_program": 12480,
+  "sample_feed_above_program": 205,
+  "program_over_sample_feed_median": 3.062,
+  "runtime_by_intent_present": true
+ }
+}

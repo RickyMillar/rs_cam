@@ -1,0 +1,134 @@
+{
+ "fix14/corne": {
+  "tp1": {
+   "cutting_samples": 224584,
+   "peak_doc_mm": 18.0,
+   "peak_samples": 8,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 7,
+    "clearing_cut / linear / beyond mesh bbox": 1
+   },
+   "peak_moves": [
+    9659,
+    9976,
+    9995,
+    10002,
+    10023,
+    10034,
+    10041,
+    10390
+   ],
+   "peak_z": [
+    5.0
+   ],
+   "peak_xy_examples": [
+    [
+     62.23,
+     -98.03,
+     5.0
+    ],
+    [
+     100.67,
+     -80.67,
+     5.0
+    ],
+    [
+     106.59,
+     -80.61,
+     5.0
+    ],
+    [
+     108.87,
+     -80.61,
+     5.0
+    ],
+    [
+     126.41,
+     -80.62,
+     5.0
+    ],
+    [
+     128.59,
+     -80.61,
+     5.0
+    ],
+    [
+     130.87,
+     -80.61,
+     5.0
+    ],
+    [
+     39.87,
+     -2.99,
+     5.0
+    ]
+   ],
+   "deep_share_pct": 0.11,
+   "deep_samples": 247,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 158,
+    "clearing_cut / linear / inside silhouette": 44,
+    "clearing_cut / linear / beyond mesh bbox": 38,
+    "clearing_cut / arc / beyond mesh bbox": 5,
+    "linking / linear / beyond mesh bbox": 1,
+    "linking / linear / outer strip 0-9": 1
+   },
+   "deep_z": {
+    "5.0": 108,
+    "11.0": 139
+   }
+  },
+  "tp3": {
+   "cutting_samples": 66756,
+   "peak_doc_mm": 15.562589645385742,
+   "peak_samples": 1,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 1
+   },
+   "peak_moves": [
+    5379
+   ],
+   "peak_z": [
+    0.5
+   ],
+   "peak_xy_examples": [
+    [
+     2.78,
+     -75.21,
+     0.5
+    ]
+   ],
+   "deep_share_pct": 0.41,
+   "deep_samples": 277,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 117,
+    "clearing_cut / helix / inside silhouette": 79,
+    "clearing_cut / linear / outer strip 0-9": 33,
+    "clearing_cut / linear / inside silhouette": 32,
+    "clearing_cut / arc / beyond mesh bbox": 12,
+    "clearing_cut / arc / outer strip 0-9": 4
+   },
+   "deep_z": {
+    "0.5": 30,
+    "2.01": 29,
+    "5.01": 88,
+    "8.01": 17,
+    "11.01": 10,
+    "14.01": 24,
+    "14.16": 9,
+    "14.46": 9,
+    "14.76": 9,
+    "15.06": 9,
+    "15.36": 9,
+    "15.66": 9,
+    "15.96": 8,
+    "16.26": 6,
+    "16.55": 5,
+    "16.85": 3,
+    "17.15": 1,
+    "17.45": 1,
+    "17.75": 1
+   }
+  }
+ }
+}
