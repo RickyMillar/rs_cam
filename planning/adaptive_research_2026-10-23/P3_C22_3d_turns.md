@@ -2336,3 +2336,145 @@ counts add up to the D20 totals:
 C12 will send its line ranges and will ask before it touches the C31 call
 site (`research_grown_outlines`). I still hold all code until the lead
 reports D21.
+
+### 12.6 D21 RED: the replay splits the core spiral (8 re-entries per level); the instrument (2026-10-26)
+
+D21 (`phase3/d21/10_c12_heavy.txt`):
+- core at Z 7.00 and Z 4.50: seed (-18.46, -8.88), radius 9.31 mm, 4
+  levels; "2D re-entries 8, 3D entries inside 8" at each level;
+- 0 over the exact bound; the turns are identical to `zigzag_pick`;
+- plain test: 55 entries against 47 for `zigzag_pick`.
+This is the risk of §12.5.
+
+**What the geometry says (computed, s 2, R 3, c·D 2.1759).** The
+curvature law places the levels at ρ = 3.000, 4.437, 6.031, 7.733, 9.514
+(steps 1.437, 1.594, 1.703, 1.781). On turn n the spiral runs from level n
+to n+1 while the turn before it ran from n−1 to n. So at the fraction f
+of a turn the band is `d_n + f(d_{n+1} − d_n)`, at a pass radius between
+the two levels. Over f in [0, 1] the circular-front width
+`w(ρ, Δ) = R − (a² − R² − ρ²)/(2ρ)`, `a = ρ − Δ + R`, never exceeds c·D
+on turns 1–4: the excess is 0 at f = 0 (exactly on the law) and negative
+between. Turn 0, against the starter lap, is far under. **So on exact
+circles the spiral holds the law.** Its spacing does not exceed the
+curvature law anywhere. The refusals come from what the exact model
+leaves out.
+
+**The candidates (none confirmed without a run):**
+- **H1, a zero margin read on the lattice.** At the law the pass reads
+  exactly c·D (C10: `m ≈ 0` inside ρ\*; C24: LocalLevel's bisection lands
+  up to 0.075 mm under the root). The replay reads the swept width on the
+  planner lattice (cell 0.5), whose quantum is one cell over D (0.083). A
+  pass placed exactly on the ceiling can read one quantum over where the
+  spiral crosses the lattice badly. Two places per turn would fit that.
+  The closed rings of `zigzag_pick` sit on the same law, so H1 must also
+  say why they pass. Their polylines are lattice contour chains, while
+  the spiral is a polar curve with chords from the tolerance.
+- **H2, not the spiral.** The `Rapid`s inside the disc may enter another
+  producer: a residue contour or a mop patch that the spiral leaves work
+  for (for example between the starter lap and the first turn), not a
+  split of the spiral.
+- **H3, the spiral's discretisation.** Its chord step comes from the
+  tolerance at the outer radius (22 chords per turn here, 2.66 mm at
+  ρ 9.3, sag 0.095). I showed the radial alignment of the vertices keeps
+  the band under Δ at chord midpoints, so H3 is unlikely. It stays listed
+  until the readings rule it out.
+
+**The instrument (built; no change of behaviour):**
+- `CoreZone` now carries the ceiling and every RAW-plan step over the
+  ceiling with an end inside the disc. That is
+  `pass_load_readout(raw, parts)` in `slice_segments`; the raw readout's
+  over-steps are the steps the replay refuses. Each step carries its
+  radii from the seed, its reading, its `StepPart` (Spiral, Wrap, …) and
+  its producer.
+- `core_rapids` now returns each `Rapid` inside, with the producer it
+  enters.
+- `CoreZoneRecord` gains `ceiling`, `rapid_lines` and `over_lines`, and
+  the C12 tests print them under each core line.
+- So one run of the plain test shows every split: where it is, the swept
+  width there against the ceiling, and whether it is the spiral (H1/H3)
+  or another producer (H2).
+
+**No fix is built yet.** "Fix the cause, not the count", and the cause is
+not proven. The fix by outcome:
+- **H2:** the spiral leaves a gap that another producer refuses. The fix
+  is in the spiral's start or closing lap.
+- **H1:** the spiral needs the margin the closed rings get from their
+  lattice tracing. The derived fix is to trace the spiral's chords at the
+  lattice cell instead of the tolerance, so it reads like a contour chain.
+  Or the spiral steps one bisection bracket under the law; the bracket is
+  the LocalLevel tolerance, not a new constant.
+- **The core too small:** if the readings show over at f ≈ 0 on every turn
+  (on the law itself), then a 9.3 mm core at s 2 sits wholly inside ρ\*
+  (22.7 mm) with no margin. C35 would then need the spacing one quantum
+  under the law inside the spiral only: a cost of about one extra turn in
+  a 4-level core.
+
+### 12.7 D21b: the cause is the chord heading (H3, not the sag); the fix (2026-10-26)
+
+**The readings** (`phase3/d21/b_3_c12_plain.txt`): 9 raw overs, all
+Spiral / Clearing, 0.3631 to 0.3931 against 0.3626. The 8 rapids are the
+ends of the first 8 overs. H2 is out.
+
+**Each over is the second half of a chord.** The tolerance rule gives 22
+vertices per turn (`dφ` 0.286 rad, chords 1.2 to 2.7 mm). The replay
+splits each chord into steps of at most 1.5 mm, so a chord is two steps
+of about 1 mm. The chord's middle lies 0.1 mm inside the circle (the
+sag), so its second half runs out by about 0.1 mm. That is the radial
+change of 0.06 to 0.15 mm that the readings show on each over.
+
+**Why a step of 1 mm reads up to 8 % over.**
+- The vertices ARE radially aligned with the turn before. Each turn has
+  the same 22 rays (`θ = j·dφ`). The alignment holds the gap; it does not
+  hold the heading.
+- The swept width reads the extent of the stock in the disc ACROSS the
+  step's heading. At the end of a chord the heading is `β = dφ/2` (0.143
+  rad) off the tangent, out into the stock. The cap of stock ahead of the
+  cutter then reads `R(1 − cos β) + h sin β` wider (`EntryLaw`'s
+  tilted-step bound, `h = √(R² − (R − s)²)` = 2.83). The previous turn's
+  chord ahead also lies `ρ(1 − cos β)` inside the level. At 22 per turn
+  that is 0.43 + 0.09 mm, about 0.08 of D.
+- The law has no margin inside `ρ*`. So any tilt reads over on exact
+  geometry. The lattice reads up to one cell short, so only some steps
+  show (9 here, at no fixed place on the turn).
+- My §12.6 model checked the gap at the chord midpoints, not the heading.
+  The note in `transition_fraction` ("the spiral form has no kink") is
+  true for the curve only.
+
+**The model asserts this** (`phase3/d21/c35_chord_model/assert_chord_tilt.py`,
+exact circles, the replay's step reading):
+- On a fine grid (0.05) at the law levels the excess is 0.077, 0.0165
+  and 0.0037 of D at 22, 88 and 352 vertices per turn. It is linear in
+  `β` and goes to 0, so the law itself holds on the curve.
+- At 22 per turn on the 0.5 lattice: 12 to 18 overs, max 0.40 to 0.43,
+  at each of five lattice phases (Corne: 9, max 0.393).
+- The held spiral below: 0 overs at every phase, max 0.325 to 0.337; on
+  the fine grid 0 overs, max 0.344.
+
+**The fix (built; research arm `geodesic_local_spiral_pick` only):**
+`held_core_spiral` in `research_geodesic.rs` replaces `core_spiral` on
+the C35 path. `core_spiral` (morph arms) gives the same output; its
+tracing moved into `trace_core_spiral` and `chord_turn_steps` with the
+same arithmetic.
+1. The angle step holds the tilt to the op tolerance:
+   `β = atan2(R, h) + asin((tol − R)/√(h² + R²))` (`held_tilt`, the form of
+   `transition_fraction` with margin = tol). At s 2, R 3, tol 0.1:
+   β 0.0347, 91 vertices per turn (the chord rule is used when finer).
+2. Each vertex radius is bisected to the float resolution (tolerance 0 in
+   `radius_at`). A radius error of 0.1 mm between two vertices 0.5 mm
+   apart would tilt the chord by 0.2 rad.
+3. The turns are spaced by the LocalLevel walk
+   (`GeodesicField::spiral_turn_levels`) at the ceiling width less the
+   tilt term (0.099), the chord sag at the outer radius (0.006) and one
+   tol (the law is read on the traced contours, the spiral on the
+   bilinear field). Width 1.971 against 2.176. The last turn ends on
+   level K, so the wraps and the zone radius do not change.
+- Every number comes from R, s, tol and the ceiling. No new constant.
+
+**Cost.** On the model core: 5 turns instead of 4 (the last one 0.77 mm),
+one extra lap of about 60 mm per core. The P numbers of §12.5 move by less
+than their bands: Corne about +1 lap × levels with a core.
+
+**What D21 must show:** the spiral arm's core zones have 0 re-entries and
+0 raw overs inside the disc; every other mode prints as in D21b
+(`core_spiral` is unchanged for the morph arms; the seam arms do not call
+it).
