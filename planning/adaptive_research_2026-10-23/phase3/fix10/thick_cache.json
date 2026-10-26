@@ -1,0 +1,58 @@
+{
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/corne/contour_parallel|tp_1_*.json|337475118|1792920341.7004597": {
+  "total_mm": 3138.9,
+  "perimeter": null,
+  "body": 3132.7,
+  "waterline": 6.3,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix5/corne/geodesic_local_zigzag_pick|tp_1_*.json|355508618|1792908357.3424466": {
+  "total_mm": 1557.1,
+  "perimeter": 1293.0,
+  "body": 33.6,
+  "waterline": 230.4,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/corne/geodesic_local_zigzag_pick|tp_1_*.json|388164369|1792956655.186612": {
+  "total_mm": 300.3,
+  "perimeter": 0,
+  "body": 268.0,
+  "waterline": 32.3,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/corne/agent|tp_1_*.json|236125358|1792889434.9705682": {
+  "total_mm": 2901.5,
+  "perimeter": 1422.3,
+  "body": 1223.1,
+  "waterline": 256.2,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix6/wanaka200/contour_parallel|tp_1_*.json|309756934|1792920377.5176792": {
+  "total_mm": 2822.0,
+  "perimeter": null,
+  "body": 2822.0,
+  "waterline": 0,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/geodesic_local_zigzag|tp_1_*.json|149888365|1792889528.7450848": {
+  "total_mm": 2516.6,
+  "perimeter": 2238.1,
+  "body": 263.8,
+  "waterline": 14.7,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix7/wanaka200/geodesic_local_zigzag_pick|tp_1_*.json|168072017|1792956831.4461255": {
+  "total_mm": 372.7,
+  "perimeter": 5.0,
+  "body": 353.2,
+  "waterline": 14.6,
+  "unplaced": 0
+ },
+ "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix2/simart/wanaka200/agent|tp_1_*.json|62300190|1792889483.439836": {
+  "total_mm": 14295.3,
+  "perimeter": 2241.3,
+  "body": 12040.3,
+  "waterline": 13.8,
+  "unplaced": 0
+ }
+}

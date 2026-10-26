@@ -1,0 +1,934 @@
+{
+ "fixtures": {
+  "corne": {
+   "levels_shown": [
+    "Z 17.00",
+    "Z 5.00",
+    "Z 0.50"
+   ],
+   "arms": {
+    "contour_parallel": {
+     "commit": "f32401326",
+     "role": "main control",
+     "cycle_time_s": 2022,
+     "cutting_mm": 58238,
+     "rapid_mm": 21069,
+     "air_cut_pct": 51.8,
+     "sim_cell_mm": 0.3,
+     "ops": {
+      "3D Rough 1": {
+       "moves": 8006,
+       "entries": 73,
+       "keepdown_links": 176,
+       "keepdown_mm": 768.0,
+       "cut_xy_mm": 39569.2
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 5347,
+       "entries": 180,
+       "keepdown_links": 7,
+       "keepdown_mm": 76.9,
+       "cut_xy_mm": 7060.2
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [
+       {
+        "op": "3D Rough 1 (copy)",
+        "count": 1428,
+        "at_wall": 1387,
+        "area_mm2": 772.9
+       },
+       {
+        "op": "3D Rough 1",
+        "count": 902,
+        "at_wall": 871,
+        "area_mm2": 1373.5
+       }
+      ],
+      "coverage_pass": false,
+      "gouge_lines": 2,
+      "gouge_pass": false,
+      "generation": {
+       "steps": 5,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 17.0,
+       "cut_mm": 9465.338,
+       "plunge_entries": 5,
+       "lift_over": 1
+      },
+      "plane 1": {
+       "z": 5.0,
+       "cut_mm": 8348.176,
+       "plunge_entries": 12,
+       "lift_over": 2
+      },
+      "plane 2": {
+       "z": 0.5,
+       "cut_mm": 1375.5,
+       "plunge_entries": 23,
+       "lift_over": 2
+      },
+      "drape": {
+       "cut_mm": 11859.088
+      }
+     },
+     "load": {
+      "cut_mm": 39425.0,
+      "over_mm": 3158.9,
+      "over_pct": 8.01,
+      "screen": 0.5126,
+      "over_screen_mm": 2834.7,
+      "over_screen_pct": 7.19
+     },
+     "producers": {
+      "perimeter": null,
+      "body": 3149.4,
+      "waterline": 9.5,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 3138.9,
+      "perimeter": null,
+      "body": 3132.7,
+      "waterline": 6.3,
+      "unplaced": 0,
+      "pct": 7.96
+     },
+     "lift_over": 13,
+     "coverage_rebuild": {
+      "inside_mm2": 903.7,
+      "outer_band_mm2": 1511.3
+     }
+    },
+    "zigzag_pick D18": {
+     "commit": "f32401326",
+     "role": "before C31",
+     "cycle_time_s": 2607,
+     "cutting_mm": 60483,
+     "rapid_mm": 18003,
+     "air_cut_pct": 60.0,
+     "sim_cell_mm": 0.3,
+     "ops": {
+      "3D Rough 1": {
+       "moves": 10918,
+       "entries": 56,
+       "keepdown_links": 1050,
+       "keepdown_mm": 2371.3,
+       "cut_xy_mm": 29940.6
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 6034,
+       "entries": 176,
+       "keepdown_links": 0,
+       "keepdown_mm": 0,
+       "cut_xy_mm": 7060.3
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [
+       {
+        "op": "3D Rough 1 (copy)",
+        "count": 1024,
+        "at_wall": 1010,
+        "area_mm2": 3449.4
+       },
+       {
+        "op": "3D Rough 1",
+        "count": 961,
+        "at_wall": 950,
+        "area_mm2": 5106.2
+       }
+      ],
+      "coverage_pass": false,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 5,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 17.0,
+       "cut_mm": 8747.724,
+       "plunge_entries": 6,
+       "lift_over": 156
+      },
+      "plane 1": {
+       "z": 5.0,
+       "cut_mm": 6482.101,
+       "plunge_entries": 6,
+       "lift_over": 50
+      },
+      "plane 2": {
+       "z": 0.5,
+       "cut_mm": 222.736,
+       "plunge_entries": 14,
+       "lift_over": 116
+      },
+      "drape": {
+       "cut_mm": 10966.23
+      }
+     },
+     "load": {
+      "cut_mm": 32834.9,
+      "over_mm": 1929.1,
+      "over_pct": 5.88,
+      "screen": 0.5126,
+      "over_screen_mm": 1827.1,
+      "over_screen_pct": 5.56
+     },
+     "producers": {
+      "perimeter": 1293.0,
+      "body": 43.2,
+      "waterline": 592.8,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 1557.1,
+      "perimeter": 1293.0,
+      "body": 33.6,
+      "waterline": 230.4,
+      "unplaced": 0,
+      "pct": 4.74
+     },
+     "lift_over": 719,
+     "coverage_rebuild": {
+      "inside_mm2": 2027.5,
+      "outer_band_mm2": 3070.1
+     }
+    },
+    "zigzag_pick D20": {
+     "commit": "b37cad1a4",
+     "role": "after C31",
+     "cycle_time_s": 2760,
+     "cutting_mm": 64712,
+     "rapid_mm": 18612,
+     "air_cut_pct": 50.8,
+     "sim_cell_mm": 0.3,
+     "ops": {
+      "3D Rough 1": {
+       "moves": 11724,
+       "entries": 60,
+       "keepdown_links": 1239,
+       "keepdown_mm": 1702.3,
+       "cut_xy_mm": 30711.3
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 6042,
+       "entries": 176,
+       "keepdown_links": 0,
+       "keepdown_mm": 0,
+       "cut_xy_mm": 7060.3
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [
+       {
+        "op": "3D Rough 1 (copy)",
+        "count": 1027,
+        "at_wall": 1019,
+        "area_mm2": 2582.2
+       },
+       {
+        "op": "3D Rough 1",
+        "count": 1024,
+        "at_wall": 1018,
+        "area_mm2": 4095.6
+       }
+      ],
+      "coverage_pass": false,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 5,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 17.0,
+       "cut_mm": 8996.103,
+       "plunge_entries": 9,
+       "lift_over": 238
+      },
+      "plane 1": {
+       "z": 5.0,
+       "cut_mm": 7132.63,
+       "plunge_entries": 7,
+       "lift_over": 65
+      },
+      "plane 2": {
+       "z": 0.5,
+       "cut_mm": 222.856,
+       "plunge_entries": 14,
+       "lift_over": 123
+      },
+      "drape": {
+       "cut_mm": 11632.169
+      }
+     },
+     "load": {
+      "cut_mm": 35195.2,
+      "over_mm": 462.1,
+      "over_pct": 1.31,
+      "screen": 0.5126,
+      "over_screen_mm": 450.7,
+      "over_screen_pct": 1.28
+     },
+     "producers": {
+      "perimeter": 1.3,
+      "body": 423.6,
+      "waterline": 37.1,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 300.3,
+      "perimeter": 0,
+      "body": 268.0,
+      "waterline": 32.3,
+      "unplaced": 0,
+      "pct": 0.85
+     },
+     "openings": [
+      {
+       "z": 17.0,
+       "region": 1,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 11.0,
+       "region": 2,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 5.0,
+       "region": 2,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 0.5,
+       "region": 2,
+       "decision": "grown, no sweep"
+      }
+     ],
+     "opening_tags": {},
+     "lift_over": 1195,
+     "coverage_rebuild": {
+      "inside_mm2": 1042.2,
+      "outer_band_mm2": 3070.1
+     }
+    },
+    "AgentSearch": {
+     "commit": "cdc9814e",
+     "role": "secondary control",
+     "cycle_time_s": 2112,
+     "cutting_mm": 38487,
+     "rapid_mm": 17531,
+     "air_cut_pct": 55.2,
+     "sim_cell_mm": 0.3,
+     "ops": {
+      "3D Rough 1": {
+       "moves": 4168,
+       "entries": 48,
+       "keepdown_links": 136,
+       "keepdown_mm": 741.3,
+       "cut_xy_mm": 14312.0
+      },
+      "3D Rough 1 [copy]": {
+       "moves": 6060,
+       "entries": 182,
+       "keepdown_links": 4,
+       "keepdown_mm": 50.8,
+       "cut_xy_mm": 7952.5
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [
+       {
+        "op": "3D Rough 1 (copy)",
+        "count": 1257,
+        "at_wall": 1175,
+        "area_mm2": 3652.5
+       },
+       {
+        "op": "3D Rough 1",
+        "count": 457,
+        "at_wall": 404,
+        "area_mm2": 6832.7
+       }
+      ],
+      "coverage_pass": false,
+      "gouge_lines": 1,
+      "gouge_pass": false,
+      "generation": {
+       "steps": 5,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 17.0,
+       "cut_mm": 4342.371,
+       "plunge_entries": 7,
+       "lift_over": 23
+      },
+      "plane 1": {
+       "z": 5.0,
+       "cut_mm": 2550.436,
+       "plunge_entries": 3,
+       "lift_over": 6
+      },
+      "plane 2": {
+       "z": 0.5,
+       "cut_mm": 122.741,
+       "plunge_entries": 14,
+       "lift_over": 13
+      },
+      "drape": {
+       "cut_mm": 4650.977
+      }
+     },
+     "load": {
+      "cut_mm": 14207.0,
+      "over_mm": 3338.1,
+      "over_pct": 23.5,
+      "screen": 0.5126,
+      "over_screen_mm": 3041.5,
+      "over_screen_pct": 21.41
+     },
+     "producers": {
+      "perimeter": 1423.5,
+      "body": 1269.2,
+      "waterline": 645.4,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 2901.5,
+      "perimeter": 1422.3,
+      "body": 1223.1,
+      "waterline": 256.2,
+      "unplaced": 0,
+      "pct": 20.42
+     },
+     "lift_over": 127,
+     "coverage_rebuild": {
+      "inside_mm2": 3632.6,
+      "outer_band_mm2": 3071.6
+     }
+    }
+   }
+  },
+  "wanaka200": {
+   "levels_shown": [
+    "Z 19.54",
+    "Z 8.62",
+    "Z 4.00"
+   ],
+   "arms": {
+    "contour_parallel": {
+     "commit": "f32401326",
+     "role": "main control",
+     "cycle_time_s": 5750,
+     "cutting_mm": 88747,
+     "rapid_mm": 158535,
+     "air_cut_pct": 34.2,
+     "sim_cell_mm": 1.0,
+     "ops": {
+      "2 Back Rough": {
+       "moves": 14180,
+       "entries": 964,
+       "keepdown_links": 982,
+       "keepdown_mm": 14855.6,
+       "cut_xy_mm": 58883.5
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 86,
+       "failed_checks": 0
+      },
+      "collisions_pass": false,
+      "coverage": [],
+      "coverage_pass": true,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 2,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 19.54,
+       "cut_mm": 18359.264,
+       "plunge_entries": 0,
+       "lift_over": 0
+      },
+      "plane 1": {
+       "z": 14.08,
+       "cut_mm": 18359.264,
+       "plunge_entries": 2,
+       "lift_over": 0
+      },
+      "plane 2": {
+       "z": 8.62,
+       "cut_mm": 193.926,
+       "plunge_entries": 48,
+       "lift_over": 11
+      },
+      "drape": {
+       "cut_mm": 20891.136
+      }
+     },
+     "load": {
+      "cut_mm": 58248.8,
+      "over_mm": 6201.7,
+      "over_pct": 10.65,
+      "screen": 0.6293,
+      "over_screen_mm": 5190.0,
+      "over_screen_pct": 8.91
+     },
+     "producers": {
+      "perimeter": null,
+      "body": 6201.7,
+      "waterline": 0,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 2822.0,
+      "perimeter": null,
+      "body": 2822.0,
+      "waterline": 0,
+      "unplaced": 0,
+      "pct": 4.84
+     },
+     "lift_over": 123,
+     "coverage_rebuild": {
+      "inside_mm2": 2052.2,
+      "outer_band_mm2": null
+     }
+    },
+    "zigzag_pick D18": {
+     "commit": "31935b89",
+     "role": "before C31 (the zigzag run at 31935b89, as D20 used)",
+     "cycle_time_s": 3950,
+     "cutting_mm": 90906,
+     "rapid_mm": 3301,
+     "air_cut_pct": 45.2,
+     "sim_cell_mm": 1.0,
+     "ops": {
+      "2 Back Rough": {
+       "moves": 20853,
+       "entries": 22,
+       "keepdown_links": 3402,
+       "keepdown_mm": 3422.8,
+       "cut_xy_mm": 58467.4
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [],
+      "coverage_pass": true,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 2,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 19.54,
+       "cut_mm": 19586.787,
+       "plunge_entries": 1,
+       "lift_over": 0
+      },
+      "plane 1": {
+       "z": 14.08,
+       "cut_mm": 19702.842,
+       "plunge_entries": 2,
+       "lift_over": 50
+      },
+      "plane 2": {
+       "z": 8.62,
+       "cut_mm": 143.853,
+       "plunge_entries": 6,
+       "lift_over": 0
+      },
+      "drape": {
+       "cut_mm": 17210.262
+      }
+     },
+     "load": {
+      "cut_mm": 57263.3,
+      "over_mm": 4136.8,
+      "over_pct": 7.22,
+      "screen": 0.6293,
+      "over_screen_mm": 3541.0,
+      "over_screen_pct": 6.18
+     },
+     "producers": {
+      "perimeter": 2245.6,
+      "body": 1871.1,
+      "waterline": 20.1,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 2516.6,
+      "perimeter": 2238.1,
+      "body": 263.8,
+      "waterline": 14.7,
+      "unplaced": 0,
+      "pct": 4.39
+     },
+     "lift_over": 2622,
+     "coverage_rebuild": {
+      "inside_mm2": 2796.0,
+      "outer_band_mm2": null
+     }
+    },
+    "zigzag_pick D20": {
+     "commit": "b37cad1a4",
+     "role": "after C31",
+     "cycle_time_s": 4832,
+     "cutting_mm": 100294,
+     "rapid_mm": 3159,
+     "air_cut_pct": 44.1,
+     "sim_cell_mm": 1.0,
+     "ops": {
+      "2 Back Rough": {
+       "moves": 25573,
+       "entries": 20,
+       "keepdown_links": 3982,
+       "keepdown_mm": 3349.3,
+       "cut_xy_mm": 55209.8
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 0,
+       "failed_checks": 0
+      },
+      "collisions_pass": true,
+      "coverage": [],
+      "coverage_pass": true,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 2,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 19.54,
+       "cut_mm": 18823.347,
+       "plunge_entries": 0,
+       "lift_over": 0
+      },
+      "plane 1": {
+       "z": 14.08,
+       "cut_mm": 18823.347,
+       "plunge_entries": 1,
+       "lift_over": 47
+      },
+      "plane 2": {
+       "z": 8.62,
+       "cut_mm": 170.141,
+       "plunge_entries": 6,
+       "lift_over": 0
+      },
+      "drape": {
+       "cut_mm": 15675.362
+      }
+     },
+     "load": {
+      "cut_mm": 53859.6,
+      "over_mm": 1733.2,
+      "over_pct": 3.22,
+      "screen": 0.6293,
+      "over_screen_mm": 1255.2,
+      "over_screen_pct": 2.33
+     },
+     "producers": {
+      "perimeter": 12.3,
+      "body": 1701.4,
+      "waterline": 19.5,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 372.7,
+      "perimeter": 5.0,
+      "body": 353.2,
+      "waterline": 14.6,
+      "unplaced": 0,
+      "pct": 0.69
+     },
+     "openings": [
+      {
+       "z": 19.54,
+       "region": 1,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 14.08,
+       "region": 1,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 8.62,
+       "region": 1,
+       "decision": "grown, no sweep"
+      },
+      {
+       "z": 4.0,
+       "region": 1,
+       "decision": "closing guard: shipped sweep"
+      },
+      {
+       "z": 4.0,
+       "region": 3,
+       "decision": "the shortfall inset split the outline: shipped sweep"
+      }
+     ],
+     "opening_tags": {
+      "4.00/1": "G-RINGGROW, DEFECTS.md"
+     },
+     "lift_over": 3578,
+     "coverage_rebuild": {
+      "inside_mm2": 3073.5,
+      "outer_band_mm2": null
+     }
+    },
+    "AgentSearch": {
+     "commit": "31935b89",
+     "role": "secondary control",
+     "cycle_time_s": 1339,
+     "cutting_mm": 38108,
+     "rapid_mm": 3603,
+     "air_cut_pct": 36.0,
+     "sim_cell_mm": 1.0,
+     "ops": {
+      "2 Back Rough": {
+       "moves": 7652,
+       "entries": 32,
+       "keepdown_links": 510,
+       "keepdown_mm": 1727.7,
+       "cut_xy_mm": 30727.0
+      }
+     },
+     "bars": {
+      "collisions": {
+       "feed": 0,
+       "rapid": 1,
+       "failed_checks": 0
+      },
+      "collisions_pass": false,
+      "coverage": [],
+      "coverage_pass": true,
+      "gouge_lines": 0,
+      "gouge_pass": true,
+      "generation": {
+       "steps": 2,
+       "blocked": 0,
+       "ops_with_moves": true
+      },
+      "generation_pass": true,
+      "export_refused": null,
+      "machine_safety_errors": 0
+     },
+     "images": {
+      "plane 0": {
+       "z": 19.54,
+       "cut_mm": 10280.366,
+       "plunge_entries": 0,
+       "lift_over": 0
+      },
+      "plane 1": {
+       "z": 14.08,
+       "cut_mm": 10295.834,
+       "plunge_entries": 4,
+       "lift_over": 5
+      },
+      "plane 2": {
+       "z": 8.62,
+       "cut_mm": 92.128,
+       "plunge_entries": 6,
+       "lift_over": 0
+      },
+      "drape": {
+       "cut_mm": 9272.048
+      }
+     },
+     "load": {
+      "cut_mm": 30075.8,
+      "over_mm": 14440.9,
+      "over_pct": 48.02,
+      "screen": 0.6293,
+      "over_screen_mm": 5102.1,
+      "over_screen_pct": 16.96
+     },
+     "producers": {
+      "perimeter": 2249.8,
+      "body": 12171.9,
+      "waterline": 19.2,
+      "unplaced": 0
+     },
+     "thick": {
+      "total_mm": 14295.3,
+      "perimeter": 2241.3,
+      "body": 12040.3,
+      "waterline": 13.8,
+      "unplaced": 0,
+      "pct": 47.53
+     },
+     "lift_over": 481,
+     "coverage_rebuild": {
+      "inside_mm2": 6182.8,
+      "outer_band_mm2": null
+     }
+    }
+   }
+  }
+ },
+ "islands_diff": {
+  "new_r1": {
+   "height_mm": 14.5,
+   "width_mm": 2.38,
+   "area_mm2": 412.1,
+   "x": 24.9,
+   "y": -100.3,
+   "at_wall": true
+  },
+  "gone_r1": {
+   "height_mm": 16.5,
+   "width_mm": 7.59,
+   "area_mm2": 1400.9,
+   "x": 28.8,
+   "y": -16.6,
+   "at_wall": false
+  },
+  "copy_moved_d20": {
+   "height_mm": 16.51,
+   "width_mm": 5.07,
+   "area_mm2": 678.0,
+   "x": 20.4,
+   "y": -102.4,
+   "at_wall": true
+  },
+  "copy_moved_d18": {
+   "height_mm": 16.51,
+   "width_mm": 5.07,
+   "area_mm2": 678.0,
+   "x": 5.4,
+   "y": -13.9,
+   "at_wall": true
+  },
+  "copy_other_new_count": 67,
+  "copy_other_new_max_mm2": 2.3
+ },
+ "c33": {
+  "rows": [
+   {
+    "cause": "draped wrap below a higher same-level pass (shoulder step)",
+    "z17": 101.2,
+    "z11": 0.0,
+    "z5": 0.0,
+    "z05": 6.9,
+    "sum": 108.1
+   },
+   {
+    "cause": "wrap at the level below a higher same-level pass (step)",
+    "z17": 72.8,
+    "z11": 2.4,
+    "z5": 2.4,
+    "z05": 0.0,
+    "sum": 77.5
+   },
+   {
+    "cause": "fresh: first cut of that stock at this level",
+    "z17": 13.2,
+    "z11": 11.8,
+    "z5": 11.8,
+    "z05": 11.7,
+    "sum": 48.5
+   },
+   {
+    "cause": "hex-hole dip: a short run down to Z 0.5 between links at Z 4",
+    "z17": 0.0,
+    "z11": 0.0,
+    "z5": 0.0,
+    "z05": 33.9,
+    "sum": 33.9
+   }
+  ],
+  "layer_median": 0.59,
+  "layer_p10": 0.51,
+  "layer_p90": 1.0
+ }
+}
