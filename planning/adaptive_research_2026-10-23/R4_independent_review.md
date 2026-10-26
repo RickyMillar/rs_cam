@@ -43,6 +43,13 @@ the code in the worktree at `b37cad1a4`: `adaptive/research_geodesic.rs`,
    does not trust intent labels, a load-rate (MRR over time) view, and an
    acceleration or reversal count. The operator's one positive report
    ("smoother in acceleration") is measured nowhere.
+6. The near-wall band the operator sees on Corne is real: about 1950 mm²
+   of stock 3 to 9 mm outside the case wall, 16 mm tall, against 63 mm²
+   for contour_parallel. It is identical to the mm² on AgentSearch, so it
+   is the slice path's region handling (the F-038 forecast skips the
+   outer strip at every level below the top; §1.5), not the field. It
+   is G-OUTERBAND from Phase 0 and it is fixable without touching the
+   kernel.
 
 ## 1. Architecture
 
@@ -126,6 +133,96 @@ not decide entries for a step the 2D plan marked as a transition.
 | Bieterman PDE morph | Fails V3 by construction on branched slices (R3). Correctly dropped. |
 | Trochoidal ring change | Out of scope by `PLAN.md`; agreed. The spiral removes the need. |
 | Routed keep-down links (FreeCAD bisection, Freesteel A*) | Needed for lobe-to-lobe and far-side moves, not for ring changes. `SYNTHESIS.md` §3.2 already says V1 is a link problem. Not built yet. Second priority after the spiral. |
+
+### 1.5 The near-wall band (operator, 2026-10-26: "a large band of material at the edge")
+
+The band is real, and it is not the field's doing. I rebuilt the lead's
+numbers from `phase3/fix9/stock_corne_<column>.npz` (keys `top`, `target`,
+`xs`, `ys`, `g`) with the part mask from `corne_part.npz` resampled onto
+the stock grid, and split the standing stock (more than 0.8 mm above the
+target) by distance from the part outline.
+
+**Corne, after the first rough op, mm² over 0.8 mm (whole box: CP 3573,
+D18 7593, D20 6608, AgentSearch 9200; the lead's figures hold).**
+
+| Band from the outer wall | Band area | CP | D18 | D20 | AgentSearch |
+|---|---|---|---|---|---|
+| outside 0–1.5 mm | 3451 | 855 (6.0 mm tall) | 1262 | 1185 (9.8 mm) | 2074 |
+| outside 1.5–3 mm | 2196 | 1 | 646 | 591 (16.2 mm) | 1272 |
+| outside 3–4.5 mm | 1010 | 0 | 632 | 620 (16.2 mm) | 758 |
+| outside 4.5–6 mm | 557 | 0 | 511 | 511 (16.2 mm) | 511 |
+| outside 6–9 mm | 821 | 63 | 820 (22.1 mm) | 820 (18.2 mm) | 820 |
+| outside 9 mm and more | 2423 | 2405 (22.5 mm) | 2423 | 2423 | 2423 |
+| inside 0–3 mm | 5039 | 54 | 377 | 111 | 420 |
+| inside 3–4.5 mm | 1010 | 192 | 509 | 308 | 509 |
+| inside 4.5–6 mm | 458 | 5 | 390 | 39 | 390 |
+
+Reading:
+
+- **Beyond 9 mm nobody cuts.** The rough op's boundary is the model
+  silhouette with `containment = "center"` and `offset = 6.0`
+  (`corne_job_corrected_c12_agent_search.toml`, `[setups.toolpaths.boundary]`),
+  so the tool centre may go 6 mm out and the disc 9 mm. That stock is out
+  of scope for every column.
+- **The band the operator sees is 3 to 9 mm outside the wall, 16 mm tall:
+  the levels Z 11, 5 and 0.5, uncut.** D20 leaves about 1950 mm² there
+  against CP's 63 mm². The figures 511 / 820 are identical for D18, D20
+  and AgentSearch to the mm², so the cause is the shared slice path, not
+  the geodesic kernel. It is G-OUTERBAND from Phase 0, filed against
+  AgentSearch and ContourSpiral before the geodesic work began.
+- **The cause chain (code, read):**
+  1. Below the top level, the outer strip is its own region: the case
+     wall separates it from the inside. In tool-centre space it is the
+     strip from wall + R (3 mm) to the containment line (6 mm): 3 mm wide.
+  2. The F-038 forecast (`clearing.rs:2844-2908`, on when
+     `min_region_cut_length_mm > 0`; Corne sets 15.0) insets the region by
+     `R + 0.25` for its perimeter estimate (nothing is left of a 3 mm
+     strip), then dry-runs the AGENT on the raw region, whose 2D planner
+     insets by R again (nothing is left). Forecast 0 < 15 → the region is
+     skipped. The research arm's own notes say so (`P3_C22` §10d and
+     §11.2: "the F-038-skipped region 1 of Z 11 / 5 / 0.5").
+  3. The forecast runs before `planner_outlines`, so the C31 grow never
+     sees that region. C31 grew "4 of 4" regions on Corne; the skipped
+     strip is not one of the four.
+  4. At the top level (Z 17) the strip is part of the big region. There
+     the double inset (region in tool-centre space, inset by R again by
+     the 2D planner) kept D18's and AgentSearch's centres 3 mm short of
+     the containment line, so the 6–9 mm band stood at full height
+     (22.1 mm). C31's grow fixed that for D20 at Z 17 (18.2 mm: cut at
+     Z 17, uncut below).
+  5. contour_parallel has neither the double inset nor the F-038 gate:
+     it offsets inward from the boundary and the walls in material space,
+     so a 9 mm strip gives it ordinary offsets. It leaves only the
+     0–1.5 mm wall band (855 mm², 6 mm tall: G-WALLSTRIP-PLAN) and the
+     3–4.5 mm inside band (192 mm²).
+  6. The inside bands show C31 working: inside 4.5–6 mm fell from 390
+     (D18) to 39 (D20); inside 0–3 mm from 377 to 111.
+- **wanaka200 has no such band.** Outside the terrain footprint, the
+  0–9 mm bands read 14–18 % uncut for CP, D18 and D20 alike (AgentSearch
+  25–27 %); whole box CP 24416, D20 25438 mm². The terrain has no vertical
+  outer wall, so no strip region forms.
+
+**Structural or a setting?** A domain-handling defect of the slice path,
+shared by every 2D-slice arm, and fixable without touching the field:
+
+- Run the F-038 forecast on the outline the planner will plan (the
+  C31-grown outline for the research arm), or on the field's own wrap
+  length, not on the agent over the ungrown region. Better: for the
+  research arm, drop the gate and let the field decide; a region the
+  field gives fewer than one wrap is the only honest "micro-region".
+- Pass every region to the 2D kernel in tool-centre space with no second
+  inset. C31 does this for the research arm; the shipped arms still inset
+  twice. That is the shipped G-OUTERBAND fix.
+
+One structural note stands: a seed-and-wrap kernel in a strip narrower
+than `2R + 2s` in material space gives one or two passes along the strip
+and no spiral. That is the right output for a strip; it is not a
+weakness. The entry into such a strip is the open question: the seed disc
+(the starter rim at radius R) does not fit a 3 mm-wide centre corridor,
+so the kernel needs a corridor entry (a plunge or a ramp along the strip,
+or an entry from the level above, which is already open there). Check
+`geodesic_segments` returns `None` on such a piece and what the fallback
+does; the agent fallback insets again and gives nothing.
 
 ## 2. The proposed next step: a fed step at depth at each ring change
 
@@ -273,22 +370,31 @@ the ceiling, and the module says so at each site.
    find the guard). A 2D `Rapid` is then allowed only between zones the
    field proves disconnected at that level. Add a sentry that counts 2D
    `Rapid`s per connected zone and fails on more than one.
-4. **Re-read C6 as a bug.** Reason: a tangential drift cannot read 0.94 D
+4. **The outer strip: run the F-038 forecast on the planned outline, or
+   drop the gate for the research arm (§1.5).** Reason: it is the band the
+   operator sees first on the machine; it is one gate in `clear_one_region`
+   (`clearing.rs:2844-2908`); it costs the research arm about 1950 mm² of
+   16 mm-tall stock on Corne against 63 mm² for the control; and it is
+   not the kernel. Pre-register: the outside 3–9 mm bands fall to CP's
+   figures, the inside bands do not move. Then confirm the strip piece
+   gets a corridor entry and at least one wrap.
+5. **Re-read C6 as a bug.** Reason: a tangential drift cannot read 0.94 D
    by geometry. If the transition is sound it is a second way to item 2
    that also serves open-to-open joins.
-5. **Kinematic audit, MRR histogram, reversal count, cycle split
+6. **Kinematic audit, MRR histogram, reversal count, cycle split
    (§3.2 items 1-4) on the page, and the label rule.** Reason: the next
-   defect of this kind should not need a week.
-6. **Derive the planner cell from s, or label the s 1.2 readout a
+   defect of this kind should not need a week. Add the distance-band
+   table of §1.5 to the page; the masked stock map hid the band.
+7. **Derive the planner cell from s, or label the s 1.2 readout a
    screen.** Reason: §3.2 item 5; the Corne numbers under 1 % are not
    evidence either way.
-7. **File and fix the control's 86 rapid collisions and 2 gouge lines.**
+8. **File and fix the control's 86 rapid collisions and 2 gouge lines.**
    Reason: safety on the operator's daily strategy. It is shipped code and
    outside this arm, so it needs its own owner, but it must not stay
    unfiled.
-8. **Routed keep-down links with a retract penalty (R1 §4).** Reason: the
+9. **Routed keep-down links with a retract penalty (R1 §4).** Reason: the
    remaining lobe-to-lobe and far-side moves; V1 is a link problem.
-9. **Freeze the option space.** Reason: nine enums and about twelve
+10. **Freeze the option space.** Reason: nine enums and about twelve
    presets cannot all be clean. Once items 1-3 land, name ONE preset as
    the candidate, delete the columns that lost (the repo rule is delete,
    not archive), and move the kernel's 3D-facing part out of
