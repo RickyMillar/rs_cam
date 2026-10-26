@@ -68,6 +68,13 @@ grep -E "F-038: skipping micro-region|C31 region opening" $D/stderr.txt
 The filter turns on `debug` for `adaptive3d/clearing.rs` only. A crate-wide
 `debug` on Corne writes a very large log.
 
+**Result (D9, 2026-10-26, `phase3/c38/corne_d20_debug/`):** the CLI
+writes the tracing lines to `stdout.txt`, not `stderr.txt`
+(`grep_lines.txt` holds them). In op 1, region 1 is skipped at Z 11, 5 and
+0.5 with `forecast_mm=0.0` and `area_mm2=1334.75`; 1334.75 / 3 ≈ 445 mm,
+so it is the strip. Only region 2 opens. P1.1–P1.3 hold. The copy op is in
+§7.
+
 **The lines that prove the skip** (P = predicted):
 
 - P1.1: three lines `F-038: skipping micro-region (forecast cut length
@@ -406,9 +413,119 @@ beyond, which is the same contract again. I propose:
     C37's instrument must read those as "corridor slot entries", not as
     open-arc ends. The slot record carries that tag.
 
-## 7. What C38 could not do
+## 7. The copy op, "3D Rough 1 (copy)" (D9 debug run, 2026-10-26)
 
-- No run. §1.1 is read from an existing artefact. Every statement in §2
+### 7.1 What the copy op is
+
+From `corne_job_corrected_c12_agent_search.toml`:
+- Tool 1 is a **3 mm flat end mill** (R 1.5). Stepover 0.6, Depth/Pass 3,
+  axial leave 0.5, F 2429, plunge 375. `min_region_cut_length_mm` is 15.
+- `stock_source = "from_remaining_stock"`: it is the rest rough after op 1.
+- The boundary is the silhouette with `containment = "center"`,
+  `offset = 3.0`. Op 1 has 6.0.
+- Its strategy is `agent_search`, so the env variable puts the research arm
+  on it too.
+- The pass ceiling is `c = 0.2189`, the same as op 1, because `s/R` = 0.4
+  for both.
+
+### 7.2 Where its three regions are, and where its cut comes from
+
+- **The log** (`phase3/c38/corne_d20_debug/grep_lines.txt`): F-038 skips
+  every region at every level. That is 3 regions × Z 14, 11, 8, 5, 2 and
+  0.5 = 18 skips. The areas are 258–281, 72–81 and 258–281 mm²
+  (611–621 mm² per level), and the forecast is 0 in every case. There is
+  no C31 line, because the gate skips each region before C31 runs.
+- **The trace** (`tp_3_3D_Rough_1__copy_.json`) shows the following at all
+  six levels:
+  - `planner_cut_mm` 0;
+  - `agent_walk_cut_length_mm` 0;
+  - `perimeter_sweep_length_mm` 0;
+  - `dropped_short_regions_f038` 3.
+
+  The only producers are the six `Waterline cleanup` spans (2 contours at
+  Z 14–5, 84 contours at Z 2 and 0.5) and their 176 plunge entries. So
+  **all the copy op's cut comes from the waterline cleanup**: your 7060 mm
+  of cut, and the 16869 mm cutting distance of the trace with plunges and
+  links. No region body runs.
+- **The place** (`phase3/c38/copy_op_regions.py`, `python3 -I`, asserts):
+  - The script rebuilds the copy op's level grid from the D20 stock map
+    after op 1. It uses the 3 mm flat's tool-centre floor, the
+    `cell_has_material` test and the O5b boundary clear at silhouette +
+    3 mm.
+  - At Z 14–5, at least 95 % of the material is outside the silhouette. At
+    Z 2 and 0.5 it is at least 85 %, because small floors inside the case
+    join there. The median wall distance is 2.2 mm.
+  - So the regions are the **outer strip again**: the tool-centre band
+    from wall + 1.5 to the containment line at wall + 3, 1.5 mm wide.
+  - The rebuilt area (316–364 mm²) is a lower bound. The part map does not
+    cover the margin beyond the mesh bbox. At 611–621 mm² / 1.5 mm, the
+    logged strip is about 410 mm long. The split into 3 pieces fits the
+    necks, where the band pinches at the corners and tapers. The rebuild
+    finds several fragments too.
+- **Why the forecast is 0:** the perimeter inset is `R + 0.25` = 1.75 mm,
+  and the agent dry run insets by R = 1.5 mm. Each of those empties a band
+  1.5 mm wide.
+
+### 7.3 What G-b plus the corridor opening does to the copy op, and what it should cut
+
+The copy op's input is op 1's remaining stock. With C38, op 1 changes
+first. So predict the copy op after op 1 is fixed. That is the run D9
+makes: one env variable puts the arm on both ops, so the copy op cannot be
+changed alone.
+
+- **After op 1 with C38** (§3.3): op 1 cuts the outer band from 0.51 to
+  8.49 mm from the wall at every level. It leaves a skin about 0.51 mm
+  thick at the wall, plus the axial leave.
+- **The copy op's level grid then** holds only the cells whose 3 mm disc
+  meets that skin. Its centres stand from wall + 1.5 to about wall + 2.0,
+  a band about 0.5 mm wide.
+  - C31's smoothing (inset 0.3, RDP 0.3) and its margin (≥ one copy cell,
+    0.25 mm; the nominal 0.55) empty a band that narrow. The decision is
+    "no smoothed or grown outline: shipped sweep".
+  - The shipped sweep insets by 1.75 mm, which leaves nothing.
+  - Under G-b each region plans 0 mm, so it is skipped and counted, as now.
+- **So the copy op should cut what it cuts now:** the waterline at the
+  wall. That takes the 0.51 mm skin at a radial load of 0.51 / 3 = 0.17 of
+  D, under `c` = 0.219, which is within the pass load. That is the right
+  job for a rest rough that has no room in the strip.
+
+**Pre-registration for the copy op (Corne, the full job, both ops on the arm with C38):**
+
+- P-C1: 18 region skips again (3 × 6 levels), each with a planned length
+  of 0, or C31 lines with "no smoothed or grown outline" / "shipped
+  sweep". No copy region gives "grown, no sweep".
+- P-C2: the copy op's cut length and its plunge entries stay within 10 %
+  of today (the waterline is the same contour; the stock it meets is
+  thinner).
+- P-C3: the band outside the wall from 0 to 1.5 mm after the full job is
+  no worse than the D20 full job. The skin is cut by the copy's waterline.
+- **Falsifier F-C:** a copy region opens ("grown, no sweep"), or the copy
+  op plans a corridor slot. Either one means op 1 left more than the
+  0.51 mm skin, and §3.3's band figures are then wrong as well.
+
+If op 1 were NOT fixed (today's D20 op 1), the copy op's corridor would be
+the 1.5 mm strip inset by about 0.55 on each side: about 0.4 mm wide. The
+seed needs a centre clearance of 1.5, so it gets the corridor slot. The
+slot runs at 2429 × 0.219 ≈ 532 mm/min. It is about 410 mm × 6 levels =
+2460 mm of slot (4.6 min), with 18 entries, and it clears 0.55–3.95 mm
+from the wall. That case cannot be run alone with one env variable
+(above), so it is not pre-registered as a run.
+
+### 7.4 Risks shared with op 1
+
+- **G-RINGGROW:** below Z 17 the outer strip is a ring round the case.
+  The C31 closing guard can refuse it, and then the region gets the
+  shipped sweep, which cuts nothing in the strip. Read it in the first run
+  after the gate change: the `C31 region opening` lines for op 1 region 1
+  at Z 11/5/0.5 and their decision. This D9 run at b37cad1a4 cannot show
+  it, because the gate skips the strip before C31.
+- **The shortfall split:** a strip that tapers can split under the
+  shortfall inset (§2.1). Both ops have tapers at the stock-box corners.
+
+## 8. What C38 could not do
+
+- No run of the C38 code. §1.1 is read from an existing artefact, and
+  §7 from the D9 debug run at b37cad1a4. Every statement in §2
   and §3 is a prediction from the code at `b37cad1a4`.
 - The strip length L: the files I read do not give it. P1.2 and F2 read it
   from the run.
