@@ -2739,3 +2739,69 @@ the 3D stage's hops of §12.8, the same in both runs.
 - **My recommendation:**
   1. Do not build stage 2 yet. First an instrument on the 3D stage: each 3D descent with the cause that made it (the 2D re-entry, the large-Z split of a draped cut, the C26b lift of a held link, the air split, F-038). The same per-cause count that C37 stage 1 gave for the 2D plan.
   2. Do not keep the head-on rule always on as built. It removed 41 2D re-entries and cost 267 s, 180 air descents and about 300 sharp turns, through the one-way returns. Either keep the C29 3D-scored pick, which chose plan A almost everywhere on Corne, or keep the head-on start without the per-vertex return (the turn from the cutter only). That variant is a question for the lead.
+
+## 15. C40 design: the cause of every 3D descent in a research run (2026-10-26)
+
+DESIGN ONLY. No code until the lead approves. Input: §12.8 (wanaka) and
+§13.9 (Corne). Both found that most 3D descents are not 2D re-entries.
+
+### 15.1 Where the 3D stage makes an entry (read from the code)
+
+Every descent the fixtures count is an entry: a keep-down-link span or a
+plunge-entry span that ends in `EntryPlunge` / `EntryHelix` / `EntryRamp`
+moves. Each one starts as an `Adaptive3dSegment::Rapid` that
+`plan_and_emit_region` hands to the sink (`sink.emit`, clearing.rs). The
+sink plans it on commit (`plan_entry`). At emission
+(`adaptive3d/path.rs`), `segments_to_toolpath` makes it a stay-down
+lift-over link (`try_emit_stay_down_link`: Linking feeds up, across and
+down to the rapid floor, then the entry style down) or a retract and
+plunge. The `Rapid`s come from these places, and each one is a cause:
+
+| Cause | Where (clearing.rs, `plan_and_emit_region`) |
+|---|---|
+| `Start` | the first 2D `Rapid` of an outline's plan (the plan's entry) |
+| `Reentry2d` | every later 2D `Rapid` of the plan: a refusal of the replay. It also carries the C37 join class, by its XY, from that outline's `JoinsRecord` |
+| `Link2d` | a 2D `Link` that is not held (a shipped arm, or a `Link` before any position) |
+| `LargeZ` | the large-Z split of a draped cut: `dz > max(1.1·DPP, 1 mm)` or slope > 0.3 between two lifted points |
+| `LargeZHeld` | the same split on a held link that C26b lifted as a cut (the `held` flag) |
+| `AirRun` | the end of an air run longer than `air_run_crossover_mm` inside a cut |
+| `Sweep` | the shipped perimeter sweep's entries (exterior and holes) |
+| `Other` | an entry of the toolpath that no record matches (must stay near 0) |
+
+F-038 makes no entry of its own: it removes groups, and the next group's
+`Rapid` is `Reentry2d`. So it is not a cause in this list. The C22a
+replay after the filter shows up as more `Reentry2d`.
+
+### 15.2 The design
+
+- **Record at the source.** At each `sink.emit(ctx, Adaptive3dSegment::Rapid(p))` site above, a research-only push of `(p, cause)` to a new `RefCell<Vec<EntryCause>>` on `ClearZLevelContext`.
+  - It is rolled back with the pick and with C38's `RecordMark`, as the other research records are.
+  - It changes no segment and no emitted move.
+- **Join at the emission, by position.** In `research_turn_feeds` (adaptive3d/mod.rs), after `segments_to_toolpath`, walk the toolpath's moves:
+  - An entry is a run of entry-intent moves.
+  - Its kind is a **lift-over** when the move before the run is a `Linking` feed, or a **plunge entry** when it is a rapid.
+  - Its end XY is the entry point.
+  - Its drop is the Z where the run starts less its end Z. The fixture rule counts a descent at 1 mm or more.
+  - The cause is the record whose XY equals the end XY, to 1e-6 mm. The emitter moves the entry point by none of its steps, so the key is exact. No record means `Other`.
+- **One `info` line per entry** in CLI runs: `C40 entry kind= cause= join= x= y= z= drop_mm=`.
+- **One `info` line per op** with the counts by kind × cause, and by cause for the drops of 1 mm or more.
+- `Research3d.entries` holds the same records, for the C12 tests. The tests print them and assert only `Other` = 0 on the pocket.
+- **What the instrument cannot see:** whether a descent removes stock. That is the simulation's (entries.py: `removed_volume_est_mm3`). D9 joins the two by XY. Each C40 line carries the exact entry XY, which is the sample XY at the end of the descent.
+- No new constant: the causes are the existing branches, with their existing thresholds.
+
+### 15.3 Pre-registration (P; D24 build, arm `geodesic_local_spiral_pick`; the descents of 1 mm or more that remove stock, after the join with entries.py)
+
+- **Corne op 1, 1010 such descents in D23:**
+  - `Reentry2d`: 140–200 (14–20 %). §13.9: the 2D re-entries are 161, and only 188 of the head-on arm's descents lay near one.
+  - `LargeZ` + `LargeZHeld`: 550–780 (55–75 %). Most descents end off the level planes (591 of 1010 in D23 pick) on the part's top faces. That is the large-Z split's signature. `LargeZHeld` of those: 20–100.
+  - `AirRun`: 80–220 (8–20 %).
+  - `Start` + `Sweep`: 10–40. Op 1 has 4 levels and 1–3 regions each.
+  - `Link2d`: 0 (every research link is held). `Other`: ≤ 1 %.
+- **wanaka200, 2016 such descents in D23:**
+  - `Reentry2d`: 140–170 (about 8 %). The 163 2D re-entries, 153 of them OverBound.
+  - `LargeZ`: 1500–1850 (75–90 %). §12.8: the Z 8.62 hops are short (median 0.8–1.7 mm in XY) and drop about 4.3 mm, under the dz rule's 6.0 mm. So they are the SLOPE rule (`dz / xy > 0.3`) on the draped terrain.
+  - `AirRun`: 50–250. `Start` + `Sweep`: ≤ 20. `Other`: ≤ 1 %.
+- **Falsifiers:**
+  - If `LargeZ` is under 50 % on either fixture, my reading of §12.8 and §13.9 is wrong.
+  - If `Other` is over 1 %, the join by XY is not exact, and I report it before reading any split.
+- **What the result decides:** if `LargeZ` dominates as predicted, the next item is the 3D stage's split rule, not the 2D joins. The candidates are a large-Z split that rides the drape at feed when the stock above it is cut, and a slope threshold from the tool and the ruled pass load in place of the fixed 0.3. That is a design for after C40, not part of it.
