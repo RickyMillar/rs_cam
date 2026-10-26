@@ -2160,3 +2160,111 @@ property of the cut. The new anchors cover every slot record. They keep
 at the full feed), so they are at least as strict. D30 is frozen with
 these fixes and C22's width read; D9 runs it, with the dressup sentries
 and the viz and cli tests.
+
+### 15.6 D30: the 87 strip samples still at F 4000, and the slot length over 0.471 (2026-10-27)
+
+Read only. `phase3/c38/d30_why/` holds `strip87.py`, `departure.py`,
+`slot_over.py` and `assert_d30.py` (prints `ASSERTS OK`). They read
+D30's op 1 (`fix21/a_only/corne`) with `fix21/feed_check.py`'s rules.
+Op 1's commanded feed is F = 1518.75 (job file, line 129).
+
+#### 15.6.1 What the 87 are: the steps out of each corridor plunge
+
+The 87 samples lie on 19 moves, all at program F 4000.
+- **86 samples, 18 moves: the first moves of a corridor loop out of its
+  straight plunge.**
+  - There are 4 places, one at each strip piece, each at the three strip
+    levels Z 11 / 5 / 0.5.
+  - At each place the program plunges at 750 (the peck descents), then
+    runs 1 or 2 straight moves at F 4000. They start less than R = 3 mm
+    from the plunge and end at most 4.09 mm from it.
+  - The first move after them is a capped slot step (F 312–434).
+  - The sim reads 0.89–0.95 on them. That is a full slot.
+- **Why they have no cap:** the 2D readout (`pass_load_readout`) exempts
+  every readout step that starts within R of a straight plunge
+  (`departing`, `plunge_departure_exempt`).
+  - An exempt step returns before the turn and slot classing, so it
+    makes no slot record. With no record, no matcher writes a feed or a
+    cap.
+  - The modulator then lifts the step to the band limit, 4000.
+  - A readout step can be up to `3 × cell` long, so the exemption reaches
+    past R: here to 4.09 mm.
+  - The emitter joins the collinear exempt steps into one move (move
+    4314 is 2.74 mm long).
+- **1 sample, move 5086:** a G3 arc 0.16 mm long at F 4000, between
+  capped slot steps (721 and 1300), radial 0.370 against the bound
+  0.369.
+  - The arc fit made it from linear moves with no cap (equal caps are a
+    run-key term), so the readout gave those steps factor 1, or no
+    record.
+  - It is 0.001 over the bound. It is not a cap that failed.
+- **None of the 87 is:**
+  - a slot record that the exact match missed: `unfed=0`, `chain=0`;
+  - a corridor move that is a slot record with a cap the modulator broke:
+    the program feed equals the cap on every capped move, §15.6.2;
+  - the clip;
+  - one of C22's width-split steps: all 87 are at the strip levels, 3–6
+    mm outside the wall, on the corridor loops.
+
+Item 1 of §15.5 (P = 0) fails by these 87. The cap does what it was built
+to do. The departure exemption is the open item.
+
+#### 15.6.2 The 344.7 mm of slot moves over 0.471
+
+`fix21/load_split.py` classes a sample as a slot move when its feed is
+under the base feed (4000) and it is not on a capped turn move.
+- **340.4 mm are ruled slot steps at their reduced feed.**
+  - Their feed is F × 0.167 … F × 0.95, inside the slot factor range
+    (C22: lowest 0.167, factor < 1).
+  - The program feed equals the sample feed on all of them, so no later
+    stage raised them.
+  - 337.5 mm lie in the strip, 3–6.2 mm outside the wall (336.9 mm of
+    it at the strip levels), and 2.9 mm lie 0–3 mm outside.
+  - Their feed against `F × c / w_sim` (c = 0.219): median −0.031,
+    p90 +0.010. The planner's width reads at or over the sim's.
+  - These are the counted slots of the operator's slot ruling (full
+    width, fed at `F × c/w`). They belong to the slot exemption, not to
+    the over-load P.
+  - D29 had them too, at F 4000. `load_split` classed them as "near A's
+    steps" and "other" then: 1003 → 563 mm and 207 → 136 mm, while slot
+    moves rose 40 → 345 mm.
+- **4.3 mm are not slots:** samples at the plunge rate 750 (descents,
+  inside the part's silhouette). The class rule takes them because 750 is
+  under the base feed. They belong to the descents.
+
+#### 15.6.3 The fix (proposed; not built)
+
+The plunge departure stays exempt from the ceiling: the planner must be
+able to leave a straight plunge. It must not be exempt from the feed
+rule.
+
+1. **Generic: a departure is a counted slot.**
+   - The readout reads each departing step as now (it is not judged
+     against the ceiling, and `exempt_steps` counts it).
+   - It also records the step with its reading, as a new record kind
+     `TurnKind::Departure`, with the slot factor
+     `turn_feed_factor(c, swept, area)`.
+   - The exact match and then the chain match feed it and set its cap,
+     as for slots.
+   - The chain match covers the case where the emitter joins exempt
+     steps into one move (move 4314).
+   - Where: `research_geodesic.rs` (the readout and the record kind:
+     C22's code) and `slot_chains`, which also takes `Departure`
+     records.
+   - Other users: every plan that enters by a straight plunge. That is
+     the field plans of the research arm and the shipped 2D adaptive (the
+     same exemption), in a later parity-checked step.
+2. **Narrow alternative:** only the corridor's departing steps make slot
+   records (`kind Slot`). This fixes Corne. It leaves the field plans'
+   departures at the full feed.
+
+I recommend option 1.
+
+**P (Corne, D31):**
+- The 86 departure samples at F ≥ 3999 → 0. The strip count over 0.369
+  at F ≥ 3999 goes from 87 to at most 1 (move 5086, the 0.370 arc).
+- The departures run at about F × 0.22 (about 334 mm/min). This is
+  12 departures × about 4 mm, so op 1 takes about 8 s more for the
+  corridor departures.
+- A field-plan departure gets the same rule, so the "other" class over
+  0.471 (135.5 mm) may fall. I do not predict that size.

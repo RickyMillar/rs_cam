@@ -1,0 +1,653 @@
+{
+ "strip_samples": 6934,
+ "bad_samples": 87,
+ "bad_moves": 19,
+ "moves": [
+  {
+   "move": 4313,
+   "over_samples": 1,
+   "move_samples": 5,
+   "from": [
+    3.412,
+    -85.017,
+    11.0
+   ],
+   "to": [
+    4.142,
+    -85.816,
+    11.0
+   ],
+   "len_xy": 1.082,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    314.0,
+    332.0
+   ],
+   "radial_max": 0.921,
+   "wall": 5.73,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 4314,
+   "over_samples": 7,
+   "move_samples": 10,
+   "from": [
+    4.299,
+    -86.037,
+    11.0
+   ],
+   "to": [
+    5.493,
+    -88.221,
+    11.0
+   ],
+   "len_xy": 2.489,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    314.0,
+    332.0,
+    319.0
+   ],
+   "radial_max": 0.938,
+   "wall": 5.76,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 4429,
+   "over_samples": 8,
+   "move_samples": 12,
+   "from": [
+    30.392,
+    -106.309,
+    11.0
+   ],
+   "to": [
+    33.598,
+    -106.315,
+    11.0
+   ],
+   "len_xy": 3.206,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    372.0,
+    425.0,
+    311.0
+   ],
+   "radial_max": 0.9,
+   "wall": 5.09,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 4807,
+   "over_samples": 1,
+   "move_samples": 4,
+   "from": [
+    91.4,
+    -1.205,
+    11.0
+   ],
+   "to": [
+    92.013,
+    -1.667,
+    11.0
+   ],
+   "len_xy": 0.767,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    312.0,
+    325.0
+   ],
+   "radial_max": 0.89,
+   "wall": 3.69,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 4808,
+   "over_samples": 4,
+   "move_samples": 8,
+   "from": [
+    92.259,
+    -1.745,
+    11.0
+   ],
+   "to": [
+    94.283,
+    -1.759,
+    11.0
+   ],
+   "len_xy": 2.024,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    312.0,
+    325.0,
+    303.0
+   ],
+   "radial_max": 0.951,
+   "wall": 3.8,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 4963,
+   "over_samples": 7,
+   "move_samples": 12,
+   "from": [
+    3.42,
+    -9.805,
+    11.0
+   ],
+   "to": [
+    5.595,
+    -7.665,
+    11.0
+   ],
+   "len_xy": 3.051,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    434.0,
+    384.0,
+    1082.0
+   ],
+   "radial_max": 0.92,
+   "wall": 3.77,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 5086,
+   "over_samples": 1,
+   "move_samples": 2,
+   "from": [
+    28.123,
+    -2.879,
+    11.0
+   ],
+   "to": [
+    28.046,
+    -2.901,
+    11.0
+   ],
+   "len_xy": 0.08,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    1053.0,
+    816.0,
+    721.0
+   ],
+   "next_F": [
+    1300.0,
+    1128.0,
+    4000.0
+   ],
+   "radial_max": 0.37,
+   "wall": 5.44,
+   "z": 11.0,
+   "intent": "clearing_cut",
+   "kin": "arc"
+  },
+  {
+   "move": 7324,
+   "over_samples": 1,
+   "move_samples": 5,
+   "from": [
+    3.411,
+    -85.027,
+    5.0
+   ],
+   "to": [
+    4.136,
+    -85.82,
+    5.0
+   ],
+   "len_xy": 1.074,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    315.0,
+    319.0
+   ],
+   "radial_max": 0.921,
+   "wall": 5.83,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 7325,
+   "over_samples": 7,
+   "move_samples": 10,
+   "from": [
+    4.293,
+    -86.041,
+    5.0
+   ],
+   "to": [
+    5.487,
+    -88.225,
+    5.0
+   ],
+   "len_xy": 2.489,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    315.0,
+    319.0,
+    325.0
+   ],
+   "radial_max": 0.938,
+   "wall": 5.76,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 7430,
+   "over_samples": 8,
+   "move_samples": 12,
+   "from": [
+    30.379,
+    -106.309,
+    5.0
+   ],
+   "to": [
+    33.611,
+    -106.315,
+    5.0
+   ],
+   "len_xy": 3.232,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    372.0,
+    425.0,
+    284.0
+   ],
+   "radial_max": 0.9,
+   "wall": 5.09,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 7816,
+   "over_samples": 1,
+   "move_samples": 4,
+   "from": [
+    91.418,
+    -1.206,
+    5.0
+   ],
+   "to": [
+    92.016,
+    -1.676,
+    5.0
+   ],
+   "len_xy": 0.761,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    319.0,
+    310.0
+   ],
+   "radial_max": 0.89,
+   "wall": 3.8,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 7817,
+   "over_samples": 6,
+   "move_samples": 10,
+   "from": [
+    92.255,
+    -1.755,
+    5.0
+   ],
+   "to": [
+    94.766,
+    -1.767,
+    5.0
+   ],
+   "len_xy": 2.511,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    319.0,
+    310.0,
+    319.0
+   ],
+   "radial_max": 0.95,
+   "wall": 3.8,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 7972,
+   "over_samples": 6,
+   "move_samples": 11,
+   "from": [
+    3.418,
+    -9.816,
+    5.0
+   ],
+   "to": [
+    5.352,
+    -7.892,
+    5.0
+   ],
+   "len_xy": 2.728,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    353.0,
+    406.0,
+    384.0
+   ],
+   "radial_max": 0.92,
+   "wall": 3.75,
+   "z": 5.0,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 10406,
+   "over_samples": 1,
+   "move_samples": 5,
+   "from": [
+    3.411,
+    -85.027,
+    0.5
+   ],
+   "to": [
+    4.136,
+    -85.82,
+    0.5
+   ],
+   "len_xy": 1.074,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    315.0,
+    319.0
+   ],
+   "radial_max": 0.921,
+   "wall": 5.83,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 10407,
+   "over_samples": 7,
+   "move_samples": 10,
+   "from": [
+    4.293,
+    -86.041,
+    0.5
+   ],
+   "to": [
+    5.487,
+    -88.225,
+    0.5
+   ],
+   "len_xy": 2.489,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    315.0,
+    319.0,
+    325.0
+   ],
+   "radial_max": 0.938,
+   "wall": 5.76,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 10512,
+   "over_samples": 8,
+   "move_samples": 12,
+   "from": [
+    30.379,
+    -106.309,
+    0.5
+   ],
+   "to": [
+    33.611,
+    -106.315,
+    0.5
+   ],
+   "len_xy": 3.232,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    372.0,
+    425.0,
+    284.0
+   ],
+   "radial_max": 0.9,
+   "wall": 5.09,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 10898,
+   "over_samples": 1,
+   "move_samples": 4,
+   "from": [
+    91.418,
+    -1.206,
+    0.5
+   ],
+   "to": [
+    92.016,
+    -1.676,
+    0.5
+   ],
+   "len_xy": 0.761,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    4000.0,
+    319.0,
+    310.0
+   ],
+   "radial_max": 0.89,
+   "wall": 3.8,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 10899,
+   "over_samples": 6,
+   "move_samples": 10,
+   "from": [
+    92.255,
+    -1.755,
+    0.5
+   ],
+   "to": [
+    94.766,
+    -1.767,
+    0.5
+   ],
+   "len_xy": 2.511,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    4000.0
+   ],
+   "next_F": [
+    319.0,
+    310.0,
+    319.0
+   ],
+   "radial_max": 0.95,
+   "wall": 3.8,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  },
+  {
+   "move": 11054,
+   "over_samples": 6,
+   "move_samples": 11,
+   "from": [
+    3.418,
+    -9.816,
+    0.5
+   ],
+   "to": [
+    5.352,
+    -7.892,
+    0.5
+   ],
+   "len_xy": 2.728,
+   "dz": 0.0,
+   "program_F": 4000.0,
+   "commanded_F": 4000.0,
+   "prev_F": [
+    750.0,
+    750.0,
+    750.0
+   ],
+   "next_F": [
+    353.0,
+    406.0,
+    384.0
+   ],
+   "radial_max": 0.92,
+   "wall": 3.75,
+   "z": 0.5,
+   "intent": "clearing_cut",
+   "kin": "linear"
+  }
+ ]
+}

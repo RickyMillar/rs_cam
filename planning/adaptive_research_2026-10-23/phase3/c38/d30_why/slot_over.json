@@ -1,0 +1,45 @@
+{
+ "samples": 1573,
+ "length_mm": 344.7,
+ "moves": 1136,
+ "program_feed_equals_sample_feed_mm": 344.7,
+ "program_feed_above_sample_feed_mm": 0.0,
+ "at_plunge_rate_750_mm": 4.3,
+ "not_750_mm": 340.4,
+ "not_750_ratio_to_F_op_p0_p10_p50_p90_p100": [
+  0.167,
+  0.195,
+  0.21,
+  0.276,
+  0.95
+ ],
+ "not_750_in_slot_factor_range_mm": 340.4,
+ "not_750_c_over_sim_radial_p10_p50_p90": [
+  0.23,
+  0.243,
+  0.287
+ ],
+ "not_750_ratio_minus_c_over_sim_radial_p10_p50_p90": [
+  -0.055,
+  -0.031,
+  0.01
+ ],
+ "not_750_length_by_wall_band_mm": {
+  "inside part": 0.0,
+  "0-3 outside": 2.9,
+  "3-6.2 outside (strip)": 337.5,
+  ">6.2 outside": 0.0
+ },
+ "not_750_length_at_strip_levels_mm": 336.9,
+ "wall_mm_p0_p50_p100": [
+  -41.2,
+  4.0,
+  6.08
+ ],
+ "length_by_wall_band_mm": {
+  "inside part": 4.3,
+  "0-3 outside": 2.9,
+  "3-6.2 outside (strip)": 337.5,
+  ">6.2 outside": 0.0
+ }
+}
