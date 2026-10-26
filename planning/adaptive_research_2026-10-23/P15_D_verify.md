@@ -4093,3 +4093,61 @@ deflection (above). Islands: Corne headon op 1 847 (2237.3 mm²), copy 1015
 
 After the runs: `git checkout -- .`, research_outer_band.rs removed;
 `git status --short` empty at 3cc257c1f.
+
+### D23 addendum: the override rerun, the peaks, and the mrcl0 run
+
+All on the D23 build (fixture worktree at 3cc257c1f, the D23 patch applied
+again and checked against `d23/applied.diff`; `fix13/run_extra.sh`;
+spiral_pick, the D22 flags). Restored after: `git status --short` empty.
+
+**Override rerun (lead-approved, analysis only):**
+`fix13/corne_pick_override/`, `--accept-exceeded-tool-load`; rc 0, 204 s.
+The program is renamed `program_REFUSED_ANALYSIS_ONLY.nc`, with a
+`README.txt` that quotes the refusal and says the file must never go to a
+machine. simulation.json is byte-equal to the refused run, summary.json
+is equal apart from the export block, and the toolpath files differ only
+in debug timing. So the entries and stock map of `fix13/corne_pick` stand
+for it. Audit (through a scratchpad view that links the renamed file as
+program.nc): descents into stock 1062; planar turns over 30° 1096;
+plunge feed on the program clock 475.1 / 1469.6 s = 32.3 %
+(`fix13/audit_corne_pick_override.*`, `c39_d23_override.json`).
+
+**Peaks** (`fix13/peaks_d23.py` → `peaks_d23.json`; place by the
+hole-filled silhouette; the trace has no slot tag):
+- Op 1 depth of cut 12.0 mm: headon 544 samples, pick 526; all
+  clearing_cut linear at Z 11.0 and 5.0, in the outer strip (412 / 409) or
+  beyond the mesh bbox (132 / 117). That is the outer strip cut at its
+  full height from the stock top (23 − 11 = 12 mm) by the corridor
+  openings, which run at Z 11, 5 and 0.5 in region 1.
+- Copy op depth of cut (headon 9.0, pick 12.0 mm): 24 samples on one move
+  (headon 1421, pick 1420), clearing_cut linear at x 151.06, y −70.6 to
+  −64.3, Z 2.01: beyond the mesh bbox, 2.0 mm inside the stock's +X edge
+  (153.07). The "peaking at 9.00 / 12.00 mm" of the triage line is this
+  move. The copy op's samples over 3.3 mm are 173 linear beyond the bbox
+  (Z 2.01), 79 helix inside the silhouette (Z 14.0 to 17.75, entry
+  helices), 32 linear inside. My count gives 1.0 % of the copy op's
+  cutting samples, not the CLI's 3.5 / 3.6 %; I did not reproduce the
+  gate's population (its steady-state filter needs the span lookup), so
+  the share is not checked.
+- Copy op deflection peak: no output names the sample. Two proxies
+  (ap · fz · sin θ, and ap alone) both put it on the same move 1420, at
+  (151.06, −70.58, 2.01): ap 12.0 mm, arc 2.5 rad, fz 0.060 mm.
+- C22a ground: the D23 build drops no copy-op group (0 "F-038: dropped
+  short cut groups" lines for the copy op; D22 c38a dropped 1018 of 1220
+  over both plans, 509 per plan). So none of these peaks is on dropped-group
+  ground; they are on ground no op cut before, beyond the mesh bbox.
+
+**mrcl0 run** (`phase3/c38/corne_mrcl0/`, job `corne_c38_mrcl0.toml`, md5
+9682112c4dbfc8183f321ba21a9149eb; only the copy op's
+`min_region_cut_length_mm` 15 → 0): rc 1, export refused, the same
+deflection text as the base. Every toolpath file equals the D23
+spiral_pick base apart from debug timing; summary.json and the CLI triage
+lines are the same. The base has no "fed link cuts stock" line, and the
+copy op drops no group at 15 mm on this build, so the threshold change has
+nothing to act on. Copy op entries 188 (all plunge-entry spans) in both.
+
+D23 code commit check: the lead committed the D23 code as 6aefca969. `git
+diff 3cc257c1f 6aefca969` equals `d23/applied.diff` for the tracked files,
+and its research_outer_band.rs equals the patch's (index lines aside). So
+every D23 run (fix13, the override rerun, mrcl0) is the 6aefca969 code; no
+rerun is needed. The fixture worktree is now at 6aefca969, clean.

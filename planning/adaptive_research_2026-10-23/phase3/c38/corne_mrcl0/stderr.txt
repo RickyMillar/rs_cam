@@ -1,0 +1,43 @@
+Measurability:
+  NOT MEASURED  radial engagement on toolpath 3 — 73% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 4.489 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  air-cut % on toolpath 3 — 73% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 4.489 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  chip engagement on toolpath 3 — 73% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 4.489 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+
+Safety (2):
+  "3D Rough 1 (copy)": the rough leaves 1030 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1020 of them against a wall: 1163.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 3.50 mm high, 1.50 mm wide, 3.4 mm2 at (45.3, -80.8); 3.50 mm high, 1.60 mm wide, 3.3 mm2 at (79.8, -40.9); 3.50 mm high, 1.50 mm wide, 3.8 mm2 at (28.5, -31.0); 1.00 mm high, 0.30 mm wide, 0.4 mm2 at (46.2, -7.9); 0.94 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -75.4); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -75.7); 0.86 mm high, 0.30 mm wide, 0.6 mm2 at (43.5, -8.5); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (109.5, -8.8); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -76.0); 0.80 mm high, 0.30 mm wide, 0.1 mm2 at (7.8, -79.3); and 1020 more. 369 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1": the rough leaves 872 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 864 of them against a wall: 2314.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 0.94 mm high, 0.30 mm wide, 0.3 mm2 at (90.3, -75.1); 0.94 mm high, 0.30 mm wide, 0.2 mm2 at (91.5, -74.8); 0.86 mm high, 0.30 mm wide, 0.4 mm2 at (43.5, -8.5); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (46.2, -7.9); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -76.0); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -75.7); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (89.4, -75.4); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (109.5, -8.8); 22.50 mm high, 5.10 mm wide, 457.7 mm2 at (14.1, -109.3) at a wall; 22.50 mm high, 5.10 mm wide, 765.1 mm2 at (34.8, -109.3) at a wall; and 862 more. 11 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Act on (1):
+  crosses standing material deeper than this pass was planned to cut: 3.6% of cutting samples remove more than the commanded 3.00 mm depth per pass by over 0.300 mm, peaking at 12.00 mm
+
+Advisories:
+  1023.1s wasted around (114.6, -32.5, 2.7) — engagement 0.04
+  440.8s wasted around (89.5, -64.5, 1.5) — engagement 0.10
+  3.3s wasted around (30.2, -106.3, 8.2) — engagement 0.10
+  2.9s wasted around (3.3, -84.9, 8.2) — engagement 0.12
+  2.7s wasted around (30.2, -106.3, 8.2) — engagement 0.16
+  2.5s wasted around (149.9, -72.6, 6.7) — engagement 0.17
+  2.3s wasted around (3.5, -13.7, 6.7) — engagement 0.18
+  2.2s wasted around (3.3, -84.9, 8.2) — engagement 0.19
+  1.9s wasted around (24.8, -99.2, 8.2) — engagement 0.22
+  1.9s wasted around (140.8, -18.9, 6.8) — engagement 0.04
+  1.9s wasted around (58.2, -85.3, 11.6) — engagement 0.21
+  1.9s wasted around (58.2, -85.3, 6.8) — engagement 0.21
+  1.8s wasted around (150.8, -72.3, 6.7) — engagement 0.21
+  1.8s wasted around (149.9, -72.3, 6.7) — engagement 0.35
+  1.8s wasted around (58.2, -85.3, 4.8) — engagement 0.04
+  1.7s wasted around (3.5, -13.7, 6.7) — engagement 0.23
+  1.7s wasted around (3.3, -7.2, 17.6) — engagement 0.22
+  1.4s wasted around (24.8, -99.2, 10.4) — engagement 0.29
+  1.2s wasted around (150.8, -72.3, 8.8) — engagement 0.28
+  1.2s wasted around (3.5, -13.7, 8.8) — engagement 0.30
+  ... 1253 more not shown
+
+Counts: 330549 samples | 127411 flagged-air + 33033 flagged-low (per SAMPLE) | 28047 issue runs (COALESCED, the legacy "issue_count") | 1273 hotspots
+
+Error: Emit G-code: G-code export refused: tool load exceeded on toolpath(s):
+  toolpath 3: deflection=stiffness
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 12.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+  toolpath 3: depth of cut, peak 12.0000 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source
+To override (a known-dangerous override): MCP `accept_exceeded_tool_load: true`, CLI `--accept-exceeded-tool-load`, or the GUI pre-flight checkbox "Accept EXCEEDED criteria".

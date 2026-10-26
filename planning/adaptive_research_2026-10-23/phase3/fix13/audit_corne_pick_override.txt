@@ -1,0 +1,9 @@
+== /tmp/claude-1001/-home-ricky-personal-repos-rs-cam/20298b28-70fa-4ffe-9f21-d955b81a5407/scratchpad/override_view '3D Rough 1': 13279 moves; sim cell 0.3 mm, sample step 0.3 mm, volume quantum 0.027 mm3
+1. descent events into stock (a vertical fed descent at one XY, pecks included, that removes > quantum): 1062 (drop median 5.23 mm, max 23.0 mm, 475.1 s); labels {'entry_plunge / plunge entry': 48, 'entry_plunge / keep-down link': 1009, 'linking / keep-down link': 5}
+   moves: descents into stock (fed, Z down, removes > quantum) 1785; vertical 1394 (removed 18761.3 mm3, drop median 5.0 mm, max 6.5 mm)
+   labels of the vertical descents (intent / span style): {'entry_plunge / plunge entry': 74, 'entry_plunge / keep-down link': 1320}
+   planar junctions (both moves travel in XY) 8003; planar reversals 353; planar histogram [193, 735, 5270, 709, 148, 68, 527, 141, 212]
+2. junctions at feed 12138; reversals (turn > 90 deg) 577; turns of exactly 90 deg 3591; Z reversals 501
+   turn histogram (deg, bins (lo, hi]): (0,1] 198, (1,5] 739, (5,15] 5309, (15,30] 714, (30,45] 150, (45,60] 133, (60,90] 4318, (90,135] 359, (135,180] 218
+3. MRR time histogram (mm3/s): [0,1e-09) 359.8 s, [1e-09,25) 450.0 s, [25,50) 88.4 s, [50,100) 149.6 s, [100,200) 62.9 s, [200,400) 163.7 s, [400,800) 161.3 s, [800,1600) 3.2 s, [1600,inf) 29.3 s; p50 16.0, p95 517.5, p99 2662.0, max 23423.7; nominal 182.25: 369.1 s over, 263.8 s over 2x
+4. time split (s): {'cut': 722.8, 'fed in air': 95.8, 'lift feed': 79.7, 'plunge feed': 475.1, 'rapid': 95.0}; sum 1468.4 of sim runtime 1468.4

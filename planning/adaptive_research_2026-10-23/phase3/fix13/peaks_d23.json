@@ -1,0 +1,390 @@
+{
+ "fix13/corne": {
+  "tp1": {
+   "cutting_samples": 234320,
+   "peak_doc_mm": 12.0,
+   "peak_samples": 544,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 412,
+    "clearing_cut / linear / beyond mesh bbox": 132
+   },
+   "peak_moves": [
+    6281,
+    6285,
+    6287,
+    6288,
+    6305,
+    6306,
+    6307,
+    6309,
+    6310,
+    6311,
+    6312,
+    6313,
+    6315,
+    6317,
+    6319,
+    6321,
+    6322,
+    6323,
+    6324,
+    6325,
+    6326,
+    6328,
+    6329,
+    6330,
+    6332,
+    6334,
+    6380,
+    6382,
+    6383,
+    6384,
+    6385,
+    6387,
+    6388,
+    6389,
+    6408,
+    6409,
+    6411,
+    6412,
+    6414,
+    11037
+   ],
+   "peak_z": [
+    5.0,
+    11.0
+   ],
+   "peak_xy_examples": [
+    [
+     6.58,
+     -90.26,
+     11.0
+    ],
+    [
+     87.01,
+     -89.24,
+     11.0
+    ],
+    [
+     110.31,
+     -80.77,
+     11.0
+    ],
+    [
+     130.61,
+     -80.76,
+     11.0
+    ],
+    [
+     144.93,
+     -5.39,
+     11.0
+    ],
+    [
+     124.72,
+     -5.35,
+     11.0
+    ],
+    [
+     53.74,
+     -1.13,
+     11.0
+    ],
+    [
+     30.0,
+     -2.88,
+     11.0
+    ]
+   ],
+   "deep_share_pct": 0.41,
+   "deep_samples": 960,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 670,
+    "clearing_cut / linear / beyond mesh bbox": 246,
+    "clearing_cut / linear / inside silhouette": 44
+   },
+   "deep_z": {
+    "5.0": 147,
+    "11.0": 813
+   }
+  },
+  "tp3": {
+   "cutting_samples": 63461,
+   "peak_doc_mm": 9.0,
+   "peak_samples": 24,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 24
+   },
+   "peak_moves": [
+    1421
+   ],
+   "peak_z": [
+    2.01
+   ],
+   "peak_xy_examples": [
+    [
+     151.06,
+     -70.58,
+     2.01
+    ],
+    [
+     151.06,
+     -69.68,
+     2.01
+    ],
+    [
+     151.06,
+     -68.78,
+     2.01
+    ],
+    [
+     151.06,
+     -67.88,
+     2.01
+    ],
+    [
+     151.06,
+     -66.98,
+     2.01
+    ],
+    [
+     151.06,
+     -66.08,
+     2.01
+    ],
+    [
+     151.06,
+     -65.19,
+     2.01
+    ],
+    [
+     151.06,
+     -64.29,
+     2.01
+    ]
+   ],
+   "deep_share_pct": 0.45,
+   "deep_samples": 286,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 173,
+    "clearing_cut / helix / inside silhouette": 79,
+    "clearing_cut / linear / inside silhouette": 32,
+    "clearing_cut / arc / beyond mesh bbox": 2
+   },
+   "deep_z": {
+    "0.5": 4,
+    "2.01": 175,
+    "5.01": 1,
+    "8.01": 1,
+    "11.01": 2,
+    "14.01": 24,
+    "14.16": 9,
+    "14.46": 9,
+    "14.76": 9,
+    "15.06": 9,
+    "15.36": 9,
+    "15.66": 9,
+    "15.96": 8,
+    "16.26": 6,
+    "16.55": 5,
+    "16.85": 3,
+    "17.15": 1,
+    "17.45": 1,
+    "17.75": 1
+   }
+  }
+ },
+ "fix13/corne_pick_override": {
+  "tp1": {
+   "cutting_samples": 194074,
+   "peak_doc_mm": 12.0,
+   "peak_samples": 526,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 409,
+    "clearing_cut / linear / beyond mesh bbox": 117
+   },
+   "peak_moves": [
+    4941,
+    4943,
+    4945,
+    4947,
+    4948,
+    4966,
+    4967,
+    4969,
+    4970,
+    4971,
+    4972,
+    4973,
+    4975,
+    4977,
+    4979,
+    4981,
+    4982,
+    4983,
+    4984,
+    4985,
+    4986,
+    4988,
+    4989,
+    4990,
+    4992,
+    4995,
+    5044,
+    5045,
+    5046,
+    5048,
+    5049,
+    5050,
+    5069,
+    5072,
+    5073,
+    5075,
+    9576,
+    9577
+   ],
+   "peak_z": [
+    5.0,
+    11.0
+   ],
+   "peak_xy_examples": [
+    [
+     6.86,
+     -90.78,
+     11.0
+    ],
+    [
+     87.87,
+     -88.08,
+     11.0
+    ],
+    [
+     109.71,
+     -80.77,
+     11.0
+    ],
+    [
+     129.12,
+     -80.76,
+     11.0
+    ],
+    [
+     144.34,
+     -5.38,
+     11.0
+    ],
+    [
+     125.02,
+     -5.35,
+     11.0
+    ],
+    [
+     54.93,
+     -1.13,
+     11.0
+    ],
+    [
+     30.88,
+     -2.88,
+     11.0
+    ]
+   ],
+   "deep_share_pct": 0.48,
+   "deep_samples": 939,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / outer strip 0-9": 671,
+    "clearing_cut / linear / beyond mesh bbox": 224,
+    "clearing_cut / linear / inside silhouette": 44
+   },
+   "deep_z": {
+    "5.0": 139,
+    "11.0": 800
+   }
+  },
+  "tp3": {
+   "cutting_samples": 63459,
+   "peak_doc_mm": 12.0,
+   "peak_samples": 24,
+   "peak_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 24
+   },
+   "peak_moves": [
+    1420
+   ],
+   "peak_z": [
+    2.01
+   ],
+   "peak_xy_examples": [
+    [
+     151.06,
+     -70.58,
+     2.01
+    ],
+    [
+     151.06,
+     -69.68,
+     2.01
+    ],
+    [
+     151.06,
+     -68.78,
+     2.01
+    ],
+    [
+     151.06,
+     -67.88,
+     2.01
+    ],
+    [
+     151.06,
+     -66.98,
+     2.01
+    ],
+    [
+     151.06,
+     -66.08,
+     2.01
+    ],
+    [
+     151.06,
+     -65.19,
+     2.01
+    ],
+    [
+     151.06,
+     -64.29,
+     2.01
+    ]
+   ],
+   "deep_share_pct": 0.45,
+   "deep_samples": 288,
+   "deep_by_kind_place": {
+    "clearing_cut / linear / beyond mesh bbox": 173,
+    "clearing_cut / helix / inside silhouette": 79,
+    "clearing_cut / linear / inside silhouette": 32,
+    "clearing_cut / arc / beyond mesh bbox": 4
+   },
+   "deep_z": {
+    "0.5": 4,
+    "2.01": 177,
+    "5.01": 1,
+    "8.01": 1,
+    "11.01": 2,
+    "14.01": 24,
+    "14.16": 9,
+    "14.46": 9,
+    "14.76": 9,
+    "15.06": 9,
+    "15.36": 9,
+    "15.66": 9,
+    "15.96": 8,
+    "16.26": 6,
+    "16.55": 5,
+    "16.85": 3,
+    "17.15": 1,
+    "17.45": 1,
+    "17.75": 1
+   }
+  }
+ }
+}
