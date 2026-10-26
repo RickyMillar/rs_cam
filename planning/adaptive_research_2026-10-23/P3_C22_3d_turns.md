@@ -2919,3 +2919,36 @@ P: about 70 of the 72 have an end outside the clip and no move within the turn b
   from the "C22 turn summary" line. The exact match reads C12's merged
   slot steps as unfed. Until then, a reader takes slot counts from the
   "C38 slot chains" line only.
+
+### 12.9 C35 regression: three Corne hole floors left uncut (2026-10-26)
+
+Read only. `phase3/fix17/c22_holes/assert_12_9.py` asserts the numbers.
+
+**What the simulations show.** Below are the op-1 cutting samples within 1.5 mm of each hole centre, below Z 1.0 (the Z 0.5 level). The seed is (55.87, −49.76).
+
+| Hole | r from seed | D20 | C35 | D24 |
+|---|---|---|---|---|
+| (28.3, −30.0) | 33.9 | 11 cut, 2 entry, 4 link | 0 | 0 |
+| (80.3, −40.0) | 26.3 | 6 cut, 4 entry, 4 link | 0 | 0 |
+| (45.6, −80.1) | 32.0 | 9 cut, 4 entry, 4 link | 0 | 0 |
+
+- Both arms cut these holes at Z 17, 11, 5 and down to the drape at 4.0.
+- Only the Z 0.5 level is missing in C35. D20 went into each hole at Z 0.5 with an entry (a descent from 5.5 to 0.5), so its plan reached each hole as a separate piece of a level set: a small closed wrap, joined by a re-entry.
+- At Z 0.5 the C35 core of region 2 ends at r 33.975 (the C35b hand-off line, 33.975 → 35.175). **All three holes lie inside that core disc** (26.3, 32.0, 33.9).
+
+**The mechanism (from the code; the field is not in the artefacts, so this is a reading, not a measurement):**
+- `held_core_spiral` takes K from `star_levels`. That test asks only that each ray from the seed crosses each level set ONCE before the ray first leaves the reachable cells. Pairs of samples with an unreachable one between them do not count (`ray_crosses_once`).
+- A hole pocket that the plate cuts off along the ray is behind unreachable cells on that ray. If its own T values (reached by another way) are all on one side of the level, it adds no crossing. So the level "is star-shaped" even though part of its level set is a separate small loop in the pocket.
+- The spiral traces only the first crossing on each ray: the main loop. Then `ordered_wraps(.., spiral_levels + 1, ..)` skips EVERY wrap of level ≤ K, the pocket loops included.
+- So the core claims the pocket's levels and never cuts them. That is the lead's third hypothesis. At Z 17, 11 and 5 the holes are open to the main area (the plate top is below those levels or the pocket joins the main zone), so there the spiral or the outer wraps cut them.
+- The other holes inside the disc are cut at Z 0.5. I expect their pockets to have their T beyond T_K (their loops are kept as wraps of level > K) or to be joined to the main zone. These three sit near the core's edge (26–34 against 33.975), where a pocket's T can fall under T_K. That is a prediction for the instrument, not a measurement.
+
+**The fix (for approval; research arm only; no new constant):**
+- `ordered_wraps` keeps the wraps of levels ≤ K that the spiral does not trace. It drops only the level-k piece that is the closed loop round the seed (the one whose ray crossings the spiral follows). Every other piece of a level ≤ K (a pocket loop, an open arc) stays in the plan as a wrap. The test: a closed wrap of level k ≤ K that contains the seed is the core's; anything else is kept.
+- **Instrument first, in the same build:** the core-zone record gains the count and the area of the level ≤ K pieces that are not the core loop, and whether each one was planned. P: at Corne Z 0.5 region 2, three pockets (the three holes, about 50 mm² of floor each). At Z 17, 11 and 5: none or few. On wanaka: none (the block has no pockets inside the core).
+- **The generic point (operator ruling 2026-10-26):** "a star-shaped core claims only the area its spiral sweeps" is a rule of the core spiral itself, not of this arm. It belongs where `held_core_spiral` lives, and any strategy that adopts a core spiral gets it.
+
+**Pre-registration (P; D27 + this fix, Corne, spiral_pick):**
+- The three hole floors read 0.00 above target (D20's value).
+- +3 entries at Z 0.5 (one per pocket), and about +30 s of cycle.
+- No other stock-map cell changes by more than 0.1 mm.
