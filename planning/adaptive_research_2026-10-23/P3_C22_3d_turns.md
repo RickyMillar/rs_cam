@@ -2865,3 +2865,42 @@ They are in the outer strip and beyond the bbox, where D23's corridor opening pl
   - Read the link after the sink's clip, i.e. move the test to where the sink stamps the held link.
   - Report it separately from G-CLIPAIR. The counter cannot see stock that the planner reads as air.
 - **The cascade:** the filter-and-replay loop is correct (the replay reads the plan that goes out), but it can erode a plan through a chain of splits. If D25 (with G-CLIPAIR) shows that the erosion leaves stock, the alternative is C38 §9.5 item 2 (no group filter in research regions). I would measure it before deciding: the C22a info line already gives `dropped_more` per plan.
+
+### 14.6 wanaka200: 72 of 77 cut turns "unfed" (2026-10-26)
+
+Read only. `phase3/fix15/c22_turns/assert_14_6.py` asserts each number.
+
+**The record:**
+- D24: planned 77, cut 74, fed 2, unfed 72, full_feed_unmatched 0, and all 74 with a factor under 1.
+- D25: planned 331, cut 77, fed 5, unfed 72.
+"Unfed" means that `apply_slice_turn_feeds` found NO emitted `Linear` move whose start and target both lie within 1e-6 mm of the turn's XY segment. It does not by itself mean that a move cut the turn at full feed.
+
+**What the D24 simulation shows:**
+- Every wanaka clearing sample runs at 1000 mm/min, except 4 samples on 2 moves (feeds 377 and 428): the 2 fed turns. They lie 34–41 mm inside the emitted toolpath's XY box (22.76–217.24 × 27.76–221.74).
+- No cutting sample lies outside that box.
+- The 2D plan DOES reach beyond it: all 66 D24 held-link counter points lie outside the box, at x 219.3 / 20.8 and y 25.874 / 223.874 (§14.5). The C31 grown outline extends past the containment line, and the boundary clip (`clip_segment`) removes what lies beyond it.
+
+**The three candidates against this:**
+- **The merge (C12 §10.1):** not on its own. `split_at_turns` (D14) makes each turn a `Cut` of its own, so the one RDP keeps its two ends. Corne, under the same code, feeds 132/132 and 230/230.
+- **The drape:** it changes Z only. `drape_path_to_leave` densifies along the segment, and a large-Z split cuts it at a point on it, so the pieces' XY still lie on the turn's segment and still match.
+- **The setup-0 flip:** the turn feeds are applied to the toolpath that `segments_to_toolpath` builds in the planning frame. The work-frame transform comes after. A frame error would leave 0 turns matched, not 2–5 near the middle.
+- **What fits: the boundary clip.** On wanaka the open arcs are the block's corner arcs, 153 of the 164 re-entries OverBound (§13.9). They end at the 2D region's edge, which lies BEYOND the containment. So the turns that join their ends lie outside it too. The clip drops them, so no move exists to feed: they are not cut at all.
+  - `SliceTurns::add` counts a turn as cut from the 2D plan (`turn_in_plan`), before the clip, so it reads "cut, unfed".
+  - On Corne the turns are at inner walls, inside the containment, so they are fed.
+
+**Since when:** reduced-feed clearing moves in the wanaka sims: D20 0, C35 1, D24 2 (Corne D24: 383). So this has been so since the turns came to the 3D arm. The summary line (D24) only made it visible. The grow past the containment dates from C31.
+
+**The load:** if my reading is right, these 72 turns put NO load on the tool: they are clipped away. Their cost is elsewhere. Where the clip cuts an arc, the next piece gets a clip entry (the C40 `Clip` cause), that is, a descent.
+- If my reading is wrong and they are cut at full feed, each one cuts `w = c / factor` of D: factor 0.365–1, so up to 2.7× the ceiling width, the 0.75–0.94 D turn cap of C14.
+- The D24 sim has 324 samples over 0.471 within 3.2 mm (the turn bound) of the box edge, against 2142 farther in. They are not attributed to turns.
+
+**Proof needed (no code yet):** one instrument line per unfed turn:
+- its from / to;
+- whether each end lies inside the centre clip (`CentreClip::contains`);
+- the distance to the nearest emitted move segment.
+P: about 70 of the 72 have an end outside the clip and no move within the turn bound. The D26 C40 summary on wanaka should also show `Clip` entries at Z 19.54 / 14.08 / 8.62, about one per clipped arc end.
+
+**The fix, if it is confirmed:**
+1. **The record:** count a turn as cut only when its segment survives the clip, so a clipped turn is "clipped", not "unfed". Give the summary a `clipped` count.
+2. **The cause:** the research arm should not plan beyond the containment. Clip the C31 grown outline to the centre boundary as well as to the stock box (C38 item B), so that the 2D plan, its turns and its held links all lie where the 3D stage may emit them. This is C12's code (C31 call site / research_clip), so it is for C12 and the lead.
+3. **C12's chain match (§13.2) is not the fix here.** It finds moves that a merge changed, but a clipped turn has no move at all.
