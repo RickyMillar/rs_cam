@@ -70,10 +70,11 @@ lateral strip of the cutter disc, over that of a full pass:
 - d: the Depth/Pass of the op that is read. D: the tool diameter.
 - Bound: 0.471, the radial bound of today.
 - **Screen only:** the simulation's box `radial_woc_fraction ·
-  axial_engagement_mm / d` (the deepest point times the full width). It is
-  never less than L, so a sample that it reads at 0.471 or less is not
-  read on the exact lattice. A sample is read when the sim radial or the
-  box is over 0.471.
+  axial_engagement_mm / d` (the deepest point times the full width). It
+  is an upper bound of L: on the exact lattice the box is under L by at
+  most two strips, from the rounding of the end strips. A sample is read
+  on the exact lattice when the sim radial or the sim box is over the
+  screen bound.
 
 **Info column:** `L_box`, the same box on the exact lattice:
 mrr_cross_section_mm2(ap, ae) / mrr_cross_section_mm2(d, D), with ap the
@@ -105,8 +106,8 @@ deepest uncut height in the disc and ae its lateral extent.
   flat end mill of R 3 mm sets H = min(H, z) at the lattice points within R
   of points 0.3 mm apart or less along the step, Z linear along the step.
   So a read sees every earlier step and the current move up to `from`, as
-  `exact_width_at` does. The longest step is a helix chord: 0.52 mm on
-  Corne, 1.80 mm on wanaka200.
+  `exact_width_at` does. The longest sample step is 0.54 mm on Corne
+  and 1.83 mm on wanaka200.
 - The read: the disc of R at the step midpoint, the tip Z at the midpoint.
 - Usage: `area_oracle.py <run> <corne|wanaka200> [toolpath id] [Depth/Pass]`.
   A later toolpath (a CP rest op) is read on the stock that the earlier
@@ -118,7 +119,8 @@ pass at stepover e on stock of height t over the tip (d = 6.0 mm, R 3 mm).
 
 {syn()}
 Each L is within one lattice bin, pitch · t / (D · d), of e·t/(D·d), and
-each w within pitch / D = 0.0083 of e/D.
+each w within pitch / D = 0.0083 of e/D. At t = 9.0 mm > d the load is
+{SYN['cases'][6]['L']:.4f} against w {SYN['cases'][6]['w']:.4f}: a deep side cut is held.
 
 {JUDGE}
 ## 5. The fixture counts
@@ -172,8 +174,8 @@ turns.
 
 - The base feed of D26 Corne is 3556 mm/min, not 4000, so its feed split is
   not comparable with the other columns.
-- The oracle stamps a helix chord as a straight step (wanaka200: up to
-  1.80 mm).
+- The oracle stamps each sample step, an arc or helix chord included, as
+  a straight step (wanaka200: up to 1.83 mm).
 - The stock outside the stock box is air. A cut never goes below the
   target, so the stock above the tip is the only quantity.
 

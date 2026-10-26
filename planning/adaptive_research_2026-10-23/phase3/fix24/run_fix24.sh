@@ -8,5 +8,5 @@ for r in "fix6/corne/contour_parallel corne" "fix16/corne_pick corne" "fix12/cor
 done
 python3 -I rescore.py
 python3 -I synthetic.py
-python3 -I make_readme.py || true
-
+python3 -I make_readme.py
+python3 -I assert_fix24.py
