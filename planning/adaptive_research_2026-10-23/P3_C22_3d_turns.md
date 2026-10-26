@@ -3229,3 +3229,23 @@ Script: `phase3/fix21/c22/nearA_kind.py`; the assert script is `phase3/fix21/c22
   - the heightmap lift of a point that the stamp's drape does not raise, for example a single-point piece.
 - **The probe I would add (needs code):** at the Start entry, the planner cell with the highest top inside the disc, its XY, and the Z-17 stamps that covered that cell. D31 then names the stamp.
 - **Separately, the micro-steps are poor output:** five lift-overs in 3 mm. The width read splits them. A step that splits by width there is a climb onto the frame top with stock beside it. After the fix, these may become fewer or more; D31 shows which.
+
+### 16.13 D32 probes: the planner cell under a Start entry, and the short cut pieces (2026-10-27; built, not run)
+
+The lead ruled to build the cell-level probe of §16.12 for D32. Research only; the research arm only (`StampLog::on`).
+- `StampLog` (`adaptive3d/clearing.rs`, on `ClearZLevelContext`) records every stamp of the run as `stamp_emitted_segment` stamps it:
+  - kind `cut`: the fed polyline;
+  - kind `entry`: the descent from its start to the draped entry;
+  - kind `link`: the draped link.
+  The waterline stamps go in too (`waterline_cleanup` now takes the context).
+- **"C22 start cell probe"**, one per Start entry: the cell `plan_entry`'s rapid floor reads (`max_conservative_top_cell_in_disc`, the same walk as `max_conservative_top_z_in_disc`), its XY, its conservative top and its centre top, and the number of logged stamps that reached its centre.
+- **"C22 start cell stamp"**, one per such stamp, lowest first: the stamp's level, kind, `cut_to` (the lowest tip Z plus the profile height at the cell centre, sampled at half a cell), and the tool position there.
+- **"C22 short cut probe"**, at the sink (`LevelSink::emit_clipped`): each cut piece with fewer than two points or an XY length within the RDP tolerance (`cut_tolerance`), and whether the sink stamps it (two points or more).
+- The lines wait in the log until the C29 region pick keeps its variant. A scratch run's records leave the log after it runs and only the kept run's come back. So the B run never reads A's stamps, and a variant that is not kept prints nothing. The level start and the run end print them.
+- **Caution:** the older "C22 start entry probe" line prints at once, so it also prints for the variant the pick does not keep. Read its D30 values with that in mind.
+
+**P for D32 at Corne (91.3, −1.13), Z 11:** the highest cell sits within the entry floor disc at top ≈ 17.45. Its lowest-cut stamp is from level 17, and its `cut_to` is near 17.45, below the sim's 18.0–18.5. The kind of that stamp names the cause:
+- `cut` with a zero XY length, together with a "C22 short cut probe" line at the same XY, confirms the zero-length candidate;
+- `entry`: the entry stamp descends below the emitted plunge;
+- `link`: a link stamp the emitter does not feed.
+If every `cut_to` there is at or above 18.0, the planner never cut the cell to 17.45: the read is then the conservative bound itself, and the collision cause lies in the sim/planner cell mismatch, not in a stamp.
