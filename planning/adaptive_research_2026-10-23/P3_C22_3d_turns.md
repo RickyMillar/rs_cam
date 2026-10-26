@@ -2276,3 +2276,63 @@ descent numbers; base C35 as in §12.5):**
 
 **Hold.** No file in `adaptive-head` changes until the lead reports D21
 (C35) done and committed.
+
+### 13.7 Scope change: C37 also takes 79 outer wall-end descents (C38 §5–§6) (2026-10-26)
+
+C12's `P3_C38_outer_band.md` §5.2 (script `phase3/c38/classify_outer_descents.py`,
+asserts every number) splits the 124 outer-strip descents at Z 17 by the
+edge beyond them:
+
+| Class | Count | Owner |
+|---|---|---|
+| beyond the mesh bbox, in the 5 mm margin, 0.55–4.6 mm from the stock-box edge (air beyond: a true free edge) | 45 | **C38** (clip the grown outline to the stock box at the call site) |
+| on the part grid, 1.5–3 mm from the silhouette (wall ends, centre at the R limit) | 6 | **C37** |
+| on the part grid, 3–4.5 mm from the silhouette (wall ends at wall + R) | 58 | **C37** |
+| on the part grid, 4.5–6 mm from the silhouette (near the containment line, with real stock beyond) | 15 | **C37** |
+
+**The containment line is not a free edge.** C38 §5.1 shows that real
+stock stands beyond it (the O5b clear makes the planner stock read air
+there). So my §13.6 note, which took R4's "free edge" reading, is
+corrected. C37 owns the open-arc join contract at every wall, outer and
+inner, and at the containment line: **262 + 79 = 341 descents on Corne**.
+
+**The instrument uses C12's silhouette rule,** so that C37's and C38's
+counts add up to the D20 totals:
+- C37's per-join classification (lens, over the bound, outside, stub)
+  carries a second key, the edge class of its position: the four C38
+  classes (beyond the mesh bbox; 1.5–3, 3–4.5, 4.5–6 mm from the hole-filled
+  silhouette on the part grid) plus "inside the silhouette".
+- The research record gives each refusal its position. The D-run applies
+  `classify_outer_descents.py`'s rule to the record's positions with the
+  same part grid (`fix9/corne_part.npz`). No new rule in the Rust code.
+
+**Pre-registration for the 79 outer wall ends (P; they join §13.6's set):**
+- The mechanism split, by class:
+  - 64 wall ends (1.5–4.5 mm): the same mechanism as the inner face of the
+    frame wall, so lens about 75 %, over the bound about 15 %, outside
+    about 5 %, stubs about 5 %;
+  - 15 near the containment line: no wall stands there, so a head-on
+    approach meets the real band beyond the line (C38 §5.1), which the
+    replay reads as stock. Lens about 30 %, over the bound about 40 %
+    (the line meets the level sets at an angle), stubs about 30 %.
+- After stage 1: 79 → about 35–50. After stage 2: about 10–25. After
+  stage 3: about 5–15.
+- **The full C37 set (341):** 341 → about **145–210** after stage 1 →
+  about **40–95** after stage 2 → about **15–45** after stage 3.
+- **Corne whole op, with C35, all three C37 stages and C38 item B** (the
+  45): 1195 → about 60–200, as in §13.6. The 79 were already inside the
+  outer strip I had counted there; the total does not move, only the
+  owner.
+- **Two caveats tied to C38:**
+  - C38's P-B2 (the 79 change by at most 25 % under item B) is C38's
+    pre-registration. Mine above is for C37's stages, read after item B
+    lands. If item B lands first, my stage-1 base is C38's measured 79′
+    rather than 79.
+  - C38's corridor opening (its §3.2, behind a ruling) adds new descents
+    below Z 17 (a slot entry per corridor piece per level). Those are
+    entries of a newly planned region, not open-arc ends. My sentry
+    counts them as the zone's first entry, not as a violation.
+
+C12 will send its line ranges and will ask before it touches the C31 call
+site (`research_grown_outlines`). I still hold all code until the lead
+reports D21.
