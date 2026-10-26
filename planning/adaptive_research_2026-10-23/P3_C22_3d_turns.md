@@ -3197,7 +3197,7 @@ Moves, not samples: one long move over one place reads 4 samples where two short
 
 ### 16.12 D30: the wanaka near-A over-load, and the Corne rapid collision (2026-10-27; read only)
 
-Script: `phase3/fix21/c22/nearA_kind.py`. It splits `load_split.py`'s "near A's steps" length by the move each over sample lies on:
+Script: `phase3/fix21/c22/nearA_kind.py`; the assert script is `phase3/fix21/c22/assert_c22_16_12.py`. It splits `load_split.py`'s "near A's steps" length by the move each over sample lies on:
 - 'on a step': the move climbs or drops by the path rule A replaced;
 - 'after a step': a level move right after such a step;
 - 'level': any other move.
@@ -3207,7 +3207,7 @@ Script: `phase3/fix21/c22/nearA_kind.py`. It splits `load_split.py`'s "near A's 
 | | on a step | after a step | level | total |
 |---|---|---|---|---|
 | wanaka D26 | 114.9 | 79.2 | 1340.6 | 1534.7 |
-| wanaka D30 | 153.8 | 258.3 | 1628.6 | 2040.6 |
+| wanaka D30 | 153.8 | 258.3 | 1628.6 | 2040.7 |
 | Corne D26 | 14.9 | 74.0 | 548.6 | 637.5 |
 | Corne D30 | 21.5 | 82.3 | 459.1 | 562.9 |
 
