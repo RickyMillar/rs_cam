@@ -1,0 +1,1029 @@
+diff --git a/crates/rs_cam_core/src/adaptive/research_geodesic.rs b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+index cc7798e3b..96afaf0ab 100644
+--- a/crates/rs_cam_core/src/adaptive/research_geodesic.rs
++++ b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+@@ -1135,6 +1135,53 @@ impl GeodesicField {
+         Ok(())
+     }
+ 
++    /// C35 ([`held_core_spiral`]): the turn values of `T` (stepovers) of a
++    /// core spiral from the rim (`T = 0`) to level `k`, by the walk of
++    /// [`Self::use_level_spacing`] at the width `ceiling_width`. The walk
++    /// ends on level `k` itself: a step that would pass it stops on it.
++    /// `None` when a step holds nothing above the bisection's first
++    /// bracket (the guard of [`Self::use_level_spacing`]).
++    fn spiral_turn_levels(
++        &self,
++        k: usize,
++        tool_radius: f64,
++        ceiling_width: f64,
++        tolerance: f64,
++        meeting: MeetingRule,
++        cancel: &dyn CancelCheck,
++    ) -> Result<Option<Vec<f64>>, Cancelled> {
++        let s = self.stepover;
++        let end = self.level_value(k);
++        let span = pass_step_len(self.field.cell);
++        let fits = |t: f64, dt: f64| {
++            dt * s <= self.level_gap(t + dt, tool_radius, ceiling_width, span, meeting)
++        };
++        let mut levels = vec![0.0];
++        let mut t = 0.0_f64;
++        while t < end {
++            check_cancel(cancel)?;
++            let mut dt = (end - t).min(1.0);
++            if !fits(t, dt) {
++                let (mut lo, mut hi) = (0.0_f64, dt);
++                while (hi - lo) * s > tolerance {
++                    let mid = 0.5 * (lo + hi);
++                    if fits(t, mid) {
++                        lo = mid;
++                    } else {
++                        hi = mid;
++                    }
++                }
++                dt = lo;
++            }
++            if dt <= 0.0 {
++                return Ok(None);
++            }
++            t = if t + dt >= end { end } else { t + dt };
++            levels.push(t);
++        }
++        Ok(Some(levels))
++    }
++
+     /// C16: the least law spacing (mm) over the level set `T = t`: at each
+     /// vertex of each piece, `min(s, s'(ρ))` ([`law_spacing`]) with `ρ` the
+     /// piece's signed radius there over `span` of arc length each side
+@@ -2142,6 +2189,24 @@ pub enum ArcPick {
+     Replay,
+ }
+ 
++/// How the closed wraps round the seed are joined under [`JoinRule::Seam`]
++/// (C35, R4 item 2, 2026-10-26).
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
++pub enum CoreJoin {
++    /// Every column before C35: each closed wrap is lapped from a radial
++    /// seam (the [`JoinRule::Seam`] step, about 0.94 D, which the replay
++    /// refuses: a re-entry per ring).
++    #[default]
++    Seam,
++    /// The closed, star-shaped levels round the seed are one spiral
++    /// ([`core_spiral`]: `F = T/s − φ/2π` out of the starter rim, then a
++    /// closing lap on the last core level K). The wraps start at level
++    /// K + 1, joined as the other options say. Applies under
++    /// [`JoinRule::Seam`] only; the spiral steps out one level per turn, so
++    /// the spacing law holds its band as it holds a closed wrap's.
++    Spiral,
++}
++
+ /// The research options of candidate (a).
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub struct GeodesicOptions {
+@@ -2159,6 +2224,8 @@ pub struct GeodesicOptions {
+     pub ends: ArcEnds,
+     /// C28: one plan per piece, or the better of two.
+     pub pick: ArcPick,
++    /// C35: the closed wraps round the seed as seams or as one spiral.
++    pub core: CoreJoin,
+ }
+ 
+ impl GeodesicOptions {
+@@ -2173,6 +2240,7 @@ impl GeodesicOptions {
+         chaining: Chaining::TailOnly,
+         ends: ArcEnds::Default,
+         pick: ArcPick::Off,
++        core: CoreJoin::Seam,
+     };
+     /// The G1 fixes of editors C2 and C3: the source-tracked field, the
+     /// one-side meeting rule, and the G1 join (C3 reverted the ramp join,
+@@ -2187,6 +2255,7 @@ impl GeodesicOptions {
+         chaining: Chaining::TailOnly,
+         ends: ArcEnds::Default,
+         pick: ArcPick::Off,
++        core: CoreJoin::Seam,
+     };
+     /// C4: the C2 field and meeting rule with the morph join, half-pitch
+     /// alternation in the lobes.
+@@ -2320,6 +2389,12 @@ impl GeodesicOptions {
+         pick: ArcPick::Replay,
+         ..Self::C20_LOCAL_ZIGZAG
+     };
++    /// C35: [`Self::C28_ZIGZAG_PICK`] with the closed wraps round the seed
++    /// cut as one spiral ([`CoreJoin::Spiral`]); the open arcs as before.
++    pub const C35_SPIRAL_PICK: Self = Self {
++        core: CoreJoin::Spiral,
++        ..Self::C28_ZIGZAG_PICK
++    };
+ 
+     /// C28: plan A and plan B of [`ArcPick::Replay`]: these options with
+     /// the pick off, and the same with [`ArcEnds::HeadOn`] and
+@@ -3402,41 +3477,156 @@ fn core_spiral(
+     while k > 0 {
+         check_cancel(cancel)?;
+         let outer = r0 + field.level_value(k) * stepover;
+-        let sag = (1.0 - (tolerance / outer).min(1.0))
+-            .acos()
+-            .max(f64::EPSILON);
+-        let per_turn = (std::f64::consts::PI / sag).ceil().max(3.0) as usize;
+-        let dphi = std::f64::consts::TAU / per_turn as f64;
+-        let mut pts: Vec<P2> = Vec::with_capacity(per_turn * (k + 1) + 1);
+-        let mut traced = true;
+-        for j in 0..=per_turn * (k + 1) {
+-            let theta = j as f64 * dphi;
+-            // The unwrapped turn count, and `T` there: level `n` of the field
+-            // at turn `n`, linear in the angle between two levels.
+-            let turns = theta / std::f64::consts::TAU;
+-            let t = if turns >= k as f64 {
+-                field.level_value(k)
+-            } else {
+-                let n = turns.floor();
+-                let (lo, hi) = (
+-                    field.level_value(n as usize),
+-                    field.level_value(n as usize + 1),
+-                );
+-                lo + (turns - n) * (hi - lo)
+-            };
+-            let phi = phi0 + theta;
+-            let Some(r) = field.radius_at(seed, phi, r0, t, tolerance) else {
+-                traced = false;
+-                break;
+-            };
+-            pts.push(P2::new(seed.x + r * phi.cos(), seed.y + r * phi.sin()));
++        let per_turn = chord_turn_steps(outer, tolerance);
++        let levels: Vec<f64> = (0..=k).map(|n| field.level_value(n)).collect();
++        if let Some(pts) =
++            trace_core_spiral(field, region, seed, r0, phi0, &levels, per_turn, tolerance)
++        {
++            return Ok((pts, k));
+         }
+-        let inside = traced
+-            && pts.windows(2).all(|w| match w {
+-                &[a, b] => region.contains_segment(a, b),
+-                _ => true,
+-            });
+-        if inside {
++        k -= 1;
++    }
++    Ok((Vec::new(), 0))
++}
++
++/// The chord rule of [`core_spiral`]: the vertices per turn that keep each
++/// chord within `tolerance` of a circle of radius `outer`
++/// (`⌈π / acos(1 - tolerance / ρ)⌉`, the rule of [`circle_from`]).
++fn chord_turn_steps(outer: f64, tolerance: f64) -> usize {
++    let sag = (1.0 - (tolerance / outer).min(1.0))
++        .acos()
++        .max(f64::EPSILON);
++    (std::f64::consts::PI / sag).ceil().max(3.0) as usize
++}
++
++/// The spiral of [`core_spiral`] through the turn values `levels` of `T`
++/// (stepovers): turn `n` runs from `levels[n]` to `levels[n + 1]`, linear
++/// in the angle, and one closing lap follows on the last value. Each turn
++/// has `per_turn` vertices, on the same rays as the turn before it, and
++/// each vertex radius is bisected to `radius_tolerance`. `None` when a ray
++/// does not reach its value or a chord leaves the region.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++fn trace_core_spiral(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    seed: P2,
++    r0: f64,
++    phi0: f64,
++    levels: &[f64],
++    per_turn: usize,
++    radius_tolerance: f64,
++) -> Option<Vec<P2>> {
++    let (&last, k) = (levels.last()?, levels.len() - 1);
++    let dphi = std::f64::consts::TAU / per_turn as f64;
++    let mut pts: Vec<P2> = Vec::with_capacity(per_turn * (k + 1) + 1);
++    for j in 0..=per_turn * (k + 1) {
++        let theta = j as f64 * dphi;
++        // The unwrapped turn count, and `T` there: turn value `n` at turn
++        // `n`, linear in the angle between two values.
++        let turns = theta / std::f64::consts::TAU;
++        let t = if turns >= k as f64 {
++            last
++        } else {
++            let n = turns.floor();
++            let (lo, hi) = (
++                levels.get(n as usize).copied()?,
++                levels.get(n as usize + 1).copied()?,
++            );
++            lo + (turns - n) * (hi - lo)
++        };
++        let phi = phi0 + theta;
++        let r = field.radius_at(seed, phi, r0, t, radius_tolerance)?;
++        pts.push(P2::new(seed.x + r * phi.cos(), seed.y + r * phi.sin()));
++    }
++    pts.windows(2)
++        .all(|w| match w {
++            &[a, b] => region.contains_segment(a, b),
++            _ => true,
++        })
++        .then_some(pts)
++}
++
++/// The largest heading tilt (rad) of a step into a band of depth `s`
++/// that reads at most `margin` (mm) over the band's own width: the tilted
++/// step sweeps `R(1 - cos β) + h sin β` more, `h = √(R² - (R - s)²)`
++/// ([`EntryLaw`]), so `β = atan2(R, h) + asin((margin - R) / √(h² + R²))`
++/// (the form of [`transition_fraction`]). 0 when no tilt holds.
++fn held_tilt(tool_radius: f64, stepover: f64, margin: f64) -> f64 {
++    let r = tool_radius;
++    let h = (r * r - (r - stepover).max(0.0).powi(2)).max(0.0).sqrt();
++    let rho_h = h.hypot(r);
++    (r.atan2(h) + ((margin - r) / rho_h).clamp(-1.0, 1.0).asin()).max(0.0)
++}
++
++/// C35, D21b: the core spiral of [`CoreJoin::Spiral`], spaced under the
++/// law by what its chords add. Returns the spiral and `K`, as
++/// [`core_spiral`] does. `r0` is the seed disc's radius, which is the tool
++/// radius `R` (the field's rim).
++///
++/// [`core_spiral`] spaces its turns on the field levels, which hold the
++/// law with no margin inside `ρ*` (D21: the replay refused 9 chords at
++/// 0.3631 to 0.3931 against 0.3626). The level holds on the curve; a chord
++/// does not follow it. Each chord heads `β = π / n` off the tangent at its
++/// end (`n` vertices per turn), out into the stock on its second half, and
++/// the previous turn's chord ahead of it lies `ρ(1 - cos β)` inside the
++/// level. The swept width reads across the heading, so the cap of stock
++/// ahead of the cutter reads `R(1 - cos β) + h sin β` wider ([`EntryLaw`];
++/// on exact circles at s 2, R 3 and 22 vertices per turn, 0.44 against
++/// 0.3626; the excess falls linearly with `β`). The spiral form of
++/// [`transition_fraction`] has no kink only as a curve.
++///
++/// - The angle step holds the tilt to the op `tolerance`
++///   ([`held_tilt`]), or the chord rule of [`core_spiral`] when that is
++///   finer.
++/// - Each vertex radius is bisected to the float resolution: a radius
++///   error between two vertices tilts the chord too.
++/// - The turns are spaced by the walk of [`Spacing::LocalLevel`]
++///   ([`GeodesicField::spiral_turn_levels`]) at the ceiling width less the
++///   tilt term at the step used, the chord sag `ρ_K(1 - cos β)` at the
++///   outer radius, and one `tolerance`: the law is read on the traced
++///   contours and the spiral on the bilinear field, and the plan holds
++///   positions to the op tolerance. The last turn ends on level `K`, so
++///   the wraps past it keep their spacing.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++fn held_core_spiral(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    seed: P2,
++    r0: f64,
++    phi0: f64,
++    stepover: f64,
++    ceiling_width: f64,
++    tolerance: f64,
++    meeting: MeetingRule,
++    cancel: &dyn CancelCheck,
++) -> Result<(Vec<P2>, usize), Cancelled> {
++    let h = (r0 * r0 - (r0 - stepover).max(0.0).powi(2)).max(0.0).sqrt();
++    let beta = held_tilt(r0, stepover, tolerance);
++    if beta <= 0.0 {
++        return Ok((Vec::new(), 0));
++    }
++    let mut k = field.star_levels(seed, r0);
++    while k > 0 {
++        check_cancel(cancel)?;
++        let outer = r0 + field.level_value(k) * stepover;
++        let per_turn =
++            chord_turn_steps(outer, tolerance).max((std::f64::consts::PI / beta).ceil() as usize);
++        let step = std::f64::consts::PI / per_turn as f64;
++        let held_width = ceiling_width
++            - r0 * (1.0 - step.cos())
++            - h * step.sin()
++            - outer * (1.0 - step.cos())
++            - tolerance;
++        let levels = field.spiral_turn_levels(k, r0, held_width, tolerance, meeting, cancel)?;
++        if let Some(pts) = levels.and_then(|levels| {
++            trace_core_spiral(field, region, seed, r0, phi0, &levels, per_turn, 0.0)
++        }) {
+             return Ok((pts, k));
+         }
+         k -= 1;
+@@ -5026,9 +5216,29 @@ fn plan_piece(
+         }));
+     }
+     let outer = r + spiral_levels as f64 * s;
+-    let spiral: Vec<P2> = match law {
+-        Some(law) if spiral_levels > 0 => law.spiral(seed, phi0, outer, params.tolerance),
+-        _ => Vec::new(),
++    // C35 ([`CoreJoin::Spiral`]): the closed, star-shaped levels round the
++    // seed are one spiral; the wraps start past them.
++    let core_spiral_join =
++        options.core == CoreJoin::Spiral && options.join == JoinRule::Seam && law.is_none();
++    let (spiral, spiral_levels): (Vec<P2>, usize) = if core_spiral_join {
++        held_core_spiral(
++            &field,
++            &region,
++            seed,
++            r,
++            phi0,
++            s,
++            pass.ceiling * 2.0 * r,
++            params.tolerance,
++            options.meeting,
++            cancel,
++        )?
++    } else {
++        let spiral = match law {
++            Some(law) if spiral_levels > 0 => law.spiral(seed, phi0, outer, params.tolerance),
++            _ => Vec::new(),
++        };
++        (spiral, spiral_levels)
+     };
+     let wraps = ordered_wraps(
+         &field,
+@@ -5077,6 +5287,7 @@ fn plan_piece(
+     let first = match law {
+         Some(_) => Some(starter_end),
+         None if rim_first => Some(starter_end),
++        None if !spiral.is_empty() => spiral.first().copied(),
+         None => wraps.iter().find_map(|w| w.pts.first().copied()),
+     };
+     if let Some(first) = first {
+@@ -5108,6 +5319,11 @@ fn plan_piece(
+     let mut turns: Vec<(P2, P2)> = Vec::new();
+     match law {
+         None => {
++            // C35: the core spiral first, from the starter end (empty for
++            // every other option).
++            if !spiral.is_empty() {
++                join(&spiral, &mut run, &mut cur, &mut segments);
++            }
+             let cd = pass.ceiling * 2.0 * r;
+             let mut joins = JoinReport::default();
+             // The transition of a closed wrap at `level` to the next level:
+@@ -7763,6 +7979,91 @@ pub(crate) struct SlicePlan {
+     /// no longer than [`turn_bound`]. Empty unless the options link the
+     /// arcs.
+     pub(crate) turns: Vec<(P2, P2)>,
++    /// C35: the core zone the spiral cut ([`CoreJoin::Spiral`] with at
++    /// least one core level): the seed, the closing lap's radius, and K.
++    pub(crate) core: Option<CoreZone>,
++}
++
++/// C35: the closed core round the seed that one spiral cut
++/// ([`CoreJoin::Spiral`]): the disc of radius `radius` about `seed`, out to
++/// the closing lap on core level `levels`.
++#[derive(Debug, Clone)]
++pub(crate) struct CoreZone {
++    pub(crate) seed: P2,
++    pub(crate) radius: f64,
++    pub(crate) levels: usize,
++    /// D21 instrument: the ceiling (a_e / D), and every step of the RAW
++    /// plan (the producer's, before the replay) that reads over it with an
++    /// end inside the disc. The raw readout's over-steps are the steps the
++    /// replay refuses, in plan order (exact up to the first one; see
++    /// `Summary2d::raw_pass_load`).
++    pub(crate) ceiling: f64,
++    pub(crate) over: Vec<CoreOver>,
++}
++
++/// D21 instrument: one raw-plan step over the ceiling inside a core zone.
++#[derive(Debug, Clone, Copy)]
++pub(crate) struct CoreOver {
++    pub(crate) from: P2,
++    pub(crate) to: P2,
++    /// The swept-width reading (a_e / D).
++    pub(crate) reading: f64,
++    /// Where on the plan the step lies (the spiral, a wrap, a link, ...).
++    pub(crate) part: StepPart,
++    pub(crate) producer: Producer,
++}
++
++/// D21 instrument: one 2D `Rapid` of the cleaned plan inside a core zone,
++/// and the producer of the segments it enters (the last marker before it).
++#[derive(Debug, Clone, Copy)]
++pub(crate) struct CoreRapid {
++    pub(crate) at: P2,
++    pub(crate) producer: Producer,
++}
++
++/// C35: the 2D `Rapid`s of the cleaned slice plan `segments` inside the
++/// core zone (closer to the seed than its radius less one planner cell),
++/// less the piece's first `Rapid` (the starter's entry at the seed), each
++/// with the producer of the segments it enters. Under the spiral every
++/// closed core level is one cut, so this is empty unless the replay split
++/// the spiral or another producer (a residue contour, the mop) re-enters
++/// inside the core.
++pub(crate) fn core_rapids(
++    segments: &[AdaptiveSegment],
++    zone: &CoreZone,
++    params: &AdaptiveParams,
++) -> Vec<CoreRapid> {
++    let limit = zone.radius - planner_cell(params);
++    let mut producer = Producer::Unmarked;
++    let mut rapids = Vec::new();
++    let mut first = true;
++    for (k, seg) in segments.iter().enumerate() {
++        match seg {
++            AdaptiveSegment::Marker(event) => producer = producer.after(event),
++            AdaptiveSegment::Rapid(p) => {
++                if std::mem::take(&mut first) {
++                    continue;
++                }
++                if (p.x - zone.seed.x).hypot(p.y - zone.seed.y) < limit {
++                    // The producer of the segments the entry leads to: a
++                    // marker right after the `Rapid` names it.
++                    let next = segments.get(k + 1..).and_then(|rest| {
++                        rest.iter().find_map(|s| match s {
++                            AdaptiveSegment::Marker(event) => Some(producer.after(event)),
++                            AdaptiveSegment::Cut(_) => Some(producer),
++                            AdaptiveSegment::Link(_) | AdaptiveSegment::Rapid(_) => None,
++                        })
++                    });
++                    rapids.push(CoreRapid {
++                        at: *p,
++                        producer: next.unwrap_or(producer),
++                    });
++                }
++            }
++            AdaptiveSegment::Cut(_) | AdaptiveSegment::Link(_) => {}
++        }
++    }
++    rapids
+ }
+ 
+ /// Candidate (a) as the per-slice producer of the 3D research arm
+@@ -7778,9 +8079,54 @@ pub(crate) fn slice_segments(
+     cancel: &dyn CancelCheck,
+ ) -> Result<Option<SlicePlan>, Cancelled> {
+     Ok(
+-        geodesic_segments(polygon, params, options, cancel)?.map(|produced| SlicePlan {
+-            segments: produced.segments,
+-            turns: produced.turns,
++        geodesic_segments(polygon, params, options, cancel)?.map(|produced| {
++            // C35: the core zone, from the producer's own report: the rim
++            // radius plus the last core level (the radius `core_spiral`
++            // traces its closing lap at).
++            let core = (options.core == CoreJoin::Spiral)
++                .then_some(&produced.report)
++                .filter(|report| report.spiral_levels > 0)
++                .and_then(|report| {
++                    let seed = report.seed?;
++                    let level_mm = report.level_values_mm.get(report.spiral_levels)?;
++                    let radius = report.seed_radius + level_mm;
++                    // D21 instrument: the raw plan's steps over the ceiling
++                    // with an end inside the core disc.
++                    let cell = planner_cell(params);
++                    let raw = pass_load_readout(
++                        polygon,
++                        params,
++                        &produced.segments,
++                        Some(&produced.parts),
++                        cell,
++                        ReplayMeasure::SweptWidth,
++                    );
++                    let inside = |p: &P2| (p.x - seed.x).hypot(p.y - seed.y) < radius;
++                    let over = raw
++                        .over
++                        .iter()
++                        .filter(|o| inside(&o.from) || inside(&o.to))
++                        .map(|o| CoreOver {
++                            from: o.from,
++                            to: o.to,
++                            reading: o.reading,
++                            part: o.part,
++                            producer: o.producer,
++                        })
++                        .collect();
++                    Some(CoreZone {
++                        seed,
++                        radius,
++                        levels: report.spiral_levels,
++                        ceiling: raw.ceiling,
++                        over,
++                    })
++                });
++            SlicePlan {
++                segments: produced.segments,
++                turns: produced.turns,
++                core,
++            }
+         }),
+     )
+ }
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 950aecc71..3d59da93d 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -422,6 +422,10 @@ pub(super) struct ClearZLevelContext<'a> {
+     /// research record of the run (`mod.rs`, `Research3d::openings`).
+     #[cfg(feature = "research")]
+     pub(super) research_openings: std::cell::RefCell<Vec<super::RegionOpening>>,
++    /// Research (C35): one record per slice piece whose plan cut a core
++    /// spiral (`CoreJoin::Spiral`), for `Research3d::core_zones`.
++    #[cfg(feature = "research")]
++    pub(super) research_core_zones: std::cell::RefCell<Vec<super::CoreZoneRecord>>,
+ }
+ 
+ // ── Contour-parallel clearing ─────────────────────────────────────────
+@@ -2352,10 +2356,14 @@ fn plan_one_outline(
+     // C22: the planned clearing turns go with the plan into the cleanup.
+     #[cfg(feature = "research")]
+     let mut research_turns: Vec<(P2, P2)> = Vec::new();
++    // C35: the core zone of a spiral plan, for the record below.
++    #[cfg(feature = "research")]
++    let mut research_core: Option<crate::adaptive::research_geodesic::CoreZone> = None;
+     #[cfg(feature = "research")]
+     let research =
+         research_slice_segments(strategy, polygon_for_adaptive, params_2d, cancel)?.map(|plan| {
+             research_turns = plan.turns;
++            research_core = plan.core;
+             plan.segments
+         });
+     #[cfg(not(feature = "research"))]
+@@ -2406,6 +2414,57 @@ fn plan_one_outline(
+         &segs_2d_raw,
+         &research_turns,
+     );
++    // Research arm C35: the core zone a spiral cut, and the 2D re-entries
++    // the cleaned plan still has inside it (0 unless the replay split the
++    // spiral).
++    #[cfg(feature = "research")]
++    if let Some(zone) = research_core {
++        let rapids =
++            crate::adaptive::research_geodesic::core_rapids(&segs_2d_raw, &zone, params_2d);
++        ctx.research_core_zones
++            .borrow_mut()
++            .push(super::CoreZoneRecord {
++                z_level,
++                seed_x: zone.seed.x,
++                seed_y: zone.seed.y,
++                radius_mm: zone.radius,
++                levels: zone.levels,
++                rapids_inside: rapids.len(),
++                ceiling: zone.ceiling,
++                rapid_lines: rapids
++                    .iter()
++                    .map(|r| {
++                        format!(
++                            "rapid at ({:.3}, {:.3}) r {:.3} from the seed, into {:?}",
++                            r.at.x,
++                            r.at.y,
++                            (r.at.x - zone.seed.x).hypot(r.at.y - zone.seed.y),
++                            r.producer
++                        )
++                    })
++                    .collect(),
++                over_lines: zone
++                    .over
++                    .iter()
++                    .map(|o| {
++                        format!(
++                            "raw over: ({:.3}, {:.3}) -> ({:.3}, {:.3}) r {:.3} -> {:.3}, \
++                             reading {:.4} against {:.4}, {:?}, {:?}",
++                            o.from.x,
++                            o.from.y,
++                            o.to.x,
++                            o.to.y,
++                            (o.from.x - zone.seed.x).hypot(o.from.y - zone.seed.y),
++                            (o.to.x - zone.seed.x).hypot(o.to.y - zone.seed.y),
++                            o.reading,
++                            zone.ceiling,
++                            o.part,
++                            o.producer
++                        )
++                    })
++                    .collect(),
++            });
++    }
+     // Research arm C12/C22: under the 2D pass load the replay admits a link
+     // only within the load and stamps it on the planner grid, as a cut at
+     // depth. The links stay `Link`s here; `clear_one_region` emits each one
+@@ -3599,12 +3658,16 @@ fn pick_region_plan(
+         let turns = ctx.research_turns.borrow();
+         (turns.planned, turns.records.len())
+     };
++    // C35: the core-zone records of each run, as for the turns.
++    let zones_of = || ctx.research_core_zones.borrow().len();
++    let zones_before = zones_of();
+     let start = emission.sink.cursor.tool_pos;
+     let before = turns_of();
+     let a = RegionScratch::run(
+         ctx, plan, emission, outlines, region_idx, strategy_a, cancel,
+     )?;
+     let after_a = turns_of();
++    let zones_after_a = zones_of();
+     let b = RegionScratch::run(
+         ctx, plan, emission, outlines, region_idx, strategy_b, cancel,
+     )?;
+@@ -3634,6 +3697,12 @@ fn pick_region_plan(
+             turns.records.truncate(after_a.1);
+             turns.planned = after_a.0;
+         }
++        let mut zones = ctx.research_core_zones.borrow_mut();
++        if keep_b {
++            zones.drain(zones_before..zones_after_a);
++        } else {
++            zones.truncate(zones_after_a);
++        }
+     }
+     if keep_b {
+         b.commit(emission);
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index ab3c63609..d19b2314e 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -109,7 +109,8 @@ pub enum ClearingStrategy3d {
+ /// harness column names: `geodesic_curv`, `geodesic_curv_split`, (C22)
+ /// `geodesic_local_oneway` and `geodesic_local_zigzag`, and (C25b)
+ /// `geodesic_local_zigzag_v2` (`GeodesicOptions::C23_ZIGZAG_V2`), and (C28)
+-/// `geodesic_local_zigzag_pick` (`GeodesicOptions::C28_ZIGZAG_PICK`).
++/// `geodesic_local_zigzag_pick` (`GeodesicOptions::C28_ZIGZAG_PICK`), and
++/// (C35) `geodesic_local_spiral_pick` (`GeodesicOptions::C35_SPIRAL_PICK`).
+ /// The variable has no effect without the `research` feature.
+ #[cfg(feature = "research")]
+ pub const RESEARCH_ARM_ENV: &str = "RS_CAM_RESEARCH_ADAPTIVE3D_ARM";
+@@ -141,6 +142,10 @@ fn research_arm_override() -> Option<ClearingStrategy3d> {
+             "geodesic_local_zigzag_pick" => Some(ClearingStrategy3d::Geodesic(
+                 GeodesicOptions::C28_ZIGZAG_PICK,
+             )),
++            // C35: the zigzag pick with the closed core as one spiral.
++            "geodesic_local_spiral_pick" => Some(ClearingStrategy3d::Geodesic(
++                GeodesicOptions::C35_SPIRAL_PICK,
++            )),
+             other => {
+                 tracing::warn!(
+                     value = other,
+@@ -669,6 +674,33 @@ pub struct RegionOpening {
+     pub decision: &'static str,
+ }
+ 
++/// Research (C35): the closed core round the seed of one slice piece that
++/// the research arm cut as one spiral (`CoreJoin::Spiral`), and the 2D
++/// re-entries the cleaned plan still has inside it.
++#[cfg(feature = "research")]
++#[derive(Debug, Clone)]
++pub struct CoreZoneRecord {
++    pub z_level: f64,
++    pub seed_x: f64,
++    pub seed_y: f64,
++    /// The closing lap's radius about the seed (mm).
++    pub radius_mm: f64,
++    /// The core levels K the spiral covers.
++    pub levels: usize,
++    /// The 2D `Rapid`s inside the zone (radius less one planner cell), the
++    /// starter's entry left out.
++    pub rapids_inside: usize,
++    /// D21 instrument: the ceiling (a_e / D) the replay holds.
++    pub ceiling: f64,
++    /// D21 instrument: one line per `Rapid` inside: where, its distance from
++    /// the seed, and the producer it enters.
++    pub rapid_lines: Vec<String>,
++    /// D21 instrument: one line per step of the raw plan over the ceiling
++    /// with an end inside the zone: the step, its radii from the seed, the
++    /// reading against the ceiling, its part and producer.
++    pub over_lines: Vec<String>,
++}
++
+ /// Research (C22, C31): what the research arm reports beside the output.
+ #[cfg(feature = "research")]
+ #[derive(Debug, Clone, Default)]
+@@ -678,6 +710,8 @@ pub struct Research3d {
+     pub turns: crate::adaptive::research_geodesic::TurnSummary,
+     /// One record per region the arm reached (after F-038), in plan order.
+     pub openings: Vec<RegionOpening>,
++    /// C35: one record per slice piece whose plan cut a core spiral.
++    pub core_zones: Vec<CoreZoneRecord>,
+ }
+ 
+ /// Research (C22, C31): [`adaptive_3d_toolpath_output_with_cancel`] and the
+@@ -718,7 +752,15 @@ fn research_turn_feeds(
+         feed_rate,
+     );
+     let openings = std::mem::take(&mut result.research_openings);
+-    (tp, Research3d { turns, openings })
++    let core_zones = std::mem::take(&mut result.research_core_zones);
++    (
++        tp,
++        Research3d {
++            turns,
++            openings,
++            core_zones,
++        },
++    )
+ }
+ #[cfg(not(feature = "research"))]
+ fn research_turn_feeds(
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index f99f580e8..05f67cdb6 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -602,6 +602,9 @@ pub(super) struct Adaptive3dSegmentsResult {
+     /// Research (C31): how the research arm opened each region.
+     #[cfg(feature = "research")]
+     pub research_openings: Vec<super::RegionOpening>,
++    /// Research (C35): the core zones the research arm's spirals cut.
++    #[cfg(feature = "research")]
++    pub research_core_zones: Vec<super::CoreZoneRecord>,
+ }
+ 
+ /// F-029 probe: build the planner-internal segments + final material_stock
+@@ -982,6 +985,8 @@ pub(super) fn adaptive_3d_segments(
+         stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
+         #[cfg(feature = "research")]
+         research_openings: std::cell::RefCell::default(),
++        #[cfg(feature = "research")]
++        research_core_zones: std::cell::RefCell::default(),
+     };
+ 
+     let mut segments = Vec::new();
+@@ -1177,6 +1182,8 @@ pub(super) fn adaptive_3d_segments(
+         research_turns: ctx.research_turns.take(),
+         #[cfg(feature = "research")]
+         research_openings: ctx.research_openings.take(),
++        #[cfg(feature = "research")]
++        research_core_zones: ctx.research_core_zones.take(),
+     })
+ }
+ 
+diff --git a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+index 1931a0261..ce43694d4 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+@@ -94,6 +94,12 @@
+ //!    them. Their plain-seam arcs end with a short sideways hop off the
+ //!    arc's line into stock that the shipped perimeter sweep used to remove
+ //!    (D19d probes; `DEFECTS.md` G-ARCENDHOOK, parked).
++//!    C35 adds `GeodesicOptions::C35_SPIRAL_PICK` (column
++//!    `geodesic_local_spiral_pick`, a G1 arm): the closed core round the
++//!    seed as one spiral. For it the test also requires at least one core
++//!    zone and no re-entry inside any zone: 0 2D `Rapid`s in the record and
++//!    0 3D entries at the level inside the zone's disc, more than R from the
++//!    seed ([`core_zone_lines`]).
+ //! 3. The turns hold the 2D rule ([`turn_faults`]): no turn is unfed, each
+ //!    turn is within the bound, and each turn move carries the reduced
+ //!    feed. The arc-link modes also plan at least one turn.
+@@ -121,11 +127,11 @@ use std::f64::consts::SQRT_2;
+ use common::meshes::height_field;
+ 
+ use rs_cam_core::adaptive::pass_engagement_limit;
+-use rs_cam_core::adaptive::research_geodesic::{GeodesicOptions, TurnSummary};
++use rs_cam_core::adaptive::research_geodesic::{CoreJoin, GeodesicOptions, TurnSummary};
+ use rs_cam_core::adaptive3d::{
+     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dOutput, Adaptive3dParams,
+-    Adaptive3dRuntimeEvent, ClearingStrategy3d, EntryStyle3d, RegionOpening, RegionOrdering,
+-    adaptive_3d_research_output_with_cancel,
++    Adaptive3dRuntimeEvent, ClearingStrategy3d, CoreZoneRecord, EntryStyle3d, RegionOpening,
++    RegionOrdering, adaptive_3d_research_output_with_cancel,
+ };
+ use rs_cam_core::dexel_stock::{StockCutDirection, TriDexelStock};
+ use rs_cam_core::geo::P3;
+@@ -303,12 +309,17 @@ fn plan(
+     mesh: &TriangleMesh,
+     index: &SpatialIndex,
+     params: &Adaptive3dParams,
+-) -> (Adaptive3dOutput, TurnSummary, Vec<RegionOpening>) {
++) -> (
++    Adaptive3dOutput,
++    TurnSummary,
++    Vec<RegionOpening>,
++    Vec<CoreZoneRecord>,
++) {
+     let cutter = FlatEndmill::new(2.0 * TOOL_RADIUS, 25.0);
+     let (out, research) =
+         adaptive_3d_research_output_with_cancel(mesh, index, &cutter, params, &|| false, None)
+             .expect("the plan is not cancelled");
+-    (out, research.turns, research.openings)
++    (out, research.turns, research.openings, research.core_zones)
+ }
+ 
+ /// C31: the decision of a region whose 2D plan got the grown outline.
+@@ -318,6 +329,58 @@ const GROWN: &str = "grown, no sweep";
+ /// when its inset by 0.3 is), so it is not a refusal.
+ const NO_OUTLINE: &str = "no smoothed or grown outline: shipped sweep";
+ 
++/// C35: one line per core zone of a run, with its 2D re-entries (the
++/// record's `rapids_inside`) and its 3D re-entries: the entries (a run of
++/// `EntryPlunge`, `EntryHelix` or `EntryRamp` moves) that end at the zone's
++/// level, inside its disc (radius less one planner cell) and more than R
++/// from the seed (the starter's plunge is at the seed). Inside a core cut
++/// as one spiral each of them is a re-entry the plan should not have.
++fn core_zone_lines(
++    label: &str,
++    tp: &Toolpath,
++    zones: &[CoreZoneRecord],
++) -> Vec<(String, usize, usize)> {
++    zones
++        .iter()
++        .map(|zone| {
++            let mut descents = 0usize;
++            for (k, mv) in tp.moves.iter().enumerate() {
++                let entry_end = is_entry(mv.intent)
++                    && tp
++                        .moves
++                        .get(k + 1)
++                        .is_none_or(|next| !is_entry(next.intent));
++                if !entry_end {
++                    continue;
++                }
++                let d = (mv.target.x - zone.seed_x).hypot(mv.target.y - zone.seed_y);
++                if (mv.target.z - zone.z_level).abs() <= TOLERANCE
++                    && d > TOOL_RADIUS
++                    && d < zone.radius_mm - planner_cell()
++                {
++                    descents += 1;
++                }
++            }
++            let mut line = format!(
++                "{label} core Z {:.2} seed ({:.2}, {:.2}) radius {:.2} mm, {} levels: 2D \
++                 re-entries {}, 3D entries inside {descents}",
++                zone.z_level,
++                zone.seed_x,
++                zone.seed_y,
++                zone.radius_mm,
++                zone.levels,
++                zone.rapids_inside
++            );
++            // D21 instrument: each re-entry and each raw over-step inside.
++            for detail in zone.rapid_lines.iter().chain(&zone.over_lines) {
++                line.push_str("\n    ");
++                line.push_str(detail);
++            }
++            (line, zone.rapids_inside, descents)
++        })
++        .collect()
++}
++
+ /// C31: one line per region opening of a run.
+ fn opening_lines(label: &str, openings: &[RegionOpening]) -> Vec<String> {
+     openings
+@@ -944,14 +1007,15 @@ fn summary(label: &str, r: &Readout) -> String {
+ }
+ 
+ #[test]
+-#[ignore = "heavy: about 16 min in debug (D12: 427 s for three arms; C22, C25b and C31 add \
+-            four): seven 3D plans and seven dexel simulations with exact readings; run by name \
+-            with --ignored (C22: the arc-link modes with their clearing turns)"]
++#[ignore = "heavy: about 18 min in debug (D12: 427 s for three arms; C22, C25b, C31 and C35 \
++            add five): eight 3D plans and eight dexel simulations with exact readings; run by \
++            name with --ignored (C22: the arc-link modes with their clearing turns)"]
+ fn the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels() {
+     let mesh = pocket_with_island();
+     let index = SpatialIndex::build(&mesh, 10.0);
+ 
+-    let (control, control_turns, _) = plan(&mesh, &index, &params(ClearingStrategy3d::AgentSearch));
++    let (control, control_turns, _, _) =
++        plan(&mesh, &index, &params(ClearingStrategy3d::AgentSearch));
+     let c = read(&mesh, &control, &control_turns, true);
+     eprintln!("{}", summary("control AgentSearch", &c));
+ 
+@@ -993,9 +1057,36 @@ fn the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels() {
+             true,
+             true,
+         ),
++        // C35: the zigzag pick with the closed core as one spiral.
++        (
++            "geodesic_local_spiral_pick",
++            GeodesicOptions::C35_SPIRAL_PICK,
++            true,
++            true,
++        ),
+     ] {
+         let p = params(ClearingStrategy3d::Geodesic(options));
+-        let (out, turns, openings) = plan(&mesh, &index, &p);
++        let (out, turns, openings, core_zones) = plan(&mesh, &index, &p);
++        // C35: the core zones and their re-entries; the spiral arm must
++        // have a zone at each level and no re-entry inside any.
++        let spiral = options.core == CoreJoin::Spiral;
++        let zone_lines = core_zone_lines(label, &out.toolpath, &core_zones);
++        for (line, _, _) in &zone_lines {
++            eprintln!("{line}");
++        }
++        if spiral {
++            let reentries: Vec<&String> = zone_lines
++                .iter()
++                .filter(|(_, rapids, descents)| *rapids > 0 || *descents > 0)
++                .map(|(line, _, _)| line)
++                .collect();
++            if zone_lines.is_empty() || !reentries.is_empty() {
++                failures.push(format!(
++                    "{label}: {} core zones; with a re-entry inside: {reentries:#?}",
++                    zone_lines.len()
++                ));
++            }
++        }
+         let lines = opening_lines(label, &openings);
+         for line in &lines {
+             eprintln!("{line}");
+@@ -1111,14 +1202,22 @@ fn the_geodesic_arm_feeds_its_turns_down_at_the_level() {
+             "geodesic_local_zigzag_pick",
+             GeodesicOptions::C28_ZIGZAG_PICK,
+         ),
++        // C35: the zigzag pick with the closed core as one spiral.
++        (
++            "geodesic_local_spiral_pick",
++            GeodesicOptions::C35_SPIRAL_PICK,
++        ),
+     ] {
+         let mut p = params(ClearingStrategy3d::Geodesic(options));
+         p.depth.depth_per_pass = TOP_Z - FLOOR_Z;
+-        let (out, turns, openings) = plan(&mesh, &index, &p);
++        let (out, turns, openings, core_zones) = plan(&mesh, &index, &p);
+         let tp = &out.toolpath;
+         for line in opening_lines(label, &openings) {
+             eprintln!("{line}");
+         }
++        for (line, _, _) in core_zone_lines(label, tp, &core_zones) {
++            eprintln!("{line}");
++        }
+         eprintln!("{}", turn_line(label, &turns));
+         eprintln!(
+             "{label}: {} moves, {} entries",
+@@ -1152,3 +1251,85 @@ fn the_geodesic_arm_feeds_its_turns_down_at_the_level() {
+         );
+     }
+ }
++
++/// One line per polygon of a stage of the C34 probe: the exterior's signed
++/// area and each hole's signed area (mm²; CCW positive).
++fn c34_stage(label: &str, polys: &[rs_cam_core::polygon::Polygon2]) {
++    eprintln!("C34 {label}: {} polygon(s)", polys.len());
++    for (k, p) in polys.iter().enumerate() {
++        let holes: Vec<String> = p
++            .holes
++            .iter()
++            .map(|h| {
++                format!(
++                    "{:.1}",
++                    rs_cam_core::polygon::Polygon2::new(h.clone()).signed_area()
++                )
++            })
++            .collect();
++        eprintln!(
++            "  {k}: exterior {:.1}, holes [{}], area {:.1}",
++            p.signed_area(),
++            holes.join(", "),
++            p.area()
++        );
++    }
++}
++
++/// C34 probe (wanaka200 Z 4.0 region 1, `phase3/fix7`): the steps of
++/// `research_grown_outlines` (less the RDP) on a frame ring of the same
++/// size: an exterior square of 40100 mm² with a square hole of 37520 mm²
++/// (region area 2580 mm²; band about 3.3 mm). It prints the polygons of
++/// each stage, so the stage where the hole turns into a filled polygon
++/// shows. D20 read `centre_area_mm2` 77602.8 ≈ the filled exterior
++/// (39631, the full-square value of the upper levels) + an island the size
++/// of the hole grown and inset again (≈ 37971).
++#[test]
++#[ignore = "instrument: C34 probe of the grown-outline steps on a frame ring; prints, asserts nothing"]
++fn c34_frame_ring_grow_probe() {
++    use rs_cam_core::geo::P2;
++    use rs_cam_core::polygon::{FlattenPolicy, OffsetRingSet, Polygon2, offset_polygon};
++    let square = |half: f64| {
++        vec![
++            P2::new(-half, -half),
++            P2::new(half, -half),
++            P2::new(half, half),
++            P2::new(-half, half),
++        ]
++    };
++    let outer_half = 40100.0_f64.sqrt() / 2.0;
++    let hole_half = 37520.0_f64.sqrt() / 2.0;
++    let mut hole = square(hole_half);
++    hole.reverse();
++    let region = Polygon2::with_holes(square(outer_half), vec![hole]);
++    c34_stage("region", std::slice::from_ref(&region));
++    let (r, m, inset, shortfall) = (TOOL_RADIUS, 0.25, 0.3, 0.26);
++    let smoothed = offset_polygon(&region, inset);
++    c34_stage("smoothed (inset 0.3, no RDP)", &smoothed);
++    let s_prime: Vec<Polygon2> = smoothed
++        .iter()
++        .flat_map(|p| offset_polygon(p, shortfall))
++        .collect();
++    c34_stage("after the shortfall inset", &s_prime);
++    let grown: Vec<Polygon2> = s_prime
++        .iter()
++        .flat_map(|p| {
++            OffsetRingSet::from_polygon(p)
++                .offset(-(r - m))
++                .to_polygons(FlattenPolicy::untoleranced())
++        })
++        .collect();
++    c34_stage("grown by R - m (OffsetRingSet)", &grown);
++    let grown_single: Vec<Polygon2> = s_prime
++        .iter()
++        .flat_map(|p| offset_polygon(p, -(r - m)))
++        .collect();
++    c34_stage(
++        "grown by R - m (offset_polygon, for comparison)",
++        &grown_single,
++    );
++    let centre: Vec<Polygon2> = grown.iter().flat_map(|g| offset_polygon(g, r)).collect();
++    c34_stage("centre (grown inset by R)", &centre);
++    let target: Vec<Polygon2> = s_prime.iter().flat_map(|p| offset_polygon(p, m)).collect();
++    c34_stage("target (shortfall-inset outline inset by m)", &target);
++}
