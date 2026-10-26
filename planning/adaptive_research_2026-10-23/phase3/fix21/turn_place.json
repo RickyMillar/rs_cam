@@ -1,0 +1,14 @@
+{
+ "fix21/a_only/corne": {
+  "over30": {
+   "inside": 1176,
+   "outside": 219,
+   "beyond mesh bbox": 105
+  },
+  "over90": {
+   "inside": 271,
+   "beyond mesh bbox": 42,
+   "outside": 34
+  }
+ }
+}

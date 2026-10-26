@@ -1,0 +1,20 @@
+
+running 10 tests
+...... 6/10
+tabs_lifts_match_apply_tabs_for_the_same_points_p5 --- FAILED
+...
+failures:
+
+---- tabs_lifts_match_apply_tabs_for_the_same_points_p5 stdout ----
+
+thread 'tabs_lifts_match_apply_tabs_for_the_same_points_p5' (2658747) panicked at crates/rs_cam_core/tests/tabs_sit_on_straight_sides_p5.rs:444:34:
+S11: the fixture sets it
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tabs_lifts_match_apply_tabs_for_the_same_points_p5
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p rs_cam_core --test tabs_sit_on_straight_sides_p5`

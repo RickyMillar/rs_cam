@@ -3148,3 +3148,31 @@ Scripts are in `phase3/fix20/c22/`: `parta_place.py`, `turns_inside.py`, `turns_
 - Inside the silhouette, D26 → D29: 3D 831 → 1767, but XY only 452 → 446.
 - The +936 are the draped steps A now cuts at feed (up onto a face, then level again). Before, a split broke the chain with a G0.
 - The heading of the path did not change. Whether a slope change at feed matters for the machine is the operator's call. The accel model, not the turn count, decides its cost.
+
+### 16.10 Built: Part A's width read and the start-entry probe; pre-registration (2026-10-26; clippy clean, not tested)
+
+**Built:**
+- `clearing::step_swept_width(stock, p, q, R, clearance)`:
+  - at each half-cell sample along the move, the grid cells inside the disc of R whose stock top stands above the tool's Z plus the clearance, less the cells the move has already swept (the capsule from `p`);
+  - their spread across the move's XY heading; the widest over the samples;
+  - 0 for a move with no XY length.
+  - It is the 2D `swept_width_on` rule read on the 3D planner stock, generic, beside `step_axial_depth`.
+- **In the split loop (StockDepth):** a step within one pass deep is cut at feed only if its swept width is at most `c·D`. `c·D = radial_woc_fraction_from_leading_arc(pass_engagement_limit(s, R)) × 2R`, the formula of `PassLoad::swept_width`'s ceiling, so no new number. Otherwise it splits.
+  - `SplitStats.width_split` counts these splits. They are inside `made`, and the "C22 step split" line prints them.
+- **The probe:** one "C22 start entry probe" info line per Start entry. It gives the entry XY and Z, `floor_top` (the conservative top over the entry floor disc, the value `plan_entry` reads for the rapid floor) and `centre_top` (the cell-centre top over the tool's disc). D30 reads it at (91.3, −1.13) against the simulated stock there.
+- **The draped-step heavy test** also asserts that the width read split at least one step over all arms (`width_total > 0`), beside the 0-over and `avoided > 0` asserts. No assert is weakened.
+
+**P (D30, spiral_pick, route as in D29; base D26 and D29 v4):**
+- **Over 0.471:**
+  - Corne 1277.7 → **at most 820 mm** (D26 780.8 + 5 %);
+  - wanaka 3365.1 → **at most 2337 mm** (D26 2225.4 + 5 %).
+  - Thick over within +5 % of D26 (399.1 / 463.3).
+- **Descents (entries.py), some of A's steps coming back as splits:**
+  - Corne 157 → **about 350–700** (D26 1112);
+  - wanaka 349 → **about 700–1400** (D26 2016).
+  - Low confidence. The share of A's steps that are wider than `c·D` is not measured. The 86 % / 94 % of the new over-load near the steps says many are.
+- **Cycle:** Corne 2458 → **about 2600–2950 s** (D26 3247); wanaka 1991 → **about 2350–2950 s** (D26 3513).
+- **Falsifiers:**
+  - the over-load stays above +5 % of D26: the width read misses part of the load (the stock beside the drape, or the cut after the step). I report with the probes;
+  - the descents return above 90 % of D26: the steps are mostly wider than `c·D`, and A buys little.
+- **The probe at (91.3, −1.13):** if `floor_top` reads under the simulated stock top (≥ 17.95 + the rapid-floor buffer), the planner stock there disagrees with the sim, and the cause lies in the stamp of the draped cut. If `floor_top` reads higher than the rapid ended, the emitter's descent floor and `plan_entry` disagree.

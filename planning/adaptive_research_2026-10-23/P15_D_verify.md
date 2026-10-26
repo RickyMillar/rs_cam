@@ -4516,3 +4516,78 @@ Corne a_only and cut_feed program.nc are byte-equal (the router took 0).
   9.18 mm (wanaka). No export refused.
 - Band, Corne 3–9 mm: D25/D26 965 → 453 mm²; 0–1.5 525 → 421.
 - Fixture worktree restored: clean 2c32340ab.
+
+## D30: feed cap + level-aware chain match + Part A width read + start-entry probe — gates green (2 known pre-existing reds, 1 known A-test red); fixtures fix21
+
+`d30/tree_vs_3181ae54f.patch` (md5 9368abb799a249bbf49e15338195d91b) on a
+clean 3181ae54f: 28 files (433+/55−) + the new
+`tests/a_feed_cap_binds_every_feed_stage_c38.rs`. No edit.
+
+- Green: fmt; clippy plain / research / workspace; parity 5/5 and 5/5;
+  research_geodesic 26 / 2; harness 189 byte-equal to D29 v4; plain C12
+  (identical to D29 v4); heavy C12 (identical to D29 v4); f152; the 13
+  adaptive3d sentries; 16 of 17 dressup sentries (incl. the new
+  a_feed_cap_binds_every_feed_stage_c38 4/4, constrained_max_modulation_f039
+  6, plunge_guard_p3 7, chipload_boundary_g_chip_ulp 6); cli 92 passed.
+- Slot test green; its chain line now reads "slot chains 0 steps 0 …"
+  (D29 v4: 2 chains, 116 steps); accepted by the lead (the exact match
+  feeds every record).
+- **Known red (patch-new assert, accepted by the lead):** the draped-step
+  A test: 0 over in every arm, but "no arm had a step the width read
+  split" (every arm "made 0 (by width 0)").
+- **Known pre-existing reds (proven on a clean 3181ae54f, patch removed and
+  re-applied byte for byte):** `tabs_sit_on_straight_sides_p5`
+  (tabs_lifts_match_apply_tabs_for_the_same_points_p5, :444 "S11: the
+  fixture sets it"; `d30_12b_tabs_on_clean_base.txt`; from 74af0f8e1) and
+  viz `an_unbacked_cell_still_adds_its_operation_fm5` (2 fails, :142
+  "anchor: the MCP add door has an Unbacked arm", :100 the toast text;
+  `d30_16b_fm5_on_clean_base.txt`). Viz otherwise 631 passed, 2 ignored.
+
+**Fixtures** (`fix21/run_fix21.sh`): a_only and cut_feed program.nc are
+byte-equal on both parts (Corne route tried 1596 / 24, taken 2 / 0,
+refused 1327 / 12; wanaka tried 2501, taken 1, refused 2260).
+
+| | Corne D26 | Corne D29 | Corne D30 | wanaka D26 | wanaka D29 | wanaka D30 |
+|---|---|---|---|---|---|---|
+| cycle (CLI) | 3247 s | 2458 s | 2996 s (P 2600–2950) | 3513 s | 1991 s | 2693 s (P 2350–2950) |
+| over 0.471 (mm) | 780.8 | 1277.7 | 1069.6 (P ≤ 820) | 2225.3 | 3365.1 | 2858.2 (P ≤ 2337) |
+| thick over 0.471 | 399.1 | 763.8 | 661.6 (P ≤ 419) | 463.3 | 638.3 | 537.3 (P ≤ 486) |
+| lift-over descents (entries.py) | 1112 | 157 | 745 (P 350–700) | 2016 | 349 | 1160 (P 700–1400) |
+| descents (audit) | 1164 | 200 | 788 | 2035 | 340 | 1154 |
+| plunge-entry spans | 65 | 62 | 62 | 20 | 19 | 19 |
+| plunge share (program clock) | 34.8 % | 13.6 % | 23.4 % | 48.4 % | 31.5 % | 41.5 % |
+| planar turns > 30° | 3027 | 2201 | 1500 | 186 | 1451 | 924 |
+
+- Over 0.471 split (`fix21/load_split.py`): Corne D29 → D30: near A's steps
+  1003.2 → 562.9; slot moves 39.8 → 344.7; turn moves 27.8 → 26.5; other
+  206.9 → 135.5. wanaka: near A's steps 2558.3 → 2040.6; slots 5.7 → 1.5;
+  turns 40.1 → 41.6; other 761.1 → 774.4.
+- Feed check on the program (`fix21/feed_check.py`): Corne 118 capped turn
+  moves, 677 samples, 0 above the cap at program feed (D29: the same moves
+  at F 4000). Strip samples over 0.369 at program F ≥ 3999: 1554 → **87**;
+  over 0.219: 1895 → **105** (P 0: fails). wanaka 80 matched, 3 samples
+  over: all on move 16906, a helix whose sample feed is the base 1000 (not a
+  cap), a false match of the 1.05 mm XY tolerance; so 0 real breaks.
+- Lines: "C38 feed caps exact=2124 chain=0" (op 1), "exact=2452 chain=0"
+  (copy), wanaka "exact=83 chain=0"; "C38 slot chains loops=0 steps=0 …" on
+  every op; "C22 step split (stock-read rule) made=1439 width_split=1439
+  avoided=1088 max_ap_avoided_mm=6.000" (Corne), "made=2493
+  width_split=1995 avoided=2274 max_ap_avoided_mm=5.460" (wanaka). Turn
+  summaries: Corne op 1 turns 222/132/132/0, slots 2639/2553/2553/0; copy
+  slots 2648/2571/2571/0; wanaka turns 83/76/76/0, slots 67/0/0/0.
+- C40 (Other 0): Corne op 1 descents 786: LargeZ 74.0 %, Reentry2d 19.3;
+  wanaka 1172: LargeZ 81.7 %, Reentry2d 12.8, LargeZHeld 3.5.
+- Turns > 30° / > 90°, Corne: inside 1176 / 271, outside 219 / 34, beyond
+  the bbox 105 / 42.
+- Start-entry probe at (91.30, −1.13): Z 11 entry_z 11.0, floor_top 17.451,
+  centre_top 17.0; Z 5 floor_top 17.119, centre_top 11.283; Z 0.5 floor_top
+  17.073, centre_top 5.296. **The 3 rapid-through-stock collisions remain**
+  (moves 4803 / 7810 / 10892: (91.3, −1.1, 28.0) → 17.951 / 17.619 /
+  17.573). floor_top (17.45 / 17.12 / 17.07) is under the depth the rapid
+  ended (17.95 / 17.62 / 17.57) by 0.50 mm each time: by §16.10 the planner
+  stock there is lower than the sim's.
+- Hard bars: rapid collisions 3 (Corne); no fed-link or deeper-than line;
+  depth-of-cut advisories op 1 13.0 mm (Corne), 9.18 mm (wanaka); no export
+  refused. Band, Corne 3–9 mm: 453 (D29 453).
+- Disk: 72 → 40 GB free during D30 (the fixture worktree target is 36 GB
+  after the viz build). Fixture worktree restored: clean 3181ae54f.

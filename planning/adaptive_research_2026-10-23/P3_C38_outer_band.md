@@ -2058,3 +2058,105 @@ the oracle bound at F 4000 (about 466 mm of path at 0.3 mm per sample).
    - **P:** Corne "C38 slot chains" unfed 1604 → 0 (op 1), 2130 → 0
      (copy op); moves lowered by the chain match → only merged slot
      moves (0 on Corne); the channel test stays green.
+
+### 15.5 The build and its pre-registration (2026-10-26)
+
+Code in the `adaptive-head` worktree, not committed. Both fixes are
+built as §15.4 says, with the generic shape of §13.8.
+
+**Fix 1, the generic feed cap.**
+- `toolpath::Move` gains `feed_cap: Option<f64>`. Every shipped
+  constructor writes `None`.
+- The modulator (`adaptive_feed_modulate_with_materials`) applies the cap
+  last, after every arm (ConstrainedMax, BandMid, bandless), the chipload
+  floor and the plunge guard. It only lowers. The binding is the new
+  `BindingConstraint::FeedCap` (label `feed-cap`, load regime
+  `ToolLimited`).
+- `feedopt` applies the cap last, after the smoothing.
+- `rg with_feed_rate` finds no other feed stage. The export writes the
+  feed it is given.
+- A stage that rebuilds moves keeps the cap: the arc fit and the segment
+  merge take the cap as an equality term of the run key (as `intent`).
+  The transform, the simulation copy and the surface relink copy it. The
+  simulation hash ignores it, as it ignores `intent`.
+- The planner writes the cap where a load rule lowers a feed: my chain
+  match (factor under 1), and C22's exact match (factor under 1; C22's
+  code, agreed edit).
+- Sentry: `tests/a_feed_cap_binds_every_feed_stage_c38.rs` (ConstrainedMax,
+  BandMid, bandless, feedopt: the capped move leaves at its cap, every
+  other move is bit-identical to a run with no cap, and a cap above the
+  feed changes nothing). Unit test `does_not_merge_across_feed_cap_change`
+  in `dressup/condition.rs`.
+- Other users: any strategy whose planner lowers a feed by a rule
+  (2D adaptive turns, a slot in a pocket, a plunge-like step) can set the
+  cap. No shipped planner sets it yet.
+
+**Fix 2, the level in the chain match.**
+- `TurnRecord` gains `level_z: Option<f64>`, set by `SliceTurns::add`
+  from the slice level (C22's struct; agreed edit).
+- The chain match now runs AFTER `apply_slice_turn_feeds`. It reads the
+  slot summary and takes only the records with `fed == false`. A chain
+  splits at a level change. A move matches a chain only when both its
+  ends lie in `[level_z − 1e-6, level_z + depth_per_pass)`.
+- A limit: a level ladder with extra levels has levels closer than
+  `depth_per_pass`. A move of the extra level over a chain can then pass
+  the level test. The plan-order cursor and the "fresh step" rule still
+  hold, and the match runs only on records the exact match left unfed.
+- New log lines: `C38 feed caps exact=… chain=…` per op, and one
+  `C38 capped turn` line per reduced turn the exact match fed (from, to,
+  level, factor), so a script can find the turn moves in the program.
+
+**Pre-registration, for the next Corne run (D30, same arm, a_only, same
+job file as D29).** Op 1 is `3D Rough 1`; the copy op is
+`3D Rough 1 (copy)`, commanded at F 2429.
+1. Op 1 strip samples (`d29_why/strip_feed.py` on the D30 simulation)
+   over the oracle bound 0.369 at F ≥ 3999: **1554 → 0**. Over c = 0.219
+   at F ≥ 3999: 1895 → 0.
+2. "C38 slot chains": op 1 **unfed 1604 → 0**, copy op **2130 → 0**.
+   The exact match feeds every slot step on Corne (2561 / 2571), so both
+   ops print `loops=0`, `moves_lowered=0`. D29 lowered 165 and 320 moves
+   (one 51.5 mm long) by cross-level matches; D30 lowers none.
+3. "C38 feed caps": `chain=0` on both ops. `exact` is near the reduced
+   record count: op 1 129 + 1983 = 2112, copy op 2452. It is not equal
+   to it, because the emitter can split one record into two moves.
+4. The copy op: no sample on a capped move runs above 2429. Its
+   clearing samples at 3137 / 4000 that lie on capped moves go to the
+   cap or below.
+5. The turns (C22's are overwritten today as well): op 1 has 129
+   reduced turns (factor 0.28 … 1). The D30 `C38 capped turn` lines give
+   their XY. A script maps them to program moves (both ends within
+   1e-3 mm, both runs have one geometry) and counts, per run, the
+   samples on those moves with feed above `F × factor`.
+   - **P:** D29 > 0 (every such sample is at the modulated feed, and the
+     strip shows the modulator lifts these moves to 4000); D30 = 0.
+   - The count of D29 samples is the "effect on the turn samples" the
+     lead asked for. It is measured from D30's lines; it is not known
+     before D30.
+6. Op 1 and copy op cycle time go up (feeds are only lowered). No
+   prediction of the size.
+7. Shipped parity: with no cap set, no shipped output changes. The
+   dressup sentries and `constrained_max_modulation_f039`,
+   `plunge_guard_p3`, `chipload_boundary_g_chip_ulp` stay green.
+
+**Channel test result (2026-10-26, after the build).** C22's exact match
+now feeds all 116 slot records on the channel. The chain match gets no
+unfed record, so it has 0 chains. The old anchor `chains > 0` went red
+for this reason alone. The anchors now read every slot record:
+- records > 0, and some factor < 1;
+- C22's `unfed == 0`, and the chain match feeds every reduced record that
+  the exact match left (here 0 of 0);
+- the simulation check finds the slot moves from loops built from all
+  slot records, not from the chain list.
+
+It judges the same 444 samples as before: 0 are over the screen at the
+full feed. The test is green. On this fixture the 3D merge joins no slot
+steps, so the chain match is a fallback with no work to do. That is the
+same as the Corne prediction (§15.5 item 2).
+
+**Ruling (lead, 2026-10-26).** The lead accepts the change to the slot
+test's anchors. "chains > 0" stated the order of the two matchers, not a
+property of the cut. The new anchors cover every slot record. They keep
+`chains.unfed == 0` and the simulation check (0 samples over the screen
+at the full feed), so they are at least as strict. D30 is frozen with
+these fixes and C22's width read; D9 runs it, with the dressup sentries
+and the viz and cli tests.

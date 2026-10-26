@@ -1,0 +1,26 @@
+{
+ "fix16/corne_pick": {
+  "base_feed": 3556,
+  "over_0.471_mm": 780.8,
+  "near A's steps": 610.7,
+  "other": 136.8,
+  "slot moves": 6.6,
+  "turn moves": 26.8
+ },
+ "fix20/a_only/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1277.7,
+  "near A's steps": 1003.2,
+  "other": 206.9,
+  "slot moves": 39.8,
+  "turn moves": 27.8
+ },
+ "fix21/a_only/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1069.6,
+  "near A's steps": 562.9,
+  "other": 135.5,
+  "slot moves": 344.7,
+  "turn moves": 26.5
+ }
+}

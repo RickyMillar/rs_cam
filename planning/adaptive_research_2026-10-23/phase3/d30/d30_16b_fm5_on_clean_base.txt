@@ -1,0 +1,27 @@
+
+running 3 tests
+the_mcp_add_reply_carries_the_refusal_fm5 --- FAILED
+. 2/3
+an_unbacked_cell_still_adds_its_operation_fm5 --- FAILED
+
+failures:
+
+---- the_mcp_add_reply_carries_the_refusal_fm5 stdout ----
+
+thread 'the_mcp_add_reply_carries_the_refusal_fm5' (2726508) panicked at crates/rs_cam_viz/tests/an_unbacked_cell_still_adds_its_operation_fm5.rs:142:10:
+anchor: the MCP add door has an Unbacked arm
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- an_unbacked_cell_still_adds_its_operation_fm5 stdout ----
+
+thread 'an_unbacked_cell_still_adds_its_operation_fm5' (2726507) panicked at crates/rs_cam_viz/tests/an_unbacked_cell_still_adds_its_operation_fm5.rs:100:5:
+the toast carries the refusal, names the operation and leaks no Debug output: Added with no feeds: Suggest has no basis for Pin Drill with a flat end mill in softwood: No published figure for this flat end mill plunge: the Amana Spektra Ramp Down claim covers 3.0-12.7 mm, 2 or 3 flutes, in wood, plywood and MDF (G6 drill, ruling B5).. no feeds data for this tool: set feed and RPM.
+
+
+failures:
+    an_unbacked_cell_still_adds_its_operation_fm5
+    the_mcp_add_reply_carries_the_refusal_fm5
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p rs_cam_viz --test an_unbacked_cell_still_adds_its_operation_fm5`
