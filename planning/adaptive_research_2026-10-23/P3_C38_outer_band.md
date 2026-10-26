@@ -809,7 +809,10 @@ tiny groups.
 
 The falsifier, a run and no code: the same project with the copy op's
 `min_region_cut_length_mm = 0`, saved as
-`corne_job_corrected_c12_agent_search_c38_mrcl0.toml`. P: the bar goes
+`phase3/c38/corne_c38_mrcl0.toml`. It is the Corne job
+(`corne_job_corrected_c12_agent_search.toml`) with only line 248, the copy
+op, changed from 15.0 to 0.0. The model path is absolute. With 0, both the
+G-b judge and the F-038 group filter are off for the copy op. P: the bar goes
 (0 samples over 3.30 mm), and the copy op's entries rise by up to 509.
 
 ### 9.5 Proposal
