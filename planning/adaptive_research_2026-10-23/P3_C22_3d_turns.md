@@ -2825,3 +2825,43 @@ replay after the filter shows up as more `Reentry2d`.
   sweep's records come before the mark, as the sweep's entries do.
 - **Tests:** the C12 plain and heavy tests print `entry_line`, and assert
   that no entry is Other.
+
+### 14.5 D24: why three C22a predictions missed (2026-10-26)
+
+Read only. `phase3/fix14/c22a/assert_14_5.py` asserts each number below
+from the D24 artefacts. D24 holds C22a AND C12's removal of the corridor
+opening, so I split the two where the data allow.
+
+**1. Three rounds (P ≤ 2).** Corne has 17 of 40 replay lines at 3 rounds,
+and the most groups that a later round dropped is 271 (copy op Z 2.01,
+region 2, after 47 in the first filter). In at least 10 plans the later
+rounds drop more groups than the first filter did.
+- **The cause:** a cascade. The replay re-walks each cut under the pass load. A cut that stood on ground a dropped group had cleared is split there, and its short pieces become new groups under the threshold. The next filter drops them, which uncuts more ground under the cuts after them, and so on.
+- The rounds equal the depth of that chain of dependencies, not one level as I assumed. The loop still ends (the bound is the group count), but my "≤ 2" was wrong.
+- **The cost of the cascade:** each round drops cuts that removed real stock, only because the split made them short.
+  - Inside the silhouette, where C12's corridor removal does not act, the op-1 lift-over descents moved 587 → 606 (+19). That is within my ±20.
+  - So the cascade's harm to op 1 is small here. Its effect on the left stock is not measured apart from the corridor removal.
+
+**2. The wanaka counter (66 lines; 33 in the kept plan; P 0).**
+- Every flagged point lies OUTSIDE the emitted toolpath's XY box (22.76–217.24 × 27.76–221.74): x 219.3 / 20.8, and y 25.874 / 223.874.
+- No move of the G-code goes past that box.
+- 34 of the 66 read exactly the full stock above the level (25 − Z: 5.46, 10.92, 16.38). No cut was ever stamped there.
+- **So the counter reads the stock correctly, but it judges the held link BEFORE the level's clip to the boundary.** The link's part outside the containment is not emitted and not stamped, so the sim sees no cut.
+- The counter is wrong in where it reads, not in what it reads. It must test only the points of the link that are emitted, after the sink's clip. That is a counter fix, and the link itself is not a fault.
+
+**3. The Corne fed-link bar (move 6921, 10.50 mm, counter 0).**
+- Move 6921 is a `Linking` feed AT the level (all samples Z 11.00), 2.25 mm long, between `clearing_cut` moves. It is a held link (`HeldLinks`, keep-down), not a C26b lift (that one goes out as a cut) and not an F-038b stay-down link (that one runs above the level).
+- The clearing cuts around it at the same place also remove 12.0 mm, which is the D24 deep-cut line.
+- So the stock there is the containment band, beyond the mesh bbox, that the planner reads as AIR: G-CLIPAIR, C38 §10/§11. The counter reads the planner stock, so by construction it cannot see stock the planner believes cut.
+- The link is the same fault as the cuts beside it. C12's G-CLIPAIR fix (research_clip) is the fix for both. The counter needs no change for this case.
+
+**4. Not asked, but in D24's table: the Corne reversals (> 135° at move junctions)**, D23 pick → D24:
+- inside the silhouette 36 → 40;
+- outside 10 → 2217.
+They are in the outer strip and beyond the bbox, where D23's corridor opening planned. So the 3007 planar turns, and most of the +473 s, come from the corridor removal (the agent's narrow loops across the strip), not from C22a. The 3–9 mm band (455 → 999) is in the same strip.
+
+**What follows:**
+- **The C22a counter:**
+  - Read the link after the sink's clip, i.e. move the test to where the sink stamps the held link.
+  - Report it separately from G-CLIPAIR. The counter cannot see stock that the planner reads as air.
+- **The cascade:** the filter-and-replay loop is correct (the replay reads the plan that goes out), but it can erode a plan through a chain of splits. If D25 (with G-CLIPAIR) shows that the erosion leaves stock, the alternative is C38 §9.5 item 2 (no group filter in research regions). I would measure it before deciding: the C22a info line already gives `dropped_more` per plan.
