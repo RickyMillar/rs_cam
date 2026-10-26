@@ -1,0 +1,91 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 3d59da93d..31bacc225 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -2900,7 +2900,13 @@ fn clear_one_region(
+     // call it twice (here, and again after the perimeter sweep is
+     // emitted) at no risk of state divergence. We accept the doubled
+     // 2D-adaptive cost as the price for the up-front decision.
+-    if ctx.min_region_cut_length_mm > 0.0 {
++    //
++    // Research arm C38 (G-b): no forecast. The forecast insets a region in
++    // tool-centre space twice and reads 0 on a strip narrower than about
++    // 2R (the Corne outer strip), so it skipped regions the arm can plan.
++    // The arm judges the region on its own plan instead
++    // (`plan_and_emit_region`, `research_outer_band::planned_cut_mm`).
++    if ctx.min_region_cut_length_mm > 0.0 && !is_research_arm(ctx.clearing_strategy) {
+         const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
+         let inset_polygons_forecast = crate::polygon::offset_polygon(
+             region_polygon,
+@@ -3006,7 +3012,10 @@ fn clear_one_region(
+         params_2d,
+         sink.material_stock.z_grid.cell_size,
+         (z_level, region_idx),
+-    );
++    )
++    // Research arm C38 (item B): the grow stops at the stock box, where
++    // no material stands beyond the edge.
++    .and_then(|grown| super::research_outer_band::clip_to_stock_box(grown, &*sink.material_stock));
+     #[cfg(not(feature = "research"))]
+     let grown: Option<Vec<crate::polygon::Polygon2>> = None;
+     let inset_polygons = if grown.is_some() {
+@@ -3136,6 +3145,10 @@ fn plan_and_emit_region(
+     // the polygon it gets, so the region is planned outline by outline.
+     let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
+     let mut segs_2d: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
++    // Research arm C38 (G-b): the research records before this region's
++    // plan, so that a skipped region leaves none behind.
++    #[cfg(feature = "research")]
++    let records_before = super::research_outer_band::RecordMark::of(ctx);
+     for outline in outlines {
+         segs_2d.extend(plan_one_outline(
+             ctx,
+@@ -3149,6 +3162,35 @@ fn plan_and_emit_region(
+             cancel,
+         )?);
+     }
++    // Research arm C38 (G-b): the region is judged on its own plan, in
++    // place of the F-038 forecast (`clear_one_region`). A plan that cuts
++    // less than `min_region_cut_length_mm` is a micro-region: it emits
++    // nothing, and its research records are rolled back.
++    #[cfg(feature = "research")]
++    if is_research_arm(strategy) && ctx.min_region_cut_length_mm > 0.0 {
++        let planned_mm = super::research_outer_band::planned_cut_mm(&segs_2d);
++        if planned_mm < ctx.min_region_cut_length_mm {
++            records_before.roll_back(ctx);
++            *dropped_short_regions += 1;
++            debug!(
++                z = z_level,
++                region = region_idx + 1,
++                region_total = plan.region_total,
++                planned_mm,
++                threshold_mm = ctx.min_region_cut_length_mm,
++                "C38 G-b: skipping region (planned cut length below threshold)"
++            );
++            if let Some(debug_ctx) = piece_debug {
++                let scope = debug_ctx.start_span(
++                    DebugSpanKind::Agent2dRegion,
++                    format!("C38 G-b skip, region {} @ Z {z_level:.3}", region_idx + 1),
++                );
++                scope.set_counter("skipped_f038", 1.0);
++                scope.set_counter("forecast_cut_length_mm", planned_mm);
++            }
++            return Ok(());
++        }
++    }
+     // Spatial lookup: quantised 2D position → predicted engagement.
+     // Positions are exact f64 from the spiral's own emit, so a
+     // fixed-point key reproduces them without float-equality hazard.
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index d19b2314e..9e001616e 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -27,6 +27,8 @@ mod clearing;
+ mod intended_floor;
+ mod path;
+ mod region_map;
++#[cfg(feature = "research")]
++mod research_outer_band;
+ mod search;
+ pub use intended_floor::{FloorGrid, intended_floor_grid};
+ use path::{adaptive_3d_segments, segments_to_toolpath};

@@ -1,0 +1,53 @@
+{
+ "zigzag_pick D20": {
+  "z17_descents": 238,
+  "outside_silhouette": 124,
+  "beyond_mesh_bbox": 45,
+  "beyond_bbox_stock_edge_mm_min_max": [
+   0.55,
+   4.6
+  ],
+  "on_grid_by_silhouette_distance_mm": {
+   "0-1.5": 0,
+   "1.5-3": 6,
+   "3-4.5": 58,
+   "4.5-6": 15,
+   "6-99": 0
+  },
+  "on_grid_stock_edge_mm_min": 5.14
+ },
+ "spiral_pick C35": {
+  "z17_descents": 206,
+  "outside_silhouette": 125,
+  "beyond_mesh_bbox": 45,
+  "beyond_bbox_stock_edge_mm_min_max": [
+   0.55,
+   4.6
+  ],
+  "on_grid_by_silhouette_distance_mm": {
+   "0-1.5": 0,
+   "1.5-3": 8,
+   "3-4.5": 57,
+   "4.5-6": 15,
+   "6-99": 0
+  },
+  "on_grid_stock_edge_mm_min": 5.14
+ },
+ "spiral_pick C38a": {
+  "z17_descents": 184,
+  "outside_silhouette": 101,
+  "beyond_mesh_bbox": 14,
+  "beyond_bbox_stock_edge_mm_min_max": [
+   3.0,
+   4.44
+  ],
+  "on_grid_by_silhouette_distance_mm": {
+   "0-1.5": 0,
+   "1.5-3": 7,
+   "3-4.5": 59,
+   "4.5-6": 21,
+   "6-99": 0
+  },
+  "on_grid_stock_edge_mm_min": 5.19
+ }
+}

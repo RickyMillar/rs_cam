@@ -3939,3 +3939,59 @@ D20 (1195 / 3578).
 - Bars: Corne islands 865 (6 free), 4307.3 mm² (D20 1024, 4095.6); copy
   op 1031, 2599.7 mm². wanaka: no island line. No gouge, deeper-than or
   fed-link line; collisions 0; no export refusal.
+
+D21c addendum, the plunge-feed share on the program clock (C39; the
+fix11/c39_runtime.py rules, copy `fix12/c39_fix12.py` → `c39_fix12.json`):
+Corne D20 545.3 / 1455.3 s = 37.5 %, C35 489.2 / 1453.0 s = 33.7 %;
+wanaka200 D20 2350.0 / 3866.0 s = 60.8 % (C39's value), C35 1416.7 /
+2732.5 s = 51.8 %.
+
+## D22: C38 part 1 (c38a.patch) in the fixture worktree — gates green; F1 run
+
+Fixture worktree clean at 3cc257c1f; `git apply` of `phase3/c38/c38a.patch`
+(md5 40a2353cec9ae4ef1de1cfe8ebc0f179; clearing.rs, mod.rs, new
+research_outer_band.rs). Outputs `phase3/d22/`. Gates, all green: fmt;
+clippy core plain (53 s) and research (47 s); byte parity plain 5/5 and
+research 5/5; the 13 adaptive3d sentries; plain C12 (every line identical
+to D21c step 9); workspace clippy (76 s).
+
+**F1 run** (`phase3/c38/corne_c38a/`): spiral_pick,
+`RUST_LOG=info,rs_cam_core::adaptive3d::clearing=debug`, `--sim-artifact`,
+plus `--emit-gcode` (for the fix9 scripts); rc 0, 207 s; stamp
+`0.1.03cc257c1f` (the stamp names HEAD, not the patch). Analysis copies
+in `phase3/d22/`: `entries_d22.py` (fix9/entries.py, columns only),
+`stockmap_d22.py` (fix9/stockmap.py; its D20 map is array-equal to
+fix9's), `bands_d22.py` (R4's band table; reproduces R4's D20 row
+exactly), `classify_d22.py` (c38/classify_outer_descents.py on three
+columns; reproduces the C38 note's D20 numbers).
+
+§3.4:
+1. op 1 region=1 at Z 11, 5, 0.5: "grown, no sweep" (region area 1375.2,
+   1334.8, 1334.8 mm²). P holds.
+2. No "F-038: skipping micro-region" line. 12 "C38 G-b: skipping region"
+   lines, all in the copy op, region 2 of 2, two per level (planned_mm
+   -0.0).
+3. Copy op, P-C1 **fails**: all 12 copy-op openings (2 regions × 6
+   levels) read "grown, no sweep", and region 1 plans 2–3 plunges per
+   level. Copy op 6042 → 10822 moves.
+4. Slot records: not readable from the CLI log, and the plain C12 test
+   prints no slot line; not checked.
+5. Bands (mm² over 0.8 mm, outside the silhouette), D20 / C35 / C38a:
+   0–1.5 600 / 600 / 514; 1.5–3 591 / 591 / 304; 3–4.5 620 / 620 / 313;
+   4.5–6 511 / 511 / 180; 6–9 820 / 820 / 301; **3–9 1951 / 1951 / 794**.
+   F1 (gate only) predicted ≥ 1756: **falsified** (794); by §3.3 the
+   narrow loops do cut under the gate change alone.
+   Z 17 outer descents (§5.4), D20 / C35 / C38a: all 238 / 206 / 184;
+   outside the silhouette 124 / 125 / 101; beyond the mesh bbox 45 / 45 /
+   14 (P-B1 ≤ 5: **fails**); on the grid 79 / 80 / 87 (P-B2 59–99:
+   holds).
+- Lift-over descents (entries.py) 1195 / 1076 / 1116; plunge-entry spans
+  60 / 60 / 70.
+- Cycle time 2760 / 2757 / 3445 s; cutting 64712 / 71615 / 83233 mm.
+- Hard bars: collisions 0; no export refusal. **New in C38a:** the copy
+  op "a fed link cuts stock it was planned to cross in air or on cut
+  ground: link move 8460 removes 15.43 mm at (3.0, -71.6, 0.50). 301 of
+  4596 link samples on 193 link moves remove more than 3.30 mm". Islands:
+  op 1 869 (2729.9 mm²), copy 1028 (1538.3 mm²).
+- After the run: `git checkout -- .`, research_outer_band.rs removed;
+  `git status --short` empty at 3cc257c1f.
