@@ -3544,3 +3544,58 @@ At full depth (`d = DPP` wherever stock stands), `A = w · DPP` and `L = w / D`:
 - Bound: 0.471 (exact) and the screen as today.
 
 **The §18.5 fixture numbers stand unchanged:** `area_metric.py` already computes `woc · ap / DPP`, the box.
+
+### 18.7 §18.6 built (planner side); results under the OLD width judge (2026-10-27)
+
+**Build:**
+- `SlabField` carries DPP, D and the cutter's `ToolGeometryHint`. `SlabField::load(ap, ae)` calls `ToolGeometryHint::mrr_cross_section_mm2` twice: the cut, and a full pass `(DPP, D)`.
+- `research_slab_field` refuses the field (with a warning) if the cutter's own `mrr_cross_section_mm2(DPP, D)` and the hint's differ in any bit: the build check.
+- `swept_width_on`, under a field, returns `load(deepest engaged depth, width)`. The width is the §17 strict width of the cells with stock above the tip.
+- `compute_engagement`, `compute_engagement_arc` and `compute_area_per_mm` are back to the §17 binary read. The integral draft is removed.
+- Gates: both clippy commands clean; emission parity green (plain and research); both Part A tests green.
+
+**Test results.** C18 has not yet changed the judge (`exact_width_at` is still the width), so the overs below are by WIDTH:
+
+| | over (width judge) | moves | entries | under an earlier, higher pass |
+|---|---|---|---|---|
+| slope, spiral_pick, base | 172 | 911 | 24 | 1077 mm |
+| slope, spiral_pick, field §17 (width read) | 0 | 3434 | 354 | 1658 mm |
+| slope, spiral_pick, field §18.6 (load read) | 2 | 1471 | 97 | 1553 mm |
+| slope, AgentSearch, base / field | 458 / 403 (ruling (b): ≤ base, holds) | 247 / 292 | 12 / 12 | |
+| shelf, oneway, field | gap 2, shelf-end corner 1, other 1 (24.76, −16.07: the band, exact width 0.636) | 2799 | | |
+| shelf, spiral_pick, field | corner class 0; other 2 (7.18, 5.15 and 2.74, 9.30, beside the island; exact width 0.730, 0.549) | 1129 | | |
+
+**Readings:**
+- The load read keeps the descents. Entries fall from 354 to 97 and moves from 3434 to 1471. That is still 4× the base's entries, not the 2× I predicted. P (§18.5) fails on entries; I report it.
+- The 2 slope overs met an earlier pass 0.075 and 0.136 mm above, within R: thin layers. Their width is over, and their load is about `0.6 · 0.1 / 6 ≈ 0.01`. Under the area judge they are not over. This cannot be confirmed until C18's judge lands.
+- The shelf "other" samples are deep cuts: the band beside the shelf, and stock beside the island. The width judge reads them at 0.55–0.73. The load read admits a width up to `c · DPP / ap` (0.39 at ap 5.5 of DPP 6), so these widths are over by both measures if the judge's ap is near DPP. **This is a real disagreement between the planner and the judge, and I have not found its cause.** In §17.7, under the strict width read, the oneway band case was clear. So the load read lets the plan take a wider step there than the width read did. The judge reads it wider still.
+- Ruling (c), as built: the class is the corner beyond the shelf's end (x > 30, |y| > 12, within `R + leave + cell` = 4.0 mm of the wall). The oneway sample at (30.45, −16.11, wall 3.55) falls in it.
+
+**Both §17 tests stay RED** until the area judge is in. The shelf "other" samples need a probe under that judge.
+
+### 18.8 The per-strip load (the lead's ruling) built; the four tests GREEN under C18's area judge (2026-10-27)
+
+**The form (agreed with C18):**
+- Strips one planner cell wide across the step heading. Each strip's depth `h` is the deepest stock above the tip (strict; with the profile).
+- `L = Σ_strips mrr_cross_section_mm2(h, cell) / mrr_cross_section_mm2(DPP, D)`, by `ToolGeometryHint::mrr_cross_section_mm2`.
+- Code: `SlabField::strips_load`, read by `swept_width_on` under a field. `SlabField::load` (the box) is removed.
+- The judge (C18) reads the same form at its exact pitch.
+
+**Tests** (judge: C18's per-strip area judge, now in the test file):
+
+| | over the exact bound | moves | entries | under an earlier, higher pass |
+|---|---|---|---|---|
+| slope, spiral_pick, base | **0** (exact peak 0.353) | 911 | 24 | 1077 mm |
+| slope, spiral_pick, field | 0 (0.423) | 1929 | 22 | 1141 mm |
+| slope, AgentSearch, base / field | 259 / 239 (≤ base, ruling (b)) | 247 / 292 | 12 / 12 | |
+| shelf, oneway, base / field | 0 / 0 | 2794 / 2904 | | |
+| shelf, spiral_pick, base / field | 3 / **0** | 1155 / 1225 | | |
+
+All four tests pass: `the_slab_field_holds_the_load_on_a_sloped_floor`, `the_slab_field_reads_the_floor_band_beside_a_shelf`, and both Part A tests.
+
+**Readings:**
+- **Under the area load, the slope is not an over-load even without the field.** The base's 172 width overs were thin layers. So on terrain like this the field buys no load, and it costs 2.1× the moves (1929 against 911), at the same entries (22 against 24). The §18.5 P "entries within 2× the base" holds (22). The P on moves (within 2×) narrowly fails: 2.1×.
+- **The shelf is where the field earns its place:** spiral_pick 3 → 0, with moves +6 %.
+- Move 373 (§18.7, the open case) is no longer over, so the probe the lead approved is not needed for it. The per-strip read changed its verdict. I have not added the probe.
+- The shelf-end corner class (ruling (c)) is empty under the area judge.
+- **For the fixtures:** the field's cost on terrain is the real question now. P for D34 (research arm, field on against off on one tree): the area over-load falls on both fixtures, and wanaka's cycle rises by less than the 2.1× the slope shows in moves. If the cycle with the field reaches D26's 3513 s, I report it.
