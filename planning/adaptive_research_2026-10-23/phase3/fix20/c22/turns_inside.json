@@ -1,0 +1,14 @@
+{
+ "D26": {
+  "away / long moves": 50,
+  "away / short move": 73,
+  "near step / long moves": 272,
+  "near step / short move": 395
+ },
+ "D29": {
+  "away / long moves": 48,
+  "away / short move": 74,
+  "near step / long moves": 287,
+  "near step / short move": 380
+ }
+}

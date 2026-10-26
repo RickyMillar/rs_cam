@@ -3118,3 +3118,33 @@ From `phase3/d29/v2_10_c12_heavy.txt`. Every first over-sample the lead names si
   - Setup: one level from the top to the floor (drapes over the island and gives the large-Z steps), six G1 arms, `StockDepth`, route `Some(Off)`.
   - It asserts 0 judged samples over the exact bound per arm, the router not run, and at least one step cut at feed by the rule over all arms.
   - No existing assert is changed.
+
+### 16.9 D29 v4 fixtures: Part A's over-load, the Corne rapid collision, and the turns (2026-10-26; read only)
+
+Scripts are in `phase3/fix20/c22/`: `parta_place.py`, `turns_inside.py`, `turns_xy.py`, and `assert_16_9.py`, which asserts the numbers. D29 also holds C12's corridor opening and slot fix, so I split by place where the data allow.
+
+**1. The over-load is on Part A's steps.**
+- The D26 op-1 large-Z entries (the C40 lines with cause LargeZ / LargeZHeld: 874 on Corne, 2028 on wanaka) mark the steps that Part A now cuts at feed.
+- Clearing length over 0.471, D26 → D29:
+  - Corne: +496.9 mm in all; +426.7 mm (86 %) within R + one sim cell of such a step;
+  - wanaka: +1139.8 mm in all; +1065.8 mm (94 %) there.
+- So the rise is A's steps, and the cut around them, at the full feed. Part A held the axial depth of a step (ap ≤ DPP + clearance; max ap 6.0 on Corne, 5.46 on wanaka, which is a full Depth/Pass) and not its width. That is my §16 falsifier.
+- **The proposed width read (no code yet):**
+  - At an avoided step, also read the step's swept width on the planner stock. Take the cells inside the disc of R along the step whose stock stands above the tool's Z there plus the clearance. Their extent across the step's XY heading (the rule of the 2D `swept_width_on`, read in 3D) must stay within the pass ceiling `c·D` of the 2D load (`PassLoad::swept_width(s, R, cell).ceiling` × D, no new number).
+  - If it is wider, the step splits as before.
+  - It sits beside `step_axial_depth` and is generic.
+  - Expected: the over-load falls back toward D26, and some of the descents come back. The P waits for the build.
+
+**2. The Corne rapid collisions:**
+- (91.3, −1.1): Z 28 down to 17.95 / 17.62 / 17.57. The three are the C40 entries `Plunge, Start` at (91.298 / 91.318, −1.128) at Z 11, 5 and 0.5: the first `Rapid` of an outline plan at each level. They follow C12's corridor openings in the log order, so they are corridor entries.
+- They are NOT A's or B's entries (the router took 0 on Corne).
+- But near that XY, D29's Z-17 cut now RIDES the frame top: clearing samples at Z 17.3–18.5. These are A's avoided steps. D26 lifted over the same place (linking samples at Z 22.7–23.5; the C40 LargeZ entries at (89.2–93.3, −1.1 to −3.6), Z 17.1–18.4).
+- So the collision appeared where A cuts at feed over the frame top, and the planner's rapid floor there (17.95, then lower at each level) is under the simulated stock.
+- That is a planner/sim divergence over A's draped steps, or C12's corridor entry reading the band as air. I cannot tell which from the artefacts.
+- **Next:** a probe line at each entry: the planner's conservative disc top against the stamped path's top over the same disc. Or D9 reads the sim stock top at (91.3, −1.13) after the Z-17 level, for D26 and D29.
+
+**3. The inside turns doubled because of slope, not heading:**
+- `fix20/turn_place.py` uses `fix11/audit.py`'s 3D tangents, so a change of SLOPE counts as a turn.
+- Inside the silhouette, D26 → D29: 3D 831 → 1767, but XY only 452 → 446.
+- The +936 are the draped steps A now cuts at feed (up onto a face, then level again). Before, a split broke the chain with a G0.
+- The heading of the path did not change. Whether a slope change at feed matters for the machine is the operator's call. The accel model, not the turn count, decides its cost.

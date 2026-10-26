@@ -1,0 +1,30 @@
+{
+ "corne D26": {
+  "steps_ref": 874,
+  "over_mm": 780.8,
+  "over_near_steps_mm": 644.1,
+  "turns30": 3008,
+  "turns30_near_steps": 2475
+ },
+ "corne D29": {
+  "steps_ref": 874,
+  "over_mm": 1277.7,
+  "over_near_steps_mm": 1070.8,
+  "turns30": 969,
+  "turns30_near_steps": 833
+ },
+ "wanaka200 D26": {
+  "steps_ref": 2028,
+  "over_mm": 2225.3,
+  "over_near_steps_mm": 1537.3,
+  "turns30": 442,
+  "turns30_near_steps": 400
+ },
+ "wanaka200 D29": {
+  "steps_ref": 2028,
+  "over_mm": 3365.1,
+  "over_near_steps_mm": 2603.1,
+  "turns30": 549,
+  "turns30_near_steps": 504
+ }
+}
