@@ -284,6 +284,89 @@ The tracing lines are in the CLI's `stdout.txt`. Run with the filter
 6. **Shipped neutrality:** `adaptive3d_emission_byte_parity` without
    `research`, and the adaptive3d sentries (`adaptive3d/CLAUDE.md`).
 
+### 3.5 As built (2026-10-26): the corridor opening is concentric loops, not a medial slot
+
+The code (`adaptive3d/research_outer_band.rs`, `corridor_opening`; called
+in `clearing.rs` `research_slice_segments` when the field returns `None`)
+differs from §3.2 in one point.
+
+- **The gate is as designed.** The 2D tool-centre region (the piece inset
+  by R) is not empty, and its inset by R more is empty: no centre
+  clearance of R, so the seed does not fit.
+- **The plan is the loops of the tool-centre region at `k · s`, outside
+  in, not a medial slot plus side passes.**
+  - A medial line by offset finds only the widest part of a corridor whose
+    width varies. The Corne strip is wider at the concave corners, where
+    the containment line bulges.
+  - The loops are the shipped narrow-gate geometry. Every edge is split to
+    steps of at most `s`, under `turn_bound`.
+  - **Every step is a slot** (`SlicePlan::slots`, `TurnKind::Slot`). The
+    replay admits it as a turn. The 3D stage feeds it at
+    `turn_feed_factor(c, w, area)` of its MEASURED engagement: `c / w`
+    over the ceiling, and the full feed where the step holds the ceiling.
+    A slot record with `steps_over = 0` held the load.
+- **In the Corne strip** (centre width 2ρ ≈ 2.0 mm < 2s = 2.4) the plan is
+  the two edges. The first edge is the slot (w ≈ 1, feed ≈ 0.219 F). The
+  second bites about 2ρ / D ≈ 0.33, so its feed is about 0.66 F.
+  - Feed-time: `L/F · (1/0.219 + 1/0.66)` ≈ 6.1 L/F, against 6.6 L/F for
+    the medial slot plus two sides.
+- **Changed falsifiers:**
+  - F3 becomes: every over-ceiling sample in the strip lies on a slot step
+    that carries the reduced feed. A slot step with no reduced feed and
+    w > c falsifies it. The second edge is expected over the ceiling.
+  - F4 changes. The corridor rule is geometric, so it runs on every piece
+    with no centre clearance of R. wanaka200 and the inner necks of Corne
+    have such pieces, where the agent fallback ran before. wanaka200 is
+    therefore not byte-identical to D21. Count the `C38 corridor opening`
+    info lines per run (loops, slot steps, cut mm, centre area). Report
+    the area they cut outside the outer strip separately.
+
+### 3.6 Pre-registration of the corridor openings (lead, 2026-10-26: the rule is accepted for every piece with no centre clearance of R)
+
+Each opening writes one info line, `C38 corridor opening`, with `loops`,
+`slot_steps`, `cut_mm` and `centre_area_mm2`. The line carries no Z or
+region, so read each one against the `C31 region opening` / `C38 G-b`
+lines just before it. A loop set at `d = k·s` exists only while
+`k·s < R`, so a piece has at most `⌈R/s⌉` loop sets: 2 on Corne op 1
+(s 1.2, R 3), 3 on the Corne copy op (s 0.6, R 1.5), 2 on wanaka200
+(s 2, R 3). So `cut_mm ≤ ⌈R/s⌉ ×` the perimeter of the piece's
+tool-centre region.
+
+**Corne "3D Rough 1":**
+- P-O1: the outer strip opens at Z 11, 5 and 0.5. That is one opening
+  per piece of region 1; with C31 accepting the ring, one per level.
+- P-O2: the strip's centre width is about 2.0 mm < 2s, so only `k = 0`
+  exists. That is 2 loops per ring (the exterior and the hole) and
+  `cut_mm` ≈ 2 × the strip length ≈ 2 × 445 ≈ 890 mm per level (± 15 %
+  for the corners and the margin).
+- P-O3: openings elsewhere in op 1 (inner necks) are reported apart from
+  the strip, as the lead asks: count, `cut_mm`, `centre_area_mm2`, with
+  the Z and the region from the lines around them. I give no number for
+  them before the run.
+
+**Corne "3D Rough 1 (copy)":** P-C1 holds as written (§7.3). No copy
+region opens, so it has no corridor opening.
+
+**wanaka200 "2 Back Rough"** (the D20 log, `fix7/wanaka200`: four
+levels):
+- P-W1: no opening at Z 19.54, 14.08 or 8.62. Each level is one region of
+  40100 mm², "grown, no sweep", with a centre clearance far over R.
+- P-W2: openings only at Z 4.0, and only in region 2, the one F-038
+  skipped in D20 (forecast 0). Its inset by `R + 0.25` was empty, so its
+  centre width is under `2R + 0.5`, and under the C31 margin no centre
+  clearance of R remains. The count is the number of its pieces: 1 to 3.
+  It is 0 if C31 refuses region 2 (closing guard or split: then the
+  shipped outlines are double-inset and the piece has no centre region).
+  - Region 1 (the frame ring, closing guard) and region 3 (split) keep
+    the shipped outlines and get no opening, as in D20.
+- P-W3: the total `cut_mm` of the wanaka200 openings is ≤ 2 × the
+  perimeter of their centre regions (two loop sets at most). It is also
+  under 3 % of the op's D20 walk (62466.8 mm, the sum of
+  `agent_walk_cut_length_mm` over the four levels), so ≤ 1874 mm. The 3 %
+  is a stated bound, not a derived number: if the run exceeds it, the
+  openings are wider than F-038's 0 forecast implies, and that is
+  reported.
+
 ## 4. The shipped fix (G-OUTERBAND) — described only, not changed
 
 Shipped output stays byte-identical until the lead and the operator rule.

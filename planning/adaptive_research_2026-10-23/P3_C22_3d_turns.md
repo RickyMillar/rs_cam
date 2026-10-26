@@ -2478,3 +2478,34 @@ than their bands: Corne about +1 lap × levels with a core.
 0 raw overs inside the disc; every other mode prints as in D21b
 (`core_spiral` is unchanged for the morph arms; the seam arms do not call
 it).
+
+### 13.8 Built after the C35 commit (3cc257c1f): the C38 slot types and C37 stage 1 (2026-10-26)
+
+**C38 slot types (agreed in C38 §6.1, item 4):**
+- `SlicePlan.slots`, `TurnKind { Turn, Slot }`, and `SliceTurns.planned_slots` / `kinds`.
+- `slice_turn_records` returns each record with its index into the list (turns, then slots).
+- `SliceTurns::mark` / `truncate` / `drain` replace the hand-kept counts. `pick_region_plan` and C12's `RecordMark` use them.
+- `apply_slice_turn_feeds` returns `(turns, slots)`, and `Research3d.slots` holds the slots.
+- With no slot, every list and every record is as before.
+
+**C37 stage 1 (the instrument and the head-on rule; no bridge, no routed link):**
+- **Arm:** `geodesic_local_spiral_headon` (`GeodesicOptions::C37_SPIRAL_HEADON`). It is C35 with `ArcEnds::HeadOn`, `MeetingRule::Through` and no pick, that is, C35's plan B on every piece.
+- **Join marks:** `plan_piece` records each join into a wrap as `JoinMark { from: the cutter, to: the wrap's start, class }`. The classes are:
+  - `Start` and `CoreHandOff` for the first wrap;
+  - `ClosedSeam` and `Transition` for two closed wraps;
+  - `Mixed`;
+  - `Seam`, `Turn`, `OverBound` and `Outside` for two open arcs, set where the C14 counts are set;
+  - `Corridor`, set by C38.
+  The marks do not change the plan.
+- **Re-entry classes:** `classify_reentries` labels each 2D `Rapid` of the slice plan that goes to the 3D stage. It skips the first `Rapid` and works after the F-038 filter. The label is the class of the nearest mark whose step lies within `turn_bound` of the `Rapid`, or "no join". The bound is the plan's own; no new constant.
+  - A re-entry at a `Turn` mark is the head-on lens refusal (mechanism 1 of §13.1).
+  - At `OverBound` or `Outside` it is mechanism 2 or 3.
+  - "No join" is a split inside a wrap or a cleanup producer's entry.
+  Each re-entry also carries its producer.
+- **The record:** `Research3d.joins` holds one `JoinsRecord` per field-planned slice piece: the `ArcCounts` and the re-entries with their positions. It is rolled back with the pick and with C38's region judge.
+- **C35b:** the core-zone record gains `handoff_line`. It gives the hand-off step, its largest raw over-reading, and the 2D re-entries from one planner cell inside the core's radius to one stepover outside it.
+- **The test:** the C12 tests add the arm, print `join_lines` for every mode, and print one `c37 re-entry` line per re-entry for the D-run's edge classes (C38's silhouette rule). Stage 1 asserts nothing new. The core-zone sentry applies to the new arm, because it is a spiral arm.
+
+**What the stage-1 run must show (P, from §13.6 / §13.7):**
+- On the C12 pocket, the head-on arm's re-entries at `Turn` marks fall against `geodesic_local_spiral_pick`'s. C25 saw 20 → 0 on the pocket under the same rule.
+- On Corne, the 341 → about 145–210 after stage 1 is read by the fixture run with the `c37 re-entry` lines.
