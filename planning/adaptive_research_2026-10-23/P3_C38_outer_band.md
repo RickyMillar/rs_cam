@@ -2393,3 +2393,41 @@ where the run meets a window that is not a departure. Then:
   at the run's end). For example, zigzag ≤ 940 + 78, and spiral_pick
   ≤ 969 + 70. In the channel test, the departure moves keep their caps.
   Corne strip samples over 0.369 at F ≥ 3999: still at most 1.
+
+**§15.8 built (2026-10-27; C22 agreed; not committed).**
+- `split_at_turns(segments, records, first_departure)` maps every
+  departure record to one shared run key.
+- The caller (`clearing.rs`) finds the first departure position in its
+  record list and passes it. A `debug_assert` checks that no turn or slot
+  record comes after it.
+- `apply_slice_turn_feeds` prints no "turn not fed" line for a departure.
+  `mod.rs` prints that line after the chain match, for the departures
+  neither match fed (`ChainFeedSummary::step_fed`).
+- The channel test now asserts that every departure step is fed by the
+  exact match or the chain match.
+
+**Checks (through the lane).**
+- Both core clippy commands are clean.
+- Slot test green. The channel has 167 moves again (D32: 173). Its 8
+  departure records are not fed by the exact match. The chain match
+  feeds all 8 on 2 joined moves: lowest factor 0.309, longest move
+  3.955 mm, unfed 0. The slot check is unchanged: 444 samples, 0 over the
+  screen at the full feed.
+- Plain C12 (`the_geodesic_arm_feeds_its_turns_down_at_the_level`):
+  - **The default tree:** the step split is `path_shape`, because C22's
+    switch is off by default. This gives other entry counts than D31, so
+    it cannot be compared.
+  - **Like for like,** with `RS_CAM_RESEARCH_STEP_SPLIT=stock_depth`, the
+    entries are the same as D31.
+
+| Mode | D31 | D32 | §15.8 | P (D31 + 2 / entry) |
+|---|---|---|---|---|
+| oneway | 2565 | 2905 | 2572 (+7) | ≤ 2653 |
+| zigzag | 940 | 1344 | 950 (+10) | ≤ 1018 |
+| zigzag_v2 | 3116 | 3392 | 3122 (+6) | ≤ 3166 |
+| spiral_pick | 969 | 1331 | 978 (+9) | ≤ 1039 |
+| spiral_headon | 3145 | 3379 | 3150 (+5) | ≤ 3187 |
+
+The P holds, at 0.2–0.3 moves per entry. With the default `path_shape`,
+the counts are 2585 / 966 / 3128 / 994 / 3156 at 49 / 47 / 28 / 43 / 24
+entries.
