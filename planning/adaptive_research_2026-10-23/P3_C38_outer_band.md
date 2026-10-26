@@ -1696,3 +1696,45 @@ build):**
   - op 1 and the copy op's move counts are within ± 1 % of D26's.
 - **Falsifier:** if wanaka's unfed count stays near 72 with the clip in,
   the turns are not lost to the clip, and C22's reading in §14.6 is wrong.
+
+### 13.8 Which parts are generic (operator ruling 2026-10-26), and the interface each would offer
+
+Ruling: "a keep down link should be generic and not built just for this.
+same for anything else that could be useful from this research." For this
+build the gating stays research-only. Below is the target placement for
+adoption.
+- None of these parts depends on the geodesic field. Each depends only on
+  the planner stock, the boundary and the emitted path.
+- G-CPRAPID and G-LINKPLOUGH (contour_parallel: rapids and keep-down
+  links through stock, Corne and wanaka200) are the same planner-stock
+  blindness, seen from the shipped default strategy.
+
+| Part | Today (research) | Shared layer for adoption | Interface another strategy would call |
+|---|---|---|---|
+| **G-CLIPAIR (a): the stock model keeps what a disc can reach** | the branch in the `path.rs` boundary clear, gated by `boundary_reach` | the planner-stock set-up of `adaptive3d` (`path.rs`, the border and boundary clears). Every Adaptive3d strategy builds its stock there, contour_parallel included | `boundary_reach(boundary, R) -> Vec<Polygon2>` (the clear keeps `boundary ⊕ R`), with no strategy test. Then every strategy's stamps, `plan_entry`, keep-down link test and air test read the stock the cutter meets. That is the planner side of G-LINKPLOUGH / G-CPRAPID |
+| **G-CLIPAIR (b, c): regions inside the boundary, plus the centres that reach the band** | `ResearchClip::restrict_regions`, called in `detect_and_order_regions` | the level grid (`clearing.rs`, `build_material_bool_grid` / `level_gate`). Contour_parallel builds its grid with the same function (`clear_z_level_contour_parallel`). Better, `geometry/region_mask.rs` beside the existing masks | `RegionReach { inside: Vec<bool>, rows, cols, cell, reach }` with `restrict(grid)`, applied by the grid builder for every strategy. `AreaMask` (By Area) would intersect with it, so By Area needs no separate path |
+| **Stock-box clip of a grown outline** | `clip_to_stock_box` | `geometry/` (a polygon against the stock's XY box): any producer that grows an outline past a wall (C31 today; a CP-style offset from a boundary, tomorrow) | `clip_to_box(polys, BoundingBox2) -> Option<Vec<Polygon2>>`, unchanged inside the box |
+| **Centre-clip reach of a grown outline** (§13.7) | `clip_to_centre_reach` plus a `#[cfg(research)]` `CentreClip::polygons()` | `centre_clip.rs` itself: the clip is shared, and so is "where may a centre plan". The accessor stops being research-only | `CentreClip::reach(margin) -> Vec<Polygon2>` (its polygons grown by `R − margin`), and `clip_to(polys, &reach)`. A strategy plans its 2D domain inside the reach, so nothing it plans is dropped by the clip later. That is the cause of C22's "cut, unfed" turns, and of any planned-then-clipped pass |
+| **Fed-slot feed match** (§13.2) | a slot-only function beside `apply_slice_turn_feeds` | feed application on the emitted `Toolpath`: `dressup/feed_modulation.rs` or a small `toolpath` util, beside the turn feed of C22 | `apply_chain_feeds(tp, chains: &[FeedChain], tolerance) -> ChainFeedSummary`. Here `FeedChain { pts, level_z, factor_per_step }` and `tolerance` = the RDP tolerance that simplified the path. Any producer that knows a stretch must run slower (a slot, a turn, a full-width plunge-out, a CP first offset that slots) hands in its chains, and gets the counts back (fed, unfed, matched before own). C22's exact turn match becomes the special case of a chain of one step |
+| **G-b judge and `RecordMark`** | `planned_cut_mm`, the judge in `plan_and_emit_region` | the region loop of the slice path. It is generic to every 2D-slice arm (AgentSearch and ContourSpiral too): "judge a region on its plan, not on a double-inset forecast" (§4 item 2) | `judge_region(plan, threshold) -> bool` in the region loop, used by the shipped arms once the double inset is gone. `RecordMark` stays research-only: it guards research records |
+
+**What stays research-only:**
+- the slot plan (`corridor_opening`): it plans with counted over-ceiling
+  steps under an operator ruling made for this research;
+- the geodesic-specific records.
+
+**The order of adoption I would propose:**
+1. **G-CLIPAIR (a)+(b,c), for every Adaptive3d strategy.** It fixes a
+   planner-stock blindness that contour_parallel has too.
+2. **The centre-clip reach.** It ends the planned-then-clipped waste.
+3. **The chain feed match, in feed application.**
+4. **The G-b judge for the shipped slice arms**, with the shipped fix of
+   §4.
+
+Each changes shipped output, so each needs its own byte-parity re-bless
+on a measured cause. The interfaces above let me write the research build
+so that adoption is a move of code and a removal of a `cfg`, not a
+rewrite. In this build:
+- `boundary_reach` and `ResearchClip` take only geometry (the strategy
+  test sits at the call site);
+- the chain feed match takes `FeedChain`s, not `SliceTurns`.
