@@ -2952,3 +2952,93 @@ Read only. `phase3/fix17/c22_holes/assert_12_9.py` asserts the numbers.
 - The three hole floors read 0.00 above target (D20's value).
 - +3 entries at Z 0.5 (one per pocket), and about +30 s of cycle.
 - No other stock-map cell changes by more than 0.1 mm.
+
+**Built (2026-10-26, for D28; not compiled):**
+- `SpiralCore { seed, levels }` and `SpiralCore::owns` (a closed chain of a level ≤ K that encloses the seed). `beside_core` drops only those.
+- `ordered_wraps_beside_core(.., core, ..)`: with a core, the chains start at level 1 and only the core's own loops are dropped. `ordered_wraps` is now a wrapper with no core, so every other caller is unchanged. The C35 call in `plan_piece` passes the core.
+- The record:
+  - `FieldReport.core_pieces` lists each kept wrap of a core level (level, closed, area);
+  - `CoreZone.pieces` and `CoreZoneRecord.core_pieces` / `core_pieces_closed` / `core_pieces_area_mm2` carry it;
+  - one info line per core: "C35 core: wraps of a core level beside the core loop".
+- The lib test `only_the_core_loop_leaves_the_wraps_beside_a_core_spiral`: the core loop goes; a pocket loop of a core level, an open arc of a core level and a loop past K stay.
+- **A doubt I record before D28 reads it.** If T is a true distance (T·s at least the straight distance from the rim), a pocket that the plate cuts off along a ray lies beyond the point where that ray leaves the reachable cells. Every level ≤ K crosses the ray before that point, so the pocket's T exceeds T_K, its loops are of a level > K, and they were never dropped.
+  - So the mechanism of §12.9 needs T under the straight distance in the pocket. The lattice solve could do that, or the pocket could be joined to the main zone behind the plate on another path.
+  - Or the cause is elsewhere: the pocket reached by no field at all, with the mop or the wall pass not reaching it in C35 but reaching it in D20.
+  - The D28 core-pieces line and the hole floors decide. If the floors stay uncut and the core-pieces line shows no pocket at Z 0.5, my mechanism is wrong, and the next step is to log the unreachable lattice cells inside the region per core.
+
+**Built for D27 and RULED (lead, 2026-10-26): the held-link keep-down proof (C38 §14).**
+- `clearing::keep_down_excess(stock, from, to, radius, ceiling_z)` reads the swept disc of a link as `corridor_ceiling_z` does. It is generic: any strategy's held links may call it.
+- A research held link stays keep-down only if no column of its R disc stands above `level + Depth/Pass + stay_down_clearance` (the top of its level's slab plus the dexel allowance). Otherwise it goes out as an entry (C40 cause `HeldLinkRefused`).
+- The C22a counter reads the same disc and ceiling, after the clip.
+- **The ruling:** the ceiling is the SLAB TOP, not `level + clearance`. A link held to the 2D pass load may take a side band up to `c·D` inside its own slab (G-ADAPTLINKLOAD). The fed-link bars are stock ABOVE the slab ("removes more than Depth/Pass + one cell"). Accepted by the lead.
+
+## 16. Design: the 3D split rule and a shared routed keep-down travel (2026-10-26; read only, no code)
+
+Inputs:
+- C40 (D26, fix16): LargeZ makes 74.2 % of Corne op-1 descents and 90.0 % of wanaka's.
+- C21's C42 (fix18/README.md): the spiral_pick descents are SIDE STEPS. Lift and plunge are almost at one XY (median 0.57 mm Corne, 1.22 mm wanaka) and the drop is 5.16 / 4.16 mm.
+  - 72.6 % / 69.1 % have a path over cut ground plus a short side leg (median 0.58 / 1.19 mm).
+  - The side leg is within a stepover and its depth within Depth/Pass for 64.2 % / 55.4 %.
+  - Taken at the cut feed, these save 380 s of 1452 s (Corne op 1) and 1313 s of 6026 s (wanaka, sample clock).
+  - contour_parallel's entries are long hops (median 37 / 64 mm), where a keep-down at feed pays only on the short ones.
+- The operator ruling: the keep-down link is a shared part, not research-arm code.
+
+### 16.1 What makes the side steps
+
+`plan_and_emit_region` splits a draped cut where two lifted points step by `|dz| > max(1.1·DPP, 1 mm)` or by a slope over 0.3 (`PLUNGE_SLOPE_LIMIT`, `Z_DROP_FLOOR_MM`, clearing.rs). Its comment gives the purpose: "peak→valley bridges that drag the cutter diagonally through uncut stock".
+- **The source of the numbers:** none. 0.3, 1.1 and 1 mm are typed constants, and the 1 mm floor was tuned against over-splitting. They are not derived.
+- **What they test:** they test the PATH (its slope), not what the path cuts. On a draped level the path climbs onto a part face and drops back many times. Each such step splits the cut, lifts and re-enters about 1 mm away (C42). In most cases the step cuts no more than an ordinary pass would: the 64 % / 55 % above.
+
+### 16.2 Part A: the split rule reads the stock, not the slope (all adaptive3d strategies)
+
+**The rule (derived; it replaces the three constants):** split a draped cut between two lifted points `p → q` only when feeding it would take more than one pass, that is, when the tool's swept disc along `p → q` meets stock deeper than Depth/Pass below its top.
+- **The read:** for each sample `x` along `p → q` at the planner cell (as `corridor_ceiling_z` samples), with the tool bottom `z(x)` on the segment, the stock top over the disc of R at `x` is `top(x)` (the conservative read).
+- **The axial engagement:** `ap(x) = top(x) − z(x)`.
+- **The split:** where `max ap(x) > DPP + stay_down_clearance`. Otherwise `p → q` is cut at feed as part of the cut. That is the planner's own pass rule (F-029 clamps each cell's cut to Depth/Pass).
+- **Its sense:** a descent through air (`top ≤ z`) never splits. A climb onto a face whose remaining stock is within a pass is a cut. A bridge "through uncut stock" (the stated purpose) has `ap > DPP` and still splits.
+- **Where it lives:** in the 3D emission of `plan_and_emit_region`, the one place every adaptive3d strategy (AgentSearch, contour_parallel, geodesic) drapes and splits a cut. It reads the sink's planner stock, which already holds every earlier move. A helper `cut_step_within_pass(stock, p, q, R, DPP, clearance) -> bool` sits beside `keep_down_excess` (the same disc read).
+- **Shipped arms:** byte parity forbids changing them in the same step. The rule goes behind a research switch first, keyed as `disc_read` is today (`is_research_arm`). Shipped adoption is a separate, parity-checked step, as ruled.
+
+### 16.3 Part B: a routed keep-down travel at the entry layer (shared)
+
+Where Part A still splits (`ap > DPP`), and for every other entry (2D re-entries, clip entries, waterline):
+- **The component:** `keep_down_route(stock, from, to, R, level_z, clearance, max_len) -> Option<Route>` in a new module `adaptive3d/keep_down_route.rs`.
+  - **The search:** a shortest path over the planner grid's free centre cells (a cell is free when `keep_down_excess` over its disc of R is `None` against `level_z + clearance`, the slab-top ruling of §14 for a held link). The search runs from the tool position to the free cell nearest `to`.
+  - **The side leg:** from there to `to`, accepted only as a cut within a pass (Part A's rule) and within one stepover (the side band a pass may take). C42's method: 16 neighbours, a window of the two points plus a margin.
+  - **The result:** the route as XY points at the level and the side leg, or `None`.
+- **The call site:** `plan_entry` (clearing.rs). It is the one door every adaptive3d entry passes, so every strategy gets it. Today it tries one straight stay-down corridor (`corridor_ceiling_z`). With Part B it tries the straight corridor first, then the route.
+  - The route is emitted as keep-down `Linking` feeds at the level, then the side leg as a cut. Its proof is the same disc read.
+  - The emitter needs one new segment, `Adaptive3dSegment::RoutedLink { path, side_leg }`, or the route as a `Link` chain plus a `Cut`. The second needs no new type and is my preference.
+- **Feed or lift:** the route is taken only when it is faster than the entry it replaces. Travel at the link feed costs `len / feed`; the entry costs the retract, the rapid and the plunge feed. That is the existing crossover rule `air_run_crossover_mm(feed, plunge, retract_depth)`: no new constant.
+  - That decides contour_parallel's long hops (C42: at feed they rarely pay) without a strategy switch.
+  - A low travel at the RAPID rate (C42's larger saving on contour_parallel) is a separate question: a rapid at depth over cut ground. It needs its own safety ruling; I do not include it.
+- **Bounds:**
+  - The search is bounded by `max_len = air_run_crossover_mm(..)`: a longer route can never pay. So the window and the cost are bounded, with no typed length.
+  - The grid is the planner stock's (Corne 0.25 mm, wanaka 1 mm). The work per entry is at most the window's cells.
+- **Who else can use it:**
+  - every adaptive3d strategy, through `plan_entry`;
+  - the 2D adaptive's keep-down links (`feed_link_to_legal`) could call the same search on the 2D grid, but that is a separate adoption step;
+  - the finishing ops' link layer (`dressup`) has its own link rules and is not in scope.
+
+### 16.4 Order and pre-registration (P)
+
+**Order:** Part A first (a rule change, research switch), then Part B. Part A removes most side steps at their cause: they are not entries at all. Part B then serves what remains.
+
+- **P after Part A (spiral_pick; base D27 when it reports):**
+  - Corne op-1 descents (≥ 1 mm, removing stock): 1156 → **about 450–550**. C42's 64 % within a pass, read on the swept disc rather than C42's centre cell, so a little fewer qualify.
+  - wanaka: 2030 → **about 900–1100** (55 %).
+  - Cycle: Corne about −250 to −380 s; wanaka about −900 to −1300 s. C42's cut-feed savings, less the cut time the steps now take.
+  - LargeZ's share falls below Reentry2d's on Corne.
+  - The over-load samples (0.471) on the draped steps must not rise by more than 5 %. A step within a pass is an ordinary cut, but its swept width is not held to the 2D ceiling, so this is the risk to watch.
+- **P after Part B:**
+  - a further −10 to −20 % of the remaining entries on spiral_pick;
+  - on contour_parallel (once adopted), routes on at most about 30 of Corne's 95 entries and about 450 of wanaka's 1609. C42: the routes faster at the cut feed are 28 and 449.
+- **Falsifiers:**
+  - Part A removes under 30 % of Corne's descents: the steps are deeper than one pass, and Part B, not A, is the main fix.
+  - The over-load on the steps rises by more than 5 %: the rule needs a width read too.
+
+### 16.5 What I need before code
+
+1. C21's measurement of the side legs on the swept disc (C42 used the centre cell), to size Part A's share.
+2. A ruling on the research switch for Part A: `is_research_arm` (as `disc_read`), or a new `Adaptive3dParams` field off by default.
+3. Whether Part B may add `Linking` feeds at the level for a shipped arm later. Today's F-038b link climbs to a safe Z over the corridor; a level link is a new shape, and the simulation's fed-link bar reads it.
