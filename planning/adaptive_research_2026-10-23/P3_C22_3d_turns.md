@@ -1884,3 +1884,395 @@ outcome. The cascade is right on the synthetic ring.**
   shipped sweep; the output is safe.
 
 Parked as G-RINGGROW in `DEFECTS.md` (lead, 2026-10-26).
+
+## 12. C35 design: one spiral while the wraps are closed (R4 item 2) (2026-10-26)
+
+DESIGN; no code yet, no cargo. Inputs: `R4_independent_review.md` §1.2,
+§2 and §5 (item 2); `phase3/fix9/README.md` §4; the worktree at b37cad1a4
+(plus the uncommitted C12 test file).
+
+### 12.1 What the code does now (read)
+
+- The zigzag arms (`C20_LOCAL_ZIGZAG`, `C23_ZIGZAG_V2`, `C28_ZIGZAG_PICK`)
+  run `JoinRule::Seam`. In `plan_piece` (research_geodesic.rs:4817) the
+  Seam path calls `ordered_wraps(.., spiral_levels + 1, ..)` with
+  `spiral_levels = 0`, because only the Ramp join's `EntryLaw` sets it.
+  So every closed wrap round the seed is lapped from a radial seam. The
+  seam step reads about 0.94 D (the `Seam` doc, :1898), and the replay
+  re-enters there. In 3D that is a lift-over and a plunge (R4 §1.2).
+- `core_spiral` (:3391) exists and is called only under
+  `JoinRule::Morph` (:4926):
+  - It traces `F = T/s − φ/2π` out of the starter rim through the levels
+    `1..=K`, where `K = field.star_levels(seed, r0)`: every level set
+    closed round the seed and crossed once by each ray.
+  - Then it adds one closing lap on level K.
+  - Its chord step comes from the op tolerance (the `circle_from` rule).
+    It drops its outer level and retraces until every segment lies inside
+    the `ToolCentreRegion`.
+- `ordered_wraps` already takes a first level (`min_level`), and the Seam
+  path already starts it at the spiral's end point (`spiral.last()`), the
+  hook the Ramp join used.
+
+### 12.2 The design
+
+A new option field, `GeodesicOptions::core: CoreJoin`, with two values:
+- `CoreJoin::Seam`: today's behaviour, set in `G1` and `C2`. Every other
+  preset inherits it, so every existing arm is unchanged.
+- `CoreJoin::Spiral`: under `JoinRule::Seam` with no Ramp law,
+  `plan_piece` calls `core_spiral` (with the same field, region, seed, the
+  rim radius `r`, `phi0` from the starter end, `s` and the tolerance),
+  emits the spiral first, from the starter end, through `append_path`, and
+  calls `ordered_wraps(.., K + 1, ..)` from the spiral's end. The open-arc
+  logic of the zigzag pick (turns, head-on ends, C28 / C29 pick) then
+  starts at the first level past the core, unchanged.
+- The new preset is `GeodesicOptions::C35_SPIRAL_PICK = { core:
+  CoreJoin::Spiral, ..C28_ZIGZAG_PICK }`, and the new 3D arm value is
+  `geodesic_local_spiral_pick` (`RESEARCH_ARM_ENV`).
+  - `pick_variants` copies `core` into plan A and plan B (`..self`), so
+    the C29 3D pick compares two plans that both cut the spiral.
+  - C31 (the grown outline) is untouched: it acts on the outline before
+    the producer.
+
+The load, from the code's own derivations. The levels are the field's
+(`LocalLevel` under these presets). The spiral moves out by one level step
+per turn, so each turn meets the ring of the turn before it, one level
+step out: the same band a closed wrap meets from the wrap before it. The
+spacing law holds that band at or under c·D (C5, R4 §1.1). The seam step
+(about 0.94 D) is gone. There is no new turn and no exemption.
+
+**No new constant.** K comes from the field's star test; the chord step
+from the tolerance; the levels from R, s, the ceiling and the tolerance
+(C16); the reach from s and the cell.
+
+**What the spiral does not cover:**
+- closed levels past K (closed round an island, so not star-shaped from
+  the seed). They keep the seam join.
+- every open arc. These are R4 item 3, the wall-end descents.
+
+### 12.3 The record and the test
+
+- `SlicePlan` gains `core: Option<CoreZone>` (seed, radius `r +
+  T_K · s`, levels K), set only under `CoreJoin::Spiral` with K > 0.
+- `plan_one_outline` counts the 2D `Rapid`s of the cleaned plan that lie
+  inside the core disc (radius − one cell), leaving out the piece's first
+  `Rapid` (the starter entry at the seed). It records the zone with z and
+  the count in `Research3d::core_zones` (new; the C29 pick drops the
+  loser's records, as it does for turns).
+- C12 heavy test: for each geodesic mode, print every core zone and count
+  in 3D the lift-over descents into stock inside it: entry-plunge moves
+  that drop more than 1 mm, at the level, more than R from the seed (the
+  starter plunge is at the seed), and inside the zone's disc. For
+  `geodesic_local_spiral_pick` (a new heavy mode) the test fails when the
+  2D count or the 3D count is above 0, or when no core zone exists. The
+  existing modes record no zone (`CoreJoin::Seam`) and print nothing new.
+
+### 12.4 Byte parity
+
+The shipped arms do not use `research_geodesic.rs`. Every existing
+research preset has `core: Seam`, so `plan_piece` takes the old path;
+`spiral` stays empty (or is the Ramp law's, as before). The new record is
+filled only when a zone exists. The C29 pick and the C31 opening are not
+changed. So `adaptive3d_emission_byte_parity` and the 2D render harness
+stay byte-equal (the harness gains no column).
+
+### 12.5 Pre-registered numbers (P; D20 is the base)
+
+The counts are the README §4 instrument (`entries.py`): lift-over
+descents into stock, which are keep-down-link spans whose plunge drops
+≥ 1 mm and removes > 0.1 mm³, and the plunge-entry spans.
+
+- **Corne Z 17**: 238 descents = 40 on the seam line + 198 at
+  open-arc ends. The seam line runs from about 8.5 mm to about 47 mm from
+  the seed, about one descent per ring. The nearest wall is about 33 mm
+  away, so the closed, star-shaped core ends there: K reaches about ρ 33.
+  - Expected removed: the seam descents with ρ < 33, about
+    40 × (33 − 8.5)/(47 − 8.5) ≈ 25.
+  - The seam descents past 33 mm (about 15) are on closed levels that are
+    not star-shaped from the seed, or are not closed. They stay.
+- **Corne, whole op** (1195 descents over 4 levels): Z 11 and Z 5 share
+  the same seed and walls (C24: one piece holds all levels), so about −25
+  each; Z 0.5 (the small-region grid) about −5. Expected about **1195 →
+  1115 (range 1080–1150)**.
+- **wanaka200** (3578): terrain levels have walls near every seed, so K
+  is a few levels. Expected about **3578 → 3400 (range 3330–3550)**. Low
+  confidence: I have no per-level seam count for wanaka.
+- **Plunge-entry spans** (the G2 "plunges"): unchanged, Corne **60 ± 3**,
+  wanaka **20 ± 2**. The spiral removes ring changes, not region entries.
+- **The share of descents left at open arcs**: Corne about 198 / 213 ≈
+  **93 %** at Z 17; whole op about **90–95 %**. wanaka about 95 %+.
+  - This is R4's point (§6): the spiral alone fixes the closed rings, and
+    the bulk is item 3.
+  - If the share comes out much lower, then the open arcs were not the
+    bulk, and my reading of the 198 is wrong.
+- **Cycle time**: each descent removed saves about 0.55 s (a 6 mm plunge
+  at 750 mm/min plus the rise). Corne about −45 s (2760 → about 2715),
+  wanaka about −100 s.
+- **C12 heavy test, new mode**: 0 2D Rapids and 0 descents inside the
+  core zone at both levels; K ≥ 1. The pocket seed lies between the
+  island and the walls, so K is small (a few levels). The exact-bound
+  assertion holds (the spiral needs no exemption).
+
+**Risk.** In C3 the Ramp join's spiral was refused by the replay and came
+out "as 2 to 6 mm pieces". That spiral used plain spacing (s per turn),
+which reads over c·D near the seed (the `Ramp` doc). `core_spiral` under
+the curvature or LocalLevel levels is the case the spacing law covers.
+If the replay still splits it, the 2D count in the core zone says so at
+once, and the test fails there.
+
+## 13. C37 design: no re-entry inside a connected zone, for open arcs (R4 item 3) (2026-10-26)
+
+DESIGN ONLY; no code, no cargo. Inputs: R4 §1.2, §5 item 3; `P2_C2`
+§C25 (the wall-end refusals); `P2_C10_leadin_guard.md` (the C8 guard,
+found); C35 (§12) as the base this builds on.
+
+### 13.1 Why the replay refuses the wall-end turns (Corne Z 17: 198)
+
+The open-arc join today (`plan_piece`, the `C14` block; `JoinRule::Seam`
+with `ArcLink::Zigzag`) plans a turn from the cutter (the end of arc k)
+to the near end of arc k+1 when the turn is no longer than `turn_bound =
+s + (1 + √2)·cell` and its chord lies inside the region; else the join is
+a seam step or a link. The replay then turns a refusal into a 2D `Rapid`,
+and in 3D a lift-over and a plunge. There are four ways to a refusal at a
+wall, from the code and the notes:
+
+1. **The head-on lens (C25, C23 problem 2).** An arc that ends square into
+   a wall meets the lens of stock the arc before left at the wall:
+   `arc_end_lens(R, Δ, θ)`, which at θ = 0 is `(R + Δ/2)/2R`, over the
+   ceiling for every Δ. The replay refuses the last 0.6–2.1 mm of the arc
+   and re-enters at the arc's end, that is, at the turn's start (C25: 17
+   of the 19 lost turns on the C12 pocket).
+   - On Corne the C29 pick kept plan A at every level (C29 §10d, D18).
+     Plan A is plain zigzag, with the head-on rule off. So this mechanism
+     is fully live at Corne.
+2. **Over the bound at an oblique wall** (C14 (5)). Where the level sets
+   meet the wall at θ off the normal, the arc ends are `Δ/cos θ` apart.
+   Past the bound the turn is not planned; the seam step or the link that
+   replaces it is refused.
+3. **Outside the region at a convex wall** (C14 (5)). The chord between
+   the two ends leaves the tool-centre region (round an island or a
+   convex corner); the join is a link, and a link through standing stock
+   is refused.
+4. **A turn on a stub.** The shortfall and the smoothing cut short arcs
+   near walls; an arc shorter than its turn gives no turn.
+
+I cannot split the 198 between these four from the data in hand. `entries.json` has positions, not
+reasons. The design therefore starts with the instrument (13.3). The
+pre-registered split is in 13.4.
+
+### 13.2 The C8 guard (found by C10) and what it means here
+
+C10 (`P2_C10_leadin_guard.md`) traced the C8 lead-in, which applied 0
+times:
+- **Inside ρ\*** the curvature law spends the whole margin
+  (`m = c·D − w ≈ 0`), so `lead_in_radius` gives none, or a radius ≈ ρ
+  that guard #4 refuses. That is a limit by construction.
+- **Beyond ρ\*** a mid-arc trace walks off the cut arc (guard #5). That
+  is a bug, which hides the limit that the arcs are shorter than the
+  span.
+- C10's growing bite fits 0 bands at spacing `s`, and fits only with a
+  reserved band margin (a spacing ruling).
+
+**Consequence for C37.** On Corne (s 1.2) the margin beyond ρ\* is
+`c·D − s = 0.113 mm`. A lead-in with a growing bite needs a lead length of
+tens of mm at that margin. It is not the join to build. The join that
+fits everywhere is the counted, fed step the operator already ruled for
+(C14: length ≤ the bound, feed by the measured engagement,
+`turn_feed_factor`), placed where it fits instead of only at the arc
+ends.
+
+### 13.3 The design
+
+**The contract:** inside one connected zone of a level, the plan has no
+2D `Rapid` after the zone's first entry. A zone is a connected component
+of the field's reachable lattice at the level (`GeodesicField` reach). A
+`Rapid` is allowed only between two zones the field proves disconnected.
+
+The open-arc join, in order (the first that fits wins):
+1. **The head-on rule, always** (`ArcEnds::HeadOn` with
+   `MeetingRule::Through`, the C23 rule; no pick). Each arc starts at its
+   end with the larger lens, and the counted turn cuts that lens. This
+   removes mechanism 1 at its cause (C25: pocket 20 → 0 turns that start
+   at an entry). The C28/C29 pick is then not needed (R4 §6).
+2. **The zigzag turn** from the cutter to the next arc's start, when it
+   fits the bound and the region (today's rule).
+3. **The fed bridge** (new), when the turn does not fit:
+   - The cutter returns along the band just cut (keep-down `Link`s, one
+     per vertex: the C14 one-way return) to the point P of arc k from
+     which the nearest point Q of arc k+1 is within the bound and the
+     chord PQ lies inside the region.
+   - It takes the fed step P→Q (a counted turn: the `LinkLoad::turns`
+     exemption, the feed by measured engagement).
+   - It cuts arc k+1 from Q to the end that holds the larger lens (the
+     head-on rule's start), then returns along it (keep-down, through the
+     band just cut) to Q, and cuts the rest of arc k+1.
+   - Such a P exists wherever the two arcs are one level apart along
+     their common length: across the band they stand `Δ ≤ s` apart, with
+     the cell quantum inside the bound, by the derivation of `turn_bound`.
+     So the bridge fails only where arc k+1 has no point within the bound
+     of arc k: a branch, a stub, or a far side.
+4. **A routed keep-down link** (R4 item 8, minimal form), when the bridge
+   fails inside one zone: a shortest path over the cut lattice cells of
+   the plan so far (the 2D grid the replay stamps), from the cutter to
+   the next arc's start, emitted as keep-down `Link`s and entered by a
+   fed step at its end. If no such path exists, the two arcs are in two
+   zones of the cut set, and the `Rapid` is allowed. It is counted and
+   classified.
+
+**No new constant:** the bound (s, the cell), the ceiling, R, the
+tolerance, and the lattice.
+
+**The instrument, built first, in the same step:**
+- the research record gains, per slice piece, the ArcReport counts
+  (turns, over the bound, outside), plus the bridge and routed-link
+  counts;
+- every 2D `Rapid` after the first, per zone, is classified by the join
+  that produced it (lens refusal, over the bound, outside, no bridge, no
+  routed path).
+This settles 13.1 on the first run.
+
+**The sentry** (R4 item 3): the C12 heavy test counts the 2D `Rapid`s per
+connected zone (the field's components at each level, from the record)
+and fails on more than one per zone for the C37 arm.
+
+### 13.4 Pre-registered numbers (P; base C35 as predicted in §12.5)
+
+- **The split of the 198 wall-end descents at Corne Z 17:**
+  - head-on lens (1) about 55 %;
+  - over the bound (2) about 25 %;
+  - outside (3) about 15 %;
+  - stubs (4) about 5 %.
+  Low confidence; the instrument decides.
+- **Lift-over descents into stock** (README §4 instrument):
+  - Corne 1195 (D20) → about 1115 after C35 → **about 150–350** after
+    C37. What remains is the starter, the far-side and branch joins that
+    need the routed link where it fails, and the F-038 and air splits of
+    the 3D stage, which C37 does not touch.
+  - wanaka200 3578 → about 3400 after C35 → **about 500–1200**. Lower
+    confidence: terrain levels have many small zones, and between zones
+    a `Rapid` stays legal.
+- **Plunge-entry spans** (the G2 plunges): about unchanged (Corne 60 ± 5,
+  wanaka 20 ± 3). Zone entries stay.
+- **Counted fed steps (turns):** up by about the descents removed (Corne
+  about +800 to +950). Each is a side cut at depth under the turn
+  exemption. The G1 exact-bound assertion holds, because turns are
+  exempt and fed.
+- **Keep-down length:** up. The bridge returns along the band, about half
+  an arc per bridge: Corne about +20–40 m over the op.
+- **Cycle time:**
+  - each removed descent saves about 0.55 s;
+  - each bridge costs its return length at feed, plus about 0.1 s for the
+    fed step.
+  - Corne about −500 s + 300 s = **about −200 s** (2760 → about 2550).
+    wanaka about −1200 s + 600 s = **about −600 s**. Low confidence; the
+    C21 kinematic model decides.
+- **Share of descents left at open arcs after C37:** under 30 % (from
+  about 93 %).
+
+### 13.5 Scope, risk and what I would build first
+
+- Files: `research_geodesic.rs` (the join block in `plan_piece`, a new
+  preset `C37_…` = C35 with the head-on rule and the bridge; the record
+  types), the 3D record plumbing (as C35), and the C12 test (the sentry).
+- **Risk 1.** The bridge's fed step P→Q is a radial step into an arc's
+  interior. Its engagement is a cap like the turn's (0.75–0.94 D per
+  step, C14 (7)), held by the feed, not by the ceiling. The exemption
+  already covers it (≤ bound, fed), but it puts a load spike per bridge,
+  as R4 §2.3 says of the fed step. C37 accepts that for open arcs. The
+  spiral (C35) keeps it out of the closed core.
+- **Risk 2.** The return-and-recut of arc k+1's near part doubles the
+  path over that part. Bounded by the arc length; the instrument reports
+  it.
+- **Order:** the instrument and the head-on rule first (cheap, and they
+  answer 13.1). Then the bridge, then the routed link. Each step is
+  measured against the sentry.
+
+### 13.6 Update: R4 §7 splits the wall-end descents; C37 against C38 (2026-10-26)
+
+R4 §7.2 (from `entries.json`, D20, against the hole-filled silhouette):
+
+| Plane | Descents | Seam line | Outer strip (outside the silhouette) | Inner walls |
+|---|---|---|---|---|
+| Z 17 | 238 | 40 | 124 (38 within 3 mm of the wall, 86 at 3–9 mm: the containment line) | **74** (6.5–7.0 mm inside the silhouette: the inner face of the frame wall, R from it) |
+| Z 5 | 65 | 0 | 0 | **65** |
+| Z 0.5 | 123 | 0 | 0 | **123** |
+
+The 86 at the containment line end at a free edge. The C31 grow puts
+`R − m` of phantom material beyond the real edge (11.3, "pessimistic,
+not unsafe"), and the replay reads that band at the turn. Below Z 17 the
+strip region is never planned (the F-038 forecast skips it before the
+grow).
+
+**The split of work:**
+- **C38 (C12):** the F-038 skip, and the C31 grow at free edges (grow
+  only along walls, or let a wrap end free at a material edge). It covers
+  the 124 outer-strip descents. C31 is my code, so C12 asks me before it
+  changes it.
+- **C37 (this design):** the inner-wall open-arc ends, **74 + 65 + 123 =
+  262** on Corne. R4 §7.2 gives no Z 11 row; I take its inner-wall count
+  as one more set, near Z 5's, and report it when the instrument reads it.
+
+**Where C37 touches C31 and C38 (so the two do not collide):**
+- **C37 does not edit** `research_grown_outlines`, `smoothed_region`,
+  `planner_outlines`, `grown_planner_outlines`, the F-038 forecast block
+  of `clear_one_region`, or the opening record (`RegionOpening`). Those
+  are C38's (with my review, since C31 is mine).
+- **C37 reads their output only through the 2D outline** that
+  `plan_one_outline` passes to the producer. The fed bridge's "chord
+  inside the region" test, the head-on rule's lens test and the routed
+  link's lattice all read the piece's own `ToolCentreRegion` (built in
+  `plan_piece` from that outline). So when C38 changes the grow at free
+  edges, C37 sees the new region with no code change.
+- **The one shared file is `adaptive3d/clearing.rs`, in disjoint
+  places.** C37 adds its record plumbing next to the C35 core-zone record
+  (`plan_one_outline`, after the cleanup; the C29 pick's record ranges).
+  C38 edits the opening path before the producer. A merge touches
+  neither of the other's lines. I will tell C12 the exact line ranges
+  before stage 1.
+- **The zone sentry depends on C38 in one way.** The zones are the
+  field's reach components at the level, and the field is built on the
+  outline C38 decides. A free edge that C38 stops growing changes the
+  zone's shape, not its count. The sentry reads the zones from the record
+  of each run, so it follows C38 with no change.
+- **Order.** If C38 lands first, the stage-1 instrument reads the inner
+  set alone. If C37 stage 1 lands first, its instrument classifies the
+  outer-strip refusals too (as "outside" or "over bound" at the
+  containment line), and the D-run splits them out by R4's silhouette
+  test.
+
+**Pre-registration for the inner-wall set only (P; replaces the 13.4
+descent numbers; base C35 as in §12.5):**
+- **Mechanism split of the 262**, by plane:
+  - Z 17 (74, the inner face of the frame wall, arcs end square into it):
+    head-on lens about 75 %, over the bound about 15 %, outside about 5 %,
+    stubs about 5 %.
+  - Z 5 (65), the same walls: about the same split.
+  - Z 0.5 (123, the grid of small regions and hex holes, convex walls):
+    head-on lens about 40 %, outside about 30 %, over the bound about
+    20 %, stubs about 10 %.
+- **After stage 1** (the instrument and the head-on rule always on):
+  262 → **about 110–160**. The lens class goes; the C25 pocket went
+  20 → 0 under the same rule.
+- **After stage 2** (the fed bridge): → **about 30–70**. The over-bound
+  and outside classes go where a bridge point exists.
+- **After stage 3** (the routed link): → **about 10–30**: true zone
+  changes and joins with no cut path. They are legal `Rapid`s under the
+  contract, and the sentry counts them per zone.
+- **Corne whole op** (lift-over descents into stock), when C35, C37 (all
+  three stages) and C38 have landed: 1195 → about 1115 (C35) → about
+  **60–200**. The outer strip goes to C38: its 124, and the same strip at
+  Z 11 if planned, are its number to pre-register.
+- **Plunge-entry spans:** about unchanged (60 ± 5).
+- **Stage 2 report items, as the lead asked:**
+  - the count of fed-bridge steps (expected about one per removed
+    over-bound or outside descent: Corne about 60–110);
+  - the feed dip per bridge: the factor `turn_feed_factor` and the feed
+    in mm/min, with its quartiles. The factor `c / max(w, a)` for a
+    head-on cap of 0.75–0.94 D at Corne's c 0.219 is about 0.23–0.29,
+    so F 4000 → about 930–1170 mm/min (R4 §2.1);
+  - the spike length per bridge (≤ the bound: `s + (1 + √2)·cell` =
+    2.41 mm at Corne).
+- **wanaka200:** R4 §7 does not split it. I keep 13.4's range for the
+  whole op and will split it by the instrument in stage 1.
+
+**Hold.** No file in `adaptive-head` changes until the lead reports D21
+(C35) done and committed.
