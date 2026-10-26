@@ -1,0 +1,21 @@
+
+running 3 tests
+iigeodesic_local_oneway opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_oneway turns: planned 35, cut 35, not cut 0, with a reduced factor 34 (lowest 0.359), longest 2.757 mm (bound 3.207); fed 35, unfed 0, full feed with no move 0
+geodesic_local_oneway: 2575 moves, 49 entries
+geodesic_local_zigzag opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_zigzag: 954 moves, 47 entries
+geodesic_local_zigzag_v2 opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_v2 turns: planned 42, cut 42, not cut 0, with a reduced factor 41 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 42, unfed 0, full feed with no move 0
+geodesic_local_zigzag_v2: 3122 moves, 28 entries
+geodesic_local_zigzag_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_pick turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_zigzag_pick: 954 moves, 47 entries
+geodesic_local_spiral_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_spiral_pick core Z 4.50 seed (-18.46, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 8, 3D entries inside 8
+geodesic_local_spiral_pick turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_spiral_pick: 981 moves, 55 entries
+.
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 27.87s
+

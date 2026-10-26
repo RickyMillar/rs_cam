@@ -3829,3 +3829,39 @@ footprint, so "inside" cannot be tested exactly.
   (141.3, -71.8); D18 has 14.5 mm, 4.54 mm wide, 1285.6 mm² there. The
   height and width equal those of the new rough-1 island; I did not
   examine why.
+
+## D21: C35, the core spiral arm geodesic_local_spiral_pick — RED (step 10)
+
+adaptive-head at b37cad1a4 plus the uncommitted C35 diff in 5 files
+(`research_geodesic.rs`, `adaptive3d/clearing.rs`, `mod.rs`, `path.rs`,
+the C12 test; 651 lines, `phase3/d21/start.diff`). The diff did not change
+during the run. Lane script, `timeout`, each step in the foreground.
+Outputs: `phase3/d21/<step>.txt`. Disk 81 GB.
+
+| Step | Result |
+|---|---|
+| 1 fmt | green |
+| 2 clippy core plain | green (46 s) |
+| 3 clippy core research+test-support | green (50 s) |
+| 4 clippy workspace heavy+research+test-support | green (57 s; only the dependency future-incompat note) |
+| 5 parity plain | green 5/5 |
+| 6 parity research | green 5/5 |
+| 7 `--lib adaptive::research_geodesic` | green 24, 2 ignored |
+| 8 2D harness | green 1/1; 189 rewritten files byte-equal to the last run (D19c) |
+| 9 plain C12 | green 1/1 |
+| 10 heavy C12 | **RED** at T:1151 (210.30 s) |
+| 11 f152 | green 2/2 |
+
+**Plain (step 9), spiral:** "core Z 4.50 seed (-18.46, -8.88) radius
+9.31 mm, 4 levels: 2D re-entries 8, 3D entries inside 8"; 981 moves, 55
+entries against zigzag_pick 954 / 47; turns the same; opening "grown, no
+sweep". The other four modes are as in D19e.
+
+**Heavy (step 10):** the spiral holds the exact bound (0 over, peak
+0.000; 2068 moves; entry samples 753, vertical 656, departing 1512
+against zigzag_pick 641 / 552 / 1360). It fails the core-zone assert:
+"geodesic_local_spiral_pick: 2 core zones; with a re-entry inside" — core
+Z 7.00 and Z 4.50, each "2D re-entries 8, 3D entries inside 8". The other
+modes are as in D19e (curv 4 and split 2 attribution only).
+
+**Verdict.** RED. Step 12 (the fixtures) not started.
