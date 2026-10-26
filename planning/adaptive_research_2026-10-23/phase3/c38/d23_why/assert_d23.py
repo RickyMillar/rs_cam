@@ -21,4 +21,14 @@ assert (c["pick"]["tp3"]["deep_samples"], c["pick"]["tp3"]["at_containment_line_
 t = json.loads((H / "turnfeed.json").read_text())
 assert (t["reduced_feed_samples"], t["reduced_feed_samples_over_c"], t["reduced_feed_moves"]) == (6687, 95, 387)
 assert (t["over_bound"], t["over_bound_at_full_feed"], t["full_feed_over_bound_moves"], t["full_feed_over_bound_moves_within_turn_bound"]) == (2014, 1943, 568, 519)
+pm = json.loads((H / "peak_move.json").read_text())
+assert (pm["headon"]["deep_on_line"], pm["headon"]["deep_on_line_on_peak_move"]) == (126, 125)
+assert (pm["pick"]["deep_on_line"], pm["pick"]["deep_on_line_on_peak_move"]) == (127, 125)
+assert pm["pick"]["peak_move_x_range"] == [151.06, 151.06] and pm["pick"]["peak_move_stock_edge_x"] == 2.02
+assert pm["pick"]["peak_move_axial_max"] == 12.0 and pm["headon"]["peak_move_axial_max"] == 9.0
+assert pm["pick"]["tp3_cut_levels_within_R"] == [2.01, 5.01, 8.01, 11.01, 14.01, 17.0]
+assert min(pm["pick"]["tp1_cut_levels_within_R"]) == 17.0
+od = json.loads((H / "op1_deep.json").read_text())
+assert od["C38a nibble"]["op1_axial_over_9"] == 89 and od["D23 pick slot"]["op1_axial_over_9"] == 627
+assert od["D23 headon slot"]["op1_axial_over_9"] == 654
 print("ASSERTS OK")

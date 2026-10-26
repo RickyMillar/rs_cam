@@ -1102,6 +1102,78 @@ deflection and the export refusal (§10.7). Op 1's other deep samples
 strip of §10.8, where a later pass meets a full column. That is not
 G-CLIPAIR.
 
+### 11.1b Reconciled with D9's peaks (P15 "D23 addendum", `fix13/peaks_d23.json`)
+
+`d23_why/peak_move.py` and `op1_deep.py` (read only) give the answers.
+
+**Copy op: my 126 / 127 are D9's peak move.** Of my deep samples at the
+copy op's containment line, 125 lie on one move: headon 1421, pick 1420.
+- The move is a straight cut, 57 mm long, at x 151.06 from y −71.2 to
+  −14.3, at Z 2.01.
+- Its centre is 3.2 mm outside the silhouette (the copy op's line is at
+  3.0) and 2.02 mm inside the stock's +X edge.
+- Its axial peak is 9.0 mm (headon) and 12.0 mm (pick).
+
+So D9's place ("beyond the mesh bbox, 2 mm inside the stock edge") and
+mine ("at the containment line") are the same samples. On that side the
+line lies beyond the mesh bbox.
+
+**Why the cut is deep: both items act, in sequence.**
+1. **The stock stands because of the free edge (§10.8).** Op 1 cut within
+   R of the move's path only at Z ≥ 17 (17.0–18.5, the Z 17 level and
+   its drape). Below Z 17 op 1 never came there. On that side its strip
+   is about 2.2 mm wide in centre space (wall + 3 to the stock edge), and
+   C31 gives it no centre region.
+2. **The copy op meets it in one level because its planner cannot see it
+   (G-CLIPAIR).**
+   - The copy op cut within its R of the path at every level (17.0,
+     14.01, 11.01, 8.01, 5.01, 2.01), so the columns at and inside its
+     line were taken level by level.
+   - The 9–12 mm the move meets lies beyond its line: x 150.9 to 152.56
+     is the disc reach past the line, inside the stock box. The O5b clear
+     holds that band as air in the copy op's planner stock, so no copy
+     region cell targets it.
+   - At Z 2.01 this long move, centred 0.2 mm outside the line, takes the
+     whole standing band at once.
+
+**What follows for P-CA1 / P-CA2:**
+- Either fix alone should remove this move's deep cut.
+  - §11 (c): the copy op's region gains the centres whose disc meets
+    the band, so the band is cut one Depth/Pass per level.
+  - The C31 free-edge item: op 1 takes the strip first, so the band is
+    not there.
+- P-CA1 and P-CA2 stand for §11 as designed. To keep them falsifiable,
+  §11 must be measured BEFORE the C31 free-edge item lands, or with it
+  absent. Otherwise the C31 item could pass them alone.
+- P-CA1, restated with the move: the deep samples of the copy op's
+  long containment-line cut (headon move 1421 / pick 1420 or its
+  successor at the same place) → 0. The copy op's axial peak ≤ 4.5 mm.
+
+**Op 1: the 12 mm samples are the slot's, not G-CLIPAIR's.**
+`op1_deep.py`, op-1 samples with axial engagement over 9.0 mm:
+
+| Run | over 9.0 | ... within ± 0.5 mm of op 1's line | wall distance p5 / p50 / p95 | levels |
+|---|---|---|---|---|
+| C38a (nibble, no slot) | 89 (peak 18.0) | 22 | 4.0 / 5.2 / 5.7 | Z 11, 5 |
+| D23 pick (slot) | 627 (peak 12.0) | 165 | 4.4 / 5.4 / 5.9 | Z 11, 5 |
+| D23 headon (slot) | 654 (peak 12.0) | 158 | — | Z 11, 5 |
+
+The D23 samples sit at the corridor's outer edge (median 5.2–5.4 mm
+from the wall), where the corridor loops ran. That is D9's reading: the
+strip openings met the strip's column at full height (23 − 11 = 12). My
+§11.1 row "158 / 165 at the containment line" counted those slot samples
+under G-CLIPAIR, which was wrong.
+
+With the slot removed (D24), op 1 returns to about the nibble's state:
+89 over 9.0 mm, 22 of them within ± 0.5 mm of the line.
+- **P-CA3, restated:** against the D24 run, not D23. Op 1's samples over
+  9.0 mm within ± 0.5 mm of its containment line fall to ≤ 10 % of their
+  D24 count (C38a, as a stand-in, has 22). If D24 has fewer than 10
+  there, P-CA3 is vacuous, and I report it so.
+- Op 1's other deep samples are the strip opening (C38a: peak 18 mm at Z
+  11 / 5, 89 in all). They are a strip-opening effect, not G-CLIPAIR, and
+  §11 is not predicted to change them by more than 10 %.
+
 ### 11.2 The fix (research arm only; shipped byte-identical)
 
 The boundary clear does two jobs, which the fix separates:
