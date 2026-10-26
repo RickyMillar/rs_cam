@@ -3388,3 +3388,36 @@ Shipped output stays byte-identical: with no field, every cell read is the read 
 - The cycle, against D31 (wanaka 2694 s, Corne 3011 s) and against D26 (wanaka 3513 s, Corne 3247 s).
 - P (load): the "an earlier pass above" over class falls by at least 1284 mm on wanaka (§17.4 item 3).
 - P (cost), stated as a test and not as a guess: if the wanaka cycle with the field rises to D26's 3513 s or more, then "load held" has cost the whole gain back. I report that as the result. I do not tune it away. The AgentSearch consumer is then the comparison for the cycle that the climb can keep.
+
+### 17.7 Stage 1 built; first test results (2026-10-27; both new tests RED as written)
+
+**Build (adaptive-head):**
+- `adaptive/slab_field.rs` (new): `SlabField`, the tip and the stock top on the 3D planner lattice, the tolerance and the cutter profile.
+- `AdaptiveParams.slab_field: Option<Arc<SlabField>>`: every literal passes `None`; `params_with` passes it on.
+- `material_grid.rs`: `attach_slab` at each place the grid is seeded (5 in `path.rs`, 1 in `research_geodesic.rs`).
+  - A stamp lowers the top of every cell under the cutter to `tip + h`. A cell's state changes only where the top reaches the cell's own tip plus the tolerance.
+  - The trial-cut log restores the tops.
+- `search.rs`: `compute_engagement`, `compute_engagement_arc`, the swept width and the area read `top > (tip + h) as f32` under a field. `lowest_tip_entry` seeds the starter at the lowest tip.
+- `Adaptive3dDepth.slab_field: Option<bool>`, `RS_CAM_RESEARCH_SLAB_FIELD = on | off` (default off). It acts only on the research arm and the AgentSearch slice (`effective_slab_field`); `research_slab_field` builds the field per level.
+- Gates: both clippy commands clean; `adaptive3d_emission_byte_parity` green (plain and research); the two Part A tests green.
+
+**One change from §17.3 that the slope test forced.** The read is strict: any stock over the tip counts. With the tolerance in the read (first run), the slope test kept 10 over samples. In each, an earlier pass stood 0.05–0.12 mm above the sample within R: a wedge thinner than the tolerance. The exact oracle and the simulation both read it. The tolerance stays only in the state rule (when a cell is done for its own centre).
+
+**Tests:**
+
+| | over the exact bound | moves | entries | under an earlier, higher pass |
+|---|---|---|---|---|
+| slope, spiral_pick, base | 172 | 911 | 24 | 1077 mm |
+| slope, spiral_pick, field | **0** | 3434 | **354** | 1658 mm |
+| slope, AgentSearch, base | 458 | 247 | 12 | 311 mm |
+| slope, AgentSearch, field | 403 | 292 | 12 | 273 mm |
+| shelf, oneway, base / field | 3 (+3 in the gap) / **1** (0 in the gap) | 2794 / 2862 | | |
+| shelf, spiral_pick, base / field | 7 (+2) / **1** (+1) | 1155 / 3488 | | |
+
+**Readings:**
+1. **The research arm holds the load on the slope, at a large cost.** 0 over, but 354 entries against 24 and 3.8× the moves. The arm does not climb: the clearing length under an earlier, higher pass rises (1077 → 1658 mm). The load is held by refusals (splits and re-entries), not by the wrap order. The lowest-tip seed is not enough. A wrap leaves the seed in all directions, and along its own path it descends on the far side.
+2. **Why a descent reads full width.** A cutter that moves DOWN its own path cuts, in the trailing half of its disc, the wedge between its tip and the tips of its own earlier positions. The simulation's radial woc and the exact oracle both read that as width across the whole disc (exact 0.99–1.0 on the base slope). The material is a layer only `slope × step` thick. So on terrain, every descending traverse reads as a slot. That is most of the slope base's 172 and probably much of wanaka's thin over-load (791 mm at 2 mm or less of axial engagement in D26). Whether such a layer is load is the §17.5 open point (a thickness-weighted load). It now decides how much the field must cost.
+3. **AgentSearch is not a fair "0 over" consumer.** The shipped slice plans to the historical measure, not to the exact bound. Its first move is a full-width slot at the HIGH end (x = 28, exact 1.000, no earlier pass), in the base and with the field. Its entry does not come from the starter, so the seed rule does not reach it. The field changes it little (458 → 403).
+4. **Shelf:** the floor-band overs fall from 3 and 7 to 1 per arm. The one left is the same in both arms: a cut out of a corner plunge at (30.46, −20.38) north into the pocket between the shelf end (x = 30) and the wall (x = 34) (`probe` in the test output). Its centre is barely reachable (3.55 from the wall, 3.95 from the shelf corner). It is not in the island gap.
+
+**The tests as written are RED:** the slope test (spiral_pick 0, but AgentSearch 403) and the shelf test (1 each). The asserts were pre-registered. I do not change them before the lead rules.

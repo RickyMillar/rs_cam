@@ -4720,3 +4720,14 @@ clean 3181ae54f: 31 files (1327+/112−) + the a_feed_cap test. No edit.
 - Hard bars: no fed-link or deeper-than line; depth-of-cut 12.0 mm
   (default) / 13.0 mm (stock_depth) Corne, 9.18 mm wanaka; no refusal.
 - Fixture worktree restored: clean 3181ae54f.
+
+D33 addendum (lead's references): the default plain C12 moves equal C12's
+D33 numbers exactly (oneway 2585, zigzag 966, v2 3128, spiral_pick 994,
+headon 3156). The slot-test departure change is expected: the departure
+windows join into one Cut, and the chain match feeds all 8 (the test
+asserts "fed by the exact match OR the chain match"). Departures on the
+fixtures, exact-unfed read with the chain line: Corne op 1 exact unfed
+851, chain steps 2409 fed 1322 unfed 422; copy op 169 / 397 / 383 / 14;
+wanaka (default) 497 / 1800 / 1468 / 70. The chain line pools slot and
+departure records; Corne op 1's slots read unfed 0, so the 422 left after
+both matches are most likely departures.
