@@ -3421,3 +3421,89 @@ Shipped output stays byte-identical: with no field, every cell read is the read 
 4. **Shelf:** the floor-band overs fall from 3 and 7 to 1 per arm. The one left is the same in both arms: a cut out of a corner plunge at (30.46, −20.38) north into the pocket between the shelf end (x = 30) and the wall (x = 34) (`probe` in the test output). Its centre is barely reachable (3.55 from the wall, 3.95 from the shelf corner). It is not in the island gap.
 
 **The tests as written are RED:** the slope test (spiral_pick 0, but AgentSearch 403) and the shelf test (1 each). The asserts were pre-registered. I do not change them before the lead rules.
+
+## 18. The load as chip area: one definition for planner and judge (design, 2026-10-27; no code)
+
+Operator ruling (2026-10-27): the load bound weights the engagement by axial depth. Load is the chip area (radial width × axial depth), against the area of a full pass at the bound. A thin bottom layer across the disc is a light load. A deep side cut is still held.
+
+Script: `phase3/fix22/c22/area_metric.py` (writes `area_metric.json`; the numbers in §18.5).
+
+### 18.1 The definition
+
+For a cutter of diameter D at a step, with tip `t`, heading `θ` and sideways axis `u`:
+
+- the engaged depth at a point `q` of the disc: `d(q) = max(0, top(q) - (t + h(|q - centre|)))`. `top` is the stock top there; `h` is the cutter profile. A non-gouging tip has `t + h >= part + leave` under the whole disc, so `d` counts stock only, never the part.
+- the chip area: `A = ∫ d_max(u) du` over the disc's sideways extent. `d_max(u)` is the deepest engaged depth on the chord at `u`.
+- **the load: `L = A / (D · DPP)`**, where DPP is the run's Depth/Pass.
+
+At full depth (`d = DPP` wherever stock stands), `A = w · DPP` and `L = w / D`: the swept width of today. **So the 2D rule (no field) is this definition with a constant depth, and its code stays as it is (byte parity).**
+
+**The bound, with no new number:**
+- The planner ceiling stays `c = 0.3626` (s 2, R 3), now as an area fraction: the area of a full pass at the commanded stepover. In mm²: `c · D · DPP` (6.53 mm² at DPP 3 in the C12 test; 11.88 at wanaka's 5.46; 13.05 at Corne's 6.0).
+- **The exact bound (0.471 today) becomes `c + (planner cell + tol + pitch) / D + tol / DPP`.**
+  - The first three terms are today's width quanta. At full depth they bound the area error divided by `D · DPP`.
+  - The last term is the depth read's own error: the planner's tip is the lattice drape, within the emitter's tolerance of the exact drape. That adds at most `D · tol` to `A`.
+  - Values: 0.504 at DPP 3 (C12 test); 0.488 at DPP 6 (the shelf and slope tests, Corne); 0.489 at DPP 5.46 (wanaka).
+- The simulation screen (0.546 today) gains the same `tol / DPP` term.
+
+### 18.2 The planner: every place that changes (all under an attached `SlabField`; with no field each keeps today's code)
+
+1. `SlabField` carries the run's DPP (one more argument; `research_slab_field` passes `ctx.depth_per_pass`).
+2. `search.rs::swept_width_on` (the swept width that `measure_step`, `PassLoad`, the capped walk and the direction search read):
+   - under a field it returns `L`;
+   - it bins the cells of the disc on the sideways axis at one planner cell, keeps the deepest `d` per bin, and sums the bins times the cell, over `D · DPP`;
+   - the `is_swept` stretch of the step reads as cut, as today.
+   - `PassLoad`'s ceiling, band and `step_within_pass_load` are unchanged: they compare a fraction with `c`.
+3. `search.rs::compute_area_per_mm` (research `AreaPerMm`): under a field, each new node weighs `cell² · d / DPP`. The reading is the volume per mm over `D · DPP`, the same fraction as `L` on a straight side cut.
+4. `compute_engagement` and `compute_engagement_arc` (AgentSearch's historical measures): under a field, each cell or arc point weighs `d / DPP` instead of 1.
+5. The readout and the records (`research_geodesic::pass_load_readout`, the turn, slot and departure records, `turn_feed_factor`) read through `measure_step`. Under a field their `swept` and `area` ARE `L`, with no code change. Consequence: a turn or a departure over a thin layer gets factor 1 (no lowered feed).
+6. Part A's `step_swept_width` (`adaptive3d/clearing.rs`, off by default since §16.14) reads a width. If Part A is ever turned on again, it must read `L` through the same function. Until then it is left as it is, and noted.
+7. The stamp and the state rule (§17.7) are unchanged.
+
+### 18.3 The judges (to agree with C18, who owns this side)
+
+1. **The exact oracle** (`exact_width_at` in `adaptive3d_geodesic_arm_c12.rs` and its 2D twin) becomes `exact_load_at`:
+   - a lattice of tops at the exact pitch, all starting at the stock top;
+   - EVERY earlier move lowers the tops under its capsule to its tip plus profile (today only moves at or below the level + 0.01 cut, as booleans: that 0.01 goes);
+   - the move itself lowers them up to `from`;
+   - at the sub-segment midpoint, `L` by §18.1 on the lattice.
+   - A move fails when its exact peak `L` is over the §18.1 exact bound.
+2. **The heavy C12 judge**: the screen reads the simulation's `woc · axial_engagement_mm / DPP` against the screen bound + `tol / DPP`; the exact oracle judges.
+   - The simulation gives the widest width and the deepest depth, not their integral, so this product is an upper bound on `L`: a wedge reads up to twice its area. It is a screen only, as the sim is today.
+3. **The fixture scripts** (`load_split.py`, the over-0.471 counts in P15, `drape_left.py`, `nearA_*.py`): a sample is over when `woc · ap / DPP` exceeds the bound. The width column is kept beside it for one build, so the change is visible.
+4. **Option for C18:** the dexel stamp already finds the fresh cells of the disc for its radial width (`dexel_stock/stamping.rs`). It could also sum their fresh depth per sideways bin and emit the exact `A`. The fixtures then read `L` itself, not the upper bound. That is a shared measurement change, C18's to decide.
+
+**One definition:** §18.1 is the text that the planner (`swept_width_on`), the exact oracle and the fixture scripts each cite. C18 and I agree it before any code.
+
+### 18.4 Strategies
+
+- The 2D engine reads (items 2–4) serve every slice consumer of the field: the research arm now, and AgentSearch, ContourSpiral and Adaptive when they adopt it.
+- The judges and the fixture scripts measure every strategy. **contour_parallel's fixture numbers move too, under the new metric.** The comparison baseline is re-read, not kept at its width value.
+- No shipped output changes: 2D operations and every shipped 3D strategy keep the width read until their own adoption step.
+
+### 18.5 Predictions
+
+**Fixtures, re-read under the area metric from the existing D26 and D31 simulations** (slot feeds out; `area_metric.json`; the sim upper bound, bound 0.471 / 0.471 + tol/DPP):
+
+| | width over 0.471 | area over 0.471 | area over the derived bound |
+|---|---|---|---|
+| wanaka D26 | 2222.8 mm | 866.7 | 782.5 |
+| wanaka D31 | 2812.8 | 976.5 | 886.8 |
+| Corne D26 | 774.2 | 453.7 | 445.5 |
+| Corne D31 | 694.6 | 370.9 | 366.2 |
+
+- **Wanaka's thin over-load goes, by the metric itself.** All 791.5 mm at ap ≤ 2 mm in D26 drop out: `L <= 2 / 5.46 = 0.366 < 0.471` whatever the width. What stays is the deep class (ap > 3 mm), 866.7 mm.
+- D31 against D26 becomes +12.7 % on wanaka (it was +26.5 %), and **−18 % on Corne** (it was −10 %).
+- With the field on and the planner reading `L`, the research arm meets only the deep class. P (D-run): wanaka area over falls below D26's 866.7 mm, and Corne's below D26's 453.7 mm.
+
+**Slope test** (DPP 6, slope 3/68):
+- A descending traverse meets a layer at most `slope · 2R = 0.26` mm thick across the disc: `L <= 0.26 / 6 = 0.044`, far under `c`. The field no longer refuses descents.
+- P: with the field, spiral_pick's entries come back to within 2× the base's 24, and its moves to within 2× the base's 911. The area over is 0.
+- P: the base's 172 width overs fall to under 10 % under the area judge (they are thin layers).
+- AgentSearch: field ≤ base, the lead's ruling (b). Its first slot at the high end is 2.63 mm deep (stock 10, tip 7.37): `L = 2.63 / 6 = 0.44`, under the bound 0.488. P: it is no longer over.
+
+**Shelf:**
+- The floor band beside the shelf is deep (from 4.5 up to 10), so the field still holds it, as in §17.7.
+- The corner case at (30.45, −16.11) is re-read under `L`. If it stays over, it becomes the stated class **"barely reachable at the level"**: its centre is 3.55 mm from the wall and 3.95 mm from the shelf corner, against `R + leave = 3.5`. The test reports it apart with those numbers, as the lead ruled (c).
+
+**What I do not predict:** the cycle with the field on the fixtures. P (cost, as §17.6): with descents no longer refused, the research arm's wanaka cycle stays under D26's 3513 s. If it reaches 3513 s, I report that as the result.

@@ -1,0 +1,40 @@
+{
+ "wanaka200 D26": {
+  "area over 0.471": 866.7,
+  "area over 0.489": 782.5,
+  "area over, ap > 3": 866.7,
+  "width over 0.471": 2222.8,
+  "width over, ap 2-3": 147.7,
+  "width over, ap <= 2": 791.5,
+  "width over, ap > 3": 1283.6
+ },
+ "wanaka200 D31": {
+  "area over 0.471": 976.5,
+  "area over 0.489": 886.8,
+  "area over, ap > 3": 976.5,
+  "width over 0.471": 2812.8,
+  "width over, ap 2-3": 256.4,
+  "width over, ap <= 2": 1133.9,
+  "width over, ap > 3": 1422.5
+ },
+ "corne D26": {
+  "area over 0.471": 453.7,
+  "area over 0.488": 445.5,
+  "area over, ap 2-3": 0.9,
+  "area over, ap > 3": 452.8,
+  "width over 0.471": 774.2,
+  "width over, ap 2-3": 34.9,
+  "width over, ap <= 2": 242.4,
+  "width over, ap > 3": 497.0
+ },
+ "corne D31": {
+  "area over 0.471": 370.9,
+  "area over 0.488": 366.2,
+  "area over, ap 2-3": 0.6,
+  "area over, ap > 3": 370.3,
+  "width over 0.471": 694.6,
+  "width over, ap 2-3": 46.6,
+  "width over, ap <= 2": 242.0,
+  "width over, ap > 3": 406.0
+ }
+}
