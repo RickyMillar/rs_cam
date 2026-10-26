@@ -1,0 +1,53 @@
+{
+ "corne spiral_headon D23": {
+  "program_plunge_feed_s": 554.0,
+  "summary_runtime_s": 1735.7,
+  "summary_cutting_s": 1628.7,
+  "summary_rapid_s": 107.0,
+  "per_kinematics_sum_s": 1628.7,
+  "samples_s": 1735.7,
+  "program_s": 1737.0,
+  "program_fed_s": 1628.7,
+  "program_rapid_s": 108.3,
+  "samples_retimed_at_program_feed_s": 1735.7,
+  "fed_moves_compared": 14624,
+  "sample_feed_below_program": 1680,
+  "sample_feed_above_program": 1,
+  "program_over_sample_feed_median": 1.0,
+  "runtime_by_intent_present": false
+ },
+ "wanaka200 spiral_headon D23": {
+  "program_plunge_feed_s": 1420.3,
+  "summary_runtime_s": 3372.5,
+  "summary_cutting_s": 3265.5,
+  "summary_rapid_s": 107.0,
+  "per_kinematics_sum_s": 6015.5,
+  "samples_s": 6033.3,
+  "program_s": 2737.7,
+  "program_fed_s": 2718.9,
+  "program_rapid_s": 18.9,
+  "samples_retimed_at_program_feed_s": 2736.6,
+  "fed_moves_compared": 18123,
+  "sample_feed_below_program": 12498,
+  "sample_feed_above_program": 209,
+  "program_over_sample_feed_median": 3.031,
+  "runtime_by_intent_present": true
+ },
+ "wanaka200 spiral_pick D23": {
+  "program_plunge_feed_s": 1418.9,
+  "summary_runtime_s": 3367.1,
+  "summary_cutting_s": 3260.0,
+  "summary_rapid_s": 107.1,
+  "per_kinematics_sum_s": 6010.4,
+  "samples_s": 6028.3,
+  "program_s": 2733.5,
+  "program_fed_s": 2714.6,
+  "program_rapid_s": 19.0,
+  "samples_retimed_at_program_feed_s": 2732.5,
+  "fed_moves_compared": 18068,
+  "sample_feed_below_program": 12477,
+  "sample_feed_above_program": 202,
+  "program_over_sample_feed_median": 3.062,
+  "runtime_by_intent_present": true
+ }
+}

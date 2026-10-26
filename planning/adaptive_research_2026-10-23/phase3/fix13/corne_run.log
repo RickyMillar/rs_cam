@@ -1,0 +1,4 @@
+tree = 3cc257c1f + D23 patch
+corne geodesic_local_spiral_headon rc=0 196s; Toolpaths: 2  |  Cutting: 85744mm  |  Rapid: 22565mm  |  Time: 3199s
+  disk free 77G
+RUNDONE

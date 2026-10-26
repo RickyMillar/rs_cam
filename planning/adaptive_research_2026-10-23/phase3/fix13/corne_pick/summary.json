@@ -1,0 +1,56 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 2,
+  "total_cutting_distance_mm": 74233.23961107737,
+  "total_rapid_distance_mm": 21766.613388071393,
+  "total_runtime_s": 2931.6385898932226,
+  "air_cut_pct_of_total_runtime": 50.75075290107672,
+  "air_cut_pct_of_cutting_time": 57.11128790078688,
+  "average_engagement": 0.20257933268285458,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 13279,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6221,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 50.75075290107672,
+    "headline": "WARNING: 50.8% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": "G-code export refused: tool load exceeded on toolpath(s):\n  toolpath 3: deflection=stiffness\nExceeded without refusing the export, because the bound does not gate one:\n  toolpath 1: depth of cut, peak 12.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source\n  toolpath 3: depth of cut, peak 12.0000 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source\nTo override (a known-dangerous override): MCP `accept_exceeded_tool_load: true`, CLI `--accept-exceeded-tool-load`, or the GUI pre-flight checkbox \"Accept EXCEEDED criteria\".",
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

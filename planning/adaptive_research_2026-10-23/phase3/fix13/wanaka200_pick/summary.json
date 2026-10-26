@@ -1,0 +1,50 @@
+{
+  "project": "wanaka200",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 89402.12162639092,
+  "total_rapid_distance_mm": 2980.808175160674,
+  "total_runtime_s": 3367.088754337577,
+  "air_cut_pct_of_total_runtime": 43.876603394956334,
+  "air_cut_pct_of_cutting_time": 45.31787166183431,
+  "average_engagement": 0.2269964646758445,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 1.0,
+    "mode": "fixed",
+    "source": "override",
+    "project_mm": 0.5
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "2 Back Rough",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 18962,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 43.876603394956334,
+    "headline": "WARNING: 43.9% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [
+      "G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.\n  toolpath 5: chipload: simulation trace is stale — re-run simulation\n  toolpath 5: power: simulation trace is stale — re-run simulation\n  toolpath 5: deflection: simulation trace is stale — re-run simulation\n  toolpath 5: depth of cut: simulation trace is stale — re-run simulation"
+    ],
+    "feeds_cautions": []
+  }
+}

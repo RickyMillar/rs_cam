@@ -1,0 +1,2 @@
+    Checking rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/crates/rs_cam_core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 46.57s

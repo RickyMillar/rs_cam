@@ -2644,6 +2644,18 @@ ceiling. The links show it first because a link has no load reading in 3D.
      - the held-link stock counter is 0;
      - no link move removes more than the volume quantum in the dexel simulation, the D22 bar's rule.
 
+### 14.3b Agreed with C12 (2026-10-26)
+
+- C12 makes no edit in the F-038 block or next to it. The block moves,
+  unchanged, into `filter_short_groups`.
+- C38's G-b judge reads the plan after the filter-and-replay loop, which
+  is the plan the region emits. It rolls back every research record the
+  region pushed.
+- The re-replay uses the cleanup's own turn list,
+  `research_turns = turns ++ slots`. Otherwise the second replay refuses
+  the corridor slots, their groups split and drop, and the strip comes
+  back.
+
 ### 14.4 Pre-registration (P; base D23 if it lands first, else D22 c38a)
 
 - **Corne copy op:**

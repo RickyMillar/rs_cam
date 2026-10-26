@@ -1,0 +1,4 @@
+tree = 3cc257c1f + D23 patch
+wanaka200 geodesic_local_spiral_pick rc=0 67s; Toolpaths: 1  |  Cutting: 89402mm  |  Rapid: 2981mm  |  Time: 3367s
+  disk free 76G
+RUNDONE

@@ -3995,3 +3995,101 @@ columns; reproduces the C38 note's D20 numbers).
   op 1 869 (2729.9 mm²), copy 1028 (1538.3 mm²).
 - After the run: `git checkout -- .`, research_outer_band.rs removed;
   `git status --short` empty at 3cc257c1f.
+
+## D23: the full stack (C38 parts 1–2, slot types, C37 stage 1) — gates green; fixtures
+
+Fixture worktree clean at 3cc257c1f; `git apply` of
+`phase3/d23/tree_vs_3cc257c1f.patch` (md5 1afb532bc11a4340bbe2a3c694f5ac5e;
+5 tracked files, 598+/81−, and the new research_outer_band.rs; saved as
+`d23/applied.diff`, unchanged to the end). Outputs `phase3/d23/`.
+
+| Step | Result |
+|---|---|
+| 1 fmt; 2–4 clippy core plain, core research, workspace heavy | green |
+| 5, 6 byte parity plain, research | green 5/5 each; outputs identical but for timing |
+| 7 `--lib adaptive::research_geodesic` | green 24, 2 ignored |
+| 8 2D harness | green; 189 rewritten files byte-equal to D21c |
+| 9 plain C12 | green; old modes identical to D21c apart from the new c37 / hand-off lines |
+| 10 heavy C12 | green (225.73 s); spiral_headon 0 over the exact bound; cores 0 / 0 |
+| 11 f152 | green |
+| 12 the 13 adaptive3d sentries | green |
+
+Step 9, 2D re-entries by join: spiral_headon 18 {CoreHandOff 1, Mixed 1,
+OverBound 8, Turn 8}; spiral_pick 32 {CoreHandOff 1, Mixed 2, OverBound
+10, Turn 19}. Entries: headon 24, spiral_pick 43. Heavy: headon 6407
+moves, entry samples 383 (spiral_pick 585).
+
+**Step 13 runs** (`phase3/fix13/run_fix13.sh`; the D23 build;
+`RUST_LOG=info,rs_cam_core::adaptive3d::clearing=debug`, `--sim-artifact`):
+fix13/corne (headon) rc 0; fix13/corne_pick (spiral_pick) **rc 1, export
+refused**: "G-code export refused: tool load exceeded on toolpath(s):
+toolpath 3: deflection=stiffness" (log: peak_um=200.476); no program.nc;
+fix13/wanaka200 (headon) rc 0; fix13/wanaka200_pick rc 0. Scripts:
+`d23_log.py` (log lines; pick runs count the kept plan only, split by the
+per-plan "F-038: dropped short cut groups" marker, or equal corridor
+halves; every block split), `entries_d23.py`, `stockmap_d23.py`,
+`bands_d23.py`, `classify_d23.py`, `c39_d23.py` (copies of the d22 /
+fix12 scripts; each reproduces its D20 reference), fix11/audit.py.
+
+| | D20 | C35 | D23 headon | D23 pick |
+|---|---|---|---|---|
+| Corne descents (audit) | 1236 | 1118 | 1209 | — (no program.nc) |
+| Corne lift-over descents (entries.py) | 1195 | 1076 | 1093 | 1010 |
+| Corne plunge-entry spans | 60 | 60 | 74 | 67 |
+| Corne planar turns > 30° | 1074 | 1063 | 1468 | — |
+| Corne plunge share, program clock | 37.5 % | 33.7 % | 31.9 % | — |
+| Corne cycle time | 2760 s | 2757 s | 3199 s | 2932 s |
+| Corne 3–9 mm band (mm²) | 1951 | 1951 | 455 | 455 |
+| wanaka descents (audit) | 3412 | 2031 | 2035 | 2031 |
+| wanaka lift-over descents (entries.py) | 3578 | 2016 | 2016 | 2016 |
+| wanaka plunge-entry spans | 20 | 20 | 20 | 20 |
+| wanaka planar turns > 30° | 221 | 188 | 183 | 177 |
+| wanaka plunge share, program clock | 60.8 % | 51.8 % | 51.9 % | 51.9 % |
+| wanaka cycle time | 4832 s | 3366 s | 3372 s | 3367 s |
+
+Bands, Corne (outside the silhouette, mm² over 0.8 mm), D23 headon = pick:
+0–1.5 443, 1.5–3 230, 3–4.5 233, 4.5–6 96, 6–9 126 (C38a 794 for 3–9).
+
+C37 re-entries (kept plan): Corne headon 120 {ClosedSeam 6, CoreHandOff 1,
+Mixed 16, OverBound 55, Turn 42}, by z 36 / 28 / 28 / 28 (Z 17 / 11 / 5 /
+0.5); pick 161 {ClosedSeam 1, CoreHandOff 4, Mixed 22, OverBound 44, Turn
+90}, 38 / 41 / 41 / 41. Corne headon by place: inside the silhouette 84,
+outside 3–4.5 1, 4.5–6 23, beyond the mesh bbox 12 (pick 123 / 1 / 24 /
+13). wanaka headon 164 {Mixed 1, OverBound 153, Start 1, Turn 9}; pick 163
+{OverBound 153, Start 1, Turn 9}; 54 per level at Z 19.54 / 14.08 / 8.62.
+C35b hand-off: Corne Z 17 (1 re-entry) and Z 11 / 5 / 0.5 (2 each in
+headon, 1 each in pick); wanaka Z 19.54 / 14.08 / 8.62 (0 re-entries,
+"raw over none").
+
+§3.4 and §3.6:
+1. op 1 region=1 at Z 11 / 5 / 0.5: "grown, no sweep". Holds.
+2. No "F-038: skipping micro-region" line in any run. G-b: Corne none;
+   wanaka Z 4.0 region 2 (planned_mm -0.0).
+3. Copy op, P-C1 **fails**: all 12 copy openings "grown, no sweep", and
+   the copy op has 12 corridor openings (1 per region per level, about
+   120–129 mm each).
+4. Slot records with their feeds: no CLI or test line prints them; not
+   checked.
+5. 3–9 mm band 455 (P ≤ 321) **fails**. Z 17 outer descents beyond the
+   mesh bbox: headon 18, pick 14 (P-B1 ≤ 5 **fails**); on the grid headon
+   101 (P-B2 59–99 **fails**), pick 87 (holds).
+6. Parity and sentries green.
+- P-O1: openings at Z 11, 5, 0.5 in op 1 region 1: yes, but 4 per level,
+  not 1. P-O2: each opening loops=1; cut 578–579 mm per level against P
+  890 ± 15 % (757–1024): **fails**. P-O3: no other op 1 opening.
+- P-W1: no opening at Z 19.54 / 14.08 / 8.62: holds. P-W2: the one
+  opening (38 slot steps, 27.0 mm, centre 17.0 mm²) follows the Z 4.0
+  region 1 line ("shortfall inset split: shipped sweep"), not region 2:
+  **fails** as written. P-W3: 27.0 mm ≤ 1874: holds.
+
+Hard bars: collisions 0 in all four. Corne headon and pick add a triage
+line "crosses standing material deeper than this pass was planned to cut:
+3.5 % (pick 3.6 %) of cutting samples remove more than the commanded 3.00
+mm depth per pass by over 0.300 mm, peaking at 9.00 mm (pick 12.00 mm)"
+and non-gating depth-of-cut advisories (op 1 peak 12 mm against 9; copy
+op 9 / 12 mm against 4.5). Corne pick: export refused on the copy op's
+deflection (above). Islands: Corne headon op 1 847 (2237.3 mm²), copy 1015
+(1105.1 mm²). wanaka: no island, gouge or advisory line.
+
+After the runs: `git checkout -- .`, research_outer_band.rs removed;
+`git status --short` empty at 3cc257c1f.
