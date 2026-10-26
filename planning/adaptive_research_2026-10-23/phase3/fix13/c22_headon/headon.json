@@ -1,0 +1,55 @@
+{
+ "headon": {
+  "descents_1mm": 1273,
+  "removing": 1093,
+  "removing_by_before": {
+   "clearing_cut": 1091,
+   "linking": 2
+  },
+  "air_by_before": {
+   "clearing_cut": 148,
+   "linking": 32
+  },
+  "removing_on_plane": 419,
+  "moves": 15261,
+  "moves_by_intent": {
+   "linking": 3209,
+   "entry_plunge": 1772,
+   "retract": 488,
+   "clearing_cut": 9792
+  },
+  "turns_over_30": {
+   "clearing_cut -> clearing_cut": 583,
+   "linking -> clearing_cut": 113,
+   "clearing_cut -> linking": 91,
+   "linking -> linking": 12
+  },
+  "linking_xy_mm": 11948.1,
+  "reentries_2d": 120,
+  "removing_at_a_2d_reentry": 188
+ },
+ "pick": {
+  "descents_1mm": 1012,
+  "removing": 1010,
+  "removing_by_before": {
+   "clearing_cut": 1010
+  },
+  "air_by_before": {
+   "clearing_cut": 2
+  },
+  "removing_on_plane": 379,
+  "moves": 13267,
+  "moves_by_intent": {
+   "linking": 2315,
+   "entry_plunge": 1514,
+   "retract": 498,
+   "clearing_cut": 8940
+  },
+  "turns_over_30": {
+   "clearing_cut -> clearing_cut": 480,
+   "clearing_cut -> linking": 12,
+   "linking -> clearing_cut": 4
+  },
+  "linking_xy_mm": 5397.5
+ }
+}

@@ -2668,3 +2668,74 @@ ceiling. The links show it first because a link has no load reading in 3D.
 - **wanaka200:** entries within ±1 %, cycle within ±1 %. The filter drops few groups there.
 - **The replay rounds:** at most 2 per outline on both fixtures. More than 3 means the filter and the replay feed each other, and I report it.
 - **If the counter is > 0 after the fix:** a third divergence exists. Then I add the emission guard of §9.5 item 1, with its own count.
+
+### 13.9 D23: the stage-1 result explained (2026-10-26)
+
+Read only. Scripts are in `phase3/fix13/c22_headon/`: `headon.py` and
+`time_split.py`, then `assert_13_9.py`, which asserts every number below.
+The base for the head-on arm is **D23 spiral_pick** (the same build), not
+C35. The D23 build also holds C38.
+
+**1. The 2D re-entries fell; the 3D descents did not.**
+
+| Corne op 1 | D23 pick | D23 headon |
+|---|---|---|
+| 2D re-entries (C37, kept plan) | 161 | 120 |
+| keep-down descents ≥ 1 mm that remove stock | 1010 | 1093 |
+| keep-down descents ≥ 1 mm through air | 2 | 180 |
+| keep-down link XY length | 5397.5 mm | 11 948.1 mm |
+
+- Of the 1093 head-on descents, only **188** lie within R of a 2D re-entry
+  at their level. The other ~905 come from the 3D stage, not from the 2D
+  plan. They are the drape and large-Z splits over the part's top faces,
+  as on wanaka (§12.8). Only 419 of the 1093 end on a level plane.
+- So my §13.6/13.7 pre-registration counted the wrong thing. It assumed
+  that one 3D descent is one 2D re-entry. On Corne the 2D re-entries are
+  at most about 1 in 6 of the descents (188 / 1093); on wanaka about 1 in
+  12 (164 / 2016).
+- **Why the head-on arm has more descents:** the head-on rule starts each
+  arc at its lens end. When the straight step from the cutter does not
+  fit, the zigzag join takes the C23 one-way return. That is a keep-down
+  link back along the arc just cut, one link per vertex, split at the
+  planner cell. This adds 6.55 m of keep-down link on Corne. Where the
+  return or the turn after it crosses a part face above the level, the 3D
+  stage lifts it and drops again: +178 descents through air, and +83 that
+  remove stock. I did not prove which return makes which descent; the
+  link length and the air descents are measured.
+
+**2. Plunge-entry spans:** 74 against 67 (D23 pick) and 60 (C35). The
+C35 → D23 pick rise of +7 is C38's band and corridor openings. The head-on
+rule adds 7 more. I did not split those 7.
+
+**3. Smoothness:** the planar turns over 30°, read at the move junctions
+of the simulation samples, coarser than the G-code audit:
+- head-on 799 against pick 496 (+303);
+- of those, junctions that touch a link move: 216 against 16 (+200). These are the returns: each one reverses at the arc end and turns again at its own end.
+- clearing to clearing: +103.
+The G-code audit's 1468 against 1063 (C35) shows the same rise. So the
+head-on rule as built makes the path less smooth, through its returns.
+
+**4. Cycle time (Corne, simulated, by op and intent):**
+- C35 → D23 pick: +174.6 s. Op 1 is +16.5 s; the copy op is +158.1 s. That is C38's band and corridor cutting, nearly all in the copy op.
+- D23 pick → D23 headon: +266.9 s, all in op 1 (the copy op differs by 0.5 s):
+  - link time +127.7 s (the returns);
+  - plunge time +78.3 s (the air and stock descents);
+  - cut time +59.3 s.
+- So of the 3199 s against 2757 s, about 175 s is C38 and about 267 s is the head-on rule.
+
+**5. wanaka: no change.** 153 of its 164 2D re-entries are OverBound, 54 at
+each of Z 19.54, 14.08 and 8.62. They are the open arcs in the block's
+corners, outside the core disc of r 97.4, where the level sets meet the
+walls at about 45°. So the arc ends lie `Δ/cos θ` apart, over the bound.
+The head-on rule does not touch that mechanism. The 2016 descents are
+the 3D stage's hops of §12.8, the same in both runs.
+
+**What this means for stage 2 (the fed bridge):**
+- The bridge removes OverBound and Outside 2D re-entries: Corne 55, wanaka 153 at most.
+  - On Corne, each 2D re-entry carries about 1.6 descents near it (188 / 120). So the bridge can remove at most about 90 of the 1093.
+  - On wanaka at most about 153 of the 2016.
+  - The §13.7 targets (341 → 40–95 after stage 2) are therefore out of reach by the bridge. They assumed 2D re-entries are the descents.
+- The large share of descents is the 3D stage's: the drape and large-Z splits and their lift-overs. A bridge in the 2D plan cannot remove them.
+- **My recommendation:**
+  1. Do not build stage 2 yet. First an instrument on the 3D stage: each 3D descent with the cause that made it (the 2D re-entry, the large-Z split of a draped cut, the C26b lift of a held link, the air split, F-038). The same per-cause count that C37 stage 1 gave for the 2D plan.
+  2. Do not keep the head-on rule always on as built. It removed 41 2D re-entries and cost 267 s, 180 air descents and about 300 sharp turns, through the one-way returns. Either keep the C29 3D-scored pick, which chose plan A almost everywhere on Corne, or keep the head-on start without the per-vertex return (the turn from the cutter only). That variant is a question for the lead.

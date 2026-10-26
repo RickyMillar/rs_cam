@@ -1,0 +1,35 @@
+{
+ "C35 pick": {
+  "tp1 clearing_cut": 733.6,
+  "tp1 entry_plunge": 487.4,
+  "tp1 linking": 208.0,
+  "tp1 retract": 22.7,
+  "tp3 clearing_cut": 1073.5,
+  "tp3 entry_plunge": 35.8,
+  "tp3 linking": 132.7,
+  "tp3 retract": 63.3,
+  "total": 2757.0
+ },
+ "D23 pick": {
+  "tp1 clearing_cut": 754.3,
+  "tp1 entry_plunge": 473.2,
+  "tp1 linking": 215.7,
+  "tp1 retract": 25.2,
+  "tp3 clearing_cut": 1170.9,
+  "tp3 entry_plunge": 60.9,
+  "tp3 linking": 164.0,
+  "tp3 retract": 67.5,
+  "total": 2931.6
+ },
+ "D23 headon": {
+  "tp1 clearing_cut": 813.6,
+  "tp1 entry_plunge": 551.5,
+  "tp1 linking": 343.4,
+  "tp1 retract": 27.2,
+  "tp3 clearing_cut": 1170.4,
+  "tp3 entry_plunge": 60.9,
+  "tp3 linking": 164.0,
+  "tp3 retract": 67.5,
+  "total": 3198.5
+ }
+}
