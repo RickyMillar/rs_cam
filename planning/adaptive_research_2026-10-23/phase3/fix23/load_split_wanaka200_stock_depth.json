@@ -1,0 +1,10 @@
+{
+ "fix23/stock_depth/wanaka200": {
+  "base_feed": 1000,
+  "over_0.471_mm": 2864.0,
+  "near A's steps": 2038.8,
+  "other": 775.3,
+  "slot moves": 8.3,
+  "turn moves": 41.6
+ }
+}

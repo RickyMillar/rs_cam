@@ -4592,7 +4592,7 @@ refused 1327 / 12; wanaka tried 2501, taken 1, refused 2260).
 - Disk: 72 → 40 GB free during D30 (the fixture worktree target is 36 GB
   after the viz build). Fixture worktree restored: clean 3181ae54f.
 
-## D31: D30 + C22 §16.11 (width-read descent fix, shelf test) — gates green (known tabs red); fixtures fix22_d31 (cut_feed; moved from fix22 for D32)
+## D31: D30 + C22 §16.11 (width-read descent fix, shelf test) — gates green (known tabs red); fixtures fix22 (cut_feed)
 
 Before the build: `cargo clean -p rs_cam_viz` in the fixture worktree
 (lane) removed 1814 files, 25.7 GiB; target 36 → 10 GB; free 40 → 65 GB.
@@ -4611,7 +4611,7 @@ clean 3181ae54f: 29 files (550+/64−) + the a_feed_cap test. No edit.
   base 1141 / 7 over (0.994) → 1090 / **9 over samples** (0.988). The test
   asserts on over moves, not samples.
 
-**Fixtures** (cut_feed; `fix22_d31/run_fix22.sh`):
+**Fixtures** (cut_feed; `fix22/run_fix22.sh`):
 
 | | Corne D26 | Corne D30 | Corne D31 | wanaka D26 | wanaka D30 | wanaka D31 |
 |---|---|---|---|---|---|---|
@@ -4639,4 +4639,84 @@ clean 3181ae54f: 29 files (550+/64−) + the a_feed_cap test. No edit.
   10938, → 17.951 / 17.619 / 17.573).
 - Hard bars: rapid collisions 3; no fed-link or deeper-than line;
   depth-of-cut advisories 13.0 mm (Corne), 9.18 mm (wanaka); no refusal.
+- Fixture worktree restored: clean 3181ae54f.
+
+## D32: D31 + C12 departures + C22 probes — gates green (known tabs red); fixtures skipped (lead)
+
+`d32/tree_vs_3181ae54f.patch` (md5 8d6224a1d3553a0e438e1ab8f1f888f6) on a
+clean 3181ae54f: 31 files (1206+/100−) + the a_feed_cap test. No edit.
+- Green: fmt; clippy plain / research / workspace; parity 5/5, 5/5;
+  research_geodesic 26 / 2; harness byte-equal to D31; f152; 13 adaptive3d
+  sentries; dressup sentries except the known pre-existing tabs red (9 / 1);
+  cli 92 passed.
+- Plain C12 green: only move counts change against D31 (oneway 2565 →
+  2905, zigzag 940 → 1344, v2 3116 → 3392, spiral_pick 969 → 1331, headon
+  3145 → 3379); entries, C40, turns and openings unchanged.
+- Heavy C12 green (232.69 s): G1 0 over; moves oneway 5943, zigzag 2801,
+  v2 6933, spiral_pick 2767, headon 6899; curv 4 → 6 over (0.994,
+  attribution only), split 2.
+- Slot test green: "departure records 8 (reduced 8), fed 8, unfed 0";
+  "8 moves on departure windows"; "444 samples on slot moves, 0 over".
+- Draped-step A test green (0 over in six arms). Shelf test green: oneway
+  made 37 by width, base 6 over / A 6 over (0.994); spiral_pick made 68,
+  base 9 over / A 11 over samples (12 over the screen).
+- Fixtures skipped by the lead (D33 follows). Fixture worktree restored:
+  clean 3181ae54f.
+
+## D33: D32 + C22's step-split switch (default path rule) + C12's §15.8 departure groups — gates green (known tabs red); fixtures fix23
+
+`d33/tree_vs_3181ae54f.patch` (md5 700a64ed3c57006f1dc561ce5601a104) on a
+clean 3181ae54f: 31 files (1327+/112−) + the a_feed_cap test. No edit.
+- Green: fmt; clippy ×3; parity 5/5, 5/5; research_geodesic 26 / 2;
+  harness byte-equal to D32; f152; 30 sentries but the known tabs red; cli
+  92. Plain C12 moves within C12's P (D31 + 2 per entry): oneway 2585,
+  zigzag 966, v2 3128, spiral_pick 994, headon 3156; entries and C40 as
+  D27 v3 (LargeZ back). Heavy green: G1 0 over; curv 6, split 2. Draped-step
+  A test green; shelf test green (spiral_pick 9 → 11 over samples).
+- **Slot test (green) changed:** "departure records 8 (reduced 8), fed 0,
+  unfed 8" and "2 moves on departure windows" (D32: fed 8, unfed 0; 8
+  moves); "slot chains 2 steps 8 reduced 8 fed 8 unfed 0 lowered 2 …".
+
+**Fixtures** (`fix23/run_fix23.sh`; router CutFeed in both columns):
+
+| | Corne D26 | D31 | D33 default | D33 stock_depth | wanaka D26 | D31 | D33 default | D33 stock_depth |
+|---|---|---|---|---|---|---|---|---|
+| cycle | 3247 | 3011 | 3165 | 3039 | 3513 | 2694 | 3403 | 2708 |
+| over 0.471 (mm) | 780.8 | 1065.9 | 1044.1 | 1058.8 | 2225.3 | 2856.0 | 2558.4 | 2864.0 |
+| thick over | 399.1 | 661.8 | 676.0 | 657.1 | 463.3 | 538.1 | 531.5 | 537.3 |
+| lift-over descents | 1112 | 802 | 1019 | 802 | 2016 | 1163 | 1967 | 1163 |
+| descents (audit) | 1164 | 845 | 1065 | 845 | 2035 | 1156 | 1961 | 1156 |
+| plunge entries | 65 | 62 | 62 | 62 | 20 | 19 | 19 | 19 |
+| plunge share | 34.8 % | 24.7 % | 28.6 % | 24.3 % | 48.4 % | 41.6 % | 48.0 % | 41.3 % |
+| turns > 30° | 3027 | 1382 | 1094 | 1397 | 186 | 912 | 370 | 916 |
+
+- Load split (default / stock_depth): Corne near A 498.9 / 514.2, slot
+  moves 387.6 / 387.6, turns 26.5, other 131.1 / 130.5; wanaka near A
+  1759.6 / 2038.8, slots 5.8 / 8.3, turns 34.9 / 41.6, other 758.2 / 775.3.
+- Feed check: Corne capped turns 0 above the cap; strip over 0.369 at F ≥
+  3999: **30** (D31 87; P ≤ 1 fails); over 0.219: 48. wanaka: 0 real
+  breaks (3 false-match helix samples, sample feed 1000).
+- Departures ("C22 turn summary kind=departures"): Corne op 1 cut 2537,
+  fed 128, unfed 851, full_feed_unmatched 1558, reduced 947 (default;
+  stock_depth 126 / 852 / 1559); copy op cut 397, fed 0, unfed 169,
+  full_feed_unmatched 228; wanaka cut 2178, fed 378 / 286, unfed 497 / 508,
+  full_feed_unmatched 1303 / 1384. "C22 turn not fed kind=Departure" lines:
+  Corne op 1 1087 per column.
+- Slot chains: Corne op 1 loops 184, steps 2409, fed 1322, unfed 422,
+  lowered 135; copy loops 13, steps 397, fed 383, unfed 14; wanaka loops
+  236 / 200, steps 1800 / 1892, unfed 70 / 52. Feed caps: Corne op 1
+  exact 2218 chain 135; copy 2452 / 54; wanaka 130 / 138 (125 / 148).
+- Step split (stock_depth only): Corne made 1630, width 1630, avoided 897;
+  wanaka made 2505, width 2007, avoided 2262. Default: no line.
+- Probes at (91.3, −1.13), default column: "C22 start cell probe z=11.0
+  x=91.298 y=-1.128 entry_z=11.000 top=23.000 cell_x=89.814 cell_y=1.684
+  centre_top=Some(17.330778121948242) touches=3"; z=5.0 "top=17.119 …
+  centre_top=Some(14.976056098937988) touches=4"; z=0.5 "top=17.073 …
+  centre_top=Some(11.26547908782959) touches=5"; "C22 short cut probe
+  z=11.0 points=2 xy_len=0.0952 x=91.393 y=-1.121 z_lo_raw=11.000
+  z_hi_raw=11.000 stamped=true tool_z=Some("11.000")". Rapid collisions:
+  **default 2** (moves 8528 / 11619 → 17.619 / 17.573; the Z 11 one is gone,
+  its floor_top now 23.0); **stock_depth 3** (as D31).
+- Hard bars: no fed-link or deeper-than line; depth-of-cut 12.0 mm
+  (default) / 13.0 mm (stock_depth) Corne, 9.18 mm wanaka; no refusal.
 - Fixture worktree restored: clean 3181ae54f.

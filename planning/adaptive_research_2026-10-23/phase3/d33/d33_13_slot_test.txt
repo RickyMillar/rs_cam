@@ -1,0 +1,12 @@
+
+running 1 test
+channel opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.5500, shortfall inset 0.0000, measured after 0.5500; closing excess -0.00 mm2 of 56.65 allowed
+channel opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.5500, shortfall inset 0.0000, measured after 0.5500; closing excess -0.00 mm2 of 56.65 allowed
+channel: slots planned 120, slot records 116; 167 moves, 8 entries
+channel: half width 4.800 mm; slot chains 2 steps 8 reduced 8 fed 8 unfed 0 lowered 2 out of run 0 lowest 0.309 longest move 3.955 mm
+channel: departure records 8 (reduced 8), fed 0, unfed 8
+channel: 2 moves on departure windows
+channel: 444 samples on slot moves, 0 over the screen at the full feed
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.51s
+

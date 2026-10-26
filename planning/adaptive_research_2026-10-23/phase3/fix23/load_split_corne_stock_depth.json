@@ -1,0 +1,10 @@
+{
+ "fix23/stock_depth/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1058.8,
+  "near A's steps": 514.2,
+  "other": 130.5,
+  "slot moves": 387.6,
+  "turn moves": 26.5
+ }
+}

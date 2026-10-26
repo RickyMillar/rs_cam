@@ -1,0 +1,10 @@
+{
+ "fix23/default/wanaka200": {
+  "base_feed": 1000,
+  "over_0.471_mm": 2558.4,
+  "near A's steps": 1759.6,
+  "other": 758.2,
+  "slot moves": 5.8,
+  "turn moves": 34.9
+ }
+}

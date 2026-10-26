@@ -1,0 +1,10 @@
+{
+ "fix23/default/corne": {
+  "base_feed": 4000,
+  "over_0.471_mm": 1044.1,
+  "near A's steps": 498.9,
+  "other": 131.1,
+  "slot moves": 387.6,
+  "turn moves": 26.5
+ }
+}

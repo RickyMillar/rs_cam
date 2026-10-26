@@ -1,0 +1,398 @@
+
+running 1 test
+geodesic_local_oneway shelf: step split made 37 (by width 37), avoided 24, max ap avoided 5.500 mm
+geodesic_local_oneway shelf, path-shape base: geodesic_local_oneway: 2794 moves, 5957 judged at levels {45, 46, 47, 49, 50, 52, 70, 105} (Z x 10), 6 over the screen 0.546 (sim peak 0.844), 6 over the exact bound 0.471 (exact peak 0.994); entry 1062, vertical 1020, departing 1113, waterline 728 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 144 (30 over the screen, sim peak 0.873)
+  geodesic_local_oneway base over: move 2123 ClearingCut at (20.89, -16.07, 4.50) wall distance 7.93: sim radial 0.604, exact peak of the move 0.638
+  geodesic_local_oneway base over: move 2270 ClearingCut at (24.76, -16.07, 4.50) wall distance 7.93: sim radial 0.581, exact peak of the move 0.636
+  geodesic_local_oneway base over: move 2417 ClearingCut at (28.68, -16.07, 4.50) wall distance 5.32: sim radial 0.561, exact peak of the move 0.631
+  geodesic_local_oneway base over: move 2597 ClearingCut at (8.10, 3.56, 4.50) wall distance 3.84: sim radial 0.701, exact peak of the move 0.833
+  geodesic_local_oneway base over: move 2598 ClearingCut at (8.42, 2.71, 4.50) wall distance 3.84: sim radial 0.844, exact peak of the move 0.994
+  geodesic_local_oneway base over: move 2599 ClearingCut at (8.53, 1.46, 4.68) wall distance 3.66: sim radial 0.836, exact peak of the move 0.991
+geodesic_local_oneway: 2740 moves, 6114 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 54, 55, 56, 58, 59, 60, 63, 64, 65, 68, 69, 70, 105} (Z x 10), 6 over the screen 0.546 (sim peak 0.870), 6 over the exact bound 0.471 (exact peak 0.994); entry 831, vertical 773, departing 988, waterline 728 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 144 (30 over the screen, sim peak 0.873)
+  geodesic_local_oneway screened: move 2083 ClearingCut at (20.89, -16.07, 4.50) wall distance 7.93: sim radial 0.604, exact peak of the move 0.638
+  geodesic_local_oneway screened: move 2228 ClearingCut at (24.76, -16.07, 4.50) wall distance 7.93: sim radial 0.581, exact peak of the move 0.636
+  geodesic_local_oneway screened: move 2375 ClearingCut at (28.68, -16.07, 4.50) wall distance 5.32: sim radial 0.561, exact peak of the move 0.631
+  geodesic_local_oneway screened: move 2549 ClearingCut at (8.10, 3.56, 4.50) wall distance 3.84: sim radial 0.701, exact peak of the move 0.833
+  geodesic_local_oneway screened: move 2550 ClearingCut at (8.42, 2.71, 4.50) wall distance 3.84: sim radial 0.870, exact peak of the move 0.994
+  geodesic_local_oneway screened: move 2551 ClearingCut at (8.53, 1.46, 4.68) wall distance 3.66: sim radial 0.836, exact peak of the move 0.991
+  geodesic_local_oneway probe move 2083 at (20.89, -16.07, 4.50):
+    2071 ClearingCut feed 1000 to (12.866, 13.117, 7.000) xy 2.541
+    2072 ClearingCut feed 1000 to (12.175, 15.117, 7.000) xy 2.116
+    2073 Linking feed 1000 to (12.175, 15.117, 10.500) xy 0.000
+    2074 Linking feed 1000 to (12.043, 15.416, 10.500) xy 0.327
+    2075 EntryPlunge feed 500 to (12.043, 15.416, 4.919) xy 0.000
+    2076 ClearingCut feed 1000 to (11.952, 15.617, 4.500) xy 0.221
+    2077 ClearingCut feed 1000 to (10.543, 18.060, 4.500) xy 2.820
+    2078 ClearingCut feed 1000 to (8.921, 20.117, 4.500) xy 2.620
+    2079 Linking feed 1000 to (8.921, 20.117, 10.500) xy 0.000
+    2080 Linking feed 1000 to (19.854, -20.383, 10.500) xy 41.950
+    2081 EntryPlunge feed 500 to (19.854, -20.383, 4.500) xy 0.000
+    2082 ClearingCut feed 1000 to (20.630, -17.383, 4.500) xy 3.099
+    2083 << ClearingCut feed 1000 to (20.926, -15.883, 4.500) xy 1.529
+    2084 ClearingCut feed 1000 to (21.011, -15.383, 5.087) xy 0.507
+    2085 Linking feed 1000 to (21.011, -15.383, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 5 above it, 1 across or below it; the last eight:
+      2004 ClearingCut (17.96, -20.38, 4.50) to (19.08, -15.88, 4.50)
+      2005 ClearingCut (19.08, -15.88, 4.50) to (19.17, -15.38, 5.09)
+      2006 Linking (19.17, -15.38, 5.09) to (19.17, -15.38, 10.50)
+      2007 Linking (19.17, -15.38, 10.50) to (19.26, -14.88, 10.50)
+      2008 EntryPlunge (19.26, -14.88, 10.50) to (19.26, -14.88, 7.00)
+      2009 ClearingCut (19.26, -14.88, 7.00) to (19.61, -11.88, 7.00)
+      2080 Linking (8.92, 20.12, 10.50) to (19.85, -20.38, 10.50)
+      2082 ClearingCut (19.85, -20.38, 4.50) to (20.63, -17.38, 4.50)
+
+  geodesic_local_oneway probe move 2228 at (24.76, -16.07, 4.50):
+    2216 ClearingCut feed 803 to (17.202, 8.617, 7.000) xy 2.179
+    2217 ClearingCut feed 1000 to (16.973, 12.117, 7.000) xy 3.508
+    2218 ClearingCut feed 1000 to (16.245, 15.117, 7.000) xy 3.087
+    2219 Linking feed 1000 to (16.245, 15.117, 10.500) xy 0.000
+    2220 Linking feed 1000 to (16.073, 15.617, 10.500) xy 0.529
+    2221 EntryPlunge feed 500 to (16.073, 15.617, 4.500) xy 0.000
+    2222 ClearingCut feed 1000 to (15.043, 17.968, 4.500) xy 2.566
+    2223 ClearingCut feed 1000 to (13.755, 20.117, 4.500) xy 2.506
+    2224 Linking feed 1000 to (13.755, 20.117, 10.500) xy 0.000
+    2225 Linking feed 1000 to (23.819, -20.383, 10.500) xy 41.732
+    2226 EntryPlunge feed 500 to (23.819, -20.383, 4.500) xy 0.000
+    2227 ClearingCut feed 1000 to (24.523, -17.383, 4.500) xy 3.081
+    2228 << ClearingCut feed 1000 to (24.793, -15.883, 4.500) xy 1.524
+    2229 ClearingCut feed 1000 to (24.871, -15.383, 5.087) xy 0.506
+    2230 Linking feed 1000 to (24.871, -15.383, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 5 above it, 1 across or below it; the last eight:
+      2166 ClearingCut (21.81, -20.38, 4.50) to (22.83, -15.88, 4.50)
+      2167 ClearingCut (22.83, -15.88, 4.50) to (22.91, -15.38, 5.09)
+      2168 Linking (22.91, -15.38, 5.09) to (22.91, -15.38, 10.50)
+      2169 Linking (22.91, -15.38, 10.50) to (22.99, -14.88, 10.50)
+      2170 EntryPlunge (22.99, -14.88, 10.50) to (22.99, -14.88, 7.00)
+      2171 ClearingCut (22.99, -14.88, 7.00) to (23.34, -11.38, 7.00)
+      2225 Linking (13.75, 20.12, 10.50) to (23.82, -20.38, 10.50)
+      2227 ClearingCut (23.82, -20.38, 4.50) to (24.52, -17.38, 4.50)
+
+  geodesic_local_oneway probe move 2375 at (28.68, -16.07, 4.50):
+    2363 ClearingCut feed 695 to (21.035, 10.617, 7.000) xy 2.266
+    2364 ClearingCut feed 1000 to (20.734, 13.117, 7.000) xy 2.518
+    2365 ClearingCut feed 1000 to (20.289, 15.117, 7.000) xy 2.049
+    2366 Linking feed 1000 to (20.289, 15.117, 10.500) xy 0.000
+    2367 Linking feed 1000 to (20.148, 15.617, 10.500) xy 0.519
+    2368 EntryPlunge feed 500 to (20.148, 15.617, 4.500) xy 0.000
+    2369 ClearingCut feed 1000 to (19.253, 18.117, 4.500) xy 2.655
+    2370 ClearingCut feed 1000 to (18.289, 20.117, 4.500) xy 2.220
+    2371 Linking feed 1000 to (18.289, 20.117, 10.500) xy 0.000
+    2372 Linking feed 1000 to (27.823, -20.383, 10.500) xy 41.607
+    2373 EntryPlunge feed 500 to (27.823, -20.383, 4.500) xy 0.000
+    2374 ClearingCut feed 796 to (28.467, -17.383, 4.500) xy 3.068
+    2375 << ClearingCut feed 1000 to (28.714, -15.883, 4.500) xy 1.520
+    2376 ClearingCut feed 1000 to (28.786, -15.383, 5.087) xy 0.505
+    2377 Linking feed 1000 to (28.786, -15.383, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 5 above it, 1 across or below it; the last eight:
+      2317 ClearingCut (25.82, -20.38, 4.50) to (26.75, -15.88, 4.50)
+      2318 ClearingCut (26.75, -15.88, 4.50) to (26.83, -15.38, 5.09)
+      2319 Linking (26.83, -15.38, 5.09) to (26.83, -15.38, 10.50)
+      2320 Linking (26.83, -15.38, 10.50) to (26.90, -14.88, 10.50)
+      2321 EntryPlunge (26.90, -14.88, 10.50) to (26.90, -14.88, 7.00)
+      2322 ClearingCut (26.90, -14.88, 7.00) to (27.22, -11.38, 7.00)
+      2372 Linking (18.29, 20.12, 10.50) to (27.82, -20.38, 10.50)
+      2374 ClearingCut (27.82, -20.38, 4.50) to (28.47, -17.38, 4.50)
+
+  geodesic_local_oneway probe move 2549 at (8.10, 3.56, 4.50):
+    2537 ClearingCut feed 1000 to (-7.325, 4.557, 4.500) xy 0.734
+    2538 ClearingCut feed 1000 to (-6.918, 5.168, 5.239) xy 0.734
+    2539 Linking feed 1000 to (-6.918, 5.168, 10.500) xy 0.000
+    2540 Linking feed 1000 to (-4.983, 7.336, 10.500) xy 2.905
+    2541 EntryPlunge feed 500 to (-4.983, 7.336, 4.500) xy 0.000
+    2542 ClearingCut feed 1000 to (-3.647, 8.056, 4.500) xy 1.518
+    2543 Linking feed 1000 to (-3.647, 8.056, 10.500) xy 0.000
+    2544 Linking feed 1000 to (1.307, 8.773, 10.500) xy 5.005
+    2545 EntryPlunge feed 500 to (1.307, 8.773, 4.500) xy 0.000
+    2546 ClearingCut feed 1000 to (4.380, 7.614, 4.500) xy 3.285
+    2547 ClearingCut feed 1000 to (5.443, 6.928, 4.500) xy 1.265
+    2548 ClearingCut feed 1000 to (7.336, 4.983, 4.500) xy 2.714
+    2549 << ClearingCut feed 1000 to (8.204, 3.355, 4.500) xy 1.845
+    2550 ClearingCut feed 1000 to (8.488, 2.495, 4.500) xy 0.906
+    2551 ClearingCut feed 1000 to (8.540, 1.340, 4.699) xy 1.156
+    earlier feed moves within R: 7 at the level, 10 above it, 1 across or below it; the last eight:
+      1905 ClearingCut (8.54, 4.76, 4.72) to (8.79, 5.12, 7.00)
+      1906 ClearingCut (8.79, 5.12, 7.00) to (9.45, 6.62, 7.00)
+      1917 Linking (3.60, 20.12, 10.50) to (16.12, -20.38, 10.50)
+      1932 ClearingCut (12.54, 2.57, 7.00) to (10.52, 3.54, 7.00)
+      1933 ClearingCut (10.52, 3.54, 7.00) to (10.54, 3.54, 7.00)
+      1934 ClearingCut (10.54, 3.54, 7.00) to (11.04, 3.37, 7.00)
+      1935 ClearingCut (11.04, 3.37, 7.00) to (11.54, 3.15, 7.00)
+      2548 ClearingCut (5.44, 6.93, 4.50) to (7.34, 4.98, 4.50)
+
+  geodesic_local_oneway probe move 2550 at (8.42, 2.71, 4.50):
+    2538 ClearingCut feed 1000 to (-6.918, 5.168, 5.239) xy 0.734
+    2539 Linking feed 1000 to (-6.918, 5.168, 10.500) xy 0.000
+    2540 Linking feed 1000 to (-4.983, 7.336, 10.500) xy 2.905
+    2541 EntryPlunge feed 500 to (-4.983, 7.336, 4.500) xy 0.000
+    2542 ClearingCut feed 1000 to (-3.647, 8.056, 4.500) xy 1.518
+    2543 Linking feed 1000 to (-3.647, 8.056, 10.500) xy 0.000
+    2544 Linking feed 1000 to (1.307, 8.773, 10.500) xy 5.005
+    2545 EntryPlunge feed 500 to (1.307, 8.773, 4.500) xy 0.000
+    2546 ClearingCut feed 1000 to (4.380, 7.614, 4.500) xy 3.285
+    2547 ClearingCut feed 1000 to (5.443, 6.928, 4.500) xy 1.265
+    2548 ClearingCut feed 1000 to (7.336, 4.983, 4.500) xy 2.714
+    2549 ClearingCut feed 1000 to (8.204, 3.355, 4.500) xy 1.845
+    2550 << ClearingCut feed 1000 to (8.488, 2.495, 4.500) xy 0.906
+    2551 ClearingCut feed 1000 to (8.540, 1.340, 4.699) xy 1.156
+    2552 ClearingCut feed 1000 to (8.624, 1.112, 5.118) xy 0.243
+    earlier feed moves within R: 3 at the level, 15 above it, 1 across or below it; the last eight:
+      1906 ClearingCut (8.79, 5.12, 7.00) to (9.45, 6.62, 7.00)
+      1917 Linking (3.60, 20.12, 10.50) to (16.12, -20.38, 10.50)
+      1932 ClearingCut (12.54, 2.57, 7.00) to (10.52, 3.54, 7.00)
+      1933 ClearingCut (10.52, 3.54, 7.00) to (10.54, 3.54, 7.00)
+      1934 ClearingCut (10.54, 3.54, 7.00) to (11.04, 3.37, 7.00)
+      1935 ClearingCut (11.04, 3.37, 7.00) to (11.54, 3.15, 7.00)
+      2548 ClearingCut (5.44, 6.93, 4.50) to (7.34, 4.98, 4.50)
+      2549 ClearingCut (7.34, 4.98, 4.50) to (8.20, 3.36, 4.50)
+
+  geodesic_local_oneway probe move 2551 at (8.53, 1.46, 4.68):
+    2539 Linking feed 1000 to (-6.918, 5.168, 10.500) xy 0.000
+    2540 Linking feed 1000 to (-4.983, 7.336, 10.500) xy 2.905
+    2541 EntryPlunge feed 500 to (-4.983, 7.336, 4.500) xy 0.000
+    2542 ClearingCut feed 1000 to (-3.647, 8.056, 4.500) xy 1.518
+    2543 Linking feed 1000 to (-3.647, 8.056, 10.500) xy 0.000
+    2544 Linking feed 1000 to (1.307, 8.773, 10.500) xy 5.005
+    2545 EntryPlunge feed 500 to (1.307, 8.773, 4.500) xy 0.000
+    2546 ClearingCut feed 1000 to (4.380, 7.614, 4.500) xy 3.285
+    2547 ClearingCut feed 1000 to (5.443, 6.928, 4.500) xy 1.265
+    2548 ClearingCut feed 1000 to (7.336, 4.983, 4.500) xy 2.714
+    2549 ClearingCut feed 1000 to (8.204, 3.355, 4.500) xy 1.845
+    2550 ClearingCut feed 1000 to (8.488, 2.495, 4.500) xy 0.906
+    2551 << ClearingCut feed 1000 to (8.540, 1.340, 4.699) xy 1.156
+    2552 ClearingCut feed 1000 to (8.624, 1.112, 5.118) xy 0.243
+    2553 Linking feed 1000 to (8.624, 1.112, 10.500) xy 0.000
+    earlier feed moves within R: 0 at the level, 22 above it, 2 across or below it; the last eight:
+      882 Linking (10.03, 2.12, 7.00) to (10.03, 2.12, 10.50)
+      883 Linking (10.03, 2.12, 10.50) to (-9.16, 0.12, 10.50)
+      1917 Linking (3.60, 20.12, 10.50) to (16.12, -20.38, 10.50)
+      1932 ClearingCut (12.54, 2.57, 7.00) to (10.52, 3.54, 7.00)
+      1933 ClearingCut (10.52, 3.54, 7.00) to (10.54, 3.54, 7.00)
+      1934 ClearingCut (10.54, 3.54, 7.00) to (11.04, 3.37, 7.00)
+      2549 ClearingCut (7.34, 4.98, 4.50) to (8.20, 3.36, 4.50)
+      2550 ClearingCut (8.20, 3.36, 4.50) to (8.49, 2.49, 4.50)
+
+geodesic_local_spiral_pick shelf: step split made 69 (by width 69), avoided 57, max ap avoided 5.500 mm
+geodesic_local_spiral_pick shelf, path-shape base: geodesic_local_spiral_pick: 1155 moves, 3437 judged at levels {45, 46, 47, 49, 52, 70, 75, 105} (Z x 10), 9 over the screen 0.546 (sim peak 0.791), 9 over the exact bound 0.471 (exact peak 0.994); entry 858, vertical 857, departing 861, waterline 728 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 147 (17 over the screen, sim peak 0.827)
+  geodesic_local_spiral_pick base over: move 666 ClearingCut at (11.83, 15.82, 4.50) wall distance 8.18: sim radial 0.591, exact peak of the move 0.707
+  geodesic_local_spiral_pick base over: move 694 ClearingCut at (22.79, -16.09, 4.50) wall distance 7.91: sim radial 0.589, exact peak of the move 0.630
+  geodesic_local_spiral_pick base over: move 717 ClearingCut at (15.99, 15.81, 4.50) wall distance 8.19: sim radial 0.616, exact peak of the move 0.717
+  geodesic_local_spiral_pick base over: move 742 ClearingCut at (26.72, -16.09, 4.50) wall distance 7.28: sim radial 0.567, exact peak of the move 0.631
+  geodesic_local_spiral_pick base over: move 764 ClearingCut at (20.07, 15.83, 4.50) wall distance 8.17: sim radial 0.617, exact peak of the move 0.708
+  geodesic_local_spiral_pick base over: move 809 ClearingCut at (24.22, 15.83, 4.50) wall distance 8.17: sim radial 0.626, exact peak of the move 0.690
+  geodesic_local_spiral_pick base over: move 829 ClearingCut at (28.33, 15.84, 4.50) wall distance 5.67: sim radial 0.565, exact peak of the move 0.685
+  geodesic_local_spiral_pick base over: move 948 ClearingCut at (8.10, 3.56, 4.50) wall distance 3.84: sim radial 0.662, exact peak of the move 0.833
+  geodesic_local_spiral_pick base over: move 949 ClearingCut at (8.42, 2.71, 4.50) wall distance 3.84: sim radial 0.791, exact peak of the move 0.994
+geodesic_local_spiral_pick: 1103 moves, 3608 judged at levels {45, 46, 47, 48, 49, 50, 51, 52, 54, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 67, 68, 69, 70, 105} (Z x 10), 12 over the screen 0.546 (sim peak 0.897), 11 over the exact bound 0.471 (exact peak 0.988); entry 676, vertical 654, departing 715, waterline 728 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 150 (17 over the screen, sim peak 0.827)
+  geodesic_local_spiral_pick screened: move 644 ClearingCut at (11.83, 15.82, 4.50) wall distance 8.18: sim radial 0.591, exact peak of the move 0.707
+  geodesic_local_spiral_pick screened: move 672 ClearingCut at (22.79, -16.09, 4.50) wall distance 7.91: sim radial 0.589, exact peak of the move 0.630
+  geodesic_local_spiral_pick screened: move 695 ClearingCut at (15.99, 15.81, 4.50) wall distance 8.19: sim radial 0.616, exact peak of the move 0.717
+  geodesic_local_spiral_pick screened: move 720 ClearingCut at (26.72, -16.09, 4.50) wall distance 7.28: sim radial 0.567, exact peak of the move 0.631
+  geodesic_local_spiral_pick screened: move 742 ClearingCut at (20.07, 15.83, 4.50) wall distance 8.17: sim radial 0.617, exact peak of the move 0.708
+  geodesic_local_spiral_pick screened: move 787 ClearingCut at (24.22, 15.83, 4.50) wall distance 8.17: sim radial 0.626, exact peak of the move 0.690
+  geodesic_local_spiral_pick screened: move 807 ClearingCut at (28.33, 15.84, 4.50) wall distance 5.67: sim radial 0.565, exact peak of the move 0.685
+  geodesic_local_spiral_pick screened: move 900 ClearingCut at (7.44, 4.77, 4.50) wall distance 3.84: sim radial 0.723, exact peak of the move 0.155
+  geodesic_local_spiral_pick screened: move 901 ClearingCut at (7.85, 3.95, 4.50) wall distance 3.79: sim radial 0.897, exact peak of the move 0.988
+  geodesic_local_spiral_pick screened: move 901 ClearingCut at (8.04, 3.54, 4.50) wall distance 3.78: sim radial 0.897, exact peak of the move 0.988
+  geodesic_local_spiral_pick screened: move 901 ClearingCut at (8.22, 3.12, 4.50) wall distance 3.79: sim radial 0.897, exact peak of the move 0.988
+  geodesic_local_spiral_pick screened: move 901 ClearingCut at (8.40, 2.70, 4.50) wall distance 3.82: sim radial 0.897, exact peak of the move 0.988
+  geodesic_local_spiral_pick probe move 644 at (11.83, 15.82, 4.50):
+    632 ClearingCut feed 1000 to (11.124, 12.617, 7.000) xy 2.536
+    633 ClearingCut feed 1000 to (10.416, 14.617, 7.000) xy 2.121
+    634 Linking feed 1000 to (10.416, 14.617, 10.500) xy 0.000
+    635 Linking feed 1000 to (10.182, 15.117, 10.500) xy 0.552
+    636 EntryPlunge feed 500 to (10.182, 15.117, 4.808) xy 0.000
+    637 Linking feed 1000 to (10.182, 15.117, 10.500) xy 0.000
+    638 Linking feed 1000 to (10.043, 15.388, 10.500) xy 0.304
+    639 EntryPlunge feed 500 to (10.043, 15.388, 4.500) xy 0.000
+    640 ClearingCut feed 1000 to (8.543, 17.736, 4.500) xy 2.786
+    641 ClearingCut feed 1000 to (6.364, 20.117, 4.500) xy 3.228
+    642 ClearingCut feed 522 to (8.921, 20.117, 4.500) xy 2.557
+    643 ClearingCut feed 1000 to (10.543, 18.060, 4.500) xy 2.620
+    644 << ClearingCut feed 1000 to (11.952, 15.617, 4.500) xy 2.820
+    645 ClearingCut feed 1000 to (12.043, 15.416, 4.919) xy 0.221
+    646 Linking feed 1000 to (12.043, 15.416, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 6 above it, 1 across or below it; the last eight:
+      634 Linking (10.42, 14.62, 7.00) to (10.42, 14.62, 10.50)
+      635 Linking (10.42, 14.62, 10.50) to (10.18, 15.12, 10.50)
+      636 EntryPlunge (10.18, 15.12, 10.50) to (10.18, 15.12, 4.81)
+      637 Linking (10.18, 15.12, 4.81) to (10.18, 15.12, 10.50)
+      638 Linking (10.18, 15.12, 10.50) to (10.04, 15.39, 10.50)
+      639 EntryPlunge (10.04, 15.39, 10.50) to (10.04, 15.39, 4.50)
+      640 ClearingCut (10.04, 15.39, 4.50) to (8.54, 17.74, 4.50)
+      643 ClearingCut (8.92, 20.12, 4.50) to (10.54, 18.06, 4.50)
+
+  geodesic_local_spiral_pick probe move 672 at (22.79, -16.09, 4.50):
+    660 ClearingCut feed 1000 to (21.430, -11.883, 7.000) xy 3.002
+    661 ClearingCut feed 1000 to (21.043, -15.183, 7.000) xy 3.323
+    662 Linking feed 1000 to (21.043, -15.183, 10.500) xy 0.000
+    663 Linking feed 1000 to (21.011, -15.383, 10.500) xy 0.202
+    664 EntryPlunge feed 500 to (21.011, -15.383, 5.087) xy 0.000
+    665 ClearingCut feed 1000 to (20.926, -15.883, 4.500) xy 0.507
+    666 ClearingCut feed 1000 to (20.001, -19.883, 4.500) xy 4.106
+    667 Linking feed 1000 to (20.001, -19.883, 10.500) xy 0.000
+    668 Linking feed 1000 to (19.854, -20.383, 10.500) xy 0.521
+    669 EntryPlunge feed 500 to (19.854, -20.383, 4.500) xy 0.000
+    670 ClearingCut feed 1000 to (21.808, -20.383, 4.500) xy 1.954
+    671 ClearingCut feed 367 to (22.326, -18.383, 4.500) xy 2.066
+    672 << ClearingCut feed 1000 to (22.829, -15.883, 4.500) xy 2.550
+    673 ClearingCut feed 1000 to (22.911, -15.383, 5.087) xy 0.507
+    674 Linking feed 1000 to (22.911, -15.383, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 4 above it, 1 across or below it; the last eight:
+      661 ClearingCut (21.43, -11.88, 7.00) to (21.04, -15.18, 7.00)
+      662 Linking (21.04, -15.18, 7.00) to (21.04, -15.18, 10.50)
+      663 Linking (21.04, -15.18, 10.50) to (21.01, -15.38, 10.50)
+      664 EntryPlunge (21.01, -15.38, 10.50) to (21.01, -15.38, 5.09)
+      665 ClearingCut (21.01, -15.38, 5.09) to (20.93, -15.88, 4.50)
+      666 ClearingCut (20.93, -15.88, 4.50) to (20.00, -19.88, 4.50)
+      671 ClearingCut (21.81, -20.38, 4.50) to (22.33, -18.38, 4.50)
+
+  geodesic_local_spiral_pick probe move 695 at (15.99, 15.81, 4.50):
+    683 ClearingCut feed 1000 to (17.543, 5.489, 7.000) xy 3.050
+    684 ClearingCut feed 1000 to (15.518, 7.117, 7.000) xy 2.598
+    685 ClearingCut feed 1000 to (15.264, 9.614, 7.000) xy 2.509
+    686 ClearingCut feed 1000 to (14.912, 12.617, 7.000) xy 3.024
+    687 ClearingCut feed 1000 to (14.193, 15.117, 7.000) xy 2.601
+    688 Linking feed 1000 to (14.193, 15.117, 10.500) xy 0.000
+    689 Linking feed 1000 to (14.043, 15.503, 10.500) xy 0.414
+    690 EntryPlunge feed 500 to (14.043, 15.503, 4.500) xy 0.000
+    691 ClearingCut feed 1000 to (13.029, 17.617, 4.500) xy 2.345
+    692 ClearingCut feed 1000 to (11.364, 20.117, 4.500) xy 3.003
+    693 ClearingCut feed 443 to (13.755, 20.117, 4.500) xy 2.391
+    694 ClearingCut feed 1000 to (15.043, 17.968, 4.500) xy 2.506
+    695 << ClearingCut feed 1000 to (16.073, 15.617, 4.500) xy 2.566
+    696 Linking feed 1000 to (16.073, 15.617, 10.500) xy 0.000
+    697 Linking feed 1000 to (16.245, 15.117, 10.500) xy 0.529
+    earlier feed moves within R: 2 at the level, 3 above it, 1 across or below it; the last eight:
+      687 ClearingCut (14.91, 12.62, 7.00) to (14.19, 15.12, 7.00)
+      688 Linking (14.19, 15.12, 7.00) to (14.19, 15.12, 10.50)
+      689 Linking (14.19, 15.12, 10.50) to (14.04, 15.50, 10.50)
+      690 EntryPlunge (14.04, 15.50, 10.50) to (14.04, 15.50, 4.50)
+      691 ClearingCut (14.04, 15.50, 4.50) to (13.03, 17.62, 4.50)
+      694 ClearingCut (13.75, 20.12, 4.50) to (15.04, 17.97, 4.50)
+
+  geodesic_local_spiral_pick probe move 720 at (26.72, -16.09, 4.50):
+    708 ClearingCut feed 1000 to (25.284, -11.383, 7.000) xy 3.000
+    709 ClearingCut feed 1000 to (24.943, -14.883, 7.000) xy 3.517
+    710 Linking feed 1000 to (24.943, -14.883, 10.500) xy 0.000
+    711 Linking feed 1000 to (24.871, -15.383, 10.500) xy 0.505
+    712 EntryPlunge feed 500 to (24.871, -15.383, 5.087) xy 0.000
+    713 ClearingCut feed 1000 to (24.793, -15.883, 4.500) xy 0.506
+    714 ClearingCut feed 1000 to (23.952, -19.883, 4.500) xy 4.087
+    715 Linking feed 1000 to (23.952, -19.883, 10.500) xy 0.000
+    716 Linking feed 1000 to (23.819, -20.383, 10.500) xy 0.517
+    717 EntryPlunge feed 500 to (23.819, -20.383, 4.500) xy 0.000
+    718 ClearingCut feed 1000 to (25.824, -20.383, 4.500) xy 2.005
+    719 ClearingCut feed 377 to (26.296, -18.383, 4.500) xy 2.055
+    720 << ClearingCut feed 1000 to (26.754, -15.883, 4.500) xy 2.542
+    721 ClearingCut feed 1000 to (26.829, -15.383, 5.087) xy 0.506
+    722 Linking feed 1000 to (26.829, -15.383, 10.500) xy 0.000
+    earlier feed moves within R: 2 at the level, 4 above it, 1 across or below it; the last eight:
+      709 ClearingCut (25.28, -11.38, 7.00) to (24.94, -14.88, 7.00)
+      710 Linking (24.94, -14.88, 7.00) to (24.94, -14.88, 10.50)
+      711 Linking (24.94, -14.88, 10.50) to (24.87, -15.38, 10.50)
+      712 EntryPlunge (24.87, -15.38, 10.50) to (24.87, -15.38, 5.09)
+      713 ClearingCut (24.87, -15.38, 5.09) to (24.79, -15.88, 4.50)
+      714 ClearingCut (24.79, -15.88, 4.50) to (23.95, -19.88, 4.50)
+      719 ClearingCut (25.82, -20.38, 4.50) to (26.30, -18.38, 4.50)
+
+  geodesic_local_spiral_pick probe move 742 at (20.07, 15.83, 4.50):
+    730 ClearingCut feed 1000 to (23.265, 4.617, 7.000) xy 3.426
+    731 ClearingCut feed 1000 to (21.346, 7.117, 7.000) xy 3.152
+    732 ClearingCut feed 1000 to (19.301, 9.117, 7.000) xy 2.861
+    733 ClearingCut feed 941 to (18.998, 11.612, 7.000) xy 2.513
+    734 ClearingCut feed 1000 to (18.275, 15.117, 7.000) xy 3.580
+    735 Linking feed 1000 to (18.275, 15.117, 10.500) xy 0.000
+    736 Linking feed 1000 to (18.120, 15.617, 10.500) xy 0.523
+    737 EntryPlunge feed 500 to (18.120, 15.617, 4.500) xy 0.000
+    738 ClearingCut feed 1000 to (17.131, 18.117, 4.500) xy 2.689
+    739 ClearingCut feed 1000 to (16.055, 20.117, 4.500) xy 2.271
+    740 ClearingCut feed 436 to (18.289, 20.117, 4.500) xy 2.235
+    741 ClearingCut feed 1000 to (19.253, 18.117, 4.500) xy 2.220
+    742 << ClearingCut feed 1000 to (20.148, 15.617, 4.500) xy 2.655
+    743 Linking feed 1000 to (20.148, 15.617, 10.500) xy 0.000
+    744 Linking feed 1000 to (20.289, 15.117, 10.500) xy 0.519
+    earlier feed moves within R: 2 at the level, 3 above it, 1 across or below it; the last eight:
+      734 ClearingCut (19.00, 11.61, 7.00) to (18.28, 15.12, 7.00)
+      735 Linking (18.28, 15.12, 7.00) to (18.28, 15.12, 10.50)
+      736 Linking (18.28, 15.12, 10.50) to (18.12, 15.62, 10.50)
+      737 EntryPlunge (18.12, 15.62, 10.50) to (18.12, 15.62, 4.50)
+      738 ClearingCut (18.12, 15.62, 4.50) to (17.13, 18.12, 4.50)
+      741 ClearingCut (18.29, 20.12, 4.50) to (19.25, 18.12, 4.50)
+
+  geodesic_local_spiral_pick probe move 787 at (24.22, 15.83, 4.50):
+    775 ClearingCut feed 1000 to (23.465, 10.617, 7.000) xy 3.296
+    776 ClearingCut feed 1000 to (22.765, 13.103, 7.000) xy 2.582
+    777 ClearingCut feed 1000 to (22.354, 15.117, 7.000) xy 2.056
+    778 Linking feed 1000 to (22.354, 15.117, 10.500) xy 0.000
+    779 Linking feed 1000 to (22.226, 15.617, 10.500) xy 0.516
+    780 EntryPlunge feed 500 to (22.226, 15.617, 4.500) xy 0.000
+    781 ClearingCut feed 1000 to (20.776, 19.617, 4.500) xy 4.255
+    782 Linking feed 1000 to (20.776, 19.617, 10.500) xy 0.000
+    783 Linking feed 1000 to (20.539, 20.117, 10.500) xy 0.554
+    784 EntryPlunge feed 500 to (20.539, 20.117, 4.500) xy 0.000
+    785 ClearingCut feed 403 to (22.745, 20.117, 4.500) xy 2.207
+    786 ClearingCut feed 403 to (23.360, 18.617, 4.500) xy 1.621
+    787 << ClearingCut feed 1000 to (24.291, 15.617, 4.500) xy 3.141
+    788 Linking feed 1000 to (24.291, 15.617, 10.500) xy 0.000
+    789 Linking feed 1000 to (24.410, 15.117, 10.500) xy 0.514
+    earlier feed moves within R: 2 at the level, 3 above it, 1 across or below it; the last eight:
+      777 ClearingCut (22.76, 13.10, 7.00) to (22.35, 15.12, 7.00)
+      778 Linking (22.35, 15.12, 7.00) to (22.35, 15.12, 10.50)
+      779 Linking (22.35, 15.12, 10.50) to (22.23, 15.62, 10.50)
+      780 EntryPlunge (22.23, 15.62, 10.50) to (22.23, 15.62, 4.50)
+      781 ClearingCut (22.23, 15.62, 4.50) to (20.78, 19.62, 4.50)
+      786 ClearingCut (22.75, 20.12, 4.50) to (23.36, 18.62, 4.50)
+
+  geodesic_local_spiral_pick probe move 807 at (28.33, 15.84, 4.50):
+    795 Linking feed 1000 to (30.043, 4.676, 10.500) xy 0.000
+    796 Linking feed 1000 to (30.043, 8.755, 10.500) xy 4.079
+    797 EntryPlunge feed 500 to (30.043, 8.755, 7.000) xy 0.000
+    798 ClearingCut feed 710 to (28.043, 11.497, 7.000) xy 3.394
+    799 ClearingCut feed 1000 to (27.076, 12.617, 7.000) xy 1.481
+    800 ClearingCut feed 873 to (26.463, 15.087, 7.000) xy 2.545
+    801 ClearingCut feed 1000 to (26.457, 15.117, 7.000) xy 0.031
+    802 Linking feed 1000 to (26.457, 15.117, 10.500) xy 0.000
+    803 Linking feed 1000 to (26.347, 15.617, 10.500) xy 0.512
+    804 EntryPlunge feed 500 to (26.347, 15.617, 4.500) xy 0.000
+    805 ClearingCut feed 1000 to (24.920, 20.117, 4.500) xy 4.721
+    806 ClearingCut feed 386 to (27.070, 20.117, 4.500) xy 2.150
+    807 << ClearingCut feed 1000 to (28.396, 15.617, 4.500) xy 4.691
+    808 Linking feed 1000 to (28.396, 15.617, 10.500) xy 0.000
+    809 Linking feed 1000 to (28.499, 15.117, 10.500) xy 0.510
+    earlier feed moves within R: 1 at the level, 4 above it, 1 across or below it; the last eight:
+      800 ClearingCut (27.08, 12.62, 7.00) to (26.46, 15.09, 7.00)
+      801 ClearingCut (26.46, 15.09, 7.00) to (26.46, 15.12, 7.00)
+      802 Linking (26.46, 15.12, 7.00) to (26.46, 15.12, 10.50)
+      803 Linking (26.46, 15.12, 10.50) to (26.35, 15.62, 10.50)
+      804 EntryPlunge (26.35, 15.62, 10.50) to (26.35, 15.62, 4.50)
+      805 ClearingCut (26.35, 15.62, 4.50) to (24.92, 20.12, 4.50)
+
+  geodesic_local_spiral_pick probe move 901 at (7.85, 3.95, 4.50):
+    889 ClearingCut feed 1000 to (-6.334, 6.017, 4.500) xy 0.296
+    890 ClearingCut feed 1000 to (-6.135, 6.236, 5.956) xy 0.296
+    891 ClearingCut feed 1000 to (-5.739, 6.633, 5.956) xy 0.560
+    892 ClearingCut feed 1000 to (-5.343, 7.029, 4.500) xy 0.560
+    893 ClearingCut feed 1000 to (-4.580, 7.582, 4.500) xy 0.943
+    894 ClearingCut feed 1000 to (-2.318, 8.577, 4.500) xy 2.471
+    895 ClearingCut feed 1000 to (0.144, 8.964, 4.500) xy 2.493
+    896 ClearingCut feed 1000 to (0.929, 8.888, 4.500) xy 0.788
+    897 ClearingCut feed 1000 to (4.380, 7.614, 4.500) xy 3.679
+    898 ClearingCut feed 1000 to (5.123, 7.207, 4.500) xy 0.847
+    899 ClearingCut feed 1000 to (7.029, 5.343, 4.500) xy 2.666
+    900 ClearingCut feed 1000 to (7.582, 4.580, 4.500) xy 0.943
+    901 << ClearingCut feed 1000 to (8.488, 2.495, 4.500) xy 2.273
+    902 ClearingCut feed 1000 to (8.540, 1.340, 4.699) xy 1.156
+    903 ClearingCut feed 1000 to (8.624, 1.112, 5.118) xy 0.243
+    earlier feed moves within R: 4 at the level, 11 above it, 2 across or below it; the last eight:
+      596 ClearingCut (9.27, 6.12, 7.00) to (8.79, 5.12, 7.00)
+      597 ClearingCut (8.79, 5.12, 7.00) to (8.54, 4.76, 4.72)
+      598 ClearingCut (8.54, 4.76, 4.72) to (8.43, 4.62, 4.50)
+      599 ClearingCut (8.43, 4.62, 4.50) to (9.48, 4.08, 7.00)
+      600 ClearingCut (9.48, 4.08, 7.00) to (10.52, 3.54, 7.00)
+      601 ClearingCut (10.52, 3.54, 7.00) to (12.54, 2.57, 7.00)
+      899 ClearingCut (5.12, 7.21, 4.50) to (7.03, 5.34, 4.50)
+      900 ClearingCut (7.03, 5.34, 4.50) to (7.58, 4.58, 4.50)
+
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 48.85s
+
