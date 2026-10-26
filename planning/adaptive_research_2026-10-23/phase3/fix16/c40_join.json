@@ -1,0 +1,164 @@
+{
+ "corne_pick": {
+  "summary_lines": [
+   "C40 entry summary entries=1188 by_kind_cause={(LiftOver, Some(Start)): 3, (LiftOver, Some(Reentry2d)): 243, (LiftOver, Some(LargeZ)): 860, (LiftOver, Some(LargeZHeld)): 14, (LiftOver, Some(AirRun)): 3, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 18, (Plunge, Some(Waterline)): 37} drop_1mm_by_cause={Some(Start): 13, Some(Reentry2d): 261, Some(LargeZ): 860, Some(LargeZHeld): 8, Some(AirRun): 3, Some(Waterline): 21}",
+   "C40 entry summary entries=225 by_kind_cause={(LiftOver, Some(Start)): 1, (LiftOver, Some(Reentry2d)): 40, (Plunge, Some(Start)): 6, (Plunge, Some(Reentry2d)): 2, (Plunge, Some(Waterline)): 176} drop_1mm_by_cause={Some(Start): 7, Some(Reentry2d): 42, Some(Waterline): 40}"
+  ],
+  "op0": {
+   "entries": 1188,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 860,
+    "LiftOver Some(Reentry2d)": 243,
+    "Plunge Some(Waterline)": 37,
+    "Plunge Some(Reentry2d)": 18,
+    "LiftOver Some(LargeZHeld)": 14,
+    "Plunge Some(Start)": 10,
+    "LiftOver Some(Start)": 3,
+    "LiftOver Some(AirRun)": 3
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 73.57,
+   "other_first20": []
+  },
+  "op1": {
+   "entries": 225,
+   "by_kind_cause": {
+    "Plunge Some(Waterline)": 176,
+    "LiftOver Some(Reentry2d)": 40,
+    "Plunge Some(Start)": 6,
+    "Plunge Some(Reentry2d)": 2,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 1156,
+   "matched": 1156,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 858,
+    "Some(Reentry2d)": 258,
+    "Some(Waterline)": 19,
+    "Some(Start)": 13,
+    "Some(LargeZHeld)": 6,
+    "Some(AirRun)": 2
+   },
+   "share_pct": {
+    "Some(LargeZ)": 74.2,
+    "Some(Reentry2d)": 22.3,
+    "Some(Waterline)": 1.6,
+    "Some(Start)": 1.1,
+    "Some(LargeZHeld)": 0.5,
+    "Some(AirRun)": 0.2
+   },
+   "largez_share_pct": 74.7,
+   "other_share_pct": 0.0
+  }
+ },
+ "corne_headon": {
+  "summary_lines": [
+   "C40 entry summary entries=1463 by_kind_cause={(LiftOver, Some(Start)): 3, (LiftOver, Some(Reentry2d)): 199, (LiftOver, Some(LargeZ)): 862, (LiftOver, Some(LargeZHeld)): 323, (LiftOver, Some(Clip)): 5, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 24, (Plunge, Some(Waterline)): 37} drop_1mm_by_cause={Some(Start): 13, Some(Reentry2d): 223, Some(LargeZ): 862, Some(LargeZHeld): 314, Some(Waterline): 21, Some(Clip): 5}",
+   "C40 entry summary entries=224 by_kind_cause={(LiftOver, Some(Reentry2d)): 40, (Plunge, Some(Start)): 6, (Plunge, Some(Reentry2d)): 2, (Plunge, Some(Waterline)): 176} drop_1mm_by_cause={Some(Start): 6, Some(Reentry2d): 42, Some(Waterline): 40}"
+  ],
+  "op0": {
+   "entries": 1463,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 862,
+    "LiftOver Some(LargeZHeld)": 323,
+    "LiftOver Some(Reentry2d)": 199,
+    "Plunge Some(Waterline)": 37,
+    "Plunge Some(Reentry2d)": 24,
+    "Plunge Some(Start)": 10,
+    "LiftOver Some(Clip)": 5,
+    "LiftOver Some(Start)": 3
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 81.0,
+   "other_first20": []
+  },
+  "op1": {
+   "entries": 224,
+   "by_kind_cause": {
+    "Plunge Some(Waterline)": 176,
+    "LiftOver Some(Reentry2d)": 40,
+    "Plunge Some(Start)": 6,
+    "Plunge Some(Reentry2d)": 2
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 1253,
+   "matched": 1253,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 860,
+    "Some(Reentry2d)": 223,
+    "Some(LargeZHeld)": 138,
+    "Some(Waterline)": 18,
+    "Some(Start)": 13,
+    "Some(Clip)": 1
+   },
+   "share_pct": {
+    "Some(LargeZ)": 68.6,
+    "Some(Reentry2d)": 17.8,
+    "Some(LargeZHeld)": 11.0,
+    "Some(Waterline)": 1.4,
+    "Some(Start)": 1.0,
+    "Some(Clip)": 0.1
+   },
+   "largez_share_pct": 79.6,
+   "other_share_pct": 0.0
+  }
+ },
+ "wanaka200_pick": {
+  "summary_lines": [
+   "C40 entry summary entries=2238 by_kind_cause={(LiftOver, Some(Reentry2d)): 2, (LiftOver, Some(LargeZ)): 2023, (LiftOver, Some(LargeZHeld)): 3, (LiftOver, Some(Clip)): 190, (Plunge, Some(Start)): 5, (Plunge, Some(LargeZ)): 2, (Plunge, Some(Waterline)): 6, (Plunge, Some(Clip)): 7} drop_1mm_by_cause={Some(Start): 5, Some(Reentry2d): 1, Some(LargeZ): 2012, Some(LargeZHeld): 3, Some(Waterline): 4, Some(Clip): 197}"
+  ],
+  "op0": {
+   "entries": 2238,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 2023,
+    "LiftOver Some(Clip)": 190,
+    "Plunge Some(Clip)": 7,
+    "Plunge Some(Waterline)": 6,
+    "Plunge Some(Start)": 5,
+    "LiftOver Some(LargeZHeld)": 3,
+    "Plunge Some(LargeZ)": 2,
+    "LiftOver Some(Reentry2d)": 2
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 90.62,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 2030,
+   "matched": 2030,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 1826,
+    "Some(Clip)": 197,
+    "Some(Start)": 3,
+    "Some(LargeZHeld)": 2,
+    "Some(Waterline)": 2
+   },
+   "share_pct": {
+    "Some(LargeZ)": 90.0,
+    "Some(Clip)": 9.7,
+    "Some(Start)": 0.1,
+    "Some(LargeZHeld)": 0.1,
+    "Some(Waterline)": 0.1
+   },
+   "largez_share_pct": 90.0,
+   "other_share_pct": 0.0
+  }
+ }
+}

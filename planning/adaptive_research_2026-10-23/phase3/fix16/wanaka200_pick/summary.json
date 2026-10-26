@@ -1,0 +1,52 @@
+{
+  "project": "wanaka200",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 89396.94935445143,
+  "total_rapid_distance_mm": 2987.340121261421,
+  "total_runtime_s": 3513.0061882408645,
+  "air_cut_pct_of_total_runtime": 43.31061719395394,
+  "air_cut_pct_of_cutting_time": 44.66563237561046,
+  "average_engagement": 0.22700901823885983,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 1.0,
+    "mode": "fixed",
+    "source": "override",
+    "project_mm": 0.5
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "2 Back Rough",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 19048,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 43.31061719395394,
+    "headline": "WARNING: 43.3% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [
+      "  toolpath 1: depth of cut, peak 11.8859 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source"
+    ],
+    "overrides_used": [
+      "G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.\n  toolpath 5: chipload: simulation trace is stale — re-run simulation\n  toolpath 5: power: simulation trace is stale — re-run simulation\n  toolpath 5: deflection: simulation trace is stale — re-run simulation\n  toolpath 5: depth of cut: simulation trace is stale — re-run simulation"
+    ],
+    "feeds_cautions": []
+  }
+}

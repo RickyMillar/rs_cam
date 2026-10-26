@@ -4327,3 +4327,71 @@ Other, D24 → D25 (Corne pick / headon; wanaka pick):
   (headon 34.1 %); cycle 3405 → 3247 s (headon 3527).
 - wanaka: descents 2031 → 2035; plunges 20; turns over 30° 180 → 186;
   plunge share 51.9 → 48.4 %; cycle 3365 → 3513 s.
+
+## D26: D24 commit 01637fb5f + C40 (waterline / clip gap fixed) + G-CLIPAIR + the held-link counter after the clip — GREEN; fixtures in fix16
+
+Fixture worktree clean, checked out at 01637fb5f; `git apply` of
+`phase3/d26/tree_vs_01637fb5f.patch` (md5 aae493f3ddec094bdb9966e62ae8af16;
+5 files, 650+/66−; `d26/applied.diff`, unchanged to step 12). No edit.
+Outputs `phase3/d26/`. No D25 fixture was running when the STOP came.
+
+| Step | Result |
+|---|---|
+| 1–4 fmt, clippy plain / research / workspace | green |
+| 5, 6 parity plain, research | green 5/5 each |
+| 7 `--lib adaptive::research_geodesic` | green 25, 2 ignored |
+| 8 2D harness | green; 189 files byte-equal to D25 = D24 |
+| 9 plain C12 | green 2/2; Other 0 on every arm; each arm "Plunge Some(Waterline)": 2; all other lines as D24 |
+| 10 heavy C12 | green (239.90 s); Other 0; D25's 4 "Plunge None" per mode are "Plunge Some(Waterline)": 4; other lines as D24 |
+| 11 f152; 12 the 13 sentries | green |
+
+**Step 13** (`phase3/fix16/run_fix16.sh`): corne_pick rc 0, corne_headon
+rc 0, wanaka200_pick rc 0; no export refused. All three program.nc and
+simulation.json files are byte-equal to the D25 runs (fix15); the toolpath
+files differ only in debug timing. So every geometry number of D25 holds
+for D26 (G-CLIPAIR P-CA1..CA7, peaks, bands, descents, plunges, turns,
+plunge share, cycle). Only the log lines differ. Restored after: `git
+status --short` empty at 01637fb5f.
+
+C40 (`fix16/c40_join.py`; entries.py rows from fix15, equal runs):
+
+| run / op | entries | Other | LargeZ(+Held) % | new causes |
+|---|---|---|---|---|
+| Corne pick op 1 | 1188 | 0 | 73.6 | Waterline 37 (was None) |
+| Corne pick copy op | 225 | 0 | 0 | Waterline 176 |
+| Corne headon op 1 | 1463 | 0 | 81.0 | Waterline 37, Clip 5 (LiftOver) |
+| Corne headon copy op | 224 | 0 | 0 | Waterline 176 |
+| wanaka pick | 2238 | 0 | 90.6 | Clip 197 (LiftOver 190, Plunge 7), Waterline 6 |
+
+Join (op 1 descents ≥ 1 mm removing stock, all matched): Corne pick 1156:
+LargeZ 74.2 %, Reentry2d 22.3, Waterline 1.6, Start 1.1, LargeZHeld 0.5,
+AirRun 0.2; headon 1253: LargeZ 68.6, Reentry2d 17.8, LargeZHeld 11.0,
+Waterline 1.4, Start 1.0, Clip 0.1; wanaka 2030: LargeZ 90.0, Clip 9.7,
+Start, LargeZHeld, Waterline 0.1 each. Falsifiers: LargeZ ≥ 50 % on both
+(holds); Other 0 % on both (holds).
+
+Counter: "C22a: held link over standing stock" 0 lines in all three runs
+(wanaka P 0: holds; D24 / D25 had 33 kept). C22a rounds (pick / headon /
+wanaka): 1 ×3, 2 ×24, 3 ×13 / 1 ×1, 2 ×12, 3 ×6 / 1 ×7, 2 ×2, 3 ×1;
+dropped_more sum 2323 (max 266) / 1140 (266) / 326 (165). D24: Corne 1 ×3,
+2 ×20, 3 ×17, dropped_more 1696 (max 271); wanaka 6.
+
+Turn summaries: Corne pick op 1 planned 222, cut 132, fed 132, unfed 0,
+full_feed_unmatched 0, reduced 129, lowest 0.280, longest 2.380 mm; copy
+op planned 10, cut 0. Headon op 1 240 / 230 / 230 / 0, reduced 227,
+lowest 0.272, longest 2.379. **wanaka planned 331, cut 77, fed 5, unfed
+72**, full_feed_unmatched 0, reduced 77, lowest 0.365, longest 3.199.
+
+Fed-link bar (as D25): op 1 link move 5565 (D24's 6921: the same move, the
+same XY and Z) is a 9-sample linking / linear move at Z 11.0 from (149.81,
+−76.42) to (149.73, −78.67), no entry span (only the boundary clip span),
+peak 10.5 mm; copy op link move 6340, linking / linear at Z 0.5, (28.14,
+−106.30) to (27.64, −106.55), peak 5.52 mm. The held-link counter reads 0
+on both, so the planner stock shows no stock there.
+
+Planar turns over 30° / over 90° by place (`fix16/turn_place.py`; the
+G-code frame moved to the model frame by the stock box minimum):
+- D24 pick: inside the silhouette 848 / 274, outside 1911 / 1501, beyond
+  the mesh bbox 248 / 193.
+- D26 pick: 831 / 274, 1933 / 1583, 263 / 202.
+- D26 headon: 1137 / 506, 2022 / 1619, 285 / 223.
