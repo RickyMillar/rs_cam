@@ -3365,3 +3365,26 @@ One shared part: **`SlabField`**. It is an optional input to the 2D adaptive eng
 - The 2D replay that C12's slot and turn feeds read changes with the field. The turn and slot counts then change. This is expected, but it is a change.
 - Thin wedges (791 mm at 2 mm or less of axial engagement in D26) count fully in the sim's woc, as they do now. If the operator wants a thickness-weighted load instead, that is a load-model decision, not a part of §17.
 - Fed bore at a descent foot (§16.14 (3)): parked, as ruled. With the field, a descent foot reads as a wedge like any other, so the bore is not needed.
+
+### 17.6 Ruling (c) and the cost pre-registration (2026-10-27; no code yet)
+
+**The finding before the build.** "The plan climbs" (§17.3, item 4) comes from the direction search. AgentSearch, ContourSpiral and Adaptive use that search (`path.rs` capped walker, `search.rs`). The research arm does not search for a direction. Its wraps are level sets of a geodesic field from the entry disc, and its capped walk refuses a step over the ceiling (split or lift). With the field, a wrap down a slope is therefore refused, not turned uphill.
+
+**The lead's ruling (c):** one shared `SlabField`, with two consumers in this order:
+1. The research arm, with a generic seed rule: a region's entry is seeded at its lowest tip (`tip(c)`, §17.3), so the front grows uphill.
+2. The AgentSearch slice, behind the research gate. There the direction search makes the climb.
+
+Shipped output stays byte-identical: with no field, every cell read is the read of today.
+
+**Tests:**
+- Sloped plane: 0 samples over the exact bound for both consumers. Climbing is asserted only for AgentSearch, and for the seeded research arm on the plane.
+- Shelf: as §17.4 item 1.
+
+**Pre-registration, the cost (fixtures, research arm, A off, field on against field off on one tree):**
+- The refusals that the field adds, counted in three ways:
+  - the capped walk's refused steps;
+  - the lifts (descents, `audit`);
+  - the slot moves.
+- The cycle, against D31 (wanaka 2694 s, Corne 3011 s) and against D26 (wanaka 3513 s, Corne 3247 s).
+- P (load): the "an earlier pass above" over class falls by at least 1284 mm on wanaka (§17.4 item 3).
+- P (cost), stated as a test and not as a guess: if the wanaka cycle with the field rises to D26's 3513 s or more, then "load held" has cost the whole gain back. I report that as the result. I do not tune it away. The AgentSearch consumer is then the comparison for the cycle that the climb can keep.
