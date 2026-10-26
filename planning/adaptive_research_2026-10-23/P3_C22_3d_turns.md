@@ -3176,3 +3176,21 @@ Scripts are in `phase3/fix20/c22/`: `parta_place.py`, `turns_inside.py`, `turns_
   - the over-load stays above +5 % of D26: the width read misses part of the load (the stock beside the drape, or the cut after the step). I report with the probes;
   - the descents return above 90 % of D26: the steps are mostly wider than `c·D`, and A buys little.
 - **The probe at (91.3, −1.13):** if `floor_top` reads under the simulated stock top (≥ 17.95 + the rapid-floor buffer), the planner stock there disagrees with the sim, and the cause lies in the stamp of the draped cut. If `floor_top` reads higher than the rapid ended, the emitter's descent floor and `plan_entry` disagree.
+
+### 16.11 The shelf fixture, the width read's descent bug, and G-FACESLAB (2026-10-27; tests green here)
+
+**Ruling (a)** is implemented in `the_width_read_splits_a_wide_draped_step`:
+- width splits > 0 over the arms;
+- per arm, no more MOVES over the exact bound under the stock-read split than under the path-shape base.
+Moves, not samples: one long move over one place reads 4 samples where two short moves over the same place read 2. That was the "extra" count. The test prints both runs' over lines.
+
+**The 3 "extra" overs, read with the base printed:**
+- The five shelf-side overs (y ≈ 15.8, exact 0.69–0.72) are the SAME in both runs: the same XY and the same exact peaks, base moves 658/708/754/799/819. They are not A.
+- The island-side over at (8.1–8.4, 2.7–3.6) is one place in both. Base: moves 934 + 935, 2 samples, exact 0.994. A: one move 888, 4 samples, 0.988.
+- One real extra place: move 866 at (8.35, −2.98), exact 0.999. A had cut the descent 864–865 (Z 7 → 4.5 beside the island) at feed, so 866, the cut after it, became a judged move. Under the split it was a departure from a plunge, which the test exempts.
+- The cause of that one was a **bug in my width read**: it dropped a cell as "already swept" by its XY distance to the move so far, whatever the Z. A descent sweeps nothing below its own path, so the floor stock it descends into was not counted.
+  - **Fixed:** a cell counts at most at the lowest Z at which an earlier sample of the move passed within R of it.
+  - Result: the width splits rose (oneway 19 → 37, spiral_pick 36 → 69), and spiral_pick's over places fell to the base's: 6 moves against 7.
+- **Test results:** both heavy tests are green through the lane (51.5 s): the draped-step test (0 over on six arms) and the shelf test. Both clippy commands are clean.
+
+**G-FACESLAB (the shared overs, a pre-existing 2D/3D mismatch at faces):** the DEFECTS row draft went to the lead.
