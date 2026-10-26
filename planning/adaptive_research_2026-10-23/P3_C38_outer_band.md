@@ -1909,3 +1909,43 @@ D27 tree, which does not change these lines.
 3. **The triage bar is right to fire.** A 10.5 mm column, however thin,
    is a side bite at full depth on a link fed at the clearing feed. I
    propose no change to the bar.
+
+### 13.10 The D27 v3 slot-test red: the corridor plan had no pass marker (2026-10-26)
+
+**The probe** (`the_corridor_slots_run_at_the_reduced_feed`, run once by
+C12 with the lead's leave):
+- C31 opened both channel levels: "grown, no sweep", measured margin
+  0.55.
+- 120 slots were planned, but **0 slot records** were kept. The toolpath
+  had 59 moves and 8 entries.
+
+This is case (c): the slots were planned, but no record came through.
+
+**The cause** (code, `research_geodesic.rs`, `pass_load_readout`): the
+readout classes a step as a turn or a slot only when its producer is
+`Producer::Clearing`, which only a `PassEntry` marker sets
+(`Producer::after`). The field's plans push that marker; my corridor plan
+had none. So every slot step read as "unmarked", `slice_turn_records`
+found no slot step, and no record or chain existed.
+
+**The fix** (`research_outer_band.rs`, `corridor_opening`): before the
+first loop's `Rapid`, push `Marker(PassEntry { pass_index: 1, entry_x,
+entry_y })`, as the field does.
+
+**The result** (the same test, after the fix):
+- 120 slots planned, 116 slot records;
+- 167 moves, 8 entries;
+- 2 slot chains, 116 steps, 108 reduced, 116 fed, 0 unfed, 110 moves
+  lowered, 0 out of run, lowest factor 0.302, longest lowered move
+  1.978 mm;
+- 444 samples on slot moves, 0 over the screen bound at the full feed;
+- the test passes in 1.61 s.
+
+Both clippy commands are clean (plain and `research,test-support`: rc 0,
+0 warnings).
+
+**Note for reading D23.** D23's corridor plans also had no marker. The
+channel shows that the marker changes more than the records: 59 → 167
+moves, because the replay and the cleanup treat an unmarked plan
+differently. So D23's slot geometry (band 455, op 1 1468 s) came from the
+unmarked variant. D27 measures the marked one.
