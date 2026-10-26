@@ -3042,3 +3042,62 @@ Where Part A still splits (`ap > DPP`), and for every other entry (2D re-entries
 1. C21's measurement of the side legs on the swept disc (C42 used the centre cell), to size Part A's share.
 2. A ruling on the research switch for Part A: `is_research_arm` (as `disc_read`), or a new `Adaptive3dParams` field off by default.
 3. Whether Part B may add `Linking` feeds at the level for a shipped arm later. Today's F-038b link climbs to a safe Z over the corridor; a level link is a new shape, and the simulation's fed-link bar reads it.
+
+### 16.6 Built (2026-10-26; not compiled)
+
+**Part A:**
+- `Adaptive3dLinking.step_split: StepSplit { PathShape (default), StockDepth }`. The research arm forces `StockDepth` in the ctx.
+- `clearing::step_axial_depth(stock, p, q, R)`.
+- In the split loop, a step that the path rule flags is split only when `ap > DPP + stay_down_clearance`.
+- It is evaluated only on flagged steps, for cost: so it removes splits and never adds one.
+- Instrument: `SplitStats { made, avoided, max_ap_avoided_mm }`, and the line "C22 step split (stock-read rule)".
+
+**Part B:**
+- `Adaptive3dLinking.keep_down_route: KeepDownRoute { Off (default), CutFeed, Rapid { clearance_mm } }`.
+- New module `adaptive3d/keep_down_route.rs`:
+  - an A* over free planner cells (the full disc of R at most `ceiling_z`, and inside the boundary clip);
+  - sources: the free cells within two cells of the tool;
+  - goal: the first free cell within a stepover of the entry whose side leg passes Part A's rule;
+  - length bounded by `stay_down_mm`;
+  - `straight_runs` merges the grid's straight runs.
+- `clearing::routed_entry` builds the replacement:
+  - cut feed: `Link`s at the entry's Z, free to the stay-down clearance;
+  - rapid: the new segment `Adaptive3dSegment::LowRapid` at Z + clearance, free to that clearance (the full-disc proof);
+  - a tool below the travel rises at its XY first; a tool above it drops only where its disc is free;
+  - the side leg goes out as a `Cut`.
+- Hooks:
+  - `push_segment_with_stamp_unclipped`: every non-deferred entry of every adaptive3d strategy;
+  - `LevelSink::commit_pending`: the deferred entries, spliced in place.
+- `LowRapid` is handled at all seven matches: the tally, the emitter (a G0 tagged `Linking`), the clip, the stamp (none), the cursor, the sink and the C29 score.
+- `StampDrape` carries the route setting, the clearance, DPP and the stepover. It is `Off` for the waterline.
+- The research arm gets `CutFeed` when the parameter is `Off`. `RS_CAM_RESEARCH_KEEP_DOWN_ROUTE = off | cut_feed | rapid:<mm>` flips it for D9. The rapid clearance comes from the run's setting; no number is typed in the code. The derivation goes here when C21 reports the fuzz.
+- Instrument: `RouteStats { tried, taken, travel_mm, side_mm }`, and the line "C22 keep-down route".
+
+**Risk to watch:** a side leg and a step cut at feed are not held to the 2D width ceiling. The heavy C12 test's exact-bound check is the gate.
+
+### 16.7 D29 v2 heavy RED: the exact bound broken by Part B's side legs (2026-10-26; read only)
+
+From `phase3/d29/v2_10_c12_heavy.txt`. Every first over-sample the lead names sits right after a ROUTE, that is, a `Linking` feed at the level where an entry stood before:
+
+| Mode | The moves before the over move |
+|---|---|
+| curv / oneway / zigzag / v2 / pick (move 64, exact 0.86) | 63 `Linking` 0.556 mm back to the free cell (−16.0, −9.0), then 64 the `ClearingCut` side leg, 1.984 mm (≤ the stepover 2) forward into stock to (−14.02, −8.88) |
+| spiral_pick (move 285, exact 0.98) | 283 `Linking` 0.890 mm, 284 a side leg of 1.298 mm, then 285 the next planned cut, 1.79 mm |
+| headon (move 2942, exact 0.82) | 2930–2941: a 28 mm `Linking` route, then 2942 a side leg of 1.905 mm |
+| zigzag (move 644, exact 0.875) | 642 `Linking` 0.587 mm, 643 a side leg of 0.940 mm, then 644 the next planned cut, 2.06 mm |
+
+**The cause (B, not A):**
+- The entry B replaces was a re-entry INTO stock: a plunge (or helix) that cut the column and left a hole of the tool's own size. The 2D replay stamped that hole (`LinkLoad::stamp_entry`) and exempted the steps out of it (the plunge-departure exemption, G-ADAPTPASSLOAD: "leaving a hole of the cutter's own size reads at least half the diameter whatever the heading").
+- B replaces the vertical entry by a HORIZONTAL side leg into the same stock. My side-leg rule held its length (≤ stepover) and its depth (Part A's ap ≤ DPP + clearance), but not its WIDTH. A side leg into a column is a slot: 0.86–0.98 D.
+- The planned cut after it then leaves a "hole" that is not a hole, so its first steps meet the stock the plunge would have taken (moves 285 and 644). They are no longer departures from an entry, so the heavy test judges them, rightly.
+- So B as built turns an exempt plunge into an unexempted full-width side cut at the full feed. The over is real load, not a reading artefact.
+
+**What this means for B:**
+- The entries B can replace without breaking the load are the ones that cut nothing: the entry disc is already free (the lift-over descends through air). There the route replaces only the lift and the traverse, with no side leg.
+- For an entry INTO stock, a horizontal approach can hold the load only if its swept width stays within `c·D`, and the cut after it then still lacks the plunge hole. Both are needed, and the second is not a local property.
+- C42's side steps are entries into stock by its selection. So B can save little of C42's 380 s / 1313 s safely. The saving is A's: steps that are no entries at all.
+
+**Proposal (no code until the ROUTE=off result separates A):**
+1. B: route only to an entry whose own disc is free at its Z plus the clearance (`free_at(entry)`), with the side leg removed (the route ends on the entry cell). Count the refused ones in `RouteStats`.
+2. A: kept, if the ROUTE=off heavy run holds the exact bound. If it does not, A's steps need the same width read, and I report it with that run's probes.
+3. A generic note for the shared router (the operator ruling): "a keep-down travel replaces the travel, never the entry's cut". It belongs in `keep_down_route.rs`'s header.
