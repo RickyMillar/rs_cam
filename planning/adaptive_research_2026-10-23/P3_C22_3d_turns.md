@@ -3507,3 +3507,40 @@ At full depth (`d = DPP` wherever stock stands), `A = w · DPP` and `L = w / D`:
 - The corner case at (30.45, −16.11) is re-read under `L`. If it stays over, it becomes the stated class **"barely reachable at the level"**: its centre is 3.55 mm from the wall and 3.95 mm from the shelf corner, against `R + leave = 3.5`. The test reports it apart with those numbers, as the lead ruled (c).
 
 **What I do not predict:** the cycle with the field on the fixtures. P (cost, as §17.6): with descents no longer refused, the research arm's wanaka cycle stays under D26's 3513 s. If it reaches 3513 s, I report that as the result.
+
+### 18.6 The load from the calculations the codebase already has (survey, 2026-10-27; operator: "use any load calcs we already have")
+
+**What exists:**
+
+| Quantity | Where it is defined | Who reads it |
+|---|---|---|
+| Chip cross-section `mrr_cross_section_mm2(ap, ae)`: `ap · ae` by default, `½ · ap · ae` for a V-bit | `tool/mod.rs:508`, `tool/vbit.rs:149` | the power gate (`tool_load/power.rs:287`), and through `predicted_power_kw` the Suggest path (`feeds::calculate`) |
+| Power: `P = A · (Ks · MRR + F_edge · ap · Vc · z·ψ/2π)`, MRR = cross-section × feed | `tool_load/power.rs:13` | power gate, feed modulation (shear term) |
+| Lateral force: `F = ap · (Ks · fz · sin θ_peak + F_edge)` | `feeds/force.rs:75` | deflection gate, predict, feed modulation |
+| Radial width of cut: the perpendicular extent of fresh cells over D | `dexel_stock/stamping.rs` (`perp_max − perp_min`) → `radial_woc_fraction` | the research's pass-load bound, its fixture counts |
+| Axial engagement: "maximum material height engaged" | `stock/simulation_cut.rs:160–164`, `dexel_stock/simulation.rs:1286` | deflection and chip gates |
+| Removed volume and MRR (the true integral) | `dexel_stock/stamping.rs:1366` (`pre − post`), `dexel_stock/simulation.rs:1311` | summaries, air cut |
+| Planner swept width: "the simulator's radial width-of-cut model on the planner grid" | `adaptive/search.rs` (`compute_swept_width` doc), read by `measure_step` and `PassLoad` | the 2D pass load (ceiling `c`) |
+| Planner area per mm (research C7): "the shear term of the power model" | `adaptive/search.rs:675`, `research_geodesic.rs:7730–7757` (`turn_feed_factor` doc) | the turn and slot records |
+
+**The definition (replaces §18.1's integral):** the load of a step is the power gate's own chip cross-section, over that of a full pass at the full width:
+
+`L = mrr_cross_section_mm2(ap, ae) / mrr_cross_section_mm2(DPP, D)`
+
+- `ae` is the radial width of cut the pass load already reads: on the planner `swept_width_on` (§17 strict, a cell counts where stock stands above the tip); in the simulation `radial_woc_fraction · D`.
+- `ap` is the axial engagement: on the planner the deepest `top − (tip + h)` in the disc; in the simulation `axial_engagement_mm`.
+- For every shipped cutter the cross-section is `k · ap · ae` (k = 1, or ½ for the V-bit), so k cancels: `L = (ap / DPP) · (ae / D)`. At a full pass (`ap = DPP`) this is the width fraction of today, so the ceiling `c` and the 0.471 bound carry over with no new number.
+- **This is C18's C43 screen ("box") form.** It is also the cross-section that the power gate already uses for MRR. So planner, oracle, simulation and power gate read one quantity. The integral `∫ d(u) du` of §18.1 is NOT used: the codebase computes no such quantity, and the power gate's MRR is the box. A wedge reads up to 2× its true removal under the box, and that errs safe.
+
+**Planner changes (all under a field; with none, today's code):**
+1. `swept_width_on` keeps the §17 strict width `w`. Under a field it also takes the deepest engaged depth `ap` of the cells it counts, and returns `w · ap / DPP` (k cancels). This replaces the per-bin integral I had drafted; that draft is withdrawn.
+2. `compute_engagement`, `compute_engagement_arc` (AgentSearch's historical measure) and `compute_area_per_mm` (research C7) keep the §17 binary read. No depth weight: they are not the pass load, and a weighted variant of them would be a second formula.
+3. `SlabField` carries DPP and `k = cutter.mrr_cross_section_mm2(1, 1)`. At build it checks that the cutter's cross-section is linear (`mrr(2, 3) == 6k`), so a future cutter shape that is not linear fails loudly, not silently.
+4. The records, `turn_feed_factor` and the readout read through `measure_step`: `swept` becomes `L` under a field, `area` stays the C7 area.
+
+**Judge side (C18):**
+- The exact oracle reads the same `L = (ap / DPP) · (ae / D)` on its lattice: `ae` the exact width of points with stock above the tip, `ap` their deepest depth. Not the integral.
+- The C12 screen and the fixture counts read `radial_woc_fraction · axial_engagement_mm / DPP` (C43's L_box, exactly).
+- Bound: 0.471 (exact) and the screen as today.
+
+**The §18.5 fixture numbers stand unchanged:** `area_metric.py` already computes `woc · ap / DPP`, the box.
