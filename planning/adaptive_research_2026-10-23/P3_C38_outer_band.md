@@ -443,6 +443,40 @@ beyond, which is the same contract again. I propose:
     C37's instrument must read those as "corridor slot entries", not as
     open-arc ends. The slot record carries that tag.
 
+### 6.1 Agreed with C22 (2026-10-26, before the code)
+
+1. **The gate:** `min_region_cut_length_mm > 0.0 &&
+   !is_research_arm(..)`. Accepted.
+2. **The G-b judge:** one cfg block after the outline loop in
+   `plan_and_emit_region`. There is no judge in `pick_region_plan`: both
+   scratch runs judge alike. **Addition from C22:** take
+   `(turns.planned, turns.records.len(), core_zones.len())` of
+   `ctx.research_turns` / `ctx.research_core_zones` before the outline
+   loop. On a skip, truncate the records back and restore `planned`, as
+   `pick_region_plan` does for the loser. Without this, the skipped
+   region's turns read as unfed, and the core sentry reads a zone that was
+   never cut.
+3. **The stock-box clip** at the `research_grown_outlines` call site.
+   Accepted. C22 does not touch the call site or the function.
+4. **The slot types are C22's,** and they land after C35 and before my
+   slot code:
+   - `SlicePlan { .., slots: Vec<(P2, P2)> }`;
+   - `plan_one_outline` passes `turns ++ slots` to `slice_cleanup` and
+     `slice_turn_records`;
+   - `SliceTurns.kinds: Vec<TurnKind { Turn, Slot }>`;
+   - `apply_slice_turn_feeds` splits the summary by kind, and `Research3d`
+     gains `slots: TurnSummary`.
+
+   The 2D C14 types do not change. The corridor fn returns
+   `SlicePlan { segments, turns: vec![], slots, core: None }`.
+- **C37's stage-1 lines** in `clearing.rs`, none in the four places above:
+  - the record block in `plan_one_outline` after the C35 core-zone record;
+  - the record ranges in `pick_region_plan`;
+  - the cfg fields of `ClearZLevelContext`.
+- **A region that falls back** to the shipped path (G-RINGGROW) gets the
+  shipped smoothing and sweep and cuts nothing in a 3 mm ring. It counts
+  in C38's outer-strip figures.
+
 ## 7. The copy op, "3D Rough 1 (copy)" (D9 debug run, 2026-10-26)
 
 ### 7.1 What the copy op is
