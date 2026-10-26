@@ -1,0 +1,53 @@
+{
+ "corne D29 a_only": {
+  "program_plunge_feed_s": 149.6,
+  "summary_runtime_s": 1100.9,
+  "summary_cutting_s": 1015.0,
+  "summary_rapid_s": 85.9,
+  "per_kinematics_sum_s": 1015.0,
+  "samples_s": 1100.9,
+  "program_s": 1102.2,
+  "program_fed_s": 1015.0,
+  "program_rapid_s": 87.2,
+  "samples_retimed_at_program_feed_s": 1100.9,
+  "fed_moves_compared": 12459,
+  "sample_feed_below_program": 330,
+  "sample_feed_above_program": 1,
+  "program_over_sample_feed_median": 1.0,
+  "runtime_by_intent_present": false
+ },
+ "wanaka200 D29 a_only": {
+  "program_plunge_feed_s": 525.2,
+  "summary_runtime_s": 1991.1,
+  "summary_cutting_s": 1909.0,
+  "summary_rapid_s": 82.1,
+  "per_kinematics_sum_s": 4824.9,
+  "samples_s": 4841.4,
+  "program_s": 1665.0,
+  "program_fed_s": 1647.4,
+  "program_rapid_s": 17.6,
+  "samples_retimed_at_program_feed_s": 1663.9,
+  "fed_moves_compared": 13957,
+  "sample_feed_below_program": 12260,
+  "sample_feed_above_program": 110,
+  "program_over_sample_feed_median": 4.55,
+  "runtime_by_intent_present": true
+ },
+ "wanaka200 D29 cut_feed": {
+  "program_plunge_feed_s": 525.1,
+  "summary_runtime_s": 1990.6,
+  "summary_cutting_s": 1908.5,
+  "summary_rapid_s": 82.1,
+  "per_kinematics_sum_s": 4824.6,
+  "samples_s": 4841.2,
+  "program_s": 1664.5,
+  "program_fed_s": 1646.8,
+  "program_rapid_s": 17.6,
+  "samples_retimed_at_program_feed_s": 1663.4,
+  "fed_moves_compared": 13960,
+  "sample_feed_below_program": 12265,
+  "sample_feed_above_program": 109,
+  "program_over_sample_feed_median": 4.55,
+  "runtime_by_intent_present": true
+ }
+}

@@ -1,0 +1,5 @@
+10_c12_heavy rc=101 427s
+thread 'the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels' (1889849) panicked at crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs:1277:5:
+the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels --- FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 426.54s
+error: test failed, to rerun pass `-p rs_cam_core --test adaptive3d_geodesic_arm_c12`

@@ -4395,3 +4395,124 @@ G-code frame moved to the model frame by the stock box minimum):
   the mesh bbox 248 / 193.
 - D26 pick: 831 / 274, 1933 / 1583, 263 / 202.
 - D26 headon: 1137 / 506, 2022 / 1619, 285 / 223.
+
+## D27 (first freeze) — RED at step 3, stopped
+
+`phase3/d27/tree_vs_2c32340ab.patch` (md5 dd501f12bd408a7fcc785e8e46b3e9f9)
+on a clean 2c32340ab: 7 files, 753+/27−. Step 1 fmt green; step 2 clippy
+plain green. Steps 3 and 4 (clippy research, workspace) RED, 1 error:
+`clippy::mut_range_bound` at `adaptive3d/research_outer_band.rs:624`
+(`cursor = k;` inside `for k in cursor..chains.len()`, before `break`).
+Stopped with no edit (lead's rule). The lead re-freezes D27 with C12's fix
+and C22's hole-pocket fix. Fixture worktree restored: clean 2c32340ab.
+
+## D27 v2 / v3 and D29 (first freeze): stops
+
+- **D27 v2** (`tree_vs_2c32340ab_v2.patch`, md5 071e6895…): RED at step 2,
+  `dead_code` on `keep_down_excess` (clearing.rs:938; both callers
+  cfg(research)); steps 3–4 RED, a duplicated
+  `#[expect(clippy::too_many_arguments)]` on `ordered_wraps`. Stopped, no
+  edit.
+- **D27 v3** (`_v3.patch`, md5 eadd8e20…): steps 1–12 green (`d27/v3_*`).
+  Step 9: main-test lines as D26; group-filter lines oneway 5085 / 121,
+  zigzag 1839 / 118, v2 6236 / 65, spiral_pick 1889 / 106, headon 6286 /
+  53, all 0 held. Step 10: green; exact bound as D26; new C40 cause
+  HeldLinkRefused 1–6 per mode. **Extra step RED:**
+  `the_corridor_slots_run_at_the_reduced_feed` (T:1616): "channel: half
+  width 4.800 mm; slot chains 0 steps 0 …" / "the channel planned no
+  corridor slot". Stopped; fixtures not run (the lead skipped them).
+- **D29** (`d29/tree_vs_2c32340ab.patch`, md5 2fe3ec9e…; 24 files + new
+  keep_down_route.rs): fmt and clippy plain green; steps 3–4 do not
+  compile with research: "lifetime may not live long enough" at
+  clearing.rs:602, `stamp_drape(&self) -> StampDrape<'a>` returning
+  `route_stats: Some(&self.research_route_stats)`. Stopped, no edit.
+- Fixture worktree restored to a clean 2c32340ab (keep_down_route.rs
+  removed). Waiting for D29 v2.
+
+## D29 v2 — RED at step 10 (the exact bound), stopped
+
+`d29/tree_vs_2c32340ab_v2.patch` (md5 c154fdb46bac3a2cf84f071dc386fea5) on
+a clean 2c32340ab (24 files, 1472+/75−, + keep_down_route.rs). Steps 1–9
+green: fmt; clippy plain / research / workspace; parity 5/5 and 5/5;
+research_geodesic 26 / 2 ignored; harness 189 files byte-equal (the render
+dir as found had mtime 20:57:28, a run not mine); plain C12 2 passed.
+Step 9 against D27 v3 (moves / entries): oneway 2575/49 → 2575/26; zigzag
+954/47 → 948/14; v2 3122/28 → 3153/13; spiral_pick 983/43 → 979/12;
+headon 3151/24 → 3184/11; LargeZ gone in every arm.
+
+**Step 10 heavy: RED** (T:1277, 426.54 s). Over the exact bound 0.471,
+D27 v3 → D29 v2: oneway 0 → 24 (peak 0.857); zigzag = zigzag_pick 0 → 55
+(0.992); v2 0 → 12 (0.857); spiral_pick 0 → 51 (0.992); headon 0 → 8
+(0.837); attribution only curv 4 → 12, split 2 → 10. First sample, four
+arms: "move 64 ClearingCut at (-14.32, -8.90, 7.00) wall distance 11.86:
+sim radial 0.754, exact peak of the move 0.856"; spiral_pick move 285 at
+(1.67, -8.95, 7.00); headon move 2942 at (-29.84, 17.94, 7.00). C40
+entries fall (spiral_pick 78 → 31). Stopped; no edit; slot test and
+fixtures not run.
+
+D29 v2, step 10b (lead's order: split Part A from Part B): the heavy C12
+test on the same build with `RS_CAM_RESEARCH_KEEP_DOWN_ROUTE=off` is GREEN
+(221.93 s; `d29/v2_10b_heavy_route_off.txt`), no route line, and every
+line equals D27 v3 step 10 (empty diff; the same moves and over counts).
+The C12 test sets `step_split: Default::default()` (PathShape), so Part A
+is not exercised there; the v2 over-bound samples all come from Part B.
+The 20:57:28 render dir of step 8 was my own D27 v3 harness (stamp
+20:54:52), not a foreign run; that remark is withdrawn.
+
+## D29 v4: D27 v3 + Part A + fixed Part B + C12's slot fix + the A gate test — gates GREEN; fixtures fix20
+
+`d29/tree_vs_2c32340ab_v4.patch` (md5 63c572afb65dc16d2fda61f9fcfe2896) on a
+clean 2c32340ab: 24 files, 1585+/77−, + keep_down_route.rs. No edit.
+
+- Steps 1–8 green (clippy workspace 60 s; parity 5/5, 5/5; research_geodesic
+  26 / 2; harness 189 byte-equal).
+- Step 9 plain C12 green. Moves / entries, D27 v3 → v4: oneway 2575/49 →
+  2565/44; zigzag 954/47 → 940/39; v2 3122/28 → 3116/25; spiral_pick 983/43
+  → 969/35; headon 3151/24 → 3145/21. LargeZ gone in every arm.
+- Step 10 heavy green (224.54 s): 0 over on the G1 arms (lines identical to
+  D27 v3); curv 2573 → 2669 moves, split 2414 → 2576. The route lines are
+  tracing events: the test prints none.
+- Steps 11, 12 green. Slot test GREEN: "slot chains 2 steps 116 reduced 108
+  fed 116 unfed 0 …", "444 samples on slot moves, 0 over the screen".
+- A gate test GREEN (35.21 s): every arm "step split made 0, avoided 3–11,
+  max ap avoided 5.500 mm; route tried 0", 0 over.
+
+**Fixtures** (`fix20/run_fix20.sh`; columns a_only ROUTE=off, cut_feed):
+Corne a_only and cut_feed program.nc are byte-equal (the router took 0).
+
+| | Corne D26 pick | Corne a_only (= cut_feed) | wanaka D26 | wanaka a_only | wanaka cut_feed |
+|---|---|---|---|---|---|
+| cycle (CLI) | 3247 s | 2458 s | 3513 s | 1991 s | 1991 s |
+| descents (audit) | 1164 | 200 | 2035 | 340 | 339 |
+| lift-over descents (entries.py) | 1112 | 157 | 2016 | 349 | 349 |
+| plunge-entry spans | 65 | 62 | 20 | 19 | 19 |
+| plunge share (program clock) | 34.8 % | 13.6 % | 48.4 % | 31.5 % | 31.5 % |
+| planar turns > 30° | 3027 | 2201 | 186 | 1451 | 1454 |
+| reversals (> 90°) | 2059 | 390 | 18 | 126 | 126 |
+| over 0.471 per / body / wl (mm) | 2.9 / 474.6 / 303.3 | 185.4 / 794.7 / 297.5 | 0 / 2209.7 / 15.7 | 2121.0 / 1223.9 / 20.1 | — |
+| thick over 0.471 total | 399.1 | 763.8 | 463.3 | 638.3 | — |
+
+- Step split: Corne made 0, avoided 2527, max ap avoided 6.0; wanaka made
+  496, avoided 4201, max 5.46. Route (cut_feed): Corne tried 24 / 372,
+  taken 0, refused_into_stock 12 / 363; wanaka tried 774, taken 5,
+  refused_into_stock 731, travel 31.5 mm, side 1.6 mm.
+- C40 (Other 0 everywhere): Corne op 1 descents 198: Reentry2d 77.3 %,
+  Waterline 9.6, Start 8.1, HeldLinkRefused 4.0, AirRun 1.0; **LargeZ 0 %**.
+  wanaka 361: Reentry2d 41.6, LargeZ 40.4, LargeZHeld 11.4,
+  HeldLinkRefused 5.5 (LargeZ(+Held) 51.8 %).
+- Turns over 30° / over 90° by place, Corne: D26 pick inside 831 / 274,
+  outside 1933 / 1583, beyond 263 / 202; D29 inside 1767 / 313, outside 308
+  / 34, beyond 126 / 43.
+- Turn summaries: Corne op 1 turns 222 / 132 / 132 / 0 unfed; slots 2655 /
+  2561 / 2561 / 0; copy op slots 2648 / 2571 / 2571 / 0; wanaka turns 80 /
+  76 / 76 / **0 unfed** (D26: 72); slots 93 / 23 / 23 / 0; clipped 0 in all.
+  But "C38 slot chains": Corne op 1 steps 2561, fed 444, **unfed 1604**;
+  copy op steps 2571, fed 329, **unfed 2130**; wanaka steps 23, fed 23,
+  unfed 0.
+- Hard bars: **Corne 3 rapid-through-stock collisions** ("Rapid passes
+  through uncut stock on TP1 '3D Rough 1' at local move 3701 / 6704 / 9786:
+  (91.3, -1.1, 28.000) -> (91.3, -1.1, 17.95 / 17.62 / 17.57)"). No fed-link
+  line, no deeper-than line; depth-of-cut advisories op 1 13.0 mm (Corne),
+  9.18 mm (wanaka). No export refused.
+- Band, Corne 3–9 mm: D25/D26 965 → 453 mm²; 0–1.5 525 → 421.
+- Fixture worktree restored: clean 2c32340ab.

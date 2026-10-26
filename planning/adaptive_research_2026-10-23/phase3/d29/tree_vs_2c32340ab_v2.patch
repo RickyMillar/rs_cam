@@ -1,0 +1,2510 @@
+diff --git a/crates/rs_cam_core/src/adaptive/research_geodesic.rs b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+index 7f7a35d1b..fb086c8e3 100644
+--- a/crates/rs_cam_core/src/adaptive/research_geodesic.rs
++++ b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+@@ -2851,7 +2851,70 @@ fn ordered_wraps(
+     options: GeodesicOptions,
+     cancel: &dyn CancelCheck,
+ ) -> Result<Vec<Wrap>, Cancelled> {
+-    let chains = collect_chains(field, region, min_level, options.meeting, cancel)?;
++    ordered_wraps_beside_core(
++        field, region, start, reach, stepover, min_level, None, options, cancel,
++    )
++}
++
++/// §12.9: the core of a core spiral ([`held_core_spiral`]): its seed and
++/// its last level `K`.
++#[derive(Debug, Clone, Copy)]
++struct SpiralCore {
++    seed: P2,
++    levels: usize,
++}
++
++impl SpiralCore {
++    /// True when `chain` is the core's own loop: a closed chain of level
++    /// `1..=K` that encloses the seed. The spiral cuts that loop; every
++    /// other piece of a level `≤ K` (a loop in a pocket the spiral does not
++    /// reach, an open arc) is not the core's.
++    fn owns(&self, chain: &Chain) -> bool {
++        chain.level <= self.levels
++            && chain.closed
++            && Polygon2::new(chain.pts.clone()).contains_point(&self.seed)
++    }
++}
++
++/// §12.9: `chains` less the core's own loops ([`SpiralCore::owns`]).
++fn beside_core(mut chains: Vec<Chain>, core: SpiralCore) -> Vec<Chain> {
++    chains.retain(|c| !core.owns(c));
++    chains
++}
++
++/// [`ordered_wraps`] beside a core spiral (§12.9). With `core`, the chains
++/// start at level 1 and the core's own loops ([`SpiralCore::owns`]) are
++/// dropped: the spiral cuts them. A star-shaped core
++/// ([`GeodesicField::star_levels`]) can still hold a pocket the plate cuts
++/// off along the rays: its loops of a level `≤ K` are not crossed by any
++/// ray before the ray leaves the reachable cells, so the spiral never
++/// sweeps them, and they stay wraps. Without `core`, the chains start at
++/// `min_level`, as before.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++fn ordered_wraps_beside_core(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    start: P2,
++    reach: f64,
++    stepover: f64,
++    min_level: usize,
++    core: Option<SpiralCore>,
++    options: GeodesicOptions,
++    cancel: &dyn CancelCheck,
++) -> Result<Vec<Wrap>, Cancelled> {
++    let mut chains = collect_chains(
++        field,
++        region,
++        if core.is_some() { 1 } else { min_level },
++        options.meeting,
++        cancel,
++    )?;
++    if let Some(core) = core {
++        chains = beside_core(chains, core);
++    }
+     let parents = parents_of(&chains, reach, cancel)?;
+     let ramp = options.join == JoinRule::Ramp;
+     // C14: the traditional arc links cut a lobe to its end first, too.
+@@ -4543,6 +4606,11 @@ pub struct FieldReport {
+     /// out from the starter rim), the rim's 0 first. Under
+     /// [`Spacing::CurvatureLocal`] the values are passes `U` times `s`.
+     pub level_values_mm: Vec<f64>,
++    /// §12.9: under the C35 core spiral, the wraps of a core level that
++    /// are not the core's own loop (a pocket the spiral does not reach, an
++    /// open arc): their level, whether each is closed, and the area a
++    /// closed one holds (mm²). They are planned as wraps.
++    pub core_pieces: Vec<(usize, bool, f64)>,
+ }
+ 
+ /// C14: the record of the arc links of one piece ([`ArcLink`]).
+@@ -5188,6 +5256,7 @@ fn plan_piece(
+             joins: JoinReport::default(),
+             local_converged: field.local_converged,
+             level_values_mm: field.level_values_mm(),
++            core_pieces: Vec::new(),
+             reseed: ReseedReport::default(),
+             split: SplitReport::default(),
+             arcs: ArcReport::default(),
+@@ -5288,16 +5357,37 @@ fn plan_piece(
+         };
+         (spiral, spiral_levels)
+     };
+-    let wraps = ordered_wraps(
++    // §12.9: beside the C35 core spiral, every piece of a core level that
++    // is not the core's own loop stays a wrap.
++    let core = (core_spiral_join && spiral_levels > 0).then_some(SpiralCore {
++        seed,
++        levels: spiral_levels,
++    });
++    let wraps = ordered_wraps_beside_core(
+         &field,
+         &region,
+         spiral.last().copied().unwrap_or(starter_end),
+         reach,
+         s,
+         spiral_levels + 1,
++        core,
+         options,
+         cancel,
+     )?;
++    // §12.9 (instrument): the wraps of a core level, and the area each
++    // closed one holds.
++    let core_pieces: Vec<(usize, bool, f64)> = wraps
++        .iter()
++        .filter(|w| core.is_some_and(|c| w.level <= c.levels))
++        .map(|w| {
++            let area = if w.closed {
++                Polygon2::new(w.pts.clone()).signed_area().abs()
++            } else {
++                0.0
++            };
++            (w.level, w.closed, area)
++        })
++        .collect();
+     let mut report = FieldReport {
+         applied: true,
+         seed: Some(seed),
+@@ -5311,6 +5401,7 @@ fn plan_piece(
+         joins: JoinReport::default(),
+         local_converged: field.local_converged,
+         level_values_mm: field.level_values_mm(),
++        core_pieces,
+         reseed: ReseedReport::default(),
+         // C11 with an empty zone: one field, the plan of `Reseed::Off`.
+         split: if split {
+@@ -5981,6 +6072,7 @@ fn reseed_segments(
+         joins: JoinReport::default(),
+         local_converged: field.local_converged,
+         level_values_mm: field.level_values_mm(),
++        core_pieces: Vec::new(),
+         reseed: ReseedReport {
+             enabled: true,
+             ..ReseedReport::default()
+@@ -6387,6 +6479,7 @@ fn split_segments(
+         joins: JoinReport::default(),
+         local_converged: field.local_converged,
+         level_values_mm: field.level_values_mm(),
++        core_pieces: Vec::new(),
+         reseed: ReseedReport::default(),
+         split: SplitReport {
+             enabled: true,
+@@ -7503,6 +7596,10 @@ pub struct TurnSummary {
+     /// needs no reduced feed: its feed is the full feed, which every
+     /// clearing move carries. It is not in [`Self::unfed`].
+     pub full_feed_unmatched: usize,
++    /// §14.6: turns the 2D plan cuts that have no emitted move and neither
++    /// end inside the boundary clip. The 3D stage's clip removed them; they
++    /// are not in [`Self::turns`] and not in [`Self::unfed`].
++    pub clipped: usize,
+ }
+ 
+ /// C14: one clearing turn of the emitted plan.
+@@ -8083,6 +8180,9 @@ pub(crate) struct CoreZone {
+     /// the ceiling on it (`None` when no step of it reads over).
+     pub(crate) handoff: Option<(P2, P2)>,
+     pub(crate) handoff_over: Option<f64>,
++    /// §12.9 ([`FieldReport::core_pieces`]): the wraps of a core level
++    /// beside the core loop, planned: level, closed, area (mm²).
++    pub(crate) pieces: Vec<(usize, bool, f64)>,
+ }
+ 
+ /// C37 (instrument): the arc-join counts of one slice plan, from its
+@@ -8297,6 +8397,7 @@ pub(crate) fn slice_segments(
+                         over,
+                         handoff,
+                         handoff_over,
++                        pieces: report.core_pieces.clone(),
+                     })
+                 });
+             let arcs = ArcCounts::of(&produced.report.arcs);
+@@ -8461,6 +8562,9 @@ pub(crate) struct SliceTurns {
+     pub(crate) records: Vec<TurnRecord>,
+     /// C38: the kind of each record, one per record.
+     pub(crate) kinds: Vec<TurnKind>,
++    /// §14.6: for each record, whether its start and its end lie inside
++    /// the boundary clip (`centre_clip`), one per record.
++    pub(crate) ends_inside: Vec<(bool, bool)>,
+ }
+ 
+ /// The extent of a [`SliceTurns`] at one time ([`SliceTurns::mark`]): the
+@@ -8478,24 +8582,28 @@ impl SliceTurns {
+     /// list of turns, then slots) of those its cleaned plan cut, kept only
+     /// where the filtered plan `segments` still cuts them (the F-038 filter
+     /// drops whole groups; a dropped turn has no move, as a turn the 2D
+-    /// plan does not cut).
++    /// plan does not cut). §14.6: each kept record also notes whether its
++    /// ends lie `inside` the boundary clip.
+     pub(crate) fn add(
+         &mut self,
+         planned: usize,
+         planned_slots: usize,
+         records: Vec<(usize, TurnRecord)>,
+         segments: &[AdaptiveSegment],
++        inside: &dyn Fn(P2) -> bool,
+     ) {
+         self.planned += planned;
+         self.planned_slots += planned_slots;
+         for (k, t) in records {
+             if turn_in_plan(segments, t.from, t.to) {
+-                self.records.push(t);
+-                self.kinds.push(if k < planned {
++                let kind = if k < planned {
+                     TurnKind::Turn
+                 } else {
+                     TurnKind::Slot
+-                });
++                };
++                self.ends_inside.push((inside(t.from), inside(t.to)));
++                self.records.push(t);
++                self.kinds.push(kind);
+             }
+         }
+     }
+@@ -8515,6 +8623,7 @@ impl SliceTurns {
+         self.planned_slots = mark.planned_slots;
+         self.records.truncate(mark.records);
+         self.kinds.truncate(mark.records);
++        self.ends_inside.truncate(mark.records);
+     }
+ 
+     /// Remove what was added between `from` and `to` (two marks, in that
+@@ -8525,6 +8634,7 @@ impl SliceTurns {
+         self.planned_slots -= to.planned_slots - from.planned_slots;
+         self.records.drain(from.records..to.records);
+         self.kinds.drain(from.records..to.records);
++        self.ends_inside.drain(from.records..to.records);
+     }
+ }
+ 
+@@ -8557,6 +8667,7 @@ pub(crate) fn apply_slice_turn_feeds(
+         planned_slots,
+         records,
+         kinds,
++        ends_inside,
+     } = turns;
+     let on = |p: P2, q: P2, x: P2| point_to_segment_distance(&x, &p, &q) < 1e-6;
+     // The turns by the buckets (side: the longest turn) their box covers,
+@@ -8605,13 +8716,42 @@ pub(crate) fn apply_slice_turn_feeds(
+         planned: planned_slots,
+         ..TurnSummary::default()
+     };
+-    for ((mut t, was_fed), kind) in records.into_iter().zip(fed).zip(kinds) {
++    // §14.6 (proof line): one `info` line per turn that is not fed: its
++    // ends, whether each lies inside the boundary clip, and the emitted
++    // move that comes nearest to holding it ([`HoldingMove`]).
++    let not_fed = |kind: TurnKind, t: &TurnRecord, ends: (bool, bool), why: &str| {
++        let near = t.holding.map_or_else(
++            || "none".to_owned(),
++            |h| format!("{:.3} / {:.3}", h.off_from, h.off_to),
++        );
++        tracing::info!(
++            kind = ?kind,
++            why,
++            from = %format!("({:.3}, {:.3})", t.from.x, t.from.y),
++            to = %format!("({:.3}, {:.3})", t.to.x, t.to.y),
++            from_inside = ends.0,
++            to_inside = ends.1,
++            factor = %format!("{:.3}", t.feed_factor),
++            nearest_move_off_mm = %near,
++            "C22 turn not fed"
++        );
++    };
++    for (((mut t, was_fed), kind), ends) in records.into_iter().zip(fed).zip(kinds).zip(ends_inside)
++    {
+         let summary = match kind {
+             TurnKind::Turn => &mut summary,
+             TurnKind::Slot => &mut slots,
+         };
+         t.fed = was_fed;
+         t.feed_mm_min = feed_rate * t.feed_factor;
++        // §14.6: a turn with no move and neither end inside the boundary
++        // clip was removed by the 3D stage's clip: it is clipped, not cut.
++        if !was_fed && ends == (false, false) {
++            t.holding = holding_move(tp, t.from, t.to);
++            not_fed(kind, &t, ends, "clipped");
++            summary.clipped += 1;
++            continue;
++        }
+         if was_fed {
+             summary.fed += 1;
+         } else {
+@@ -8621,6 +8761,12 @@ pub(crate) fn apply_slice_turn_feeds(
+                 summary.full_feed_unmatched += 1;
+             }
+             t.holding = holding_move(tp, t.from, t.to);
++            let why = if t.feed_factor < 1.0 {
++                "unfed"
++            } else {
++                "full feed, no move"
++            };
++            not_fed(kind, &t, ends, why);
+         }
+         summary.turns.push(t);
+     }
+@@ -10614,4 +10760,42 @@ mod tests {
+             "the refused link did not become a re-entry at (25, 10)"
+         );
+     }
++
++    /// §12.9: beside a core spiral, only the core's own loop (closed, of a
++    /// level up to K, round the seed) leaves the wraps. A pocket loop of a
++    /// core level that does not enclose the seed, an open arc of a core
++    /// level, and a loop of a level past K all stay, so they are planned.
++    #[test]
++    fn only_the_core_loop_leaves_the_wraps_beside_a_core_spiral() {
++        let seed = P2::new(0.0, 0.0);
++        let square = |c: P2, h: f64| {
++            vec![
++                P2::new(c.x - h, c.y - h),
++                P2::new(c.x + h, c.y - h),
++                P2::new(c.x + h, c.y + h),
++                P2::new(c.x - h, c.y + h),
++                P2::new(c.x - h, c.y - h),
++            ]
++        };
++        let core = SpiralCore { seed, levels: 3 };
++        let chains = vec![
++            // The core loop of level 2: closed, round the seed.
++            Chain::new(2, square(seed, 10.0), true),
++            // A pocket loop of level 2 inside the core radius, cut off from
++            // the seed: closed, but not round the seed.
++            Chain::new(2, square(P2::new(6.0, 0.0), 1.0), true),
++            // An open arc of level 3.
++            Chain::new(3, vec![P2::new(20.0, 0.0), P2::new(20.0, 5.0)], false),
++            // A loop of level 4, past K.
++            Chain::new(4, square(seed, 30.0), true),
++        ];
++        let kept = beside_core(chains, core);
++        let shape: Vec<(usize, bool)> = kept.iter().map(|c| (c.level, c.closed)).collect();
++        assert_eq!(shape, vec![(2, true), (3, false), (4, true)]);
++        assert!(
++            kept.first()
++                .is_some_and(|c| !Polygon2::new(c.pts.clone()).contains_point(&seed)),
++            "the kept level-2 loop must be the pocket, not the core loop"
++        );
++    }
+ }
+diff --git a/crates/rs_cam_core/src/adaptive3d/centre_clip.rs b/crates/rs_cam_core/src/adaptive3d/centre_clip.rs
+index 5269bba7a..a82fd2848 100644
+--- a/crates/rs_cam_core/src/adaptive3d/centre_clip.rs
++++ b/crates/rs_cam_core/src/adaptive3d/centre_clip.rs
+@@ -100,6 +100,13 @@ impl CentreClip {
+         Some(clip)
+     }
+ 
++    /// Research (C38 §13.7): the clip's containment polygons (shrunk by
++    /// [`EDGE_MARGIN_MM`]), for the reach a 2D plan may grow into.
++    #[cfg(feature = "research")]
++    pub(super) fn polygons(&self) -> &[Polygon2] {
++        &self.polygons
++    }
++
+     fn cell_of(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+         let c = ((x - self.origin_x) / self.cell).floor();
+         let r = ((y - self.origin_y) / self.cell).floor();
+@@ -332,6 +339,8 @@ pub(super) fn clip_segment(
+ ) -> Vec<Adaptive3dSegment> {
+     match segment {
+         Adaptive3dSegment::Marker(_) => vec![segment],
++        // A route's rapid is planned inside the clip (`keep_down_route`).
++        Adaptive3dSegment::LowRapid(_) => vec![segment],
+         Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
+             if clip.contains(entry.x, entry.y) {
+                 cursor.clip_gap = false;
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 9b3c831d9..0abe0741b 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -413,11 +413,22 @@ pub(super) struct ClearZLevelContext<'a> {
+     /// gets their feeds (`mod.rs`, `research_turn_feeds`).
+     #[cfg(feature = "research")]
+     pub(super) research_turns: std::cell::RefCell<crate::adaptive::research_geodesic::SliceTurns>,
+-    /// Research (C29): the keep-down link clearance the emitter reads
+-    /// (`params.linking.stay_down_clearance_mm.max(0.0)`), for the pick's
+-    /// 3D score.
+-    #[cfg(feature = "research")]
++    /// The keep-down link clearance the emitter reads
++    /// (`params.linking.stay_down_clearance_mm.max(0.0)`): (C29) the pick's
++    /// 3D score, and (§16) the dexel allowance of the stock-read split.
+     pub(super) stay_down_clearance_mm: f64,
++    /// §16 Part A: the split rule in force ([`super::StepSplit`]): the
++    /// parameter, or [`super::StepSplit::StockDepth`] for the research arm.
++    pub(super) step_split: super::StepSplit,
++    /// §16 Part A (instrument): the large steps under the stock-read rule.
++    #[cfg(feature = "research")]
++    pub(super) research_split_stats: std::cell::RefCell<super::SplitStats>,
++    /// §16 Part B: the routed keep-down travel in force
++    /// (`super::effective_keep_down_route`).
++    pub(super) keep_down_route: super::KeepDownRoute,
++    /// §16 Part B (instrument): the routed travels.
++    #[cfg(feature = "research")]
++    pub(super) research_route_stats: std::cell::RefCell<super::RouteStats>,
+     /// Research (C31): one record per region opening decision, for the
+     /// research record of the run (`mod.rs`, `Research3d::openings`).
+     #[cfg(feature = "research")]
+@@ -575,10 +586,19 @@ pub(super) struct StampDrape<'a> {
+     /// `None` with no boundary. Every pushed segment passes it first, so the
+     /// planner stamps only what the clip keeps (G-BOUNDARYPHANTOM).
+     pub(super) centre_clip: Option<&'a CentreClip>,
++    /// §16 Part B: the routed keep-down travel at an entry
++    /// ([`routed_entry`]), and the values it reads: the stay-down
++    /// clearance, Depth/Pass and the stepover. `Off` for the waterline.
++    pub(super) keep_down_route: super::KeepDownRoute,
++    pub(super) stay_down_clearance_mm: f64,
++    pub(super) depth_per_pass: f64,
++    pub(super) stepover: f64,
++    #[cfg(feature = "research")]
++    pub(super) route_stats: Option<&'a std::cell::RefCell<super::RouteStats>>,
+ }
+ 
+ impl<'a> ClearZLevelContext<'a> {
+-    pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
++    pub(super) fn stamp_drape(&self) -> StampDrape<'_> {
+         StampDrape {
+             mesh: self.mesh,
+             index: self.index,
+@@ -587,6 +607,12 @@ impl<'a> ClearZLevelContext<'a> {
+             entry_floor_radius: self.entry_floor_radius,
+             stay_down_mm: self.stay_down_mm,
+             centre_clip: self.centre_clip,
++            keep_down_route: self.keep_down_route,
++            stay_down_clearance_mm: self.stay_down_clearance_mm,
++            depth_per_pass: self.depth_per_pass,
++            stepover: self.stepover,
++            #[cfg(feature = "research")]
++            route_stats: Some(&self.research_route_stats),
+         }
+     }
+ }
+@@ -765,6 +791,8 @@ fn stamp_emitted_segment(
+             stamp_along_path(material_stock, lut, tool_radius, &draped);
+             draped.last().copied()
+         }
++        // A route's rapid cuts nothing (its full-disc proof): no stamp.
++        Adaptive3dSegment::LowRapid(target) => Some(*target),
+         Adaptive3dSegment::Marker(_) => None,
+     }
+ }
+@@ -922,6 +950,67 @@ fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f
+     ceiling
+ }
+ 
++/// The keep-down proof of a link that feeds at depth from `from` to `to`
++/// (any strategy's held link): the point of the swept disc of `radius`
++/// (sampled as [`corridor_ceiling_z`] samples it) where the conservative
++/// stock top stands highest above `ceiling_z`, and that height; `None`
++/// when no column of the disc stands above `ceiling_z`, so the link may
++/// stay down.
++///
++/// The ceiling a caller passes is the top of the slab the link's level
++/// cuts plus the stay-down clearance (the dexel resolution,
++/// `plan_entry`'s allowance). Inside the slab a link held to the 2D pass
++/// load may cut a side band up to `c·D` wide (G-ADAPTLINKLOAD): that is
++/// planned. A column above the slab is stock the level above did not cut,
++/// which no planned move of this level takes (C38 §14: the fed-link bars).
++/// Research only until a shipped strategy's held links adopt it.
++#[cfg(feature = "research")]
++pub(super) fn keep_down_excess(
++    stock: &TriDexelStock,
++    from: P3,
++    to: P3,
++    radius: f64,
++    ceiling_z: f64,
++) -> Option<(P2, f64)> {
++    let dx = to.x - from.x;
++    let dy = to.y - from.y;
++    let len = (dx * dx + dy * dy).sqrt();
++    let step = (stock.z_grid.cell_size * 0.5).max(1e-3);
++    let n = (len / step).ceil().max(1.0) as usize;
++    (0..=n)
++        .filter_map(|k| {
++            let t = k as f64 / n as f64;
++            let p = P2::new(from.x + dx * t, from.y + dy * t);
++            stock
++                .max_conservative_top_z_in_disc(p.x, p.y, radius)
++                .filter(|&top| top > ceiling_z)
++                .map(|top| (p, top - ceiling_z))
++        })
++        .max_by(|a, b| a.1.total_cmp(&b.1))
++}
++
++/// §16 Part A: the deepest axial engagement (mm) of a feed move from `p`
++/// to `q` with a tool of `radius`: at each sample along the move (every
++/// half cell, as [`corridor_ceiling_z`]), the conservative stock top over
++/// the disc less the tool's Z there. `NEG_INFINITY` when the move is off
++/// the grid. Any strategy's draped cut can read it.
++pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64) -> f64 {
++    let dx = q.x - p.x;
++    let dy = q.y - p.y;
++    let len = (dx * dx + dy * dy).sqrt();
++    let step = (stock.z_grid.cell_size * 0.5).max(1e-3);
++    let n = (len / step).ceil().max(1.0) as usize;
++    (0..=n)
++        .filter_map(|k| {
++            let t = k as f64 / n as f64;
++            let z = p.z + t * (q.z - p.z);
++            stock
++                .max_conservative_top_z_in_disc(p.x + dx * t, p.y + dy * t, radius)
++                .map(|top| top - z)
++        })
++        .fold(f64::NEG_INFINITY, f64::max)
++}
++
+ /// Helper to push a segment and stamp its simulator-equivalent swept
+ /// material removal in one call.
+ ///
+@@ -992,6 +1081,28 @@ fn push_segment_with_stamp_unclipped(
+     min_cutting_radius: f64,
+     drape: &StampDrape<'_>,
+ ) {
++    // §16 Part B: an entry the routed keep-down travel can replace goes out
++    // as the route.
++    if let Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } =
++        &segment
++        && let Some(route) = routed_entry(material_stock, tool_radius, cursor, *entry, drape)
++    {
++        for piece in route {
++            let piece = stamp_and_advance(
++                material_stock,
++                lut,
++                tool_radius,
++                cursor,
++                piece,
++                safe_z,
++                tolerance,
++                min_cutting_radius,
++                drape,
++            );
++            segments.push(piece);
++        }
++        return;
++    }
+     let segment = stamp_and_advance(
+         material_stock,
+         lut,
+@@ -1006,6 +1117,115 @@ fn push_segment_with_stamp_unclipped(
+     segments.push(segment);
+ }
+ 
++/// §16 Part B: the segments of a routed keep-down travel that replaces the
++/// entry `entry` (`keep_down_route`), or `None`: the travel is off, the
++/// tool has no position, or no route holds.
++///
++/// - The travel runs at the entry's Z (cut feed: `Link`s, free cells to the
++///   stay-down clearance above it) or at the entry's Z plus the rapid
++///   clearance (rapid: `LowRapid`s, free cells to that clearance). Either
++///   way a free cell's whole tool disc stands at most the clearance above
++///   the travel's floor: the full-disc proof.
++/// - The side leg from the route's last point to the entry is a `Cut`. It is
++///   at most one stepover long and passes the stock-read pass rule of
++///   §16 Part A (`step_axial_depth` within Depth/Pass plus the stay-down
++///   clearance): the side band a pass may take.
++/// - The route's length is held to the stay-down distance (`stay_down_mm`),
++///   the one keep-down dial (CUT-05).
++/// - A tool standing above the travel's Z drops to it only when its disc
++///   there is free (through air); a tool below it rises at its own XY
++///   first.
++fn routed_entry(
++    stock: &TriDexelStock,
++    tool_radius: f64,
++    cursor: &PlannerCursor,
++    entry: P3,
++    drape: &StampDrape<'_>,
++) -> Option<Vec<Adaptive3dSegment>> {
++    let (rapid, clearance) = match drape.keep_down_route {
++        super::KeepDownRoute::Off => return None,
++        super::KeepDownRoute::CutFeed => (false, drape.stay_down_clearance_mm),
++        super::KeepDownRoute::Rapid { clearance_mm } => (true, clearance_mm),
++    };
++    let from = cursor.tool_pos?;
++    if drape.stay_down_mm <= 0.0 {
++        return None;
++    }
++    #[cfg(feature = "research")]
++    if let Some(stats) = drape.route_stats {
++        stats.borrow_mut().tried += 1;
++    }
++    let travel_z = if rapid { entry.z + clearance } else { entry.z };
++    let ceiling_z = entry.z + clearance;
++    let free_at = |p: P2| {
++        stock
++            .max_conservative_top_z_in_disc(p.x, p.y, tool_radius)
++            .is_none_or(|top| top <= ceiling_z)
++    };
++    // A tool above the travel drops to it only through air; a tool below
++    // it rises at its own XY first (a rise cuts nothing).
++    if from.z > travel_z + clearance && !free_at(P2::new(from.x, from.y)) {
++        return None;
++    }
++    let allowed = |p: P2| drape.centre_clip.is_none_or(|c| c.contains(p.x, p.y));
++    let side_ok = |p: P2| {
++        step_axial_depth(stock, P3::new(p.x, p.y, travel_z), entry, tool_radius)
++            <= drape.depth_per_pass + drape.stay_down_clearance_mm
++    };
++    let req = super::keep_down_route::RouteRequest {
++        from: P2::new(from.x, from.y),
++        to: P2::new(entry.x, entry.y),
++        radius: tool_radius,
++        ceiling_z,
++        max_len: drape.stay_down_mm,
++        side_max: drape.stepover,
++        side_ok: &side_ok,
++        allowed: &allowed,
++    };
++    let path = super::keep_down_route::straight_runs(&super::keep_down_route::keep_down_route(
++        stock, &req,
++    )?);
++    let last = *path.last()?;
++    let mut out: Vec<Adaptive3dSegment> = Vec::with_capacity(path.len() + 2);
++    if from.z < travel_z - 1e-9 {
++        let up = P3::new(from.x, from.y, travel_z);
++        out.push(if rapid {
++            Adaptive3dSegment::LowRapid(up)
++        } else {
++            Adaptive3dSegment::Link(up)
++        });
++    }
++    for p in &path {
++        let at = P3::new(p.x, p.y, travel_z);
++        out.push(if rapid {
++            Adaptive3dSegment::LowRapid(at)
++        } else {
++            Adaptive3dSegment::Link(at)
++        });
++    }
++    let side = (entry.x - last.x).hypot(entry.y - last.y);
++    if side > 1e-9 || (entry.z - travel_z).abs() > 1e-9 {
++        out.push(Adaptive3dSegment::Cut(vec![
++            P3::new(last.x, last.y, travel_z),
++            entry,
++        ]));
++    }
++    #[cfg(feature = "research")]
++    if let Some(stats) = drape.route_stats {
++        let mut stats = stats.borrow_mut();
++        stats.taken += 1;
++        let mut travel = 0.0;
++        let mut prev = P2::new(from.x, from.y);
++        for p in &path {
++            travel += (p.x - prev.x).hypot(p.y - prev.y);
++            prev = *p;
++        }
++        stats.travel_mm += travel;
++        stats.side_mm += side;
++    }
++    Some(out)
++}
++
+ /// Plan an entry (its floor and keep-down proof), stamp the segment into the
+ /// planner stock and move the cursor past it. Returns the segment to emit.
+ #[expect(
+@@ -1055,7 +1275,7 @@ fn stamp_and_advance(
+         Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
+             cursor.last_pos = Some(*entry);
+         }
+-        Adaptive3dSegment::Link(target) => {
++        Adaptive3dSegment::Link(target) | Adaptive3dSegment::LowRapid(target) => {
+             cursor.last_pos = Some(*target);
+         }
+         Adaptive3dSegment::Marker(_) => {}
+@@ -1682,6 +1902,13 @@ pub(super) fn waterline_cleanup(
+         entry_floor_radius,
+         stay_down_mm: 0.0,
+         centre_clip,
++        // A waterline contour gets no routed travel either.
++        keep_down_route: super::KeepDownRoute::Off,
++        stay_down_clearance_mm: 0.0,
++        depth_per_pass: 0.0,
++        stepover: 0.0,
++        #[cfg(feature = "research")]
++        route_stats: None,
+     };
+     #[cfg(not(target_arch = "wasm32"))]
+     let t_waterline = Instant::now();
+@@ -2197,7 +2424,9 @@ impl LevelSink<'_> {
+             // than two points: they neither commit nor replace an entry.
+             Adaptive3dSegment::Marker(_) => self.segments.push(segment),
+             Adaptive3dSegment::Cut(ref path) if path.len() < 2 => self.segments.push(segment),
+-            Adaptive3dSegment::Cut(_) | Adaptive3dSegment::Link(_) => {
++            Adaptive3dSegment::Cut(_)
++            | Adaptive3dSegment::Link(_)
++            | Adaptive3dSegment::LowRapid(_) => {
+                 self.commit_pending(ctx);
+                 #[cfg(feature = "research")]
+                 self.check_held_link(ctx, &segment);
+@@ -2219,14 +2448,13 @@ impl LevelSink<'_> {
+ 
+     /// Research (C22a sentry): a held link piece that passed the boundary
+     /// clip, read on the planner stock where the sink is about to stamp it,
+-    /// from the tool position to its end, at each stock cell. The 2D replay
+-    /// admits a link only within the pass load, whose swept width (c·D) is
+-    /// under R, so the link's centre line runs on ground the emitted plan
+-    /// cut to the level. Stock there above the link plus the stay-down
+-    /// clearance (the dexel resolution, as `plan_entry`'s reads allow) is
+-    /// stock that no emitted move cut. Counted and logged; the move is not
+-    /// changed. A stock the planner reads as air (G-CLIPAIR) cannot show
+-    /// here.
++    /// from the tool position to its end, by the keep-down proof the link
++    /// passed before the clip (`keep_down_excess`: the swept disc of R
++    /// against the top of the level's slab plus the stay-down clearance;
++    /// C38 §14). A column there is stock that no emitted move cut. Counted
++    /// and logged (`stock_above_mm` is its height over that ceiling); the
++    /// move is not changed. A stock the planner reads as air (G-CLIPAIR)
++    /// cannot show here.
+     #[cfg(feature = "research")]
+     fn check_held_link(&self, ctx: &ClearZLevelContext<'_>, segment: &Adaptive3dSegment) {
+         let (true, Adaptive3dSegment::Link(end), Some(from)) =
+@@ -2234,22 +2462,15 @@ impl LevelSink<'_> {
+         else {
+             return;
+         };
+-        let len = (end.x - from.x).hypot(end.y - from.y);
+-        let cell = self.material_stock.z_grid.cell_size;
+-        let n = (len / cell).ceil().max(1.0) as usize;
+-        let worst = (0..=n)
+-            .filter_map(|k| {
+-                let t = k as f64 / n as f64;
+-                let p = P3::new(
+-                    from.x + t * (end.x - from.x),
+-                    from.y + t * (end.y - from.y),
+-                    from.z + t * (end.z - from.z),
+-                );
+-                sample_stock_top_at(self.material_stock, p.x, p.y)
+-                    .filter(|&top| top > p.z + ctx.stay_down_clearance_mm)
+-                    .map(|top| (p, top - p.z))
+-            })
+-            .max_by(|a, b| a.1.total_cmp(&b.1));
++        // C38 §14: the same swept disc and ceiling as the keep-down proof
++        // (`keep_down_excess`); `above` is the height over that ceiling.
++        let worst = keep_down_excess(
++            self.material_stock,
++            from,
++            *end,
++            ctx.tool_radius,
++            end.z + ctx.depth_per_pass + ctx.stay_down_clearance_mm,
++        );
+         if let Some((at, above)) = worst {
+             tracing::info!(
+                 z = end.z,
+@@ -2284,6 +2505,34 @@ impl LevelSink<'_> {
+             }
+             _ => return,
+         };
++        // §16 Part B: an entry the routed keep-down travel can replace goes
++        // out as the route, in the entry's place (only markers stand after
++        // a pending entry, so the order holds).
++        let drape = ctx.stamp_drape();
++        if let Some(route) = routed_entry(
++            self.material_stock,
++            ctx.tool_radius,
++            self.cursor,
++            entry,
++            &drape,
++        ) {
++            let mut stamped = Vec::with_capacity(route.len());
++            for piece in route {
++                stamped.push(stamp_and_advance(
++                    self.material_stock,
++                    ctx.lut,
++                    ctx.tool_radius,
++                    self.cursor,
++                    piece,
++                    ctx.safe_z,
++                    ctx.cut_tolerance,
++                    ctx.min_cutting_radius,
++                    &drape,
++                ));
++            }
++            self.segments.splice(i..=i, stamped);
++            return;
++        }
+         *slot = stamp_and_advance(
+             self.material_stock,
+             ctx.lut,
+@@ -2293,7 +2542,7 @@ impl LevelSink<'_> {
+             ctx.safe_z,
+             ctx.cut_tolerance,
+             ctx.min_cutting_radius,
+-            &ctx.stamp_drape(),
++            &drape,
+         );
+     }
+ }
+@@ -2301,7 +2550,7 @@ impl LevelSink<'_> {
+ /// Whether the slice runs the research arm C12
+ /// (`ClearingStrategy3d::Geodesic`). Always false without the `research`
+ /// feature.
+-fn is_research_arm(strategy: ClearingStrategy3d) -> bool {
++pub(super) fn is_research_arm(strategy: ClearingStrategy3d) -> bool {
+     #[cfg(feature = "research")]
+     {
+         matches!(strategy, ClearingStrategy3d::Geodesic(_))
+@@ -2325,7 +2574,13 @@ fn research_slice_segments(
+ ) -> Result<Option<crate::adaptive::research_geodesic::SlicePlan>, Cancelled> {
+     match strategy {
+         ClearingStrategy3d::Geodesic(options) => {
+-            crate::adaptive::research_geodesic::slice_segments(polygon, params_2d, options, cancel)
++            let plan = crate::adaptive::research_geodesic::slice_segments(
++                polygon, params_2d, options, cancel,
++            )?;
++            // C38 §13: where the field does not apply because its seed does
++            // not fit, the corridor opening (counted, fed slots) plans the
++            // piece.
++            Ok(plan.or_else(|| super::research_outer_band::corridor_opening(polygon, params_2d)))
+         }
+         ClearingStrategy3d::AgentSearch
+         | ClearingStrategy3d::ContourParallel
+@@ -2525,6 +2780,16 @@ fn plan_one_outline(
+             crate::adaptive::research_geodesic::core_rapids(&segs_2d_raw, &zone, params_2d);
+         let handoff_line = core_handoff_line(&zone, &segs_2d_raw, params_2d);
+         tracing::info!(z = z_level, "C35b {handoff_line}");
++        // §12.9: the wraps of a core level beside the core loop.
++        let core_pieces_closed = zone.pieces.iter().filter(|p| p.1).count();
++        let core_pieces_area_mm2: f64 = zone.pieces.iter().map(|p| p.2).sum();
++        tracing::info!(
++            z = z_level,
++            pieces = zone.pieces.len(),
++            closed = core_pieces_closed,
++            area_mm2 = %format!("{core_pieces_area_mm2:.1}"),
++            "C35 core: wraps of a core level beside the core loop"
++        );
+         ctx.research_core_zones
+             .borrow_mut()
+             .push(super::CoreZoneRecord {
+@@ -2568,6 +2833,9 @@ fn plan_one_outline(
+                     })
+                     .collect(),
+                 handoff_line,
++                core_pieces: zone.pieces.len(),
++                core_pieces_closed,
++                core_pieces_area_mm2,
+             });
+     }
+     // Research arm C12/C22: under the 2D pass load the replay admits a link
+@@ -2666,11 +2934,14 @@ fn plan_one_outline(
+     // run's turn list, for the feeds of the emitted toolpath.
+     #[cfg(feature = "research")]
+     if !research_turns.is_empty() {
++        // §14.6: a turn with neither end inside the boundary clip is
++        // removed by the 3D stage; it is counted as clipped.
+         ctx.research_turns.borrow_mut().add(
+             research_planned_turns,
+             research_turns.len() - research_planned_turns,
+             research_records,
+             &segs_2d,
++            &|p: P2| ctx.centre_clip.is_none_or(|c| c.contains(p.x, p.y)),
+         );
+     }
+     // Research arm C37 (instrument): the 2D re-entries of the plan that
+@@ -3294,7 +3565,17 @@ fn clear_one_region(
+     )
+     // Research arm C38 (item B): the grow stops at the stock box, where
+     // no material stands beyond the edge.
+-    .and_then(|grown| super::research_outer_band::clip_to_stock_box(grown, &*sink.material_stock));
++    .and_then(|grown| super::research_outer_band::clip_to_stock_box(grown, &*sink.material_stock))
++    // C38 §13.7: and at the reach of the boundary clip, so that nothing is
++    // planned where the clip would drop it.
++    .and_then(|grown| {
++        super::research_outer_band::clip_to_centre_reach(
++            grown,
++            ctx.centre_clip,
++            ctx.tool_radius,
++            PERIMETER_INSET_MARGIN_MM,
++        )
++    });
+     #[cfg(not(feature = "research"))]
+     let grown: Option<Vec<crate::polygon::Polygon2>> = None;
+     let inset_polygons = if grown.is_some() {
+@@ -3527,12 +3808,32 @@ fn plan_and_emit_region(
+                     let lifted: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                     if lifted.iter().all(|p| p.z <= z_level) {
+                         if let Some(&end) = lifted.last() {
+-                            // C22a sentry: the sink tests the link's pieces
+-                            // that pass the boundary clip, where it stamps
+-                            // them (`LevelSink::check_held_link`).
+-                            sink.held_link = true;
+-                            sink.emit(ctx, Adaptive3dSegment::Link(end));
+-                            sink.held_link = false;
++                            // C38 §14: the keep-down proof on the swept
++                            // disc (`keep_down_excess`). A held link whose
++                            // disc meets a column above its slab goes out
++                            // as an entry instead.
++                            let from = sink.cursor.tool_pos.or(lifted.first().copied());
++                            let refused = from.is_some_and(|from| {
++                                keep_down_excess(
++                                    sink.material_stock,
++                                    from,
++                                    end,
++                                    ctx.tool_radius,
++                                    z_level + ctx.depth_per_pass + ctx.stay_down_clearance_mm,
++                                )
++                                .is_some()
++                            });
++                            if refused {
++                                record_entry_cause(ctx, end, super::EntryCause::HeldLinkRefused);
++                                sink.emit(ctx, Adaptive3dSegment::Rapid(end));
++                            } else {
++                                // C22a sentry: the sink tests the link's
++                                // pieces that pass the boundary clip, where it
++                                // stamps them (`LevelSink::check_held_link`).
++                                sink.held_link = true;
++                                sink.emit(ctx, Adaptive3dSegment::Link(end));
++                                sink.held_link = false;
++                            }
+                         }
+                         continue;
+                     }
+@@ -3703,7 +4004,30 @@ fn plan_and_emit_region(
+                     } else {
+                         0.0
+                     };
+-                    let large_z = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
++                    let shape_split = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
++                    // §16 Part A: under the stock-read rule a step the path
++                    // rule flags is cut at feed unless the tool's swept disc
++                    // meets stock deeper than one pass (`step_axial_depth`).
++                    let large_z = match ctx.step_split {
++                        super::StepSplit::PathShape => shape_split,
++                        super::StepSplit::StockDepth if shape_split => {
++                            let ap =
++                                step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
++                            let split = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
++                            #[cfg(feature = "research")]
++                            {
++                                let mut stats = ctx.research_split_stats.borrow_mut();
++                                if split {
++                                    stats.made += 1;
++                                } else {
++                                    stats.avoided += 1;
++                                    stats.max_ap_avoided_mm = stats.max_ap_avoided_mm.max(ap);
++                                }
++                            }
++                            split
++                        }
++                        super::StepSplit::StockDepth => false,
++                    };
+                     let engagement_change = engaged[i] != sub_engaged;
+                     if large_z || engagement_change {
+                         // Flush the current run.
+@@ -3970,7 +4294,7 @@ impl RegionScratch {
+                         here = Some(end);
+                     }
+                 }
+-                Adaptive3dSegment::Link(end) => {
++                Adaptive3dSegment::Link(end) | Adaptive3dSegment::LowRapid(end) => {
+                     if let Some(from) = here {
+                         keep_down += xy(from, *end);
+                     }
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 9f6683179..39ac76a01 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -25,10 +25,13 @@ use tracing::info;
+ mod centre_clip;
+ mod clearing;
+ mod intended_floor;
++mod keep_down_route;
+ mod path;
+ mod region_map;
+ #[cfg(feature = "research")]
+ mod research_outer_band;
++#[cfg(feature = "research")]
++pub use research_outer_band::{ChainFeedSummary, FeedChain};
+ mod search;
+ pub use intended_floor::{FloorGrid, intended_floor_grid};
+ use path::{adaptive_3d_segments, segments_to_toolpath};
+@@ -344,6 +347,113 @@ pub struct Adaptive3dLinking {
+     /// hair of safety margin so the rapid step over a low peak does not
+     /// scrape the surface. Default 0.5 mm.
+     pub stay_down_clearance_mm: f64,
++    /// §16 Part A: how a draped cut is split at a large Z step
++    /// ([`StepSplit`]). The default keeps the historical rule (byte
++    /// parity); the research arm turns on [`StepSplit::StockDepth`].
++    pub step_split: StepSplit,
++    /// §16 Part B: the routed keep-down travel at an entry
++    /// ([`KeepDownRoute`]). Off by default; the research arm turns it on
++    /// at [`KeepDownRoute::CutFeed`].
++    pub keep_down_route: KeepDownRoute,
++}
++
++/// §16 Part A: where a draped cut is split at a step between two lifted
++/// points.
++#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
++pub enum StepSplit {
++    /// The historical rule: a step of `|dz| > max(1.1·DPP, 1 mm)` or a
++    /// slope over 0.3 (`clearing.rs`, `PLUNGE_SLOPE_LIMIT`).
++    #[default]
++    PathShape,
++    /// Split only where the tool's swept disc along the step meets stock
++    /// deeper than one Depth/Pass below its top (plus the stay-down
++    /// clearance): the planner's own pass rule. A step through air or
++    /// onto a face that holds at most a pass of stock is cut at feed.
++    StockDepth,
++}
++
++/// Research (§16 Part A, instrument): the steps of the draped cuts that the
++/// path rule flags, under the stock-read rule: split (`made`), or cut at
++/// feed (`avoided`), and the deepest axial engagement on an avoided step.
++#[cfg(feature = "research")]
++#[derive(Debug, Clone, Copy, Default)]
++pub struct SplitStats {
++    pub made: usize,
++    pub avoided: usize,
++    pub max_ap_avoided_mm: f64,
++}
++
++/// Research (§16 Part B, instrument): the entries a routed keep-down travel
++/// replaced, and the length of their travels and side legs (mm, XY).
++#[cfg(feature = "research")]
++#[derive(Debug, Clone, Copy, Default)]
++pub struct RouteStats {
++    pub tried: usize,
++    pub taken: usize,
++    pub travel_mm: f64,
++    pub side_mm: f64,
++}
++
++/// Research (§16 Part B): the environment variable that sets the routed
++/// keep-down travel of a research run: `off`, `cut_feed`, or
++/// `rapid:<clearance mm>` (the clearance from the run's config, derived
++/// from the measured stock left above cut floors). Read once per process.
++#[cfg(feature = "research")]
++pub const RESEARCH_ROUTE_ENV: &str = "RS_CAM_RESEARCH_KEEP_DOWN_ROUTE";
++
++#[cfg(feature = "research")]
++fn research_route_override() -> Option<KeepDownRoute> {
++    static OVERRIDE: std::sync::OnceLock<Option<KeepDownRoute>> = std::sync::OnceLock::new();
++    *OVERRIDE.get_or_init(|| {
++        let raw = std::env::var(RESEARCH_ROUTE_ENV).ok()?;
++        let raw = raw.trim();
++        match raw {
++            "off" => Some(KeepDownRoute::Off),
++            "cut_feed" => Some(KeepDownRoute::CutFeed),
++            _ => match raw.strip_prefix("rapid:").map(str::parse::<f64>) {
++                Some(Ok(clearance_mm)) if clearance_mm.is_finite() && clearance_mm >= 0.0 => {
++                    Some(KeepDownRoute::Rapid { clearance_mm })
++                }
++                _ => {
++                    tracing::warn!(
++                        value = raw,
++                        "{RESEARCH_ROUTE_ENV} is not off, cut_feed or rapid:<mm>"
++                    );
++                    None
++                }
++            },
++        }
++    })
++}
++
++/// §16 Part B: the routed keep-down travel a run uses: the parameter; for
++/// the research arm, at least [`KeepDownRoute::CutFeed`], or what
++/// [`RESEARCH_ROUTE_ENV`] names.
++fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
++    #[cfg(feature = "research")]
++    if clearing::is_research_arm(params.clearing_strategy) {
++        return research_route_override().unwrap_or(match params.linking.keep_down_route {
++            KeepDownRoute::Off => KeepDownRoute::CutFeed,
++            other => other,
++        });
++    }
++    params.linking.keep_down_route
++}
++
++/// §16 Part B: the routed keep-down travel at an entry, and its speed.
++#[derive(Debug, Clone, Copy, Default, PartialEq)]
++pub enum KeepDownRoute {
++    /// No routed travel: the entry is a straight stay-down link or a
++    /// retract (as before).
++    #[default]
++    Off,
++    /// A route over cut ground at the level, at the cut feed, held by the
++    /// full-disc proof at the stay-down clearance.
++    CutFeed,
++    /// The same route at the rapid rate, held by the full-disc proof at
++    /// `clearance_mm` (the stock left above cut floors: a config value,
++    /// derived from the measured fuzz, never typed here).
++    Rapid { clearance_mm: f64 },
+ }
+ 
+ /// Parameters for 3D adaptive clearing.
+@@ -711,6 +821,12 @@ pub struct CoreZoneRecord {
+     /// wrap, its raw reading over the ceiling, and the re-entries near the
+     /// core's rim.
+     pub handoff_line: String,
++    /// §12.9: the wraps of a core level beside the core loop (pockets the
++    /// spiral does not reach, open arcs), all planned: how many, how many
++    /// closed, and the area the closed ones hold (mm²).
++    pub core_pieces: usize,
++    pub core_pieces_closed: usize,
++    pub core_pieces_area_mm2: f64,
+ }
+ 
+ /// Research (C22, C31): what the research arm reports beside the output.
+@@ -722,6 +838,10 @@ pub struct Research3d {
+     pub turns: crate::adaptive::research_geodesic::TurnSummary,
+     /// C38: the corridor slots, recorded and fed as the turns are.
+     pub slots: crate::adaptive::research_geodesic::TurnSummary,
++    /// C38 §13.2: the slot feeds matched by distance to each loop's chain
++    /// (the authority for slots: `slots` above uses the exact match, which
++    /// the 3D merge defeats).
++    pub slot_chains: ChainFeedSummary,
+     /// One record per region the arm reached (after F-038), in plan order.
+     pub openings: Vec<RegionOpening>,
+     /// C35: one record per slice piece whose plan cut a core spiral.
+@@ -734,6 +854,10 @@ pub struct Research3d {
+     /// C40: every entry of the emitted toolpath, with the cause that made
+     /// it.
+     pub entries: Vec<EntryRecord>,
++    /// §16 Part A: the steps under the stock-read split rule.
++    pub split_stats: SplitStats,
++    /// §16 Part B: the routed keep-down travels.
++    pub route_stats: RouteStats,
+ }
+ 
+ /// Research (C40): why `plan_and_emit_region` handed the sink an entry
+@@ -760,6 +884,9 @@ pub enum EntryCause {
+     /// The boundary clip (`centre_clip::clip_segment`): a cut piece that
+     /// does not continue from the tool, or a link it turned into an entry.
+     Clip,
++    /// A held link that failed the keep-down proof on its swept disc
++    /// (`clearing::keep_down_excess`, C38 §14), sent out as an entry.
++    HeldLinkRefused,
+ }
+ 
+ /// Research (C40): one entry handed to the sink, at its XY.
+@@ -894,9 +1021,10 @@ fn entry_records(
+     out
+ }
+ 
+-/// Research (C22a, sentry): a held link emitted keep-down whose centre
+-/// line runs under standing stock: the point with the most stock above
+-/// the link, and that height (mm) above the link's Z.
++/// Research (C22a, sentry): a held link emitted keep-down whose swept
++/// disc meets a column above its level's slab (C38 §14,
++/// `clearing::keep_down_excess`): the point of the highest column, and its
++/// height (mm) over the slab top plus the stay-down clearance.
+ #[cfg(feature = "research")]
+ #[derive(Debug, Clone, Copy)]
+ pub struct HeldLinkFault {
+@@ -948,7 +1076,27 @@ fn research_turn_feeds(
+     mut tp: Toolpath,
+     result: &mut path::Adaptive3dSegmentsResult,
+     feed_rate: f64,
++    chord_tolerance: f64,
+ ) -> (Toolpath, ResearchTurns) {
++    // C38 §13.2: the slot feeds, matched by distance to each slot loop's
++    // chain (the 3D merge joins collinear slot steps into one move).
++    let chains = research_outer_band::slot_chains(&result.research_turns);
++    let slot_chains =
++        research_outer_band::apply_chain_feeds(&mut tp, &chains, chord_tolerance, feed_rate);
++    if slot_chains.chains > 0 {
++        tracing::info!(
++            loops = slot_chains.chains,
++            steps = slot_chains.steps,
++            reduced = slot_chains.reduced,
++            fed = slot_chains.fed,
++            unfed = slot_chains.unfed,
++            moves_lowered = slot_chains.moves_lowered,
++            matched_out_of_run = slot_chains.matched_out_of_run,
++            lowest_factor = %format!("{:.3}", slot_chains.lowest_factor),
++            longest_move_mm = %format!("{:.3}", slot_chains.longest_move_mm),
++            "C38 slot chains"
++        );
++    }
+     let (turns, slots) = crate::adaptive::research_geodesic::apply_slice_turn_feeds(
+         &mut tp,
+         std::mem::take(&mut result.research_turns),
+@@ -957,7 +1105,7 @@ fn research_turn_feeds(
+     // One `info` line per summary that planned anything, for CLI runs (the
+     // op is the line's `generate_toolpath` span).
+     for (kind, summary) in [("turns", &turns), ("slots", &slots)] {
+-        if summary.planned == 0 && summary.turns.is_empty() {
++        if summary.planned == 0 && summary.turns.is_empty() && summary.clipped == 0 {
+             continue;
+         }
+         let lowest = summary
+@@ -977,6 +1125,7 @@ fn research_turn_feeds(
+             fed = summary.fed,
+             unfed = summary.unfed,
+             full_feed_unmatched = summary.full_feed_unmatched,
++            clipped = summary.clipped,
+             reduced = summary.turns.iter().filter(|t| t.feed_factor < 1.0).count(),
+             lowest_factor = %format!("{lowest:.3}"),
+             longest_mm = %format!("{longest:.3}"),
+@@ -1025,16 +1174,40 @@ fn research_turn_feeds(
+     let core_zones = std::mem::take(&mut result.research_core_zones);
+     let joins = std::mem::take(&mut result.research_joins);
+     let held_link_faults = std::mem::take(&mut result.research_link_faults);
++    // §16 Part B: one line per op on the routed keep-down travels.
++    let route_stats = result.research_route_stats;
++    if route_stats.tried > 0 {
++        tracing::info!(
++            tried = route_stats.tried,
++            taken = route_stats.taken,
++            travel_mm = %format!("{:.1}", route_stats.travel_mm),
++            side_mm = %format!("{:.1}", route_stats.side_mm),
++            "C22 keep-down route"
++        );
++    }
++    // §16 Part A: one line per op on the stock-read split.
++    let split_stats = result.research_split_stats;
++    if split_stats.made + split_stats.avoided > 0 {
++        tracing::info!(
++            made = split_stats.made,
++            avoided = split_stats.avoided,
++            max_ap_avoided_mm = %format!("{:.3}", split_stats.max_ap_avoided_mm),
++            "C22 step split (stock-read rule)"
++        );
++    }
+     (
+         tp,
+         Research3d {
+             turns,
+             slots,
++            slot_chains,
+             openings,
+             core_zones,
+             joins,
+             held_link_faults,
+             entries,
++            split_stats,
++            route_stats,
+         },
+     )
+ }
+@@ -1043,6 +1216,7 @@ fn research_turn_feeds(
+     tp: Toolpath,
+     _result: &mut path::Adaptive3dSegmentsResult,
+     _feed_rate: f64,
++    _chord_tolerance: f64,
+ ) -> (Toolpath, ResearchTurns) {
+     (tp, ())
+ }
+@@ -1059,7 +1233,12 @@ fn output_and_turns(
+     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
+     // can query the heightfield along each candidate stay-down link.
+     let (tp, annotations) = segments_to_toolpath(&result.segments, params, mesh, index, cutter);
+-    let (tp, turns) = research_turn_feeds(tp, &mut result, params.feed_rate);
++    let (tp, turns) = research_turn_feeds(
++        tp,
++        &mut result,
++        params.feed_rate,
++        params.emission_chord_tolerance(),
++    );
+     let planner_engagement = result.planner_engagement;
+     if let Some(debug_ctx) = debug {
+         for annotation in &annotations {
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index d284e0874..24f13b224 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -243,6 +243,10 @@ pub(super) enum Adaptive3dSegment {
+     },
+     /// Feed directly at cutting depth (no retract)
+     Link(P3),
++    /// §16 Part B (`keep_down_route`): a rapid at depth, above cut ground
++    /// by the route's clearance, held by the full-disc proof. The emitter
++    /// moves straight there at the rapid rate.
++    LowRapid(P3),
+     /// Structured runtime marker at the current point in the toolpath
+     Marker(Adaptive3dRuntimeEvent),
+ }
+@@ -293,7 +297,7 @@ pub(super) fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLev
+             Adaptive3dSegment::Rapid(_) | Adaptive3dSegment::RapidWithFloor { .. } => {
+                 tally.rapid_segs += 1;
+             }
+-            Adaptive3dSegment::Link(_) => tally.link_segs += 1,
++            Adaptive3dSegment::Link(_) | Adaptive3dSegment::LowRapid(_) => tally.link_segs += 1,
+             Adaptive3dSegment::Marker(_) => {}
+         }
+     }
+@@ -614,6 +618,12 @@ pub(super) struct Adaptive3dSegmentsResult {
+     /// Research (C40): every entry handed to the sink, with its cause.
+     #[cfg(feature = "research")]
+     pub research_entry_causes: Vec<super::EntryCauseRecord>,
++    /// Research (§16 Part A): the large steps under the stock-read split.
++    #[cfg(feature = "research")]
++    pub research_split_stats: super::SplitStats,
++    /// Research (§16 Part B): the routed keep-down travels.
++    #[cfg(feature = "research")]
++    pub research_route_stats: super::RouteStats,
+ }
+ 
+ /// F-029 probe: build the planner-internal segments + final material_stock
+@@ -860,8 +870,13 @@ pub(super) fn adaptive_3d_segments(
+     #[cfg(feature = "research")]
+     let mut research_clip: Option<super::research_outer_band::ResearchClip> = None;
+     if let Some(ref boundary) = params.geometry.boundary {
++        // The research arm with Global ordering only (§13.8: the strategy
++        // test sits here, the helper is geometry only).
+         #[cfg(feature = "research")]
+-        let reach = super::research_outer_band::boundary_reach(params, boundary, tool_radius);
++        let reach = (matches!(params.clearing_strategy, ClearingStrategy3d::Geodesic(_))
++            && matches!(params.linking.region_ordering, RegionOrdering::Global))
++        .then(|| super::research_outer_band::boundary_reach(boundary, tool_radius))
++        .flatten();
+         #[cfg(feature = "research")]
+         let mut inside_mask: Vec<bool> = Vec::new();
+         let mut boundary_cleared = 0u32;
+@@ -1022,8 +1037,19 @@ pub(super) fn adaptive_3d_segments(
+         centre_clip: centre_clip.as_ref(),
+         #[cfg(feature = "research")]
+         research_turns: std::cell::RefCell::default(),
+-        #[cfg(feature = "research")]
+         stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
++        // §16 Part B: the routed keep-down travel in force.
++        keep_down_route: super::effective_keep_down_route(params),
++        #[cfg(feature = "research")]
++        research_route_stats: std::cell::RefCell::default(),
++        // §16 Part A: the research arm turns the stock-read split on.
++        step_split: if super::clearing::is_research_arm(params.clearing_strategy) {
++            super::StepSplit::StockDepth
++        } else {
++            params.linking.step_split
++        },
++        #[cfg(feature = "research")]
++        research_split_stats: std::cell::RefCell::default(),
+         #[cfg(feature = "research")]
+         research_openings: std::cell::RefCell::default(),
+         #[cfg(feature = "research")]
+@@ -1257,6 +1283,10 @@ pub(super) fn adaptive_3d_segments(
+         research_link_faults: ctx.research_link_faults.take(),
+         #[cfg(feature = "research")]
+         research_entry_causes: ctx.research_entry_causes.take(),
++        #[cfg(feature = "research")]
++        research_split_stats: ctx.research_split_stats.take(),
++        #[cfg(feature = "research")]
++        research_route_stats: ctx.research_route_stats.take(),
+     })
+ }
+ 
+@@ -1814,6 +1844,9 @@ pub(super) fn segments_to_toolpath(
+                     pass_counter += 1;
+                 }
+             }
++            Adaptive3dSegment::LowRapid(target) => {
++                tp.rapid_to_with_intent(*target, crate::toolpath::MoveIntent::Linking);
++            }
+             Adaptive3dSegment::Link(target) => {
+                 // Gouge guard: a link is a feed at depth, so it holds the leave
+                 // as a cut does (`drape_path_to_leave`). The planner mirror in
+@@ -2000,6 +2033,8 @@ mod tests {
+                 // tests keep their existing structural assertions.
+                 max_stay_down_distance_mm: Some(0.0),
+                 stay_down_clearance_mm: 0.5,
++                step_split: Default::default(),
++                keep_down_route: Default::default(),
+             },
+             trochoid_cap_mult: 1.6,
+             feed_rate: 1500.0,
+diff --git a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+index 09d1297a0..e3a50c538 100644
+--- a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
++++ b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+@@ -11,9 +11,18 @@
+ //!   the grow there would put phantom stock in the 2D grid. At a wall and
+ //!   at the containment line the grow stays: the stock there is real.
+ //!
+-//! The corridor opening (counted slots) was removed after D23 (P3_C38
+-//! §10): the 3D merge joined its slot steps into moves that the turn feed
+-//! does not match, so its over-ceiling steps ran at the full feed.
++//! - The corridor opening (§13, design A): a slice piece whose seed does
++//!   not fit (no centre clearance of R) is planned as the loops of its
++//!   tool-centre region at the stepover, each step a counted slot
++//!   ([`corridor_opening`]). The 3D merge joins collinear slot steps, so the
++//!   slot feed is matched by distance to the loop's chain, not by one
++//!   segment ([`apply_chain_feeds`]; §10.1 was the defect).
++//! - §13.7: the grown outline also stops at the reach of the boundary clip
++//!   ([`clip_to_centre_reach`]), so nothing is planned where the clip
++//!   would drop it.
++//!
++//! §13.8: each helper takes geometry or toolpath data only; the strategy
++//! test sits at the call site, so a shared layer can adopt it unchanged.
+ //!
+ //! - G-CLIPAIR (§11): the boundary clear keeps the stock a disc with its
+ //!   centre inside the boundary can reach ([`boundary_reach`]), and the
+@@ -25,10 +34,15 @@
+ //! the planner stock's, and the reach is the tool radius.
+ 
+ use crate::adaptive::AdaptiveSegment;
++use crate::adaptive::research_geodesic::{
++    ArcCounts, JoinClass, JoinMark, SlicePlan, SliceTurns, TurnKind,
++};
+ use crate::dexel_stock::TriDexelStock;
++use crate::geo::{P2, point_to_segment_distance};
+ use crate::polygon::{Polygon2, offset_polygon};
++use crate::toolpath::{MoveType, Toolpath};
+ 
+-use super::{Adaptive3dParams, ClearingStrategy3d, RegionOrdering};
++use super::centre_clip::CentreClip;
+ 
+ use super::clearing::ClearZLevelContext;
+ 
+@@ -106,19 +120,14 @@ pub(super) fn clip_to_stock_box(
+ }
+ 
+ /// G-CLIPAIR (§11 a): the boundary grown by the tool radius, the reach of a
+-/// disc whose centre is inside `boundary`, for the research arm with Global
+-/// ordering; `None` otherwise (the shipped clear). The boundary clear then
+-/// empties only the planner-stock cells outside this reach. The cells
+-/// between the boundary and the reach keep their stock, which a cut from
+-/// inside the boundary meets (P3_C38 §10.7, §11.1b).
+-pub(super) fn boundary_reach(
+-    params: &Adaptive3dParams,
+-    boundary: &Polygon2,
+-    tool_radius: f64,
+-) -> Option<Vec<Polygon2>> {
+-    let research = matches!(params.clearing_strategy, ClearingStrategy3d::Geodesic(_));
+-    let global = matches!(params.linking.region_ordering, RegionOrdering::Global);
+-    if !research || !global || !tool_radius.is_finite() || tool_radius <= 0.0 {
++/// disc whose centre is inside `boundary`, or `None` when the radius is not
++/// usable or the grow is empty. The boundary clear then empties only the
++/// planner-stock cells outside this reach. The cells between the boundary
++/// and the reach keep their stock, which a cut from inside the boundary
++/// meets (P3_C38 §10.7, §11.1b). Geometry only (§13.8): the caller decides
++/// which strategies use it.
++pub(super) fn boundary_reach(boundary: &Polygon2, tool_radius: f64) -> Option<Vec<Polygon2>> {
++    if !tool_radius.is_finite() || tool_radius <= 0.0 {
+         return None;
+     }
+     let reach = offset_polygon(boundary, -tool_radius);
+@@ -214,3 +223,437 @@ impl ResearchClip {
+         }
+     }
+ }
++
++/// C38 (§13.1): the corridor opening of one slice piece, or `None` when the
++/// piece is not a corridor. Restored from D23 (`6aefca969`) unchanged; its
++/// slot steps are fed by [`apply_chain_feeds`].
++///
++/// The piece is a corridor when its 2D tool-centre region (`polygon` inset
++/// by R, the region the planner plans in) is not empty and holds no centre
++/// clearance of R (its inset by R more is empty). There the field's seed
++/// (the starter rim of radius R) does not fit, and under the 2D pass load
++/// every pass of the agent's narrow loops is refused, because the first
++/// pass through a closed strip is a slot (P3_C38 §2).
++///
++/// The plan: the concentric loops of the tool-centre region at `k · s`
++/// (k = 0, 1, …, while the inset is not empty), outside in, each ring a
++/// closed `Cut` after a `Rapid`, its edges split to steps of at most `s`.
++/// Every step is a slot ([`SlicePlan::slots`]): the replay admits it as a
++/// turn (each step is shorter than `turn_bound`), and the 3D stage feeds
++/// it at `c / w` of its measured engagement, or at the full feed where it
++/// holds the ceiling (`turn_feed_factor`). In a strip of centre width
++/// `2ρ ≤ 2s` the plan is the two edges: the first is the slot (w about 1),
++/// the second bites `2ρ`.
++pub(super) fn corridor_opening(
++    polygon: &Polygon2,
++    params: &crate::adaptive::AdaptiveParams,
++) -> Option<SlicePlan> {
++    let r = params.tool_radius;
++    let s = params.stepover;
++    if !r.is_finite() || !s.is_finite() || r <= 0.0 || s <= 0.0 {
++        return None;
++    }
++    let centre: Vec<Polygon2> = offset_polygon(polygon, r);
++    if centre.is_empty() || centre.iter().any(|c| !offset_polygon(c, r).is_empty()) {
++        return None;
++    }
++    let mut segments: Vec<AdaptiveSegment> = Vec::new();
++    let mut slots: Vec<(P2, P2)> = Vec::new();
++    // One C37 join mark per entered loop, so that the re-entry there reads
++    // as a corridor slot entry, not as an open-arc join.
++    let mut joins: Vec<JoinMark> = Vec::new();
++    let mut loops = 0usize;
++    // The insets stop before R: a centre clearance of R does not exist.
++    let mut k = 0usize;
++    while (k as f64) * s < r {
++        let d = (k as f64) * s;
++        let rings: Vec<Polygon2> = if k == 0 {
++            centre.clone()
++        } else {
++            centre.iter().flat_map(|c| offset_polygon(c, d)).collect()
++        };
++        if rings.is_empty() {
++            break;
++        }
++        for poly in &rings {
++            for ring in std::iter::once(&poly.exterior).chain(poly.holes.iter()) {
++                let path = closed_steps(ring, s);
++                let Some(&start) = path.first() else {
++                    continue;
++                };
++                slots.extend(path.windows(2).filter_map(|w| match w {
++                    &[a, b] => Some((a, b)),
++                    _ => None,
++                }));
++                joins.push(JoinMark {
++                    from: start,
++                    to: start,
++                    class: JoinClass::Corridor,
++                });
++                segments.push(AdaptiveSegment::Rapid(start));
++                segments.push(AdaptiveSegment::Cut(path));
++                loops += 1;
++            }
++        }
++        k += 1;
++    }
++    if slots.is_empty() {
++        return None;
++    }
++    let cut_mm: f64 = slots
++        .iter()
++        .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
++        .sum();
++    tracing::info!(
++        loops,
++        slot_steps = slots.len(),
++        cut_mm = %format!("{cut_mm:.1}"),
++        centre_area_mm2 = %format!("{:.1}", centre.iter().map(Polygon2::area).sum::<f64>()),
++        "C38 corridor opening"
++    );
++    Some(SlicePlan {
++        segments,
++        turns: Vec::new(),
++        slots,
++        joins,
++        arcs: ArcCounts::default(),
++        core: None,
++    })
++}
++
++/// A closed ring as a path that returns to its first point, each edge split
++/// into equal steps of at most `max_step`. Empty for fewer than 3 points.
++fn closed_steps(ring: &[P2], max_step: f64) -> Vec<P2> {
++    let mut pts: Vec<P2> = ring.to_vec();
++    if let (Some(&first), Some(&last)) = (pts.first(), pts.last())
++        && pts.len() > 1
++        && (first.x - last.x).hypot(first.y - last.y) < 1e-9
++    {
++        pts.pop();
++    }
++    if pts.len() < 3 {
++        return Vec::new();
++    }
++    if let Some(&first) = pts.first() {
++        pts.push(first);
++    }
++    let mut out: Vec<P2> = Vec::with_capacity(pts.len());
++    for w in pts.windows(2) {
++        let &[a, b] = w else {
++            continue;
++        };
++        if out.is_empty() {
++            out.push(a);
++        }
++        let len = (b.x - a.x).hypot(b.y - a.y);
++        let n = ((len / max_step).ceil() as usize).max(1);
++        for i in 1..=n {
++            let t = i as f64 / n as f64;
++            out.push(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)));
++        }
++    }
++    out
++}
++
++/// §13.7: the C31 grown outlines of a region clipped to the reach of the
++/// boundary clip: each clip polygon grown by `tool_radius - margin`. The 2D
++/// planner insets its outline by the tool radius, so its tool-centre region
++/// then lies within the clip shrunk by `margin` (up to a concave notch of
++/// the clip narrower than twice the grow), and every turn, held link and
++/// wrap end it plans is one the clip keeps. `margin` is the C31 margin
++/// (`PERIMETER_INSET_MARGIN_MM`). With no clip the outlines pass unchanged;
++/// a polygon inside the reach is returned unchanged; `None` when nothing is
++/// left (the region then keeps the shipped path). Geometry only (§13.8).
++pub(super) fn clip_to_centre_reach(
++    grown: Vec<Polygon2>,
++    clip: Option<&CentreClip>,
++    tool_radius: f64,
++    margin: f64,
++) -> Option<Vec<Polygon2>> {
++    let Some(clip) = clip else {
++        return Some(grown);
++    };
++    let grow = tool_radius - margin;
++    if !grow.is_finite() || grow <= 0.0 {
++        return Some(grown);
++    }
++    let reach: Vec<Polygon2> = clip
++        .polygons()
++        .iter()
++        .flat_map(|poly| offset_polygon(poly, -grow))
++        .collect();
++    if reach.is_empty() {
++        return None;
++    }
++    let inside = |poly: &Polygon2| {
++        reach
++            .iter()
++            .any(|r| poly.exterior.iter().all(|p| r.contains_point(p)))
++    };
++    let out: Vec<Polygon2> = grown
++        .into_iter()
++        .flat_map(|poly| {
++            if inside(&poly) {
++                vec![poly]
++            } else {
++                reach.iter().flat_map(|r| poly.intersection(r)).collect()
++            }
++        })
++        .filter(|poly| poly.exterior.len() >= 3)
++        .collect();
++    (!out.is_empty()).then_some(out)
++}
++
++/// §13.2: one chain of steps whose emitted moves get a reduced feed: the
++/// points of one slot loop in plan order, and the feed factor of each step
++/// (`factors[k]` for the step `pts[k] .. pts[k + 1]`). Toolpath data only
++/// (§13.8): a shared feed layer can take chains from any producer.
++#[derive(Debug, Clone)]
++pub struct FeedChain {
++    pub pts: Vec<P2>,
++    pub factors: Vec<f64>,
++}
++
++/// §13.2: what [`apply_chain_feeds`] did.
++#[derive(Debug, Clone, Default)]
++pub struct ChainFeedSummary {
++    pub chains: usize,
++    pub steps: usize,
++    /// Steps with a factor under 1 (they need a reduced feed).
++    pub reduced: usize,
++    /// Steps some move covered.
++    pub fed: usize,
++    /// Steps with a factor under 1 that no move covered.
++    pub unfed: usize,
++    /// Moves whose feed was lowered.
++    pub moves_lowered: usize,
++    /// Matches of a chain after a cutting move that is not on it, inside
++    /// the chain's own run (an interleaved move; the design asserts 0).
++    pub matched_out_of_run: usize,
++    pub lowest_factor: f64,
++    pub longest_move_mm: f64,
++    /// The chains matched against and the tolerance, so that a test can
++    /// find the slot moves again by geometry alone.
++    pub chain_list: Vec<FeedChain>,
++    pub tolerance: f64,
++}
++
++/// §13.2: the slot chains of a run's records: the kept slot records
++/// ([`TurnKind::Slot`], not both ends outside the boundary clip), split into
++/// chains where a record does not start at the end of the one before (a new
++/// loop).
++pub(super) fn slot_chains(turns: &SliceTurns) -> Vec<FeedChain> {
++    let mut chains: Vec<FeedChain> = Vec::new();
++    let mut last: Option<P2> = None;
++    for ((rec, kind), ends) in turns
++        .records
++        .iter()
++        .zip(&turns.kinds)
++        .zip(&turns.ends_inside)
++    {
++        if *kind != TurnKind::Slot || *ends == (false, false) {
++            last = None;
++            continue;
++        }
++        let joined = last.is_some_and(|q| (q.x - rec.from.x).hypot(q.y - rec.from.y) <= 1e-6);
++        match chains.last_mut() {
++            Some(chain) if joined => {
++                chain.pts.push(rec.to);
++                chain.factors.push(rec.feed_factor);
++            }
++            _ => chains.push(FeedChain {
++                pts: vec![rec.from, rec.to],
++                factors: vec![rec.feed_factor],
++            }),
++        }
++        last = Some(rec.to);
++    }
++    chains
++}
++
++/// The nearest step of `pts` to `q`: (step index, distance).
++fn nearest_step(pts: &[P2], q: &P2) -> Option<(usize, f64)> {
++    pts.windows(2)
++        .enumerate()
++        .filter_map(|(k, w)| match w {
++            [a, b] => Some((k, point_to_segment_distance(q, a, b))),
++            _ => None,
++        })
++        .min_by(|x, y| x.1.total_cmp(&y.1))
++}
++
++/// §13.2: lower the feed of each emitted `Linear` move that runs along a
++/// chain to `feed_rate` × the lowest factor of the steps it covers (a feed
++/// is only lowered). A move matches a chain when:
++/// 1. its ends and its points at a spacing of `tolerance` lie within
++///    `tolerance` of the chain;
++/// 2. it runs the chain's way (its direction against the nearest step of
++///    its midpoint);
++/// 3. it covers a step no move has covered yet;
++/// 4. the chain is not before the last matched chain (the toolpath keeps
++///    the plan order, so a chain's own moves come first).
++///
++/// `tolerance` is the RDP tolerance that simplified the cuts
++/// (`Adaptive3dParams::emission_chord_tolerance`): RDP keeps a point only if
++/// every dropped point is within it of the kept segment, and the tube round
++/// a segment is convex, so a merged move lies within it of its chain both
++/// ways (P3_C38 §13.2). The lift, the drape and the boundary clip move no
++/// point in XY. 1e-6 mm is the same-point tolerance of the turn match.
++pub(super) fn apply_chain_feeds(
++    tp: &mut Toolpath,
++    chains: &[FeedChain],
++    tolerance: f64,
++    feed_rate: f64,
++) -> ChainFeedSummary {
++    let d = tolerance.max(0.0) + 1e-6;
++    let boxes: Vec<(P2, P2)> = chains
++        .iter()
++        .map(|c| {
++            c.pts.iter().fold(
++                (
++                    P2::new(f64::INFINITY, f64::INFINITY),
++                    P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
++                ),
++                |(lo, hi), p| {
++                    (
++                        P2::new(lo.x.min(p.x), lo.y.min(p.y)),
++                        P2::new(hi.x.max(p.x), hi.y.max(p.y)),
++                    )
++                },
++            )
++        })
++        .collect();
++    let in_box = |k: usize, p: &P2| {
++        boxes.get(k).is_some_and(|(lo, hi)| {
++            p.x >= lo.x - d && p.x <= hi.x + d && p.y >= lo.y - d && p.y <= hi.y + d
++        })
++    };
++    let mut covered: Vec<Vec<bool>> = chains
++        .iter()
++        .map(|c| vec![false; c.factors.len()])
++        .collect();
++    let mut last_move: Vec<Option<usize>> = vec![None; chains.len()];
++    let mut summary = ChainFeedSummary {
++        chains: chains.len(),
++        steps: chains.iter().map(|c| c.factors.len()).sum(),
++        reduced: chains
++            .iter()
++            .flat_map(|c| &c.factors)
++            .filter(|&&f| f < 1.0)
++            .count(),
++        lowest_factor: 1.0,
++        chain_list: chains.to_vec(),
++        tolerance: d,
++        ..ChainFeedSummary::default()
++    };
++    let mut cursor = 0usize;
++    let mut start: Option<P2> = None;
++    let mut cutting_since: Vec<bool> = vec![false; chains.len()];
++    for (i, m) in tp.moves.iter_mut().enumerate() {
++        let b = P2::new(m.target.x, m.target.y);
++        let mut matched = None;
++        if let (Some(a), MoveType::Linear { feed_rate: f }) = (start, &mut m.move_type) {
++            let len = (b.x - a.x).hypot(b.y - a.y);
++            if len > 1e-6 {
++                let n = (len / d).ceil().max(1.0) as usize;
++                for k in cursor..chains.len() {
++                    let Some(chain) = chains.get(k) else {
++                        continue;
++                    };
++                    if !in_box(k, &a) || !in_box(k, &b) {
++                        continue;
++                    }
++                    let mut lo = usize::MAX;
++                    let mut hi = 0usize;
++                    let mut ok = true;
++                    for s in 0..=n {
++                        let t = s as f64 / n as f64;
++                        let q = P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
++                        match nearest_step(&chain.pts, &q) {
++                            Some((j, dist)) if dist <= d => {
++                                lo = lo.min(j);
++                                hi = hi.max(j);
++                            }
++                            _ => {
++                                ok = false;
++                                break;
++                            }
++                        }
++                    }
++                    if !ok || lo > hi {
++                        continue;
++                    }
++                    let mid = P2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
++                    let forward = nearest_step(&chain.pts, &mid).is_some_and(|(j, _)| {
++                        match (chain.pts.get(j), chain.pts.get(j + 1)) {
++                            (Some(p), Some(q)) => {
++                                (b.x - a.x) * (q.x - p.x) + (b.y - a.y) * (q.y - p.y) > 0.0
++                            }
++                            _ => false,
++                        }
++                    });
++                    let fresh = covered
++                        .get(k)
++                        .is_some_and(|c| c.iter().take(hi + 1).skip(lo).any(|v| !v));
++                    if forward && fresh {
++                        let factor = chain
++                            .factors
++                            .iter()
++                            .take(hi + 1)
++                            .skip(lo)
++                            .fold(1.0_f64, |acc, &x| acc.min(x));
++                        if factor < 1.0 {
++                            *f = f.min(feed_rate * factor);
++                            summary.moves_lowered += 1;
++                            summary.lowest_factor = summary.lowest_factor.min(factor);
++                            summary.longest_move_mm = summary.longest_move_mm.max(len);
++                        }
++                        if let Some(c) = covered.get_mut(k) {
++                            for v in c.iter_mut().take(hi + 1).skip(lo) {
++                                *v = true;
++                            }
++                        }
++                        if last_move.get(k).copied().flatten().is_some()
++                            && cutting_since.get(k).copied().unwrap_or(false)
++                        {
++                            summary.matched_out_of_run += 1;
++                        }
++                        if let Some(slot) = last_move.get_mut(k) {
++                            *slot = Some(i);
++                        }
++                        matched = Some(k);
++                        break;
++                    }
++                }
++            }
++            // A cutting move that is not on a chain, after that chain's
++            // run started, marks the run as interleaved.
++            if matched.is_none() && len > 1e-6 {
++                for (k, flag) in cutting_since.iter_mut().enumerate() {
++                    if last_move.get(k).copied().flatten().is_some() {
++                        *flag = true;
++                    }
++                }
++            }
++        }
++        if let Some(k) = matched {
++            // The plan-order cursor (rule 4): later moves try this chain
++            // and the ones after it.
++            cursor = k;
++        }
++        if let Some(k) = matched
++            && let Some(flag) = cutting_since.get_mut(k)
++        {
++            *flag = false;
++        }
++        start = Some(b);
++    }
++    summary.fed = covered.iter().flatten().filter(|&&v| v).count();
++    summary.unfed = chains
++        .iter()
++        .zip(&covered)
++        .flat_map(|(c, cov)| c.factors.iter().zip(cov))
++        .filter(|(f, v)| **f < 1.0 && !**v)
++        .count();
++    summary
++}
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index fd80ba027..c322764cf 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -142,6 +142,8 @@ fn default_params() -> Adaptive3dParams {
+             // unless they specifically target the keep-tool-down logic).
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         feed_rate: 1000.0,
+diff --git a/crates/rs_cam_core/src/compute/execute/rough_3d.rs b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+index 0d374f3b5..83613c32c 100644
+--- a/crates/rs_cam_core/src/compute/execute/rough_3d.rs
++++ b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+@@ -140,6 +140,8 @@ impl Adaptive3dRough<'_> {
+                 // feature; Some(x) caps stay-down at x mm.
+                 max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
+                 stay_down_clearance_mm: cfg.stay_down_clearance_mm,
++                step_split: Default::default(),
++                keep_down_route: Default::default(),
+             },
+             feed_rate: self.feed_rate,
+             plunge_rate: self.plunge_rate,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+index 5d312aacf..eadf6ff49 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+@@ -146,6 +146,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         feed_rate: 1000.0,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+index c2c1b4794..77b0d7adf 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+@@ -72,6 +72,8 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         feed_rate: 1000.0,
+         plunge_rate: 500.0,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+index bc6491c1c..d7b55db58 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+@@ -99,6 +99,8 @@ fn params(strategy: ClearingStrategy3d, ordering: RegionOrdering) -> Adaptive3dP
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         feed_rate: 1000.0,
+         plunge_rate: 500.0,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+index e9b9e9e29..858d98e45 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+@@ -111,6 +111,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         feed_rate: 1000.0,
+         plunge_rate: 500.0,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+index 9532f8061..94df97fac 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+@@ -169,6 +169,8 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
+             // regression net stays comparable across F-038 and F-038b.
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs b/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
+index d6890e791..8e9efc7ae 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
+@@ -156,6 +156,8 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: stay_down,
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+index 083701c35..a081ce988 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+@@ -260,6 +260,8 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: None,
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         feed_rate: 1000.0,
+         plunge_rate: 500.0,
+@@ -1538,3 +1540,190 @@ fn c34_frame_ring_grow_probe() {
+     let target: Vec<Polygon2> = s_prime.iter().flat_map(|p| offset_polygon(p, m)).collect();
+     c34_stage("target (shortfall-inset outline inset by m)", &target);
+ }
++
++/// C38 §13.3: a straight channel whose 2D tool-centre region is about one
++/// stepover wide, so the field's seed (a centre clearance of R) does not
++/// fit and the corridor opening plans it with counted slots. The channel
++/// width in material space is `2R + 2·(SIMPLIFY_INSET + cell) + s`: the
++/// region (in tool-centre space, `2R` narrower) loses the C31 smoothing
++/// inset and the one-cell margin on each side, which leaves about `s`.
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++/// The shipped region smoothing inset (`adaptive3d/clearing.rs`,
++/// `SIMPLIFY_INSET`).
++const SIMPLIFY_INSET: f64 = 0.3;
++
++fn channel_half_width() -> f64 {
++    (2.0 * TOOL_RADIUS + 2.0 * (SIMPLIFY_INSET + planner_cell()) + STEPOVER) / 2.0
++}
++
++fn channel() -> TriangleMesh {
++    let hw = channel_half_width();
++    height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= hw {
++            FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    })
++}
++
++/// The XY distance from `q` to the polyline `pts`.
++fn chain_distance(q: (f64, f64), pts: &[rs_cam_core::geo::P2]) -> f64 {
++    pts.windows(2)
++        .map(|w| {
++            let (a, b) = (w[0], w[1]);
++            let (dx, dy) = (b.x - a.x, b.y - a.y);
++            let l2 = dx * dx + dy * dy;
++            let t = if l2 > 0.0 {
++                (((q.0 - a.x) * dx + (q.1 - a.y) * dy) / l2).clamp(0.0, 1.0)
++            } else {
++                0.0
++            };
++            (q.0 - a.x - t * dx).hypot(q.1 - a.y - t * dy)
++        })
++        .fold(f64::INFINITY, f64::min)
++}
++
++/// C38 §13.3 (the fed slot, design A): in the channel, the research arm
++/// plans corridor slots, every slot step the toolpath needs slower is fed,
++/// and every simulated sample over the screen bound on a move that runs
++/// along a slot chain carries a feed below the op feed. The slot moves are
++/// found here again by geometry (each point of the move within the chain
++/// tolerance of a chain), not by their feed, so the check is not circular.
++/// Entry moves and the steps that leave a straight plunge within R of it
++/// are not judged (the 2D exemption).
++#[test]
++#[ignore = "heavy: plans and simulates the channel fixture (two levels); run with -- --ignored"]
++fn the_corridor_slots_run_at_the_reduced_feed() {
++    let mesh = channel();
++    let index = SpatialIndex::build(&mesh, 10.0);
++    let p = params(ClearingStrategy3d::Geodesic(
++        GeodesicOptions::C35_SPIRAL_PICK,
++    ));
++    let (out, research) = plan(&mesh, &index, &p);
++    // Where the corridor plan went (D27 v3 read no chain): the region
++    // openings (C31), the slots the producer planned and the slot records
++    // the 2D replay kept (C22's exact-match summary, `planned` and `cut`),
++    // and the size of the plan.
++    for line in opening_lines("channel", &research.openings) {
++        eprintln!("{line}");
++    }
++    eprintln!(
++        "channel: slots planned {}, slot records {}; {} moves, {} entries",
++        research.slots.planned,
++        research.slots.turns.len(),
++        out.toolpath.moves.len(),
++        entry_count(&out.toolpath)
++    );
++    let chains = &research.slot_chains;
++    eprintln!(
++        "channel: half width {:.3} mm; slot chains {} steps {} reduced {} fed {} unfed {} lowered {} out of run {} lowest {:.3} longest move {:.3} mm",
++        channel_half_width(),
++        chains.chains,
++        chains.steps,
++        chains.reduced,
++        chains.fed,
++        chains.unfed,
++        chains.moves_lowered,
++        chains.matched_out_of_run,
++        chains.lowest_factor,
++        chains.longest_move_mm
++    );
++    assert!(chains.chains > 0, "the channel planned no corridor slot");
++    assert!(
++        chains.reduced > 0,
++        "no slot step needs a reduced feed: the fixture tests nothing"
++    );
++    assert_eq!(
++        chains.unfed, 0,
++        "slot steps that need a reduced feed and no move carries"
++    );
++    assert_eq!(
++        chains.matched_out_of_run, 0,
++        "a slot chain matched out of its own run"
++    );
++
++    let tp = &out.toolpath;
++    let cutter = FlatEndmill::new(2.0 * TOOL_RADIUS, 25.0);
++    let b = &mesh.bbox;
++    let mut stock = TriDexelStock::from_stock(
++        b.min.x - TOOL_RADIUS,
++        b.min.y - TOOL_RADIUS,
++        b.max.x + TOOL_RADIUS,
++        b.max.y + TOOL_RADIUS,
++        b.min.z,
++        TOP_Z,
++        SIM_CELL,
++    );
++    let samples = stock
++        .simulate_toolpath_with_metrics_with_cancel(
++            tp,
++            &cutter,
++            StockCutDirection::FromTop,
++            ToolpathId::from_raw(0),
++            12_000,
++            2,
++            3000.0,
++            SIM_CELL,
++            None,
++            &[],
++            &[],
++            false,
++            &|| false,
++        )
++        .expect("the simulation is not cancelled");
++    // The slot moves by geometry: every point of the move within the chain
++    // tolerance of one chain.
++    let on_chain: Vec<bool> = (0..tp.moves.len())
++        .map(|m| {
++            if m == 0 || !matches!(tp.moves[m].move_type, MoveType::Linear { .. }) {
++                return false;
++            }
++            let pts = move_points(tp.moves[m - 1].target, &tp.moves[m], chains.tolerance);
++            chains.chain_list.iter().any(|c| {
++                pts.iter()
++                    .all(|&q| chain_distance(q, &c.pts) <= chains.tolerance)
++            })
++        })
++        .collect();
++    let screen = sim_bound();
++    let mut hole: Option<(f64, f64)> = None;
++    let mut judged = 0usize;
++    let mut faults = Vec::new();
++    for s in &samples {
++        let m = s.move_index;
++        let Some(mv) = tp.moves.get(m) else { continue };
++        if mv.intent == MoveIntent::EntryPlunge {
++            hole = Some((mv.target.x, mv.target.y));
++        }
++        if !s.is_cutting || is_entry(mv.intent) {
++            continue;
++        }
++        let [x, y, _] = s.position;
++        if let Some((hx, hy)) = hole {
++            if (x - hx).hypot(y - hy) <= TOOL_RADIUS {
++                continue;
++            }
++            hole = None;
++        }
++        if !on_chain.get(m).copied().unwrap_or(false) {
++            continue;
++        }
++        judged += 1;
++        if s.engagement.radial_woc_fraction > screen && s.feed_rate_mm_min >= p.feed_rate - 1e-9 {
++            faults.push(format!(
++                "move {m} at ({x:.2}, {y:.2}): radial {:.3} at feed {:.0}",
++                s.engagement.radial_woc_fraction, s.feed_rate_mm_min
++            ));
++        }
++    }
++    eprintln!(
++        "channel: {judged} samples on slot moves, {} over the screen at the full feed",
++        faults.len()
++    );
++    assert!(judged > 0, "no simulated sample lies on a slot move");
++    assert!(
++        faults.is_empty(),
++        "over-ceiling slot samples at the full feed: {faults:#?}"
++    );
++}
+diff --git a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+index 187d654d8..482a4bd45 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+@@ -79,6 +79,8 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         feed_rate: 1000.0,
+         plunge_rate: 500.0,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs b/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
+index 6958e109c..5207e8da6 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
+@@ -180,6 +180,8 @@ fn make_params(
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm,
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs b/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
+index e9a26d836..10c7b4454 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
+@@ -122,6 +122,8 @@ fn params(merge: Option<f64>) -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: None,
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+index 296361f00..e028210e7 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+@@ -114,6 +114,8 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
+             min_region_cut_length_mm: MIN_REGION_CUT_MM,
+             max_stay_down_distance_mm: None,
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/agent_search_axial_doc.rs b/crates/rs_cam_core/tests/agent_search_axial_doc.rs
+index 9d95793e1..db147f187 100644
+--- a/crates/rs_cam_core/tests/agent_search_axial_doc.rs
++++ b/crates/rs_cam_core/tests/agent_search_axial_doc.rs
+@@ -114,6 +114,8 @@ fn agent_search_axial_doc_diag() {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/agent_search_coverage.rs b/crates/rs_cam_core/tests/agent_search_coverage.rs
+index 83832115d..936e94a1a 100644
+--- a/crates/rs_cam_core/tests/agent_search_coverage.rs
++++ b/crates/rs_cam_core/tests/agent_search_coverage.rs
+@@ -242,6 +242,8 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/end_to_end.rs b/crates/rs_cam_core/tests/end_to_end.rs
+index ba38d433e..3e6f11d8d 100644
+--- a/crates/rs_cam_core/tests/end_to_end.rs
++++ b/crates/rs_cam_core/tests/end_to_end.rs
+@@ -599,6 +599,8 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/param_sweep.rs b/crates/rs_cam_core/tests/param_sweep.rs
+index 015663cd3..a769ff37e 100644
+--- a/crates/rs_cam_core/tests/param_sweep.rs
++++ b/crates/rs_cam_core/tests/param_sweep.rs
+@@ -1544,6 +1544,8 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/tests/wanaka_z_layer_render.rs b/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
+index 79210e0c3..c46ea0037 100644
+--- a/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
++++ b/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
+@@ -227,6 +227,8 @@ fn wanaka_back_rough_first_and_last_z_layers() {
+             min_region_cut_length_mm: 0.0,
+             max_stay_down_distance_mm: Some(0.0),
+             stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
+         },
+         trochoid_cap_mult: 1.6,
+         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
+diff --git a/crates/rs_cam_core/src/adaptive3d/keep_down_route.rs b/crates/rs_cam_core/src/adaptive3d/keep_down_route.rs
+new file mode 100644
+index 000000000..3d39f240d
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive3d/keep_down_route.rs
+@@ -0,0 +1,202 @@
++//! §16 Part B (P3_C22_3d_turns.md): a routed keep-down travel at an entry,
++//! shared by every adaptive3d strategy (it is called where every entry is
++//! stamped, `clearing.rs`), off unless `Adaptive3dLinking::keep_down_route`
++//! or the research arm turns it on.
++//!
++//! An entry lifts the tool, moves it and plunges again. C42 (fix18) found
++//! that most such entries of the research arm lie about one millimetre
++//! from where the tool stands, behind a column of stock: a path at the
++//! level over cut ground and a short side leg reach them. This module finds
++//! that path on the planner stock.
++//!
++//! - A grid cell is FREE when the conservative stock top over the tool's
++//!   disc there is at most `ceiling_z`: the tool at the cell's centre cuts
++//!   nothing above the ceiling (the full-disc proof of `plan_entry`).
++//! - The search is A* over the free cells, 8 neighbours, from the free
++//!   cells within two cells of the tool to the first free cell whose
++//!   centre lies within `side_max` of the entry and from which the side leg
++//!   to the entry passes `side_ok` (the caller's pass rule).
++//! - Its length is held to `max_len` (the caller's stay-down distance), so
++//!   the search window and the work per entry are bounded.
++//!
++//! No new constant: the ceiling, the side-leg rule and the length bound are
++//! the caller's; two cells is the grid's own diagonal reach of a point.
++
++use std::cmp::Ordering;
++use std::collections::{BinaryHeap, HashMap};
++
++use crate::dexel_stock::TriDexelStock;
++use crate::geo::P2;
++
++/// What a route must hold.
++pub(super) struct RouteRequest<'a> {
++    pub(super) from: P2,
++    pub(super) to: P2,
++    pub(super) radius: f64,
++    pub(super) ceiling_z: f64,
++    pub(super) max_len: f64,
++    pub(super) side_max: f64,
++    /// The side leg from a free point to the entry: true when it may be cut.
++    pub(super) side_ok: &'a dyn Fn(P2) -> bool,
++    /// Where a route may run at all (the session's boundary clip): a cell
++    /// outside it is never free, so a route needs no clip.
++    pub(super) allowed: &'a dyn Fn(P2) -> bool,
++}
++
++#[derive(Clone, Copy, PartialEq)]
++struct Open {
++    f: f64,
++    g: f64,
++    cell: (isize, isize),
++}
++
++impl Eq for Open {}
++
++impl Ord for Open {
++    fn cmp(&self, other: &Self) -> Ordering {
++        // A min-heap on f, then on g.
++        other
++            .f
++            .total_cmp(&self.f)
++            .then_with(|| other.g.total_cmp(&self.g))
++    }
++}
++
++impl PartialOrd for Open {
++    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
++        Some(self.cmp(other))
++    }
++}
++
++/// The route from `req.from` to the free point the side leg leaves from:
++/// the free cell centres in order, the first within two cells of
++/// `req.from`, the last within `req.side_max` of `req.to`. `None` when no
++/// route holds within `req.max_len`.
++pub(super) fn keep_down_route(stock: &TriDexelStock, req: &RouteRequest<'_>) -> Option<Vec<P2>> {
++    let grid = &stock.z_grid;
++    let cs = grid.cell_size;
++    if cs.is_nan() || cs <= 0.0 || req.max_len <= 0.0 {
++        return None;
++    }
++    let to_world = |c: (isize, isize)| {
++        P2::new(
++            grid.origin_u + c.0 as f64 * cs,
++            grid.origin_v + c.1 as f64 * cs,
++        )
++    };
++    let on_grid = |c: (isize, isize)| {
++        c.0 >= 0 && c.1 >= 0 && (c.0 as usize) < grid.cols && (c.1 as usize) < grid.rows
++    };
++    let mut free_memo: HashMap<(isize, isize), bool> = HashMap::new();
++    let mut free = |c: (isize, isize)| -> bool {
++        *free_memo.entry(c).or_insert_with(|| {
++            on_grid(c) && (req.allowed)(to_world(c)) && {
++                let p = to_world(c);
++                stock
++                    .max_conservative_top_z_in_disc(p.x, p.y, req.radius)
++                    .is_none_or(|top| top <= req.ceiling_z)
++            }
++        })
++    };
++    let dist = |a: P2, b: P2| (b.x - a.x).hypot(b.y - a.y);
++    let cell_of = |p: P2| {
++        (
++            ((p.x - grid.origin_u) / cs).round() as isize,
++            ((p.y - grid.origin_v) / cs).round() as isize,
++        )
++    };
++    let h = |c: (isize, isize)| dist(to_world(c), req.to);
++
++    let mut open: BinaryHeap<Open> = BinaryHeap::new();
++    let mut best_g: HashMap<(isize, isize), f64> = HashMap::new();
++    let mut came: HashMap<(isize, isize), (isize, isize)> = HashMap::new();
++    // Sources: the free cells within two cells of the tool, at their true
++    // distance from it.
++    let start = cell_of(req.from);
++    for dx in -2..=2 {
++        for dy in -2..=2 {
++            let c = (start.0 + dx, start.1 + dy);
++            let g = dist(req.from, to_world(c));
++            if g <= 2.0 * cs * std::f64::consts::SQRT_2 + 1e-9 && free(c) {
++                best_g.insert(c, g);
++                open.push(Open {
++                    f: g + h(c),
++                    g,
++                    cell: c,
++                });
++            }
++        }
++    }
++    while let Some(Open { g, cell, .. }) = open.pop() {
++        if best_g.get(&cell).is_some_and(|&b| g > b + 1e-12) {
++            continue;
++        }
++        let here = to_world(cell);
++        let side = dist(here, req.to);
++        if side <= req.side_max && g + side <= req.max_len && (req.side_ok)(here) {
++            let mut path = vec![here];
++            let mut c = cell;
++            while let Some(&prev) = came.get(&c) {
++                path.push(to_world(prev));
++                c = prev;
++            }
++            path.reverse();
++            return Some(path);
++        }
++        for (dx, dy) in [
++            (1, 0),
++            (-1, 0),
++            (0, 1),
++            (0, -1),
++            (1, 1),
++            (1, -1),
++            (-1, 1),
++            (-1, -1),
++        ] {
++            let next = (cell.0 + dx, cell.1 + dy);
++            let step = if dx != 0 && dy != 0 {
++                cs * std::f64::consts::SQRT_2
++            } else {
++                cs
++            };
++            let ng = g + step;
++            // A route longer than the bound, even straight on from here,
++            // cannot hold.
++            if ng + h(next) > req.max_len + req.side_max {
++                continue;
++            }
++            if best_g.get(&next).is_some_and(|&b| ng >= b) || !free(next) {
++                continue;
++            }
++            best_g.insert(next, ng);
++            came.insert(next, cell);
++            open.push(Open {
++                f: ng + h(next),
++                g: ng,
++                cell: next,
++            });
++        }
++    }
++    None
++}
++
++/// `path` less its interior points that lie on the line of their
++/// neighbours (the grid's straight runs), so a route is one move per turn.
++pub(super) fn straight_runs(path: &[P2]) -> Vec<P2> {
++    let mut out: Vec<P2> = Vec::with_capacity(path.len());
++    for &p in path {
++        while out.len() >= 2 {
++            let (Some(&a), Some(&b)) = (out.get(out.len() - 2), out.last()) else {
++                break;
++            };
++            let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
++            if cross.abs() <= 1e-9 {
++                out.pop();
++            } else {
++                break;
++            }
++        }
++        out.push(p);
++    }
++    out
++}

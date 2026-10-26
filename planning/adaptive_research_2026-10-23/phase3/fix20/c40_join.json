@@ -1,0 +1,208 @@
+{
+ "a_only/corne": {
+  "summary_lines": [
+   "C40 entry summary entries=220 by_kind_cause={(LiftOver, Some(Start)): 6, (LiftOver, Some(Reentry2d)): 141, (LiftOver, Some(AirRun)): 3, (LiftOver, Some(HeldLinkRefused)): 8, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 15, (Plunge, Some(Waterline)): 37} drop_1mm_by_cause={Some(Start): 16, Some(Reentry2d): 156, Some(AirRun): 3, Some(Waterline): 21, Some(HeldLinkRefused): 8}",
+   "C40 entry summary entries=189 by_kind_cause={(LiftOver, Some(Start)): 1, (Plunge, Some(Start)): 12, (Plunge, Some(Waterline)): 176} drop_1mm_by_cause={Some(Start): 13, Some(Waterline): 37}"
+  ],
+  "op0": {
+   "entries": 220,
+   "by_kind_cause": {
+    "LiftOver Some(Reentry2d)": 141,
+    "Plunge Some(Waterline)": 37,
+    "Plunge Some(Reentry2d)": 15,
+    "Plunge Some(Start)": 10,
+    "LiftOver Some(HeldLinkRefused)": 8,
+    "LiftOver Some(Start)": 6,
+    "LiftOver Some(AirRun)": 3
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "op1": {
+   "entries": 189,
+   "by_kind_cause": {
+    "Plunge Some(Waterline)": 176,
+    "Plunge Some(Start)": 12,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 198,
+   "matched": 198,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(Reentry2d)": 153,
+    "Some(Waterline)": 19,
+    "Some(Start)": 16,
+    "Some(HeldLinkRefused)": 8,
+    "Some(AirRun)": 2
+   },
+   "share_pct": {
+    "Some(Reentry2d)": 77.3,
+    "Some(Waterline)": 9.6,
+    "Some(Start)": 8.1,
+    "Some(HeldLinkRefused)": 4.0,
+    "Some(AirRun)": 1.0
+   },
+   "largez_share_pct": 0.0,
+   "other_share_pct": 0.0
+  }
+ },
+ "cut_feed/corne": {
+  "summary_lines": [
+   "C40 entry summary entries=220 by_kind_cause={(LiftOver, Some(Start)): 6, (LiftOver, Some(Reentry2d)): 141, (LiftOver, Some(AirRun)): 3, (LiftOver, Some(HeldLinkRefused)): 8, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 15, (Plunge, Some(Waterline)): 37} drop_1mm_by_cause={Some(Start): 16, Some(Reentry2d): 156, Some(AirRun): 3, Some(Waterline): 21, Some(HeldLinkRefused): 8}",
+   "C40 entry summary entries=189 by_kind_cause={(LiftOver, Some(Start)): 1, (Plunge, Some(Start)): 12, (Plunge, Some(Waterline)): 176} drop_1mm_by_cause={Some(Start): 13, Some(Waterline): 37}"
+  ],
+  "op0": {
+   "entries": 220,
+   "by_kind_cause": {
+    "LiftOver Some(Reentry2d)": 141,
+    "Plunge Some(Waterline)": 37,
+    "Plunge Some(Reentry2d)": 15,
+    "Plunge Some(Start)": 10,
+    "LiftOver Some(HeldLinkRefused)": 8,
+    "LiftOver Some(Start)": 6,
+    "LiftOver Some(AirRun)": 3
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "op1": {
+   "entries": 189,
+   "by_kind_cause": {
+    "Plunge Some(Waterline)": 176,
+    "Plunge Some(Start)": 12,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 0.0,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 198,
+   "matched": 198,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(Reentry2d)": 153,
+    "Some(Waterline)": 19,
+    "Some(Start)": 16,
+    "Some(HeldLinkRefused)": 8,
+    "Some(AirRun)": 2
+   },
+   "share_pct": {
+    "Some(Reentry2d)": 77.3,
+    "Some(Waterline)": 9.6,
+    "Some(Start)": 8.1,
+    "Some(HeldLinkRefused)": 4.0,
+    "Some(AirRun)": 1.0
+   },
+   "largez_share_pct": 0.0,
+   "other_share_pct": 0.0
+  }
+ },
+ "a_only/wanaka200": {
+  "summary_lines": [
+   "C40 entry summary entries=394 by_kind_cause={(LiftOver, Some(Start)): 1, (LiftOver, Some(Reentry2d)): 150, (LiftOver, Some(LargeZ)): 149, (LiftOver, Some(LargeZHeld)): 60, (LiftOver, Some(HeldLinkRefused)): 15, (Plunge, Some(Start)): 4, (Plunge, Some(Reentry2d)): 2, (Plunge, Some(LargeZ)): 1, (Plunge, Some(Sweep)): 1, (Plunge, Some(Waterline)): 6, (Plunge, Some(HeldLinkRefused)): 5} drop_1mm_by_cause={Some(Start): 5, Some(Reentry2d): 150, Some(LargeZ): 150, Some(LargeZHeld): 60, Some(Sweep): 1, Some(Waterline): 5, Some(HeldLinkRefused): 20}"
+  ],
+  "op0": {
+   "entries": 394,
+   "by_kind_cause": {
+    "LiftOver Some(Reentry2d)": 150,
+    "LiftOver Some(LargeZ)": 149,
+    "LiftOver Some(LargeZHeld)": 60,
+    "LiftOver Some(HeldLinkRefused)": 15,
+    "Plunge Some(Waterline)": 6,
+    "Plunge Some(HeldLinkRefused)": 5,
+    "Plunge Some(Start)": 4,
+    "Plunge Some(Reentry2d)": 2,
+    "Plunge Some(LargeZ)": 1,
+    "Plunge Some(Sweep)": 1,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 53.3,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 361,
+   "matched": 361,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(Reentry2d)": 150,
+    "Some(LargeZ)": 146,
+    "Some(LargeZHeld)": 41,
+    "Some(HeldLinkRefused)": 20,
+    "Some(Start)": 3,
+    "Some(Waterline)": 1
+   },
+   "share_pct": {
+    "Some(Reentry2d)": 41.6,
+    "Some(LargeZ)": 40.4,
+    "Some(LargeZHeld)": 11.4,
+    "Some(HeldLinkRefused)": 5.5,
+    "Some(Start)": 0.8,
+    "Some(Waterline)": 0.3
+   },
+   "largez_share_pct": 51.8,
+   "other_share_pct": 0.0
+  }
+ },
+ "cut_feed/wanaka200": {
+  "summary_lines": [
+   "C40 entry summary entries=392 by_kind_cause={(LiftOver, Some(Start)): 1, (LiftOver, Some(Reentry2d)): 148, (LiftOver, Some(LargeZ)): 149, (LiftOver, Some(LargeZHeld)): 60, (LiftOver, Some(HeldLinkRefused)): 15, (Plunge, Some(Start)): 4, (Plunge, Some(Reentry2d)): 2, (Plunge, Some(LargeZ)): 1, (Plunge, Some(Sweep)): 1, (Plunge, Some(Waterline)): 6, (Plunge, Some(HeldLinkRefused)): 5} drop_1mm_by_cause={Some(Start): 5, Some(Reentry2d): 150, Some(LargeZ): 150, Some(LargeZHeld): 60, Some(Sweep): 1, Some(Waterline): 5, Some(HeldLinkRefused): 20}"
+  ],
+  "op0": {
+   "entries": 392,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 149,
+    "LiftOver Some(Reentry2d)": 148,
+    "LiftOver Some(LargeZHeld)": 60,
+    "LiftOver Some(HeldLinkRefused)": 15,
+    "Plunge Some(Waterline)": 6,
+    "Plunge Some(HeldLinkRefused)": 5,
+    "Plunge Some(Start)": 4,
+    "Plunge Some(Reentry2d)": 2,
+    "Plunge Some(LargeZ)": 1,
+    "Plunge Some(Sweep)": 1,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 0,
+   "other_share_pct": 0.0,
+   "largez_share_pct": 53.57,
+   "other_first20": []
+  },
+  "join_op1": {
+   "descents": 361,
+   "matched": 361,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(Reentry2d)": 150,
+    "Some(LargeZ)": 146,
+    "Some(LargeZHeld)": 41,
+    "Some(HeldLinkRefused)": 20,
+    "Some(Start)": 3,
+    "Some(Waterline)": 1
+   },
+   "share_pct": {
+    "Some(Reentry2d)": 41.6,
+    "Some(LargeZ)": 40.4,
+    "Some(LargeZHeld)": 11.4,
+    "Some(HeldLinkRefused)": 5.5,
+    "Some(Start)": 0.8,
+    "Some(Waterline)": 0.3
+   },
+   "largez_share_pct": 51.8,
+   "other_share_pct": 0.0
+  }
+ }
+}

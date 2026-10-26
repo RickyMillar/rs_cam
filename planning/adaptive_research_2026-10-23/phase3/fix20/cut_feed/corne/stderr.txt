@@ -1,0 +1,56 @@
+Measurability:
+  NOT MEASURED  radial engagement on toolpath 3 — 75% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 6.420 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  air-cut % on toolpath 3 — 75% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 6.420 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  chip engagement on toolpath 3 — 75% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 6.420 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+
+Safety (5):
+  "3D Rough 1 (copy)": the rough leaves 1067 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1063 of them against a wall: 1193.2 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (46.2, -7.9); 0.85 mm high, 0.30 mm wide, 0.1 mm2 at (109.5, -8.8); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (15.0, -91.9); 0.81 mm high, 0.30 mm wide, 0.1 mm2 at (17.1, -95.5); 16.70 mm high, 0.55 mm wide, 1.1 mm2 at (110.4, -9.7) at a wall; 16.56 mm high, 0.90 mm wide, 30.7 mm2 at (80.1, -88.9) at a wall; 16.55 mm high, 0.55 mm wide, 9.5 mm2 at (47.4, -6.1) at a wall; 16.51 mm high, 0.90 mm wide, 115.8 mm2 at (145.8, -10.9) at a wall; 16.51 mm high, 4.50 mm wide, 101.9 mm2 at (20.4, -102.4) at a wall; 16.51 mm high, 0.90 mm wide, 8.5 mm2 at (29.1, -8.2) at a wall; and 1057 more. 331 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1": the rough leaves 883 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 874 of them against a wall: 2420.6 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 21.46 mm high, 5.10 mm wide, 421.6 mm2 at (29.1, -109.3); 5.25 mm high, 0.30 mm wide, 0.7 mm2 at (31.8, -109.3); 1.59 mm high, 0.30 mm wide, 0.4 mm2 at (0.3, -82.6); 1.29 mm high, 0.30 mm wide, 0.4 mm2 at (18.0, -109.3); 0.92 mm high, 0.30 mm wide, 0.2 mm2 at (91.5, -74.8); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (109.8, -9.1); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (90.6, -75.1); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (109.5, -8.8); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (15.0, -91.9); 22.50 mm high, 0.90 mm wide, 21.0 mm2 at (14.1, -109.3) at a wall; and 873 more. 12 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+  Rapid passes through uncut stock on TP1 '3D Rough 1' at local move 3701 (run move 3701): (91.3, -1.1, 28.000) -> (91.3, -1.1, 17.951)
+  Rapid passes through uncut stock on TP1 '3D Rough 1' at local move 6704 (run move 6704): (91.3, -1.1, 28.000) -> (91.3, -1.1, 17.619)
+  Rapid passes through uncut stock on TP1 '3D Rough 1' at local move 9786 (run move 9786): (91.3, -1.1, 28.000) -> (91.3, -1.1, 17.573)
+
+Advisories:
+  937.1s wasted around (30.2, -14.2, 15.1) — engagement 0.04
+  459.7s wasted around (71.6, -55.9, 1.2) — engagement 0.11
+  3.3s wasted around (30.2, -106.3, 8.2) — engagement 0.10
+  3.3s wasted around (137.0, -68.3, 8.2) — engagement 0.01
+  3.1s wasted around (137.0, -68.3, 8.2) — engagement 0.04
+  2.9s wasted around (3.3, -84.9, 8.2) — engagement 0.12
+  2.8s wasted around (149.8, -72.8, 6.7) — engagement 0.09
+  2.7s wasted around (30.2, -106.3, 8.2) — engagement 0.16
+  2.5s wasted around (25.1, -96.2, 9.8) — engagement 0.06
+  2.4s wasted around (137.0, -68.3, 11.6) — engagement 0.05
+  2.3s wasted around (140.3, -56.3, 8.2) — engagement 0.19
+  2.3s wasted around (149.9, -72.4, 6.7) — engagement 0.19
+  2.2s wasted around (3.3, -84.9, 8.2) — engagement 0.19
+  2.2s wasted around (3.5, -13.6, 6.7) — engagement 0.20
+  1.9s wasted around (3.7, -77.1, 6.7) — engagement 0.35
+  1.9s wasted around (24.8, -99.2, 8.2) — engagement 0.23
+  1.9s wasted around (58.2, -85.3, 11.6) — engagement 0.21
+  1.6s wasted around (3.5, -13.6, 6.7) — engagement 0.25
+  1.5s wasted around (149.9, -72.4, 6.7) — engagement 0.30
+  1.3s wasted around (24.8, -99.2, 10.4) — engagement 0.29
+  ... 391 more not shown
+
+Counts: 305882 samples | 118875 flagged-air + 34236 flagged-low (per SAMPLE) | 31244 issue runs (COALESCED, the legacy "issue_count") | 411 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 13.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 4: chipload: simulation trace is stale — re-run simulation
+  toolpath 4: power: simulation trace is stale — re-run simulation
+  toolpath 4: deflection: simulation trace is stale — re-run simulation
+  toolpath 4: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 2  |  Cutting: 67281mm  |  Rapid: 20930mm  |  Time: 2458s
+Air cutting: 54.0% of total runtime  |  Avg engagement: 0.11  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [!] #1 3D Rough 1 (3D Adaptive) — 12890 moves, 3 collisions
+      kinematics: 68% of commanded (37% feed-bound → +6% at ×1.30, 63% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #3 3D Rough 1 (copy) (3D Adaptive) — 8762 moves, 0 collisions
+      kinematics: 69% of commanded (76% feed-bound → +16% at ×1.30, 24% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 3 rapid-through-stock collisions
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix20/cut_feed/corne

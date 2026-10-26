@@ -1,0 +1,18 @@
+    Checking rs_cam_core v0.1.0 (/home/ricky/personal_repos/rs_cam/.claude/worktrees/fixture-cdc9814e/crates/rs_cam_core)
+error: lifetime may not live long enough
+   --> crates/rs_cam_core/src/adaptive3d/clearing.rs:602:9
+    |
+600 |   impl<'a> ClearZLevelContext<'a> {
+    |        -- lifetime `'a` defined here
+601 |       pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
+    |                                 - let's call the lifetime of this reference `'1`
+602 | /         StampDrape {
+603 | |             mesh: self.mesh,
+604 | |             index: self.index,
+605 | |             cutter: self.cutter,
+...   |
+615 | |             route_stats: Some(&self.research_route_stats),
+616 | |         }
+    | |_________^ method was supposed to return data with lifetime `'a` but it is returning data with lifetime `'1`
+
+error: could not compile `rs_cam_core` (lib) due to 1 previous error

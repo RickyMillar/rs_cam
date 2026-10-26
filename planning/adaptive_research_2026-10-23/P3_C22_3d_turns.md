@@ -3101,3 +3101,20 @@ From `phase3/d29/v2_10_c12_heavy.txt`. Every first over-sample the lead names si
 1. B: route only to an entry whose own disc is free at its Z plus the clearance (`free_at(entry)`), with the side leg removed (the route ends on the entry cell). Count the refused ones in `RouteStats`.
 2. A: kept, if the ROUTE=off heavy run holds the exact bound. If it does not, A's steps need the same width read, and I report it with that run's probes.
 3. A generic note for the shared router (the operator ruling): "a keep-down travel replaces the travel, never the entry's cut". It belongs in `keep_down_route.rs`'s header.
+
+### 16.8 The B fix and the Part A gate (2026-10-26; clippy clean, not tested)
+
+- **The ROUTE=off heavy run is identical to D27 v3**, so every D29 over was B. Part A WAS on in that run: `path.rs` sets the ctx's `step_split` to `StockDepth` for the research arm whatever the test's parameter says. But the two-level fixture has no large-Z step, so A acted on nothing there.
+- **The B fix (§16.7):**
+  - `routed_entry` refuses an entry whose own footprint is not free (the entry floor disc, `plan_entry`'s read, against Z + clearance) and counts it as `RouteStats::refused_into_stock`.
+  - The route ends ON the entry: a last `Link`/`LowRapid` to the entry point, and for the rapid a vertical `Cut` down the clearance (a link never feeds down). There is no side leg.
+  - The header of `keep_down_route.rs` states the rule: "a keep-down travel replaces the travel, never the entry's cut".
+- **The parameter** is now `keep_down_route: Option<KeepDownRoute>`:
+  - `None` is the strategy's default (the research arm `CutFeed`, every other strategy off);
+  - `Some(Off)` turns it off for the research arm too;
+  - the env override still wins in research runs.
+  - The literals already passed `Default::default()`, so none changed.
+- **The Part A gate:** the new heavy test `the_stock_read_split_holds_the_exact_bound_on_draped_steps`.
+  - Setup: one level from the top to the floor (drapes over the island and gives the large-Z steps), six G1 arms, `StockDepth`, route `Some(Off)`.
+  - It asserts 0 judged samples over the exact bound per arm, the router not run, and at least one step cut at feed by the rule over all arms.
+  - No existing assert is changed.

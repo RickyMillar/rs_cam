@@ -1,0 +1,26 @@
+{
+ "fix16/corne_pick": {
+  "over30": {
+   "inside": 831,
+   "beyond mesh bbox": 263,
+   "outside": 1933
+  },
+  "over90": {
+   "inside": 274,
+   "beyond mesh bbox": 202,
+   "outside": 1583
+  }
+ },
+ "fix20/a_only/corne": {
+  "over30": {
+   "inside": 1767,
+   "outside": 308,
+   "beyond mesh bbox": 126
+  },
+  "over90": {
+   "inside": 313,
+   "beyond mesh bbox": 43,
+   "outside": 34
+  }
+ }
+}

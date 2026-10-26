@@ -1,0 +1,909 @@
+
+running 1 test
+test the_geodesic_arm_generates_and_holds_the_pass_load_at_two_levels has been running for over 60 seconds
+control AgentSearch: 657 moves, 1460 judged at levels {45, 70, 75, 80, 105} (Z x 10), 225 over the screen 0.546 (sim peak 0.928), 225 over the exact bound 0.471 (exact peak 0.999); entry 291, vertical 250, departing 562, waterline 1301 (28 over the screen, exact peak 0.990), perimeter band 941 (632 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv c37 joins: 2 pieces; arc joins 0, turns 0, over the bound 0, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 170 by join {"ClosedSeam": 36, "Mixed": 24, "Seam": 94, "Start": 2, "no join": 14}, by producer {"Clearing": 94, "ResidueContour": 47, "ResidueMop": 12, "WallPass": 17}
+geodesic_curv c37 re-entry Z 7.00 (-14.020, -8.883) Start Clearing
+geodesic_curv c37 re-entry Z 7.00 (-12.426, -8.883) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-10.723, -8.883) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-8.942, -8.883) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-7.832, -4.883) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.690, -15.883) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-28.324, -20.383) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.457, -6.083) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-8.957, 0.332) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.957, 0.985) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-8.457, 4.987) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.957, 6.325) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-7.957, 9.365) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.957, 11.098) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-7.457, 13.627) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (-29.930, 15.617) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-7.731, 18.117) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (1.972, 11.117) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-2.598, 20.117) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (2.543, 16.641) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (6.543, 15.145) no join Clearing
+geodesic_curv c37 re-entry Z 7.00 (5.043, 17.026) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (3.543, 18.407) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-5.306, -7.383) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-8.457, -20.268) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-1.358, -8.883) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (-2.957, -19.985) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (2.543, -10.383) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (1.543, -20.348) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (6.416, -11.883) no join Clearing
+geodesic_curv c37 re-entry Z 7.00 (6.043, -20.355) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (10.043, -14.522) no join Clearing
+geodesic_curv c37 re-entry Z 7.00 (10.767, -19.383) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (13.348, -17.883) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (10.214, 7.086) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (7.543, 17.177) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (7.618, 20.117) Seam Clearing
+geodesic_curv c37 re-entry Z 7.00 (12.441, 9.617) no join Clearing
+geodesic_curv c37 re-entry Z 7.00 (29.639, -1.883) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (28.543, 1.516) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (29.698, 8.117) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (14.072, 12.617) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (13.043, 15.761) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (15.148, 15.867) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (16.114, 12.617) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (17.947, 13.617) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (19.993, 13.617) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (23.505, 16.117) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (23.972, 14.117) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (27.510, 16.617) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 7.00 (28.460, 13.117) Mixed Clearing
+geodesic_curv c37 re-entry Z 7.00 (8.152, 20.457) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (-8.893, 20.457) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (-30.387, 18.229) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (-30.457, -20.383) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (30.424, -2.562) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (30.406, 7.834) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (1.458, -8.738) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (28.724, -2.209) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (28.706, 7.525) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (9.314, 18.757) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (-5.588, 18.757) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (1.422, 10.514) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (3.753, -9.693) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (27.022, -1.443) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (27.007, 7.437) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (26.990, 17.057) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (25.322, -1.084) no join ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (25.306, 7.884) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (9.076, -12.736) no join ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (23.606, 7.767) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (21.906, 7.487) Seam ResidueContour
+geodesic_curv c37 re-entry Z 7.00 (-27.419, 20.457) Mixed WallPass
+geodesic_curv c37 re-entry Z 7.00 (-30.383, 20.457) Mixed WallPass
+geodesic_curv c37 re-entry Z 7.00 (30.395, 13.774) Mixed WallPass
+geodesic_curv c37 re-entry Z 7.00 (2.590, -8.313) Seam WallPass
+geodesic_curv c37 re-entry Z 7.00 (-7.732, 3.946) Seam WallPass
+geodesic_curv c37 re-entry Z 7.00 (-5.457, 7.117) Seam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (30.043, 2.117) ClosedSeam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (30.043, 16.117) ClosedSeam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (6.543, -5.883) Seam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (8.543, 1.617) Seam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (4.543, 7.617) Seam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (-2.457, 8.617) Seam ResidueMop
+geodesic_curv c37 re-entry Z 7.00 (-29.957, -20.383) Seam WallPass
+geodesic_curv c37 re-entry Z 7.00 (-4.983, 7.336) Seam WallPass
+geodesic_curv c37 re-entry Z 7.00 (3.151, 8.078) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (-14.014, -8.877) Start Clearing
+geodesic_curv c37 re-entry Z 4.50 (-12.420, -8.877) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-10.718, -8.877) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-8.937, -8.877) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-7.376, -6.377) Mixed Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.684, -15.877) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-28.318, -20.377) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.451, -6.077) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-8.951, 0.338) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.951, 0.991) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-8.451, 4.993) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.951, 6.331) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-7.951, 9.371) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.951, 11.104) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-7.451, 13.633) no join Clearing
+geodesic_curv c37 re-entry Z 4.50 (-29.924, 15.623) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-7.725, 18.123) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-7.348, 20.123) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (1.239, 20.123) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-5.252, -7.877) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-8.451, -20.262) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-1.352, -8.877) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (-2.951, -19.979) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (2.549, -10.377) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (1.549, -20.342) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (6.422, -11.877) no join Clearing
+geodesic_curv c37 re-entry Z 4.50 (6.049, -20.350) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (10.049, -14.516) no join Clearing
+geodesic_curv c37 re-entry Z 4.50 (10.773, -19.377) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (13.354, -17.877) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (9.902, 6.670) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (12.266, 9.623) Seam Clearing
+geodesic_curv c37 re-entry Z 4.50 (29.628, -1.877) Mixed Clearing
+geodesic_curv c37 re-entry Z 4.50 (28.549, 1.376) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (14.050, 11.623) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (13.049, 15.257) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (15.198, 15.123) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (18.095, 11.623) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (19.545, 14.623) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (20.112, 11.623) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (22.064, 12.123) Mixed Clearing
+geodesic_curv c37 re-entry Z 4.50 (23.549, 15.086) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (24.014, 12.623) ClosedSeam Clearing
+geodesic_curv c37 re-entry Z 4.50 (3.705, 20.451) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-4.446, 20.451) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-30.382, 18.224) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-30.451, -20.377) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (30.418, -2.561) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (1.760, -8.786) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-28.681, 18.751) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (28.718, -2.209) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (22.721, 18.751) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (4.842, 18.751) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-4.097, 18.751) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (4.353, -10.030) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (27.016, -1.442) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (26.994, 11.133) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (26.234, 17.051) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (4.497, 17.051) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-4.497, 17.051) no join ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (9.075, 8.613) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (6.255, -11.045) no join ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (25.295, 10.869) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (4.462, 15.351) no join ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-4.462, 15.351) no join ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (10.755, 11.742) ClosedSeam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (9.047, -13.272) no join ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (23.595, 10.707) Seam ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (21.895, 10.462) Mixed ResidueContour
+geodesic_curv c37 re-entry Z 4.50 (-2.964, 20.451) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (-27.414, 20.451) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (-30.378, 20.451) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (-7.902, 4.525) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (3.494, -8.493) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (5.549, -7.377) Seam ResidueMop
+geodesic_curv c37 re-entry Z 4.50 (8.549, 2.623) Seam ResidueMop
+geodesic_curv c37 re-entry Z 4.50 (8.549, 2.123) Seam ResidueMop
+geodesic_curv c37 re-entry Z 4.50 (8.049, -4.377) Seam ResidueMop
+geodesic_curv c37 re-entry Z 4.50 (0.049, 20.123) Seam ResidueMop
+geodesic_curv c37 re-entry Z 4.50 (-29.951, -20.377) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (-6.655, 5.972) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (3.626, 8.093) Seam WallPass
+geodesic_curv c37 re-entry Z 4.50 (6.309, 6.571) Seam WallPass
+geodesic_curv c40 entries: 207 by kind and cause {"LiftOver Some(AirRun)": 22, "LiftOver Some(HeldLinkRefused)": 5, "LiftOver Some(Reentry2d)": 168, "LiftOver Some(Start)": 1, "Plunge Some(AirRun)": 4, "Plunge Some(HeldLinkRefused)": 1, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(AirRun)": 15, "Some(HeldLinkRefused)": 6, "Some(Reentry2d)": 169, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_curv opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_curv opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_curv: 2573 moves, 6775 judged at levels {45, 70, 75, 80, 100, 105} (Z x 10), 4 over the screen 0.546 (sim peak 0.833), 4 over the exact bound 0.471 (exact peak 0.975); entry 1490, vertical 1578, departing 4269, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+  geodesic_curv screened: move 435 ClearingCut at (-2.50, -8.59, 7.00) wall distance 3.95: sim radial 0.685, exact peak of the move 0.707
+  geodesic_curv screened: move 533 ClearingCut at (12.93, 5.52, 7.00) wall distance 9.06: sim radial 0.815, exact peak of the move 0.957
+  geodesic_curv screened: move 1711 ClearingCut at (-2.57, -8.88, 4.50) wall distance 4.24: sim radial 0.667, exact peak of the move 0.775
+  geodesic_curv screened: move 1805 ClearingCut at (17.82, 12.12, 4.50) wall distance 11.88: sim radial 0.833, exact peak of the move 0.975
+  geodesic_curv probe move 435 at (-2.50, -8.59, 7.00):
+    423 ClearingCut feed 1000 to (-10.457, -20.166, 7.000) xy 1.001
+    424 Linking feed 1000 to (-10.457, -20.166, 10.500) xy 0.000
+    425 Linking feed 1000 to (-8.457, -20.268, 10.500) xy 2.003
+    426 EntryPlunge feed 500 to (-8.457, -20.268, 7.500) xy 0.000
+    427 Retract rapid to (-8.457, -20.268, 8.000) xy 0.000
+    428 EntryPlunge feed 500 to (-8.457, -20.268, 7.000) xy 0.000
+    429 ClearingCut feed 1000 to (-6.457, -18.135, 7.000) xy 2.924
+    430 ClearingCut feed 1000 to (-5.017, -15.883, 7.000) xy 2.673
+    431 ClearingCut feed 1000 to (-4.337, -14.383, 7.000) xy 1.647
+    432 ClearingCut feed 1000 to (-3.713, -12.383, 7.000) xy 2.095
+    433 ClearingCut feed 1000 to (-3.377, -10.383, 7.000) xy 2.028
+    434 ClearingCut feed 1000 to (-3.311, -8.383, 7.000) xy 2.001
+    435 << ClearingCut feed 1000 to (-2.335, -8.633, 7.000) xy 1.008
+    436 Linking feed 1000 to (-2.335, -8.633, 10.500) xy 0.000
+    437 Linking feed 1000 to (-1.358, -8.883, 10.500) xy 1.008
+    earlier feed moves within R: 3 at the level, 0 above it, 0 across or below it; the last eight:
+      418 ClearingCut (-5.31, -7.38, 7.00) to (-5.31, -10.38, 7.00)
+      433 ClearingCut (-3.71, -12.38, 7.00) to (-3.38, -10.38, 7.00)
+      434 ClearingCut (-3.38, -10.38, 7.00) to (-3.31, -8.38, 7.00)
+
+  geodesic_curv probe move 533 at (12.93, 5.52, 7.00):
+    521 Linking feed 1000 to (7.618, 20.117, 10.500) xy 2.007
+    522 EntryPlunge feed 500 to (7.618, 20.117, 7.500) xy 0.000
+    523 Retract rapid to (7.618, 20.117, 8.000) xy 0.000
+    524 EntryPlunge feed 500 to (7.618, 20.117, 7.000) xy 0.000
+    525 ClearingCut feed 1000 to (8.097, 19.617, 7.000) xy 0.692
+    526 Linking feed 1000 to (8.097, 19.617, 10.500) xy 0.000
+    527 Linking feed 1000 to (12.441, 9.617, 10.500) xy 10.903
+    528 EntryPlunge feed 500 to (12.441, 9.617, 7.500) xy 0.000
+    529 Retract rapid to (12.441, 9.617, 8.000) xy 0.000
+    530 EntryPlunge feed 500 to (12.441, 9.617, 7.000) xy 0.000
+    531 ClearingCut feed 1000 to (12.346, 7.617, 7.000) xy 2.002
+    532 ClearingCut feed 1000 to (12.043, 6.170, 7.000) xy 1.478
+    533 << ClearingCut feed 1000 to (13.106, 5.395, 7.000) xy 1.316
+    534 Linking feed 1000 to (13.106, 5.395, 10.500) xy 0.000
+    535 Linking feed 1000 to (29.639, -1.883, 10.500) xy 18.063
+    earlier feed moves within R: 2 at the level, 1 above it, 0 across or below it; the last eight:
+      506 Linking (13.04, -18.90, 10.50) to (10.21, 7.09, 10.50)
+      531 ClearingCut (12.44, 9.62, 7.00) to (12.35, 7.62, 7.00)
+      532 ClearingCut (12.35, 7.62, 7.00) to (12.04, 6.17, 7.00)
+
+  geodesic_curv probe move 1711 at (-2.57, -8.88, 4.50):
+    1699 ClearingCut feed 1000 to (-10.451, -20.160, 4.500) xy 1.001
+    1700 Linking feed 1000 to (-10.451, -20.160, 7.999) xy 0.000
+    1701 Linking feed 1000 to (-8.451, -20.262, 7.999) xy 2.003
+    1702 EntryPlunge feed 500 to (-8.451, -20.262, 4.999) xy 0.000
+    1703 Retract rapid to (-8.451, -20.262, 5.499) xy 0.000
+    1704 EntryPlunge feed 500 to (-8.451, -20.262, 4.500) xy 0.000
+    1705 ClearingCut feed 1000 to (-6.451, -18.129, 4.500) xy 2.924
+    1706 ClearingCut feed 1000 to (-5.011, -15.877, 4.500) xy 2.673
+    1707 ClearingCut feed 1000 to (-4.331, -14.377, 4.500) xy 1.647
+    1708 ClearingCut feed 1000 to (-3.707, -12.377, 4.500) xy 2.095
+    1709 ClearingCut feed 1000 to (-3.430, -10.877, 4.500) xy 1.525
+    1710 ClearingCut feed 1000 to (-3.297, -8.877, 4.500) xy 2.004
+    1711 << ClearingCut feed 1000 to (-2.324, -8.877, 4.500) xy 0.973
+    1712 Linking feed 1000 to (-2.324, -8.877, 8.000) xy 0.000
+    1713 Linking feed 1000 to (-1.352, -8.877, 8.000) xy 0.973
+    earlier feed moves within R: 3 at the level, 29 above it, 1 across or below it; the last eight:
+      1347 Linking (-4.00, -7.08, 7.50) to (-4.00, -7.08, 10.50)
+      1348 Linking (-4.00, -7.08, 10.50) to (-18.45, -8.88, 10.50)
+      1691 Linking (3.87, 18.12, 10.50) to (-5.25, -7.88, 10.50)
+      1692 Linking (-5.25, -7.88, 10.50) to (-5.25, -7.88, 7.50)
+      1693 EntryPlunge (-5.25, -7.88, 7.50) to (-5.25, -7.88, 4.50)
+      1694 ClearingCut (-5.25, -7.88, 4.50) to (-5.37, -10.88, 4.50)
+      1709 ClearingCut (-3.71, -12.38, 4.50) to (-3.43, -10.88, 4.50)
+      1710 ClearingCut (-3.43, -10.88, 4.50) to (-3.30, -8.88, 4.50)
+
+  geodesic_curv probe move 1805 at (17.82, 12.12, 4.50):
+    1793 Linking feed 1000 to (14.050, 11.623, 7.500) xy 0.000
+    1794 EntryPlunge feed 500 to (14.050, 11.623, 4.500) xy 0.000
+    1795 ClearingCut feed 1000 to (13.102, 15.123, 4.500) xy 3.626
+    1796 Linking feed 1000 to (13.102, 15.123, 7.500) xy 0.000
+    1797 Linking feed 1000 to (13.049, 15.257, 7.500) xy 0.143
+    1798 EntryPlunge feed 500 to (13.049, 15.257, 4.500) xy 0.000
+    1799 ClearingCut feed 1000 to (13.102, 15.123, 4.500) xy 0.143
+    1800 Linking feed 1000 to (13.102, 15.123, 7.500) xy 0.000
+    1801 Linking feed 1000 to (15.198, 15.123, 7.500) xy 2.096
+    1802 EntryPlunge feed 500 to (15.198, 15.123, 4.500) xy 0.000
+    1803 ClearingCut feed 1000 to (16.075, 11.623, 4.500) xy 3.608
+    1804 ClearingCut feed 1000 to (15.994, 12.123, 4.500) xy 0.507
+    1805 << ClearingCut feed 1000 to (18.022, 12.123, 4.500) xy 2.028
+    1806 Linking feed 1000 to (18.022, 12.123, 7.500) xy 0.000
+    1807 Linking feed 1000 to (18.095, 11.623, 7.500) xy 0.505
+    earlier feed moves within R: 2 at the level, 31 above it, 0 across or below it; the last eight:
+      886 EntryPlunge (16.07, 10.26, 7.50) to (16.07, 10.26, 7.00)
+      887 Linking (16.07, 10.26, 7.00) to (13.45, 11.71, 7.00)
+      1178 Linking (21.49, 13.81, 7.00) to (19.30, 12.21, 7.00)
+      1179 Linking (19.30, 12.21, 7.00) to (17.11, 10.61, 7.00)
+      1180 Linking (17.11, 10.61, 7.00) to (14.93, 9.00, 7.00)
+      1792 Linking (28.65, 1.12, 10.50) to (14.05, 11.62, 10.50)
+      1803 ClearingCut (15.20, 15.12, 4.50) to (16.08, 11.62, 4.50)
+      1804 ClearingCut (16.08, 11.62, 4.50) to (15.99, 12.12, 4.50)
+
+  geodesic_curv: 4 samples over the exact bound, attribution only (G-ARCENDHOOK)
+geodesic_curv_split c37 joins: 2 pieces; arc joins 0, turns 0, over the bound 0, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 125 by join {"no join": 125}, by producer {"Clearing": 62, "ResidueContour": 34, "ResidueMop": 11, "WallPass": 18}
+geodesic_curv_split c37 re-entry Z 7.00 (-14.020, -8.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-12.426, -8.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-10.723, -8.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-8.942, -8.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-7.832, -4.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.690, -15.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-28.324, -20.383) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.457, -6.083) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-8.957, 0.332) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.957, 0.985) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-8.457, 4.987) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.957, 6.325) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-7.957, 9.365) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.957, 11.098) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-7.457, 13.627) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-29.930, 15.617) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-7.731, 18.117) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-7.354, 20.117) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (1.233, 20.117) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-5.306, -7.383) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-8.457, -20.268) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-1.358, -8.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (-2.957, -19.985) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (2.543, -10.383) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (1.543, -20.348) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (6.416, -11.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (6.043, -20.355) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (10.043, -14.522) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (10.767, -19.383) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (13.348, -17.883) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (30.043, -16.227) no join Clearing
+geodesic_curv_split c37 re-entry Z 7.00 (30.453, -18.898) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (2.964, 20.457) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-4.446, 20.457) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-30.387, 18.229) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-30.457, -20.383) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (28.970, -20.383) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (1.458, -8.738) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (28.753, -18.683) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (4.098, 18.757) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-4.098, 18.757) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (3.753, -9.693) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (3.749, 17.057) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-4.498, 17.057) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (5.701, -10.769) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (-4.463, 15.357) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (7.416, -11.800) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (9.076, -12.736) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 7.00 (30.456, -20.383) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (-2.964, 20.457) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (-27.419, 20.457) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (-30.383, 20.457) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (-7.732, 3.946) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (2.590, -8.313) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (5.043, -7.383) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (30.043, 20.117) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (6.043, 6.617) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (8.543, 1.617) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (6.543, -5.883) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (-5.457, 7.117) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 7.00 (-29.957, -20.383) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (-4.983, 7.336) no join WallPass
+geodesic_curv_split c37 re-entry Z 7.00 (3.151, 8.078) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-14.014, -8.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-12.420, -8.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-10.718, -8.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-8.937, -8.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-7.376, -6.377) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.684, -15.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-28.318, -20.377) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.451, -6.077) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-8.951, 0.338) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.951, 0.991) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-8.451, 4.993) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.951, 6.331) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-7.951, 9.371) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.951, 11.104) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-7.451, 13.633) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-29.924, 15.623) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-7.725, 18.123) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-7.348, 20.123) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (1.239, 20.123) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-5.252, -7.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-8.451, -20.262) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-1.352, -8.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (-2.951, -19.979) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (2.549, -10.377) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (1.549, -20.342) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (6.422, -11.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (6.049, -20.350) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (10.049, -14.516) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (10.773, -19.377) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (13.354, -17.877) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (30.049, -16.221) no join Clearing
+geodesic_curv_split c37 re-entry Z 4.50 (30.447, -18.892) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (2.964, 20.451) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-4.446, 20.451) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-30.382, 18.224) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-30.451, -20.377) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (28.965, -20.377) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (1.760, -8.786) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-28.681, 18.751) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (28.747, -18.677) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (3.352, 18.751) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-4.097, 18.751) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (4.353, -10.030) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-4.497, 17.051) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (6.255, -11.045) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (-4.462, 15.351) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (7.732, -12.130) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (9.349, -13.034) no join ResidueContour
+geodesic_curv_split c37 re-entry Z 4.50 (30.450, -20.377) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-2.964, 20.451) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-27.414, 20.451) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-30.378, 20.451) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-7.902, 4.525) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (3.494, -8.493) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (5.549, -7.377) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 4.50 (30.049, -14.877) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 4.50 (9.049, 0.123) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 4.50 (0.049, 9.123) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 4.50 (8.549, 2.623) no join ResidueMop
+geodesic_curv_split c37 re-entry Z 4.50 (30.379, 19.709) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (-6.655, 5.972) no join WallPass
+geodesic_curv_split c37 re-entry Z 4.50 (5.626, 7.212) no join WallPass
+geodesic_curv_split c40 entries: 152 by kind and cause {"LiftOver Some(AirRun)": 17, "LiftOver Some(HeldLinkRefused)": 1, "LiftOver Some(Reentry2d)": 121, "LiftOver Some(Start)": 1, "Plunge Some(AirRun)": 4, "Plunge Some(Reentry2d)": 3, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(AirRun)": 11, "Some(HeldLinkRefused)": 1, "Some(Reentry2d)": 124, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_curv_split opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_curv_split opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_curv_split: 2414 moves, 6923 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 2 over the screen 0.546 (sim peak 0.685), 2 over the exact bound 0.471 (exact peak 0.775); entry 1079, vertical 1209, departing 4007, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 0 (0 over the screen, sim peak 0.000)
+geodesic_curv_split turns: planned 0, cut 0, not cut 0, with a reduced factor 0 (lowest 1.000), longest 0.000 mm (bound 3.207); fed 0, unfed 0, full feed with no move 0
+  geodesic_curv_split screened: move 404 ClearingCut at (-2.50, -8.59, 7.00) wall distance 3.95: sim radial 0.685, exact peak of the move 0.707
+  geodesic_curv_split screened: move 1587 ClearingCut at (-2.57, -8.88, 4.50) wall distance 4.24: sim radial 0.667, exact peak of the move 0.775
+  geodesic_curv_split probe move 404 at (-2.50, -8.59, 7.00):
+    392 ClearingCut feed 1000 to (-10.457, -20.166, 7.000) xy 1.001
+    393 Linking feed 1000 to (-10.457, -20.166, 10.500) xy 0.000
+    394 Linking feed 1000 to (-8.457, -20.268, 10.500) xy 2.003
+    395 EntryPlunge feed 500 to (-8.457, -20.268, 7.500) xy 0.000
+    396 Retract rapid to (-8.457, -20.268, 8.000) xy 0.000
+    397 EntryPlunge feed 500 to (-8.457, -20.268, 7.000) xy 0.000
+    398 ClearingCut feed 1000 to (-6.457, -18.135, 7.000) xy 2.924
+    399 ClearingCut feed 1000 to (-5.017, -15.883, 7.000) xy 2.673
+    400 ClearingCut feed 1000 to (-4.337, -14.383, 7.000) xy 1.647
+    401 ClearingCut feed 1000 to (-3.713, -12.383, 7.000) xy 2.095
+    402 ClearingCut feed 1000 to (-3.377, -10.383, 7.000) xy 2.028
+    403 ClearingCut feed 1000 to (-3.311, -8.383, 7.000) xy 2.001
+    404 << ClearingCut feed 1000 to (-2.335, -8.633, 7.000) xy 1.008
+    405 Linking feed 1000 to (-2.335, -8.633, 10.500) xy 0.000
+    406 Linking feed 1000 to (-1.358, -8.883, 10.500) xy 1.008
+    earlier feed moves within R: 3 at the level, 0 above it, 0 across or below it; the last eight:
+      387 ClearingCut (-5.31, -7.38, 7.00) to (-5.31, -10.38, 7.00)
+      402 ClearingCut (-3.71, -12.38, 7.00) to (-3.38, -10.38, 7.00)
+      403 ClearingCut (-3.38, -10.38, 7.00) to (-3.31, -8.38, 7.00)
+
+  geodesic_curv_split probe move 1587 at (-2.57, -8.88, 4.50):
+    1575 ClearingCut feed 1000 to (-10.451, -20.160, 4.500) xy 1.001
+    1576 Linking feed 1000 to (-10.451, -20.160, 7.999) xy 0.000
+    1577 Linking feed 1000 to (-8.451, -20.262, 7.999) xy 2.003
+    1578 EntryPlunge feed 500 to (-8.451, -20.262, 4.999) xy 0.000
+    1579 Retract rapid to (-8.451, -20.262, 5.499) xy 0.000
+    1580 EntryPlunge feed 500 to (-8.451, -20.262, 4.500) xy 0.000
+    1581 ClearingCut feed 1000 to (-6.451, -18.129, 4.500) xy 2.924
+    1582 ClearingCut feed 1000 to (-5.011, -15.877, 4.500) xy 2.673
+    1583 ClearingCut feed 1000 to (-4.331, -14.377, 4.500) xy 1.647
+    1584 ClearingCut feed 1000 to (-3.707, -12.377, 4.500) xy 2.095
+    1585 ClearingCut feed 1000 to (-3.430, -10.877, 4.500) xy 1.525
+    1586 ClearingCut feed 1000 to (-3.297, -8.877, 4.500) xy 2.004
+    1587 << ClearingCut feed 1000 to (-2.324, -8.877, 4.500) xy 0.973
+    1588 Linking feed 1000 to (-2.324, -8.877, 8.000) xy 0.000
+    1589 Linking feed 1000 to (-1.352, -8.877, 8.000) xy 0.973
+    earlier feed moves within R: 3 at the level, 29 above it, 1 across or below it; the last eight:
+      1223 Linking (-4.00, -7.08, 7.50) to (-4.00, -7.08, 10.50)
+      1224 Linking (-4.00, -7.08, 10.50) to (-18.45, -8.88, 10.50)
+      1567 Linking (2.64, 19.12, 10.50) to (-5.25, -7.88, 10.50)
+      1568 Linking (-5.25, -7.88, 10.50) to (-5.25, -7.88, 7.50)
+      1569 EntryPlunge (-5.25, -7.88, 7.50) to (-5.25, -7.88, 4.50)
+      1570 ClearingCut (-5.25, -7.88, 4.50) to (-5.37, -10.88, 4.50)
+      1585 ClearingCut (-3.71, -12.38, 4.50) to (-3.43, -10.88, 4.50)
+      1586 ClearingCut (-3.43, -10.88, 4.50) to (-3.30, -8.88, 4.50)
+
+  geodesic_curv_split: 2 samples over the exact bound, attribution only (G-ARCENDHOOK)
+geodesic_local_oneway c37 joins: 2 pieces; arc joins 113, turns 71, over the bound 42, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 82 by join {"ClosedSeam": 7, "Mixed": 4, "OverBound": 44, "Start": 2, "Turn": 25}, by producer {"Clearing": 67, "ResidueMop": 2, "WallPass": 13}
+geodesic_local_oneway c37 re-entry Z 7.00 (-14.082, -8.883) Start Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-12.532, -20.383) Mixed Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-9.123, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (1.975, -9.383) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (3.543, -8.564) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (5.043, -7.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (6.263, -6.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (7.277, -5.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (8.250, -4.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (8.709, -3.383) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (9.543, -2.204) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (9.543, -0.538) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (9.543, 0.859) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-29.957, 19.703) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (2.662, 8.617) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (4.161, 8.617) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (16.118, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (19.854, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (23.819, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (27.823, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (30.043, -0.954) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (20.543, 20.108) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (30.043, 4.676) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (30.043, 8.755) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (30.043, 17.342) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (30.043, -19.678) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-29.957, -14.807) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-29.957, -18.217) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 7.00 (-29.714, -20.383) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (30.456, -20.383) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (30.383, 20.457) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (-30.383, 20.457) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (-7.270, -5.026) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (-4.983, 7.336) Turn WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (1.307, 8.773) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 7.00 (-9.457, -20.383) OverBound ResidueMop
+geodesic_local_oneway c37 re-entry Z 4.50 (-14.076, -8.877) Start Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-12.513, -8.877) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-10.888, -8.877) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.138, -8.877) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-8.451, -4.006) Mixed Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.951, 19.709) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (2.549, 8.851) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-8.277, -4.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-12.526, -20.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.117, -20.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (0.147, -9.877) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (3.731, -9.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (5.049, -8.401) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (6.180, -7.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (7.160, -6.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (8.281, -5.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.113, -2.377) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.549, -1.045) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.549, 0.372) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.549, 1.894) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (18.029, -20.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (21.879, -20.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (25.895, -20.377) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.049, -0.795) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.049, 4.581) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.049, 8.544) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.049, 11.938) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.951, -14.801) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.708, -20.377) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (30.378, 20.451) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-30.378, 20.451) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-7.275, -5.529) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (1.740, 8.804) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.451, -20.377) OverBound ResidueMop
+geodesic_local_oneway c40 entries: 89 by kind and cause {"LiftOver Some(HeldLinkRefused)": 1, "LiftOver Some(Reentry2d)": 80, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 2, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 1, "Some(Reentry2d)": 82, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_oneway opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_oneway opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_oneway: 5270 moves, 12454 judged at levels {45, 70, 75, 80, 89, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.464), 0 over the exact bound 0.471 (exact peak 0.000); entry 675, vertical 589, departing 1612, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 295 (59 over the screen, sim peak 0.873)
+geodesic_local_oneway turns: planned 71, cut 71, not cut 0, with a reduced factor 70 (lowest 0.327), longest 2.757 mm (bound 3.207); fed 71, unfed 0, full feed with no move 0
+geodesic_local_zigzag c37 joins: 2 pieces; arc joins 113, turns 92, over the bound 21, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 78 by join {"ClosedSeam": 7, "Mixed": 5, "OverBound": 19, "Start": 2, "Turn": 45}, by producer {"Clearing": 61, "ResidueMop": 2, "WallPass": 15}
+geodesic_local_zigzag c37 re-entry Z 7.00 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-9.123, -20.383) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (0.161, -9.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (3.496, -8.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (6.043, -6.543) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (8.043, -4.640) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (9.043, -1.892) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (9.043, 0.929) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-29.957, 0.452) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-6.957, 5.767) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-4.334, 8.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-1.354, 9.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (1.396, 9.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (4.014, 8.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (6.407, 6.617) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (19.854, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (23.819, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (27.823, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (20.539, 20.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (30.043, 8.755) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (30.043, 17.342) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-29.957, -14.807) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-27.791, -20.383) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 7.00 (-29.714, -20.383) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (30.456, -20.383) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (30.424, -2.562) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (30.383, 20.457) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (-7.270, -5.026) Mixed WallPass
+geodesic_local_zigzag c37 re-entry Z 7.00 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_zigzag c37 re-entry Z 4.50 (-14.076, -8.877) Start Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-12.513, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-10.888, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.138, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-7.891, -5.377) Mixed Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.951, 0.457) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-7.411, 6.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-4.819, 8.623) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-1.749, 9.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (1.158, 9.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (2.662, 9.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (3.763, 8.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (6.343, 7.123) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.117, -20.377) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (0.167, -9.377) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (3.683, -8.877) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (6.049, -7.199) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (8.049, -5.110) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (9.049, -2.350) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (10.549, 0.033) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (9.049, 0.427) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (21.879, -20.377) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (25.895, -20.377) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.049, 4.581) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.049, 11.938) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-24.376, -20.377) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.708, -20.377) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.378, 20.451) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-22.227, 20.451) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-30.378, 20.451) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-7.275, -5.529) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-3.215, 8.575) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (0.440, -8.931) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-3.434, -8.388) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-3.451, -20.377) Turn ResidueMop
+geodesic_local_zigzag c40 entries: 86 by kind and cause {"LiftOver Some(HeldLinkRefused)": 2, "LiftOver Some(Reentry2d)": 77, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 2, "Some(Reentry2d)": 78, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_zigzag opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag: 1997 moves, 6755 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 662, vertical 582, departing 1439, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 306 (38 over the screen, sim peak 0.833)
+geodesic_local_zigzag turns: planned 92, cut 61, not cut 31, with a reduced factor 53 (lowest 0.336), longest 3.199 mm (bound 3.207); fed 61, unfed 0, full feed with no move 0
+geodesic_local_zigzag_v2 c37 joins: 2 pieces; arc joins 94, turns 84, over the bound 10, outside 0, head-on starts 87, zigzag returns 80; 2D re-entries 50 by join {"ClosedSeam": 7, "Mixed": 6, "OverBound": 14, "Start": 2, "Turn": 21}, by producer {"Clearing": 28, "ResidueMop": 2, "WallPass": 20}
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (4.161, 8.617) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (30.043, -19.678) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-24.382, -20.383) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-29.957, -18.217) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-29.957, 18.148) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-30.457, -20.383) OverBound WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (30.456, -20.383) OverBound WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-4.983, 7.336) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (1.307, 8.773) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (8.577, -2.318) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (4.669, -7.502) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-2.932, -8.382) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 7.00 (-6.957, -20.383) OverBound ResidueMop
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-14.076, -8.877) Start Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-12.513, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-10.888, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-9.138, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-7.891, -5.377) Mixed Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (2.662, 9.123) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-8.277, -4.377) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (18.029, -20.377) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-24.376, -20.377) Mixed Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-29.951, 18.221) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-30.378, 20.451) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-30.451, -20.377) OverBound WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.378, 20.451) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-7.902, 4.525) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (1.740, 8.804) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (8.526, -3.345) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (3.037, -8.535) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (0.440, -8.931) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-3.434, -8.388) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-6.167, -6.680) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-8.951, -20.377) Mixed ResidueMop
+geodesic_local_zigzag_v2 c40 entries: 57 by kind and cause {"LiftOver Some(HeldLinkRefused)": 1, "LiftOver Some(Reentry2d)": 48, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 2, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 1, "Some(Reentry2d)": 50, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_zigzag_v2 opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_v2 opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag_v2: 6361 moves, 14086 judged at levels {45, 70, 75, 80, 89, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.388), 0 over the exact bound 0.471 (exact peak 0.000); entry 449, vertical 406, departing 869, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 323 (80 over the screen, sim peak 0.873)
+geodesic_local_zigzag_v2 turns: planned 84, cut 83, not cut 1, with a reduced factor 81 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 83, unfed 0, full feed with no move 0
+geodesic_local_zigzag_pick c37 joins: 2 pieces; arc joins 113, turns 92, over the bound 21, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 78 by join {"ClosedSeam": 7, "Mixed": 5, "OverBound": 19, "Start": 2, "Turn": 45}, by producer {"Clearing": 61, "ResidueMop": 2, "WallPass": 15}
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-9.123, -20.383) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (0.161, -9.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (3.496, -8.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (6.043, -6.543) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (8.043, -4.640) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (9.043, -1.892) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (9.043, 0.929) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-29.957, 0.452) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-6.957, 5.767) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-4.334, 8.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-1.354, 9.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (1.396, 9.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (4.014, 8.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (6.407, 6.617) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (19.854, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (23.819, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (27.823, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (20.539, 20.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (30.043, 8.755) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (30.043, 17.342) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-29.957, -14.807) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-27.791, -20.383) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-29.714, -20.383) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (30.456, -20.383) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (30.424, -2.562) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (30.383, 20.457) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-7.270, -5.026) Mixed WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 7.00 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-14.076, -8.877) Start Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-12.513, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-10.888, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.138, -8.877) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-7.891, -5.377) Mixed Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.951, 0.457) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-7.411, 6.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-4.819, 8.623) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-1.749, 9.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (1.158, 9.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (2.662, 9.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (3.763, 8.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (6.343, 7.123) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.117, -20.377) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (0.167, -9.377) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (3.683, -8.877) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (6.049, -7.199) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (8.049, -5.110) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (9.049, -2.350) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (10.549, 0.033) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (9.049, 0.427) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (21.879, -20.377) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (25.895, -20.377) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.049, 4.581) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.049, 11.938) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-24.376, -20.377) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.708, -20.377) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.378, 20.451) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-22.227, 20.451) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-30.378, 20.451) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-7.275, -5.529) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-3.215, 8.575) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (0.440, -8.931) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-3.434, -8.388) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-3.451, -20.377) Turn ResidueMop
+geodesic_local_zigzag_pick c40 entries: 86 by kind and cause {"LiftOver Some(HeldLinkRefused)": 2, "LiftOver Some(Reentry2d)": 77, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 2, "Some(Reentry2d)": 78, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_zigzag_pick opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_zigzag_pick: 1997 moves, 6755 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 662, vertical 582, departing 1439, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 306 (38 over the screen, sim peak 0.833)
+geodesic_local_zigzag_pick turns: planned 92, cut 61, not cut 31, with a reduced factor 53 (lowest 0.336), longest 3.199 mm (bound 3.207); fed 61, unfed 0, full feed with no move 0
+geodesic_local_spiral_pick c37 joins: 2 pieces; arc joins 113, turns 92, over the bound 21, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 70 by join {"CoreHandOff": 2, "Mixed": 4, "OverBound": 19, "Turn": 45}, by producer {"Clearing": 53, "ResidueMop": 2, "WallPass": 15}
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-7.332, -8.883) CoreHandOff Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-5.675, -6.883) Mixed Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-9.123, -20.383) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (0.161, -9.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (3.496, -8.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (6.043, -6.543) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (8.043, -4.640) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (9.043, -1.892) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (9.043, 0.929) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-29.957, 0.452) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-6.957, 5.767) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-4.334, 8.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-1.354, 9.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (1.396, 9.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (4.014, 8.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (6.407, 6.617) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (19.854, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (23.819, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (27.823, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (20.539, 20.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (30.043, 8.755) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (30.043, 17.342) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-29.957, -14.807) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-27.791, -20.383) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-29.714, -20.383) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (30.456, -20.383) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (30.424, -2.562) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (30.383, 20.457) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-30.383, 20.457) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-7.270, -5.026) Mixed WallPass
+geodesic_local_spiral_pick c37 re-entry Z 7.00 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-7.891, -5.377) CoreHandOff Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.951, 0.457) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-7.411, 6.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-4.819, 8.623) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-1.749, 9.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (1.158, 9.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (2.662, 9.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (3.763, 8.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (6.343, 7.123) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-9.117, -20.377) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (0.167, -9.377) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (3.683, -8.877) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (6.049, -7.199) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (8.049, -5.110) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (9.049, -2.350) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (10.549, 0.033) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (9.049, 0.427) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (21.879, -20.377) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (25.895, -20.377) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.049, 4.581) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.049, 11.938) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-24.376, -20.377) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.708, -20.377) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.378, 20.451) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-22.227, 20.451) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-30.378, 20.451) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-7.275, -5.529) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-3.215, 8.575) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (0.440, -8.931) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-3.434, -8.388) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-3.451, -20.377) Turn ResidueMop
+geodesic_local_spiral_pick c40 entries: 78 by kind and cause {"LiftOver Some(HeldLinkRefused)": 2, "LiftOver Some(Reentry2d)": 69, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 2, "Some(Reentry2d)": 70, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_spiral_pick core Z 7.00 seed (-18.46, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    raw over: (-9.144, -8.883) -> (-8.238, -8.883) r 9.312 -> 10.219, reading 0.5000 against 0.3626, Join, Clearing
+    hand-off: (-9.144, -8.883) -> (-7.332, -8.883) r 9.312 -> 11.125, length 1.813, raw over 0.8333; re-entries from r 8.812 to 11.312: 1 [(-7.332, -8.883) r 11.125]
+geodesic_local_spiral_pick core Z 4.50 seed (-18.45, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    hand-off: (-9.138, -8.877) -> (-7.891, -5.377) r 9.312 -> 11.125, length 3.716, raw over 0.5603; re-entries from r 8.812 to 11.312: 1 [(-7.891, -5.377) r 11.125]
+geodesic_local_spiral_pick opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_spiral_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_spiral_pick: 2047 moves, 7125 judged at levels {45, 70, 75, 80, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 606, vertical 530, departing 1369, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 306 (38 over the screen, sim peak 0.833)
+geodesic_local_spiral_pick turns: planned 92, cut 61, not cut 31, with a reduced factor 53 (lowest 0.336), longest 3.199 mm (bound 3.207); fed 61, unfed 0, full feed with no move 0
+geodesic_local_spiral_headon c37 joins: 2 pieces; arc joins 94, turns 84, over the bound 10, outside 0, head-on starts 87, zigzag returns 80; 2D re-entries 42 by join {"CoreHandOff": 2, "Mixed": 5, "OverBound": 14, "Turn": 21}, by producer {"Clearing": 20, "ResidueMop": 2, "WallPass": 20}
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-7.332, -8.883) CoreHandOff Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-5.675, -6.883) Mixed Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-9.164, 0.117) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (4.161, 8.617) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (30.043, -19.678) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-24.382, -20.383) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-29.957, -18.217) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-29.957, 18.148) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-30.383, 20.457) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-30.457, -20.383) OverBound WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (30.456, -20.383) OverBound WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (30.383, 20.457) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-4.983, 7.336) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (1.307, 8.773) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (8.577, -2.318) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (4.669, -7.502) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-2.932, -8.382) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 7.00 (-6.957, -20.383) OverBound ResidueMop
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-7.891, -5.377) CoreHandOff Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-9.159, 0.123) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-3.307, 9.123) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (2.662, 9.123) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-8.277, -4.377) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (1.855, -9.377) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (8.938, -3.877) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (18.029, -20.377) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.049, -19.957) Mixed Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-24.376, -20.377) Mixed Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-29.951, -18.211) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-29.951, 18.221) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-30.378, 20.451) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-30.451, -20.377) OverBound WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.450, -20.377) Mixed WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.378, 20.451) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-7.902, 4.525) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (1.740, 8.804) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (8.526, -3.345) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (3.037, -8.535) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (0.440, -8.931) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-3.434, -8.388) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-6.167, -6.680) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-8.951, -20.377) Mixed ResidueMop
+geodesic_local_spiral_headon c40 entries: 49 by kind and cause {"LiftOver Some(HeldLinkRefused)": 1, "LiftOver Some(Reentry2d)": 40, "LiftOver Some(Start)": 1, "Plunge Some(Reentry2d)": 2, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 4}; drop of 1 mm or more by cause {"Some(HeldLinkRefused)": 1, "Some(Reentry2d)": 42, "Some(Start)": 2, "Some(Waterline)": 4}
+geodesic_local_spiral_headon core Z 7.00 seed (-18.46, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    raw over: (-9.144, -8.883) -> (-8.238, -8.883) r 9.312 -> 10.219, reading 0.5000 against 0.3626, Join, Clearing
+    hand-off: (-9.144, -8.883) -> (-7.332, -8.883) r 9.312 -> 11.125, length 1.813, raw over 0.8333; re-entries from r 8.812 to 11.312: 1 [(-7.332, -8.883) r 11.125]
+geodesic_local_spiral_headon core Z 4.50 seed (-18.45, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    hand-off: (-9.138, -8.877) -> (-7.891, -5.377) r 9.312 -> 11.125, length 3.716, raw over 0.5603; re-entries from r 8.812 to 11.312: 2 [(-7.891, -5.377) r 11.125, (-8.277, -4.377) r 11.125]
+geodesic_local_spiral_headon opening Z 7.00 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_spiral_headon opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2609, shortfall inset 0.2491, measured after 0.5100; closing excess 0.96 mm2 of 130.67 allowed
+geodesic_local_spiral_headon: 6411 moves, 14456 judged at levels {45, 70, 75, 80, 89, 97, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.388), 0 over the exact bound 0.471 (exact peak 0.000); entry 393, vertical 354, departing 799, waterline 1301 (0 over the screen, exact peak 0.000), perimeter band 0 (0 over the screen), turn 323 (80 over the screen, sim peak 0.873)
+geodesic_local_spiral_headon turns: planned 84, cut 83, not cut 1, with a reduced factor 81 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 83, unfed 0, full feed with no move 0
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 221.93s
+
