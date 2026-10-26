@@ -1,0 +1,182 @@
+{
+ "plane_corne_contour_parallel_0": {
+  "z": 17.0,
+  "cut_mm": 9465.338,
+  "plunge_entries": 5,
+  "lift_over": 1
+ },
+ "plane_corne_contour_parallel_1": {
+  "z": 5.0,
+  "cut_mm": 8348.176,
+  "plunge_entries": 12,
+  "lift_over": 2
+ },
+ "plane_corne_contour_parallel_2": {
+  "z": 0.5,
+  "cut_mm": 1375.5,
+  "plunge_entries": 23,
+  "lift_over": 2
+ },
+ "plane_corne_zigzag_pick_D20_0": {
+  "z": 17.0,
+  "cut_mm": 8996.103,
+  "plunge_entries": 9,
+  "lift_over": 238
+ },
+ "plane_corne_zigzag_pick_D20_1": {
+  "z": 5.0,
+  "cut_mm": 7132.63,
+  "plunge_entries": 7,
+  "lift_over": 65
+ },
+ "plane_corne_zigzag_pick_D20_2": {
+  "z": 0.5,
+  "cut_mm": 222.856,
+  "plunge_entries": 14,
+  "lift_over": 123
+ },
+ "plane_corne_spiral_pick_C35_0": {
+  "z": 17.0,
+  "cut_mm": 10308.702,
+  "plunge_entries": 9,
+  "lift_over": 205
+ },
+ "plane_corne_spiral_pick_C35_1": {
+  "z": 5.0,
+  "cut_mm": 8064.392,
+  "plunge_entries": 7,
+  "lift_over": 36
+ },
+ "plane_corne_spiral_pick_C35_2": {
+  "z": 0.5,
+  "cut_mm": 206.562,
+  "plunge_entries": 14,
+  "lift_over": 118
+ },
+ "plane_corne_spiral_pick_D24_0": {
+  "z": 17.0,
+  "cut_mm": 10146.97,
+  "plunge_entries": 8,
+  "lift_over": 221
+ },
+ "plane_corne_spiral_pick_D24_1": {
+  "z": 5.0,
+  "cut_mm": 8795.306,
+  "plunge_entries": 9,
+  "lift_over": 68
+ },
+ "plane_corne_spiral_pick_D24_2": {
+  "z": 0.5,
+  "cut_mm": 965.592,
+  "plunge_entries": 17,
+  "lift_over": 150
+ },
+ "plane_corne_spiral_pick_D25_0": {
+  "z": 17.0,
+  "cut_mm": 10386.188,
+  "plunge_entries": 8,
+  "lift_over": 186
+ },
+ "plane_corne_spiral_pick_D25_1": {
+  "z": 5.0,
+  "cut_mm": 8842.804,
+  "plunge_entries": 9,
+  "lift_over": 70
+ },
+ "plane_corne_spiral_pick_D25_2": {
+  "z": 0.5,
+  "cut_mm": 1013.089,
+  "plunge_entries": 17,
+  "lift_over": 152
+ },
+ "plane_wanaka200_contour_parallel_0": {
+  "z": 19.54,
+  "cut_mm": 18359.264,
+  "plunge_entries": 0,
+  "lift_over": 0
+ },
+ "plane_wanaka200_contour_parallel_1": {
+  "z": 14.08,
+  "cut_mm": 18359.264,
+  "plunge_entries": 2,
+  "lift_over": 0
+ },
+ "plane_wanaka200_contour_parallel_2": {
+  "z": 8.62,
+  "cut_mm": 193.926,
+  "plunge_entries": 48,
+  "lift_over": 11
+ },
+ "plane_wanaka200_zigzag_pick_D20_0": {
+  "z": 19.54,
+  "cut_mm": 18823.347,
+  "plunge_entries": 0,
+  "lift_over": 0
+ },
+ "plane_wanaka200_zigzag_pick_D20_1": {
+  "z": 14.08,
+  "cut_mm": 18823.347,
+  "plunge_entries": 1,
+  "lift_over": 47
+ },
+ "plane_wanaka200_zigzag_pick_D20_2": {
+  "z": 8.62,
+  "cut_mm": 170.141,
+  "plunge_entries": 6,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_C35_0": {
+  "z": 19.54,
+  "cut_mm": 20853.158,
+  "plunge_entries": 0,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_C35_1": {
+  "z": 14.08,
+  "cut_mm": 20853.158,
+  "plunge_entries": 1,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_C35_2": {
+  "z": 8.62,
+  "cut_mm": 229.152,
+  "plunge_entries": 5,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D24_0": {
+  "z": 19.54,
+  "cut_mm": 20853.158,
+  "plunge_entries": 0,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D24_1": {
+  "z": 14.08,
+  "cut_mm": 20853.158,
+  "plunge_entries": 1,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D24_2": {
+  "z": 8.62,
+  "cut_mm": 229.152,
+  "plunge_entries": 5,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D25_0": {
+  "z": 19.54,
+  "cut_mm": 20853.158,
+  "plunge_entries": 0,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D25_1": {
+  "z": 14.08,
+  "cut_mm": 20853.158,
+  "plunge_entries": 1,
+  "lift_over": 0
+ },
+ "plane_wanaka200_spiral_pick_D25_2": {
+  "z": 8.62,
+  "cut_mm": 229.152,
+  "plunge_entries": 5,
+  "lift_over": 0
+ }
+}
