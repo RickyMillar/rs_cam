@@ -2561,3 +2561,125 @@ silhouette).
 **Other strategies:** the contour pass needs no new code, so any body
 strategy can use it, contour_parallel included (as a band-only rest after
 a finer body op). The parts kept in §16.1 stay generic, as they are now.
+
+### 16.4 The area-measure versions of P1, P2 and P5 (lead, 2026-10-27)
+
+C18's area load: `phase3/fix24/area_oracle.py`. It gives L = A / (D · d)
+per read sample, with d the op's Depth/Pass and the same bound, 0.471.
+`fix24/rescore.py` gives `area_over_mm`, the XY length of op 1's read
+samples with L > 0.471.
+
+The fix24 references for op 1:
+
+| | old count, over 0.471 (mm) | area_over_mm |
+|---|---|---|
+| Corne C35 | 486.3 | 86.1 |
+| Corne D33 | 1044.1 | 423.6 |
+| wanaka C35 | 2234.8 | 25.1 |
+| wanaka D33 | 2558.4 | 52.2 |
+
+| # | Width version (§16.3) | Area version | P (area) |
+|---|---|---|---|
+| P1a | op 1 strip samples over 0.471 at Corne Z 11 / 5 / 0.5 | op 1 read samples with L > 0.471 in the same mask (3–6.2 mm outside the wall at those levels; the fix21 strip rule on the npz x, y, z) | (A) **0 mm** |
+| P2a | op 1 over 0.471 against C35 | op 1 `area_over_mm` | Corne (A) within ±15 % of C35's 86.1 mm, or within 15 mm, whichever is wider (D33 423.6). wanaka (A) within the same of 25.1 mm (D33 52.2). |
+| P5a | CP rest op's edge-band load against CP alone's op 1 in the same mask | the same with L | within ±20 %, or within 15 mm, whichever is wider |
+
+Also by length, P2 holds on the old count: Corne (A) op 1 within ±15 % of
+486.3 mm, and wanaka (A) within ±15 % of 2234.8 mm.
+
+**A request to C18:** `area_oracle.py` reads toolpath 1 with op 1's Depth/Pass
+(`DPP`). P5a needs it run on the CP rest op (toolpath id 5 on Corne, 7 on
+wanaka, Depth/Pass 6.0 / 5.46 as op 1), with a toolpath argument. That is
+C18's script, so I do not change it.
+
+**Job files** (written 2026-10-27; the old files are unchanged):
+- `planning/corne_case_analysis_2026-09-18/corne_job_corrected_c12_body_cp_edges.toml`
+  (new op id 5, "3D Rough 1 (edges, CP rest)", placed after op 1; the copy
+  op set to `contour_parallel`; `--skip 4` still skips the waterline).
+- `planning/multitool_2026-08-23/wanaka200_mt1_c12_rough_only_body_cp_edges.toml`
+  (new op id 7, "2 Back Rough (edges, CP rest)", placed after "2 Back
+  Rough").
+
+Run (A) is the same file with the CP rest op skipped (`--skip 5` on Corne,
+`--skip 7` on wanaka, plus Corne's `--skip 4`).
+
+### 16.5 As built, and two findings (2026-10-27; not committed)
+
+**Built** (research arm only; shipped code unchanged; C22 agreed to the
+`research_geodesic.rs` edits):
+- **Corridor and slots:** `corridor_opening` and `closed_steps` are gone.
+  The fallback in `research_slice_segments` returns the field's plan or
+  `None`. In `research_geodesic.rs`, `SlicePlan.slots`,
+  `SliceTurns.planned_slots`, `TurnKind::Slot` and the slot summary are
+  gone. `apply_slice_turn_feeds` returns (turns, departures). The
+  `debug_assert` in `add` reads `k >= planned`.
+- **G-b:** gone (`RecordMark`, `planned_cut_mm`, the judge in
+  `plan_and_emit_region`). The F-038 forecast gate applies to the research
+  arm again.
+- **`restrict_regions`:** keeps only its first loop. `ResearchClip` lost
+  its radius and cell fields.
+- **Renames:** `Research3d.slot_chains` is now `feed_chains`. The log line
+  "C38 slot chains" is now "C38 feed chains" (with `chains=` in place of
+  `loops=`). A fixture script that greps the old name must change.
+
+**Finding 1: the chain match missed departures on the plain C12 zigzag;
+fixed.** The plain test's new departure asserts went red. Two reduced
+departure windows on zigzag were carried by moves at F 1000 with no cap.
+There were three causes, all in `apply_chain_feeds` and the chain build:
+- **(a) The plan-order cursor (rule 4)** assumed that the toolpath keeps
+  the record order of the chains. It does not (region order, C29 picks).
+  A chain whose moves came after a later chain's moves was skipped.
+  - **Fix:** the cursor is dropped. The level, the "fresh step" rule and
+    the box keep the matches apart.
+- **(b) Coverage by nearest step at the move's ends:** a move that only
+  touched a chain vertex covered the step beyond it. That step was then
+  not "fresh" for its own move.
+  - **Fix:** the steps covered are those that overlap the span of the
+    move's positions along the chain (`nearest_position`).
+- **(c) Chains held only the unfed records,** but the RDP joins a fed
+  window and an unfed one into one move (move 588 on zigzag: 19.854 →
+  21.808, over a fed and an unfed window). Such a move fails "every point
+  within d of the chain".
+  - **Fix:** `feed_chains` holds the whole run. A step that the exact
+    match fed counts as covered (`FeedChain::fed`). `step_fed` holds one
+    flag per record.
+
+The plain test is now green in all six modes. Every reduced departure
+record is carried by a capped move at or below F × factor:
+- oneway: 130 checked;
+- zigzag: 184;
+- v2: 100;
+- zigzag_pick: 184;
+- spiral_pick: 169;
+- headon: 85.
+
+With the chain match's cap write removed, the assert goes red. The code
+was then restored.
+
+**Finding 2: the channel test is red, and §16.1's claim about the agent
+fallback is wrong for this channel.**
+- §16.1 said that a piece where the field does not apply falls back to the
+  agent, which cuts nothing under the pass load (§2.3). On the channel
+  (material half width 4.8 mm, tool-centre width about 3.6 mm) that is
+  false.
+  - With the group filter at 0, the fallback cuts 794 clearing moves
+    inside the channel (the nibble).
+  - With the F-038 filter at the op default (15 mm), the forecast passes,
+    because this channel is wider than the Corne strip. The fallback then
+    cuts one loop per level along y = ±1.75: 26 moves inside the channel.
+- The first pass of that loop runs in a fresh channel, so it is a full
+  slot.
+- `the_research_arm_leaves_the_channel_to_the_edge_pass` asserts 0
+  clearing cuts inside the channel and fails with 26. I did not weaken it.
+- **This needs a ruling.** Is a 9.6 mm channel in the body "body"? Then
+  the fallback's slot is an over-load that the arm must feed or skip. Or
+  is it "edge"? Then the arm must skip every piece where the field does
+  not apply.
+  - The generic form of "skip": the research arm plans only where the
+    field applies, and leaves every other piece to the rest contour pass.
+    That is one condition in `plan_one_outline` (no agent fallback for the
+    research arm).
+  - For Corne it changes nothing: the forecast already skips the strip.
+- **Effect on §16.3:** the forecast reads 0 on the Corne strip pieces, so
+  this finding does not affect P1. A body piece that the forecast passes
+  and the field cannot plan gets the agent's loop, as in C35.
