@@ -3,7 +3,15 @@
 Agent C38 (the C12 agent), 2026-10-26. Design note and run plan only: **no
 code is changed.** File:line citations are at `b37cad1a4` (the D20 build;
 `.claude/worktrees/adaptive-head` HEAD; C22 edits that tree now, so read
-the lines with `git show b37cad1a4:<path>`). Source: R4 §1.5.
+the lines with `git show b37cad1a4:<path>`). Sources: R4 §1.5 and §7.
+
+C38 covers two items (lead, 2026-10-26):
+
+- **Item A, the F-038 skip** of the outer strip below Z 17 (§1–§4).
+- **Item B, the C31 grow at edges that are not walls** (§5): the
+  outer-strip descents at Z 17 (R4 §7.2: 124).
+
+§6 gives the line between C38 and C22's C37.
 
 ## 1. The cause: confirmed from the D20 artefact, one run pins the rest
 
@@ -129,9 +137,12 @@ measured them.
    - R4 says "the agent fallback insets again and gives nothing". The
      outcome is right, but the reason is the pass load, not a second
      inset.
-4. **The strip is closed on both sides.** One side is the case wall. The
-   other side is the stock beyond the containment line, which no column
-   cuts (R4 §1.5, the 2423 mm² band). So the first pass along the strip is
+4. **The strip is closed on both sides.** One side is the case wall. On
+   the other side, real stock stands out to 9 mm from the wall and beyond,
+   and no column cuts beyond 9 mm (R4 §1.5, the 2423 mm² band). The
+   planner's own stock reads air beyond the containment line, because the
+   boundary clear empties those cells (`adaptive3d/path.rs:835-868`, O5b),
+   but the real stock is there (§5.1). So the first pass along the strip is
    a slot whatever the producer. No producer holds `c` there. This is
    geometry, not a defect of the field.
 5. The 2D grid reads the grown outline as the material edge. The cutter
@@ -272,12 +283,138 @@ A shipped fix would be:
    which has none of this, so the shipped fix matters for AgentSearch and
    ContourSpiral users only.
 
-## 5. What C38 could not do
+## 5. Item B: the C31 grow at edges that are not walls (Z 17)
+
+### 5.1 Three kinds of edge, not two
+
+R4 §7.2 calls the containment line a free edge ("no wall, no stock beyond
+the clip"). The code and the stock map say the outer strip has three kinds
+of edge:
+
+| Edge | Planner stock beyond it | Real stock beyond it (within the disc's reach) | What the C31 grow by `R − m` puts in the 2D grid |
+|---|---|---|---|
+| The case wall | the wall | stock up to the wall | real stock (C31's intent) |
+| The containment line (silhouette + 6 mm, tool-centre space) | **air**: `path.rs:835-868` clears every cell outside the boundary polygon in the planner stock (O5b) | **stock**: the 6–9 mm band from the wall stands 16–22 mm tall in every column but CP (R4 §1.5: 820 mm²), and D20's Z 17 discs cut it (18.2 mm left) | real stock that the planner's 3D stock calls air. This is NOT phantom in material terms |
+| The stock-box edge (mesh bbox + 5 mm; `simulation.json` header) | none (the grid ends) | none: air | phantom: `R − m` of material beyond the real edge (C22 §11.3) |
+
+So "grow only along walls" (R4 §7.2) is wrong at the containment line. The
+grown band there is real stock within the disc's reach. If the 2D grid
+reads it as air, a turn at the line meets stock that the plan does not see:
+a load the planner hides, not a load it removes. Only the stock-box edge is
+a true free edge.
+
+### 5.2 Where the 124 descents are (measured, script with asserts)
+
+`phase3/c38/classify_outer_descents.py` (`python3 -I`, asserts every
+number here) reads `fix9/entries.json` (D20) and `fix9/corne_part.npz`:
+
+| Class | Count | What stands beyond |
+|---|---|---|
+| Beyond the mesh bbox, in the 5 mm margin to the stock box: 0.55–4.6 mm from the stock-box edge | **45** | air (true free edge) |
+| On the part grid, 1.5–3 mm from the silhouette | 6 | wall ends: the centre stands at the R limit, read on a 0.2 mm map |
+| On the part grid, 3–4.5 mm from the silhouette | **58** | wall ends: the centre limit is wall + R = 3 mm |
+| On the part grid, 4.5–6 mm from the silhouette | 15 | near the containment line (6 mm): real stock beyond |
+| Total outside the silhouette | 124 | (R4's total; R4's 38 / 86 split used a mask resampled onto the stock grid, which also covers the margin beyond the mesh bbox) |
+
+All 79 on-grid descents are at least 5.14 mm from the stock-box edge.
+
+### 5.3 The design for item B (research arm only)
+
+**Intersect the C31 grown outline with the stock XY box.** That is the
+real stock footprint in the plane. `research_grown_outlines` keeps its grow
+and its guards. The grown polygons are clipped to the stock rectangle
+(`Adaptive3dGeometry::world_stock_xy_bbox`, or the planner stock bbox)
+before `grown_planner_outlines`.
+
+- At the stock-box edge the phantom band goes. The 2D tool-centre region
+  then ends R inside the real edge, the disc reaches the edge exactly, and
+  the arc ends where the material ends. A turn there reads air, as it is.
+- At the containment line the grown band stays. It is real stock.
+- At a wall nothing changes.
+- No new constant: the stock box is an input.
+
+Rejected alternatives:
+
+- **"Grow only along walls"**, which needs a per-point wall test: it frees
+  the containment line, where the stock is real (§5.1).
+- **Seed the 2D grid from the planner stock** (`seed_from_material_mask`,
+  the G-RESTLEVELS route): the planner stock reads air beyond the
+  containment line (the O5b clear), so it frees the same edge wrongly.
+
+**The planner-stock divergence at the containment band is a separate
+finding, not C38 scope.** The planner's 3D stock reads the 6–9 mm band as
+air while real stock stands there. The 3D entry and keep-down link
+decisions read the planner stock, so they cannot see that band. The O5b
+clear is shipped behaviour. I flag it for the lead and do not change it.
+
+### 5.4 Pre-registration for item B (Corne, "3D Rough 1", Z 17, `entries.json` method, the same selection as the script)
+
+- P-B1: of the 45 descents beyond the mesh bbox, at most 5 remain (≥ 90 %
+  go). The turn at the stock-box edge now reads air.
+- P-B2: the 79 on-grid outer descents change by at most 25 % (≥ 59 and
+  ≤ 99). They are not at a stock-box edge: 64 are wall ends and 15 are at
+  the containment line with real stock beyond. They belong to the open-arc
+  join contract (§6), not to item B.
+- P-B3: the 6–9 mm band at Z 17 does not get worse (D20 cut it at Z 17).
+  The 3–9 mm figure of §3.3 is unchanged by item B.
+- P-B4: wanaka200 has no vertical outer wall, so its stock-box edges meet
+  the terrain. The descents within R of its stock-box edge, at every plane,
+  fall. Count them with the script's rule before and after; there is no
+  number to give before the run.
+- Falsifier: if P-B1 fails (more than 5 of the 45 remain), the descents at
+  the stock edge are not caused by the phantom band, and the cause is the
+  arc order or the 3D stage.
+
+## 6. Where C38 and C37 touch
+
+C22's §13.6 assigns all 124 outer-strip descents to C38. By §5.2 that is
+not right. Only the 45 at the stock-box edge are item B's. The 64 wall
+ends at the outer wall (1.5–4.5 mm from the silhouette) are the same
+mechanism as C37's inner-wall open-arc ends: an arc ends at the centre
+limit R from a wall, and the next arc starts one stepover inward. The 15
+at the containment line are open-arc ends at an edge with real stock
+beyond, which is the same contract again. I propose:
+
+- **C38 owns:**
+  - the F-038 gate for the research arm (G-b);
+  - the corridor opening (§3.2), behind a ruling;
+  - the clip of the grown outline to the stock box (§5.3);
+  - the 45 stock-edge descents at Z 17.
+- **C37 owns** the open-arc join contract at every wall, outer and inner,
+  and at the containment line: 74 + 65 + 123 inner, plus 64 + 15 = 79
+  outer at Z 17. C37's instrument should classify the outer ones with the
+  same silhouette rule as the script, so that the two counts add up.
+- **Code places:**
+  - C38 edits `clear_one_region` before the producer: the gate block
+    (`clearing.rs:2844-2910`), and a stock-box clip on the output of
+    `research_grown_outlines` at its call (`:2944`) or inside it after the
+    grow. C22 owns C31, so C38 asks C22 before it touches
+    `research_grown_outlines`. The least change is the clip at the call
+    site.
+  - The corridor opening goes where the field returns `None`, in the
+    slice's producer switch (`research_slice_segments` / the fallback in
+    `plan_one_outline`). It feeds its slot as turns into the existing C22
+    turn list. That list is C22's structure, so the slot record must use
+    C22's types unchanged.
+  - C37 edits the field's arc joins and its record plumbing after the
+    cleanup (C22 §13.6). The two sets of lines are disjoint.
+- **Order effect:**
+  - Item B changes the 2D region at the stock edge only, so C37's zones
+    change shape there, not count (C22 §13.6 says the same).
+  - The corridor opening adds new descents in the strip below Z 17: one per
+    corridor piece per level for the slot entry, from the open level above.
+    C37's instrument must read those as "corridor slot entries", not as
+    open-arc ends. The slot record carries that tag.
+
+## 7. What C38 could not do
 
 - No run. §1.1 is read from an existing artefact. Every statement in §2
   and §3 is a prediction from the code at `b37cad1a4`.
 - The strip length L: the files I read do not give it. P1.2 and F2 read it
   from the run.
+- The 45 descents beyond the mesh bbox have no silhouette distance (the
+  part map covers the mesh bbox only); the script gives their distance to
+  the stock-box edge instead.
 - I did not read C22's in-flight edits of `plan_piece` and
   `research_geodesic.rs`. If C22 adds a seed for a corridor, §2.2
   changes.
