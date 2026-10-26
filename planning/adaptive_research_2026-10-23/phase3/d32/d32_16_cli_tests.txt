@@ -1,0 +1,159 @@
+
+running 67 tests
+...................................................................
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.09s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.39s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+   0.002709288s  INFO rs_cam_core::session::project_file: Loaded 2D model name=Square items=1
+   0.002986467s  INFO rs_cam_cli::project: Loaded project name=Rest cascade G-RESTRES tools=1 models_loaded=true setups=1
+   0.037357093s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=Rest pocket
+   0.069374658s  INFO rs_cam_cli::project: generation plan finished steps=3 simulations=2 blocked=0
+   0.069401338s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=2 hits=0 entries_reused=0
+   0.070736300s  INFO rs_cam_cli::project: simulation.json not written; pass --sim-artifact to write it
+Act on (2):
+  plunge-class motion descends faster than this op's own plunge rate: 8 of 8 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.50). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+  plunge-class motion descends faster than this op's own plunge rate: 6 of 6 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.00). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+
+Advisories:
+  1.2s wasted around (9.5, 30.5, -2.3) — engagement 0.14
+  1.2s wasted around (11.0, 29.0, -2.3) — engagement 0.14
+  1.2s wasted around (12.5, 27.5, -2.3) — engagement 0.13
+  1.2s wasted around (14.0, 26.0, -2.3) — engagement 0.12
+  1.2s wasted around (15.5, 24.5, -2.3) — engagement 0.11
+  1.2s wasted around (17.0, 23.0, -2.3) — engagement 0.08
+  1.1s wasted around (8.0, 32.0, -2.2) — engagement 0.68
+  1.0s wasted around (18.5, 21.5, -2.3) — engagement 0.00
+  0.6s wasted around (18.0, 22.0, -2.2) — engagement 0.37
+  0.5s wasted around (10.0, 30.0, -2.2) — engagement 0.34
+  0.5s wasted around (12.0, 28.0, -2.2) — engagement 0.35
+  0.5s wasted around (14.0, 26.0, -2.2) — engagement 0.37
+  0.5s wasted around (16.0, 24.0, -2.2) — engagement 0.40
+  0.4s wasted around (8.0, 32.0, -2.2) — engagement 0.70
+  0.0s wasted around (17.0, 23.0, 9.8) — engagement 0.00
+  0.0s wasted around (16.0, 24.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.0, 22.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.5, 21.5, 9.8) — engagement 0.00
+
+Counts: 2345 samples | 432 flagged-air + 20 flagged-low (per SAMPLE) | 98 issue runs (COALESCED, the legacy "issue_count") | 18 hotspots
+
+   0.071576996s  INFO rs_cam_cli::project: Wrote project summary path=/tmp/rs_cam_restres_cli_3164197/summary.json
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 1 test
+   0.002821829s  INFO rs_cam_core::session::project_file: Loaded 2D model name=Square items=1
+   0.003141528s  INFO rs_cam_cli::project: Loaded project name=Rest cascade G-RESTRES tools=1 models_loaded=true setups=1
+   0.036250990s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=Rest pocket
+   0.063468900s  INFO rs_cam_cli::project: generation plan finished steps=3 simulations=2 blocked=0
+   0.063490511s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=2 hits=0 entries_reused=0
+   0.065137588s  INFO rs_cam_cli::project: simulation.json not written; pass --sim-artifact to write it
+Act on (2):
+  plunge-class motion descends faster than this op's own plunge rate: 8 of 8 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.50). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+  plunge-class motion descends faster than this op's own plunge rate: 6 of 6 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.00). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+
+Advisories:
+  1.2s wasted around (9.5, 30.5, -2.3) — engagement 0.14
+  1.2s wasted around (11.0, 29.0, -2.3) — engagement 0.14
+  1.2s wasted around (12.5, 27.5, -2.3) — engagement 0.13
+  1.2s wasted around (14.0, 26.0, -2.3) — engagement 0.12
+  1.2s wasted around (15.5, 24.5, -2.3) — engagement 0.11
+  1.2s wasted around (17.0, 23.0, -2.3) — engagement 0.08
+  1.1s wasted around (8.0, 32.0, -2.2) — engagement 0.68
+  1.0s wasted around (18.5, 21.5, -2.3) — engagement 0.00
+  0.6s wasted around (18.0, 22.0, -2.2) — engagement 0.37
+  0.5s wasted around (10.0, 30.0, -2.2) — engagement 0.34
+  0.5s wasted around (12.0, 28.0, -2.2) — engagement 0.35
+  0.5s wasted around (14.0, 26.0, -2.2) — engagement 0.37
+  0.5s wasted around (16.0, 24.0, -2.2) — engagement 0.40
+  0.4s wasted around (8.0, 32.0, -2.2) — engagement 0.70
+  0.0s wasted around (17.0, 23.0, 9.8) — engagement 0.00
+  0.0s wasted around (16.0, 24.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.0, 22.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.5, 21.5, 9.8) — engagement 0.00
+
+Counts: 2345 samples | 432 flagged-air + 20 flagged-low (per SAMPLE) | 98 issue runs (COALESCED, the legacy "issue_count") | 18 hotspots
+
+   0.065776014s  INFO rs_cam_cli::project: Wrote project summary path=/tmp/rs_cam_simart_off_3164225/summary.json
+   0.002129050s  INFO rs_cam_core::session::project_file: Loaded 2D model name=Square items=1
+   0.002337100s  INFO rs_cam_cli::project: Loaded project name=Rest cascade G-RESTRES tools=1 models_loaded=true setups=1
+   0.031438140s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=Rest pocket
+   0.059878491s  INFO rs_cam_cli::project: generation plan finished steps=3 simulations=2 blocked=0
+   0.059894601s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=2 hits=0 entries_reused=0
+   0.102750830s  INFO rs_cam_cli::project: Wrote simulation artifact path=/tmp/rs_cam_simart_on_3164225/simulation.json
+Act on (2):
+  plunge-class motion descends faster than this op's own plunge rate: 8 of 8 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.50). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+  plunge-class motion descends faster than this op's own plunge rate: 6 of 6 vertical-dominant moves exceed 500 mm/min, peaking at 500 mm/min (1.0x) at move 2 (8.0,32.0,-3.00). The modulator lifts untagged descents to the lateral band; the load gates skip nothing here — this reading is emitted motion after the machine's rate clamp.
+
+Advisories:
+  1.2s wasted around (9.5, 30.5, -2.3) — engagement 0.14
+  1.2s wasted around (11.0, 29.0, -2.3) — engagement 0.14
+  1.2s wasted around (12.5, 27.5, -2.3) — engagement 0.13
+  1.2s wasted around (14.0, 26.0, -2.3) — engagement 0.12
+  1.2s wasted around (15.5, 24.5, -2.3) — engagement 0.11
+  1.2s wasted around (17.0, 23.0, -2.3) — engagement 0.08
+  1.1s wasted around (8.0, 32.0, -2.2) — engagement 0.68
+  1.0s wasted around (18.5, 21.5, -2.3) — engagement 0.00
+  0.6s wasted around (18.0, 22.0, -2.2) — engagement 0.37
+  0.5s wasted around (10.0, 30.0, -2.2) — engagement 0.34
+  0.5s wasted around (12.0, 28.0, -2.2) — engagement 0.35
+  0.5s wasted around (14.0, 26.0, -2.2) — engagement 0.37
+  0.5s wasted around (16.0, 24.0, -2.2) — engagement 0.40
+  0.4s wasted around (8.0, 32.0, -2.2) — engagement 0.70
+  0.0s wasted around (17.0, 23.0, 9.8) — engagement 0.00
+  0.0s wasted around (16.0, 24.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.0, 22.0, 4.8) — engagement 0.00
+  0.0s wasted around (18.5, 21.5, 9.8) — engagement 0.00
+
+Counts: 2345 samples | 432 flagged-air + 20 flagged-low (per SAMPLE) | 98 issue runs (COALESCED, the legacy "issue_count") | 18 hotspots
+
+   0.103636730s  INFO rs_cam_cli::project: Wrote project summary path=/tmp/rs_cam_simart_on_3164225/summary.json
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+

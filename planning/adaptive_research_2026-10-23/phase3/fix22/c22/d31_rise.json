@@ -1,0 +1,83 @@
+{
+ "plunge feet": {
+  "D26": 883,
+  "D31": 712
+ },
+ "D26": {
+  "over_mm": 2222.8,
+  "by kind": {
+   "after a descent": 85.0,
+   "level": 2021.6,
+   "on a climb": 1.4,
+   "on a descent": 114.8
+  },
+  "by place": {
+   "at a D26 plunge foot, own foot": 905.6,
+   "not at a D26 foot, no own foot": 1317.2
+  }
+ },
+ "D31": {
+  "over_mm": 2812.8,
+  "by kind": {
+   "after a climb": 2.4,
+   "after a descent": 270.0,
+   "level": 2388.1,
+   "on a climb": 3.6,
+   "on a descent": 148.7
+  },
+  "by place": {
+   "at a D26 plunge foot, no own foot": 318.1,
+   "at a D26 plunge foot, own foot": 978.8,
+   "not at a D26 foot, no own foot": 1414.3,
+   "not at a D26 foot, own foot": 101.6
+  }
+ },
+ "trade": {
+  "wanaka200": {
+   "D29v4->D31": {
+    "splits": 2009,
+    "cycle_s": 703,
+    "over_mm": -509.0,
+    "s_per_split": 0.35,
+    "over_mm_per_split": -0.253
+   },
+   "D30->D31": {
+    "splits": 12,
+    "cycle_s": 1,
+    "over_mm": -2.2,
+    "s_per_split": 0.083,
+    "over_mm_per_split": -0.183
+   },
+   "D31->D26": {
+    "splits": 2262,
+    "cycle_s": 819,
+    "over_mm": -630.7,
+    "s_per_split": 0.362,
+    "over_mm_per_split": -0.279
+   }
+  },
+  "corne": {
+   "D29v4->D31": {
+    "splits": 1630,
+    "cycle_s": 553,
+    "over_mm": -211.7,
+    "s_per_split": 0.339,
+    "over_mm_per_split": -0.13
+   },
+   "D30->D31": {
+    "splits": 191,
+    "cycle_s": 15,
+    "over_mm": -3.7,
+    "s_per_split": 0.079,
+    "over_mm_per_split": -0.019
+   },
+   "D31->D26": {
+    "splits": 897,
+    "cycle_s": 236,
+    "over_mm": -285.1,
+    "s_per_split": 0.263,
+    "over_mm_per_split": -0.318
+   }
+  }
+ }
+}

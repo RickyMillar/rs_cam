@@ -1,0 +1,46 @@
+{
+ "D26": {
+  "over by level": {
+   "terrain level": 2222.8
+  },
+  "over by axial": {
+   "> 3 mm": 1283.6,
+   "<= 2 mm": 791.5,
+   "2-3 mm": 147.7
+  },
+  "over": {
+   "above by (0.1, 1]": 1542.2,
+   "above by > 1": 602.2,
+   "none above": 78.4
+  },
+  "under": {
+   "above by (0.1, 1]": 6762.0,
+   "above by > 1": 1818.1,
+   "none above": 7633.7
+  },
+  "over rate with an earlier pass above": 0.2,
+  "over rate with none above": 0.01
+ },
+ "D31": {
+  "over by level": {
+   "terrain level": 2812.8
+  },
+  "over by axial": {
+   "> 3 mm": 1422.5,
+   "<= 2 mm": 1133.9,
+   "2-3 mm": 256.4
+  },
+  "over": {
+   "above by (0.1, 1]": 1868.9,
+   "above by > 1": 885.6,
+   "none above": 58.3
+  },
+  "under": {
+   "above by (0.1, 1]": 7807.3,
+   "above by > 1": 2552.2,
+   "none above": 7742.7
+  },
+  "over rate with an earlier pass above": 0.21,
+  "over rate with none above": 0.007
+ }
+}

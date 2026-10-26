@@ -2336,3 +2336,60 @@ Code in the `adaptive-head` worktree, not committed. It is §15.6 option
      D32 count, with the same script on D32, gives the number.
    - By the same rule, 210.0 mm of "near A's steps" lies on such moves.
      It may fall too, for the same reason, by at most that much.
+
+### 15.8 D32: why the plain C12 move counts rose 30–40 % (2026-10-27)
+
+Read only, from `phase3/d31/d31_09_c12_plain.txt`,
+`phase3/d32/d32_09_c12_plain.txt` and the code.
+
+**The rise per entry.** The entry counts are the same in D31 and D32.
+
+| Mode | Moves D31 → D32 | Entries | Extra moves per entry |
+|---|---|---|---|
+| oneway | 2565 → 2905 | 44 | 7.7 |
+| zigzag | 940 → 1344 | 39 | 10.4 |
+| zigzag_v2 | 3116 → 3392 | 25 | 11.0 |
+| spiral_pick | 969 → 1331 | 35 | 10.3 |
+| spiral_headon | 3145 → 3379 | 21 | 11.1 |
+
+**The cause: `split_at_turns` gives each departure window a `Cut` of its
+own.**
+- A departure record is one plan window: one step of the field's `Cut`
+  path, about one planner cell long. In this test the cell is 0.5 mm and
+  R is 3 mm.
+- So each straight plunge has about R / cell = 6 departure windows, plus
+  the window that crosses R.
+- `split_at_turns` keys its runs by the record index. Each departure
+  window has its own index, so each window becomes its own `Cut`.
+- The 3D emitter's one RDP works within a `Cut`. It can no longer join
+  these short, nearly collinear windows. Each window becomes a move, plus
+  the piece ends.
+- This gives about 7–11 extra moves per entry, which is what the table
+  shows.
+
+**Not the cause:**
+- **The `subdivide_each` change:** it is only in the readout. The readout
+  writes no plan point, and the points equal `subdivide`'s.
+- **Windows longer than the departing steps:** the departure windows are
+  the plan's own windows. They are as short as the steps, or shorter.
+
+**The path is unchanged.** The split changes no point, so it does not
+change the load. The only costs are the move count and the controller's
+time on short moves.
+
+**The fix (proposed).** `split_at_turns` gives all the departure windows
+of one run (one `Cut`, consecutive windows) one run key. It still splits
+where the run meets a window that is not a departure. Then:
+- The RDP joins the departure windows again, as in D31.
+- The exact match no longer finds a move for each window. The chain match
+  does: consecutive departure records join into one chain on their level
+  (`unfed_chains`). It lowers the merged move to the lowest factor of the
+  windows it covers, and sets the cap.
+- How: `split_at_turns` takes the index where the departure records start
+  (`research_turns.len()`, the same index as the `debug_assert` in
+  `SliceTurns::add`). It maps every departure record index to one shared
+  run key.
+- **P:** plain C12 moves return to D31 + at most 2 per entry (the split
+  at the run's end). For example, zigzag ≤ 940 + 78, and spiral_pick
+  ≤ 969 + 70. In the channel test, the departure moves keep their caps.
+  Corne strip samples over 0.369 at F ≥ 3999: still at most 1.

@@ -4592,7 +4592,7 @@ refused 1327 / 12; wanaka tried 2501, taken 1, refused 2260).
 - Disk: 72 → 40 GB free during D30 (the fixture worktree target is 36 GB
   after the viz build). Fixture worktree restored: clean 3181ae54f.
 
-## D31: D30 + C22 §16.11 (width-read descent fix, shelf test) — gates green (known tabs red); fixtures fix22 (cut_feed)
+## D31: D30 + C22 §16.11 (width-read descent fix, shelf test) — gates green (known tabs red); fixtures fix22_d31 (cut_feed; moved from fix22 for D32)
 
 Before the build: `cargo clean -p rs_cam_viz` in the fixture worktree
 (lane) removed 1814 files, 25.7 GiB; target 36 → 10 GB; free 40 → 65 GB.
@@ -4611,7 +4611,7 @@ clean 3181ae54f: 29 files (550+/64−) + the a_feed_cap test. No edit.
   base 1141 / 7 over (0.994) → 1090 / **9 over samples** (0.988). The test
   asserts on over moves, not samples.
 
-**Fixtures** (cut_feed; `fix22/run_fix22.sh`):
+**Fixtures** (cut_feed; `fix22_d31/run_fix22.sh`):
 
 | | Corne D26 | Corne D30 | Corne D31 | wanaka D26 | wanaka D30 | wanaka D31 |
 |---|---|---|---|---|---|---|

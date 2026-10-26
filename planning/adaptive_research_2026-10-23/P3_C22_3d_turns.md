@@ -3249,3 +3249,53 @@ The lead ruled to build the cell-level probe of §16.12 for D32. Research only; 
 - `entry`: the entry stamp descends below the emitted plunge;
 - `link`: a link stamp the emitter does not feed.
 If every `cut_to` there is at or above 18.0, the planner never cut the cell to 17.45: the read is then the conservative bound itself, and the collision cause lies in the sim/planner cell mismatch, not in a stamp.
+
+### 16.14 D31: the wanaka over-load rise is not on the steps A keeps; it sits where D26 plunged (2026-10-27; read only)
+
+Scripts in `phase3/fix22_d31/c22/` (the D31 run directory):
+- `d31_rise.py` writes `d31_rise.json`;
+- `nearA_new.py` writes `nearA_new_wanaka200.json`;
+- `assert_c22_16_14.py` asserts each number below.
+
+The set is every op-1 clearing sample over 0.471 at the base feed (slot feeds out), with the move kinds of §16.12.
+
+**The §16.12 P failed.** The descent fix changed the after-step share by 0 mm (wanaka near A 2040.7 → 2038.4). So the after-step load is not the width read's descent gap.
+
+**1. The rise by move kind, wanaka D26 → D31 (all over samples, 2222.8 → 2812.8 mm, +590.0):**
+- on a step (descents and climbs): +36.1 mm. The sim reads these steps at a median woc of 0.70 in both runs, so D26 has them too.
+- on the level move after a step: +187.4 mm.
+- on other level moves: +366.5 mm.
+
+The lead's classes:
+- **(a) on a step the width read accepted: 36 mm, about 6 % of the rise.** The planner/sim width disagreement there is real but small in mm. It also cannot be read on this fixture: the sim cell is 1.0 mm (1/6 D), and the gap between the split threshold (c·D = 2.18 mm) and the bound (0.471·D = 2.83 mm) is 0.65 mm, less than one cell. The log has no per-step planner width.
+- **(b) after a step: 187 mm**, and **(c) level: 367 mm.**
+
+**2. Where the rise is, against the D26 plunge feet** (an `entry_plunge` move's end; within 2R in XY and DPP/2 in Z):
+- D26 over at its own plunge feet: 905.6 mm. D31 over at the same places: 1296.9 mm (+391.3, two thirds of the rise).
+- 318.1 mm of that lies where D26 plunged and D31 does not.
+- Elsewhere: 1317.2 → 1515.9 mm (+198.7).
+- Plunge feet: D26 883, D31 712.
+
+**Reading.** A D26 split ends in a plunge at the step foot. The plunge bores a full-depth disc of R there, and the next passes cut into that hole. When A keeps the step down, the hole is not bored, and those passes meet the stock that the bore used to remove. That stock is the 2D plan's blind spot on terrain: the draped earlier passes leave it in the slab (G-FACESLAB). So the path rule's plunges hid part of the G-FACESLAB load, and A shows it again. A step's own load did not rise.
+
+This is a reading of place, not a controlled test. D26 and D31 also differ by the D27–D30 changes.
+
+**3. The trade: what each split buys (P15 numbers; the table is in `d31_rise.json`):**
+
+| | splits | cycle | over 0.471 | per split |
+|---|---|---|---|---|
+| wanaka D29 v4 → D31 (width read added) | +2009 | +703 s | −509 mm | 0.35 s, −0.25 mm |
+| wanaka D31 → D26 (split all) | +2262 | +819 s | −631 mm | 0.36 s, −0.28 mm |
+| Corne D30 → D31 (same tree, descent fix only) | +191 | +15 s | −3.7 mm | −0.02 mm |
+| Corne D31 → D26 | +897 | +236 s | −285 mm | 0.26 s, −0.32 mm |
+
+- On wanaka the trade is nearly linear: every split costs about 0.35 s and buys about 0.26 mm of over-load. The splits that the width read makes buy no more than the ones it avoids.
+- On Corne, the 191 extra width splits of D31 bought nothing (−0.02 mm each). The splits that the width read still avoids buy more (−0.32 mm each) than the ones it makes.
+- **The honest answer:** on wanaka-like terrain, a stock-read split cannot hold the load without giving back most of the gain. To return wanaka to D26's over-load, the trade needs about all 2262 avoided splits, which is about 819 s, all of the cycle gain. The reason is the reading above: the load is not on the step, so a rule that reads the step cannot find it.
+
+**What would hold the load and keep the cycle (proposals, no code):**
+1. **The control first.** The same D32 tree with A off for the research arm, through a research env value `RS_CAM_RESEARCH_STEP_SPLIT=path_shape` (a few lines). Run wanaka and Corne. This gives A's own share on one tree; every number above is across builds.
+2. **G-FACESLAB is the load.** The level and after-step share is stock that the 2D plan does not see in its slab. The fix belongs in the slice plan (it reads the drape's left stock as stock), not in the step rule. That is the G-FACESLAB row's fix, and it is generic.
+3. **A cheaper bore than a lift.** At a kept-down descent foot whose next pass meets left stock, the lift-and-plunge gave a full-depth bore. A kept-down entry could cut the same disc without the lift (a fed bore at the foot, a helix of radius 0 at the step bottom). That is the Part B family ("never the entry's cut"). It would cost seconds where the planner stock shows the left stock, not at every step.
+
+The operator ranks load-held first and cycle second. Until (1) and (2), my recommendation for the research arm is the path rule (A off), with Part B's keep-down travel kept. A holds the load on its own steps (36 mm), but by removing the plunges it shows load that only G-FACESLAB's fix removes.

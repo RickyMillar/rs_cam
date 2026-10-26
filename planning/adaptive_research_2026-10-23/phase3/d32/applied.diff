@@ -1,0 +1,2469 @@
+diff --git a/crates/rs_cam_core/src/adaptive/path.rs b/crates/rs_cam_core/src/adaptive/path.rs
+index 22c4fd5cf..4131d9c6a 100644
+--- a/crates/rs_cam_core/src/adaptive/path.rs
++++ b/crates/rs_cam_core/src/adaptive/path.rs
+@@ -446,11 +446,19 @@ fn feed_link_checked(
+ /// consecutive pair is at most one pass step apart.
+ pub(super) fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
+     let mut out = Vec::with_capacity(path.len());
++    subdivide_each(path, max_step, |p, _| out.push(p));
++    out
++}
++
++/// The points of [`subdivide`], in order, each with the index of the
++/// window of `path` it ends a step of (the first point: window 0). The one
++/// walk both call, so their points are the same (C38 §15.6).
++pub(super) fn subdivide_each(path: &[P2], max_step: f64, mut each: impl FnMut(P2, usize)) {
+     let Some(&first) = path.first() else {
+-        return out;
++        return;
+     };
+-    out.push(first);
+-    for w in path.windows(2) {
++    each(first, 0);
++    for (index, w) in path.windows(2).enumerate() {
+         let &[a, b] = w else {
+             continue;
+         };
+@@ -458,10 +466,9 @@ pub(super) fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
+         let n = ((len / max_step).ceil() as usize).max(1);
+         for k in 1..=n {
+             let t = k as f64 / n as f64;
+-            out.push(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)));
++            each(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)), index);
+         }
+     }
+-    out
+ }
+ 
+ /// G-ADAPTPASSLOAD: emit the cutter-centre polyline `path` as cutting spans
+diff --git a/crates/rs_cam_core/src/adaptive/research_geodesic.rs b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+index fb086c8e3..f06168648 100644
+--- a/crates/rs_cam_core/src/adaptive/research_geodesic.rs
++++ b/crates/rs_cam_core/src/adaptive/research_geodesic.rs
+@@ -331,7 +331,8 @@ use super::material_grid::{CELL_FRINGE, CELL_MATERIAL, SUB, sub_offset};
+ use super::path::{
+     AdaptiveSegment, LinkLoad, apply_contour_parallel_residue_cleanup_turns,
+     apply_residue_mop_cleanup_turns, emit_helical_starter_pocket, pass_load_for, pass_step_len,
+-    planner_cell_size, replay_after_group_filter, segments_to_toolpath, subdivide, turn_bound,
++    planner_cell_size, replay_after_group_filter, segments_to_toolpath, subdivide, subdivide_each,
++    turn_bound,
+ };
+ use super::search::{PassLoad, PassLoadMeasure, ToolCentreRegion, measure_step};
+ use super::{
+@@ -6855,6 +6856,23 @@ pub struct PassLoadReadout {
+     /// steps on no turn (the rule every other step holds).
+     pub non_turn_max: f64,
+     pub non_turn_over: usize,
++    /// C38 §15.6: every step out of a straight plunge (exempt from the
++    /// ceiling, in [`Self::exempt_steps`]), with the plan window that holds
++    /// it and its measured engagement, for its feed.
++    pub departure_steps: Vec<DepartureStep>,
++}
++
++/// C38 §15.6: one step out of a straight plunge, read on the readout's
++/// grid. It is exempt from the ceiling, not from the feed rule: the 3D arm
++/// feeds its window at the slot factor of its reading.
++#[derive(Debug, Clone, Copy)]
++pub struct DepartureStep {
++    /// The plan window (one step of the `Cut` path) that holds the step.
++    pub window_from: P2,
++    pub window_to: P2,
++    /// The swept width and the area per mm, fractions of D.
++    pub swept: f64,
++    pub area: f64,
+ }
+ 
+ /// C14: one step on a planned clearing turn, read on the readout's grid.
+@@ -6886,6 +6904,8 @@ impl PassLoadReadout {
+         self.turn_over += other.turn_over;
+         self.non_turn_max = self.non_turn_max.max(other.non_turn_max);
+         self.non_turn_over += other.non_turn_over;
++        self.departure_steps
++            .extend_from_slice(&other.departure_steps);
+         for t in &other.tallies {
+             self.tally(t);
+         }
+@@ -7084,8 +7104,11 @@ fn pass_load_readout(
+                 here = Some(*p);
+             }
+             AdaptiveSegment::Cut(path) => {
+-                let pts = subdivide(path, step_len);
+-                if let Some(&p0) = pts.first() {
++                // The points of `subdivide`, each with its plan window, so
++                // that a departing step knows its window (§15.6).
++                let mut pts: Vec<(P2, usize)> = Vec::with_capacity(path.len());
++                subdivide_each(path, step_len, |p, window| pts.push((p, window)));
++                if let Some(&(p0, _)) = pts.first() {
+                     setup.grid.clear_circle(p0.x, p0.y, r);
+                 }
+                 let departure = plunged_at.take();
+@@ -7095,16 +7118,35 @@ fn pass_load_readout(
+                     segment: index,
+                 };
+                 for w in pts.windows(2) {
+-                    let &[a, b] = w else {
++                    let &[(a, _), (b, window)] = w else {
+                         continue;
+                     };
+                     if !in_slot_lines {
+                         let departing = departure.is_some_and(|d| (a.x - d.x).hypot(a.y - d.y) < r);
++                        if departing
++                            && let (Some(&wa), Some(&wb)) = (path.get(window), path.get(window + 1))
++                        {
++                            let angle = (b.y - a.y).atan2(b.x - a.x);
++                            out.departure_steps.push(DepartureStep {
++                                window_from: wa,
++                                window_to: wb,
++                                swept: measure_step(
++                                    &setup.grid,
++                                    a,
++                                    b.x,
++                                    b.y,
++                                    r,
++                                    angle,
++                                    &swept_pass,
++                                ),
++                                area: measure_step(&setup.grid, a, b.x, b.y, r, angle, &area_pass),
++                            });
++                        }
+                         read(&setup.grid, a, b, departing, tag, &mut out);
+                     }
+                     setup.grid.clear_segment(a, b, r);
+                 }
+-                if let Some(&end) = pts.last() {
++                if let Some(&(end, _)) = pts.last() {
+                     here = Some(end);
+                 }
+             }
+@@ -7626,6 +7668,9 @@ pub struct TurnRecord {
+     /// C20: for a turn with no move on it, the emitted move that comes
+     /// nearest to holding the whole turn ([`HoldingMove`]).
+     pub holding: Option<HoldingMove>,
++    /// C38 §15.4: the Z level of the 3D slice that planned it
++    /// ([`SliceTurns::add`]); `None` in 2D.
++    pub level_z: Option<f64>,
+ }
+ 
+ /// C20: the emitted `Linear` move that holds a turn whose own vertex the
+@@ -7782,6 +7827,7 @@ fn apply_turn_feeds(
+             } else {
+                 holding_move(tp, from, to)
+             },
++            level_z: None,
+         });
+     }
+ }
+@@ -8473,13 +8519,22 @@ pub(crate) fn slice_replay(
+ /// cleaned plan, on the planner cell, with only the turns classed. The
+ /// feed in mm/min, `fed` and `holding` are set where the 3D toolpath is
+ /// emitted ([`apply_slice_turn_feeds`]).
++///
++/// C38 §15.6: after them, one record per plan window that holds steps out
++/// of a straight plunge ([`DepartureStep`]), index `turns.len() + j`: its
++/// largest reading over those steps and the slot factor of it. A plan with
++/// no turns and no `Rapid` has none, and is not read.
+ pub(crate) fn slice_turn_records(
+     polygon: &Polygon2,
+     params: &AdaptiveParams,
+     segments: &[AdaptiveSegment],
+     turns: &[(P2, P2)],
+ ) -> Vec<(usize, TurnRecord)> {
+-    if turns.is_empty() {
++    if turns.is_empty()
++        && !segments
++            .iter()
++            .any(|s| matches!(s, AdaptiveSegment::Rapid(_)))
++    {
+         return Vec::new();
+     }
+     let cell = planner_cell(params);
+@@ -8519,9 +8574,53 @@ pub(crate) fn slice_turn_records(
+                     feed_mm_min: 0.0,
+                     fed: false,
+                     holding: None,
++                    level_z: None,
+                 },
+             ))
+         })
++        .chain(departure_records(&load, turns.len()))
++        .collect()
++}
++
++/// C38 §15.6: one record per plan window of `load`'s departing steps, in
++/// plan order, indexed from `first`.
++fn departure_records(load: &PassLoadReadout, first: usize) -> Vec<(usize, TurnRecord)> {
++    let mut windows: Vec<(P2, P2, Vec<&DepartureStep>)> = Vec::new();
++    for d in &load.departure_steps {
++        match windows.last_mut() {
++            Some((from, to, steps)) if *from == d.window_from && *to == d.window_to => {
++                steps.push(d);
++            }
++            _ => windows.push((d.window_from, d.window_to, vec![d])),
++        }
++    }
++    windows
++        .into_iter()
++        .enumerate()
++        .map(|(j, (from, to, steps))| {
++            let max_swept = steps.iter().map(|t| t.swept).fold(0.0_f64, f64::max);
++            let max_area = steps.iter().map(|t| t.area).fold(0.0_f64, f64::max);
++            (
++                first + j,
++                TurnRecord {
++                    from,
++                    to,
++                    length_mm: (to.x - from.x).hypot(to.y - from.y),
++                    steps: steps.len(),
++                    steps_over: steps
++                        .iter()
++                        .filter(|t| t.swept > load.ceiling || t.area > load.ceiling)
++                        .count(),
++                    max_swept,
++                    max_area,
++                    feed_factor: turn_feed_factor(load.ceiling, max_swept, max_area),
++                    feed_mm_min: 0.0,
++                    fed: false,
++                    holding: None,
++                    level_z: None,
++                },
++            )
++        })
+         .collect()
+ }
+ 
+@@ -8533,6 +8632,9 @@ pub(crate) enum TurnKind {
+     Turn,
+     /// C38: a corridor slot.
+     Slot,
++    /// C38 §15.6: a plan window out of a straight plunge (its steps are
++    /// exempt from the ceiling), fed at the slot factor of its reading.
++    Departure,
+ }
+ 
+ /// C22: true when a `Cut` of `segments` has a step on the turn `from` →
+@@ -8583,23 +8685,42 @@ impl SliceTurns {
+     /// where the filtered plan `segments` still cuts them (the F-038 filter
+     /// drops whole groups; a dropped turn has no move, as a turn the 2D
+     /// plan does not cut). §14.6: each kept record also notes whether its
+-    /// ends lie `inside` the boundary clip.
++    /// ends lie `inside` the boundary clip. C38 §15.4: each kept record
++    /// carries the slice level `z_level`.
+     pub(crate) fn add(
+         &mut self,
+         planned: usize,
+         planned_slots: usize,
+         records: Vec<(usize, TurnRecord)>,
++        z_level: f64,
+         segments: &[AdaptiveSegment],
+         inside: &dyn Fn(P2) -> bool,
+     ) {
++        // C38 §15.6: the first departure record has the index right after
++        // the planned turns and slots (`turns.len()` in
++        // [`slice_turn_records`]), so the classing below is exact.
++        debug_assert!(
++            records
++                .iter()
++                .map(|&(k, _)| k)
++                .filter(|&k| k >= planned + planned_slots)
++                .min()
++                .is_none_or(|k| k == planned + planned_slots),
++            "the departure records do not start right after the turns and slots"
++        );
+         self.planned += planned;
+         self.planned_slots += planned_slots;
+-        for (k, t) in records {
++        for (k, mut t) in records {
+             if turn_in_plan(segments, t.from, t.to) {
++                t.level_z = Some(z_level);
++                // C38 §15.6: the departure records come after the planned
++                // turns and slots ([`slice_turn_records`]).
+                 let kind = if k < planned {
+                     TurnKind::Turn
+-                } else {
++                } else if k < planned + planned_slots {
+                     TurnKind::Slot
++                } else {
++                    TurnKind::Departure
+                 };
+                 self.ends_inside.push((inside(t.from), inside(t.to)));
+                 self.records.push(t);
+@@ -8640,7 +8761,8 @@ impl SliceTurns {
+ 
+ /// C22: the reduced feed of each clearing turn of the 3D arm written on
+ /// the emitted toolpath `tp` (clearing feed `feed_rate`), and the turn
+-/// summary. The rule of [`apply_turn_feeds`], read on the 3D moves in XY:
++/// summaries: turns, slots and (C38 §15.6) departures. The rule of
++/// [`apply_turn_feeds`], read on the 3D moves in XY:
+ /// a `Linear` move whose start and target lie on a turn's segment within
+ /// 1e-6 mm in XY carries `feed_rate · factor` (a feed is only lowered). A
+ /// turn with no such move is unfed when its factor is under 1; with factor
+@@ -8661,7 +8783,7 @@ pub(crate) fn apply_slice_turn_feeds(
+     tp: &mut Toolpath,
+     turns: SliceTurns,
+     feed_rate: f64,
+-) -> (TurnSummary, TurnSummary) {
++) -> (TurnSummary, TurnSummary, TurnSummary) {
+     let SliceTurns {
+         planned,
+         planned_slots,
+@@ -8691,6 +8813,9 @@ pub(crate) fn apply_slice_turn_feeds(
+     let mut start: Option<P2> = None;
+     for m in &mut tp.moves {
+         let target = P2::new(m.target.x, m.target.y);
++        // C38 §15.4: the lowest reduced feed written on this move, as its
++        // feed cap (`Move::feed_cap`), so no later feed stage raises it.
++        let mut cap: Option<f64> = None;
+         if let (Some(a), crate::toolpath::MoveType::Linear { feed_rate: f }) =
+             (start, &mut m.move_type)
+             && (target.x - a.x).hypot(target.y - a.y) > 1e-6
+@@ -8702,10 +8827,16 @@ pub(crate) fn apply_slice_turn_feeds(
+                     && on(t.from, t.to, target)
+                 {
+                     *f = f.min(feed_rate * t.feed_factor);
++                    if t.feed_factor < 1.0 {
++                        cap = Some(cap.map_or(*f, |c: f64| c.min(*f)));
++                    }
+                     *flag = true;
+                 }
+             }
+         }
++        if let Some(c) = cap {
++            m.feed_cap = Some(m.feed_cap.map_or(c, |old| old.min(c)));
++        }
+         start = Some(target);
+     }
+     let mut summary = TurnSummary {
+@@ -8716,6 +8847,8 @@ pub(crate) fn apply_slice_turn_feeds(
+         planned: planned_slots,
+         ..TurnSummary::default()
+     };
++    // C38 §15.6: the departures are not planned; they are read.
++    let mut departures = TurnSummary::default();
+     // §14.6 (proof line): one `info` line per turn that is not fed: its
+     // ends, whether each lies inside the boundary clip, and the emitted
+     // move that comes nearest to holding it ([`HoldingMove`]).
+@@ -8741,6 +8874,7 @@ pub(crate) fn apply_slice_turn_feeds(
+         let summary = match kind {
+             TurnKind::Turn => &mut summary,
+             TurnKind::Slot => &mut slots,
++            TurnKind::Departure => &mut departures,
+         };
+         t.fed = was_fed;
+         t.feed_mm_min = feed_rate * t.feed_factor;
+@@ -8770,7 +8904,7 @@ pub(crate) fn apply_slice_turn_feeds(
+         }
+         summary.turns.push(t);
+     }
+-    (summary, slots)
++    (summary, slots, departures)
+ }
+ 
+ /// C22: the length (mm) of the `Link`s of `segments` from the cutter
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index db7b8ce94..639231115 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -429,6 +429,10 @@ pub(super) struct ClearZLevelContext<'a> {
+     /// §16 Part B (instrument): the routed travels.
+     #[cfg(feature = "research")]
+     pub(super) research_route_stats: std::cell::RefCell<super::RouteStats>,
++    /// Research (D32 probe, §16.12): the stamps of the research arm's run
++    /// and its held probe lines ([`StampLog`]).
++    #[cfg(feature = "research")]
++    pub(super) research_stamp_log: std::cell::RefCell<StampLog>,
+     /// Research (C31): one record per region opening decision, for the
+     /// research record of the run (`mod.rs`, `Research3d::openings`).
+     #[cfg(feature = "research")]
+@@ -593,6 +597,9 @@ pub(super) struct StampDrape<'a> {
+     pub(super) stay_down_clearance_mm: f64,
+     #[cfg(feature = "research")]
+     pub(super) route_stats: Option<&'a std::cell::RefCell<super::RouteStats>>,
++    /// Research (D32 probe): the run's stamp log ([`StampLog`]).
++    #[cfg(feature = "research")]
++    pub(super) stamp_log: Option<&'a std::cell::RefCell<StampLog>>,
+ }
+ 
+ impl<'a> ClearZLevelContext<'a> {
+@@ -609,7 +616,327 @@ impl<'a> ClearZLevelContext<'a> {
+             stay_down_clearance_mm: self.stay_down_clearance_mm,
+             #[cfg(feature = "research")]
+             route_stats: Some(&self.research_route_stats),
++            #[cfg(feature = "research")]
++            stamp_log: Some(&self.research_stamp_log),
++        }
++    }
++}
++
++/// Research (D32 probe, §16.12): one stamp the planner made, as it stamped
++/// it (`stamp_emitted_segment`).
++#[cfg(feature = "research")]
++#[derive(Debug, Clone)]
++pub(super) struct StampRecord {
++    level_z: f64,
++    kind: &'static str,
++    path: Vec<P3>,
++    /// The XY box of `path`.
++    lo: P2,
++    hi: P2,
++}
++
++/// Research (D32 probe): a probe line, held until the region pick keeps
++/// its variant (`pick_region_plan`), so a variant that is not kept prints
++/// nothing.
++#[cfg(feature = "research")]
++#[derive(Debug, Clone)]
++enum StampProbeLine {
++    /// The planner's highest cell over a Start entry's floor disc.
++    StartCell {
++        level_z: f64,
++        entry: P3,
++        top: f64,
++        cell: P2,
++        centre_top: Option<f64>,
++        touches: usize,
++    },
++    /// One stamp that reached that cell: the lowest Z its tool cut the
++    /// cell centre to, and the tool position there.
++    Touch {
++        level_z: f64,
++        cell: P2,
++        stamp_level_z: f64,
++        kind: &'static str,
++        cut_to: f64,
++        tool: P3,
++        dist: f64,
++    },
++    /// A cut piece the sink receives with an XY length within the RDP
++    /// tolerance (or fewer than two points).
++    ShortCut {
++        level_z: f64,
++        points: usize,
++        xy_len: f64,
++        first: P3,
++        z_hi: f64,
++        stamped: bool,
++        tool_pos: Option<P3>,
++    },
++}
++
++/// Research (D32 probe): the stamps of the research arm's run and the probe
++/// lines not yet printed. Off for every other arm.
++#[cfg(feature = "research")]
++#[derive(Debug, Default)]
++pub(super) struct StampLog {
++    on: bool,
++    level_z: f64,
++    records: Vec<StampRecord>,
++    lines: Vec<StampProbeLine>,
++}
++
++/// The part of a [`StampLog`] that one scratch run of the region pick wrote.
++#[cfg(feature = "research")]
++#[derive(Debug, Default)]
++pub(super) struct StampLogTail {
++    records: Vec<StampRecord>,
++    lines: Vec<StampProbeLine>,
++}
++
++#[cfg(feature = "research")]
++impl StampLog {
++    pub(super) fn new(on: bool) -> Self {
++        Self {
++            on,
++            ..Self::default()
++        }
++    }
++
++    fn record(&mut self, kind: &'static str, path: &[P3]) {
++        if !self.on || path.is_empty() {
++            return;
++        }
++        let lo = path
++            .iter()
++            .fold(P2::new(f64::INFINITY, f64::INFINITY), |m, p| {
++                P2::new(m.x.min(p.x), m.y.min(p.y))
++            });
++        let hi = path
++            .iter()
++            .fold(P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY), |m, p| {
++                P2::new(m.x.max(p.x), m.y.max(p.y))
++            });
++        self.records.push(StampRecord {
++            level_z: self.level_z,
++            kind,
++            path: path.to_vec(),
++            lo,
++            hi,
++        });
++    }
++
++    fn mark(&self) -> (usize, usize) {
++        (self.records.len(), self.lines.len())
++    }
++
++    fn split_off(&mut self, (records, lines): (usize, usize)) -> StampLogTail {
++        StampLogTail {
++            records: self.records.split_off(records),
++            lines: self.lines.split_off(lines),
++        }
++    }
++
++    fn append(&mut self, tail: StampLogTail) {
++        self.records.extend(tail.records);
++        self.lines.extend(tail.lines);
++    }
++
++    /// Start a level: print the held lines, and stamp the next records
++    /// with `level_z`.
++    pub(super) fn start_level(&mut self, level_z: f64) {
++        self.flush();
++        self.level_z = level_z;
++    }
++
++    /// Print the held probe lines.
++    pub(super) fn flush(&mut self) {
++        let fmt = |v: f64| format!("{v:.3}");
++        for line in self.lines.drain(..) {
++            match line {
++                StampProbeLine::StartCell {
++                    level_z,
++                    entry,
++                    top,
++                    cell,
++                    centre_top,
++                    touches,
++                } => tracing::info!(
++                    z = level_z,
++                    x = %fmt(entry.x),
++                    y = %fmt(entry.y),
++                    entry_z = %fmt(entry.z),
++                    top = %fmt(top),
++                    cell_x = %fmt(cell.x),
++                    cell_y = %fmt(cell.y),
++                    centre_top = ?centre_top,
++                    touches,
++                    "C22 start cell probe"
++                ),
++                StampProbeLine::Touch {
++                    level_z,
++                    cell,
++                    stamp_level_z,
++                    kind,
++                    cut_to,
++                    tool,
++                    dist,
++                } => tracing::info!(
++                    z = level_z,
++                    cell_x = %fmt(cell.x),
++                    cell_y = %fmt(cell.y),
++                    stamp_z = stamp_level_z,
++                    kind,
++                    cut_to = %fmt(cut_to),
++                    tool_x = %fmt(tool.x),
++                    tool_y = %fmt(tool.y),
++                    tool_z = %fmt(tool.z),
++                    dist = %fmt(dist),
++                    "C22 start cell stamp"
++                ),
++                StampProbeLine::ShortCut {
++                    level_z,
++                    points,
++                    xy_len,
++                    first,
++                    z_hi,
++                    stamped,
++                    tool_pos,
++                } => tracing::info!(
++                    z = level_z,
++                    points,
++                    xy_len = %format!("{xy_len:.4}"),
++                    x = %fmt(first.x),
++                    y = %fmt(first.y),
++                    z_lo_raw = %fmt(first.z.min(z_hi)),
++                    z_hi_raw = %fmt(z_hi),
++                    stamped,
++                    tool_z = ?tool_pos.map(|p| fmt(p.z)),
++                    "C22 short cut probe"
++                ),
++            }
++        }
++    }
++
++    /// The Start entry probe: the planner's highest cell over the entry
++    /// floor disc (the cell `plan_entry`'s rapid floor reads), and each
++    /// logged stamp whose tool reached that cell centre, lowest first.
++    fn probe_start_cell(
++        &mut self,
++        stock: &TriDexelStock,
++        lut: &RadialProfileLUT,
++        tool_radius: f64,
++        floor_radius: f64,
++        entry: P3,
++    ) {
++        if !self.on {
++            return;
++        }
++        let Some((top, row, col)) =
++            stock.max_conservative_top_cell_in_disc(entry.x, entry.y, floor_radius)
++        else {
++            return;
++        };
++        let grid = &stock.z_grid;
++        let cs = grid.cell_size;
++        let cell = P2::new(
++            grid.origin_u + col as f64 * cs,
++            grid.origin_v + row as f64 * cs,
++        );
++        let centre_top = grid.top_z_at(row, col).map(f64::from);
++        let mut touches: Vec<StampProbeLine> = self
++            .records
++            .iter()
++            .filter(|r| {
++                cell.x >= r.lo.x - tool_radius
++                    && cell.x <= r.hi.x + tool_radius
++                    && cell.y >= r.lo.y - tool_radius
++                    && cell.y <= r.hi.y + tool_radius
++            })
++            .filter_map(|r| {
++                // Sample each move at half a cell: the lowest tip Z plus
++                // the profile height at the cell centre.
++                let mut best: Option<(f64, P3, f64)> = None;
++                let mut at = |p: P3| {
++                    let d2 = (p.x - cell.x).powi(2) + (p.y - cell.y).powi(2);
++                    if let Some(h) = lut.height_at_dist_sq(d2) {
++                        let cut = p.z + h;
++                        if best.is_none_or(|(b, _, _)| cut < b) {
++                            best = Some((cut, p, d2.sqrt()));
++                        }
++                    }
++                };
++                if let Some(&p) = r.path.first() {
++                    at(p);
++                }
++                for pair in r.path.windows(2) {
++                    let &[a, b] = pair else { continue };
++                    let n = ((b.x - a.x).hypot(b.y - a.y) / (cs * 0.5)).ceil().max(1.0);
++                    for i in 1..=(n as usize) {
++                        let t = i as f64 / n;
++                        at(P3::new(
++                            a.x + (b.x - a.x) * t,
++                            a.y + (b.y - a.y) * t,
++                            a.z + (b.z - a.z) * t,
++                        ));
++                    }
++                }
++                best.map(|(cut_to, tool, dist)| StampProbeLine::Touch {
++                    level_z: self.level_z,
++                    cell,
++                    stamp_level_z: r.level_z,
++                    kind: r.kind,
++                    cut_to,
++                    tool,
++                    dist,
++                })
++            })
++            .collect();
++        touches.sort_by(|a, b| match (a, b) {
++            (StampProbeLine::Touch { cut_to: x, .. }, StampProbeLine::Touch { cut_to: y, .. }) => {
++                x.total_cmp(y)
++            }
++            _ => std::cmp::Ordering::Equal,
++        });
++        self.lines.push(StampProbeLine::StartCell {
++            level_z: self.level_z,
++            entry,
++            top,
++            cell,
++            centre_top,
++            touches: touches.len(),
++        });
++        self.lines.extend(touches);
++    }
++
++    /// The sink probe: a cut piece with an XY length within `tolerance`.
++    fn probe_short_cut(&mut self, path: &[P3], tolerance: f64, tool_pos: Option<P3>) {
++        if !self.on {
++            return;
++        }
++        let Some(&first) = path.first() else {
++            return;
++        };
++        let xy_len: f64 = path
++            .windows(2)
++            .map(|w| match w {
++                [a, b] => (b.x - a.x).hypot(b.y - a.y),
++                _ => 0.0,
++            })
++            .sum();
++        if path.len() >= 2 && xy_len > tolerance {
++            return;
+         }
++        let z_hi = path.iter().map(|p| p.z).fold(f64::NEG_INFINITY, f64::max);
++        let z_lo = path.iter().map(|p| p.z).fold(f64::INFINITY, f64::min);
++        self.lines.push(StampProbeLine::ShortCut {
++            level_z: self.level_z,
++            points: path.len(),
++            xy_len,
++            first: P3::new(first.x, first.y, z_lo),
++            z_hi,
++            stamped: path.len() >= 2,
++            tool_pos,
++        });
+     }
+ }
+ 
+@@ -707,6 +1034,10 @@ fn stamp_emitted_segment(
+             fed.extend(tool_pos.or_else(|| blended.first().copied()));
+             fed.extend(blended.iter().skip(1).copied());
+             stamp_along_path(material_stock, lut, tool_radius, &fed);
++            #[cfg(feature = "research")]
++            if let Some(log) = drape.stamp_log {
++                log.borrow_mut().record("cut", &fed);
++            }
+             blended.last().copied()
+         }
+         Adaptive3dSegment::Rapid(entry) => {
+@@ -735,6 +1066,10 @@ fn stamp_emitted_segment(
+                 entry,
+                 StockCutDirection::FromTop,
+             );
++            #[cfg(feature = "research")]
++            if let Some(log) = drape.stamp_log {
++                log.borrow_mut().record("entry", &[start, entry]);
++            }
+             Some(emitted_entry_end(entry, safe_z))
+         }
+         Adaptive3dSegment::RapidWithFloor {
+@@ -768,6 +1103,10 @@ fn stamp_emitted_segment(
+                 *entry,
+                 StockCutDirection::FromTop,
+             );
++            #[cfg(feature = "research")]
++            if let Some(log) = drape.stamp_log {
++                log.borrow_mut().record("entry", &[start, *entry]);
++            }
+             Some(emitted_entry_end(*entry, descent_floor))
+         }
+         Adaptive3dSegment::Link(target) => {
+@@ -785,6 +1124,10 @@ fn stamp_emitted_segment(
+                 drape.cutter.radius(),
+             );
+             stamp_along_path(material_stock, lut, tool_radius, &draped);
++            #[cfg(feature = "research")]
++            if let Some(log) = drape.stamp_log {
++                log.borrow_mut().record("link", &draped);
++            }
+             draped.last().copied()
+         }
+         // A route's rapid cuts nothing (its full-disc proof): no stamp.
+@@ -1007,6 +1350,82 @@ pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64)
+         .fold(f64::NEG_INFINITY, f64::max)
+ }
+ 
++/// §16.9: the widest swept width (mm) of a feed move from `p` to `q` with
++/// a tool of `radius`, read on the 3D planner stock by the rule of the 2D
++/// `swept_width_on`: at each sample along the move (every half cell, as
++/// [`step_axial_depth`]), the grid cells inside the disc whose stock stands
++/// above the tool's Z there plus `clearance` (the dexel allowance), spread
++/// across the move's XY heading by this much. A cell the move has already
++/// passed over counts at most at the Z the tool passed it (an earlier
++/// sample within R cut it down to that Z, and no lower): a descent sweeps
++/// nothing below its own path, so the stock it descends into still
++/// counts. 0 for a move with no XY length (a pure rise or
++/// drop has no side width; its depth is [`step_axial_depth`]'s). Any
++/// strategy's draped cut can read it.
++pub(super) fn step_swept_width(
++    stock: &TriDexelStock,
++    p: P3,
++    q: P3,
++    radius: f64,
++    clearance: f64,
++) -> f64 {
++    let grid = &stock.z_grid;
++    let cs = grid.cell_size;
++    let (dx, dy) = (q.x - p.x, q.y - p.y);
++    let len = (dx * dx + dy * dy).sqrt();
++    if len < 1e-9 || cs <= 0.0 {
++        return 0.0;
++    }
++    let (ux, uy) = (dx / len, dy / len);
++    let (nx, ny) = (-uy, ux);
++    let n = (len / (cs * 0.5).max(1e-3)).ceil().max(1.0) as usize;
++    let r_sq = radius * radius;
++    let r_cells = (radius / cs).ceil() as isize;
++    let mut widest = 0.0_f64;
++    for k in 0..=n {
++        let t = k as f64 / n as f64;
++        let (x, y, z) = (p.x + dx * t, p.y + dy * t, p.z + t * (q.z - p.z));
++        let col0 = ((x - grid.origin_u) / cs).round() as isize;
++        let row0 = ((y - grid.origin_v) / cs).round() as isize;
++        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
++        for row in (row0 - r_cells)..=(row0 + r_cells) {
++            for col in (col0 - r_cells)..=(col0 + r_cells) {
++                if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
++                    continue;
++                }
++                let (cx, cy) = (
++                    grid.origin_u + col as f64 * cs,
++                    grid.origin_v + row as f64 * cs,
++                );
++                let (ex, ey) = (cx - x, cy - y);
++                if ex * ex + ey * ey > r_sq {
++                    continue;
++                }
++                // The cell's top after the earlier samples of this move: each
++                // one within R cut it down to its own Z.
++                let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
++                for j in 0..k {
++                    let tj = j as f64 / n as f64;
++                    let (jx, jy) = (p.x + dx * tj, p.y + dy * tj);
++                    if (cx - jx).powi(2) + (cy - jy).powi(2) <= r_sq {
++                        top = top.min(p.z + tj * (q.z - p.z));
++                    }
++                }
++                if top <= z + clearance {
++                    continue;
++                }
++                let u = ex * nx + ey * ny;
++                lo = lo.min(u);
++                hi = hi.max(u);
++            }
++        }
++        if hi >= lo {
++            widest = widest.max(hi - lo);
++        }
++    }
++    widest
++}
++
+ /// Helper to push a segment and stamp its simulator-equivalent swept
+ /// material removal in one call.
+ ///
+@@ -1900,7 +2319,7 @@ pub(super) fn waterline_cleanup(
+     tolerance: f64,
+     min_cutting_radius: f64,
+     stock_to_leave: f64,
+-    centre_clip: Option<&CentreClip>,
++    ctx: &ClearZLevelContext<'_>,
+     segments: &mut Vec<Adaptive3dSegment>,
+     cursor: &mut PlannerCursor,
+     debug_ctx: Option<&ToolpathDebugContext>,
+@@ -1920,13 +2339,17 @@ pub(super) fn waterline_cleanup(
+         // contour gets no keep-down link.
+         entry_floor_radius,
+         stay_down_mm: 0.0,
+-        centre_clip,
++        centre_clip: ctx.centre_clip,
+         // A waterline contour gets no routed travel either.
+         keep_down_route: super::KeepDownRoute::Off,
+         stay_down_clearance_mm: 0.0,
+         #[cfg(feature = "research")]
+         route_stats: None,
++        #[cfg(feature = "research")]
++        stamp_log: Some(&ctx.research_stamp_log),
+     };
++    #[cfg(feature = "research")]
++    ctx.research_stamp_log.borrow_mut().start_level(z_level);
+     #[cfg(not(target_arch = "wasm32"))]
+     let t_waterline = Instant::now();
+     let waterline_scope = debug_ctx.map(|ctx| {
+@@ -2409,6 +2832,16 @@ impl LevelSink<'_> {
+ 
+     /// [`Self::emit`] for a segment that has passed the boundary clip.
+     fn emit_clipped(&mut self, ctx: &ClearZLevelContext<'_>, segment: Adaptive3dSegment) {
++        // D32 probe: a cut piece with no XY length to speak of, and
++        // whether the sink stamps it.
++        #[cfg(feature = "research")]
++        if let Adaptive3dSegment::Cut(path) = &segment {
++            ctx.research_stamp_log.borrow_mut().probe_short_cut(
++                path,
++                ctx.cut_tolerance,
++                self.cursor.tool_pos,
++            );
++        }
+         if !self.defer_entries {
+             #[cfg(feature = "research")]
+             self.check_held_link(ctx, &segment);
+@@ -2929,18 +3362,26 @@ fn plan_one_outline(
+     // measured engagement and feed factor, read as the 2D run reads it
+     // (C22a: after the filter and its replay, so the reading is the one of
+     // the emitted plan).
++    //
++    // C38 §15.6: and its departure records (the steps out of a straight
++    // plunge). The research arm only: another arm in a research build has
++    // no turns, and must not be read or split.
+     #[cfg(feature = "research")]
+-    let research_records = crate::adaptive::research_geodesic::slice_turn_records(
+-        polygon_for_adaptive,
+-        params_2d,
+-        &segs_2d,
+-        &research_turns,
+-    );
++    let research_records = if is_research_arm(ctx.clearing_strategy) {
++        crate::adaptive::research_geodesic::slice_turn_records(
++            polygon_for_adaptive,
++            params_2d,
++            &segs_2d,
++            &research_turns,
++        )
++    } else {
++        Vec::new()
++    };
+     // Research arm C22 (D14): each turn is a cut of its own, so the ONE RDP
+     // of the stamp and the emitter never merges a turn move with a move of
+     // another feed (`research_geodesic::split_at_turns`).
+     #[cfg(feature = "research")]
+-    let segs_2d = if research_turns.is_empty() {
++    let segs_2d = if research_records.is_empty() {
+         segs_2d
+     } else {
+         let records: Vec<crate::adaptive::research_geodesic::TurnRecord> =
+@@ -2950,13 +3391,14 @@ fn plan_one_outline(
+     // Research arm C22: the turns the filtered plan still cuts go to the
+     // run's turn list, for the feeds of the emitted toolpath.
+     #[cfg(feature = "research")]
+-    if !research_turns.is_empty() {
++    if !research_turns.is_empty() || !research_records.is_empty() {
+         // §14.6: a turn with neither end inside the boundary clip is
+         // removed by the 3D stage; it is counted as clipped.
+         ctx.research_turns.borrow_mut().add(
+             research_planned_turns,
+             research_turns.len() - research_planned_turns,
+             research_records,
++            z_level,
+             &segs_2d,
+             &|p: P2| ctx.centre_clip.is_none_or(|c| c.contains(p.x, p.y)),
+         );
+@@ -4030,12 +4472,37 @@ fn plan_and_emit_region(
+                         super::StepSplit::StockDepth if shape_split => {
+                             let ap =
+                                 step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
+-                            let split = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
++                            let deep = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
++                            // §16.9: a step within one pass deep is cut at
++                            // feed only when its swept width also holds the
++                            // pass ceiling c·D of the 2D load
++                            // (`PassLoad::swept_width`: the radial fraction
++                            // of the pass ceiling, times D).
++                            let ceiling_width =
++                                crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
++                                    crate::adaptive::pass_engagement_limit(
++                                        ctx.stepover,
++                                        ctx.tool_radius,
++                                    ),
++                                ) * 2.0
++                                    * ctx.tool_radius;
++                            let wide = !deep
++                                && step_swept_width(
++                                    sink.material_stock,
++                                    prev,
++                                    curr,
++                                    ctx.tool_radius,
++                                    ctx.stay_down_clearance_mm,
++                                ) > ceiling_width;
++                            let split = deep || wide;
+                             #[cfg(feature = "research")]
+                             {
+                                 let mut stats = ctx.research_split_stats.borrow_mut();
+                                 if split {
+                                     stats.made += 1;
++                                    if wide {
++                                        stats.width_split += 1;
++                                    }
+                                 } else {
+                                     stats.avoided += 1;
+                                     stats.max_ap_avoided_mm = stats.max_ap_avoided_mm.max(ap);
+@@ -4119,6 +4586,40 @@ fn plan_and_emit_region(
+                 // safe_z down would burn time feeding through air.
+                 // Pass the sampled top to the path emitter so it
+                 // can rapid through the air gap before pecking.
++                // §16.9 (probe): at a Start entry, the planner's stock over
++                // the entry footprint as `plan_entry` reads it for the rapid
++                // floor (the conservative top over the entry floor disc), and
++                // the cell-centre top over the tool's disc, so a run shows a
++                // rapid floor under the simulated stock.
++                #[cfg(feature = "research")]
++                if first_rapids.contains(&this_index) {
++                    let floor_top = sink.material_stock.max_conservative_top_z_in_disc(
++                        p3.x,
++                        p3.y,
++                        ctx.entry_floor_radius,
++                    );
++                    let centre_top =
++                        sink.material_stock
++                            .max_top_z_in_disc(p3.x, p3.y, ctx.tool_radius);
++                    tracing::info!(
++                        z = z_level,
++                        x = %format!("{:.3}", p3.x),
++                        y = %format!("{:.3}", p3.y),
++                        entry_z = %format!("{:.3}", p3.z),
++                        floor_top = ?floor_top,
++                        centre_top = ?centre_top,
++                        "C22 start entry probe"
++                    );
++                    // D32: the cell that sets that floor, and the stamps
++                    // that cut it.
++                    ctx.research_stamp_log.borrow_mut().probe_start_cell(
++                        sink.material_stock,
++                        ctx.lut,
++                        ctx.tool_radius,
++                        ctx.entry_floor_radius,
++                        p3,
++                    );
++                }
+                 #[cfg(feature = "research")]
+                 record_entry_cause(
+                     ctx,
+@@ -4198,6 +4699,8 @@ struct RegionScratch {
+     level_metrics: ZLevelPlanMetrics,
+     cut_count: u32,
+     dropped_short_regions: usize,
++    /// D32 probe: the stamp log this run wrote.
++    stamp_tail: StampLogTail,
+ }
+ 
+ #[cfg(feature = "research")]
+@@ -4230,7 +4733,9 @@ impl RegionScratch {
+             level_metrics: emission.level_metrics.clone(),
+             cut_count: *emission.cut_count,
+             dropped_short_regions: *emission.dropped_short_regions,
++            stamp_tail: StampLogTail::default(),
+         };
++        let stamp_mark = ctx.research_stamp_log.borrow().mark();
+         let mut scratch = LevelEmission {
+             sink: LevelSink {
+                 segments: &mut out.segments,
+@@ -4263,6 +4768,8 @@ impl RegionScratch {
+             (scratch.sink.pending_entry, scratch.sink.replaced_entries);
+         out.pending_entry = pending_entry;
+         out.replaced_entries = replaced_entries;
++        // D32 probe: the other variant runs on the stamps before this one.
++        out.stamp_tail = ctx.research_stamp_log.borrow_mut().split_off(stamp_mark);
+         Ok(out)
+     }
+ 
+@@ -4453,11 +4960,11 @@ fn pick_region_plan(
+             causes.truncate(causes_after_a);
+         }
+     }
+-    if keep_b {
+-        b.commit(emission);
+-    } else {
+-        a.commit(emission);
+-    }
++    let mut kept = if keep_b { b } else { a };
++    ctx.research_stamp_log
++        .borrow_mut()
++        .append(std::mem::take(&mut kept.stamp_tail));
++    kept.commit(emission);
+     Ok(())
+ }
+ 
+@@ -4519,6 +5026,8 @@ pub(super) fn clear_z_level_agent_2d_slice(
+     level_marker: Option<Adaptive3dRuntimeEvent>,
+     cancel: &dyn CancelCheck,
+ ) -> Result<(), Cancelled> {
++    #[cfg(feature = "research")]
++    ctx.research_stamp_log.borrow_mut().start_level(z_level);
+     let (remaining_cells, remaining_fraction) = level_gate(
+         material_stock,
+         surface_hm,
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 0a400e9e1..9737dce69 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -348,9 +348,11 @@ pub struct Adaptive3dLinking {
+     /// scrape the surface. Default 0.5 mm.
+     pub stay_down_clearance_mm: f64,
+     /// §16 Part A: how a draped cut is split at a large Z step
+-    /// ([`StepSplit`]). The default keeps the historical rule (byte
+-    /// parity); the research arm turns on [`StepSplit::StockDepth`].
+-    pub step_split: StepSplit,
++    /// ([`StepSplit`]). `None` is the strategy's default: the historical
++    /// rule for every shipped strategy (byte parity),
++    /// [`StepSplit::StockDepth`] for the research arm. `Some` sets it for
++    /// any strategy.
++    pub step_split: Option<StepSplit>,
+     /// §16 Part B: the routed keep-down travel at an entry
+     /// ([`KeepDownRoute`]). `None` is the strategy's default: off for every
+     /// shipped strategy, [`KeepDownRoute::CutFeed`] for the research arm.
+@@ -380,6 +382,9 @@ pub enum StepSplit {
+ #[derive(Debug, Clone, Copy, Default)]
+ pub struct SplitStats {
+     pub made: usize,
++    /// §16.9: of `made`, the steps within one pass deep that split because
++    /// their swept width passes the pass ceiling c·D.
++    pub width_split: usize,
+     pub avoided: usize,
+     pub max_ap_avoided_mm: f64,
+ }
+@@ -842,6 +847,9 @@ pub struct Research3d {
+     pub turns: crate::adaptive::research_geodesic::TurnSummary,
+     /// C38: the corridor slots, recorded and fed as the turns are.
+     pub slots: crate::adaptive::research_geodesic::TurnSummary,
++    /// C38 §15.6: the steps out of a straight plunge (exempt from the
++    /// ceiling), recorded and fed at the slot factor of their reading.
++    pub departures: crate::adaptive::research_geodesic::TurnSummary,
+     /// C38 §13.2: the slot feeds matched by distance to each loop's chain
+     /// (the authority for slots: `slots` above uses the exact match, which
+     /// the 3D merge defeats).
+@@ -1081,13 +1089,40 @@ fn research_turn_feeds(
+     result: &mut path::Adaptive3dSegmentsResult,
+     feed_rate: f64,
+     chord_tolerance: f64,
++    depth_per_pass: f64,
+ ) -> (Toolpath, ResearchTurns) {
+-    // C38 §13.2: the slot feeds, matched by distance to each slot loop's
+-    // chain (the 3D merge joins collinear slot steps into one move).
+-    let chains = research_outer_band::slot_chains(&result.research_turns);
+-    let slot_chains =
+-        research_outer_band::apply_chain_feeds(&mut tp, &chains, chord_tolerance, feed_rate);
+-    if slot_chains.chains > 0 {
++    let (turns, slots, departures) = crate::adaptive::research_geodesic::apply_slice_turn_feeds(
++        &mut tp,
++        std::mem::take(&mut result.research_turns),
++        feed_rate,
++    );
++    let capped_exact = tp.moves.iter().filter(|m| m.feed_cap.is_some()).count();
++    // C38 §15.x: one `info` line per reduced turn the exact match fed, so a
++    // fixture script can find the turn moves in the program by XY and count
++    // their samples.
++    for t in turns.turns.iter().filter(|t| t.fed && t.feed_factor < 1.0) {
++        tracing::info!(
++            from = %format!("({:.4}, {:.4})", t.from.x, t.from.y),
++            to = %format!("({:.4}, {:.4})", t.to.x, t.to.y),
++            level_z = ?t.level_z,
++            factor = %format!("{:.4}", t.feed_factor),
++            "C38 capped turn"
++        );
++    }
++    // C38 §15.4: the slot records the exact match left unfed, matched by
++    // distance to each slot loop's chain on its own level (the 3D merge
++    // joins collinear slot steps into one move). §15.6: and the departure
++    // records (the steps out of a straight plunge) it left unfed.
++    let mut chains = research_outer_band::unfed_chains(&slots.turns);
++    chains.extend(research_outer_band::unfed_chains(&departures.turns));
++    let slot_chains = research_outer_band::apply_chain_feeds(
++        &mut tp,
++        &chains,
++        chord_tolerance,
++        feed_rate,
++        depth_per_pass,
++    );
++    if slots.planned > 0 || !departures.turns.is_empty() || slot_chains.chains > 0 {
+         tracing::info!(
+             loops = slot_chains.chains,
+             steps = slot_chains.steps,
+@@ -1101,14 +1136,20 @@ fn research_turn_feeds(
+             "C38 slot chains"
+         );
+     }
+-    let (turns, slots) = crate::adaptive::research_geodesic::apply_slice_turn_feeds(
+-        &mut tp,
+-        std::mem::take(&mut result.research_turns),
+-        feed_rate,
++    // C38 §15.x: the moves that carry a feed cap, set by the exact match
++    // (turns, slots and departures) and then by the chain match.
++    tracing::info!(
++        exact = capped_exact,
++        chain = tp.moves.iter().filter(|m| m.feed_cap.is_some()).count() - capped_exact,
++        "C38 feed caps"
+     );
+     // One `info` line per summary that planned anything, for CLI runs (the
+     // op is the line's `generate_toolpath` span).
+-    for (kind, summary) in [("turns", &turns), ("slots", &slots)] {
++    for (kind, summary) in [
++        ("turns", &turns),
++        ("slots", &slots),
++        ("departures", &departures),
++    ] {
+         if summary.planned == 0 && summary.turns.is_empty() && summary.clipped == 0 {
+             continue;
+         }
+@@ -1195,6 +1236,7 @@ fn research_turn_feeds(
+     if split_stats.made + split_stats.avoided > 0 {
+         tracing::info!(
+             made = split_stats.made,
++            width_split = split_stats.width_split,
+             avoided = split_stats.avoided,
+             max_ap_avoided_mm = %format!("{:.3}", split_stats.max_ap_avoided_mm),
+             "C22 step split (stock-read rule)"
+@@ -1205,6 +1247,7 @@ fn research_turn_feeds(
+         Research3d {
+             turns,
+             slots,
++            departures,
+             slot_chains,
+             openings,
+             core_zones,
+@@ -1222,6 +1265,7 @@ fn research_turn_feeds(
+     _result: &mut path::Adaptive3dSegmentsResult,
+     _feed_rate: f64,
+     _chord_tolerance: f64,
++    _depth_per_pass: f64,
+ ) -> (Toolpath, ResearchTurns) {
+     (tp, ())
+ }
+@@ -1243,6 +1287,7 @@ fn output_and_turns(
+         &mut result,
+         params.feed_rate,
+         params.emission_chord_tolerance(),
++        params.depth.depth_per_pass,
+     );
+     let planner_engagement = result.planner_engagement;
+     if let Some(debug_ctx) = debug {
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index 24f13b224..1eed880e2 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1042,12 +1042,19 @@ pub(super) fn adaptive_3d_segments(
+         keep_down_route: super::effective_keep_down_route(params),
+         #[cfg(feature = "research")]
+         research_route_stats: std::cell::RefCell::default(),
++        // D32 probe: the stamp log, on for the research arm only.
++        #[cfg(feature = "research")]
++        research_stamp_log: std::cell::RefCell::new(super::clearing::StampLog::new(
++            super::clearing::is_research_arm(params.clearing_strategy),
++        )),
+         // §16 Part A: the research arm turns the stock-read split on.
+-        step_split: if super::clearing::is_research_arm(params.clearing_strategy) {
+-            super::StepSplit::StockDepth
+-        } else {
+-            params.linking.step_split
+-        },
++        step_split: params.linking.step_split.unwrap_or(
++            if super::clearing::is_research_arm(params.clearing_strategy) {
++                super::StepSplit::StockDepth
++            } else {
++                super::StepSplit::PathShape
++            },
++        ),
+         #[cfg(feature = "research")]
+         research_split_stats: std::cell::RefCell::default(),
+         #[cfg(feature = "research")]
+@@ -1190,7 +1197,7 @@ pub(super) fn adaptive_3d_segments(
+                     params.emission_chord_tolerance(),
+                     params.geometry.min_cutting_radius,
+                     params.depth.stock_to_leave,
+-                    ctx.centre_clip,
++                    &ctx,
+                     &mut segments,
+                     &mut cursor,
+                     debug_ctx,
+@@ -1249,7 +1256,7 @@ pub(super) fn adaptive_3d_segments(
+                     params.emission_chord_tolerance(),
+                     params.geometry.min_cutting_radius,
+                     params.depth.stock_to_leave,
+-                    ctx.centre_clip,
++                    &ctx,
+                     &mut segments,
+                     &mut cursor,
+                     debug_ctx,
+@@ -1264,6 +1271,9 @@ pub(super) fn adaptive_3d_segments(
+             }
+         }
+     }
++    // D32 probe: the last level's held probe lines.
++    #[cfg(feature = "research")]
++    ctx.research_stamp_log.borrow_mut().flush();
+ 
+     Ok(Adaptive3dSegmentsResult {
+         segments,
+diff --git a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+index f005799f0..0b3090531 100644
+--- a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
++++ b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+@@ -33,9 +33,7 @@
+ //! No new constant: the threshold is `min_region_cut_length_mm`, the box is
+ //! the planner stock's, and the reach is the tool radius.
+ 
+-use crate::adaptive::research_geodesic::{
+-    ArcCounts, JoinClass, JoinMark, SlicePlan, SliceTurns, TurnKind,
+-};
++use crate::adaptive::research_geodesic::{ArcCounts, JoinClass, JoinMark, SlicePlan, TurnRecord};
+ use crate::adaptive::{AdaptiveRuntimeEvent, AdaptiveSegment};
+ use crate::dexel_stock::TriDexelStock;
+ use crate::geo::{P2, point_to_segment_distance};
+@@ -420,10 +418,16 @@ pub(super) fn clip_to_centre_reach(
+ /// points of one slot loop in plan order, and the feed factor of each step
+ /// (`factors[k]` for the step `pts[k] .. pts[k + 1]`). Toolpath data only
+ /// (§13.8): a shared feed layer can take chains from any producer.
++///
++/// §15.4: `level_z` is the Z level of the slice that planned the chain, or
++/// `None` for no level. A move matches a chain only when both its ends lie
++/// in `[level_z, level_z + depth_per_pass)`: a level's moves drape at or
++/// above it and below the level over it.
+ #[derive(Debug, Clone)]
+ pub struct FeedChain {
+     pub pts: Vec<P2>,
+     pub factors: Vec<f64>,
++    pub level_z: Option<f64>,
+ }
+ 
+ /// §13.2: what [`apply_chain_feeds`] did.
+@@ -450,24 +454,24 @@ pub struct ChainFeedSummary {
+     pub tolerance: f64,
+ }
+ 
+-/// §13.2: the slot chains of a run's records: the kept slot records
+-/// ([`TurnKind::Slot`], not both ends outside the boundary clip), split into
+-/// chains where a record does not start at the end of the one before (a new
+-/// loop).
+-pub(super) fn slot_chains(turns: &SliceTurns) -> Vec<FeedChain> {
++/// §15.4: the feed chains of the records of one summary (`records`, after
++/// the exact match of
++/// [`crate::adaptive::research_geodesic::apply_slice_turn_feeds`]): the
++/// records the exact match left unfed, split into chains where a record
++/// does not start at the end of the one before (a new loop) or lies on
++/// another level. A summary holds no clipped record. §15.6: the slot and
++/// the departure summaries both come here.
++pub(super) fn unfed_chains(records: &[TurnRecord]) -> Vec<FeedChain> {
+     let mut chains: Vec<FeedChain> = Vec::new();
+-    let mut last: Option<P2> = None;
+-    for ((rec, kind), ends) in turns
+-        .records
+-        .iter()
+-        .zip(&turns.kinds)
+-        .zip(&turns.ends_inside)
+-    {
+-        if *kind != TurnKind::Slot || *ends == (false, false) {
++    let mut last: Option<(P2, Option<f64>)> = None;
++    for rec in records {
++        if rec.fed {
+             last = None;
+             continue;
+         }
+-        let joined = last.is_some_and(|q| (q.x - rec.from.x).hypot(q.y - rec.from.y) <= 1e-6);
++        let joined = last.is_some_and(|(q, z)| {
++            (q.x - rec.from.x).hypot(q.y - rec.from.y) <= 1e-6 && z == rec.level_z
++        });
+         match chains.last_mut() {
+             Some(chain) if joined => {
+                 chain.pts.push(rec.to);
+@@ -476,9 +480,10 @@ pub(super) fn slot_chains(turns: &SliceTurns) -> Vec<FeedChain> {
+             _ => chains.push(FeedChain {
+                 pts: vec![rec.from, rec.to],
+                 factors: vec![rec.feed_factor],
++                level_z: rec.level_z,
+             }),
+         }
+-        last = Some(rec.to);
++        last = Some((rec.to, rec.level_z));
+     }
+     chains
+ }
+@@ -503,7 +508,12 @@ fn nearest_step(pts: &[P2], q: &P2) -> Option<(usize, f64)> {
+ ///    its midpoint);
+ /// 3. it covers a step no move has covered yet;
+ /// 4. the chain is not before the last matched chain (the toolpath keeps
+-///    the plan order, so a chain's own moves come first).
++///    the plan order, so a chain's own moves come first);
++/// 5. (§15.4) both its ends lie on the chain's level: in `[level_z,
++///    level_z + depth_per_pass)`, with 1e-6 mm below.
++///
++/// A lowered move also gets that feed as its cap (`Move::feed_cap`), so no
++/// later feed stage raises it (§15.4).
+ ///
+ /// `tolerance` is the RDP tolerance that simplified the cuts
+ /// (`Adaptive3dParams::emission_chord_tolerance`): RDP keeps a point only if
+@@ -516,8 +526,15 @@ pub(super) fn apply_chain_feeds(
+     chains: &[FeedChain],
+     tolerance: f64,
+     feed_rate: f64,
++    depth_per_pass: f64,
+ ) -> ChainFeedSummary {
+     let d = tolerance.max(0.0) + 1e-6;
++    let on_level = |k: usize, z: f64| {
++        chains.get(k).is_some_and(|c| {
++            c.level_z
++                .is_none_or(|l| z >= l - 1e-6 && z < l + depth_per_pass)
++        })
++    };
+     let boxes: Vec<(P2, P2)> = chains
+         .iter()
+         .map(|c| {
+@@ -560,6 +577,7 @@ pub(super) fn apply_chain_feeds(
+     };
+     let mut cursor = 0usize;
+     let mut start: Option<P2> = None;
++    let mut start_z = 0.0_f64;
+     let mut cutting_since: Vec<bool> = vec![false; chains.len()];
+     for (i, m) in tp.moves.iter_mut().enumerate() {
+         let b = P2::new(m.target.x, m.target.y);
+@@ -572,7 +590,11 @@ pub(super) fn apply_chain_feeds(
+                     let Some(chain) = chains.get(k) else {
+                         continue;
+                     };
+-                    if !in_box(k, &a) || !in_box(k, &b) {
++                    if !in_box(k, &a)
++                        || !in_box(k, &b)
++                        || !on_level(k, start_z)
++                        || !on_level(k, m.target.z)
++                    {
+                         continue;
+                     }
+                     let mut lo = usize::MAX;
+@@ -616,6 +638,7 @@ pub(super) fn apply_chain_feeds(
+                             .fold(1.0_f64, |acc, &x| acc.min(x));
+                         if factor < 1.0 {
+                             *f = f.min(feed_rate * factor);
++                            m.feed_cap = Some(m.feed_cap.map_or(*f, |c| c.min(*f)));
+                             summary.moves_lowered += 1;
+                             summary.lowest_factor = summary.lowest_factor.min(factor);
+                             summary.longest_move_mm = summary.longest_move_mm.max(len);
+@@ -659,6 +682,7 @@ pub(super) fn apply_chain_feeds(
+             *flag = false;
+         }
+         start = Some(b);
++        start_z = m.target.z;
+     }
+     summary.fed = covered.iter().flatten().filter(|&&v| v).count();
+     summary.unfed = chains
+diff --git a/crates/rs_cam_core/src/compute/obstacle.rs b/crates/rs_cam_core/src/compute/obstacle.rs
+index 19c510959..5b1cca1a8 100644
+--- a/crates/rs_cam_core/src/compute/obstacle.rs
++++ b/crates/rs_cam_core/src/compute/obstacle.rs
+@@ -1450,6 +1450,7 @@ fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64
+         target: P3::new(first.target.x, first.target.y, plane),
+         move_type: MoveType::Rapid,
+         intent: crate::toolpath::MoveIntent::ObstacleClearance,
++        feed_cap: None,
+     };
+     toolpath.moves.insert(0, lift);
+     for entry in mapping.iter_mut().skip(1) {
+@@ -1718,6 +1719,7 @@ mod tests {
+                 feed_rate: 1000.0,
+             },
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         };
+         let permit = ObstaclePermit { view: &view };
+         assert!(view.point_allowed(start) && view.point_allowed(m.target));
+diff --git a/crates/rs_cam_core/src/compute/simulate.rs b/crates/rs_cam_core/src/compute/simulate.rs
+index 07960cbd7..6b73aa7df 100644
+--- a/crates/rs_cam_core/src/compute/simulate.rs
++++ b/crates/rs_cam_core/src/compute/simulate.rs
+@@ -963,11 +963,13 @@ pub(crate) fn hash_toolpath(toolpath: &Toolpath) -> u64 {
+             // F101: destructured, `..`-free, so a new `Move` field is a
+             // compile error here until someone decides. The intent is not
+             // hashed: it moves no material, and a saved trace whose hash
+-            // took it would read as stale.
++            // took it would read as stale. The feed cap is not hashed for
++            // the same reason: the feed the move carries is hashed.
+             let crate::toolpath::Move {
+                 target,
+                 move_type,
+                 intent: _,
++                feed_cap: _,
+             } = motion;
+             hash_f64_bits(hasher, target.x);
+             hash_f64_bits(hasher, target.y);
+@@ -1199,6 +1201,7 @@ pub fn group_toolpath_to_global(
+                     ),
+                     move_type: m.move_type,
+                     intent: m.intent,
++                    feed_cap: m.feed_cap,
+                 })
+                 .collect(),
+         },
+diff --git a/crates/rs_cam_core/src/compute/transform.rs b/crates/rs_cam_core/src/compute/transform.rs
+index f8e0778c9..1cc07de96 100644
+--- a/crates/rs_cam_core/src/compute/transform.rs
++++ b/crates/rs_cam_core/src/compute/transform.rs
+@@ -771,6 +771,7 @@ impl SetupTransformInfo {
+                     target,
+                     move_type,
+                     intent: m.intent,
++                    feed_cap: m.feed_cap,
+                 }
+             })
+             .collect();
+diff --git a/crates/rs_cam_core/src/dexel_stock/mod.rs b/crates/rs_cam_core/src/dexel_stock/mod.rs
+index bee28f990..ffbbd987e 100644
+--- a/crates/rs_cam_core/src/dexel_stock/mod.rs
++++ b/crates/rs_cam_core/src/dexel_stock/mod.rs
+@@ -393,6 +393,19 @@ impl TriDexelStock {
+     /// which case the caller has no stock information here and should fall
+     /// back to the analytic fresh-stock top.
+     pub fn max_conservative_top_z_in_disc(&self, cx: f64, cy: f64, radius: f64) -> Option<f64> {
++        self.max_conservative_top_cell_in_disc(cx, cy, radius)
++            .map(|(top, _, _)| top)
++    }
++
++    /// [`Self::max_conservative_top_z_in_disc`] with the Z-grid cell that
++    /// holds the highest top: `(top, row, col)`. Of equal tops, the first
++    /// cell in row-major order. The same cell walk; it is the one reading.
++    pub fn max_conservative_top_cell_in_disc(
++        &self,
++        cx: f64,
++        cy: f64,
++        radius: f64,
++    ) -> Option<(f64, usize, usize)> {
+         let grid = &self.z_grid;
+         let cs = grid.cell_size;
+         // Half a cell of dilation turns "centre inside the disc" into
+@@ -417,7 +430,7 @@ impl TriDexelStock {
+         )?;
+ 
+         let reach_sq = reach * reach;
+-        let mut max_top: Option<f64> = None;
++        let mut max_top: Option<(f64, usize, usize)> = None;
+ 
+         for row in row_min..=row_max {
+             let cell_y = grid.origin_v + row as f64 * cs;
+@@ -433,7 +446,9 @@ impl TriDexelStock {
+                     continue;
+                 }
+                 let top = f64::from(grid.conservative_top_at(row, col));
+-                max_top = Some(max_top.map_or(top, |m: f64| m.max(top)));
++                if max_top.is_none_or(|(m, _, _)| top > m) {
++                    max_top = Some((top, row, col));
++                }
+             }
+         }
+         max_top
+diff --git a/crates/rs_cam_core/src/dressup/CLAUDE.md b/crates/rs_cam_core/src/dressup/CLAUDE.md
+index 1b292d73c..d93fcdd2b 100644
+--- a/crates/rs_cam_core/src/dressup/CLAUDE.md
++++ b/crates/rs_cam_core/src/dressup/CLAUDE.md
+@@ -27,7 +27,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
+   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
+   fit `entry_containment`, arc fit inside it; under entry None a
+   `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
+-- The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT).
++- The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT). C38 §15: `Move::feed_cap` binds last in every feed stage (modulator, feedopt) and only lowers; arc fit and segment merge join only moves with equal caps.
+ - `tsp.rs`: a reordered group's fed first move is never fed from elsewhere
+   (G-TIERBURIAL); rapid travel never grows: a group keeps its order and
+   framing unless its rebuild is shorter, else the input comes out as is.
+@@ -36,5 +36,5 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
+ 
+ - `cargo test -p rs_cam_core -q --features test-support --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b --test the_tab_layout_is_the_cut_layout_p4_6`
+ - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
+-- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
++- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test a_feed_cap_binds_every_feed_stage_c38 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
+ - `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b --test a_lead_curls_away_from_the_part_p6_0c`
+diff --git a/crates/rs_cam_core/src/dressup/arcfit.rs b/crates/rs_cam_core/src/dressup/arcfit.rs
+index 03c53ec9c..bc78c43a1 100644
+--- a/crates/rs_cam_core/src/dressup/arcfit.rs
++++ b/crates/rs_cam_core/src/dressup/arcfit.rs
+@@ -185,6 +185,9 @@ pub(crate) fn fit_arcs_within(
+         // finishing pass never cut. Equality is strict: `Unknown` breaks
+         // against every tagged intent (Checkpoint F1 Q3).
+         let run_intent = m.intent;
++        // C38 §15: the feed cap is an equality term too, so the arc keeps
++        // the cap of every move it replaces.
++        let run_cap = m.feed_cap;
+         // G-ARCFITSCAN (2026-10-02): the run end is found LAZILY, one move
+         // past what the greedy loop below has already accepted. The old
+         // code scanned the whole same-feed run up front for every `i`; a
+@@ -207,9 +210,12 @@ pub(crate) fn fit_arcs_within(
+         let eligible = |k: usize| -> bool {
+             #[cfg(test)]
+             RUN_SCAN_READS.with(|c| c.set(c.get() + 1));
+-            match moves.get(k).map(|mv| (mv.move_type, mv.intent)) {
+-                Some((MoveType::Linear { feed_rate: f }, intent)) => {
+-                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent
++            match moves
++                .get(k)
++                .map(|mv| (mv.move_type, mv.intent, mv.feed_cap))
++            {
++                Some((MoveType::Linear { feed_rate: f }, intent, cap)) => {
++                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent && cap == run_cap
+                 }
+                 _ => false,
+             }
+@@ -286,6 +292,7 @@ pub(crate) fn fit_arcs_within(
+                         feed_rate,
+                     },
+                     intent: arc_intent,
++                    feed_cap: moves[i].feed_cap,
+                 });
+             } else {
+                 result.moves.push(Move {
+@@ -296,6 +303,7 @@ pub(crate) fn fit_arcs_within(
+                         feed_rate,
+                     },
+                     intent: arc_intent,
++                    feed_cap: moves[i].feed_cap,
+                 });
+             }
+             arc_positions.push(arc_idx);
+diff --git a/crates/rs_cam_core/src/dressup/condition.rs b/crates/rs_cam_core/src/dressup/condition.rs
+index a7a61cc9d..1822c6853 100644
+--- a/crates/rs_cam_core/src/dressup/condition.rs
++++ b/crates/rs_cam_core/src/dressup/condition.rs
+@@ -102,15 +102,18 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
+         // which without this term could carry a different intent. On a
+         // collinear run the whole thing collapsed to one move wearing the
+         // last block's label. Equality is strict here too: `Unknown` is not a
+-        // wildcard.
++        // wildcard. C38 §15: the feed cap is an equality term for the same
++        // reason.
+         let run_start = i;
+         let run_intent = moves[run_start].intent;
++        let run_cap = moves[run_start].feed_cap;
+         let mut end = run_start + 1;
+         while end < moves.len() {
+             match moves[end].move_type {
+                 MoveType::Linear { feed_rate: f }
+                     if (f - feed_rate).abs() < FEED_EPS
+                         && moves[end].intent == run_intent
++                        && moves[end].feed_cap == run_cap
+                         && !barriers.contains(&end) =>
+                 {
+                     end += 1;
+@@ -367,6 +370,39 @@ mod tests {
+         assert_eq!(last.intent, MoveIntent::Linking);
+     }
+ 
++    /// C38 §15: runs with different feed caps are not merged across the
++    /// change, so a merged move keeps the cap of every move it replaces.
++    #[test]
++    fn does_not_merge_across_feed_cap_change() {
++        let mut tp = Toolpath::new();
++        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
++        // Perfectly collinear, one feed, one intent. Only the cap
++        // distinguishes the halves.
++        for k in 1..=10 {
++            tp.feed_to(P3::new(k as f64, 0.0, 0.0), 1000.0);
++        }
++        for m in tp.moves.iter_mut().skip(1).take(5) {
++            m.feed_cap = Some(600.0);
++        }
++
++        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
++
++        assert_eq!(
++            cut_move_count(&out.toolpath),
++            2,
++            "one merged move per cap block, got {:?}",
++            out.toolpath.moves
++        );
++        let boundary = out
++            .toolpath
++            .moves
++            .iter()
++            .find(|m| (m.target.x - 5.0).abs() < 1e-9)
++            .expect("the cap boundary at x=5 must survive the merge");
++        assert_eq!(boundary.feed_cap, Some(600.0));
++        assert_eq!(out.toolpath.moves.last().unwrap().feed_cap, None);
++    }
++
+     /// Spans remap cleanly and invariants hold after a merge.
+     #[test]
+     fn remaps_spans_and_holds_invariants() {
+diff --git a/crates/rs_cam_core/src/dressup/feed_modulation.rs b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+index e04096bf9..bb2f38a46 100644
+--- a/crates/rs_cam_core/src/dressup/feed_modulation.rs
++++ b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+@@ -1013,6 +1013,17 @@ pub fn adaptive_feed_modulate_with_materials(
+             }
+         }
+ 
++        // C38 §15: the move's own feed cap (`Move::feed_cap`), which a
++        // planner sets where a load rule lowers the feed. It binds after
++        // every arm, the floor and the plunge guard, and it only lowers.
++        // With no cap (every shipped planner) nothing changes.
++        if let Some(cap) = toolpath.moves[i].feed_cap
++            && new_feed > cap
++        {
++            new_feed = cap;
++            binding = BindingConstraint::FeedCap;
++        }
++
+         outcome.per_move.insert(i, (new_feed, binding));
+         if (new_feed - commanded).abs() > 1e-6 {
+             toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);
+diff --git a/crates/rs_cam_core/src/dressup/feedopt.rs b/crates/rs_cam_core/src/dressup/feedopt.rs
+index 1f76dea01..2dd742079 100644
+--- a/crates/rs_cam_core/src/dressup/feedopt.rs
++++ b/crates/rs_cam_core/src/dressup/feedopt.rs
+@@ -254,8 +254,12 @@ fn optimize_feed_rates_inner(
+     // changes. Rebuilding via the intent-less `rapid_to`/`feed_to`/
+     // `arc_*_to` builders (the old approach) silently reset every move's
+     // intent to `MoveIntent::Unknown`, which is the S.1 bug this fixes.
++    //
++    // C38 §15: a move's own feed cap (`Move::feed_cap`) binds last, after
++    // the smoothing, and only lowers. With no cap nothing changes.
+     let mut output = toolpath.clone();
+     for (mv, &feed) in output.moves.iter_mut().zip(feed_rates.iter()) {
++        let feed = mv.feed_cap.map_or(feed, |cap| feed.min(cap));
+         mv.move_type = mv.move_type.with_feed_rate(feed);
+     }
+ 
+@@ -562,21 +566,25 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(1.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(2.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 3000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(3.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+         ];
+ 
+diff --git a/crates/rs_cam_core/src/dressup/mod.rs b/crates/rs_cam_core/src/dressup/mod.rs
+index 9169b655d..35ef955df 100644
+--- a/crates/rs_cam_core/src/dressup/mod.rs
++++ b/crates/rs_cam_core/src/dressup/mod.rs
+@@ -965,6 +965,7 @@ pub fn optimize_entry_descents_with_provenance(
+                     target: P3::new(rapid_xy.0, rapid_xy.1, z),
+                     move_type: MoveType::Rapid,
+                     intent: MoveIntent::Linking,
++                    feed_cap: None,
+                 });
+                 splits += 1;
+             }
+@@ -987,6 +988,7 @@ pub fn optimize_entry_descents_with_provenance(
+                                     feed_rate: cfg.plunge_rate,
+                                 },
+                                 intent: MoveIntent::EntryPlunge,
++                                feed_cap: None,
+                             });
+                         }
+                         for point in &plan.points {
+@@ -996,6 +998,7 @@ pub fn optimize_entry_descents_with_provenance(
+                                     feed_rate: cfg.feed_rate,
+                                 },
+                                 intent: MoveIntent::EntryRamp,
++                                feed_cap: None,
+                             });
+                         }
+                         // `end_at_start` puts the last lap point on the run's
+@@ -1709,6 +1712,10 @@ pub fn apply_dogbones(
+                             );
+                             result.feed_to_with_intent(b, feed_rate, intent);
+                             let overcut_end = result.moves.len();
++                            // C38 §15: and the corner's feed cap.
++                            for m in result.moves.iter_mut().skip(overcut_start) {
++                                m.feed_cap = moves[i].feed_cap;
++                            }
+                             dogbone_ranges.push(overcut_start..overcut_end);
+                             emitted_overcut = true;
+                         }
+diff --git a/crates/rs_cam_core/src/dressup/tsp.rs b/crates/rs_cam_core/src/dressup/tsp.rs
+index 6d903d561..61d32c41d 100644
+--- a/crates/rs_cam_core/src/dressup/tsp.rs
++++ b/crates/rs_cam_core/src/dressup/tsp.rs
+@@ -828,18 +828,21 @@ mod tests {
+             target: P3::new(first.x, first.y, safe_z),
+             move_type: MoveType::Rapid,
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         for p in points {
+             moves.push(Move {
+                 target: *p,
+                 move_type: MoveType::Linear { feed_rate },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             });
+         }
+         moves.push(Move {
+             target: P3::new(last.x, last.y, safe_z),
+             move_type: MoveType::Rapid,
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         moves
+     }
+@@ -1549,6 +1552,7 @@ mod tests {
+                 target: P3::new(i as f64, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             })
+             .collect()
+     }
+diff --git a/crates/rs_cam_core/src/finish/surface_link.rs b/crates/rs_cam_core/src/finish/surface_link.rs
+index 91fe162b1..8947b1070 100644
+--- a/crates/rs_cam_core/src/finish/surface_link.rs
++++ b/crates/rs_cam_core/src/finish/surface_link.rs
+@@ -624,12 +624,13 @@ fn rotate_closed_loop(
+                 target: mv.target,
+                 move_type: body_type,
+                 intent: body_intent,
++                feed_cap: mv.feed_cap,
+             },
+         ));
+     }
+     // Close onto the new start, carrying the input's own closing index so the
+     // provenance stays a bijection over this fragment's moves.
+-    let (close_old, _) = moves.last()?;
++    let (close_old, close_move) = moves.last()?;
+     let new_start = cycle.get(best)?.1.target;
+     out.push((
+         *close_old,
+@@ -637,6 +638,7 @@ fn rotate_closed_loop(
+             target: new_start,
+             move_type: body_type,
+             intent: body_intent,
++            feed_cap: close_move.feed_cap,
+         },
+     ));
+     Some(out)
+diff --git a/crates/rs_cam_core/src/measurement.rs b/crates/rs_cam_core/src/measurement.rs
+index 935a1b2b9..1dd582382 100644
+--- a/crates/rs_cam_core/src/measurement.rs
++++ b/crates/rs_cam_core/src/measurement.rs
+@@ -936,11 +936,13 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(length, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: MoveIntent::FinishingCut,
++                feed_cap: None,
+             },
+         ]
+     }
+@@ -1033,16 +1035,19 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(50.0, 0.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(50.0, 50.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Retract,
++                feed_cap: None,
+             },
+         ];
+         let (area, provenance) = swept_footprint_area(&moves, 3.0, 0.5);
+@@ -1064,11 +1069,13 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(20.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 800.0 },
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+         ];
+         let (area, _) = swept_footprint_area(&moves, 1.5, 0.25);
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index afb49a293..1a20742f7 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -1474,9 +1474,12 @@ fn regime_from_binding(
+         // mostly capped descents as a light cut. On a real path this
+         // binding is never dominant (plunges are a small minority of moves),
+         // so the arm is close to unreachable.
+-        Some(BindingConstraint::DeflectionMax | BindingConstraint::PlungeRate) => {
+-            LoadRegime::ToolLimited
+-        }
++        // C38 §15: a dominant `FeedCap` is a load rule on the tool.
++        Some(
++            BindingConstraint::DeflectionMax
++            | BindingConstraint::PlungeRate
++            | BindingConstraint::FeedCap,
++        ) => LoadRegime::ToolLimited,
+         Some(
+             BindingConstraint::PowerMax
+             | BindingConstraint::MachineMaxFeed
+diff --git a/crates/rs_cam_core/src/tool_load/verdict.rs b/crates/rs_cam_core/src/tool_load/verdict.rs
+index 04e24ec0e..9e5c78733 100644
+--- a/crates/rs_cam_core/src/tool_load/verdict.rs
++++ b/crates/rs_cam_core/src/tool_load/verdict.rs
+@@ -73,6 +73,12 @@ pub enum BindingConstraint {
+     /// sits at or below the plunge rate keeps the strategy's own binding, so
+     /// this variant always means "the plunge rate LOWERED this feed".
+     PlungeRate,
++    /// C38 §15 (2026-10-26). The move's own `Move::feed_cap` lowered the
++    /// feed: a planner set it where a load rule (a pass-load ceiling on a
++    /// turn or a slot) reduced the feed. It binds after every other bound,
++    /// so the modulator cannot lift such a move back to the chipload band.
++    /// No shipped planner writes a cap, so a shipped run never reports it.
++    FeedCap,
+ }
+ 
+ impl BindingConstraint {
+@@ -85,6 +91,7 @@ impl BindingConstraint {
+             BindingConstraint::KinematicReach => "kinematic-reach",
+             BindingConstraint::ChiploadMin => "chipload-min",
+             BindingConstraint::PlungeRate => "plunge-rate",
++            BindingConstraint::FeedCap => "feed-cap",
+         }
+     }
+ }
+diff --git a/crates/rs_cam_core/src/toolpath.rs b/crates/rs_cam_core/src/toolpath.rs
+index d9aa0f006..7ba603a3c 100644
+--- a/crates/rs_cam_core/src/toolpath.rs
++++ b/crates/rs_cam_core/src/toolpath.rs
+@@ -127,6 +127,14 @@ pub struct Move {
+     pub target: P3,
+     pub move_type: MoveType,
+     pub intent: MoveIntent,
++    /// The highest feed (mm/min) this move may carry, or `None` for no
++    /// limit. A planner writes it where a load rule lowers the feed of a
++    /// move (C38 §15). Every later stage that rewrites the feed
++    /// (`dressup::feed_modulation`, `dressup::feedopt`) keeps the feed at
++    /// or below it, so a stage that raises feeds cannot undo the rule. A
++    /// stage that rebuilds a move from others keeps the cap: the arc fit
++    /// and the segment merge join only moves with the same cap.
++    pub feed_cap: Option<f64>,
+ }
+ 
+ /// Where the material is beside one closed pass, relative to the ring the
+@@ -282,6 +290,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::Rapid,
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -290,6 +299,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::Linear { feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -305,6 +315,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::ArcCW { i, j, feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -320,6 +331,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::ArcCCW { i, j, feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+diff --git a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+index c750e9df6..083147a31 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+@@ -132,7 +132,9 @@ use std::f64::consts::SQRT_2;
+ use common::meshes::height_field;
+ 
+ use rs_cam_core::adaptive::pass_engagement_limit;
+-use rs_cam_core::adaptive::research_geodesic::{CoreJoin, GeodesicOptions, TurnSummary};
++use rs_cam_core::adaptive::research_geodesic::{
++    CoreJoin, GeodesicOptions, TurnRecord, TurnSummary,
++};
+ use rs_cam_core::adaptive3d::{
+     Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dOutput, Adaptive3dParams,
+     Adaptive3dRuntimeEvent, ClearingStrategy3d, CoreZoneRecord, EntryRecord, EntryStyle3d,
+@@ -1466,8 +1468,8 @@ fn no_held_link_crosses_standing_stock_with_the_group_filter_on() {
+ /// drapes over the island and gives each arm its large-Z steps. For each G1
+ /// arm, with the stock-read split (the research arm's rule) and the routed
+ /// keep-down travel OFF (`Some(KeepDownRoute::Off)`), the simulation must
+-/// read no judged sample over the exact bound, and at least one arm must
+-/// have a step the rule cut at feed (else the test proves nothing).
++/// read no judged sample over the exact bound, and over all arms at least
++/// one step must be cut at feed (else the test proves nothing).
+ #[test]
+ #[ignore = "heavy: about 6 min in debug: six one-level 3D plans and six dexel simulations \
+             with exact readings; run by name with --ignored (§16 Part A)"]
+@@ -1476,6 +1478,7 @@ fn the_stock_read_split_holds_the_exact_bound_on_draped_steps() {
+     let index = SpatialIndex::build(&mesh, 10.0);
+     let mut failures: Vec<String> = Vec::new();
+     let mut avoided_total = 0usize;
++    let mut width_total = 0usize;
+     for (label, options) in [
+         ("geodesic_local_oneway", GeodesicOptions::C16_LOCAL_ONEWAY),
+         ("geodesic_local_zigzag", GeodesicOptions::C20_LOCAL_ZIGZAG),
+@@ -1495,16 +1498,21 @@ fn the_stock_read_split_holds_the_exact_bound_on_draped_steps() {
+     ] {
+         let mut p = params(ClearingStrategy3d::Geodesic(options));
+         p.depth.depth_per_pass = TOP_Z - FLOOR_Z;
+-        p.linking.step_split = StepSplit::StockDepth;
++        p.linking.step_split = Some(StepSplit::StockDepth);
+         p.linking.keep_down_route = Some(KeepDownRoute::Off);
+         let (out, research) = plan(&mesh, &index, &p);
+         let stats = research.split_stats;
+         eprintln!(
+-            "{label} one level: step split made {}, avoided {}, max ap avoided {:.3} mm; route \
+-             tried {}",
+-            stats.made, stats.avoided, stats.max_ap_avoided_mm, research.route_stats.tried
++            "{label} one level: step split made {} (by width {}), avoided {}, max ap avoided \
++             {:.3} mm; route tried {}",
++            stats.made,
++            stats.width_split,
++            stats.avoided,
++            stats.max_ap_avoided_mm,
++            research.route_stats.tried
+         );
+         avoided_total += stats.avoided;
++        width_total += stats.width_split;
+         if research.route_stats.tried > 0 {
+             failures.push(format!(
+                 "{label}: the router ran ({} tries) with keep_down_route Some(Off)",
+@@ -1533,9 +1541,121 @@ fn the_stock_read_split_holds_the_exact_bound_on_draped_steps() {
+     if avoided_total == 0 {
+         failures.push("no arm had a large-Z step the stock-read rule cut at feed".to_owned());
+     }
++    // §16.9: this fixture has no step wider than c·D (D30: "made 0 (by
++    // width 0)" on every arm); the width read is exercised by
++    // `the_width_read_splits_a_wide_draped_step` instead.
++    eprintln!("steps split by the width read over the arms: {width_total}");
++    assert!(failures.is_empty(), "{failures:#?}");
++}
++
++/// §16.9 (D30): the pocket with a SHELF, a flat face at Z 6.5 (between the
++/// floor and the top) on the +x side of the pocket. One level from the top
++/// to the floor drapes the cut up onto the shelf. The shelf's stock above
++/// its leave stands up to the top (Z 10), so where the cut climbs onto the
++/// shelf the tool's disc meets a band of stock spanning the whole disc: a
++/// step within one pass deep (3 mm against Depth/Pass 6) but wider than
++/// c·D. The width read must split such steps (`width_split > 0` over the
++/// arms), and per arm the simulation must read no more MOVES over the
++/// exact bound than the same plan under the historical path-shape split
++/// (the shelf over-loads under both: G-FACESLAB). Router off, as in
++/// [`the_stock_read_split_holds_the_exact_bound_on_draped_steps`].
++#[test]
++#[ignore = "heavy: about 3 min in debug: two one-level 3D plans and two dexel simulations \
++            with exact readings; run by name with --ignored (§16.9 width read)"]
++fn the_width_read_splits_a_wide_draped_step() {
++    // The shelf: x from 12 to 30, y from -12 to 12, at Z 6.5: above the
++    // level (floor 4 + leave 0.5) by 2 mm, under the top by 3.5 mm.
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.hypot(y) <= ISLAND_RADIUS {
++            TOP_Z
++        } else if (12.0..=30.0).contains(&x) && y.abs() <= 12.0 {
++            6.5
++        } else if x.abs() <= POCKET_HALF_X && y.abs() <= POCKET_HALF_Y {
++            FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let index = SpatialIndex::build(&mesh, 10.0);
++    let mut failures: Vec<String> = Vec::new();
++    let mut width_total = 0usize;
++    for (label, options) in [
++        ("geodesic_local_oneway", GeodesicOptions::C16_LOCAL_ONEWAY),
++        (
++            "geodesic_local_spiral_pick",
++            GeodesicOptions::C35_SPIRAL_PICK,
++        ),
++    ] {
++        let mut p = params(ClearingStrategy3d::Geodesic(options));
++        p.depth.depth_per_pass = TOP_Z - FLOOR_Z;
++        p.linking.step_split = Some(StepSplit::StockDepth);
++        p.linking.keep_down_route = Some(KeepDownRoute::Off);
++        let (out, research) = plan(&mesh, &index, &p);
++        let stats = research.split_stats;
++        eprintln!(
++            "{label} shelf: step split made {} (by width {}), avoided {}, max ap avoided {:.3} mm",
++            stats.made, stats.width_split, stats.avoided, stats.max_ap_avoided_mm
++        );
++        width_total += stats.width_split;
++        // The base: the same plan under the historical path-shape split.
++        let mut base = params(ClearingStrategy3d::Geodesic(options));
++        base.depth.depth_per_pass = TOP_Z - FLOOR_Z;
++        base.linking.step_split = Some(StepSplit::PathShape);
++        base.linking.keep_down_route = Some(KeepDownRoute::Off);
++        let (base_out, base_research) = plan(&mesh, &index, &base);
++        let base_r = read(&mesh, &base_out, &base_research.turns, false);
++        eprintln!(
++            "{label} shelf, path-shape base: {}",
++            summary(label, &base_r)
++        );
++        for line in &base_r.over {
++            eprintln!("  {label} base over: {line}");
++        }
++        let r = read(&mesh, &out, &research.turns, false);
++        eprintln!("{}", summary(label, &r));
++        for line in &r.screened {
++            eprintln!("  {label} screened: {line}");
++        }
++        for probe in &r.probes {
++            eprintln!("  {label} {probe}");
++        }
++        // The shelf over-loads under the historical rule too (G-FACESLAB:
++        // the 2D plan reads the shelf as stock in its slab, the 3D drape
++        // lifts the cut there). The stock-read split must add no over to
++        // the same plan under the path-shape split. Counted by MOVE: one
++        // place cut by one long move reads more samples than the same place
++        // cut by two short ones.
++        let (moves, base_moves) = (over_moves(&r.over), over_moves(&base_r.over));
++        if moves > base_moves {
++            failures.push(format!(
++                "{label}: {moves} moves over the exact bound {:.3} under the stock-read split \
++                 against {base_moves} under the path-shape split (exact peak {:.3}); the first: {}",
++                exact_bound(),
++                r.peak_exact,
++                r.over.first().map_or("", String::as_str)
++            ));
++        }
++    }
++    if width_total == 0 {
++        failures.push("no arm had a step the width read split on the shelf".to_owned());
++    }
+     assert!(failures.is_empty(), "{failures:#?}");
+ }
+ 
++/// The number of distinct moves in the over lines of a [`Readout`]
++/// ("move N …").
++fn over_moves(lines: &[String]) -> usize {
++    lines
++        .iter()
++        .filter_map(|l| {
++            l.split_whitespace()
++                .nth(1)
++                .and_then(|n| n.parse::<usize>().ok())
++        })
++        .collect::<BTreeSet<usize>>()
++        .len()
++}
++
+ /// One line per polygon of a stage of the C34 probe: the exterior's signed
+ /// area and each hole's signed area (mm²; CCW positive).
+ fn c34_stage(label: &str, polys: &[rs_cam_core::polygon::Polygon2]) {
+@@ -1706,11 +1826,32 @@ fn the_corridor_slots_run_at_the_reduced_feed() {
+         chains.lowest_factor,
+         chains.longest_move_mm
+     );
+-    assert!(chains.chains > 0, "the channel planned no corridor slot");
++    // §15.4: C22's exact match feeds a slot step first; the chain match
++    // takes only the steps it left unfed. So the anchors read every slot
++    // record, and both matches must leave none unfed.
++    let slots = &research.slots;
++    assert!(
++        !slots.turns.is_empty(),
++        "the channel planned no corridor slot"
++    );
+     assert!(
+-        chains.reduced > 0,
++        slots.turns.iter().any(|t| t.feed_factor < 1.0),
+         "no slot step needs a reduced feed: the fixture tests nothing"
+     );
++    assert_eq!(
++        slots.unfed, 0,
++        "slot steps that need a reduced feed and the exact match did not reach"
++    );
++    let chain_fed = chains.fed;
++    let exact_unfed_reduced = slots
++        .turns
++        .iter()
++        .filter(|t| !t.fed && t.feed_factor < 1.0)
++        .count();
++    assert!(
++        chain_fed >= exact_unfed_reduced,
++        "the chain match fed {chain_fed} steps of {exact_unfed_reduced} the exact match left"
++    );
+     assert_eq!(
+         chains.unfed, 0,
+         "slot steps that need a reduced feed and no move carries"
+@@ -1750,19 +1891,109 @@ fn the_corridor_slots_run_at_the_reduced_feed() {
+         )
+         .expect("the simulation is not cancelled");
+     // The slot moves by geometry: every point of the move within the chain
+-    // tolerance of one chain.
++    // tolerance of one slot loop. §15.4: the loops are built here from
++    // every slot record (fed by either match), consecutive records joined.
++    let mut loops: Vec<Vec<rs_cam_core::geo::P2>> = Vec::new();
++    for t in &slots.turns {
++        match loops.last_mut() {
++            Some(l)
++                if l.last()
++                    .is_some_and(|q| (q.x - t.from.x).hypot(q.y - t.from.y) <= 1e-6) =>
++            {
++                l.push(t.to);
++            }
++            _ => loops.push(vec![t.from, t.to]),
++        }
++    }
+     let on_chain: Vec<bool> = (0..tp.moves.len())
+         .map(|m| {
+             if m == 0 || !matches!(tp.moves[m].move_type, MoveType::Linear { .. }) {
+                 return false;
+             }
+             let pts = move_points(tp.moves[m - 1].target, &tp.moves[m], chains.tolerance);
+-            chains.chain_list.iter().any(|c| {
++            loops.iter().any(|l| {
+                 pts.iter()
+-                    .all(|&q| chain_distance(q, &c.pts) <= chains.tolerance)
++                    .all(|&q| chain_distance(q, l) <= chains.tolerance)
+             })
+         })
+         .collect();
++    // §15.6: the steps out of each straight plunge are departure records,
++    // still exempt from the ceiling but fed at the slot factor of their
++    // reading. No move along a departure window runs above its cap, and a
++    // reduced one carries a cap.
++    let departures = &research.departures;
++    eprintln!(
++        "channel: departure records {} (reduced {}), fed {}, unfed {}",
++        departures.turns.len(),
++        departures
++            .turns
++            .iter()
++            .filter(|t| t.feed_factor < 1.0)
++            .count(),
++        departures.fed,
++        departures.unfed
++    );
++    assert!(
++        departures.turns.iter().any(|t| t.feed_factor < 1.0),
++        "no plunge departure needs a reduced feed: the departure assert tests nothing"
++    );
++    assert_eq!(departures.unfed, 0, "departures that no exact move carries");
++    let mut departing_moves = 0usize;
++    for m in 1..tp.moves.len() {
++        let mv = &tp.moves[m];
++        let Some(feed) = mv.move_type.feed_rate() else {
++            continue;
++        };
++        let from = tp.moves[m - 1].target;
++        if !matches!(mv.move_type, MoveType::Linear { .. })
++            || (mv.target.x - from.x).hypot(mv.target.y - from.y) <= 1e-6
++        {
++            continue;
++        }
++        let pts = move_points(from, mv, chains.tolerance);
++        // On the departure windows: every point of the move within the
++        // tolerance of one of them (the emitter can join collinear windows
++        // into one move). Its factor: the lowest of the windows whose
++        // middle the move passes.
++        let near = |q: (f64, f64), t: &TurnRecord| chain_distance(q, &[t.from, t.to]);
++        if !pts.iter().all(|&q| {
++            departures
++                .turns
++                .iter()
++                .any(|t| near(q, t) <= chains.tolerance)
++        }) {
++            continue;
++        }
++        let segment = [
++            rs_cam_core::geo::P2::new(from.x, from.y),
++            rs_cam_core::geo::P2::new(mv.target.x, mv.target.y),
++        ];
++        let Some(lowest) = departures
++            .turns
++            .iter()
++            .filter(|t: &&TurnRecord| {
++                let mid = ((t.from.x + t.to.x) / 2.0, (t.from.y + t.to.y) / 2.0);
++                chain_distance(mid, &segment) <= chains.tolerance
++            })
++            .map(|t| t.feed_factor)
++            .reduce(f64::min)
++        else {
++            continue;
++        };
++        departing_moves += 1;
++        if lowest < 1.0 {
++            let cap = mv.feed_cap.expect("a reduced departing move carries a cap");
++            assert!(
++                feed <= cap + 1e-9 && feed <= p.feed_rate * lowest + 1e-9,
++                "departing move {m}: feed {feed} over its cap {cap} or over F x {lowest:.3}"
++            );
++        }
++    }
++    eprintln!("channel: {departing_moves} moves on departure windows");
++    assert!(
++        departing_moves > 0,
++        "no emitted move lies on a departure window"
++    );
+     let screen = sim_bound();
+     let mut hole: Option<(f64, f64)> = None;
+     let mut judged = 0usize;
+diff --git a/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs b/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
+index 8c09c9cb0..afebf59fd 100644
+--- a/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
++++ b/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
+@@ -71,6 +71,7 @@ fn ring_toolpath() -> Toolpath {
+             target: P3::new(start.x, start.y, SAFE_Z),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Linking,
++            feed_cap: None,
+         },
+         Move {
+             target: start,
+@@ -78,6 +79,7 @@ fn ring_toolpath() -> Toolpath {
+                 feed_rate: PLUNGE_RATE,
+             },
+             intent: MoveIntent::EntryPlunge,
++            feed_cap: None,
+         },
+     ];
+     for k in 1..=4 {
+@@ -90,12 +92,14 @@ fn ring_toolpath() -> Toolpath {
+                 feed_rate: CUT_FEED,
+             },
+             intent: MoveIntent::FinishingCut,
++            feed_cap: None,
+         });
+     }
+     moves.push(Move {
+         target: P3::new(start.x, start.y, SAFE_Z),
+         move_type: MoveType::Rapid,
+         intent: MoveIntent::Retract,
++        feed_cap: None,
+     });
+     Toolpath { moves }
+ }
+diff --git a/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs b/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
+index 30472a818..c5d4b7966 100644
+--- a/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
++++ b/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
+@@ -687,6 +687,9 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
+         // vertical-motion bound, not a chip-formation floor, so it does
+         // not answer rider 3 — the rubbing-floor clamp is still unnamed.
+         BindingConstraint::PlungeRate,
++        // C38 §15 (2026-10-26). A planner's per-move feed cap. It is a
++        // load-rule bound, not a chip-formation floor.
++        BindingConstraint::FeedCap,
+     ];
+     for v in all {
+         // Exhaustiveness guard: a new variant fails to compile here.
+@@ -697,7 +700,8 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
+             | BindingConstraint::PowerMax
+             | BindingConstraint::MachineMaxFeed
+             | BindingConstraint::KinematicReach
+-            | BindingConstraint::PlungeRate => {}
++            | BindingConstraint::PlungeRate
++            | BindingConstraint::FeedCap => {}
+         }
+         assert!(
+             !v.label().contains("rubbing"),
+diff --git a/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs b/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
+index fb4dc1c2c..04602014e 100644
+--- a/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
++++ b/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
+@@ -11792,6 +11792,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
+             target: P3::new(0.0, 0.0, 0.0),
+             move_type: MoveType::Rapid,
+             intent,
++            feed_cap: None,
+         };
+         assert_eq!(
+             classify_move(&rapid),
+@@ -11804,6 +11805,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
+         target: P3::new(0.0, 0.0, 0.0),
+         move_type: MoveType::Linear { feed_rate: 500.0 },
+         intent,
++        feed_cap: None,
+     };
+     for (intent, expected) in [
+         (MoveIntent::FinishingCut, MoveClass::Cut),
+diff --git a/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs b/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
+index 9668bd30f..1d3d5d015 100644
+--- a/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
++++ b/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
+@@ -82,6 +82,7 @@ fn straight_run(n: usize) -> Toolpath {
+                 MoveType::Linear { feed_rate: FEED }
+             },
+             intent: MoveIntent::FinishingCut,
++            feed_cap: None,
+         });
+     }
+     tp
+diff --git a/crates/rs_cam_viz/src/app/gpu_upload.rs b/crates/rs_cam_viz/src/app/gpu_upload.rs
+index 12829ceb1..c0f06d35b 100644
+--- a/crates/rs_cam_viz/src/app/gpu_upload.rs
++++ b/crates/rs_cam_viz/src/app/gpu_upload.rs
+@@ -702,6 +702,7 @@ mod tests {
+             target: P3::new(1.0, 2.0, 3.0),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(4.0, 5.0, -2.0),
+@@ -711,6 +712,7 @@ mod tests {
+                 feed_rate: 1000.0,
+             },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         let annotated = AnnotatedToolpath {
+             toolpath: tp,
+diff --git a/crates/rs_cam_viz/src/controller/results_parity_tests.rs b/crates/rs_cam_viz/src/controller/results_parity_tests.rs
+index 5c152e739..81b0fb7d0 100644
+--- a/crates/rs_cam_viz/src/controller/results_parity_tests.rs
++++ b/crates/rs_cam_viz/src/controller/results_parity_tests.rs
+@@ -131,16 +131,19 @@ fn worker_result_with_findings() -> ToolpathResult {
+         target: rs_cam_core::geo::P3::new(0.0, 0.0, 5.0),
+         move_type: MoveType::Rapid,
+         intent: rs_cam_core::toolpath::MoveIntent::Unknown,
++        feed_cap: None,
+     });
+     toolpath.moves.push(Move {
+         target: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
+         move_type: MoveType::Linear { feed_rate: 1000.0 },
+         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
++        feed_cap: None,
+     });
+     toolpath.moves.push(Move {
+         target: rs_cam_core::geo::P3::new(10.0, 10.0, -1.0),
+         move_type: MoveType::Linear { feed_rate: 1000.0 },
+         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
++        feed_cap: None,
+     });
+     let mut annotated = AnnotatedToolpath::new(toolpath);
+     annotated.spans = vec![
+diff --git a/crates/rs_cam_viz/src/render/toolpath_render.rs b/crates/rs_cam_viz/src/render/toolpath_render.rs
+index a266e2e01..8ce747194 100644
+--- a/crates/rs_cam_viz/src/render/toolpath_render.rs
++++ b/crates/rs_cam_viz/src/render/toolpath_render.rs
+@@ -1040,16 +1040,19 @@ mod tests {
+             target: P3::new(0.0, 0.0, 0.0),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(1.0, 0.0, 0.0),
+             move_type: MoveType::Linear { feed_rate: 100.0 },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(2.0, 0.0, 0.0),
+             move_type: MoveType::Linear { feed_rate: 100.0 },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         // Entry span covers move 1 only; default cut for move 2.
+         let spans = vec![Span::new(1, 2, SpanKind::Entry)];
+diff --git a/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs b/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
+index 4c48e2179..6d0f1d64d 100644
+--- a/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
++++ b/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
+@@ -56,6 +56,7 @@ fn mv(x: f64, y: f64, z: f64, move_type: MoveType) -> Move {
+         target: P3::new(x, y, z),
+         move_type,
+         intent: MoveIntent::Unknown,
++        feed_cap: None,
+     }
+ }
+ 

@@ -1,0 +1,233 @@
+
+running 7 tests
+iiiiigeodesic_local_oneway c37 joins: 1 pieces; arc joins 56, turns 35, over the bound 21, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 41 by join {"ClosedSeam": 4, "Mixed": 1, "OverBound": 23, "Start": 1, "Turn": 12}, by producer {"Clearing": 33, "ResidueMop": 1, "WallPass": 7}
+geodesic_local_oneway c37 re-entry Z 4.50 (-14.082, -8.883) Start Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-12.532, -20.383) Mixed Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.123, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (1.975, -9.383) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (3.543, -8.564) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (5.043, -7.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (6.263, -6.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (7.277, -5.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (8.250, -4.883) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (8.709, -3.383) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.543, -2.204) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.543, -0.538) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (9.543, 0.859) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.957, 19.703) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (2.662, 8.617) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (4.161, 8.617) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (16.118, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (19.854, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (23.819, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (27.823, -20.383) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.043, -0.954) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (20.543, 20.108) Turn Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.043, 4.676) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.043, 8.755) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.043, 17.342) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (30.043, -19.678) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.957, -14.807) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.957, -18.217) OverBound Clearing
+geodesic_local_oneway c37 re-entry Z 4.50 (-29.714, -20.383) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (30.456, -20.383) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (30.383, 20.457) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-30.383, 20.457) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-7.270, -5.026) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-4.983, 7.336) Turn WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (1.307, 8.773) OverBound WallPass
+geodesic_local_oneway c37 re-entry Z 4.50 (-9.457, -20.383) OverBound ResidueMop
+geodesic_local_oneway c40 entries: 44 by kind and cause {"LiftOver Some(Reentry2d)": 40, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 41, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_oneway opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_oneway turns: planned 35, cut 35, not cut 0, with a reduced factor 34 (lowest 0.359), longest 2.757 mm (bound 3.207); fed 35, unfed 0, full feed with no move 0
+geodesic_local_oneway: 2905 moves, 44 entries
+geodesic_local_zigzag c37 joins: 1 pieces; arc joins 56, turns 45, over the bound 11, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 36 by join {"ClosedSeam": 4, "Mixed": 2, "OverBound": 10, "Start": 1, "Turn": 19}, by producer {"Clearing": 29, "ResidueMop": 1, "WallPass": 6}
+geodesic_local_zigzag c37 re-entry Z 4.50 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.123, -20.383) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (0.161, -9.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (3.496, -8.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (6.043, -6.543) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (8.043, -4.640) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (9.043, -1.892) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (9.043, 0.929) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.957, 0.452) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-6.957, 5.767) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-4.334, 8.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-1.354, 9.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (1.396, 9.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (4.014, 8.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (6.407, 6.617) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (19.854, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (23.819, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (27.823, -20.383) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (20.539, 20.117) Turn Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.043, 8.755) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.043, 17.342) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.957, -14.807) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-27.791, -20.383) OverBound Clearing
+geodesic_local_zigzag c37 re-entry Z 4.50 (-29.714, -20.383) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.456, -20.383) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.424, -2.562) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (30.383, 20.457) OverBound WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-7.270, -5.026) Mixed WallPass
+geodesic_local_zigzag c37 re-entry Z 4.50 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_zigzag c40 entries: 39 by kind and cause {"LiftOver Some(Reentry2d)": 36, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 36, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_zigzag opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_zigzag: 1344 moves, 39 entries
+geodesic_local_oneway with the group filter at 15 mm: 5625 moves, 121 entries, 0 held links over standing stock
+geodesic_local_zigzag_v2 c37 joins: 1 pieces; arc joins 47, turns 42, over the bound 5, outside 0, head-on starts 44, zigzag returns 40; 2D re-entries 22 by join {"ClosedSeam": 4, "Mixed": 1, "OverBound": 8, "Start": 1, "Turn": 8}, by producer {"Clearing": 12, "ResidueMop": 1, "WallPass": 9}
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (4.161, 8.617) Turn Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.043, -19.678) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-24.382, -20.383) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-29.957, -18.217) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-29.957, 18.148) OverBound Clearing
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-30.457, -20.383) OverBound WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.456, -20.383) OverBound WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-4.983, 7.336) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (1.307, 8.773) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (8.577, -2.318) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (4.669, -7.502) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-2.932, -8.382) Turn WallPass
+geodesic_local_zigzag_v2 c37 re-entry Z 4.50 (-6.957, -20.383) OverBound ResidueMop
+geodesic_local_zigzag_v2 c40 entries: 25 by kind and cause {"LiftOver Some(Reentry2d)": 21, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 22, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_zigzag_v2 opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_v2 turns: planned 42, cut 42, not cut 0, with a reduced factor 41 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 42, unfed 0, full feed with no move 0
+geodesic_local_zigzag_v2: 3392 moves, 25 entries
+geodesic_local_zigzag with the group filter at 15 mm: 2505 moves, 118 entries, 0 held links over standing stock
+geodesic_local_zigzag_pick c37 joins: 1 pieces; arc joins 56, turns 45, over the bound 11, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 36 by join {"ClosedSeam": 4, "Mixed": 2, "OverBound": 10, "Start": 1, "Turn": 19}, by producer {"Clearing": 29, "ResidueMop": 1, "WallPass": 6}
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-14.082, -8.883) Start Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-12.519, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-10.894, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.144, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-7.332, -8.883) ClosedSeam Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-5.675, -6.883) Mixed Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.123, -20.383) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (0.161, -9.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (3.496, -8.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (6.043, -6.543) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (8.043, -4.640) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (9.043, -1.892) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (9.043, 0.929) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.957, 0.452) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-6.957, 5.767) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-4.334, 8.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-1.354, 9.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (1.396, 9.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (4.014, 8.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (6.407, 6.617) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (19.854, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (23.819, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (27.823, -20.383) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (20.539, 20.117) Turn Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.043, 8.755) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.043, 17.342) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.957, -14.807) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-27.791, -20.383) OverBound Clearing
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-29.714, -20.383) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.456, -20.383) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.424, -2.562) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (30.383, 20.457) OverBound WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-30.383, 20.457) Turn WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-7.270, -5.026) Mixed WallPass
+geodesic_local_zigzag_pick c37 re-entry Z 4.50 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_zigzag_pick c40 entries: 39 by kind and cause {"LiftOver Some(Reentry2d)": 36, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 36, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_zigzag_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_zigzag_pick turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_zigzag_pick: 1344 moves, 39 entries
+geodesic_local_spiral_pick c37 joins: 1 pieces; arc joins 56, turns 45, over the bound 11, outside 0, head-on starts 0, zigzag returns 0; 2D re-entries 32 by join {"CoreHandOff": 1, "Mixed": 2, "OverBound": 10, "Turn": 19}, by producer {"Clearing": 25, "ResidueMop": 1, "WallPass": 6}
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-7.332, -8.883) CoreHandOff Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-5.675, -6.883) Mixed Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-9.123, -20.383) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (0.161, -9.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (3.496, -8.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (6.043, -6.543) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (8.043, -4.640) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (9.043, -1.892) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (9.043, 0.929) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.957, 0.452) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-6.957, 5.767) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-4.334, 8.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-1.354, 9.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (1.396, 9.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (4.014, 8.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (6.407, 6.617) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (19.854, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (23.819, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (27.823, -20.383) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (20.539, 20.117) Turn Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.043, 8.755) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.043, 17.342) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.957, -14.807) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-27.791, -20.383) OverBound Clearing
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-29.714, -20.383) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.456, -20.383) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.424, -2.562) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (30.383, 20.457) OverBound WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-30.383, 20.457) Turn WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-7.270, -5.026) Mixed WallPass
+geodesic_local_spiral_pick c37 re-entry Z 4.50 (-6.457, -20.383) Turn ResidueMop
+geodesic_local_spiral_pick c40 entries: 35 by kind and cause {"LiftOver Some(Reentry2d)": 32, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 32, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_spiral_pick opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_spiral_pick core Z 4.50 seed (-18.46, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    raw over: (-9.144, -8.883) -> (-8.238, -8.883) r 9.312 -> 10.219, reading 0.5000 against 0.3626, Join, Clearing
+    hand-off: (-9.144, -8.883) -> (-7.332, -8.883) r 9.312 -> 11.125, length 1.813, raw over 0.8333; re-entries from r 8.812 to 11.312: 1 [(-7.332, -8.883) r 11.125]
+geodesic_local_spiral_pick turns: planned 45, cut 29, not cut 16, with a reduced factor 25 (lowest 0.365), longest 2.911 mm (bound 3.207); fed 29, unfed 0, full feed with no move 0
+geodesic_local_spiral_pick: 1331 moves, 35 entries
+geodesic_local_zigzag_v2 with the group filter at 15 mm: 6693 moves, 65 entries, 0 held links over standing stock
+geodesic_local_spiral_headon c37 joins: 1 pieces; arc joins 47, turns 42, over the bound 5, outside 0, head-on starts 44, zigzag returns 40; 2D re-entries 18 by join {"CoreHandOff": 1, "Mixed": 1, "OverBound": 8, "Turn": 8}, by producer {"Clearing": 8, "ResidueMop": 1, "WallPass": 9}
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-7.332, -8.883) CoreHandOff Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-5.675, -6.883) Mixed Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-9.164, 0.117) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (4.161, 8.617) Turn Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.043, -19.678) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-24.382, -20.383) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-29.957, -18.217) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-29.957, 18.148) OverBound Clearing
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-30.383, 20.457) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-30.457, -20.383) OverBound WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.456, -20.383) OverBound WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (30.383, 20.457) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-4.983, 7.336) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (1.307, 8.773) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (8.577, -2.318) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (4.669, -7.502) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-2.932, -8.382) Turn WallPass
+geodesic_local_spiral_headon c37 re-entry Z 4.50 (-6.957, -20.383) OverBound ResidueMop
+geodesic_local_spiral_headon c40 entries: 21 by kind and cause {"LiftOver Some(Reentry2d)": 17, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)": 1, "Plunge Some(Waterline)": 2}; drop of 1 mm or more by cause {"Some(Reentry2d)": 18, "Some(Start)": 1, "Some(Waterline)": 2}
+geodesic_local_spiral_headon opening Z 4.50 region 1: grown, no sweep; cell 0.500, nominal 0.550, measured before 0.2669, shortfall inset 0.2431, measured after 0.5100; closing excess 0.74 mm2 of 129.89 allowed
+geodesic_local_spiral_headon core Z 4.50 seed (-18.46, -8.88) radius 9.31 mm, 4 levels: 2D re-entries 0, 3D entries inside 0
+    raw over: (-9.144, -8.883) -> (-8.238, -8.883) r 9.312 -> 10.219, reading 0.5000 against 0.3626, Join, Clearing
+    hand-off: (-9.144, -8.883) -> (-7.332, -8.883) r 9.312 -> 11.125, length 1.813, raw over 0.8333; re-entries from r 8.812 to 11.312: 1 [(-7.332, -8.883) r 11.125]
+geodesic_local_spiral_headon turns: planned 42, cut 42, not cut 0, with a reduced factor 41 (lowest 0.326), longest 2.518 mm (bound 3.207); fed 42, unfed 0, full feed with no move 0
+geodesic_local_spiral_headon: 3379 moves, 21 entries
+.geodesic_local_zigzag_pick with the group filter at 15 mm: 2505 moves, 118 entries, 0 held links over standing stock
+test no_held_link_crosses_standing_stock_with_the_group_filter_on has been running for over 60 seconds
+geodesic_local_spiral_pick with the group filter at 15 mm: 2511 moves, 106 entries, 0 held links over standing stock
+geodesic_local_spiral_headon with the group filter at 15 mm: 6699 moves, 53 entries, 0 held links over standing stock
+.
+test result: ok. 2 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 81.03s
+
