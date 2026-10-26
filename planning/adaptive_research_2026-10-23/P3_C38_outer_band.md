@@ -2431,3 +2431,133 @@ where the run meets a window that is not a departure. Then:
 The P holds, at 0.2–0.3 moves per entry. With the default `path_shape`,
 the counts are 2585 / 966 / 3128 / 994 / 3156 at 49 / 47 / 28 / 43 / 24
 entries.
+
+## 16. Body only: the edges go to a separate contour pass (design, 2026-10-27; no code until the lead approves)
+
+**The ruling** (operator, 2026-10-27): the geodesic op clears the body
+only. The outer strip and the stock-edge band go to a separate contour
+pass, as in the operator's normal workflow.
+- The lead's renders (`phase3/fix23/why/`, c07fa8e4b) show that D33's
+  extra over-load against C35 is that edge work.
+- On Corne it is the outer ring at Z 11 / 5 / 0.5: 4028 against 2520 cut
+  samples over 0.471.
+- On wanaka200 it is the stock edges: 2792 against 2466.
+
+### 16.1 What to remove, and what to keep
+
+The test I apply: a part goes if it exists only to make the geodesic op
+cut the band. It stays if it keeps any plan correct (load, reach, feed)
+wherever the plan cuts.
+
+| Part (where) | Verdict | Why |
+|---|---|---|
+| Corridor opening and slots (`research_outer_band::corridor_opening`; the fallback in `research_slice_segments`; `SlicePlan.slots`, `TurnKind::Slot`, the slot summary) | **Remove** | It exists only for pieces with no centre clearance of R. On the fixtures those are the strip pieces: in D33, Corne op 1's openings are the 4 strip pieces per level, the copy op's are its strip, and wanaka's 6 are slivers that cut 0 slot steps. Without it, such a piece falls back to the agent as in C35. The agent cuts nothing there under the pass load (§2.3), and the contour pass takes it. A narrow body channel goes the same way. |
+| G-b (the plan judge in `plan_and_emit_region`; `RecordMark`, `planned_cut_mm`; the `!is_research_arm` in the F-038 gate of `clear_one_region`) | **Remove; the shipped F-038 forecast returns for the research arm** | G-b exists because the forecast was 0 in the strip corridors (§3.1). With no corridor, a strip region plans nothing, so G-b only adds a plan before the skip. In the body the forecast and G-b agree on regions over 15 mm. A body region that the forecast drops is under 15 mm, and the contour pass takes it as rest. `RecordMark` has no other user (only `clearing.rs:4240`). |
+| G-CLIPAIR, part (ii): `ResearchClip::restrict_regions` ADDS the centres outside the boundary whose disc meets the band stock | **Remove the addition; keep the clip to the boundary** | The addition is edge work: it makes regions over the band (the wanaka stock edges in the render). The clip to the boundary is needed: the planner's grid now holds band stock (part i), and without the clip the region finder would make regions there. |
+| G-CLIPAIR, part (i): the boundary clear keeps cells in boundary ⊕ R as stock (`adaptive3d/path.rs`, `boundary_reach`) | **Keep** | A body pass next to the boundary has its disc in the band. The band stock is there whether or not the geodesic op cuts it. With part (i) the planner reads that stock, so its pass-load reading and its held-link proofs are true. Without it, the plan ploughs stock it reads as air (§11.1). The band now stands until the contour pass, so this matters more, not less. |
+| Stock-box clip (`clip_to_stock_box`) | **Keep** | A grown outline must not reach past the stock box. That is reach correctness for any outline, body or not. |
+| Centre clip (`clip_to_centre_reach`) | **Keep** | It holds the C31 grow inside the op's centre containment + R (§13.7). Without it, a body outline at a non-wall edge (§5) is planned past the op's own boundary. |
+| C31 grown outlines | **Keep** | The grow takes the body to the part walls. That is body work. At edges that are not walls, the centre clip bounds it. |
+| Feed cap (`Move::feed_cap`) | **Keep** | It is generic and shipped-neutral. It keeps the turn and departure feeds through the dressups. |
+| Departure records (`TurnKind::Departure`, the §15.8 groups) | **Keep** | Body plans plunge too. D33 Corne op 1 has 2537 departure windows cut, and most of them are in the body. A departure from a straight plunge is the full slot the operator ruled against, wherever it is. |
+| Held-link disc proof (C22a) | **Keep** | It is correctness of the keep-down links in the body. |
+| Chain match with level (`unfed_chains`, `apply_chain_feeds`) | **Keep** | It feeds the departure runs that the RDP joins (§15.8). After the slot removal it takes departures only. |
+
+**The code this needs** (research arm only; shipped byte-identical):
+1. Remove `corridor_opening`, `closed_steps` and the slot plumbing.
+   `TurnKind` keeps `Turn` and `Departure`. The slot summary and the slot
+   line go. The departure index starts after the turns.
+2. Remove G-b: the gate in `clear_one_region` treats the research arm as
+   it treats the shipped arms. Remove `RecordMark` and `planned_cut_mm`.
+   The stock-box and centre clips stay on the C31 chain.
+3. `restrict_regions` keeps its first loop (clear the band cells out of
+   the region grid) and drops the second (add centres whose disc meets
+   the band).
+4. Tests:
+   - The channel test becomes a body-only test. The channel is a corridor
+     (half width 4.8 mm), so the geodesic op cuts nothing in it, and it
+     records no slot.
+   - The departure asserts move onto a plain C12 fixture, where the field
+     plans and plunges.
+   - The slot asserts go.
+
+### 16.2 The contour pass: a job change, no code
+
+**The op.** A copy of op 1 (same tool, stepover, Depth/Pass, boundary and
+containment), with these changes:
+- `clearing_strategy = "contour_parallel"`;
+- `stock_source = "from_remaining_stock"`;
+- it is placed right after op 1.
+
+So it is a rest rough with the operator's own strategy:
+- **Why rest, and not a band boundary:** 3D Rough plans on its own dexel
+  stock, seeded from the remaining stock (`RestUse::Planner`,
+  `compute/catalog/capabilities.rs`). Its regions come from the material
+  grid (`detect_and_order_regions`). So it plans only where op 1 left
+  stock: the strip, the stock-edge band, and any body residue (narrow
+  channels, regions under 15 mm). No band geometry has to be drawn. The
+  boundary is op 1's, so its reach equals CP alone's.
+- **Why `contour_parallel`:** the research env variable switches
+  `agent_search` ops only, so this op stays CP in a research run.
+  `min_region_cut_length_mm` acts on AgentSearch only, so CP plans every
+  rest region.
+- **The copy op** (Corne, 3 mm, rest; §7.2: its regions are the outer
+  strip again) is edge work. In the new job it is `contour_parallel` too.
+  The geodesic arm then runs on op 1 only. This makes CP alone the clean
+  control: the only difference is "op 1 CP" against "op 1 geodesic body +
+  a CP rest op".
+
+**New job files** (saved under new names; the old files do not change):
+- `planning/corne_case_analysis_2026-09-18/corne_job_corrected_c12_body_cp_edges.toml`:
+  op 1 `agent_search` (the arm), then the new op "3D Rough 1 (edges, CP
+  rest)", then the copy op `contour_parallel`. The waterline is skipped as
+  now (`--skip`, with its index moved by one).
+- `planning/multitool_2026-08-23/wanaka200_mt1_c12_rough_only_body_cp_edges.toml`:
+  "2 Back Rough" `agent_search`, then "2 Back Rough (edges, CP rest)",
+  6 mm, the same boundary (silhouette, inside, 0).
+
+**Risk:**
+- The CP rest op sees the strip as a region of its own, about 3 mm wide in
+  tool-centre space at Z 11 / 5 / 0.5.
+- CP alone cuts the same ground inside its full levels, but how CP plans a
+  thin stand-alone region has not been measured.
+- If the CP rest op leaves the strip, the job change is not enough
+  (falsifier F2 below).
+
+### 16.3 How we measure (pre-registration; D34 = §16.1 code + the two new jobs)
+
+Runs, on Corne and wanaka200:
+- **(A) body:** the new job with the CP rest op disabled. Only op 1
+  differs from C35.
+- **(B) body + edges:** the new job in full.
+- **(C) CP alone:** the existing `*_contour_parallel.toml`, on the same
+  tree.
+- **D33:** from `fix23/default`.
+
+The tools are the fix23 scripts: `load_split.py`, the audit and
+`feed_check.py`. The band uses the fix17 stock-map method
+(`band_3_9_mm2`, mm² of stock over 0.8 mm, 3–9 mm outside the
+silhouette).
+
+| # | Claim | Measure | P |
+|---|---|---|---|
+| P1 | Op 1 does no edge work | op 1 cut samples over 0.471 at Corne Z 11 / 5 / 0.5, 3–6.2 mm outside the wall (`feed_check` strip mask) | (A) **0**. D33 has 630 samples over 0.471 at Z 0.5 and 554 at Z 11, all of op 1's overs at those levels and mostly the ring (render title). The strip-mask count of D33 is read with the same script. |
+| P2 | Op 1's over-load is C35's, not D33's | op 1 cut samples over 0.471 (`why.py` count) | Corne (A) within ±15 % of C35's 2520 (D33 4028). wanaka (A) within ±15 % of 2466 (D33 2792). Confounders that can move it: C22's Part A/B and the default step split. |
+| P3 | Op 1 leaves the band that C35 left | band after op 1 | Corne within ±15 % of C35's 1951 mm² (C35 = op 1 + copy op on the arm; the copy op cut nothing in the strip, §7.2) |
+| P4 | The CP rest op clears the band as CP alone does | band after (B) | ≤ CP alone + 100 mm² (CP alone: 63) |
+| P5 | The edge load is CP's own | over-0.471 length of the CP rest op in 0–9 mm outside the silhouette (Corne) and in 0–9 mm of the stock edge (wanaka), against CP alone's op 1 in the same mask | within ±20 % |
+| P6 | The body keeps its gains | plunge share and turns > 30° of op 1 | (A) not above D33's (Corne 28.6 %, 1094; wanaka 48.0 %, 370) |
+| P7 | Cycle | the summary's total cycle | (B) < D33 (Corne 3165 s, wanaka 3403 s). The strip runs at full feed in CP, not as slots at F × 0.22. No P against CP alone (2022 s, 5750 s): that is what we measure. |
+| P8 | Hard bars | rapid collisions, fed-link and deeper-than lines, refusals | no worse than D33 per op; the CP rest op no worse than CP alone |
+
+**Falsifiers:**
+- **F1:** (A) still cuts the strip at Z 11 / 5 / 0.5. Something other than
+  the corridor cuts it, so §16.1's list is wrong.
+- **F2:** (B)'s band is more than CP alone + 100 mm². The CP rest op does
+  not plan the stand-alone strip, so a code change in CP rest is needed.
+- **F3:** P2 fails high. The body over-load has a cause other than the
+  edge work, and the lead's reading of the render does not hold alone.
+
+**Other strategies:** the contour pass needs no new code, so any body
+strategy can use it, contour_parallel included (as a band-only rest after
+a finer body op). The parts kept in §16.1 stay generic, as they are now.
