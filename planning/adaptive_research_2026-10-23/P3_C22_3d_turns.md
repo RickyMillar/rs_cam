@@ -2558,3 +2558,101 @@ D20 is the fix7 `zigzag_pick` run, C35 the fix12 `spiral_pick` run.
 **What follows for C37 / D23:**
 - The D23 2D re-entry classes on wanaka should show the Z 8.62 hops as NOT 2D re-entries, if my reading of item 1 is right.
 - If they are 2D re-entries, my reading is wrong, and the 2D plan at Z 8.62 differs between the arms in a way I have not found.
+
+## 14. C22a design: held links over ground that the F-038 filter dropped (2026-10-26)
+
+DESIGN ONLY. No code until D23 is done and the lead approves. Input: C38
+§9.4 (committed 382b4b8e7) and the D22 run in `phase3/c38/corne_c38a`.
+
+### 14.1 The cause, by the code order
+
+In `plan_one_outline` (research arm, `KeepDownLinks::WithinPassLoad`):
+1. **The research cleanup** (`slice_cleanup` → `cleaned` →
+   `apply_residue_mop_cleanup_turns`) ends its own short-cut filter with
+   `replay_kept_segments` (`adaptive/path.rs:641`, called at :1823). That
+   replay walks the kept plan again on a fresh grid:
+   - every `Link` is judged again on the grid of that moment, and a refused one becomes a `Rapid`;
+   - every `Cut` is re-walked under the pass load, so a cut that stood on material a dropped cut had cleared is split where it would overload.
+   The doc comment states the rule: "a cut the filter left standing on
+   material a dropped cut had cleared is split where it would overload".
+2. **Then the 3D F-038 group filter** (`clearing.rs:2500–2575`) drops each
+   group (a run from one `Rapid` to the next) that cuts less than
+   `min_region_cut_length_mm`. The copy op dropped 509 of its 610 groups.
+   **No replay follows.**
+3. **`HeldLinks`** emits each `Link` as a keep-down link at the level after
+   a Z-only check. The sink stamps it.
+
+So the 3D filter is a second short-cut filter that skips the step the 2D
+cleanup applies after its own filter. A `Link` admitted over a dropped
+group's ground is now a link through stock: the D22 bar, 301 link samples
+on 193 moves, up to 15.43 mm. The same holds for a `Cut` after the
+dropped group. The replay read its load with the dropped group's stamps
+in the grid, so it can now cut the dropped group's stock at more than the
+ceiling. The links show it first because a link has no load reading in 3D.
+
+### 14.2 Which fix is right at the cause
+
+- **"Run the group filter before the replay": not possible as stated.**
+  The groups ARE the replay's output: each `Rapid` that splits a group is
+  a refusal of the replay. Before the replay, a piece is mostly one group,
+  and the filter has nothing to judge.
+- **The stock test at emission (C38 §9.5 item 1): a guard, not the fix.**
+  It turns the bad links into entries. It leaves the cuts of 14.1 admitted
+  on ground that was never cut, and it hides the divergence instead of
+  closing it.
+- **The fix at the cause: replay after the filter, the rule the 2D cleanup already follows.**
+  - In the research arm, after the F-038 filter drops one group or more, the kept plan goes through `replay_kept_segments` again, with the same grid set-up and the same `LinkLoad` (the turns and slots included) as the cleanup's replay.
+  - Links over dropped ground are refused there (→ `Rapid`), and cuts over it are split under the pass load.
+  - The new `Rapid`s make new groups, so the filter runs again on the replayed plan. This repeats until no group drops.
+  - The loop ends: each round drops at least one group or stops, and the number of groups is finite. In practice I expect one or two rounds.
+  - **The code:**
+    - one `pub(super)` wrapper in `adaptive/path.rs`, `replay_filtered(polygon, params, segments, measure, turns)`. It holds the set-up lines of :1800–1822 and the call. It is new code that no shipped path calls, so shipped output stays byte-identical.
+    - a `pub(crate)` door in `research_geodesic.rs`;
+    - the loop around the F-038 block in `plan_one_outline`, under `cfg(feature = "research")` and `KeepDownLinks::WithinPassLoad` only.
+  - **The F-038 block itself:** I would move it into one function that both arms call, so the loop does not copy it. It is shared code (C12 edits next to it), so I coordinate with C12 first.
+  - No new constant. The replay is the existing one, and the bound and the threshold are the existing ones.
+- **C38 §9.5 item 2 (no F-038 group filter inside a research region) also
+  fixes the cause.** With no filter, the plan the replay read is the plan
+  that goes out. It costs every short group its entry (up to 509 in the
+  copy op, plus 37 per level in op 1's strip). Filter-then-replay keeps
+  the filter's saving, and it costs only the links and cuts that really
+  crossed dropped ground. Both are correct, so the choice is a cost
+  question. The lead decides; my design is filter-then-replay.
+- **No stock test at emission now.** After the fix the 2D grid is the
+  emitted plan, and a 2D grid starts full, so a held link that the replay
+  admits crosses ground the emitted plan cut. If the counter below reads
+  more than 0 after the fix, a third divergence exists, and the guard is
+  then the right extra step.
+
+### 14.3 The sentry
+
+- **The invariant, measured where it can break:** a counter in the research
+  record. `HeldLinks` emission reads the PLANNER stock along each held
+  link's swath, using the test `plan_entry` makes:
+  `max_conservative_top_z_in_disc` against the level plus
+  `stay_down_clearance_mm`, at each held point. The counter counts the
+  links that read stock there. Research only, recorded in `Research3d`,
+  with one `info` line per offending link for CLI runs. It changes no move.
+- **The test:** a fed link must not remove stock in a research run.
+  1. A lib test in `research_geodesic` that builds the case in 2D:
+     - a plan of three groups: a group cut A of 1 mm (under the threshold), a `Link` across A's ground, and a cut B;
+     - run the research filter-and-replay;
+     - assert that the link became a `Rapid` and that no step of B reads over the ceiling on the replay grid.
+     It needs no 3D.
+  2. The C12 heavy test sets `min_region_cut_length_mm > 0`, so the
+     filter runs. For every research arm it asserts:
+     - the held-link stock counter is 0;
+     - no link move removes more than the volume quantum in the dexel simulation, the D22 bar's rule.
+
+### 14.4 Pre-registration (P; base D23 if it lands first, else D22 c38a)
+
+- **Corne copy op:**
+  - The D22 bar: 301 samples on 193 moves → **0**. The held-link stock counter: **0**.
+  - Copy-op entries: **+50 to +200**. The at most 193 refused links become `Rapid`s, some cuts split, and the second filter round drops some of the new tiny groups.
+  - Copy-op cut length: **−0 to −5 %**.
+- **Corne op 1:**
+  - D20 had 0 bar samples, so the change is small: entries ±20, over-load 0.471 within ±2 %.
+  - If the G-b judge (C38) has replaced the F-038 filter in research regions, op 1 does not change at all.
+- **wanaka200:** entries within ±1 %, cycle within ±1 %. The filter drops few groups there.
+- **The replay rounds:** at most 2 per outline on both fixtures. More than 3 means the filter and the replay feed each other, and I report it.
+- **If the counter is > 0 after the fix:** a third divergence exists. Then I add the emission guard of §9.5 item 1, with its own count.
