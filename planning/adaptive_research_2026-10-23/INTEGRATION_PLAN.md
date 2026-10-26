@@ -485,3 +485,19 @@ rule says delete, not archive, for obsolete material only.
 **Operator decisions:** Q10. Which of items 1–5 does the GUI show, and
 which only the CLI and MCP give? Q11. Is the 0.8 mm band threshold replaced
 by the coverage bar (leave + one cell)?
+
+## 7. Lead defaults for Q1–Q11 (2026-10-27)
+
+The operator delegated these questions to the lead ("I think you know better"). Each default holds until step 0's measurements or the operator change it.
+
+- **Q1.** Yes. The per-strip L (`mrr_cross_section_mm2` summed per strip, over the same at a full pass) is the one load definition for the planner, the sim report and the judges. It moves into `tool_load/`. The app reports it.
+- **Q2.** One derived allowance for a level side link: Depth/Pass + one planner cell, in the planner and the triage alike. The typed 0.5 goes. Step 0 measures what this changes on CP before step 2 ships it.
+- **Q3.** Yes, but only with the reduced feed and the feed cap. An exempt move without a cap is not allowed. It ships per strategy after step 0 shows that the strategy has such moves.
+- **Q4.** Yes. G-CLIPAIR goes to CP first (step 3), after step 0 shows how much of CP's deep cuts and rapid collisions it explains.
+- **Q5.** AgentSearch stays until the geodesic arm ships, then it is marked legacy (not deleted) in the GUI and MCP. The arm ships as body-only, and the GUI offers "geodesic body + CP edges" as one template.
+- **Q6.** Yes. `StepSplit` (Part A) and its readers are deleted in step 7, unless D34 shows a use for it.
+- **Q7.** Not yet. The router runs at the cut feed. The low rapid waits for C21's acceleration-aware comparison (C42c) and a derived clearance.
+- **Q8.** Step 7 measures the arm with and without the C28/C29 replay pick on both fixtures. The pick ships only if it wins by more than the run-to-run noise on load or cycle, because it doubles the plan work.
+- **Q9.** Name: **Geodesic Adaptive**. "Geodesic" alone could be read as a finishing strategy, which some other CAM packages use the word for. "Adaptive" says it is a constant-engagement roughing strategy. Visible parameters are the usual roughing ones: tool, stepover, Depth/Pass, feeds and boundary. The research options stay hidden.
+- **Q10.** The GUI shows a short summary per op: the length over the load bound, the plunge count, and a smoothness reading. The full tables stay in the CLI and MCP.
+- **Q11.** Yes. The coverage bar (leave + one cell) replaces the 0.8 mm band threshold, because it is derived.
