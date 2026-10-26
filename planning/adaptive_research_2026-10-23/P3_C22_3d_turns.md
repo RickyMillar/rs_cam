@@ -3252,7 +3252,7 @@ If every `cut_to` there is at or above 18.0, the planner never cut the cell to 1
 
 ### 16.14 D31: the wanaka over-load rise is not on the steps A keeps; it sits where D26 plunged (2026-10-27; read only)
 
-Scripts in `phase3/fix22_d31/c22/` (the D31 run directory):
+Scripts in `phase3/fix22/c22/` (the D31 run directory):
 - `d31_rise.py` writes `d31_rise.json`;
 - `nearA_new.py` writes `nearA_new_wanaka200.json`;
 - `assert_c22_16_14.py` asserts each number below.
@@ -3299,3 +3299,69 @@ This is a reading of place, not a controlled test. D26 and D31 also differ by th
 3. **A cheaper bore than a lift.** At a kept-down descent foot whose next pass meets left stock, the lift-and-plunge gave a full-depth bore. A kept-down entry could cut the same disc without the lift (a fed bore at the foot, a helix of radius 0 at the step bottom). That is the Part B family ("never the entry's cut"). It would cost seconds where the planner stock shows the left stock, not at every step.
 
 The operator ranks load-held first and cycle second. Until (1) and (2), my recommendation for the research arm is the path rule (A off), with Part B's keep-down travel kept. A holds the load on its own steps (36 mm), but by removing the plunges it shows load that only G-FACESLAB's fix removes.
+
+## 17. G-FACESLAB: the 2D slice plan reads the stock that the drape leaves (design note, 2026-10-27; no code)
+
+Scripts: `phase3/fix22/c22/drape_left.py` (writes `drape_left.json`) and `assert_c22_17.py` (asserts each number below).
+
+### 17.1 What the defect is, measured
+
+- **All of wanaka's D26 over-load (2222.8 mm over 0.471) is on the terrain level** (Z 8.62, draped; the 19.54 and 14.08 levels have none). On that level, nearly every pass is lifted onto the terrain.
+- For each terrain-level clearing sample, the probe takes the highest EARLIER clearing sample of the same level within 2R. If that earlier tip stood more than the job tolerance (0.1 mm) above this sample's tip, the class is "an earlier pass above":
+
+| D26, terrain level | an earlier pass above | none above | over rate |
+|---|---|---|---|
+| over 0.471 | 2144.4 mm (96.5 %) | 78.4 mm | |
+| not over | 8580.1 mm (53 % of not over) | 7633.7 mm | |
+| over rate | 20 % | 1.0 % | 20× |
+
+- **Reading.** A draped pass rides on the highest ground under its disc. On the lower side of the disc it cuts nothing below its tip, and leaves a wedge there. The 2D plan marks the whole disc as cleared. A later pass at a lower tip meets that wedge on its side, across most of its disc, so the over-load follows. The shelf face of §16.11 is the same defect at a vertical step: the passes over the shelf are lifted, and the floor band beside it stays uncut.
+- D26 over by axial engagement: 1283.6 mm deeper than 3 mm; 791.5 mm at 2 mm or less (thin wedges).
+- D31 has the same structure (2754.5 mm in the "earlier pass above" class).
+
+### 17.2 Why no step rule and no wall rule can fix it
+
+- **A step rule (§16):** the load is not on the step (§16.14).
+- **A wall rule** (read a face as a wall at its level): this works only where a face is vertical. Terrain has no walls. On a slope every pass leaves a wedge.
+- **A rule that "clears a cell only to zero":** on a slope with a flat end mill, a pass clears only the cells within `tol / slope` of the rim on its high side. If the 2D grid stays binary and clears a cell only when nothing is left, every cell on a slope stays "material", and the plan cannot finish the level.
+
+So the 2D plan must know the height of the stock, not only whether stock is there.
+
+### 17.3 The design: a slab-height 2D grid (generic, in the 2D engine)
+
+One shared part: **`SlabField`**. It is an optional input to the 2D adaptive engine (`adaptive/material_grid.rs`, `adaptive/search.rs`), built by the 3D slice for one region at one level. 2D operations do not pass it, so their output stays byte-identical.
+
+1. **The grid holds a top per cell, not a flag.** `top(c)` is the stock top in the slab at cell `c`. At the start of a region it is the planner's 3D stock (`TriDexelStock` Z grid) at `c`, clamped to the slab top. A cell with `top(c) <= tip(c) + tol` holds no material for this level, where `tip(c)` is the tool tip at centre `c` (`level_floor_z(surface_hm(c), leave, z)`, the read `lift_to_level` already uses).
+2. **A stamp lowers the tops to the tool.** A step from centre `p` with tip `tip(p)` sets `top(c) = min(top(c), tip(p) + h(|p - c|))` for each cell in the swept disc. `h` is the cutter's radial profile (the LUT the 3D stamp uses; 0 for a flat end). A lifted pass therefore leaves the wedge in the grid, as it leaves it in the stock.
+3. **The engagement read counts the material that the tool cuts at its own height.** A step from `p` engages cell `c` only if `top(c) > tip(p) + h(|p - c|) + tol`. The swept width, the area and the pass-load ceiling (0.3626 at s 2, R 3) then read the same way as now. On flat ground, `tip` is the level everywhere, and the read is the binary read of today.
+4. **What the plan then does.** A step down a slope meets the wedge of the pass above it and reads wide, so the direction search refuses it. A step UP the slope meets only fresh stock (its tip is above every wedge below it), and reads at the stepover. So the plan climbs a slope pass by pass, and a slope gets no side cut into a wedge. Beside the shelf face, the floor band keeps its top until a pass at the level cuts it. The next pass there reads that band, and the plan adds the passes the band needs.
+- `tol` is the job's tolerance (the drape and the RDP read it). No new constant.
+
+**Where each part lives, and who uses it:**
+- 2D engine (`adaptive/`): the grid, the stamp and the read. The 3D slices of AgentSearch, ContourSpiral and Adaptive, and the research arm, all reach the engine through `clear_z_level_agent_2d_slice` or `clear_z_level_adaptive`. Each adopts the field in its own byte-parity step. The research arm adopts it first.
+- `research_geodesic.rs`: the replay (`pass_load_readout`) reads the same grid, so the turn and slot records read the wedge with no extra code.
+- ContourParallel (the operator's roughing baseline) does not plan by engagement. It can use the same field later to find the band that its draped rings leave, and cut it at the level. That is a separate design.
+- The 3D stamp (`stamp_emitted_segment`) is unchanged. The field is the 2D image of what the 3D stamp does at one level.
+
+**Cost:** one f32 per 2D planner cell, and one heightmap read per stamped centre. The planner already reads the heightmap at each lifted point.
+
+### 17.4 How to measure it (pre-registration for the build)
+
+1. **Shelf fixture** (`the_width_read_splits_a_wide_draped_step`, path rule): base over samples 5 (oneway) and 7 (spiral_pick).
+   - P: the long-side overs (y ≈ ±15.8, 5 moves) go to 0.
+   - The 7 mm island–shelf gap has no tool-centre width at the level when the gap is narrower than 2(R + leave). The field then reads it as material that no centre can reach. P: the plan does not cut it at full feed. The test reports it apart as "unreachable at the level".
+2. **A new sloped-plane test** (a tilted plane, a flat end mill, one level): today each pass meets the wedge of the pass before it.
+   - P: 0 samples over the exact bound with the field.
+   - The plan climbs: each pass's tip is at or above the tip of the pass before it, within its disc.
+3. **Wanaka and Corne fixtures** (research arm, A off):
+   - P: the "an earlier pass above" over class (wanaka D26 2144 mm) falls by at least the part deeper than 3 mm (1284 mm). The probe in `drape_left.py` reads it.
+   - The cycle cost is not predicted. The plan adds passes where wedges stand. The fixture measures the cost against D26 and D31.
+4. **Byte parity:** 2D operations and every shipped 3D strategy are unchanged until their adoption step (`adaptive3d_emission_byte_parity`, the harness).
+
+**Expected effect on wanaka's D26 2223 mm:** up to 2144 mm (96.5 %) is in the class that the field reads. It does not reach the 78 mm with no earlier pass above, or the planner/sim cell differences. I do not predict a number below that bound before the sloped-plane test runs.
+
+### 17.5 Open points for the lead
+
+- The 2D replay that C12's slot and turn feeds read changes with the field. The turn and slot counts then change. This is expected, but it is a change.
+- Thin wedges (791 mm at 2 mm or less of axial engagement in D26) count fully in the sim's woc, as they do now. If the operator wants a thickness-weighted load instead, that is a load-model decision, not a part of §17.
+- Fed bore at a descent foot (§16.14 (3)): parked, as ruled. With the field, a descent foot reads as a wedge like any other, so the bore is not needed.
