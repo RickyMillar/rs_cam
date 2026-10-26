@@ -1949,3 +1949,112 @@ channel shows that the marker changes more than the records: 59 → 167
 moves, because the replay and the cleanup treat an unmarked plan
 differently. So D23's slot geometry (band 455, op 1 1468 s) came from the
 unmarked variant. D27 measures the marked one.
+
+## 15. D29 v4: why the slot feeds do not reach the cut, and why my chain count says "unfed" (2026-10-26)
+
+Read only. `phase3/c38/d29_why/` holds `extract.py` (the a_only Corne
+simulation), `strip_feed.py`, `longmoves.py` and `assert_d29.py` (prints
+`ASSERTS OK`).
+
+### 15.1 Two counts disagree, and the simulation says neither feed survives
+
+| Op 1, Corne D29 a_only | Source | slot steps | fed | unfed |
+|---|---|---|---|---|
+| C22 summary, exact match, `kind="slots"` | the adaptive3d toolpath, before the dressups | 2561 | 2561 (reduced 1983) | 0 |
+| C38 slot chains, my chain match | the same toolpath | 2561 | 444 | 1604 |
+| the simulation of the exported program | after the dressups | — | — | see below |
+
+On the simulated program, at the strip levels (Z 11 / 5 / 0.5, centres
+3–6.2 mm outside the wall), there are **6939 clearing samples**:
+- **6924 at F 4000**, 9 at 1519 and 6 at 750;
+- **1895 read over c = 0.219, all at F 4000**;
+- **1554 read over the oracle bound 0.369, all at F 4000**.
+
+Their moves are 0.3–1.18 mm long (p10 / p90), the size of one slot step,
+so these are the slot moves themselves, not merged moves.
+- Over all of op 1's clearing cuts the simulated program has only three
+  feeds: 4000, 750 and 1519. No slot factor feed (F × 0.17 … F × 1)
+  survives.
+- The copy op is commanded at F 2429, yet 15477 of its clearing samples
+  run at 3137 and 8075 at 4000.
+
+### 15.2 Cause 1: the feed modulation dressup rewrites the planner's reduced feeds (this is the over-load)
+
+The CLI runs have `adaptive_feed_modulation: true`, `ConstrainedMax`
+(`summary.json`). In `dressup/feed_modulation.rs` (`ConstrainedMax`, about
+:969), `new_feed = max_safe_feed_for_move(engagement, band, ctx,
+predicted_cap)` is computed from the simulated engagement and the
+chipload band. The commanded feed is read only when the move has no
+engagement.
+- So a move that the planner lowered to `F × c/w`, because its width is
+  over the load ceiling, is raised again to the chip-load limit. The
+  machine ceiling, 4000, caps it.
+- The chip load does not see the pass-load (force) rule that the slot
+  ruling is about.
+
+**This defeats every research reduced feed in a CLI run: slots and C22's
+turns alike.** The C22 and C38 summaries are computed before the
+dressups, so they cannot see it. The channel test passes because it reads
+the adaptive3d output directly, with no dressup. D23's unfed slots (§10.1)
+were very likely this as well: in D23 the merge was there too, but the
+modulator alone would have raised the feeds.
+
+**The over-load C22 asked about:** op 1 alone has 1554 strip samples over
+the oracle bound at F 4000 (about 466 mm of path at 0.3 mm per sample).
+- These are counted, ruled over-ceiling steps that run at full feed
+  instead of `F × c/w`.
+- The copy op has the same mechanism. Its clearing cuts run above their
+  commanded 2429.
+
+### 15.3 Cause 2 (the count only): my chain match has no level, so it crosses levels
+
+- **Why it crosses levels:** on Corne the strip has the same XY at Z 11,
+  5 and 0.5. Op 1 has 12 chains: 3 levels × 4 pieces.
+- **What happens:** a later non-slot move at one level (a wall pass or
+  waterline along the strip, up to 55.8 mm long) lies within `d` of the
+  NEXT level's chain. That chain is still fresh, so the move is lowered
+  (wrongly) and consumes it, and the cursor jumps ahead.
+- **The result:** the next level's own slot moves find their steps
+  consumed. The skipped chains count as "unfed", and some long non-slot
+  moves are lowered.
+- **The design said so, the build did not:** §13.2 rule 4 named the level
+  ("at the record's level"). I built it as a plan-order cursor alone,
+  because the records carry no Z (§13.9). On the channel each level's
+  chain was matched before any retrace, so the test did not see it.
+- **What it costs:** the 1604 "unfed" is this counting error. The exact
+  match fed every one of those steps before the dressups.
+
+### 15.4 The fix
+
+1. **(The over-load, generic: a feed set by a load rule is a ceiling for
+   every later stage.)**
+   - The modulator must not raise a move above a feed that the planner
+     set from a load rule. `new_feed = new_feed.min(commanded)` for
+     those moves.
+   - Generic form (§13.8): a per-move `feed_cap` (`Option<f64>`) on the
+     toolpath. The planner writes it for each turn and slot move, and
+     every feed dressup reads `min(own, feed_cap)`.
+   - The cheapest research-only form: the research arm hands the
+     modulator the lowered moves (indices or caps), as Stage 4 already
+     hands it `planner_engagement` / `predicted_cap`. The modulator caps
+     those moves at their commanded feed.
+   - **Where:** `dressup/feed_modulation.rs`, which is shipped code. With
+     no caps handed in, shipped output stays byte-identical, because no
+     shipped planner writes a cap.
+   - **P:** on Corne the 1554 over-bound strip samples at full feed → 0,
+     and the strip samples carry `F × c/w` (0.17–1.0 of F).
+2. **(The count) Give the chain match a level, and run it only where the
+   exact match failed.**
+   - `SliceTurns` gains `levels: Vec<f64>`, one per record, pushed by
+     `add` with the slice's `z_level` (C22's struct and call: one more
+     argument).
+   - `FeedChain` gains `level_z`. A move matches a chain only when both
+     ends lie in `[level_z, level_z + depth_per_pass)`. A level's moves
+     drape at or above it and below the level over it.
+   - The chain match runs AFTER C22's exact match, on the slot records
+     the exact match left unfed (`TurnRecord::fed == false`). Where the
+     merge does not join steps (Corne), it then has nothing to do and
+     lowers nothing.
+   - **P:** Corne "C38 slot chains" unfed 1604 → 0 (op 1), 2130 → 0
+     (copy op); moves lowered by the chain match → only merged slot
+     moves (0 on Corne); the channel test stays green.
