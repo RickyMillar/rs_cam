@@ -254,6 +254,36 @@ Falsifiers:
   wanaka200 is byte-identical to D20. A difference there means the
   corridor rule fires on something that is not a strip.
 
+### 3.4 Verifier steps after the C38 code (read with the run log)
+
+The tracing lines are in the CLI's `stdout.txt`. Run with the filter
+`RUST_LOG=info,rs_cam_core::adaptive3d::clearing=debug`, as in §1.2.
+
+1. **Op 1 strip at the C31 opening (G-RINGGROW, shortfall split).** Read
+   the `C31 region opening` lines with `region=1` at `z=11`, `z=5` and
+   `z=0.5`, and their `decision`. P: each says `decision="grown, no
+   sweep"`.
+   - "closing guard: shipped sweep" is the G-RINGGROW refusal on the ring.
+   - "the shortfall inset split the outline: shipped sweep" is the taper
+     split.
+   - Either one means the strip falls to the shipped path, which cuts
+     nothing in 3 mm, so §3.3 cannot hold for that level. Report it before
+     any band figure.
+2. **The gate is gone for the arm.** No `F-038: skipping micro-region`
+   line remains in op 1 or the copy op. A region the plan judges short is
+   counted by the new G-b judge (`skipped_f038` on the span, with the
+   planned length as `forecast_cut_length_mm`).
+3. **The copy op** (§7.3, P-C1): no copy region gives `decision="grown, no
+   sweep"`, and the copy op plans no slot.
+4. **The slot records:** every slot step carries the `Slot` kind and its
+   reduced feed. The turn and slot counts are printed apart.
+5. **The band and the descents:**
+   - the 3–9 mm band, by §3.3 and `assert_fix9.py`'s method;
+   - the Z 17 outer descents, by `phase3/c38/classify_outer_descents.py`
+     on the new `entries.json` (§5.4).
+6. **Shipped neutrality:** `adaptive3d_emission_byte_parity` without
+   `research`, and the adaptive3d sentries (`adaptive3d/CLAUDE.md`).
+
 ## 4. The shipped fix (G-OUTERBAND) — described only, not changed
 
 Shipped output stays byte-identical until the lead and the operator rule.
