@@ -1,0 +1,94 @@
+{
+ "contour_parallel": {
+  "level2_first_move": 2250,
+  "rings": [
+   {
+    "r": [
+     0,
+     25
+    ],
+    "cells": 31415,
+    "share_cut_to_level": 1.0,
+    "share_untouched": 0.0
+   },
+   {
+    "r": [
+     25,
+     50
+    ],
+    "cells": 85483,
+    "share_cut_to_level": 0.991,
+    "share_untouched": 0.0
+   }
+  ]
+ },
+ "zigzag_pick D18": {
+  "level2_first_move": 4092,
+  "rings": [
+   {
+    "r": [
+     0,
+     25
+    ],
+    "cells": 31415,
+    "share_cut_to_level": 1.0,
+    "share_untouched": 0.0
+   },
+   {
+    "r": [
+     25,
+     50
+    ],
+    "cells": 85483,
+    "share_cut_to_level": 0.995,
+    "share_untouched": 0.0
+   }
+  ]
+ },
+ "zigzag_pick D20": {
+  "level2_first_move": 5124,
+  "rings": [
+   {
+    "r": [
+     0,
+     25
+    ],
+    "cells": 31415,
+    "share_cut_to_level": 1.0,
+    "share_untouched": 0.0
+   },
+   {
+    "r": [
+     25,
+     50
+    ],
+    "cells": 85483,
+    "share_cut_to_level": 0.995,
+    "share_untouched": 0.0
+   }
+  ]
+ },
+ "AgentSearch": {
+  "level2_first_move": 1348,
+  "rings": [
+   {
+    "r": [
+     0,
+     25
+    ],
+    "cells": 31415,
+    "share_cut_to_level": 1.0,
+    "share_untouched": 0.0
+   },
+   {
+    "r": [
+     25,
+     50
+    ],
+    "cells": 85483,
+    "share_cut_to_level": 0.986,
+    "share_untouched": 0.0
+   }
+  ]
+ }
+}

@@ -1,0 +1,162 @@
+{
+ "sim_keys": "included_toolpath_ids, request_snapshot, resolution_mm, sample_step_mm, schema_version, stock_bbox_max, stock_bbox_min, trace",
+ "corne contour_parallel inside": 903.7,
+ "corne contour_parallel outer band": 1511.3,
+ "corne contour_parallel triage": 1373.5,
+ "corne contour_parallel annulus": [
+  0.344,
+  0.08
+ ],
+ "corne contour_parallel r50 over": 0.08,
+ "corne contour_parallel Z17 cut r0-25": 1.0,
+ "corne contour_parallel Z17 cut r25-50": 0.991,
+ "corne zigzag_pick D18 inside": 2027.5,
+ "corne zigzag_pick D18 outer band": 3070.1,
+ "corne zigzag_pick D18 triage": 5106.2,
+ "corne zigzag_pick D18 annulus": [
+  0.997,
+  0.188
+ ],
+ "corne zigzag_pick D18 r50 over": 0.157,
+ "corne zigzag_pick D18 Z17 cut r0-25": 1.0,
+ "corne zigzag_pick D18 Z17 cut r25-50": 0.995,
+ "corne zigzag_pick D20 inside": 1042.2,
+ "corne zigzag_pick D20 outer band": 3070.1,
+ "corne zigzag_pick D20 triage": 4095.6,
+ "corne zigzag_pick D20 annulus": [
+  0.439,
+  0.093
+ ],
+ "corne zigzag_pick D20 r50 over": 0.089,
+ "no-part share r<35": 0.6,
+ "plate top r<35": 3.5,
+ "nearest above Z17": 39.28,
+ "corne zigzag_pick D20 Z17 cut r0-25": 1.0,
+ "corne zigzag_pick D20 Z17 cut r25-50": 0.995,
+ "corne AgentSearch inside": 3632.6,
+ "corne AgentSearch outer band": 3071.6,
+ "corne AgentSearch triage": 6832.7,
+ "corne AgentSearch annulus": [
+  1.405,
+  0.303
+ ],
+ "corne AgentSearch r50 over": 0.304,
+ "corne AgentSearch Z17 cut r0-25": 1.0,
+ "corne AgentSearch Z17 cut r25-50": 0.986,
+ "wanaka contour_parallel inside": 2052.2,
+ "wanaka contour_parallel island line": false,
+ "wanaka zigzag_pick D18 inside": 2796.0,
+ "wanaka zigzag_pick D18 island line": false,
+ "wanaka zigzag_pick D20 inside": 3073.5,
+ "wanaka zigzag_pick D20 island line": false,
+ "wanaka gap p1": 4.0,
+ "wanaka AgentSearch inside": 6182.8,
+ "wanaka AgentSearch island line": false,
+ "law radius in P2_C2": true,
+ "crop corne": [
+  55.1,
+  -44.6,
+  5.0
+ ],
+ "crop wanaka200": [
+  177.3,
+  172.3,
+  8.62
+ ],
+ "arcs zigzag_pick D18": {
+  "in": [
+   90,
+   802.7,
+   705.0
+  ],
+  "ring": [
+   41,
+   2360.4,
+   1026.2
+  ]
+ },
+ "arcs zigzag_pick D20": {
+  "in": [
+   85,
+   790.9,
+   693.7
+  ],
+  "ring": [
+   42,
+   2348.5,
+   1015.5
+  ]
+ },
+ "arcs contour_parallel": {
+  "in": [
+   0,
+   0.0,
+   0.0
+  ],
+  "ring": [
+   0,
+   0.0,
+   0.0
+  ]
+ },
+ "entries corne contour_parallel": [
+  73,
+  27,
+  13,
+  5,
+  1
+ ],
+ "entries corne zigzag_pick D18": [
+  56,
+  34,
+  719,
+  6,
+  156
+ ],
+ "entries corne zigzag_pick D20": [
+  60,
+  36,
+  1195,
+  9,
+  238
+ ],
+ "D20 lift-over median drop": 5.26,
+ "D20 lift-over median vol": 6.974,
+ "D20 meeting line": 40,
+ "old marks D20 Z17": 250,
+ "entries corne AgentSearch": [
+  48,
+  31,
+  127,
+  7,
+  23
+ ],
+ "entries wanaka200 contour_parallel": [
+  964,
+  257,
+  123,
+  0,
+  0
+ ],
+ "entries wanaka200 zigzag_pick D18": [
+  22,
+  11,
+  2622,
+  0,
+  0
+ ],
+ "entries wanaka200 zigzag_pick D20": [
+  20,
+  14,
+  3578,
+  0,
+  0
+ ],
+ "entries wanaka200 AgentSearch": [
+  32,
+  26,
+  481,
+  0,
+  0
+ ]
+}
