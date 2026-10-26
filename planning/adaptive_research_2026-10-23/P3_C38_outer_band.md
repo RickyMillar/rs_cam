@@ -682,3 +682,178 @@ from the wall. That case cannot be run alone with one env variable
 - I did not read C22's in-flight edits of `plan_piece` and
   `research_geodesic.rs`. If C22 adds a seed for a corridor, §2.2
   changes.
+
+## 9. D22 (c38a alone): why F1, P-C1 and P-B1 failed, and the new hard bar (2026-10-26)
+
+Read only. The scripts are in `phase3/c38/d22_why/`: `extract.py`,
+`why.py`, `why2.py`, `stockedge.py`, `drops.py` and `assert_why.py`. Each
+asserting script prints `ASSERTS OK`. They read the D20 run (fix7) and the
+C38a run (`corne_c38a`) and use the C35 run (fix12) for runtimes. "The
+strip" here means op 1 cutter centres 3–6.2 mm outside the silhouette at
+the strip levels Z 11, 5 and 0.5.
+
+### 9.1 F1 is falsified: the strip opens under the pass load, by passes ACROSS it
+
+| Op 1 in the strip, levels Z 11/5/0.5 | D20 | C38a |
+|---|---|---|
+| clearing-cut length | 23.1 mm | 4547.7 mm (15159 samples) |
+| radial engagement, median | 0.921 | **0.0** |
+| samples over c = 0.219 | 56 | 1176 (7.8 %) |
+| plunge-entry samples | 0 | 0 |
+| moves (from the sample runs) | — | 3049; length median **1.2 mm = s**; 1908 (63 %) run mostly ACROSS the strip (\|Δ wall distance\| / length > 0.7; median 0.8) |
+
+§2.3 said the first pass through a closed strip is a slot "whatever the
+producer". That is true only for a pass ALONG the strip. A pass ACROSS
+the strip meets new stock only over its advance along the strip, so its
+swept width is that advance, not D. The 2D planner, under the pass load,
+opened the strip that way. Short steps run from one side of the corridor
+to the other. Each is about one stepover long, and the next is a little
+further along. The median radial is 0, and 92 % of the samples hold the
+ceiling.
+
+The 3D trace does not tag the 2D producer (the markers are swallowed in
+3D), so the script cannot name it. By the code, it is the agent fallback:
+the narrow loops refuse the along-strip spans, and the mop and the residue
+walk pick up the rest in any direction.
+
+- **The strip was 3 pieces per level** (op 1 region 1 at Z 11 has three
+  `F-038: dropped short cut groups` lines: 19/39, 10/23, 8/18 groups).
+- **The corridor is 1.39 mm wide, not 2.0.** The C31 line gives
+  `centre_area_mm2 = 617.9` against a strip length of about 445 mm.
+  Smoothing plus margin take about 0.8 mm off each side, not 0.51.
+- **What stands after it:** 3–9 mm 794 mm² (3–4.5 313, 4.5–6 180, 6–9
+  301). The disc reaches 0.8 to 8.2 mm from the wall. 8.2–9 is left
+  (0.8 / 3 × 820 ≈ 219, plus the stock-map cell), and the nibble does not
+  reach every corridor edge.
+- **The cost:** op 1 runtime C35 1451.7 s → C38a 1750.7 s, **+299.0 s**,
+  from 3049 short reversing moves.
+
+### 9.2 P-C1 fails because its premise failed; the copy op is RIGHT to open
+
+P-C1 assumed op 1 leaves only a 0.51 mm skin (the slot design, §3.3). In
+c38a op 1 leaves 304 mm² at 1.5–3 mm and 313 mm² at 3–4.5 mm. Both bands
+are within the copy op's reach (3 mm tool, centres to 3 mm, disc to
+4.5 mm). So the copy op's level grid holds material, and its region 1
+(about 206 mm², centre area 75–87 mm²) opens with "grown, no sweep" at
+each level. That is correct: the stock is there.
+
+| Copy op, outside the silhouette | D20 | C38a |
+|---|---|---|
+| clearing cut: length / removed | 4094.7 mm / 181.9 mm³ | 7044.3 mm / **3238.7 mm³** |
+| keep-down links: length / removed | 0 / 0 | 1378.8 mm / **2475.9 mm³** |
+| plunge entries: length / removed | 7.2 mm / 0 | 1163.7 mm / 1239.8 mm³ |
+| runtime (whole op) | C35 1305.2 s | 1694.3 s (+389.1 s) |
+
+The copy op now does real work: 3239 mm³ cut, against 182 before. But
+its 2D plan in a corridor under 1 mm wide is hundreds of tiny groups.
+Region 1 has 610 groups over six levels; the F-038 group filter drops 509
+of them (`drops.py`: 287 of 310 at Z 5). And its links remove almost as
+much as its cuts (§9.4).
+
+### 9.3 P-B1: the clip did its job; the class I counted was too wide
+
+`stockedge.py` splits the Z 17 descents beyond the mesh bbox at R (3 mm)
+from the stock-box edge. Within R, the C31 grow put phantom material past
+the edge (§5.1). At R or more, the disc stays in the box, and the clip
+cannot touch the descent.
+
+| Beyond the mesh bbox | D20 | C35 | C38a |
+|---|---|---|---|
+| within R of the stock edge | 32 | 32 | **1** |
+| at R or more | 13 | 13 | 13 |
+
+The clip removed 31 of the 32 descents it could act on. P-B1 (≤ 5 of
+45) counted the 13 at R or more, which no stock-edge rule can move. They
+are wall ends and containment ends in the 5 mm margin beyond the mesh
+bbox, the C37 class. Restated: **P-B1′: at most 2 within R remain. It
+holds (1).**
+
+### 9.4 The new hard bar: the copy op's held links cross ground that 3D never cut
+
+The bar: "a fed link cuts stock it was planned to cross in air or on cut
+ground: link move 8460 removes 15.43 mm at (3.0, −71.6, 0.50). 301 of 4596
+link samples on 193 link moves remove more than 3.30 mm".
+
+`why.py` and `why2.py` reproduce the bar with the same selection (copy op
+link samples with axial engagement over 3.30 mm): 301 / 4596 samples on
+193 moves.
+- **Where:** all 301 lie at a centre wall distance of 1.5–3 mm, the copy
+  op's own strip, inside its containment (3 mm). The planner stock at the
+  link's centre is not O5b-cleared. So this is **not** G-CLIPAIR.
+- **When:** they are at Z 0.5, 2.01 and 8.01.
+- **What came before:** only 14 of the 301 have a copy-op clearing sample
+  of the same level within R of them before the link. For 287, no cut of
+  that level ever passed there. The link removes the full column that op
+  1 left (15.4 mm at Z 0.5).
+- **D20:** 0 such samples. The copy op had no links outside the
+  silhouette.
+
+**The mechanism, by the code order** (`plan_one_outline` →
+`plan_and_emit_region`):
+1. The 2D replay (the research cleanup) stamps every group of the plan
+   on its grid and admits each held link over the ground those stamps
+   cleared.
+2. AFTER the replay, the F-038 group filter drops each group that cuts
+   under 15 mm. In the copy op that is 509 of 610 groups. The 2D grid
+   still holds them as cut.
+3. `HeldLinks` (C22/C26) emits each admitted 2D link as a 3D keep-down
+   link at the level. It checks that the link stays at the level, but it
+   does not read the planner stock. So a link planned over a dropped
+   group's ground ploughs the stock that group would have cut.
+
+This is the "planner stock is the emitted path" rule
+(`adaptive/CLAUDE.md`: "Do not stamp stock no emitted move cuts"),
+broken between the replay and the filter. The rule has been in the arm
+since C22. It shows now because the copy op's corridor plan is mostly
+tiny groups.
+
+The falsifier, a run and no code: the same project with the copy op's
+`min_region_cut_length_mm = 0`, saved as
+`corne_job_corrected_c12_agent_search_c38_mrcl0.toml`. P: the bar goes
+(0 samples over 3.30 mm), and the copy op's entries rise by up to 509.
+
+### 9.5 Proposal
+
+1. **Fix the hard bar where the link leaves.** This is C22's code
+   (`HeldLinks` in `plan_and_emit_region`). A held link goes out
+   keep-down only when the planner stock along its swath has no
+   material above the level plus the stay-down clearance. That is the
+   test `plan_entry` already makes for every 3D entry ("no link feeds
+   down into stock"). Otherwise it goes out as an entry, and
+   `plan_entry` decides. This closes the bar for any cause: dropped
+   groups, or any later 2D/3D divergence. No new constant.
+   - Measured cost bound: the 193 link moves become entries at most.
+2. **Stop the cause in C38's arm (my code, after 1).**
+   - In a research region, the F-038 group filter is redundant with the
+     G-b judge, which already removes a region whose whole plan is short.
+   - Inside a planned region, a group can drop only if no later step of
+     the plan reads its stamps. That is not known after the replay.
+   - **Proposal:** the research arm does not run the F-038 group filter
+     inside a planned region. The short groups stay, each with its entry.
+   - Cost bound: up to 509 entries in the copy op, plus 37 per level in
+     op 1's strip.
+   - If (1) alone holds the bar, I prefer to keep the filter and let (1)
+     lift the affected links. That costs at most 193 entries, against up
+     to 546 kept groups. D23 shows which is smaller.
+3. **The copy op opening stays** (§9.2: real stock, 3239 mm³ cut). With
+   part 2 (D23), the copy op's sub-tool corridor gets the corridor
+   opening (1–3 loops per piece) in place of hundreds of tiny agent
+   groups. So its group count, its dropped groups and its links fall
+   together.
+4. **The slot against the nibble.** §9.1 shows that a load-holding plan
+   exists without the slot exemption. The slot earns its exemption only
+   if it is better. D23 (with the slot) against D22 (the nibble) decides.
+   Pre-registered for op 1 in D23:
+   - **The band:** 3–9 mm ≤ 400 mm². With the 1.39 mm corridor the disc
+     reaches 0.8–8.2 mm: 6–9 ≤ (0.8 + 0.25) / 3 × 820 = 287, plus
+     ≤ 10 % of the 3–6 mm bands (113).
+   - **The runtime:** op 1 ≤ 1651 s (C38a's 1750.7 − 100). The two edge
+     loops feed at c/w: edge 1 w ≈ 1 → 0.22 F; edge 2 bites 1.39 / 6 =
+     0.23 ≈ c → about 0.95 F. Feed time about 120 s for 3 × 445 mm.
+   - **The rule:** if D23's op 1 misses either the band or the runtime
+     bound, drop part 2 and keep the nibble (no exemption).
+5. **Restated predictions for D23:**
+   - P-B1′ (≤ 2 within R of the stock edge) holds.
+   - The copy-op hard bar holds only if (1) or (2) is in. D23 has
+     neither, so **D23 will show the bar again** unless the corridor
+     opening removes the copy op's tiny groups.

@@ -1,0 +1,44 @@
+{
+ "op1_strip_moves": {
+  "moves": 3049,
+  "length_p50_mm": 1.2,
+  "length_p90_mm": 1.25,
+  "across_share_p50": 0.8,
+  "moves_mostly_across": 1908
+ },
+ "copy_outside_d20": {
+  "clearing_cut": {
+   "length_mm": 4094.7,
+   "removed_mm3": 181.9
+  },
+  "linking": {
+   "length_mm": 0.0,
+   "removed_mm3": 0.0
+  },
+  "entry_plunge": {
+   "length_mm": 7.2,
+   "removed_mm3": 0.0
+  }
+ },
+ "copy_outside_c38a": {
+  "clearing_cut": {
+   "length_mm": 7044.3,
+   "removed_mm3": 3238.7
+  },
+  "linking": {
+   "length_mm": 1378.8,
+   "removed_mm3": 2475.9
+  },
+  "entry_plunge": {
+   "length_mm": 1163.7,
+   "removed_mm3": 1239.8
+  }
+ },
+ "over_link_samples": 301,
+ "over_link_with_a_same_level_cut_within_R_before": 14,
+ "over_link_levels": [
+  0.5,
+  2.01,
+  8.01
+ ]
+}
