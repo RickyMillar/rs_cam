@@ -1,0 +1,150 @@
+{
+ "tp1": [
+  {
+   "xyz": [
+    62.23,
+    -98.03,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.77,
+   "stock_edge_mm": 11.28,
+   "beyond_line_by_mm": -0.23,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 178
+  },
+  {
+   "xyz": [
+    100.67,
+    -80.67,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.4,
+   "stock_edge_mm": 28.64,
+   "beyond_line_by_mm": -0.6,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 375
+  },
+  {
+   "xyz": [
+    106.59,
+    -80.61,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.2,
+   "stock_edge_mm": 28.7,
+   "beyond_line_by_mm": -0.8,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 353
+  },
+  {
+   "xyz": [
+    108.87,
+    -80.61,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.2,
+   "stock_edge_mm": 28.7,
+   "beyond_line_by_mm": -0.8,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 338
+  },
+  {
+   "xyz": [
+    126.41,
+    -80.62,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.4,
+   "stock_edge_mm": 26.66,
+   "beyond_line_by_mm": -0.6,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 271
+  },
+  {
+   "xyz": [
+    128.59,
+    -80.61,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.2,
+   "stock_edge_mm": 24.49,
+   "beyond_line_by_mm": -0.8,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 305
+  },
+  {
+   "xyz": [
+    130.87,
+    -80.61,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.2,
+   "stock_edge_mm": 22.21,
+   "beyond_line_by_mm": -0.8,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 315
+  },
+  {
+   "xyz": [
+    39.87,
+    -2.99,
+    5.0
+   ],
+   "axial": 18.0,
+   "wall_mm": 5.0,
+   "stock_edge_mm": 4.87,
+   "beyond_line_by_mm": -1.0,
+   "level_cuts_within_R_at": [
+    17.0,
+    11.0
+   ],
+   "earlier_levels_within_2R_count": 299
+  }
+ ],
+ "tp3": [
+  {
+   "xyz": [
+    2.78,
+    -75.21,
+    0.5
+   ],
+   "axial": 15.56,
+   "wall_mm": 2.8,
+   "stock_edge_mm": 2.47,
+   "beyond_line_by_mm": -0.2,
+   "level_cuts_within_R_at": [
+    11.01,
+    2.01
+   ],
+   "earlier_levels_within_2R_count": 126
+  }
+ ]
+}

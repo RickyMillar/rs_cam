@@ -1,0 +1,36 @@
+{
+ "c35": {
+  "planar_reversals": 353,
+  "in_outer_strip": 71,
+  "inside_silhouette": 280,
+  "outside_other": 2,
+  "strip_levels": {
+   "17.0": 61,
+   "11.0": 0,
+   "5.0": 0,
+   "0.5": 0
+  },
+  "shorter_move_p50_mm": 1.04,
+  "strip_shorter_move_p50_mm": 1.33,
+  "op1_sample_time_s": 1451.7,
+  "time_of_moves_at_strip_reversals_s": 14.9,
+  "op1_strip_levels_time_s": 0.3
+ },
+ "d24": {
+  "planar_reversals": 1968,
+  "in_outer_strip": 1675,
+  "inside_silhouette": 274,
+  "outside_other": 19,
+  "strip_levels": {
+   "17.0": 65,
+   "11.0": 564,
+   "5.0": 518,
+   "0.5": 518
+  },
+  "shorter_move_p50_mm": 1.5,
+  "strip_shorter_move_p50_mm": 1.5,
+  "op1_sample_time_s": 1871.7,
+  "time_of_moves_at_strip_reversals_s": 91.9,
+  "op1_strip_levels_time_s": 47.0
+ }
+}

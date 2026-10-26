@@ -1311,3 +1311,166 @@ AND the ordering is Global. By Area is unchanged: `boundary_reach` gives
   P-CA1–P-CA7 (§11.3 / §11.1b).
 
 Read P-CA3 against D24's count.
+
+## 12. D24 Corne: where the cost went, the peaks, the band, and whether G-b earns it (2026-10-26)
+
+Read only. The scripts are in `phase3/c38/d24_why/`: `extract.py`
+(with segment times), `reversals.py`, `descents.py`, `peaks.py`,
+`c22a_drops.py`, `linkbar.py` and `assert_d24.py`. Each asserting script
+prints `ASSERTS OK`.
+- C35 is fix12, the base before C38.
+- D24 is fix14: G-b, the stock-box clip, no slot, and C22a.
+- Op 1 is "3D Rough 1". "The strip" means op-1 cutter centres 3–6.2 mm
+  outside the silhouette.
+- **Places come from the samples, in the model frame.** `program.nc` is
+  in the work frame, so its X/Y/Z do not match the part map. A
+  junction's place is the first sample of its second move.
+
+### 12.1 The 1968 reversals are the nibble's cross-strip steps
+
+`reversals.py` uses `fix11/audit.py`'s rule (a fed-to-fed XY junction
+over 90°):
+
+| Op 1 | C35 | D24 |
+|---|---|---|
+| planar reversals | 353 | **1968** |
+| ... in the outer strip | 71 | **1675** |
+| ... of those at Z 11 / 5 / 0.5 | 0 / 0 / 0 | **564 / 518 / 518** |
+| ... at Z 17 | 61 | 65 |
+| ... inside the silhouette | 280 | 274 |
+| shorter of the two moves, median | 1.04 mm | 1.5 mm |
+| op 1 sample time | 1451.7 s | 1871.7 s (+420.0) |
+
+- **Where:** 1600 of the 1615 new reversals are in the strip at its
+  three levels, the nibble's cross-strip steps (§9.1). The reversals
+  inside the silhouette did not change (280 → 274).
+- **Where the +420 s of op 1 goes** (`fix11/audit.py` time split, C35 →
+  D24):
+  - plunge feed +202.2 s;
+  - cut +122.7 s;
+  - lift feed +49.6 s;
+  - fed in air +26.8 s;
+  - rapid +18.5 s.
+- **Of that:**
+  - the strip's cut samples at the strip levels take 47.0 s;
+  - the moves that meet at the strip's reversals take 91.9 s;
+  - the descents in the strip rise from 165 to 403, and their time from
+    49.9 s to 124.0 s (`descents.py`). All descents together rise from
+    537.4 s to 633.8 s.
+- **So the reversals are about 22 % of op 1's added time** (91.9 / 420).
+  The larger part is plunge and lift feed. The nibble's groups are
+  short, so it has many entries, and each descends through the strip.
+- **The copy op** adds 228.4 s (1305.2 → 1533.6).
+- **The sim has no acceleration model** (the audit says so), so the real
+  cost of 1600 full reversals is larger than their sample time.
+
+### 12.2 The peaks and the fed-link bar: all G-CLIPAIR, and §11 (D25) covers them
+
+`peaks.py` and `linkbar.py`:
+
+| | Op 1, 18.0 mm at Z 5 (8 samples) | Copy op, 15.56 mm | Op 1 fed link, move 6921 |
+|---|---|---|---|
+| place | 7 at x 62–131 on the −Y side, 1 at (39.9, −3.0) | (2.78, −75.21, Z 0.5) | x 149.7, y −78.7 to −76.4, Z 11 |
+| centre wall distance | 5.0–5.77 mm (the op's line is at 6.0) | 2.8 mm (line 3.0) | 4.1–5.69 mm (line 6.0) |
+| to the stock-box edge | 7 of 8 at 11–29 mm; 1 at 4.87 | 2.47 mm (−X edge) | 3.26 mm (+X edge) |
+| same op's cuts within R before | at Z 17 and Z 11, for all 8 | at Z 11.01 and 2.01 only | — |
+
+- **The op-1 18 mm peaks are not the free edge** (7 of 8 lie 11–29 mm
+  from the stock edge).
+  - Each centre is 0.2–1.0 mm inside op 1's line, and op 1 cut within R
+    of it at Z 17 and at Z 11.
+  - Yet the disc at Z 5 met 18 mm (23 − 5): a column that NO earlier
+    level touched. A column within R of this centre but beyond R of
+    every earlier centre lies on the far side, beyond the line.
+  - That band (6–9 mm) the O5b clear holds as air, so no level planned
+    a centre to take it.
+- **The copy-op peak is the mirror of §11.1b** (x 151, the +X edge): the
+  −X edge, 2.47 mm inside the stock, centre 0.2 mm inside its line. The
+  free edge left the stock there (op 1 has no centre region), and
+  G-CLIPAIR hid it from the copy op.
+- **The fed link** runs 4.1–5.7 mm from the wall at Z 11, 3.26 mm inside
+  the +X stock edge. It removes 10.5 mm. It is a 3D keep-down link (C22a
+  counts 0 held links over stock on Corne). Its test reads the planner
+  stock, and the part of its disc beyond the line (6–8.7 mm) is O5b air.
+- **§11 as built (D25) covers all three.**
+  - (a) keeps the band beyond the line, so the link test and the stamps
+    see it.
+  - (c) plans the centres whose disc meets it at every level, so no level
+    meets the full column.
+- **Prediction for D25** (from §11.3): the op-1 18 mm peak, the copy
+  15.56 mm peak and the fed-link bar go. Where op 1 has no centre region
+  (the free edge, §10.8), (c) gives the copy op centres and the copy op
+  takes the band level by level.
+
+### 12.3 Why the band rose to 999 (D23 455, C38a 794)
+
+| Op 1 in the strip, at Z 11 / 5 / 0.5 | C38a (nibble, no C22a) | D24 (nibble + C22a) |
+|---|---|---|
+| clearing-cut length | 4547.7 mm | 3041.4 mm |
+| removed volume | 23671.5 mm³ | 17340.0 mm³ |
+| C22a groups dropped in the strip (both pick plans) | — | 204 by the first filter, **548 more** by the replay rounds (up to 3 rounds) |
+
+- **C22a costs the strip.** The nibble's plan is many short cross-strip
+  groups.
+  1. The F-038 filter drops those under 15 mm.
+  2. C22a's replay then reads the plan without them, so more steps refuse
+     or split.
+  3. The next round drops those too.
+
+  So C22a removes a third of the nibble's strip cut (4548 → 3041 mm).
+  The band rises from 794 (C38a) to 999.
+- **D23's 455 was the slot,** which cut along the strip without groups
+  (and unfed, §10.1).
+
+### 12.4 Does G-b earn its cost on Corne? The trade-off
+
+| Corne | 3–9 mm band | op 1 | copy op | cycle | note |
+|---|---|---|---|---|---|
+| C35 (F-038 skip, strip never planned) | 1951 | 1451.7 s | 1305.2 s | 2757 s | the base |
+| D24 (G-b + nibble + C22a) | 999 | 1871.7 s | 1533.6 s | 3405 s | +648 s for −952 mm²; 1600 reversals; the bar is back |
+| C38a (G-b + nibble, no C22a) | 794 | 1750.7 s | 1694.3 s | 3445 s | — |
+| D23 pick (G-b + slot, UNFED) | 455 | 1468.4 s (≈ 1504 fed, §10.1) | 1463.3 s | 2932 s | the slot's rate: about −1496 mm² for about +52 s on op 1 |
+| D20 contour_parallel (shipped CP) | 63 | — | — | 2022 s (whole job) | no pass load |
+
+**My view: G-b with the nibble does not earn its cost.** It buys 952 mm²
+for 648 s (0.68 s per mm²).
+- 22 % of op 1's added time is the reversals.
+- Most of the rest is entries, because the nibble is many short groups.
+- C22a correctly re-reads the plan and drops a third of the nibble.
+
+The band that matters is cut more cheaply along the strip than across
+it.
+
+**The two options, with the same physics:**
+
+- **(A) G-b plus a FED slot.** The slot as in D23, with the merge defect
+  of §10.1 fixed: match the feed by the distance of each emitted move to
+  the slot chain, not by one recorded segment.
+  - Measured: band 455, op 1 ≈ 1504 s (C35 + 52 s).
+  - It plans the strip in the region machinery, so G-CLIPAIR (§11) and
+    the stock-box clip apply.
+  - The slot ruling exists.
+  - Remaining: the free-edge 403 mm² (§10.8, C31).
+- **(B) Keep the F-038 skip, and add a wall-following contour pass on the
+  outer strip, as CP does.**
+  - This is the same cut as (A): passes along the strip, the first a slot
+    over the ceiling, which needs the same c/w feed under the ruling.
+  - It runs outside the region machinery, like the waterline. It needs
+    its own boundary (the strip between the wall locus and the
+    containment line), its own entry and its own G-CLIPAIR handling.
+  - Cost: about the same feed time as (A). About 445 mm × 3 levels × 1–2
+    loops at 0.22–0.95 F; D23 says +36 s of feed on the slot.
+  - It keeps the F-038 skip, which still skips every other narrow region
+    the field cannot seed (on Corne, the copy op's regions).
+
+**The trade between (A) and (B):**
+- (A) reuses the C38 machinery (the gate, the judge, the clip, and §11)
+  and needs one defect fixed (the feed match).
+- (B) needs a new producer outside the regions, and it duplicates (A)'s
+  geometry.
+- Both leave the free-edge band to C31.
+- **Against the nibble:** either option saves about 370 s on op 1
+  (1871.7 against about 1504 s), removes about 1600 reversals, and leaves
+  about half the band (455 against 999).
+
+I pre-register nothing yet, as asked.

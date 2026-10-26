@@ -1,0 +1,10 @@
+{
+ "op1_strip_lines": 18,
+ "op1_strip_dropped_first": 204,
+ "op1_strip_dropped_more": 548,
+ "op1_strip_max_rounds": 3,
+ "c38a_op1_strip_cut_mm": 4547.7,
+ "c38a_op1_strip_removed_mm3": 23671.5,
+ "d24_op1_strip_cut_mm": 3041.4,
+ "d24_op1_strip_removed_mm3": 17340.0
+}
