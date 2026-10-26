@@ -1815,3 +1815,97 @@ accessor `polygons()`.
 - the Corne spiral_pick and wanaka200 fixture runs with the fix13 flags,
   read against §13.5 and §13.7. Grep the `C38 slot chains` and
   `C22 turn summary` lines.
+
+## 14. D26: the two fed-link bars are held links that cross the unplanned band; the counter reads the centre line only (2026-10-26)
+
+Read only. `phase3/c38/d26_why/links.py` (`python3 -I`, prints `ASSERTS
+OK`) reads the D26 spiral_pick simulation, which `extract.py` writes to
+`samples_d26pick.npz`. The code citations are at `2c32340ab` plus the
+D27 tree, which does not change these lines.
+
+### 14.1 What the two moves cut
+
+| | op 1, move 5565 (D24 6921: same XY, same Z) | copy op, move 6340 |
+|---|---|---|
+| samples, intent | 9, `linking`, at Z 11.0 | 3, `linking`, at Z 0.5 |
+| centre wall distance | 4.10 → 5.69 mm (op 1's line is at 6) | 2.95 – 3.05 mm (ON the copy op's line, 3.0) |
+| where it removes | ONLY the last sample: 6.037 mm³, axial 10.5 mm, radial 0.144. The first sample 1.73 mm³ / 0.31 mm; samples 2–8 nothing | samples 2–3: 0.333 + 0.852 mm³, axial 5.52 mm, radial 0 |
+| what follows | clearing cuts (moves 5566 on) | clearing cuts |
+
+**Both are thin, tall columns, not bulk stock.**
+- Op 1 removes 6 mm³ at a height of 10.5 mm, an area of about 0.57 mm²
+  (about 6 sim cells of 0.09 mm²).
+- The copy op removes about 1.2 mm³ at 5.5 mm.
+
+**Both lie off the link's centre line.**
+- Op 1: a side contact of 0.86 mm (radial 0.144 × D) at the end, where
+  the next cut starts. The centre is 5.69 mm from the wall, so the
+  material lies 6–9 mm out: op 1's band beyond its line. D25 still has
+  379 mm² standing there (P-CA4 failed).
+- Copy op: its centre runs on its line. The columns are inside its disc
+  but not under the centre, in the copy op's own band beyond 3 mm. Op 1
+  left that band, and the copy op never cut it level by level.
+
+### 14.2 The answers
+
+1. **Not made by the boundary clip.** `clip_segment`
+   (`centre_clip.rs:335-390`) never creates a `Link`.
+   - Between clipped pieces of one cut it emits a `Rapid` (an entry),
+     and that goes through `plan_entry` and gets an entry span.
+   - It passes a `Link` through only when the chord is inside the clip
+     and there is no gap.
+   - Both moves have no entry span. So they are 2D links emitted
+     keep-down (the C22/C26 `HeldLinks` route), which the clip let
+     through.
+2. **The planner stock does not necessarily see air.** The counter that
+   reads 0 (`LevelSink::check_held_link`, `clearing.rs:2231-2270`) samples
+   `sample_stock_top_at` along the link's CENTRE LINE only, at
+   cell spacing. Both columns lie off the centre line, inside the disc.
+   - So the counter cannot see them, and its 0 says only that the centre
+     line is clear.
+   - The keep-down proof of a 3D entry reads more: `plan_entry` uses
+     `corridor_ceiling_z`, the conservative stock top on the SWEPT DISC of
+     radius R. Held links do not go through that proof.
+3. **Not beyond `boundary ⊕ R`, and not the border clear.**
+   - The material lies 6–8.7 mm from the wall (op 1, reach 9) and 3–4.5
+     mm (copy op, reach 4.5): inside the G-CLIPAIR reach, so the planner
+     stock keeps it.
+   - `compute/execute/rough_3d.rs` passes `world_stock_xy_bbox:
+     Some(inputs.world_stock_xy)`, so the border clear keeps every cell
+     inside the stock box.
+4. **Why the stock stands there at all.** It is the band beyond the
+   containment line that no centre reaches.
+   - G-CLIPAIR (c) adds region cells for the centres at the line, but the
+     C31 smoothing (0.3) and margin (one cell) trim the 2D centre region
+     back by about 0.8 mm.
+   - So the disc reaches only 8.2 of 9 mm (op 1) and about 4.2 of 4.5 mm
+     (copy op).
+   - The sliver that remains is what these links graze. It is the same C31
+     margin item as §10.8, at a containment line in place of a stock
+     edge.
+
+### 14.3 The fix
+
+1. **(The bar) One keep-down rule for every link.** This is the
+   operator's ruling: "a keep down link should be generic".
+   - A held link goes out keep-down only if the same proof that
+     `plan_entry` writes passes: `corridor_ceiling_z(stock, from, to, R)` ≤
+     the level + `stay_down_clearance_mm`. Otherwise it goes to the sink
+     as an entry, and `plan_entry` decides.
+   - The C22a counter then reads that same swept-disc proof, not the
+     centre line.
+   - That is C22's code (`plan_and_emit_region`'s held-link emit and
+     `check_held_link`), and it is the shared interface of §13.8: one
+     `keep_down_ok(stock, from, to, R, clearance)` for every producer.
+   - P (Corne D26 inputs): both fed-link bars go. At most 2 held links
+     become entries (op 1: 1, copy op: 1).
+2. **(The cause) The band beyond the containment line**, with the free
+   edge of §10.8, to C22 as the C31 margin item. At a CLIP edge (the
+   containment line) the staircase that the smoothing removes is not
+   there. The clip line is analytic, so the grown outline there can keep
+   the full `R − m` reach and the disc reaches `line + R − m`. P: the 6–9
+   mm band (D25 379) falls to the `m`-wide strip, about `m / 3 × 820 ≈ 68`
+   mm² plus the stock-map cell.
+3. **The triage bar is right to fire.** A 10.5 mm column, however thin,
+   is a side bite at full depth on a link fed at the clearing feed. I
+   propose no change to the bar.
