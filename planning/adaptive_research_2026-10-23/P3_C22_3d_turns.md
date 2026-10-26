@@ -2509,3 +2509,52 @@ it).
 **What the stage-1 run must show (P, from §13.6 / §13.7):**
 - On the C12 pocket, the head-on arm's re-entries at `Turn` marks fall against `geodesic_local_spiral_pick`'s. C25 saw 20 → 0 on the pocket under the same rule.
 - On Corne, the 341 → about 145–210 after stage 1 is read by the fixture run with the `c37 re-entry` lines.
+
+### 12.8 C35 on wanaka200 (fix12): why the descents fell by 1562, why the over-load rose, and why the Z 4.0 openings changed (2026-10-26)
+
+Read only: the fix12 and fix7 artefacts, with python. Scripts are in
+`phase3/fix12/c22_wanaka/`. `assert_12_8.py` asserts each claim below; run
+`descents_by_core.py`, `over_by_core.py` and `over_vs_descents.py` first.
+D20 is the fix7 `zigzag_pick` run, C35 the fix12 `spiral_pick` run.
+
+**1. The 1562 descents.**
+- **The core.** At Z 19.54 and 14.08 the one region is the 200 × 200 block (40 099.9 mm²), with the seed at (119.80, 124.87).
+  - C35 leaves the seed as ONE spiral of about 58 turns. It runs out to r 97.4 mm, where it meets the block's edge (y 221.74), with no radial step on the way (2382 G-code moves).
+  - D20 makes its first radial seam step at the first ring (r 3.00 → 4.38).
+  - So the core at those levels is the whole inscribed disc. Its K is about 55 levels, not the 4 of the C12 pocket.
+- **Descents** (fix9/entries.py rule), split by the disc r < 97.4 mm:
+
+| Level | D20 inside | C35 inside | D20 outside | C35 outside |
+|---|---|---|---|---|
+| Z 19.54 | 48 | 0 | 77 | 80 |
+| Z 14.08 | 48 | 0 | 77 | 80 |
+| Z 8.62 | 2430 | 995 | 898 | 861 |
+| Z 4.0 | 0 | 0 | 0 | 0 |
+
+- **The seam mechanism** that §12.5 predicted shows at Z 19.54 and 14.08: one descent per ring, 48 per level, all removed. At Z 8.62 it gives about the same 48. That is about 150 in all, in line with the predicted −180.
+- **The other 1435 are at Z 8.62, inside the disc, and they are a different mechanism.** There the path drapes over the terrain. The descents end at Z 9–13, not on the plane.
+  - Each one is a short lift-over ALONG the path: the tool lifts, hops a median 0.79 mm (D20) or 1.72 mm (C35) with no radial change (dr ≈ 0), and drops a median 4.3 mm.
+  - Per clearing move inside the disc they occur at 60.7 per 100 moves on D20 and 29.9 on C35.
+  - The counts by 10 mm radius bin fall by about the same share from r 10 to r 100. Beyond r 100 they are identical in the two runs, where the plans are the same.
+  - This is the 3D stage's lift-over over terrain, not a 2D re-entry. I did not predict it, and I cannot prove its cause from the artefacts. The C37 instrument (D23: the 2D re-entry classes) separates the two: a hop that is not a 2D re-entry is the 3D stage's. My reading: the spiral's chords are longer than the lattice-traced rings' moves (median hop 1.72 against 0.79 mm), so the 3D stage finds fewer short stretches to lift over. It is a by-product, not something C35 set out to do.
+
+**2. The over-load (+506 mm by the lead's table; +502 mm by my count over all clearing cuts).**
+- **Not in the core, not at the hand-off.** Over 0.471 is 0 mm at Z 19.54 and 14.08 in BOTH runs. Those levels hold the whole spiral, and the spiral ends at the wall there, so there is no radial hand-off step.
+- **All of the rise is at Z 8.62, inside r 105 mm.** D20 has 1493.5 mm there and C35 2005.9 mm. Beyond r 105 the length is the same (199.8 mm).
+- **Where the rise lies:**
+  - **+288 mm** lies within R of the 433 places where D20 lifted over and C35 does not (D20 descents with no C35 descent within 3 mm): 347.1 → 635.5 mm. The tool now stays down and cuts through the stock that D20 lifted over.
+  - **The other +224 mm** grows as the cut length does. The cut length inside r 105 at Z 8.62 rises by 16.3 % (14 038 → 16 326 mm), and the over length away from those places by 19.5 %. The held spiral spaces its turns at the width 1.971 mm against 2.176 (§12.7), so it cuts more turns over the same disc.
+- **So it is not the C35b hand-off slot.** It is the drape at Z 8.62 cutting through stock that D20 lifted over, plus the extra turns. I did not split the thick part (+94 mm) by place. I expect the same split, but that is not measured.
+
+**3. The Z 4.0 openings.**
+- The regions of a level are not fixed. `detect_and_order_regions` builds them from the PLANNER stock after the levels above (`build_material_bool_grid(material_stock, ..)`, clearing.rs:1919–1949 at 3cc257c1f). C35 cuts Z 8.62 differently, so the stock left over Z 4.0 differs, and so do the regions.
+  - Region 1: 2580.5 → 2563.2 mm².
+  - Region 3: 159.9 → 160.4 mm².
+- On the new outlines, C31's shortfall step takes other branches:
+  - Region 1 was "closing guard" in D20, with a centre area of 77 602.8 mm² against a target of 1157.2. That is the G-RINGGROW fault: the ring's centre grew out to the box. It is now "shortfall inset split" (centre 1228.2).
+  - Region 3 was "split" and is now "grown, no sweep".
+- So C35 does not change the regions directly. It changes the stock above them, and G-RINGGROW (parked) flips its branch on a change of 17 mm² of outline. The flip is an effect of that parked defect, not of C35.
+
+**What follows for C37 / D23:**
+- The D23 2D re-entry classes on wanaka should show the Z 8.62 hops as NOT 2D re-entries, if my reading of item 1 is right.
+- If they are 2D re-entries, my reading is wrong, and the 2D plan at Z 8.62 differs between the arms in a way I have not found.

@@ -1,0 +1,16 @@
+{
+ "D20": {
+  "L1 outside": 77,
+  "L1 inside": 48,
+  "L2 outside": 77,
+  "L2 inside": 48,
+  "L3 outside": 898,
+  "L3 inside": 2430
+ },
+ "C35": {
+  "L1 outside": 80,
+  "L2 outside": 80,
+  "L3 outside": 861,
+  "L3 inside": 995
+ }
+}
