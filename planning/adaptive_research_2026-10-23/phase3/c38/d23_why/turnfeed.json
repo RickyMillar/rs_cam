@@ -1,0 +1,19 @@
+{
+ "op1_clearing_samples_off_strip": 149961,
+ "over_bound": 2014,
+ "over_bound_at_reduced_feed": 71,
+ "over_bound_at_full_feed": 1943,
+ "reduced_feed_samples": 6687,
+ "reduced_feed_samples_over_c": 95,
+ "reduced_feed_moves": 387,
+ "reduced_move_length_p50": 0.86,
+ "reduced_moves_longer_than_turn_bound": 36,
+ "reduced_feed_values_p10_p50_p90": [
+  750,
+  1519,
+  1519
+ ],
+ "full_feed_over_bound_moves": 568,
+ "full_feed_over_bound_move_length_p50": 1.3,
+ "full_feed_over_bound_moves_within_turn_bound": 519
+}

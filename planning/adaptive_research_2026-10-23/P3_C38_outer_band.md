@@ -1027,3 +1027,167 @@ is removed, nothing is needed.
   width at the stock edge. Example: no smoothing inset where the edge is
   the stock box, since there is no staircase from a wall there. That is
   a C22/C31 item. I do not propose a number.
+
+### 10.8 For C22 (a C31 item after C22a): the strip at a free stock edge gets no 2D centre region
+
+On Corne, op 1 leaves 440 of the 455 mm² of the 3–9 mm band where no
+op-1 cutter centre came within R below Z 17. 403 of those 440 mm² lie
+within 6 mm of the stock-box edge (`d23_why/band_any.py`; the nibble run
+C38a has the same pattern, 590 of 739). Along the sides where the case
+wall is near the mesh bbox, the stock-box edge is 5 mm from the wall. So
+the outer strip there is only about 2 mm wide in tool-centre space (wall
++ R to the box edge).
+
+`research_grown_outlines` first smooths the region (inset
+`SIMPLIFY_INSET` 0.3, then RDP 0.3), then insets it by the shortfall to a
+measured margin of one planner cell (about 0.51). In a 2 mm strip that
+leaves no 2D tool-centre region, or one too thin to keep after the piece
+split. So no producer (field, nibble or slot) plans those cells, and they
+stand at full height below Z 17.
+
+The edge there is the stock-box edge, a free edge with air beyond. It is
+not a wall or a staircase, so the reasons for the smoothing inset and the
+margin (O5b at a wall, the marching-squares staircase) may not hold
+there. The item: let C31 give a 2D centre region to a strip that is about
+2 mm wide in centre space at a free edge, with no new constant. Then
+measure the 440 mm² again.
+
+### 10.9 For the lead: does the merge defect hit the C22 turns? (read only)
+
+- **On the C12 fixture: no.** `phase3/d23/10_c12_heavy.txt` prints the
+  turn summary per arm. For `geodesic_local_spiral_headon` it reads
+  "planned 84, cut 83, … fed 83, unfed 0, full feed with no move 0". Every
+  arm with turns reads `unfed 0` and `fed = cut`.
+  - Mechanism: a turn is one straight step between two arc ends at an
+    angle. The RDP keeps a corner, so the emitted move is the turn
+    segment, and `apply_slice_turn_feeds` matches it.
+  - My slots were chains of COLLINEAR steps, which the RDP merges. That is
+    the difference.
+- **On Corne: not provable from the artefacts.** The CLI does not print
+  `Research3d.turns`, the same gap as for the slots. `d23_why/turnfeed.py`
+  reads D23 headon op 1 off the strip:
+  - 6687 clearing samples carry a reduced feed (p50 1519 mm/min, on 387
+    moves of median 0.86 mm), and only 95 of them read over c.
+  - 2014 samples read over the oracle bound (0.369), and 1943 of those
+    run at the full feed, on 568 moves (519 of them no longer than the
+    turn bound).
+  - Whether those 519 short moves are turns, or mop and wall steps, the
+    samples cannot say (no producer tag).
+- **Proposal:** the log line of §10.6 prints both summaries (turns and
+  slots: planned, cut, fed, unfed, unmatched) per op in a CLI run. Then
+  this check is one grep. The line goes in C22's `mod.rs`; C22 or I can
+  add it.
+
+## 11. G-CLIPAIR in the research arm: design (2026-10-26; for approval, no code)
+
+### 11.1 The defect, measured
+
+`adaptive3d/path.rs` (the boundary clear, O5b; 835-868 at b37cad1a4)
+empties every planner-stock cell whose centre lies outside
+`params.geometry.boundary`, the tool-CENTRE containment polygon. But a
+disc whose centre is inside the boundary reaches R beyond it, and the
+real stock there stands. So the planner reads air where the cutter cuts
+stock. On D23 (`d23_why/clipair_base.py`), counting cuts deeper than 1.5
+× Depth/Pass:
+
+| | op 1 (limit 9.0 mm) | copy op (limit 4.5 mm) |
+|---|---|---|
+| deep samples, headon / pick | 654 / 627 | 129 / 130 |
+| ... with the centre at its containment line (± 0.5 mm) | **158 / 165** | **126 / 127** |
+| axial peak | 12.0 / 12.0 | 9.0 / 12.0 |
+
+The copy op's samples on its line caused the pick run's 200.48 µm
+deflection and the export refusal (§10.7). Op 1's other deep samples
+(about 460–500) are not on its line. Most are the unplanned free-edge
+strip of §10.8, where a later pass meets a full column. That is not
+G-CLIPAIR.
+
+### 11.2 The fix (research arm only; shipped byte-identical)
+
+The boundary clear does two jobs, which the fix separates:
+
+**(a) Keep the reachable stock in the planner.** The clear empties only
+the cells outside `boundary ⊕ R`, the boundary grown by the tool radius.
+No disc with its centre inside the boundary reaches those cells, so
+clearing them changes nothing that a cut can meet. The cells between the
+boundary and `boundary ⊕ R` keep their real stock. Every planner read
+(the stamp, `plan_entry`, the keep-down link test, the lift's air test,
+C22a's held-link test) then sees the stock that the cutter meets.
+
+**(b) Keep the region inside the boundary.** O5b needs regions (in
+tool-centre space) to respect the boundary, so that no centre is planned
+outside it. In `build_material_bool_grid` and `level_gate`, a cell whose
+centre is outside the boundary is not a region cell for the research arm,
+whatever its stock. Today the clear gives this for free; with (a) it must
+be explicit.
+
+**(c) Plan the centres that can cut the band.** A region cell is a
+CENTRE cell, but its material test reads the stock of its own column only.
+So a centre inside the boundary whose own column is clear is not a region
+cell, even when its disc reaches stock standing beyond the boundary. That
+is why the copy op never cut its band level by level, and then met 9–12 mm
+of it at one level.
+
+For the research arm, a cell inside the boundary is also a region cell
+when some cell of the band (outside the boundary, inside `boundary ⊕ R`,
+with stock above the level floor) lies within R of it. Implementation:
+1. the band mask (cells outside the boundary with material above the
+   level floor, and outside the band cleared by (a));
+2. dilated by a disc of R;
+3. intersected with the boundary interior;
+4. OR-ed into the region grid.
+
+The 2D planner then plans those centres at each level, and the cutter
+takes the band one Depth/Pass at a time, as it takes any wall.
+
+**Where it goes:**
+- `path.rs` at the boundary clear: a cfg(research) branch, used when the
+  arm is the research arm, that clears outside `boundary ⊕ R` and keeps a
+  boundary mask on the context;
+- `clearing.rs` `build_material_bool_grid` / `level_gate`: the mask for
+  (b) and the band dilation for (c), research only;
+- the By Area region map (`region_map.rs`) reads the same cell test. Its
+  research use needs the same mask, or the arm stays Global (it is Global
+  on Corne and wanaka200).
+
+**Shipped:** the shipped branch is unchanged (the clear as now, no mask,
+no dilation), so byte parity holds by construction. No new constant: the
+boundary, R, the planner cell and the level floor.
+
+**Interactions:**
+- The C31 grow already treats the band as stock (§5.1), so the 2D grid
+  and the 3D planner stock now agree there.
+- The stock-box clip (item B) is unchanged.
+- C22a's held-link stock test gets the right answer at the containment
+  line.
+
+### 11.3 Pre-registration (Corne, both columns, against D23)
+
+- P-CA1: the copy op's deep samples at its containment line: 126 / 127 →
+  0. All its deep samples ≤ 10 (the 3 inside the silhouette may stay).
+  Axial peak ≤ 4.5 mm (1.5 × Depth/Pass).
+- P-CA2: the copy op's deflection: no tool-load export refusal in the
+  pick column. The deflection peak falls below the refusal limit; I give
+  no number for it before the run.
+- P-CA3: op 1's deep samples at its containment line: 158 / 165 → ≤ 16
+  (10 %). Op 1's other deep samples (the free-edge strip, §10.8) are not
+  predicted to change by more than 10 %.
+- P-CA4: the 6–9 mm band (op 1's containment band) does not get worse
+  than D23 (126). The copy op's reach band 1.5–4.5 mm after the full job
+  falls, because the copy op now cuts it level by level. The full-job
+  number is not in the R4 method (after op 1 only), so I give the
+  direction, not a bound.
+- P-CA5: cost. More copy-op cut (the band centres, about the band length
+  × levels) and more retracts where a keep-down link would cross the now
+  visible band. Plunge-entry spans may rise. I bound the copy op's
+  runtime at no more than D23 + 25 % (pick 1463.3 s → ≤ 1829 s).
+- P-CA6: shipped neutrality: byte parity green without `research`, and
+  the 13 adaptive3d sentries green.
+- P-CA7: wanaka200 back rough uses `containment = "inside"` with offset 0.
+  The band beyond its boundary is the terrain's own footprint, where the
+  part stands above the stock cells. The fix adds region cells there only
+  where stock stands above the level floor in the band. P: the wanaka200
+  cycle time changes by less than 2 %, and no new hard bar appears.
+
+Falsifier: if P-CA1 fails while (a) is in, the deep copy cuts are not the
+planner's blind band, and the mechanism of §10.7 is wrong.

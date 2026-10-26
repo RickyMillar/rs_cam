@@ -1,0 +1,42 @@
+{
+ "headon": {
+  "tp1": {
+   "deep_samples": 654,
+   "at_containment_line_pm_0_5": 158,
+   "inside_silhouette": 0,
+   "axial_max": 12.0,
+   "by_intent": {
+    "clearing_cut": 654
+   }
+  },
+  "tp3": {
+   "deep_samples": 129,
+   "at_containment_line_pm_0_5": 126,
+   "inside_silhouette": 3,
+   "axial_max": 9.0,
+   "by_intent": {
+    "clearing_cut": 129
+   }
+  }
+ },
+ "pick": {
+  "tp1": {
+   "deep_samples": 627,
+   "at_containment_line_pm_0_5": 165,
+   "inside_silhouette": 0,
+   "axial_max": 12.0,
+   "by_intent": {
+    "clearing_cut": 627
+   }
+  },
+  "tp3": {
+   "deep_samples": 130,
+   "at_containment_line_pm_0_5": 127,
+   "inside_silhouette": 3,
+   "axial_max": 12.0,
+   "by_intent": {
+    "clearing_cut": 130
+   }
+  }
+ }
+}
