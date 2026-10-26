@@ -1,13 +1,24 @@
-"""C43 (C18): the exact AREA oracle, the depth-weighted version of C18's
+"""C43 (C18): the exact load oracle, the depth-weighted version of C18's
 exact_width_at (tests/adaptive3d_geodesic_arm_c12.rs on adaptive-instruments).
 
-The formula (agreed with C22, README section 1):
-  uncut disc point: H(x, y) - z > 0.01 mm (the 0.01 of the C12 oracle)
-  h(u) = max over the uncut points of the disc at lateral offset u of (H - z)
-  A = sum over lateral bins of h(u) * pitch      (the chip area, mm2)
-  L = A / (D * d)                                  (d: the op's Depth/Pass)
-  bound: the same number as the radial bound (0.471 at s 2, R 3)
-At a full pass h(u) = d over the engaged band, so A = w * D * d and L = w.
+The definition (lead's ruling 2026-10-27, agreed with C22 §18.6): the
+codebase's own chip cross-section, applied per lateral strip of the disc:
+  A = sum over the lateral bins of mrr_cross_section_mm2(h(u), bin width)
+  L = A / mrr_cross_section_mm2(d, D)
+  mrr_cross_section_mm2: tool/mod.rs:508, ap * ae (a V-bit halves it,
+  tool/vbit.rs:149; the factor cancels), the cross-section that the power
+  gate multiplies by the feed (tool_load/power.rs:287).
+  h(u): the deepest H - (z + p(r)) of the uncut disc points in the strip at
+  lateral offset u; a point is uncut when that is > 0.01 mm (the 0.01 of
+  the C12 oracle; p(r) the cutter's height above its tip at radius r,
+  height_at_radius, 0 for the flat end mill of every fixture).
+  The bin width is the lattice pitch (0.05 mm); d the op's Depth/Pass;
+  bound 0.471 (the radial bound; at a full pass h = d over the width and
+  L = ae / D, the width fraction of today).
+Info column (not the definition): L_box = mrr_cross_section_mm2(ap, ae) /
+mrr_cross_section_mm2(d, D), ap the deepest uncut height in the whole disc,
+ae its lateral extent: the box that the sim screen reads
+(radial_woc_fraction * axial_engagement_mm / d).
 
 The geometry, as exact_width_at but in 3D:
 - H is a height field on a lattice of pitch 0.05 mm (EXACT_PITCH_MM = sim
@@ -27,7 +38,8 @@ The geometry, as exact_width_at but in 3D:
 Which samples are read: the screen (README section 1): clearing_cut, cutting,
 XY step > 1e-6, and either the sim radial > 0.471 (the old count) or the box
 form radial * axial_engagement_mm / d > 0.471 (a deep cut the old count
-missed). The box is an upper bound of L when the sim reads true.
+missed). The sim box is the same quantity as L, read by the simulation
+(radial_woc_fraction * D as ae, axial_engagement_mm as ap).
 
 Usage: area_oracle.py <run dir under phase3> <corne|wanaka200> [toolpath id, default 1] [Depth/Pass, default op 1's]
 Writes fix24/area_<run>[_tp<id>].npz (one row per read sample)."""
@@ -38,6 +50,16 @@ import numpy as np
 H0 = Path(__file__).resolve().parent; P3 = H0.parent
 R = 3.0; D = 2 * R; PITCH = 0.05; UNCUT = 0.01; BOUND = 0.471; STAMP_STEP = 0.3
 DPP = {"corne": 6.0, "wanaka200": 5.46}   # op 1 depth_per_pass in the project TOMLs (README section 2)
+
+
+def mrr_cross_section(ap, ae):
+    """MillingCutter::mrr_cross_section_mm2 of the flat end mill (tool/mod.rs:508)."""
+    return ap * ae
+
+
+def tip_profile(r):
+    """The cutter's height above its tip at radius r (height_at_radius): 0 for a flat end mill."""
+    return np.zeros_like(r)
 
 
 def walk(S, lo, hi, d, read_all=False, read_tp=1):
@@ -87,20 +109,23 @@ def walk(S, lo, hi, d, read_all=False, read_tp=1):
                 if w is not None:
                     g, dsk, xs, ys = w
                     X, Y = np.meshgrid(xs, ys)
-                    ht = Hf[g].astype(np.float64) - mz   # float64: NumPy 2 keeps float32 - float in float32
+                    # float64: NumPy 2 keeps float32 - float in float32
+                    ht = Hf[g].astype(np.float64) - (mz + tip_profile(np.hypot(X - mx, Y - my)))
                     sel = dsk & (ht > UNCUT)
                     sx, sy = -dy / L, dx / L
                     if sel.any():
                         u = (X[sel] - mx) * sx + (Y[sel] - my) * sy; h = ht[sel]
                         b = np.rint((u + R) / PITCH).astype(int)   # one bin per lattice offset (floor merges float-noise neighbours)
                         hb = np.zeros(int(round(2 * R / PITCH)) + 2); np.maximum.at(hb, b, h)
-                        A = float(hb.sum() * PITCH); w_ = float((u.max() - u.min()) / D); hm = float(h.max())
+                        # A: the cross-section function per strip of one pitch
+                        A = float(mrr_cross_section(hb, PITCH).sum()); w_ = float((u.max() - u.min()) / D); hm = float(h.max())
                     else:
                         A = w_ = hm = 0.0
                 else:
                     A = w_ = hm = 0.0
-                rows.append((n, s["move_index"], p[0], p[1], p[2], L, e, s["axial_engagement_mm"], w_, hm, A, A / (D * d),
-                             s["removed_volume_est_mm3"], s.get("feed_rate_mm_min", 0.0)))
+                full = mrr_cross_section(d, D)
+                rows.append((n, s["move_index"], p[0], p[1], p[2], L, e, s["axial_engagement_mm"], w_, hm, A, A / full,
+                             s["removed_volume_est_mm3"], s.get("feed_rate_mm_min", 0.0), mrr_cross_section(hm, w_ * D) / full))
             # stamp the step prev -> s
             m_ = max(1, int(math.ceil(L / STAMP_STEP)))
             for t in range(1, m_ + 1):
@@ -125,7 +150,7 @@ def run(rel, fx, tp=1, dpp=None):
         lo, hi = [0.0, 0.0, 0.0], [hi[k] - lo[k] for k in range(3)]
     d = DPP[fx] if dpp is None else dpp; t0 = time.time()
     rows = walk(S, lo, hi, d, read_tp=tp)
-    cols = "sample move x y z step_mm sim_radial sim_axial exact_w hmax area_mm2 L removed_mm3 feed".split()
+    cols = "sample move x y z step_mm sim_radial sim_axial exact_w hmax area_mm2 L removed_mm3 feed L_box".split()
     arr = np.array(rows, float).reshape(-1, len(cols))
     tag = rel.replace("/", "_") + ("" if tp == 1 else f"_tp{tp}")
     # the op's base clearing feed: the most common feed of its clearing_cut cutting samples (load_split.py rule)

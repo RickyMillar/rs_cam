@@ -1,5 +1,6 @@
-"""C43 (fix24): re-score op 1 of each run with the area load (area_oracle.py
-output). The old count is C22 §16.9's: the XY step length of clearing_cut
+"""C43 (fix24): re-score op 1 of each run with the load L of area_oracle.py
+(the per-strip sum of mrr_cross_section_mm2 over mrr_cross_section_mm2(d, D);
+the box L_box is an info column). The old count is C22 §16.9's: the XY step length of clearing_cut
 cutting samples with sim radial > 0.471 (fix21-23 load_split.py). Its length
 is split into three classes, in this order:
   sim-only   : L <= 0.471 and the exact width w <= 0.471 (the exact radial
@@ -15,9 +16,9 @@ from pathlib import Path
 import numpy as np
 H = Path(__file__).resolve().parent
 B = 0.471
-RUNS = [("corne", "D26", "fix16/corne_pick"), ("corne", "C35", "fix12/corne"), ("corne", "D33", "fix23/default/corne"),
+RUNS = [("corne", "contour_parallel", "fix6/corne/contour_parallel"), ("corne", "D26", "fix16/corne_pick"), ("corne", "C35", "fix12/corne"), ("corne", "D33", "fix23/default/corne"),
         ("corne", "D33 stock_depth", "fix23/stock_depth/corne"),
-        ("wanaka200", "D26", "fix16/wanaka200_pick"), ("wanaka200", "C35", "fix12/wanaka200"), ("wanaka200", "D33", "fix23/default/wanaka200"),
+        ("wanaka200", "contour_parallel", "fix6/wanaka200/contour_parallel"), ("wanaka200", "D26", "fix16/wanaka200_pick"), ("wanaka200", "C35", "fix12/wanaka200"), ("wanaka200", "D33", "fix23/default/wanaka200"),
         ("wanaka200", "D33 stock_depth", "fix23/stock_depth/wanaka200")]
 HBINS = [0.0, 0.5, 1.5, 3.0, 1e9]   # hmax classes of the thin-layer length (mm)
 
@@ -47,6 +48,9 @@ def score(rel):
     # the sim's own area form: removed volume / XY step / (D d) (noisy per sample; a cross-check only)
     Ls = C("removed_mm3") / np.maximum(step, 1e-9) / (6.0 * r["dpp"])
     r["thin_simvol_agree_frac"] = round(float(step[th & (Ls <= B)].sum() / step[th].sum()), 3) if th.any() else None
+    # info: the box (deepest point x full width), not the definition
+    Lb = C("L_box"); r["box_over_mm"] = round(float(step[Lb > B].sum()), 1)
+    r["box_only_mm"] = round(float(step[(Lb > B) & (L <= B)].sum()), 1)
     r["deep_narrow_mm"] = round(float(step[(L > B) & (w <= B)].sum()), 1)
     return r
 

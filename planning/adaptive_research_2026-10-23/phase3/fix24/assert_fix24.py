@@ -57,7 +57,8 @@ for c in SYN["cases"]:
 on(f"{SYN['cases'][6]['L']:.4f} against w {SYN['cases'][6]['w']:.4f}: a deep side cut is held", "deep text")
 ok(SYN["cases"][6]["L"] > B > SYN["cases"][6]["w"], "deep case over the bound, width under")
 
-RUNS = {"corne D26": "fix16/corne_pick", "corne C35": "fix12/corne", "corne D33": "fix23/default/corne", "corne D33 stock_depth": "fix23/stock_depth/corne",
+RUNS = {"corne contour_parallel": "fix6/corne/contour_parallel", "wanaka200 contour_parallel": "fix6/wanaka200/contour_parallel",
+        "corne D26": "fix16/corne_pick", "corne C35": "fix12/corne", "corne D33": "fix23/default/corne", "corne D33 stock_depth": "fix23/stock_depth/corne",
         "wanaka200 D26": "fix16/wanaka200_pick", "wanaka200 C35": "fix12/wanaka200", "wanaka200 D33": "fix23/default/wanaka200",
         "wanaka200 D33 stock_depth": "fix23/stock_depth/wanaka200"}
 
@@ -103,24 +104,25 @@ def brute(rel, fx, rows_pick):
         ht = top - mz; sel = ht > 0.01
         dx, dy = p[0] - q[0], p[1] - q[1]; L = math.hypot(dx, dy); sx, sy = -dy / L, dx / L
         if not sel.any():
-            out.append((0.0, 0.0, 0.0, 0.0)); continue
+            out.append((0.0, 0.0, 0.0, 0.0, 0.0)); continue
         u = (X[sel] - mx) * sx + (Y[sel] - my) * sy; h = ht[sel]
         bins = {}
         for b, v in zip(np.rint((u + R) / PITCH).astype(int), h):
             bins[b] = max(bins.get(b, 0.0), v)
-        A = sum(bins.values()) * PITCH
-        out.append(((u.max() - u.min()) / D, h.max(), A, A / (D * area_oracle.DPP[fx])))
+        A = sum(bins.values()) * PITCH; d = area_oracle.DPP[fx]; w = (u.max() - u.min()) / D
+        # the box: mrr_cross_section_mm2(ap, ae) / mrr_cross_section_mm2(d, D), ap * ae for the flat end mill (tool/mod.rs:508)
+        out.append((w, h.max(), A, (h.max() * w * D) / (d * D), A / (D * d)))
     return out
 
 
 rng = np.random.default_rng(43)
-for key in ("corne D33", "corne C35", "wanaka200 D33", "wanaka200 D26"):
+for key in ("corne D33", "corne contour_parallel", "wanaka200 D33", "wanaka200 contour_parallel"):
     rel = RUNS[key]; fx = key.split()[0]; z, c = load(rel); a = z["data"]
     pick = a[rng.choice(len(a), 12, replace=False)]
-    for row, (w, hm, A, L) in zip(pick, brute(rel, fx, pick)):
+    for row, (w, hm, A, L, La) in zip(pick, brute(rel, fx, pick)):
         ci = lambda k: row[c.index(k)]
-        ok(abs(w - ci("exact_w")) < 1e-6 and abs(hm - ci("hmax")) < 1e-4 and abs(A - ci("area_mm2")) < 1e-3 and abs(L - ci("L")) < 1e-4,
-           f"brute {key} sample {int(row[0])}: {(w, hm, A, L)} vs {(ci('exact_w'), ci('hmax'), ci('area_mm2'), ci('L'))}")
+        ok(abs(w - ci("exact_w")) < 1e-6 and abs(hm - ci("hmax")) < 1e-4 and abs(A - ci("area_mm2")) < 1e-3 and abs(L - ci("L")) < 1e-4
+           and abs(La - ci("L_area")) < 1e-4, f"brute {key} sample {int(row[0])}: {(w, hm, A, L, La)}")
 
 
 # ---- rescore again
@@ -135,7 +137,8 @@ def again(rel):
          "red": S(stl & (fd < base - 0.5)), "base": S(stl & (fd >= base - 0.5)), "full": S(stl & (hm >= d - 0.01)),
          "hb": [S(th & (hm > l) & (hm <= u)) for l, u in ((0, .5), (.5, 1.5), (1.5, 3), (3, 1e9))],
          "mean": round(float(np.average(C("area_mm2")[th] / (w[th] * D), weights=st_[th])), 2), "peak": round(float(L.max()), 3),
-         "agree": round(float(st_[th & (Ls <= B)].sum() / st_[th].sum()), 3), "d": d, "bf": base}
+         "agree": round(float(st_[th & (Ls <= B)].sum() / st_[th].sum()), 3), "d": d, "bf": base,
+         "info": S(C("L_area") > B), "boxonly": S((L > B) & (C("L_area") <= B))}
     # the base feed again from the simulation file
     sim = json.load(open(P3 / rel / "simulation.json"))
     fs = [round(s["feed_rate_mm_min"]) for s in sim["trace"]["samples"] if s["toolpath_id"] == 1 and s["is_cutting"] and s["source_intent"] == "clearing_cut"]
@@ -156,6 +159,9 @@ for key, rel in RUNS.items():
        [j["old_over_mm"], j["sim_only_mm"], j["thin_layer_mm"], j["still_over_mm"], j["new_over_mm"], j["area_over_mm"],
         j["still_over_reduced_feed_mm"], j["still_over_base_feed_mm"], j["still_over_full_depth_mm"], j["thin_by_hmax_mm"],
         j["thin_mean_height_mm"], j["area_peak_L"], j["thin_simvol_agree_frac"], j["dpp"], j["base_feed"]], f"rescore {key}: {r}")
+    ok(r["info"] == j["area_info_over_mm"] and r["boxonly"] == j["box_only_mm"], f"{key} info / box-only")
+    z_, c_ = load(rel); a_ = z_["data"]; Cc = lambda k: a_[:, c_.index(k)]
+    ok(bool(np.all(Cc("L_area") <= Cc("L") + PITCH * Cc("hmax") / (D * float(z_["dpp"])) + 1e-9)), f"{key} box >= true area, to one bin, per sample")
     ok(r["bf_sim"] == r["bf"], f"{key} base feed"); ok(r["old_sim"] == r["old"], f"{key} old count from the sim {r['old_sim']}")
     ok(abs(r["so"] + r["th"] + r["st"] - r["old"]) <= 0.25, f"{key} partition")
     ok(abs(r["st"] + r["new"] - r["area"]) <= 0.15, f"{key} area = still + new")

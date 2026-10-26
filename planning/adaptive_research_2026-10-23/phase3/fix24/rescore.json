@@ -1,4 +1,32 @@
 {
+ "corne contour_parallel": {
+  "run": "fix6/corne/contour_parallel",
+  "dpp": 6.0,
+  "read": 11655,
+  "old_over_mm": 3158.9,
+  "sim_only_mm": 20.4,
+  "thin_layer_mm": 915.9,
+  "still_over_mm": 2222.5,
+  "new_over_mm": 3.5,
+  "area_over_mm": 2226.0,
+  "thin_by_hmax_mm": [
+   1.8,
+   341.3,
+   16.6,
+   556.3
+  ],
+  "thin_mean_height_mm": 2.18,
+  "still_over_peak_L": 1.031,
+  "area_peak_L": 1.031,
+  "base_feed": 4000.0,
+  "still_over_reduced_feed_mm": 0.0,
+  "still_over_base_feed_mm": 2222.5,
+  "still_over_full_depth_mm": 1963.8,
+  "thin_simvol_agree_frac": 0.858,
+  "box_over_mm": 2604.1,
+  "box_only_mm": 378.0,
+  "deep_narrow_mm": 2.9
+ },
  "corne D26": {
   "run": "fix16/corne_pick",
   "dpp": 6.0,
@@ -23,6 +51,8 @@
   "still_over_base_feed_mm": 140.2,
   "still_over_full_depth_mm": 90.4,
   "thin_simvol_agree_frac": 0.899,
+  "box_over_mm": 598.4,
+  "box_only_mm": 456.0,
   "deep_narrow_mm": 0.8
  },
  "corne C35": {
@@ -49,6 +79,8 @@
   "still_over_base_feed_mm": 86.9,
   "still_over_full_depth_mm": 57.2,
   "thin_simvol_agree_frac": 0.809,
+  "box_over_mm": 410.8,
+  "box_only_mm": 323.9,
   "deep_narrow_mm": 0.0
  },
  "corne D33": {
@@ -75,6 +107,8 @@
   "still_over_base_feed_mm": 37.2,
   "still_over_full_depth_mm": 283.8,
   "thin_simvol_agree_frac": 0.898,
+  "box_over_mm": 866.3,
+  "box_only_mm": 441.5,
   "deep_narrow_mm": 0.0
  },
  "corne D33 stock_depth": {
@@ -101,7 +135,37 @@
   "still_over_base_feed_mm": 37.2,
   "still_over_full_depth_mm": 283.8,
   "thin_simvol_agree_frac": 0.888,
+  "box_over_mm": 879.8,
+  "box_only_mm": 454.9,
   "deep_narrow_mm": 0.0
+ },
+ "wanaka200 contour_parallel": {
+  "run": "fix6/wanaka200/contour_parallel",
+  "dpp": 5.46,
+  "read": 6578,
+  "old_over_mm": 6201.7,
+  "sim_only_mm": 272.0,
+  "thin_layer_mm": 3802.3,
+  "still_over_mm": 2127.4,
+  "new_over_mm": 5.7,
+  "area_over_mm": 2133.1,
+  "thin_by_hmax_mm": [
+   175.3,
+   576.9,
+   131.4,
+   2918.8
+  ],
+  "thin_mean_height_mm": 1.43,
+  "still_over_peak_L": 2.493,
+  "area_peak_L": 2.493,
+  "base_feed": 1000.0,
+  "still_over_reduced_feed_mm": 0.0,
+  "still_over_base_feed_mm": 2127.4,
+  "still_over_full_depth_mm": 1915.4,
+  "thin_simvol_agree_frac": 0.823,
+  "box_over_mm": 4953.1,
+  "box_only_mm": 2820.0,
+  "deep_narrow_mm": 2.6
  },
  "wanaka200 D26": {
   "run": "fix16/wanaka200_pick",
@@ -127,6 +191,8 @@
   "still_over_base_feed_mm": 26.6,
   "still_over_full_depth_mm": 3.8,
   "thin_simvol_agree_frac": 0.735,
+  "box_over_mm": 1531.1,
+  "box_only_mm": 1504.5,
   "deep_narrow_mm": 0.0
  },
  "wanaka200 C35": {
@@ -153,6 +219,8 @@
   "still_over_base_feed_mm": 26.0,
   "still_over_full_depth_mm": 3.2,
   "thin_simvol_agree_frac": 0.736,
+  "box_over_mm": 1531.0,
+  "box_only_mm": 1505.0,
   "deep_narrow_mm": 0.0
  },
  "wanaka200 D33": {
@@ -179,6 +247,8 @@
   "still_over_base_feed_mm": 35.1,
   "still_over_full_depth_mm": 23.6,
   "thin_simvol_agree_frac": 0.757,
+  "box_over_mm": 1816.3,
+  "box_only_mm": 1764.0,
   "deep_narrow_mm": 0.0
  },
  "wanaka200 D33 stock_depth": {
@@ -205,6 +275,8 @@
   "still_over_base_feed_mm": 30.7,
   "still_over_full_depth_mm": 23.6,
   "thin_simvol_agree_frac": 0.75,
+  "box_over_mm": 2052.1,
+  "box_only_mm": 2003.7,
   "deep_narrow_mm": 0.0
  }
 }

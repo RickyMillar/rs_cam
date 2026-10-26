@@ -84,17 +84,17 @@ The second pass is read away from its ends.
 
 | stepover e (mm) | stock height t (mm) | heading (rad) | L read | L = e·t/(D·d) | w read | w = e/D |
 |---|---|---|---|---|---|---|
-| 2.0 | 6.0 | 0.0 | 0.3417 | 0.3333 | 0.3333 | 0.3333 |
-| 1.2 | 6.0 | 0.0 | 0.2000 | 0.2000 | 0.1917 | 0.2000 |
-| 2.0 | 0.5 | 0.0 | 0.0285 | 0.0278 | 0.3333 | 0.3333 |
-| 1.2 | 3.0 | 0.0 | 0.1000 | 0.1000 | 0.1917 | 0.2000 |
-| 2.0 | 6.0 | 0.5 | 0.3417 | 0.3333 | 0.3288 | 0.3333 |
-| 1.2 | 1.0 | 0.5 | 0.0347 | 0.0333 | 0.1958 | 0.2000 |
-| 2.0 | 9.0 | 0.5 | 0.5125 | 0.5000 | 0.3288 | 0.3333 |
+| 2.0 | 6.0 | 0.0 | 0.3333 | 0.3333 | 0.3333 | 0.3333 |
+| 1.2 | 6.0 | 0.0 | 0.1917 | 0.2000 | 0.1917 | 0.2000 |
+| 2.0 | 0.5 | 0.0 | 0.0278 | 0.0278 | 0.3333 | 0.3333 |
+| 1.2 | 3.0 | 0.0 | 0.0958 | 0.1000 | 0.1917 | 0.2000 |
+| 2.0 | 6.0 | 0.5 | 0.3288 | 0.3333 | 0.3288 | 0.3333 |
+| 1.2 | 1.0 | 0.5 | 0.0326 | 0.0333 | 0.1958 | 0.2000 |
+| 2.0 | 9.0 | 0.5 | 0.4932 | 0.5000 | 0.3288 | 0.3333 |
 
 Each L is within one bin, pitch · t / (D · d), of e·t/(D·d), and each w
 is within pitch / D = 0.0083 of e/D. At t = 9.0 mm > d the load is
-0.5125 against w 0.3288: a deep side cut is held.
+0.4932 against w 0.3288: a deep side cut is held.
 
 ## 4. The C12 heavy test judge (proposal; not applied)
 
@@ -178,19 +178,19 @@ capped turns).
 |---|---|---|---|---|
 | op 1 Depth/Pass d (mm) | 6.00 | 6.00 | 6.00 | 6.00 |
 | old count: sim radial > 0.471 (mm) | 780.8 | 486.3 | 1044.1 | 1058.8 |
-|   of it sim-only: exact w ≤ 0.471 (mm) | 6.4 | 7.1 | 3.6 | 5.0 |
-|   of it thin layer: w > 0.471, L ≤ 0.471 (mm) | 634.2 | 392.3 | 615.6 | 628.9 |
-|   of it still over: L > 0.471 (mm) | 140.2 | 86.9 | 424.9 | 424.9 |
-| thin-layer share of the old count | 81.2 % | 80.7 % | 59.0 % | 59.4 % |
-| new over: sim radial ≤ 0.471, L > 0.471 (mm) | 2.4 | 0.0 | 0.0 | 0.0 |
-| **area count: L > 0.471 (mm)** | **142.7** | **86.9** | **424.9** | **424.9** |
-|   still over at a lowered feed / at the base feed (mm) | 0.0 / 140.2 | 0.0 / 86.9 | 387.7 / 37.2 | 387.7 / 37.2 |
-|   still over with full-height stock, hmax ≥ d (mm) | 90.4 | 57.2 | 283.8 | 283.8 |
+|   of it sim-only: exact w ≤ 0.471 (mm) | 6.7 | 7.1 | 3.6 | 5.0 |
+|   of it thin layer: w > 0.471, L ≤ 0.471 (mm) | 178.2 | 68.4 | 174.4 | 174.2 |
+|   of it still over: L > 0.471 (mm) | 596.0 | 410.8 | 866.1 | 879.5 |
+| thin-layer share of the old count | 22.8 % | 14.1 % | 16.7 % | 16.5 % |
+| new over: sim radial ≤ 0.471, L > 0.471 (mm) | 2.4 | 0.0 | 0.3 | 0.3 |
+| **area count: L > 0.471 (mm)** | **598.4** | **410.8** | **866.3** | **879.8** |
+|   still over at a lowered feed / at the base feed (mm) | 2.7 / 593.3 | 5.7 / 405.1 | 400.4 / 465.6 | 400.4 / 479.1 |
+|   still over with full-height stock, hmax ≥ d (mm) | 163.8 | 146.2 | 353.7 | 355.1 |
 | base clearing feed (mm/min) | 3556 | 4000 | 4000 | 4000 |
-| peak L | 1.933 | 2.010 | 1.792 | 1.792 |
-| thin layer by hmax: ≤ 0.5 / 0.5–1.5 / 1.5–3 / > 3 mm (mm) | 137.0 / 31.2 / 2.9 / 463.1 | 32.2 / 27.4 / 4.4 / 328.4 | 135.7 / 30.8 / 2.4 / 446.7 | 135.5 / 30.8 / 2.4 / 460.1 |
-| thin layer: mean height over the width, A / (w·D) (mm) | 0.95 | 1.24 | 0.93 | 0.94 |
-| thin layer that the sim volume form also reads ≤ 0.471 | 89.9 % | 80.9 % | 89.8 % | 88.8 % |
+| peak L | 2.929 | 2.735 | 3.746 | 3.746 |
+| thin layer by hmax: ≤ 0.5 / 0.5–1.5 / 1.5–3 / > 3 mm (mm) | 137.0 / 31.2 / 2.7 / 7.3 | 32.2 / 27.4 / 3.9 / 5.0 | 135.7 / 30.8 / 2.3 / 5.6 | 135.5 / 30.8 / 2.3 / 5.6 |
+| thin layer: mean height over the width, A / (w·D) (mm) | 0.64 | 0.69 | 0.61 | 0.61 |
+| thin layer that the sim volume form also reads ≤ 0.471 | 91.3 % | 77.2 % | 92.1 % | 92.1 % |
 
 ### wanaka200, op 1 "2 Back Rough"
 
@@ -198,50 +198,50 @@ capped turns).
 |---|---|---|---|---|
 | op 1 Depth/Pass d (mm) | 5.46 | 5.46 | 5.46 | 5.46 |
 | old count: sim radial > 0.471 (mm) | 2225.3 | 2234.8 | 2558.4 | 2864.0 |
-|   of it sim-only: exact w ≤ 0.471 (mm) | 90.5 | 90.4 | 92.6 | 127.5 |
-|   of it thin layer: w > 0.471, L ≤ 0.471 (mm) | 2108.2 | 2118.4 | 2413.6 | 2688.1 |
-|   of it still over: L > 0.471 (mm) | 26.6 | 26.0 | 52.2 | 48.4 |
-| thin-layer share of the old count | 94.7 % | 94.8 % | 94.3 % | 93.9 % |
+|   of it sim-only: exact w ≤ 0.471 (mm) | 90.0 | 89.9 | 92.0 | 126.7 |
+|   of it thin layer: w > 0.471, L ≤ 0.471 (mm) | 604.2 | 613.9 | 650.2 | 685.2 |
+|   of it still over: L > 0.471 (mm) | 1531.1 | 1531.0 | 1816.3 | 2052.1 |
+| thin-layer share of the old count | 27.2 % | 27.5 % | 25.4 % | 23.9 % |
 | new over: sim radial ≤ 0.471, L > 0.471 (mm) | 0.0 | 0.0 | 0.0 | 0.0 |
-| **area count: L > 0.471 (mm)** | **26.6** | **26.0** | **52.2** | **48.4** |
-|   still over at a lowered feed / at the base feed (mm) | 0.0 / 26.6 | 0.0 / 26.0 | 17.2 / 35.1 | 17.8 / 30.7 |
-|   still over with full-height stock, hmax ≥ d (mm) | 3.8 | 3.2 | 23.6 | 23.6 |
+| **area count: L > 0.471 (mm)** | **1531.1** | **1531.0** | **1816.3** | **2052.1** |
+|   still over at a lowered feed / at the base feed (mm) | 0.0 / 1531.1 | 0.0 / 1531.0 | 37.3 / 1779.0 | 44.1 / 2008.1 |
+|   still over with full-height stock, hmax ≥ d (mm) | 52.2 | 52.1 | 150.6 | 143.1 |
 | base clearing feed (mm/min) | 1000 | 1000 | 1000 | 1000 |
-| peak L | 0.862 | 0.599 | 0.617 | 0.617 |
-| thin layer by hmax: ≤ 0.5 / 0.5–1.5 / 1.5–3 / > 3 mm (mm) | 12.6 / 420.0 / 153.3 / 1522.3 | 18.5 / 423.8 / 153.3 / 1522.8 | 13.8 / 447.7 / 173.1 / 1779.1 | 16.5 / 454.9 / 187.2 / 2029.4 |
-| thin layer: mean height over the width, A / (w·D) (mm) | 1.35 | 1.35 | 1.29 | 1.29 |
-| thin layer that the sim volume form also reads ≤ 0.471 | 73.5 % | 73.6 % | 75.7 % | 75.0 % |
+| peak L | 2.994 | 3.093 | 1.957 | 1.957 |
+| thin layer by hmax: ≤ 0.5 / 0.5–1.5 / 1.5–3 / > 3 mm (mm) | 12.6 / 420.0 / 136.1 / 35.5 | 18.5 / 423.8 / 136.1 / 35.5 | 13.8 / 447.7 / 154.9 / 33.9 | 16.5 / 454.9 / 168.0 / 45.8 |
+| thin layer: mean height over the width, A / (w·D) (mm) | 0.62 | 0.62 | 0.61 | 0.64 |
+| thin layer that the sim volume form also reads ≤ 0.471 | 95.7 % | 95.7 % | 95.0 % | 94.5 % |
 
 ## 7. Reading
 
 1. **Most of the old over-load was thin layers.** On Corne the thin-layer
-   class is 81.2 % of the old count on D26, 80.7 % on C35 and
-   59.0 % on D33. On wanaka200 it is 94.7 %, 94.8 % and
-   94.3 %.
-2. **The area count.** Corne: D26 142.7 mm, C35
-   86.9 mm, D33 424.9 mm. wanaka200:
-   26.6, 26.0 and 52.2 mm.
-3. **On Corne D33 the rest is the fed slot.** 387.7 mm of
-   D33's 424.9 mm still over runs at a lowered feed (the C38
-   fed slots and the capped turns); 37.2 mm runs at the
+   class is 22.8 % of the old count on D26, 14.1 % on C35 and
+   16.7 % on D33. On wanaka200 it is 27.2 %, 27.5 % and
+   25.4 %.
+2. **The area count.** Corne: D26 598.4 mm, C35
+   410.8 mm, D33 866.3 mm. wanaka200:
+   1531.1, 1531.0 and 1816.3 mm.
+3. **On Corne D33 the rest is the fed slot.** 400.4 mm of
+   D33's 866.1 mm still over runs at a lowered feed (the C38
+   fed slots and the capped turns); 465.6 mm runs at the
    base feed. A slot is a cut over the full width at full depth, so the
    area rule keeps it over. The judge exempts a capped turn; the lead
    decides if a fed slot gets the same rule.
 4. **What the thin class is.** Most of its length has stock higher than
-   3 mm on part of the width (hmax > 3 mm: Corne D33 446.7 of
-   615.6 mm; wanaka200 D33 1779.1 of
-   2413.6 mm). There the cutter takes a deep cut that is
+   3 mm on part of the width (hmax > 3 mm: Corne D33 5.6 of
+   174.4 mm; wanaka200 D33 33.9 of
+   650.2 mm). There the cutter takes a deep cut that is
    narrower than the bound, and a thin layer beside it. The width count
    read that as a cut over the full width. A thin layer across the whole disc (hmax ≤ 1.5 mm)
    is Corne D33 166.5 mm and wanaka200 D33
    461.5 mm.
 5. **No deep cut was hidden.** The new-over class (a cut deeper than d
-   under a radial of 0.471 or less) is 2.4 mm or less in
+   under a radial of 0.471 or less) is 6.5 mm or less in
    every run.
 6. **The sim's volume agrees in the main.** The sim's own area form
    (removed volume / XY step / (D·d)) also reads 0.471 or less on
-   80.9 % or more of the Corne thin-layer length and
-   73.5 % or more on wanaka200. One sim sample lumps its
+   77.2 % or more of the Corne thin-layer length and
+   94.5 % or more on wanaka200. One sim sample lumps its
    removal (`adaptive/CLAUDE.md`), so this is a cross-check, not the judge.
 
 ## 8. Limits and open points
