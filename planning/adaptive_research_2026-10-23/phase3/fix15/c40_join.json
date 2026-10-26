@@ -1,0 +1,964 @@
+{
+ "corne_pick": {
+  "summary_lines": [
+   "C40 entry summary entries=1188 by_kind_cause={(LiftOver, Some(Start)): 3, (LiftOver, Some(Reentry2d)): 243, (LiftOver, Some(LargeZ)): 860, (LiftOver, Some(LargeZHeld)): 14, (LiftOver, Some(AirRun)): 3, (Plunge, None): 37, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 18} drop_1mm_by_cause={None: 21, Some(Start): 13, Some(Reentry2d): 261, Some(LargeZ): 860, Some(LargeZHeld): 8, Some(AirRun): 3}",
+   "C40 entry summary entries=225 by_kind_cause={(LiftOver, Some(Start)): 1, (LiftOver, Some(Reentry2d)): 40, (Plunge, None): 176, (Plunge, Some(Start)): 6, (Plunge, Some(Reentry2d)): 2} drop_1mm_by_cause={None: 40, Some(Start): 7, Some(Reentry2d): 42}"
+  ],
+  "op0": {
+   "entries": 1188,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 860,
+    "LiftOver Some(Reentry2d)": 243,
+    "Plunge None": 37,
+    "Plunge Some(Reentry2d)": 18,
+    "LiftOver Some(LargeZHeld)": 14,
+    "Plunge Some(Start)": 10,
+    "LiftOver Some(Start)": 3,
+    "LiftOver Some(AirRun)": 3
+   },
+   "other": 37,
+   "other_share_pct": 3.11,
+   "largez_share_pct": 73.57,
+   "other_first20": [
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -105.609,
+     "z": 17.5,
+     "drop": 6.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 17.0,
+     "drop": 2.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 11.0,
+     "drop": 8.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 5.0,
+     "drop": 14.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -80.959,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -75.802,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -76.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -65.802,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -65.37,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -66.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 89.314,
+     "y": -66.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -60.959,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 80.314,
+     "y": -61.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 98.314,
+     "y": -60.702,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -50.959,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 80.314,
+     "y": -51.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 98.314,
+     "y": -50.702,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    }
+   ]
+  },
+  "op1": {
+   "entries": 225,
+   "by_kind_cause": {
+    "Plunge None": 176,
+    "LiftOver Some(Reentry2d)": 40,
+    "Plunge Some(Start)": 6,
+    "Plunge Some(Reentry2d)": 2,
+    "LiftOver Some(Start)": 1
+   },
+   "other": 176,
+   "other_share_pct": 78.22,
+   "largez_share_pct": 0.0,
+   "other_first20": [
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 14.011,
+     "drop": 4.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 11.011,
+     "drop": 7.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 8.011,
+     "drop": 10.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 5.011,
+     "drop": 13.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 27.814,
+     "y": -92.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 18.814,
+     "y": -87.507,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 35.314,
+     "y": -87.193,
+     "z": 2.011,
+     "drop": 2.489,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -87.507,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 27.814,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 44.314,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 18.814,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -71.605,
+     "z": 2.011,
+     "drop": 2.489,
+     "join": "None"
+    }
+   ]
+  },
+  "join_op1": {
+   "descents": 1156,
+   "matched": 1156,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 858,
+    "Some(Reentry2d)": 258,
+    "None": 19,
+    "Some(Start)": 13,
+    "Some(LargeZHeld)": 6,
+    "Some(AirRun)": 2
+   },
+   "share_pct": {
+    "Some(LargeZ)": 74.2,
+    "Some(Reentry2d)": 22.3,
+    "None": 1.6,
+    "Some(Start)": 1.1,
+    "Some(LargeZHeld)": 0.5,
+    "Some(AirRun)": 0.2
+   },
+   "largez_share_pct": 74.7,
+   "other_share_pct": 1.64
+  }
+ },
+ "corne_headon": {
+  "summary_lines": [
+   "C40 entry summary entries=1463 by_kind_cause={(LiftOver, None): 5, (LiftOver, Some(Start)): 3, (LiftOver, Some(Reentry2d)): 199, (LiftOver, Some(LargeZ)): 862, (LiftOver, Some(LargeZHeld)): 323, (Plunge, None): 37, (Plunge, Some(Start)): 10, (Plunge, Some(Reentry2d)): 24} drop_1mm_by_cause={None: 26, Some(Start): 13, Some(Reentry2d): 223, Some(LargeZ): 862, Some(LargeZHeld): 314}",
+   "C40 entry summary entries=224 by_kind_cause={(LiftOver, Some(Reentry2d)): 40, (Plunge, None): 176, (Plunge, Some(Start)): 6, (Plunge, Some(Reentry2d)): 2} drop_1mm_by_cause={None: 40, Some(Start): 6, Some(Reentry2d): 42}"
+  ],
+  "op0": {
+   "entries": 1463,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 862,
+    "LiftOver Some(LargeZHeld)": 323,
+    "LiftOver Some(Reentry2d)": 199,
+    "Plunge None": 37,
+    "Plunge Some(Reentry2d)": 24,
+    "Plunge Some(Start)": 10,
+    "LiftOver None": 5,
+    "LiftOver Some(Start)": 3
+   },
+   "other": 42,
+   "other_share_pct": 2.87,
+   "largez_share_pct": 81.0,
+   "other_first20": [
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -105.609,
+     "z": 17.5,
+     "drop": 1.238,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 17.0,
+     "drop": 2.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 11.0,
+     "drop": 8.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -96.591,
+     "z": 5.0,
+     "drop": 14.0,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 121.346,
+     "y": -18.264,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 122.667,
+     "y": -18.264,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 125.296,
+     "y": -18.264,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 129.212,
+     "y": -18.264,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 131.807,
+     "y": -18.264,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -106.184,
+     "z": 17.0,
+     "drop": 6.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -80.959,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -75.802,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -76.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -65.802,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -65.37,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -66.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 89.314,
+     "y": -66.007,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -60.959,
+     "z": 0.5,
+     "drop": 4.0,
+     "join": "None"
+    }
+   ]
+  },
+  "op1": {
+   "entries": 224,
+   "by_kind_cause": {
+    "Plunge None": 176,
+    "LiftOver Some(Reentry2d)": 40,
+    "Plunge Some(Start)": 6,
+    "Plunge Some(Reentry2d)": 2
+   },
+   "other": 176,
+   "other_share_pct": 78.57,
+   "largez_share_pct": 0.0,
+   "other_first20": [
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 14.011,
+     "drop": 4.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 11.011,
+     "drop": 7.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 8.011,
+     "drop": 10.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 24.814,
+     "y": -99.185,
+     "z": 5.011,
+     "drop": 13.989,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 20.314,
+     "y": -104.365,
+     "z": 17.0,
+     "drop": 1.0,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 27.814,
+     "y": -92.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 18.814,
+     "y": -87.507,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 35.314,
+     "y": -87.193,
+     "z": 2.011,
+     "drop": 2.489,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -87.507,
+     "z": 4.0,
+     "drop": 1.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 27.814,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 44.314,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 62.314,
+     "y": -82.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 18.814,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 53.314,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 71.314,
+     "y": -77.507,
+     "z": 4.0,
+     "drop": 0.5,
+     "join": "None"
+    },
+    {
+     "kind": "Plunge",
+     "x": 26.314,
+     "y": -71.605,
+     "z": 2.011,
+     "drop": 2.489,
+     "join": "None"
+    }
+   ]
+  },
+  "join_op1": {
+   "descents": 1253,
+   "matched": 1253,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 860,
+    "Some(Reentry2d)": 223,
+    "Some(LargeZHeld)": 138,
+    "None": 19,
+    "Some(Start)": 13
+   },
+   "share_pct": {
+    "Some(LargeZ)": 68.6,
+    "Some(Reentry2d)": 17.8,
+    "Some(LargeZHeld)": 11.0,
+    "None": 1.5,
+    "Some(Start)": 1.0
+   },
+   "largez_share_pct": 79.6,
+   "other_share_pct": 1.52
+  }
+ },
+ "wanaka200_pick": {
+  "summary_lines": [
+   "C40 entry summary entries=2238 by_kind_cause={(LiftOver, None): 190, (LiftOver, Some(Reentry2d)): 2, (LiftOver, Some(LargeZ)): 2023, (LiftOver, Some(LargeZHeld)): 3, (Plunge, None): 13, (Plunge, Some(Start)): 5, (Plunge, Some(LargeZ)): 2} drop_1mm_by_cause={None: 201, Some(Start): 5, Some(Reentry2d): 1, Some(LargeZ): 2012, Some(LargeZHeld): 3}"
+  ],
+  "op0": {
+   "entries": 2238,
+   "by_kind_cause": {
+    "LiftOver Some(LargeZ)": 2023,
+    "LiftOver None": 190,
+    "Plunge None": 13,
+    "Plunge Some(Start)": 5,
+    "LiftOver Some(LargeZHeld)": 3,
+    "Plunge Some(LargeZ)": 2,
+    "LiftOver Some(Reentry2d)": 2
+   },
+   "other": 203,
+   "other_share_pct": 9.07,
+   "largez_share_pct": 90.62,
+   "other_first20": [
+    {
+     "kind": "LiftOver",
+     "x": 109.611,
+     "y": 221.74,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 22.76,
+     "y": 113.001,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 133.825,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 139.134,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 102.229,
+     "y": 221.74,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 22.76,
+     "y": 107.985,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 135.934,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 100.264,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 152.587,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 87.117,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 163.515,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 77.15,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 172.516,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 68.646,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 180.455,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 61.018,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 187.704,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 53.982,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 194.466,
+     "y": 27.76,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    },
+    {
+     "kind": "LiftOver",
+     "x": 217.24,
+     "y": 47.378,
+     "z": 19.54,
+     "drop": 5.96,
+     "join": "None"
+    }
+   ]
+  },
+  "join_op1": {
+   "descents": 2030,
+   "matched": 2030,
+   "unmatched": 0,
+   "by_cause": {
+    "Some(LargeZ)": 1826,
+    "None": 199,
+    "Some(Start)": 3,
+    "Some(LargeZHeld)": 2
+   },
+   "share_pct": {
+    "Some(LargeZ)": 90.0,
+    "None": 9.8,
+    "Some(Start)": 0.1,
+    "Some(LargeZHeld)": 0.1
+   },
+   "largez_share_pct": 90.0,
+   "other_share_pct": 9.8
+  }
+ }
+}

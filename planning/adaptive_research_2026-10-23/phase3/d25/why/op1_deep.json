@@ -1,0 +1,32 @@
+{
+ "D24 pick": {
+  "op1_axial_over_9": 114,
+  "axial_max": 18.0,
+  "in_outer_strip_3_6.2": 114,
+  "within_R_of_stock_edge": 0,
+  "levels": [
+   5.0,
+   11.0
+  ]
+ },
+ "D25 pick": {
+  "op1_axial_over_9": 57,
+  "axial_max": 18.0,
+  "in_outer_strip_3_6.2": 57,
+  "within_R_of_stock_edge": 0,
+  "levels": [
+   5.0,
+   11.0
+  ]
+ },
+ "D25 headon": {
+  "op1_axial_over_9": 70,
+  "axial_max": 18.0,
+  "in_outer_strip_3_6.2": 70,
+  "within_R_of_stock_edge": 0,
+  "levels": [
+   5.0,
+   11.0
+  ]
+ }
+}

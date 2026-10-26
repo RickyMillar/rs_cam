@@ -1,0 +1,4 @@
+tree = 6aefca969 + D25 patch + expect hunk
+wanaka200 geodesic_local_spiral_pick rc=0 80s; Toolpaths: 1  |  Cutting: 89397mm  |  Rapid: 2987mm  |  Time: 3513s
+  disk free 74G
+RUNDONE

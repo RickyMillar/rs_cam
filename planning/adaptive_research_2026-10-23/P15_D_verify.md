@@ -4218,3 +4218,112 @@ wanaka200 rc 0, 73 s. Scripts: copies of the fix13 scripts
 
 After the runs: `git checkout -- .`; `git status --short` empty at
 6aefca969.
+
+## D25: D24 + C40 (entry-cause instrument) + G-CLIPAIR — RED at step 9
+
+Fixture worktree clean at 6aefca969; `git apply` of
+`phase3/d25/tree_vs_6aefca969.patch` (md5 b8202dd7df199888c908d2e1478f38f7;
+7 tracked files, 934+/218−; `d25/applied.diff`). Outputs `phase3/d25/`.
+
+- Step 1 fmt: green. Step 2 clippy plain: green.
+- Steps 3 and 4 (clippy research, workspace): RED as patched, 1 error,
+  `clippy::type_complexity` on the 7-element return tuple of `fn plan` in
+  the C12 test (line 326). Mechanical fix, recorded: before
+  `/// standing stock and (C40) its entries with their causes.` /
+  `fn plan(`; after, the same with
+  `#[expect(clippy::type_complexity, reason = "one tuple of the research
+  records; each caller destructures it at once")]` between them. Then fmt
+  and all three clippy runs green. Tree = patch + this hunk
+  (`d25/applied_with_fix.diff`).
+- Steps 5, 6 parity plain / research: green 5/5 each. Step 7: green 25,
+  2 ignored. Step 8 harness: green; 189 files byte-equal to D24.
+- **Step 9 plain C12: RED** (1 passed, 1 failed, 76.72 s).
+  `the_geodesic_arm_feeds_its_turns_down_at_the_level` fails at T:1357 in
+  its first mode: "geodesic_local_oneway c40 entries: 49 by kind and
+  cause {"LiftOver Some(LargeZ)": 5, "LiftOver Some(Reentry2d)": 40,
+  "Plunge None": 2, "Plunge Some(Reentry2d)": 1, "Plunge Some(Start)":
+  1}; drop of 1 mm or more by cause {"None": 2, "Some(LargeZ)": 5,
+  "Some(Reentry2d)": 41, "Some(Start)": 1}" / "geodesic_local_oneway: 2
+  entries with no recorded cause (Other)". The group-filter test passes
+  (D24's lines, zigzag_pick added: 1908 / 117 / 0).
+- Step 11 f152 and step 12 the 13 sentries: green.
+- Step 10 (heavy) and step 13 (fixtures) held for the lead.
+- Restored: `git checkout -- .`; `git status --short` empty at 6aefca969.
+
+### D25, steps 10 and 13 (as evidence, lead's order; not a commit candidate)
+
+Tree: clean 6aefca969 + `d25/applied_with_fix.diff` (the patch and the
+recorded expect hunk), checked byte for byte before each run; restored
+after (`git status --short` empty at 6aefca969). Lead's rule from now on:
+on a red gate, stop and report before any code edit.
+
+**Step 10 heavy: RED** (T:1287, 238.33 s). The only failures are C40
+Other = 4 in each of the 8 modes ("Plunge None", each with a drop ≥ 1
+mm). Every other line is identical to D24.
+
+**Step 13** (`phase3/fix15/run_fix15.sh`): corne_pick rc 0 (3247 s),
+corne_headon rc 0 (3527 s), wanaka200_pick rc 0 (3513 s); no export
+refused. Scripts in fix15 (copies of the fix14 ones, plus `c40_join.py`)
+and `d25/why/` (copies of c38/d23_why extract, peak_move, clipair_base,
+op1_deep on D24 pick, D25 pick, D25 headon).
+
+C40 (per-entry lines; Other = cause None):
+
+| run / op | entries | Other | Other % | LargeZ(+Held) % |
+|---|---|---|---|---|
+| Corne pick op 1 | 1188 | 37 | 3.11 | 73.6 |
+| Corne pick copy op | 225 | 176 | 78.2 | 0 |
+| Corne headon op 1 | 1463 | 42 | 2.87 | 81.0 |
+| Corne headon copy op | 224 | 176 | 78.6 | 0 |
+| wanaka pick | 2238 | 203 | 9.07 | 90.6 |
+
+Join with entries.py (op 1 descents ≥ 1 mm removing stock, every one
+matched within 0.5 mm): Corne pick 1156: LargeZ 858, Reentry2d 258, None
+19, Start 13, LargeZHeld 6, AirRun 2 → LargeZ 74.7 %, **Other 1.64 %**;
+Corne headon 1253: LargeZ(+Held) 79.6 %, **Other 1.52 %**; wanaka 2030:
+LargeZ(+Held) 90.0 %, **Other 9.8 %**. Falsifiers (§15.3): LargeZ ≥ 50 %
+on both parts (holds); Other > 1 % on both parts (**the falsifier
+fires**). The Other entries: Corne op 1 Plunges at (20.31, −105.6 /
+−106.18, 17), (26.31, −96.59) at Z 17 / 11 / 5, and many Plunges of drop
+0.5 at Z 4.0 or drop 4.0 at Z 0.5 on a grid of x 20.31 / 53.31 / 62.31 /
+71.31 / 80.31 / 89.31 / 98.31; headon adds LiftOvers at y −18.26, Z 4.0.
+Copy op: Plunges at (20.31, −104.36, 17) and (24.81, −99.19) at every
+level, then a 4.0 / 2.01 grid. wanaka: LiftOvers of drop 5.96 at Z 19.54
+along x 22.76, x 217.24, y 27.76, y 221.74 (the frame edges).
+
+G-CLIPAIR (§11.3 / §11.1b), D24 pick → D25 pick (headon = pick for the
+copy op):
+- P-CA1: copy-op deep samples (axial > 4.5) at its containment line 61
+  → 38; axial peak 15.56 → 16.5 (P ≤ 4.5): **fails**. The x 151 move is
+  absent in D24 and D25 (no copy-op cut on that line).
+- P-CA2: no export refusal: holds. Copy-op deflection proxy peak: move
+  5898 at (10.02, −89.30, 0.5), ap 16.5 mm.
+- P-CA3: op 1 deep at its line 21 → 7 (P ≤ 10 %, so ≤ 2): **fails**.
+  Op 1 deep in all 114 → 57 (headon 70), all in the outer strip, Z 11
+  and 5, peak 18.0.
+- P-CA4: 6–9 mm band 395 → 379 (P ≤ 126, the D23 value): **fails**
+  against D23, not worse than D24. 3–9 mm 999 → 965.
+- P-CA5: copy-op runtime 1526.8 s (P ≤ 1829): holds.
+- P-CA6: parity and the sentries green: holds.
+- P-CA7: wanaka cycle 3365 → 3513 s (+4.4 %, P < 2 %): **fails**; no
+  new hard bar: holds. Wanaka Z 4.0 region 1 now "grown, no sweep" (was
+  the split).
+
+Other, D24 → D25 (Corne pick / headon; wanaka pick):
+- C22a replayed rounds: Corne pick rounds 1 ×3, 2 ×24, 3 ×13; headon 1 /
+  12 / 6; wanaka 7 / 2 / 1 (one round 3). Held links over standing stock:
+  Corne 0; wanaka 33 in the kept plan (66 lines), as in D24.
+- Turn summaries: Corne pick op 1 planned 222, cut 132, fed 132, unfed
+  0; headon 240 / 230 / 230 / 0. **wanaka planned 331, cut 77, fed 5,
+  unfed 72** (D24: 77 / 74 / 2 / 72 — the unfed 72 were already in D24
+  and I did not report them then).
+- Hard bars: op 1 fed link "link move 5565 removes 10.50 mm at (149.7,
+  −78.7, 11.00)" (as D24); **new copy-op fed link** "link move 6340
+  removes 5.52 mm at (27.6, −106.6, 0.50)" (headon move 6318). The
+  deeper-than triage line is gone. Collisions 0. wanaka: none.
+- Corne pick: descents (audit) 1291 → 1164 (headon 1315); lift-over
+  descents 1194 → 1112 (headon 1201); plunges 65 → 65 (headon 71); turns
+  over 30° 3007 → 3027 (headon 3444); plunge share 36.9 → 34.8 %
+  (headon 34.1 %); cycle 3405 → 3247 s (headon 3527).
+- wanaka: descents 2031 → 2035; plunges 20; turns over 30° 180 → 186;
+  plunge share 51.9 → 48.4 %; cycle 3365 → 3513 s.

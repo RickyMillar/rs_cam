@@ -1,0 +1,61 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 2,
+  "total_cutting_distance_mm": 91462.29339752001,
+  "total_rapid_distance_mm": 21078.890183503427,
+  "total_runtime_s": 3527.259269875679,
+  "air_cut_pct_of_total_runtime": 56.91128389589799,
+  "air_cut_pct_of_cutting_time": 62.51513787385752,
+  "average_engagement": 0.1851516815840002,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 17853,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 8655,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 56.91128389589799,
+    "headline": "WARNING: 56.9% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [
+      "  toolpath 1: depth of cut, peak 18.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source",
+      "  toolpath 3: depth of cut, peak 16.5000 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source"
+    ],
+    "overrides_used": [
+      "G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.\n  toolpath 4: chipload: simulation trace is stale — re-run simulation\n  toolpath 4: power: simulation trace is stale — re-run simulation\n  toolpath 4: deflection: simulation trace is stale — re-run simulation\n  toolpath 4: depth of cut: simulation trace is stale — re-run simulation"
+    ],
+    "feeds_cautions": []
+  }
+}

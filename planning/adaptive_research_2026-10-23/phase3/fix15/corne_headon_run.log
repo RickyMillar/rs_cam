@@ -1,0 +1,4 @@
+tree = 6aefca969 + D25 patch + expect hunk
+corne geodesic_local_spiral_headon rc=0 16s; Toolpaths: 2  |  Cutting: 91462mm  |  Rapid: 21079mm  |  Time: 3527s
+  disk free 74G
+RUNDONE

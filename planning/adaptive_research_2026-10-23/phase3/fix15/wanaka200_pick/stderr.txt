@@ -1,0 +1,36 @@
+Act on (2):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+  WARNING: high air cutting on '2 Back Rough' is 43% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  1639.9s wasted around (150.0, 219.0, 8.4) — engagement 0.13
+  4.5s wasted around (137.0, 27.9, 16.1) — engagement 0.03
+  4.2s wasted around (22.8, 108.0, 16.1) — engagement 0.11
+  4.2s wasted around (102.2, 221.7, 12.6) — engagement 0.13
+  3.9s wasted around (134.3, 27.8, 16.1) — engagement 0.11
+  3.9s wasted around (217.2, 139.1, 16.1) — engagement 0.12
+  3.5s wasted around (22.8, 113.0, 16.1) — engagement 0.13
+  3.5s wasted around (109.6, 221.7, 16.1) — engagement 0.14
+  3.4s wasted around (102.2, 221.7, 14.6) — engagement 0.17
+  3.3s wasted around (135.9, 27.8, 14.6) — engagement 0.15
+  ... 2229 more not shown
+
+Counts: 101223 samples | 45429 flagged-air + 4584 flagged-low (per SAMPLE) | 20313 issue runs (COALESCED, the legacy "issue_count") | 2239 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 11.8859 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 5: chipload: simulation trace is stale — re-run simulation
+  toolpath 5: power: simulation trace is stale — re-run simulation
+  toolpath 5: deflection: simulation trace is stale — re-run simulation
+  toolpath 5: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 89397mm  |  Rapid: 2987mm  |  Time: 3513s
+Air cutting: 43.3% of total runtime  |  Avg engagement: 0.23  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 19048 moves, 0 collisions
+      kinematics: 100% of commanded (99% feed-bound → +19% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 43.3% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix15/wanaka200_pick
