@@ -1,0 +1,16 @@
+{
+ "departure_moves": 1415,
+ "base_feed": 4000,
+ "class_mm": {
+  "near A's steps": 562.9,
+  "other": 135.5,
+  "slot moves": 344.7,
+  "turn moves": 26.5
+ },
+ "on_departure_moves_mm": {
+  "near A's steps": 210.0,
+  "other": 36.8,
+  "slot moves": 3.8,
+  "turn moves": 9.7
+ }
+}

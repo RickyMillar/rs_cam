@@ -2268,3 +2268,71 @@ I recommend option 1.
   corridor departures.
 - A field-plan departure gets the same rule, so the "other" class over
   0.471 (135.5 mm) may fall. I do not predict that size.
+
+### 15.7 The departure record: build and pre-registration for D32 (2026-10-27)
+
+Code in the `adaptive-head` worktree, not committed. It is §15.6 option
+1, with C22's three conditions (agreed 2026-10-27).
+
+**The build.**
+- **The readout** (`pass_load_readout`): a step out of a straight plunge
+  stays exempt. `read` still returns early and counts `exempt_steps`, so
+  `steps_over`, `over` and the tallies do not change. The step's swept
+  width and area also go to `PassLoadReadout::departure_steps`, each with
+  its plan window (`DepartureStep`).
+- **One walk:** the readout walks `subdivide_each` (`adaptive/path.rs`).
+  This is the walk `subdivide` now calls, and it also gives each point's
+  plan window. So the points are those of `subdivide` by construction
+  (C22 condition a). `subdivide` is shipped code; its arithmetic is
+  unchanged.
+- **The record kind:** `TurnKind::Departure`.
+- **The records:** `slice_turn_records` adds one record per plan window
+  with departing steps, after the turns and slots (index
+  `turns.len() + j`). Each record takes the largest reading of its steps
+  and the slot factor `turn_feed_factor(c, swept, area)`.
+  - It now reads a plan that has no turns but has a `Rapid`.
+  - `SliceTurns::add` classes the records. A `debug_assert` checks that
+    the departures start right after the turns and slots (C22
+    condition c).
+- **The feeds:** `apply_slice_turn_feeds` returns a third summary,
+  `departures`. The exact match and the cap are unchanged. The chain
+  match (`unfed_chains`) takes the unfed slot and departure records.
+  `Research3d.departures` holds the summary, and the log prints a
+  `C22 turn summary kind="departures"` line.
+- **The gate:** `clearing.rs` reads and splits only for the research arm,
+  `is_research_arm` (C22 condition b). Another arm in a research build
+  is not read and not split, so the baseline fixtures do not change.
+- **Other users:** any plan that enters by a straight plunge. That is the
+  research arm's field plans now. The shipped 2D adaptive, which has the
+  same exemption, can take it in a later step with a parity check.
+
+**The checks (through the lane).**
+- Both core clippy commands are clean.
+- The channel slot test is green:
+  - 8 departure records, all reduced, all fed by the exact match;
+  - 8 moves lie on departure windows, each with a cap and a feed at or
+    below `F × factor`;
+  - the slot check is unchanged: 444 samples, 0 over the screen at the
+    full feed.
+- The new assert was checked once against a defect. With the exact
+  match's cap write removed, it went red ("a reduced departing move
+  carries a cap"). The code was then restored.
+
+**Pre-registration (D32, the same Corne run as D30, op 1).**
+1. Strip samples over 0.369 at program F ≥ 3999
+   (`fix21/feed_check.py`): **87 → at most 1** (the 0.370 arc of
+   §15.6.1 may stay).
+2. A new `kind="departures"` summary: `unfed=0`, and every departure
+   record fed (by the exact match or the chain match).
+3. Op 1 cycle time: **about +8 s** from the 12 corridor departures. Any
+   field-plan departure adds to it.
+4. "other" over 0.471 (`fix21/load_split.py`): counted now in
+   `phase3/c38/d30_why/other_departures.py` (`other_departures.json`).
+   - D30 has 36.8 mm of "other" on feed moves that start within R of a
+     vertical plunge at F 750.
+   - Not all of those plunges are 2D-plan entries. C22's 3D step-split
+     descents also plunge at 750, and the readout does not see them.
+   - **P: "other" falls from 135.5 mm by between 0 and 36.8 mm.** The
+     D32 count, with the same script on D32, gives the number.
+   - By the same rule, 210.0 mm of "near A's steps" lies on such moves.
+     It may fall too, for the same reason, by at most that much.
