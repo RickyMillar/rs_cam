@@ -2683,3 +2683,47 @@ fallback is wrong for this channel.**
 - **Effect on §16.3:** the forecast reads 0 on the Corne strip pieces, so
   this finding does not affect P1. A body piece that the forecast passes
   and the field cannot plan gets the agent's loop, as in C35.
+
+### 16.6 The lead's ruling on narrow pieces, as built (2026-10-27; not committed)
+
+**The ruling:** a piece where the geodesic field does not apply is edge
+work. It goes to the CP rest pass.
+
+**The correction to §16.5, finding 2.** The channel's 26 cuts did not come
+from the agent fallback.
+- The F-038 forecast reads 0 on the channel and skips the region. The
+  cuts came from the level's **waterline cleanup**. That is a shipped step
+  that runs after the regions, and it traces the channel walls as one
+  loop per level (C40 entry cause `Waterline`).
+- A probe run with a test log subscriber showed this. The subscriber was
+  removed afterwards.
+
+**Built** (research arm only):
+- `research_leave_piece` records a piece the arm leaves: its level, region
+  and area, in one `info` line, "C38 piece left to the rest pass" with
+  `why`. It also keeps the piece in `ClearZLevelContext::research_left_pieces`.
+- Two callers:
+  1. the F-038 forecast skip in `clear_one_region` (`why="F-038
+     forecast"`);
+  2. `plan_one_outline`, where the field gives no plan (`why="no
+     field"`). The research arm then plans nothing there; there is no
+     agent fallback.
+- `waterline_cleanup` skips, for the research arm only, a contour with at
+  least half its samples inside a piece left at that level.
+
+**Checks (through the lane):**
+- Both core clippy commands are clean.
+- The channel test passes as written: 0 moves, 0 clearing cuts inside the
+  channel. Each level logs one left piece of 190.6 mm².
+- The plain C12 test is green. Its move counts are unchanged (2585 / 966
+  / 3128 / 966 / 994 / 3156), so no left piece occurs on that fixture.
+
+**Additions to the D34 pre-registration (§16.3):**
+- **P9:** on Corne op 1, "C38 piece left to the rest pass" lines appear at
+  Z 11 / 5 / 0.5 for the strip regions, with `why="F-038 forecast"`.
+  The op 1 cut samples of the waterline cleanup in the strip mask are 0.
+  The CP rest op cuts that ground (P4 and P5 measure it).
+- **P10:** the summed area of the left pieces per level is the ground the
+  rest op must cover. A script reads the left-piece lines and checks that
+  the stock left there after (B) is no more than CP alone's in the same
+  polygons (the band method of §16.3, P4).
