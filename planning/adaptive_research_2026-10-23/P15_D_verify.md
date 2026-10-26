@@ -3878,3 +3878,64 @@ seed) and 9 "raw over" Spiral steps (readings 0.3631 to 0.3931 against
 the ceiling 0.3626). Each of the 8 rapids lands on the end point of one
 of the first 8 raw-over steps; the 9th (r 9.125 → 9.250, 0.3683) has no
 rapid.
+
+## D21c: the full C35 verify after the chord-tilt fix — GREEN; fixtures (step 12)
+
+adaptive-head at b37cad1a4 plus the C35 diff (1029 lines,
+`phase3/d21c/start.diff`); unchanged from step 1 to step 11. Outputs:
+`phase3/d21c/<step>.txt`.
+
+| Step | Result |
+|---|---|
+| 1 fmt | green |
+| 2, 3, 4 clippy core plain, core research, workspace heavy | green (46, 46, 59 s) |
+| 5, 6 parity plain, research | green 5/5, 5/5 |
+| 7 `--lib adaptive::research_geodesic` | green 24, 2 ignored |
+| 8 2D harness | green; 189 rewritten files byte-equal to D21 |
+| 9 plain C12 | green; spiral core "2D re-entries 0, 3D entries inside 0"; 983 moves, 43 entries (zigzag_pick 47) |
+| 10 heavy C12 | green (212.91 s); spiral 0 over the exact bound; both cores 0 / 0 |
+| 11 f152 | green 2/2 |
+
+Step 9 prints one "raw over" line, a Join step from the core edge
+(r 9.312 → 10.219, reading 0.5000); the heavy test prints it at core Z
+7.00. The lead accepted step 9: the Join is the hand-off to the first
+wrap, outside the core zone, and goes to C22 as a follow-up.
+
+**Commit.** The lead committed the diff as 3cc257c1f; `git diff b37cad1a4
+3cc257c1f` equals `d21c/start.diff` (index lines aside).
+
+**Step 12 runs.** The first Corne run was built in adaptive-head at
+3cc257c1f. During its build, C22's C38 work-in-progress came into
+adaptive-head (mod.rs 17:48:03; research_outer_band.rs 17:49:11), so
+that run is kept as `fix12/corne_adaptive_head/` only. Both fixtures then
+ran in the fixture worktree at 3cc257c1f (clean before and after; stamp
+`0.1.03cc257c1f`; `phase3/fix12/run_fix12.sh`, as fix7). The Corne
+program.nc is byte-equal to the adaptive-head run, and so is its audit
+text. Corne rc 0, 205 s; wanaka200 rc 0, 69 s. Audit:
+`fix12/audit_corne.txt`, `audit_wanaka200.txt` (fix11/audit.py, nominal
+MRR as run_all.py). The §12.5 instrument (fix9/entries.py with the new
+columns): `fix12/entries_fix12.py`, `entries_fix12.json`; it reproduces
+D20 (1195 / 3578).
+
+| | Corne D20 | Corne C35 | wanaka D20 | wanaka C35 |
+|---|---|---|---|---|
+| descents into stock, audit predicate | 1236 | 1118 | 3412 | 2031 |
+| lift-over descents, entries.py (§12.5) | 1195 | 1076 (P 1080–1150) | 3578 | 2016 (P 3330–3550) |
+| plunge-entry spans | 60 | 60 (P 60 ± 3) | 20 | 20 (P 20 ± 2) |
+| planar turns over 30° | 1074 | 1063 | 221 | 188 |
+| plunge feed / sim runtime | 545.3 / 1454.0 s = 37.5% | 489.2 / 1451.7 s = 33.7% | 2329.7 / 4832.2 s = 48.2% | 1396.4 / 3365.5 s = 41.5% |
+| cycle time (CLI) | 2760 s | 2757 s (P ≈ 2715) | 4832 s | 3366 s (P ≈ −100 s) |
+| moves, first rough op | 11724 | 13250 | 25573 | 18963 |
+| over 0.471 per / body / wl (mm) | 1.3 / 423.6 / 37.1 | 1.3 / 443.8 / 41.2 | 12.3 / 1701.4 / 19.5 | 12.3 / 2207.4 / 15.0 |
+| thick over 0.471 total (mm) | 300.3 | 294.9 | 372.7 | 466.7 |
+
+- The audit's wanaka time split sums to more than the sim runtime in
+  every wanaka column (D20 7095.1 of 4832.2 s; C35 6025.9 of 3365.5 s);
+  the shares above divide by the sim runtime.
+- C31 openings: Corne 4 of 4 grown. wanaka Z 4.0 changed: region 1 now
+  "the shortfall inset split the outline: shipped sweep" (D20: closing
+  guard, centre 77602.8 mm²; now centre 1228.2, excess 83.48 of 861.00);
+  region 3 now "grown, no sweep" (D20: inset split).
+- Bars: Corne islands 865 (6 free), 4307.3 mm² (D20 1024, 4095.6); copy
+  op 1031, 2599.7 mm². wanaka: no island line. No gouge, deeper-than or
+  fed-link line; collisions 0; no export refusal.
