@@ -3865,3 +3865,16 @@ Z 7.00 and Z 4.50, each "2D re-entries 8, 3D entries inside 8". The other
 modes are as in D19e (curv 4 and split 2 attribution only).
 
 **Verdict.** RED. Step 12 (the fixtures) not started.
+
+### D21b: the C35 instrument run (prints only)
+
+adaptive-head at b37cad1a4 + the C35 diff with C22's added prints. fmt
+green; clippy research+test-support green (51 s); plain C12 green (28.55
+s). Outputs: `phase3/d21/b_1_fmt.txt`, `b_2_clippy_research.txt`,
+`b_3_c12_plain.txt`. Every line of the other modes, and the spiral's
+summary lines, are identical to D21 step 9. The spiral core block at Z
+4.50 adds 8 "rapid at … into Clearing" lines (r 4.312 to 8.250 from the
+seed) and 9 "raw over" Spiral steps (readings 0.3631 to 0.3931 against
+the ceiling 0.3626). Each of the 8 rapids lands on the end point of one
+of the first 8 raw-over steps; the 9th (r 9.125 → 9.250, 0.3683) has no
+rapid.
