@@ -43,13 +43,14 @@ the code in the worktree at `b37cad1a4`: `adaptive/research_geodesic.rs`,
    does not trust intent labels, a load-rate (MRR over time) view, and an
    acceleration or reversal count. The operator's one positive report
    ("smoother in acceleration") is measured nowhere.
-6. The near-wall band the operator sees on Corne is real: about 1950 mm²
-   of stock 3 to 9 mm outside the case wall, 16 mm tall, against 63 mm²
+6. The near-wall band the operator sees on Corne is real: 3142 mm² of
+   stock 0 to 9 mm outside the case wall, 16 mm tall, against 265 mm²
    for contour_parallel. It is identical to the mm² on AgentSearch, so it
    is the slice path's region handling (the F-038 forecast skips the
-   outer strip at every level below the top; §1.5), not the field. It
-   is G-OUTERBAND from Phase 0 and it is fixable without touching the
-   kernel.
+   outer strip at every level below the top; §1.5, §7), not the field.
+   The domain is the same for every strategy; the planners treat the
+   region edge differently. It is G-OUTERBAND from Phase 0 and it is
+   fixable without touching the kernel.
 
 ## 1. Architecture
 
@@ -138,24 +139,27 @@ not decide entries for a step the 2D plan marked as a transition.
 
 The band is real, and it is not the field's doing. I rebuilt the lead's
 numbers from `phase3/fix9/stock_corne_<column>.npz` (keys `top`, `target`,
-`xs`, `ys`, `g`) with the part mask from `corne_part.npz` resampled onto
-the stock grid, and split the standing stock (more than 0.8 mm above the
-target) by distance from the part outline.
+`xs`, `ys`, `g`). The part mask is `corne_part.npz` `top` resampled onto
+the stock grid and then hole-filled (`binary_fill_holes`), so it is the
+silhouette (11155 mm²), not the material footprint (6536 mm²; the
+through switch holes are 4619 mm²). The standing stock (more than 0.8 mm
+above the target) is split by distance from the silhouette.
 
 **Corne, after the first rough op, mm² over 0.8 mm (whole box: CP 3573,
-D18 7593, D20 6608, AgentSearch 9200; the lead's figures hold).**
+D18 7593, D20 6608, AgentSearch 9200; the lead's figures hold). Outside
+the silhouette: CP 2670, D18 5566, D20 5566, AgentSearch 5567.**
 
-| Band from the outer wall | Band area | CP | D18 | D20 | AgentSearch |
+| Band from the silhouette | Band area | CP | D18 | D20 | AgentSearch |
 |---|---|---|---|---|---|
-| outside 0–1.5 mm | 3451 | 855 (6.0 mm tall) | 1262 | 1185 (9.8 mm) | 2074 |
-| outside 1.5–3 mm | 2196 | 1 | 646 | 591 (16.2 mm) | 1272 |
-| outside 3–4.5 mm | 1010 | 0 | 632 | 620 (16.2 mm) | 758 |
+| outside 0–1.5 mm | 664 | 202 (16.1 mm tall) | 601 | 600 (16.1 mm) | 602 |
+| outside 1.5–3 mm | 676 | 0 | 591 | 591 (16.2 mm) | 591 |
+| outside 3–4.5 mm | 699 | 0 | 620 | 620 (16.2 mm) | 620 |
 | outside 4.5–6 mm | 557 | 0 | 511 | 511 (16.2 mm) | 511 |
 | outside 6–9 mm | 821 | 63 | 820 (22.1 mm) | 820 (18.2 mm) | 820 |
 | outside 9 mm and more | 2423 | 2405 (22.5 mm) | 2423 | 2423 | 2423 |
-| inside 0–3 mm | 5039 | 54 | 377 | 111 | 420 |
-| inside 3–4.5 mm | 1010 | 192 | 509 | 308 | 509 |
-| inside 4.5–6 mm | 458 | 5 | 390 | 39 | 390 |
+| inside 0–3 mm | 1288 | 16 | 8 | 14 | 48 |
+| inside 3–6 mm | 1240 | 243 | 1017 | 448 | 1017 |
+| inside 6 mm and more | 8627 | 645 | 1003 | 580 | 2568 |
 
 Reading:
 
@@ -164,12 +168,17 @@ Reading:
   (`corne_job_corrected_c12_agent_search.toml`, `[setups.toolpaths.boundary]`),
   so the tool centre may go 6 mm out and the disc 9 mm. That stock is out
   of scope for every column.
-- **The band the operator sees is 3 to 9 mm outside the wall, 16 mm tall:
-  the levels Z 11, 5 and 0.5, uncut.** D20 leaves about 1950 mm² there
-  against CP's 63 mm². The figures 511 / 820 are identical for D18, D20
-  and AgentSearch to the mm², so the cause is the shared slice path, not
-  the geodesic kernel. It is G-OUTERBAND from Phase 0, filed against
-  AgentSearch and ContourSpiral before the geodesic work began.
+- **The band the operator sees is the whole strip 0 to 9 mm outside the
+  wall, 16 mm tall: the levels Z 11, 5 and 0.5, uncut.** D20 leaves
+  3142 mm² there against CP's 265 mm². The band figures are identical for
+  D18, D20 and AgentSearch to the mm² (600 / 591 / 620 / 511 / 820), so the
+  cause is the shared slice path, not the geodesic kernel. It is
+  G-OUTERBAND from Phase 0, filed against AgentSearch and ContourSpiral
+  before the geodesic work began.
+- **Inside the silhouette D20 is near CP** (1042 against 904 mm², as the
+  fix9 README says). The 3–6 mm band inside the outer wall shows C31
+  working (D18 1017 → D20 448) and shows what is left to do there (CP
+  243).
 - **The cause chain (code, read):**
   1. Below the top level, the outer strip is its own region: the case
      wall separates it from the inside. In tool-centre space it is the
@@ -190,13 +199,14 @@ Reading:
      the containment line, so the 6–9 mm band stood at full height
      (22.1 mm). C31's grow fixed that for D20 at Z 17 (18.2 mm: cut at
      Z 17, uncut below).
-  5. contour_parallel has neither the double inset nor the F-038 gate:
-     it offsets inward from the boundary and the walls in material space,
-     so a 9 mm strip gives it ordinary offsets. It leaves only the
-     0–1.5 mm wall band (855 mm², 6 mm tall: G-WALLSTRIP-PLAN) and the
-     3–4.5 mm inside band (192 mm²).
-  6. The inside bands show C31 working: inside 4.5–6 mm fell from 390
-     (D18) to 39 (D20); inside 0–3 mm from 377 to 111.
+  5. contour_parallel has neither the double inset nor the F-038 gate
+     (§7 gives the code): its first contour runs `min(R, s/2)` from the
+     region edge and a raster cleanup takes every material cell the
+     contours missed. It leaves only a 202 mm² sliver in the 0–1.5 mm
+     band (16 mm tall: the strip at the wall its contours do not reach)
+     and 63 mm² at 6–9 mm.
+  6. The inside bands show C31 working: inside 3–6 mm fell from 1017
+     (D18) to 448 (D20); CP reads 243 there.
 - **wanaka200 has no such band.** Outside the terrain footprint, the
   0–9 mm bands read 14–18 % uncut for CP, D18 and D20 alike (AgentSearch
   25–27 %); whole box CP 24416, D20 25438 mm². The terrain has no vertical
@@ -373,9 +383,9 @@ the ceiling, and the module says so at each site.
 4. **The outer strip: run the F-038 forecast on the planned outline, or
    drop the gate for the research arm (§1.5).** Reason: it is the band the
    operator sees first on the machine; it is one gate in `clear_one_region`
-   (`clearing.rs:2844-2908`); it costs the research arm about 1950 mm² of
-   16 mm-tall stock on Corne against 63 mm² for the control; and it is
-   not the kernel. Pre-register: the outside 3–9 mm bands fall to CP's
+   (`clearing.rs:2844-2908`); it costs the research arm 3142 mm² of
+   16 mm-tall stock on Corne against 265 mm² for the control; and it is
+   not the kernel. Pre-register: the outside 0–9 mm bands fall to CP's
    figures, the inside bands do not move. Then confirm the strip piece
    gets a corridor entry and at least one wrap.
 5. **Re-read C6 as a bug.** Reason: a tangential drift cannot read 0.94 D
@@ -417,3 +427,69 @@ the ceiling, and the module says so at each site.
   time is still the cheapest proxy for the plunge count: 478 s of plunge
   feed on Corne was visible in the cycle time before anyone counted it.
   Keep the split (§3.2 item 4) on the page.
+
+## 7. The outer band: domain or method? (lead's question, 2026-10-26)
+
+**Answer: the same domain for every strategy; the planners treat the
+region edge differently. Not the seed-and-wrap method.**
+
+### 7.1 Where each strategy takes its outer boundary (code, worktree b37cad1a4)
+
+| Step | contour_parallel | AgentSearch / ContourSpiral / geodesic arm |
+|---|---|---|
+| Material grid | `build_material_bool_grid` over the stock `z_grid` (the whole stock box), `cell_has_material` (`clearing.rs:296-307`); call at `:1094` | the same function and test; call at `:1924` in `detect_and_order_regions` |
+| Containment (silhouette + 6 mm, centre) | `centre_clip` before each stamp (G-BOUNDARYPHANTOM, `path.rs:941`) | the same clip |
+| Region edge → first tool-centre locus | EDT of the material grid; the first contour threshold is `min(R, s/2)` cells, at least 1 cell (`:1151`: "so contours exist even in the narrowest sections"). At Corne that is 0.6 mm from the region edge | the region is smoothed (`SIMPLIFY_INSET` 0.3 + RDP 0.3, `:2247-2250`), then the 2D planner insets it by R again (`planner_outlines` → `inset_piece_outlines`, `:2299-2325`): centres at least R + 0.3 from the region edge. The research arm after C31 grows the outline by R − 0.25 first, so its centres reach 0.25 from the edge |
+| What takes the rest | a raster cleanup of every material cell the contours missed (`:1274-1300`) | the perimeter sweep at R + 0.25 (shipped arms), the waterline at the wall locus, the mop |
+| Region gate | `MIN_CELLS_TO_CLEAR = 4` cells per level (`:43`, `:1088`) | the F-038 forecast per region (`:2844-2908`, on when `min_region_cut_length_mm > 0`; Corne 15.0): the region inset by R + 0.25 for a perimeter estimate, then the agent dry-run on the raw region; under the threshold the region is skipped before any plan. It runs before `planner_outlines`, so before the C31 grow |
+
+So the geodesic regions do not "stop at the part outline". Both strategies
+see the same cells out to the stock box edge and both are clipped to the
+same containment line 6 mm outside the silhouette. The difference is
+what each does with a strip region:
+
+- The outer strip below Z 17 is about 3 mm wide in tool-centre space
+  (wall + R to the containment line). contour_parallel's first contour
+  at 0.6 mm from its edge fits; two or three contours plus the raster
+  cleanup clear it to 265 mm² left (0–9 mm band). The slice path's
+  forecast insets it by 3.25 mm (nothing left), dry-runs the agent, which
+  insets by 3 mm (nothing left), reads 0 < 15 and skips the region. The
+  band figures of D18, D20 and AgentSearch are identical to the mm²
+  because none of them ever plans that region.
+- At Z 17 the strip is part of the one big region. There the double
+  inset left D18 and AgentSearch 3 mm short of the containment line
+  (6–9 mm band at 22.1 mm, never cut); the C31 grow took D20 to the line
+  (18.2 mm: cut at Z 17, uncut below).
+
+The 1511 against 3070 mm² of the fix9 README (outside the outline, inside
+the part bounding box) and my 2670 against 5566 (outside the silhouette,
+whole box) differ in the mask and the box; both say the same thing.
+
+### 7.2 Are the 198 wall-end descents of Z 17 in that band?
+
+From `entries.json` (D20, keep-down-link descents ≥ 1 mm that remove
+stock), classified against the hole-filled silhouette on the stock grid:
+
+| Plane | Descents | Seam line | Outside the silhouette (the outer strip) | Inside, at inner walls |
+|---|---|---|---|---|
+| Z 17 | 238 | 40 | **124** (38 within 3 mm of the wall, 86 at 3–9 mm, 0 beyond 9) | 74 (all 6.5–7.0 mm inside the silhouette: the inner face of the frame wall, R from it) |
+| Z 5 | 65 | 0 | 0 | 65 |
+| Z 0.5 | 123 | 0 | 0 | 123 |
+
+So yes, at Z 17: 124 of the 198 (63 %) are in the outer strip, where
+the top level's open arcs end at the containment line and at the wall.
+Below Z 17 none are there, because the strip region is never planned.
+The 86 at 3–9 mm end at the containment line, which is a free edge (no
+wall, no stock beyond the clip): an arc that runs out at a free edge
+needs no turn and no re-entry at all; the C31 grow puts R − 0.25 of
+phantom material beyond the real edge ("pessimistic, not unsafe", §11.3
+of `P3_C22`), and the replay reads that phantom band at the turn. That
+is a second reason to grow only along wall stretches, as §11.3 already
+proposed, or to let a wrap end free at a material edge.
+
+### 7.3 What this changes in the ranking
+
+Nothing in the order. Item 4 (the forecast gate) stands; it should also
+exempt or re-run the gate on the grown outline for the research arm, and
+item 2 (the spiral) removes the 40 seam-line descents. The 74 + 65 + 123
+inner-wall descents are the open-arc join contract of item 3.
