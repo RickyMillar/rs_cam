@@ -1,0 +1,12 @@
+{
+ "nibble C38a": {
+  "samples": 15159,
+  "over_bound": 524,
+  "share": 0.035
+ },
+ "slot D23 pick": {
+  "samples": 6049,
+  "over_bound": 2468,
+  "share": 0.408
+ }
+}

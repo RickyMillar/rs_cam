@@ -1,0 +1,54 @@
+{
+ "pick": {
+  "op1_strip_cut_mm": 1814.7,
+  "op1_strip_radial_p50": 0.2,
+  "op1_strip_radial_over_c": 2940,
+  "op1_strip_samples": 6049,
+  "op1_strip_reduced_feed_samples": 6,
+  "op1_strip_reduced_feed_p50": 750.0,
+  "op1_strip_over_c_at_reduced_feed": 0,
+  "op1_clearing_feed_max": 4000.0,
+  "copy_deep_samples": 130,
+  "copy_deep_by_intent": {
+   "clearing_cut": 130
+  },
+  "copy_deep_by_wall": {
+   "inside": 3,
+   "0-1.5": 0,
+   "1.5-3": 0,
+   ">3": 127
+  },
+  "copy_deep_axial_max": 12.0,
+  "copy_deep_levels": [
+   2.01,
+   5.01,
+   11.01
+  ]
+ },
+ "headon": {
+  "op1_strip_cut_mm": 1815.0,
+  "op1_strip_radial_p50": 0.2,
+  "op1_strip_radial_over_c": 2940,
+  "op1_strip_samples": 6050,
+  "op1_strip_reduced_feed_samples": 6,
+  "op1_strip_reduced_feed_p50": 750.0,
+  "op1_strip_over_c_at_reduced_feed": 0,
+  "op1_clearing_feed_max": 4000.0,
+  "copy_deep_samples": 129,
+  "copy_deep_by_intent": {
+   "clearing_cut": 129
+  },
+  "copy_deep_by_wall": {
+   "inside": 3,
+   "0-1.5": 0,
+   "1.5-3": 0,
+   ">3": 126
+  },
+  "copy_deep_axial_max": 9.0,
+  "copy_deep_levels": [
+   2.01,
+   5.01,
+   11.01
+  ]
+ }
+}

@@ -1,0 +1,17 @@
+{
+ "band_3_9_mm2": 455,
+ "not_reached_mm2": 440,
+ "reached_mm2": 15,
+ "not_reached_within_6mm_of_stock_edge_mm2": 403,
+ "reached_within_6mm_of_stock_edge_mm2": 15,
+ "by_distance_from_wall_not_reached": {
+  "3-4.5": 222,
+  "4.5-6": 93,
+  "6-9": 126
+ },
+ "by_distance_from_wall_reached": {
+  "3-4.5": 11,
+  "4.5-6": 4,
+  "6-9": 0
+ }
+}

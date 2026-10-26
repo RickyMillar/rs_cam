@@ -1,0 +1,9 @@
+{
+ "samples": 6049,
+ "over_c": 2940,
+ "over_c_at_full_feed_4000": 2940,
+ "reduced_feed_samples": 6,
+ "moves": 360,
+ "move_length_p50_mm": 2.26,
+ "moves_longer_than_s": 267
+}

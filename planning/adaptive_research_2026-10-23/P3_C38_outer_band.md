@@ -860,3 +860,170 @@ G-b judge and the F-038 group filter are off for the copy op. P: the bar goes
    - The copy-op hard bar holds only if (1) or (2) is in. D23 has
      neither, so **D23 will show the bar again** unless the corridor
      opening removes the copy op's tiny groups.
+
+## 10. D23 (the full stack): the failed C38 predictions, and the slot against the nibble (2026-10-26)
+
+Read only. The scripts are in `phase3/c38/d23_why/`: `extract.py`,
+`why.py`, `slotfeed.py`, `band_any.py`, `stockedge.py`, `overbound.py`
+and `assert_d23.py`. Every asserting script prints `ASSERTS OK`. The
+inputs are the fix13 runs: `corne` = spiral_headon, `corne_pick` =
+spiral_pick, the like-for-like column of C38a. "The strip" means op 1
+cutter centres 3–6.2 mm outside the silhouette at Z 11, 5 and 0.5.
+
+### 10.1 The slot steps ran at the FULL feed: the slot as built breaks the operator's ruling
+
+`slotfeed.py`, D23 spiral_pick, op 1 in the strip:
+
+- **Over the ceiling, at full feed:** 6049 clearing samples, and 2940 of
+  them read over c = 0.219. **All 2940 run at F 4000.** Only 6 strip
+  samples carry a reduced feed (750, the plunge rate).
+  - Over the oracle bound c + 0.15 = 0.369 (`overbound.py`), the slot
+    runs have 2468 samples (40.8 %). The nibble (C38a) has 524 (3.5 %).
+- **Why the slots are unfed:** the emitted moves in the strip are 360,
+  median 2.26 mm long, and 267 are longer than one slot step
+  (s = 1.2 mm).
+  - `corridor_opening` splits each ring edge into collinear steps of at
+    most `s`. The 3D segment merge (RDP) joins collinear steps back into
+    one move.
+  - `apply_slice_turn_feeds` lowers the feed of a `Linear` move only when
+    its start and its target lie on ONE recorded segment. A merged move
+    spans several slot steps, so it matches none.
+  - So the slot is "admitted over the ceiling" by the 2D replay but cut
+    at the full feed. That is my defect: a C14 turn is one straight
+    segment, but my slot is a chain of collinear steps.
+- **At the ruled feed** (F × c/w on every over-c strip sample, swept-width
+  form): the strip takes **+36.0 s** more.
+
+### 10.2 The slot against the nibble (the D23 rule)
+
+| Op 1, Corne | nibble (C38a) | slot (D23 spiral_pick) | bound |
+|---|---|---|---|
+| 3–9 mm band | 794 mm² | **455 mm²** | ≤ 400: **missed** |
+| op 1 runtime (fix13 summaries) | 1750.7 s | **1468.4 s** (≈ 1504 s at the ruled feed) | ≤ 1651 s: holds |
+| strip samples over the oracle bound | 524 (3.5 %) at full feed | 2468 (40.8 %), unfed | — |
+
+The pre-registered rule says that if D23 misses either bound, the slot is
+dropped and the nibble kept. **It misses the band bound, so by the rule
+the slot is dropped.**
+
+Head to head, the slot beats the nibble on the band and on the runtime.
+But the band miss is not the slot's doing (§10.3), and as built the slot
+runs over-ceiling steps at the full feed (§10.1). That breaks the
+operator's ruling ("a counted over-ceiling step at feed × c/w").
+
+**Proposal: remove the corridor opening** (`corridor_opening`, its
+`closed_steps` helper, and the `or_else` in `research_slice_segments`).
+- The nibble is the load-holding default. It needs no exemption and
+  keeps 96.5 % of its strip samples under the oracle bound.
+- If the lead wants the slot's gains, it needs a new pre-registration
+  after two changes:
+  - fed slots (one recorded segment per emitted move, or a match by
+    distance to the slot chain);
+  - a printed slot summary (§10.6).
+- The G-b gate, the region judge and the stock-box clip stay. They do not
+  depend on the slot.
+
+### 10.3 Why the band is 455, not ≤ 321 (P) or ≤ 400 (§9.5): the strip at the stock-box edge is never planned
+
+`band_any.py` splits the standing 3–9 mm cells by whether an op-1 cutter
+centre below Z 17 came within R of them, and by their distance to the
+stock-box edge:
+
+| | slot D23 | nibble C38a |
+|---|---|---|
+| 3–9 mm band | 455 | 794 |
+| no op-1 centre below Z 17 within R | **440** | 739 |
+| ... of which within 6 mm of the stock-box edge | **403** | 590 |
+| reached by a centre, still standing | 15 | 56 |
+
+The band that stands is where nobody plans. It is mostly the strip along
+the sides where the case wall is close to the mesh bbox.
+- There the stock-box edge is 5 mm from the wall, so the strip is only
+  about 2 mm wide in tool-centre space (wall + 3 to the edge).
+- The C31 smoothing (0.3) and margin (≥ one cell, about 0.51 on Corne)
+  take about 0.8 mm off each side, so no 2D tool-centre region is left.
+- So neither the field, the slot nor the nibble plans those cells.
+
+The pre-registration assumed a 3 mm strip everywhere. The cause is C31's
+margin in a strip narrower than about `2R + 2 × 0.8` in centre space at
+a free edge. That is C22's C31 code, and a separate item (§10.7). Both
+the slot and the nibble reach the rest.
+
+### 10.4 P-O1 and P-O2: the strip is four pieces, and the corridors are open strips, not a ring
+
+The fix13 log has four `C38 corridor opening` lines per op-1 level. Each
+has `loops=1`. Their cuts are 63.0 + 262.4 + 125.0 + 128.3 = 578.7 mm,
+and their centre areas 55.7 + 217.0 + 58.3 + 67.7 = 398.7 mm².
+- The strip is not one ring. The stock-box sides (§10.3) cut it, so the
+  grown outline splits into pieces (`inset_piece_outlines` splits at the
+  necks).
+- A piece's centre region is an open sliver. Its one exterior loop runs
+  along both edges, which gives `loops=1`.
+- The corridor pieces hold 398.7 mm² of C31's 617.9 mm² centre region
+  (C38a log). The rest is in pieces where the seed fits (the concave
+  corners), which the field plans, and in the parts that no centre region
+  holds (§10.3).
+- So the corridor loops cover about 578.7 / 2 ≈ 289 mm of strip, not
+  445. P-O2 (890 mm per level, one ring) was wrong because it assumed a
+  ring.
+
+### 10.5 P-B1 (18 for headon) and P-B2 (101 for headon)
+
+`stockedge.py` on `entries_d23.json`:
+
+| Beyond the mesh bbox | D20 | C35 | D23 headon | D23 pick |
+|---|---|---|---|---|
+| within R of the stock edge | 32 | 32 | **1** | **1** |
+| at R or more | 13 | 13 | 17 | 13 |
+
+P-B1′ (≤ 2 within R, §9.3) holds in both D23 columns. The 18 of headon
+are 1 + 17. The 17 at R or more are the C37 class (wall and containment
+ends in the bbox margin). The headon column has 4 more there than pick
+(17 against 13), and P-B2's 101 against 87 is the same difference between
+the columns, on the grid. I did not trace which headon rule adds them. Both are
+C37's (§6), not the stock-edge clip's. The old P-B1 / P-B2 numbers
+counted classes C38 does not own.
+
+### 10.6 P-W2: the wanaka200 opening is on a region with the shipped outlines
+
+The one wanaka200 opening (38 slot steps, 27.0 mm, centre 17.0 mm²)
+follows the Z 4.0 line "the shortfall inset split the outline: shipped
+sweep".
+- §3.6 assumed that a region on the shipped path has no 2D centre region
+  ("double inset"). That is wrong for a region wider than `2R + 0.6` in
+  places. `planner_outlines` gives the smoothed region, and the 2D
+  planner insets it by R once, so a piece can keep a small centre region
+  with no clearance of R. The corridor rule then fires on it.
+- Region 2 (F-038's forecast 0 in D20) is now G-b-skipped (planned 0):
+  its grown piece has no centre region.
+- P-W1 and P-W3 hold.
+
+**Slot records print nowhere:** `Research3d.slots` exists, but no CLI or
+test line prints it. If the slot is kept, my next change adds one info
+line `C38 slot summary` (planned, records, fed, unfed, steps over) where
+`apply_slice_turn_feeds` returns its `(turns, slots)` pair in
+`adaptive3d/mod.rs`. That is C22's line, so I ask C22 first. If the slot
+is removed, nothing is needed.
+
+### 10.7 Two more findings from the D23 samples
+
+- **G-CLIPAIR, measured. It caused the spiral_pick export refusal.**
+  - What: 130 copy-op clearing samples cut deeper than 1.5 × its
+    Depth/Pass (4.5 mm), up to 12.0 mm. 127 of them have their centre at
+    3.2 mm outside the silhouette, which is the copy op's containment
+    line (`why.py`). They are at Z 11.01, 5.01 and 2.01.
+  - Mechanism: the disc reaches 4.7 mm from the wall, into the 3–4.5 mm
+    band that op 1 left standing (§10.3). The copy op's planner stock had
+    those cells as air: the O5b clear empties every cell beyond its 3 mm
+    boundary. So the planner cut full depth along its containment line
+    beside a 9–12 mm wall of stock it did not see.
+  - Consequence: the copy op's 200 µm deflection and the D23 pick export
+    refusal, and the "crosses standing material deeper than planned"
+    triage line.
+  - A fix is G-CLIPAIR's (shipped behaviour). The research arm could
+    carry it first.
+- **The free-edge strip (§10.3) is the larger part of the band in both
+  runs.** It needs C31 (C22's code) to plan a strip of about 2 mm centre
+  width at the stock edge. Example: no smoothing inset where the edge is
+  the stock box, since there is no staircase from a wall there. That is
+  a C22/C31 item. I do not propose a number.
