@@ -1123,9 +1123,13 @@ fn scale_key(legend: Legend) -> Key {
             use crate::render::toolpath_render::engagement_color;
             // The ramp input is `feed / nominal feed`, and the strip spans
             // 0 to 1.5 of it.
-            ramp("0 %", "150 % of nominal feed", |t| {
-                engagement_color(f64::from(t) * 1.5, 1.0)
-            })
+            with_ends(
+                ramp("0 %", "150 % of nominal feed", |t| {
+                    engagement_color(f64::from(t) * 1.5, 1.0)
+                }),
+                Vec::new(),
+                vec![capped_move_entry()],
+            )
         }
         Legend::AdvancePerTooth => {
             use crate::render::toolpath_render::advance_per_tooth_segment_color;
@@ -1150,6 +1154,7 @@ fn scale_key(legend: Legend) -> Key {
                         Some(AdvancePerToothMm::new(0.05)),
                     )),
                 ),
+                capped_move_entry(),
             ])
         }
         Legend::TierMap(tier_count) => {
@@ -1322,6 +1327,16 @@ fn legend_base_colour(state: &AppState) -> Option<[f32; 3]> {
 /// when a render colour source exists.
 pub type LegendEntry = (String, Option<[f32; 3]>);
 
+/// G-B: the legend text of a move with a feed cap. Every move colour mode
+/// draws such a move dashed (`toolpath_render::ToolpathLines::walk`).
+pub const CAPPED_MOVE_LABEL: &str = "dashed: fed at a load cap";
+
+/// The capped-move entry. It has no swatch: the dash is a line style in
+/// the mode's own colour, not a colour.
+fn capped_move_entry() -> LegendEntry {
+    (CAPPED_MOVE_LABEL.to_owned(), None)
+}
+
 /// The entries of a categorical legend, in drawing order. For the
 /// collisions the two entries are the ends of the density ramp.
 pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> {
@@ -1368,6 +1383,9 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
             }
             if spans.show_dressup {
                 entries.push(("dressup".to_owned(), base.map(mirrored::dressup_rgb)));
+            }
+            if state.viewport.show_cutting {
+                entries.push(capped_move_entry());
             }
             entries
         }

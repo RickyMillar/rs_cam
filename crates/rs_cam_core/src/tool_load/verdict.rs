@@ -77,7 +77,8 @@ pub enum BindingConstraint {
     /// feed: a planner set it where a load rule (a pass-load ceiling on a
     /// turn or a slot) reduced the feed. It binds after every other bound,
     /// so the modulator cannot lift such a move back to the chipload band.
-    /// No shipped planner writes a cap, so a shipped run never reports it.
+    /// Geodesic Adaptive writes it on tight turns and plunge departures
+    /// (integration step 7.4a).
     FeedCap,
 }
 

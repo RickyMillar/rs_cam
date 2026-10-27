@@ -1397,6 +1397,9 @@ pub struct CutTraceParam {
     /// Maximum `drill_samples` entries to return when `include_drill_samples`
     /// is true (default: 500).
     pub max_drill_samples: Option<usize>,
+    /// Maximum `capped_moves` entries to return (default: 50). The rows are
+    /// the moves with a feed cap, in toolpath and move order.
+    pub max_capped_moves: Option<usize>,
     /// Optional: override the global response byte backstop (default:
     /// 8388608 = 8 MiB). Sections that do not fit are OMITTED and named in
     /// `sections_not_computed`, and `complete` becomes false — a section
@@ -3600,6 +3603,10 @@ pub fn build_info() -> serde_json::Value {
             // carries `extended` (the areas of a Pocket Extend to stock).
             "add_bore_from_drill",
             "selection_hole_fit",
+            // G-B (2026-10-28): `get_cut_trace` carries `capped_move_count`,
+            // `capped_min_feed_mm_min` and the bounded `capped_moves` rows
+            // (the moves with a feed cap); `max_capped_moves` caps them.
+            "cut_trace_capped_moves",
         ],
     })
 }

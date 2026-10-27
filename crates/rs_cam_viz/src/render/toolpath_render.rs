@@ -91,6 +91,16 @@ fn push_dashed_segment(out: &mut Vec<LineVertex>, p0: [f32; 3], p1: [f32; 3], co
     push_dashed_line(out, p0, p1, color, 0.35 * total, 0.30 * total);
 }
 
+/// Replace each segment of `out[start..]` with its [`push_dashed_segment`]
+/// dashes, in the colour of the segment's first vertex. A capped move draws
+/// through this in every colour mode (G-B).
+fn dash_segments_from(out: &mut Vec<LineVertex>, start: usize) {
+    let solid = out.split_off(start.min(out.len()));
+    for [a, b] in solid.as_chunks::<2>().0 {
+        push_dashed_segment(out, a.position, b.position, a.color);
+    }
+}
+
 /// Toolpath line data uploaded to GPU.
 /// Vertices are in move-sequence order so partial drawing works for simulation scrubbing.
 pub struct ToolpathGpuData {
@@ -454,7 +464,14 @@ impl ToolpathLines {
                         );
                     }
                 } else {
+                    let start = out.cut.len();
                     cut_move(&mut out.cut, i, &points);
+                    // A move with a feed cap draws dashed in every colour
+                    // mode: the dash names the cause, the colour still
+                    // gives the mode's reading (G-B).
+                    if tp.moves[i].feed_cap.is_some() {
+                        dash_segments_from(&mut out.cut, start);
+                    }
                 }
             }
             // A move that the stride or the span filter hides still bumps
@@ -1026,6 +1043,55 @@ mod tests {
         assert!((out[1].position[0] - 3.5).abs() < 1e-5);
         assert!((out[2].position[0] - 6.5).abs() < 1e-5);
         assert_eq!(out[3].position, [10.0, 0.0, 0.0]);
+    }
+
+    /// G-B: a move with a feed cap draws dashed (4 vertices for one
+    /// segment) in every colour mode; a move with no cap draws solid (2).
+    #[test]
+    fn a_capped_move_draws_dashed_in_every_colour_mode_g_b() {
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::toolpath::{Move, MoveIntent, MoveType};
+        use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
+
+        let mv = |x: f64, move_type: MoveType, feed_cap: Option<f64>| Move {
+            target: P3::new(x, 0.0, 0.0),
+            move_type,
+            intent: MoveIntent::Unknown,
+            feed_cap,
+        };
+        let mut tp = Toolpath::new();
+        tp.moves.push(mv(0.0, MoveType::Rapid, None));
+        tp.moves
+            .push(mv(10.0, MoveType::Linear { feed_rate: 900.0 }, None));
+        tp.moves
+            .push(mv(20.0, MoveType::Linear { feed_rate: 600.0 }, Some(600.0)));
+
+        let check = |mode: &str, lines: &ToolpathLines| {
+            // Move 1 (no cap): one solid segment; move 2 (capped): two dashes.
+            assert_eq!(lines.move_cut_counts, vec![2, 6], "{mode}");
+            let capped = &lines.cut[2..];
+            assert!((capped[1].position[0] - 13.5).abs() < 1e-5, "{mode}");
+            assert!((capped[2].position[0] - 16.5).abs() < 1e-5, "{mode}");
+        };
+        let annotated = AnnotatedToolpath::new(tp.clone());
+        check(
+            "normal",
+            &ToolpathLines::normal(
+                &annotated,
+                0,
+                false,
+                &crate::state::viewport::SpanKindFilter::default(),
+                usize::MAX,
+            ),
+        );
+        check(
+            "engagement",
+            &ToolpathLines::engagement(&tp, 900.0, usize::MAX),
+        );
+        check(
+            "advance",
+            &ToolpathLines::advance_per_tooth(&tp, None, &HashMap::new(), usize::MAX),
+        );
     }
 
     #[test]

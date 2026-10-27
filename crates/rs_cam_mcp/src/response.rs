@@ -112,6 +112,12 @@ pub const DEFAULT_MAX_HOTSPOTS: usize = 20;
 /// 50, the number `app/mcp/simulation.rs` wrote as a literal.
 pub const DEFAULT_MAX_ISSUES: usize = 50;
 
+/// Default cap on `get_cut_trace`'s `capped_moves` array (G-B).
+///
+/// The issues cap: one row per capped move, in move order, so the first
+/// N are the first N capped moves of the toolpath.
+pub const DEFAULT_MAX_CAPPED_MOVES: usize = DEFAULT_MAX_ISSUES;
+
 /// Documented ordering contract for `span_summaries` under a cap.
 ///
 /// Toolpath order is the project's own toolpath index ascending; within a
@@ -142,6 +148,8 @@ pub struct CutTraceCaps {
     pub toolpath_summaries: usize,
     pub drill_summaries: usize,
     pub drill_samples: usize,
+    /// G-B: the rows of `capped_moves`.
+    pub capped_moves: usize,
     pub max_response_bytes: usize,
 }
 
@@ -154,6 +162,7 @@ impl Default for CutTraceCaps {
             toolpath_summaries: usize::MAX,
             drill_summaries: usize::MAX,
             drill_samples: DEFAULT_MAX_DRILL_SAMPLES,
+            capped_moves: DEFAULT_MAX_CAPPED_MOVES,
             max_response_bytes: MAX_RESPONSE_BYTES,
         }
     }
@@ -168,6 +177,7 @@ impl CutTraceCaps {
         toolpath_summaries: Option<usize>,
         drill_summaries: Option<usize>,
         drill_samples: Option<usize>,
+        capped_moves: Option<usize>,
         max_response_bytes: Option<usize>,
     ) -> Self {
         let d = Self::default();
@@ -177,6 +187,7 @@ impl CutTraceCaps {
             toolpath_summaries: toolpath_summaries.unwrap_or(d.toolpath_summaries),
             drill_summaries: drill_summaries.unwrap_or(d.drill_summaries),
             drill_samples: drill_samples.unwrap_or(d.drill_samples),
+            capped_moves: capped_moves.unwrap_or(d.capped_moves),
             max_response_bytes: max_response_bytes.unwrap_or(d.max_response_bytes),
         }
     }
@@ -193,6 +204,7 @@ impl CutTraceCaps {
             toolpath_summaries: usize::MAX,
             drill_summaries: usize::MAX,
             drill_samples: usize::MAX,
+            capped_moves: usize::MAX,
             max_response_bytes: usize::MAX,
         }
     }

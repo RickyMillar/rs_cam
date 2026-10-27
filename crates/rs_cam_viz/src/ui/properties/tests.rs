@@ -1202,6 +1202,7 @@ fn the_blocked_state_word_fits_its_slot_f22() {
             simulation_run: 3,
             current_run: Some(4),
         }),
+        caps: None,
     };
     // (text, right edge, elided) of each painted text at `width`.
     let paint = |width: f32| -> Vec<(String, f32, bool)> {
@@ -1248,6 +1249,30 @@ fn the_blocked_state_word_fits_its_slot_f22() {
             );
         }
     }
+}
+
+/// G-B: the Generate row's figures hover names the feed caps of the
+/// stored result: the count and the lowest cap, as planned moves.
+#[test]
+fn the_figures_hover_names_the_feed_caps_g_b() {
+    use super::toolpath_panel::CapFigures;
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+    let mut tp = Toolpath::new();
+    assert_eq!(CapFigures::of(&tp), None, "no move, no caps");
+    for (x, cap) in [(1.0, None), (2.0, Some(1500.0)), (3.0, Some(1200.0))] {
+        tp.moves.push(Move {
+            target: P3::new(x, 0.0, 0.0),
+            move_type: MoveType::Linear { feed_rate: 2000.0 },
+            intent: MoveIntent::Unknown,
+            feed_cap: cap,
+        });
+    }
+    let caps = CapFigures::of(&tp).expect("two capped moves");
+    assert_eq!(
+        caps.line(),
+        "2 moves at a load cap (planned), lowest 1200 mm/min"
+    );
 }
 
 /// R-E (operator ruling 2026-10-23): one hole is ONE row, with one text,

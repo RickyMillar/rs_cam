@@ -120,6 +120,10 @@ pub(super) fn draw_toolpath_panel(
         blocking: blocking.as_ref(),
         moves: entry.run.result().map(|result| result.stats.move_count),
         feed_stage: inputs.feed_stage,
+        caps: entry
+            .run
+            .result()
+            .and_then(|result| CapFigures::of(result.toolpath())),
     };
     if draw_generate_row(ui, &header) {
         events.push(AppEvent::GenerateToolpath(entry.id));
@@ -1184,6 +1188,37 @@ pub(super) struct HeaderRow<'a> {
     /// The move count of the stored result.
     pub moves: Option<usize>,
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+    /// G-B: the moves of the stored result that carry a feed cap.
+    pub caps: Option<CapFigures>,
+}
+
+/// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
+/// moves, not the emitted ones, so the hover says "planned".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct CapFigures {
+    pub count: usize,
+    pub min_feed_mm_min: f64,
+}
+
+impl CapFigures {
+    /// `None` when no move of `tp` carries a cap.
+    pub fn of(tp: &rs_cam_core::toolpath::Toolpath) -> Option<Self> {
+        let mut caps = tp.moves.iter().filter_map(|m| m.feed_cap);
+        let first = caps.next()?;
+        let (count, min_feed_mm_min) = caps.fold((1, first), |(n, low), cap| (n + 1, low.min(cap)));
+        Some(Self {
+            count,
+            min_feed_mm_min,
+        })
+    }
+
+    /// The one hover line of the figures.
+    pub fn line(self) -> String {
+        format!(
+            "{} moves at a load cap (planned), lowest {:.0} mm/min",
+            self.count, self.min_feed_mm_min
+        )
+    }
 }
 
 impl HeaderRow<'_> {
@@ -1271,6 +1306,9 @@ fn figures_hover(row: &HeaderRow<'_>) -> String {
     if let Some(text) = row.moves_text() {
         parts.push(text);
     }
+    if let Some(caps) = row.caps {
+        parts.push(caps.line());
+    }
     if let Some(stage) = row.feed_stage {
         parts.push(stage.statement());
     }
@@ -1327,11 +1365,17 @@ fn draw_header_figures(ui: &mut egui::Ui, row: &HeaderRow<'_>, fit: bool) {
                 .small()
                 .color(crate::ui::tokens::TEXT_FAINT),
         )
-        .on_hover_text(if is_stale {
-            "This count is from the previous generation. Regenerate the \
-             operation to measure the settings shown here."
-        } else {
-            "The move count of the current generation."
+        .on_hover_text({
+            let count = if is_stale {
+                "This count is from the previous generation. Regenerate the \
+                 operation to measure the settings shown here."
+            } else {
+                "The move count of the current generation."
+            };
+            match row.caps {
+                Some(caps) => format!("{count}\n{}", caps.line()),
+                None => count.to_owned(),
+            }
         });
     }
 }

@@ -3362,6 +3362,15 @@
             "null"
           ]
         },
+        "max_capped_moves": {
+          "description": "Maximum `capped_moves` entries to return (default: 50). The rows are\nthe moves with a feed cap, in toolpath and move order.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "max_drill_samples": {
           "description": "Maximum `drill_samples` entries to return when `include_drill_samples`\nis true (default: 500).",
           "format": "uint",

@@ -562,7 +562,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_cut_trace",
-        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
+        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. capped_move_count and capped_min_feed_mm_min count the moves with a feed cap (a load rule lowered the feed); capped_moves lists them (default 50), omitted when there are none. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
     )]
     async fn get_cut_trace(
         &self,
@@ -579,6 +579,7 @@ impl EmbeddedCamServer {
             max_toolpath_summaries,
             max_drill_summaries,
             max_drill_samples,
+            max_capped_moves,
             max_response_bytes,
         }): Parameters<CutTraceParam>,
     ) -> String {
@@ -598,6 +599,7 @@ impl EmbeddedCamServer {
                         max_toolpath_summaries,
                         max_drill_summaries,
                         max_drill_samples,
+                        max_capped_moves,
                         max_response_bytes,
                     ),
                 },
