@@ -534,7 +534,9 @@ fn push_adaptive3d_spans(
             E::RegionStart { .. }
             | E::PassEntry { .. }
             | E::PassPreflightSkip { .. }
-            | E::PassSummary { .. } => None,
+            | E::PassSummary { .. }
+            | E::FeedCapStart { .. }
+            | E::FeedCapEnd => None,
         })
         .collect();
 

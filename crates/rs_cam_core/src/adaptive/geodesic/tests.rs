@@ -561,3 +561,49 @@ fn only_the_core_loop_leaves_the_wraps_beside_a_core_spiral() {
         "the kept level-2 loop must be the pocket, not the core loop"
     );
 }
+
+/// Step 7.4a (lead ruling 2026-10-28): on a tight turn the area term of the
+/// feed reading binds. The cutter has cut a trail along +x to the origin
+/// beside material at `y ≥ R - s` (a side cut one stepover `s` wide), then turns
+/// 30° into the material in one pass step (a turn radius of
+/// `step / (2 sin 15°)`, under `R`). The removal per mm reads more than the
+/// width across the step, so the factor is `c / (area_per_mm / D)`, lower
+/// than the width alone gives.
+#[test]
+fn the_area_term_binds_on_a_tight_turn() {
+    use crate::adaptive::MaterialGrid;
+    use crate::adaptive::path::pass_step_len;
+    use crate::adaptive::search::{PassLoad, measure_step};
+
+    use super::slice::{feed_factor, step_reading};
+
+    const STEPOVER: f64 = 2.0;
+    let cell = planner_cell_size(R, 0.1);
+    let swept = PassLoad::swept_width(STEPOVER, R, cell);
+    let area = PassLoad::area_per_mm(STEPOVER, R, cell);
+    let mut grid =
+        MaterialGrid::from_polygon(&Polygon2::rectangle(-30.0, R - STEPOVER, 30.0, 30.0), cell);
+    let mut x = -20.0;
+    while x <= 0.0 {
+        grid.clear_circle(x, 0.0, R);
+        x += cell;
+    }
+    let from = P2::new(0.0, 0.0);
+    let heading = 30.0_f64.to_radians();
+    let step = pass_step_len(cell);
+    let to = P2::new(step * heading.cos(), step * heading.sin());
+
+    let width = measure_step(&grid, from, to.x, to.y, R, heading, &swept);
+    let removal = measure_step(&grid, from, to.x, to.y, R, heading, &area);
+    assert!(
+        removal > width && width > swept.ceiling,
+        "the fixture must read the area term over the width, both over the \
+         ceiling {}: width {width}, area {removal}",
+        swept.ceiling
+    );
+    let reading = step_reading(&grid, from, to, R, &swept, &area);
+    assert_eq!(reading.to_bits(), removal.to_bits());
+    let factor = feed_factor(swept.ceiling, reading);
+    assert_eq!(factor.to_bits(), (swept.ceiling / removal).to_bits());
+    assert!(factor < feed_factor(swept.ceiling, width));
+}

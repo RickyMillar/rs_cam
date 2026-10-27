@@ -213,6 +213,7 @@ pub(super) struct StayDownProof {
     pub(super) ceiling_z: f64,
 }
 
+#[derive(Clone)]
 pub(super) enum Adaptive3dSegment {
     /// 3D cutting path with variable Z
     Cut(Vec<P3>),
@@ -466,7 +467,11 @@ fn clear_planned_level(
                 cancel,
             )?;
         }
-        ClearingStrategy3d::AgentSearch | ClearingStrategy3d::ContourSpiral => {
+        // Geodesic Adaptive: the same slice dispatch, with the geodesic plan
+        // as the per-slice generator (`clearing.rs`, `plan_one_outline`).
+        ClearingStrategy3d::AgentSearch
+        | ClearingStrategy3d::ContourSpiral
+        | ClearingStrategy3d::GeodesicAdaptive => {
             clear_z_level_agent_2d_slice(
                 ctx,
                 material_stock,
@@ -818,7 +823,18 @@ pub(super) fn adaptive_3d_segments(
     // rapids, and the dexel for those cells is left unstamped — deeper
     // z-levels then bite through fresh stock with full-depth axial DOC.
     // See planning/AGENTSEARCH_INVESTIGATION_LOG.md O5b for repro details.
+    // Geodesic Adaptive (research C38 §11, G-CLIPAIR): the stock a disc
+    // centred inside the boundary reaches stays; the region mask keeps
+    // centres inside.
+    let mut region_clip: Option<super::outer_band::RegionClip> = None;
     if let Some(ref boundary) = params.geometry.boundary {
+        // Geodesic Adaptive with Global ordering only (§13.8: the strategy
+        // test sits here, the helper is geometry only).
+        let reach = (params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
+            && matches!(params.linking.region_ordering, RegionOrdering::Global))
+        .then(|| super::outer_band::boundary_reach(boundary, tool_radius))
+        .flatten();
+        let mut inside_mask: Vec<bool> = Vec::new();
         let mut boundary_cleared = 0u32;
         for row in 0..material_stock.z_grid.rows {
             if row % 16 == 0 {
@@ -826,7 +842,18 @@ pub(super) fn adaptive_3d_segments(
             }
             for col in 0..material_stock.z_grid.cols {
                 let (x, y) = material_stock.z_grid.cell_to_world(row, col);
-                if !boundary.contains_point(&crate::geo::P2::new(x, y)) {
+                let p = crate::geo::P2::new(x, y);
+                let inside = boundary.contains_point(&p);
+                // Geodesic Adaptive (G-CLIPAIR): keep the cells a disc
+                // centred inside the boundary reaches.
+                let kept = match &reach {
+                    Some(reach) => {
+                        inside_mask.push(inside);
+                        inside || reach.iter().any(|q| q.contains_point(&p))
+                    }
+                    None => inside,
+                };
+                if !kept {
                     // Same covered/uncovered split as the border clear:
                     // uncovered cells outside the boundary must stay fully
                     // cleared or O5b's unstamped-cell deep bite returns.
@@ -844,6 +871,13 @@ pub(super) fn adaptive_3d_segments(
             debug!(
                 cells = boundary_cleared,
                 "Cleared cells outside boundary polygon"
+            );
+        }
+        if reach.is_some() {
+            region_clip = super::outer_band::RegionClip::new(
+                inside_mask,
+                material_stock.z_grid.rows,
+                material_stock.z_grid.cols,
             );
         }
     }
@@ -935,7 +969,7 @@ pub(super) fn adaptive_3d_segments(
         stock_to_leave: params.depth.stock_to_leave,
         depth_per_pass: params.depth.depth_per_pass,
         tolerance: params.geometry.tolerance,
-        cut_tolerance: params.geometry.cut_simplify_tolerance(),
+        cut_tolerance: params.emission_chord_tolerance(),
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
         target_frac,
@@ -954,6 +988,8 @@ pub(super) fn adaptive_3d_segments(
         stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
         step_split: super::effective_step_split(params),
         keep_down_route: super::effective_keep_down_route(params),
+        region_clip,
+        left_pieces: std::cell::RefCell::new(Vec::new()),
     };
 
     let mut segments = Vec::new();
@@ -1076,10 +1112,10 @@ pub(super) fn adaptive_3d_segments(
                     entry_floor_radius(params, tool_radius),
                     cell_size,
                     params.safe_z,
-                    params.geometry.cut_simplify_tolerance(),
+                    params.emission_chord_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
-                    ctx.centre_clip,
+                    &ctx,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,
@@ -1126,10 +1162,10 @@ pub(super) fn adaptive_3d_segments(
                     entry_floor_radius(params, tool_radius),
                     cell_size,
                     params.safe_z,
-                    params.geometry.cut_simplify_tolerance(),
+                    params.emission_chord_tolerance(),
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
-                    ctx.centre_clip,
+                    &ctx,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,
@@ -1214,14 +1250,12 @@ pub(super) fn entry_floor_radius(params: &Adaptive3dParams, tool_radius: f64) ->
 /// far less than this.
 const STAY_DOWN_FROM_XY_EPS_MM: f64 = 0.05;
 
-/// F-038b: attempt to emit a keep-tool-down feed link between a previous
-/// tool position and a new entry point. Returns `true` if the link was
-/// emitted (caller skips the retract and the rapids), `false` otherwise
-/// (caller falls back to the retract path).
-///
-/// The link ends at `(to.xy, descend_to_z)`, the entry's rapid floor. It
-/// never descends into stock: the entry style emitter (peck, helix, ramp)
-/// takes the material below `descend_to_z`, as it does after a retract.
+/// F-038b: the Z of the keep-tool-down feed link from a previous tool
+/// position `from` to a new entry point `to`, or `None` when the link is
+/// refused (the caller then retracts). The emitter
+/// ([`try_emit_stay_down_link`]) and Geodesic Adaptive's region score
+/// (`clearing.rs`, C29) both call it, so the score reads the emitter's own
+/// test.
 ///
 /// Algorithm:
 ///   1. Reject if `xy_distance(from, to) > max_stay_down_distance_mm`.
@@ -1232,16 +1266,11 @@ const STAY_DOWN_FROM_XY_EPS_MM: f64 = 0.05;
 ///   4. Reject if `link_z > safe_z` (the retract is no longer).
 ///   5. Reject if `link_z > to.z + cutter_length` (the shank would enter
 ///      uncut material above the new entry point that the tool can't cut).
-///   6. Emit up to three feed moves @ feed_rate, all tagged
-///      `MoveIntent::Linking`: (a) ascend at the start XY to link_z, (b) XY
-///      traverse at link_z to the entry XY, (c) descend through air to
-///      `descend_to_z`. Each step is skipped if it has no length.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
 )]
-fn try_emit_stay_down_link(
-    tp: &mut Toolpath,
+pub(super) fn stay_down_link_z(
     from: P3,
     to: P3,
     descend_to_z: f64,
@@ -1253,16 +1282,15 @@ fn try_emit_stay_down_link(
     clearance_mm: f64,
     stock_to_leave: f64,
     safe_z: f64,
-    feed_rate: f64,
-) -> bool {
+) -> Option<f64> {
     if max_stay_down_distance_mm <= 0.0 {
-        return false;
+        return None;
     }
     let dx = to.x - from.x;
     let dy = to.y - from.y;
     let xy_dist = (dx * dx + dy * dy).sqrt();
     if xy_dist > max_stay_down_distance_mm {
-        return false;
+        return None;
     }
 
     // F-038b spec sample count = 10 (incl. endpoints).
@@ -1284,7 +1312,7 @@ fn try_emit_stay_down_link(
     // Safety guard 1: link Z above safe_z means the terrain peak is
     // above the safe height. Retract is the right answer.
     if link_z > safe_z + 1e-9 {
-        return false;
+        return None;
     }
     // Safety guard 2: the cutter's cutting length bounds how far above
     // `to.z` the shank can engage material. If the link Z requires the
@@ -1292,8 +1320,62 @@ fn try_emit_stay_down_link(
     // would intersect the heightfield-sampled material. Retract.
     let cutter_length = cutter.length();
     if cutter_length > 0.0 && link_z > to.z + cutter_length + 1e-9 {
-        return false;
+        return None;
     }
+    Some(link_z)
+}
+
+/// F-038b: attempt to emit a keep-tool-down feed link between a previous
+/// tool position and a new entry point. Returns `true` if the link was
+/// emitted (caller skips the retract and the rapids), `false` otherwise
+/// (caller falls back to the retract path).
+///
+/// The link ends at `(to.xy, descend_to_z)`, the entry's rapid floor. It
+/// never descends into stock: the entry style emitter (peck, helix, ramp)
+/// takes the material below `descend_to_z`, as it does after a retract.
+///
+/// [`stay_down_link_z`] decides the link and its Z. Then this emits up to
+/// three feed moves @ feed_rate, all tagged `MoveIntent::Linking`: (a)
+/// ascend at the start XY to link_z, (b) XY traverse at link_z to the entry
+/// XY, (c) descend through air to `descend_to_z`. Each step is skipped if
+/// it has no length.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+fn try_emit_stay_down_link(
+    tp: &mut Toolpath,
+    from: P3,
+    to: P3,
+    descend_to_z: f64,
+    stock_ceiling: f64,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    max_stay_down_distance_mm: f64,
+    clearance_mm: f64,
+    stock_to_leave: f64,
+    safe_z: f64,
+    feed_rate: f64,
+) -> bool {
+    let Some(link_z) = stay_down_link_z(
+        from,
+        to,
+        descend_to_z,
+        stock_ceiling,
+        mesh,
+        index,
+        cutter,
+        max_stay_down_distance_mm,
+        clearance_mm,
+        stock_to_leave,
+        safe_z,
+    ) else {
+        return false;
+    };
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let xy_dist = (dx * dx + dy * dy).sqrt();
 
     use crate::toolpath::MoveIntent;
     // Step (a): ascend at the current XY to link_z if needed.
@@ -1514,8 +1596,16 @@ pub(super) fn segments_to_toolpath(
         }
     };
 
+    // Geodesic Adaptive (design part F): the feed of the cut moves between a
+    // `FeedCapStart` and a `FeedCapEnd` marker, written as the move's feed
+    // and its `Move::feed_cap`. `None` for every other cut.
+    let mut capped_feed: Option<f64> = None;
     for segment in segments {
         match segment {
+            Adaptive3dSegment::Marker(Adaptive3dRuntimeEvent::FeedCapStart { factor }) => {
+                capped_feed = Some(params.feed_rate * factor);
+            }
+            Adaptive3dSegment::Marker(Adaptive3dRuntimeEvent::FeedCapEnd) => capped_feed = None,
             Adaptive3dSegment::Marker(event) => {
                 annotations.push(Adaptive3dRuntimeAnnotation {
                     move_index: tp.moves.len(),
@@ -1701,10 +1791,9 @@ pub(super) fn segments_to_toolpath(
                     cutter.radius(),
                 );
                 // G-PLANSIMGAP: the same tolerance the planner stamp reads
-                // (`cut_simplify_tolerance`), so the segment merge happens
+                // (`emission_chord_tolerance`), so the segment merge happens
                 // here, before the stamp, and not after it.
-                let simplified =
-                    simplify_path_3d(&draped, params.geometry.cut_simplify_tolerance());
+                let simplified = simplify_path_3d(&draped, params.emission_chord_tolerance());
                 let blended = blend_corners_3d(&simplified, params.geometry.min_cutting_radius);
                 // G-PHANTOMSTAMP: the first feed runs from where the tool
                 // stands to `blended[1]`; the planner mirror stamps the same
@@ -1712,9 +1801,12 @@ pub(super) fn segments_to_toolpath(
                 for pt in blended.iter().skip(1) {
                     tp.feed_to_with_intent(
                         *pt,
-                        params.feed_rate,
+                        capped_feed.unwrap_or(params.feed_rate),
                         crate::toolpath::MoveIntent::ClearingCut,
                     );
+                    if let Some(m) = tp.moves.last_mut() {
+                        m.feed_cap = capped_feed;
+                    }
                 }
             }
         }

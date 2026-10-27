@@ -83,13 +83,6 @@ pub(super) fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius
 /// side band up to `c·D` wide (G-ADAPTLINKLOAD): that is planned. A column
 /// above the slab is stock the level above did not cut, which no planned
 /// move of this level takes (C38 §14: the fed-link bars).
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "integration step 7.2: the geodesic arm's held links call it in step 7.4"
-    )
-)]
 pub(super) fn keep_down_excess(
     stock: &TriDexelStock,
     from: P3,

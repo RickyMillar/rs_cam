@@ -99,9 +99,16 @@ use super::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
 
 mod field;
 mod plan;
+mod slice;
 #[cfg(test)]
 mod tests;
 mod wraps;
+
+// The 3D door (`adaptive3d/clearing.rs`, Geodesic Adaptive).
+pub(crate) use slice::{
+    HeldLinks, feed_caps, link_length, slice_cleanup, slice_load_margin, slice_replay,
+    slice_segments,
+};
 
 use plan::{cleaned, params_with, plan_piece};
 

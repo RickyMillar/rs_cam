@@ -65,6 +65,13 @@ const OUTSIDE: u8 = 2;
 const UNSET: u8 = 3;
 
 impl CentreClip {
+    /// The clip's containment polygons (shrunk by [`EDGE_MARGIN_MM`]), for
+    /// the reach a Geodesic Adaptive plan may grow into (research C38
+    /// §13.7, `outer_band::clip_to_centre_reach`).
+    pub(super) fn polygons(&self) -> &[Polygon2] {
+        &self.polygons
+    }
+
     /// The clip for `boundaries` (the clip's containment polygons) over the
     /// planner grid. `None` when there is nothing to clip to: the session
     /// clip passes an empty set through unclipped, and so does the planner.

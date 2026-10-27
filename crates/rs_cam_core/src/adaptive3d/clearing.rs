@@ -418,6 +418,14 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The routed keep-down travel in force ([`super::KeepDownRoute`];
     /// `super::effective_keep_down_route`).
     pub(super) keep_down_route: super::KeepDownRoute,
+    /// Geodesic Adaptive (research C38 §11, G-CLIPAIR): the boundary mask
+    /// of the region grid, when the boundary clear kept the reachable band.
+    pub(super) region_clip: Option<super::outer_band::RegionClip>,
+    /// Geodesic Adaptive (research C38 §16): the pieces the arm left to the
+    /// rest pass (the field does not apply, or the F-038 forecast skipped
+    /// them), each with its Z level. The waterline cleanup of that level
+    /// skips a contour inside one.
+    pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -557,7 +565,7 @@ pub(super) struct StampDrape<'a> {
 }
 
 impl<'a> ClearZLevelContext<'a> {
-    pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
+    pub(super) fn stamp_drape(&self) -> StampDrape<'_> {
         StampDrape {
             mesh: self.mesh,
             index: self.index,
@@ -1847,7 +1855,7 @@ pub(super) fn waterline_cleanup(
     tolerance: f64,
     min_cutting_radius: f64,
     stock_to_leave: f64,
-    centre_clip: Option<&CentreClip>,
+    ctx: &ClearZLevelContext<'_>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -1867,7 +1875,7 @@ pub(super) fn waterline_cleanup(
         // contour gets no keep-down link.
         entry_floor_radius,
         stay_down_mm: 0.0,
-        centre_clip,
+        centre_clip: ctx.centre_clip,
         keep_down_route: super::KeepDownRoute::Off,
         stay_down_clearance_mm: 0.0,
     };
@@ -1909,6 +1917,24 @@ pub(super) fn waterline_cleanup(
         if total_samples > 0 && steep_samples * 3 < total_samples {
             // Less than 1/3 of samples are steep — skip this contour
             continue;
+        }
+        // Geodesic Adaptive (research C38 §16): a contour that lies in a piece the arm
+        // left to the rest contour pass (at least half its samples inside
+        // one at this level) is the rest pass's work too.
+        if is_geodesic(ctx.clearing_strategy) {
+            let left = ctx.left_pieces.borrow();
+            let inside = contour
+                .iter()
+                .step_by(sample_step)
+                .filter(|p| {
+                    left.iter().any(|(z, piece)| {
+                        (z - z_level).abs() < 1e-9 && piece.contains_point(&P2::new(p.x, p.y))
+                    })
+                })
+                .count();
+            if inside * 2 >= total_samples {
+                continue;
+            }
         }
 
         push_segment_with_stamp(
@@ -2137,6 +2163,15 @@ fn detect_and_order_regions(
         ctx.stock_to_leave,
         area_mask,
     );
+    // Geodesic Adaptive (research C38 §11, G-CLIPAIR): regions stay inside the boundary,
+    // and include the centres whose disc meets the reachable band.
+    let material_grid = {
+        let mut grid = material_grid;
+        if let Some(clip) = ctx.region_clip.as_ref() {
+            clip.restrict_regions(&mut grid, rows, cols);
+        }
+        grid
+    };
     if !material_grid.iter().any(|&b| b) {
         return None;
     }
@@ -2429,9 +2464,14 @@ impl LevelSink<'_> {
             ctx.safe_z,
             ctx.cut_tolerance,
             ctx.min_cutting_radius,
-            &ctx.stamp_drape(),
+            &drape,
         );
     }
+}
+
+/// Whether the slice runs Geodesic Adaptive.
+pub(super) fn is_geodesic(strategy: ClearingStrategy3d) -> bool {
+    strategy == ClearingStrategy3d::GeodesicAdaptive
 }
 
 /// What every region of one Z level reads and none of them changes.
@@ -2443,10 +2483,16 @@ struct RegionClearPlan<'a> {
     region_total: usize,
 }
 
-/// The outlines the 2D planner plans for one region: each smoothed
-/// polygon of the region, split into one outline per piece of its inset
-/// by the tool radius (G-ADAPT3DPIECES, D2).
-fn planner_outlines(
+/// The inward offset (mm) of the shipped region smoothing
+/// ([`smoothed_region`]).
+const SIMPLIFY_INSET: f64 = 0.3;
+/// The Douglas-Peucker tolerance (mm) of the shipped region smoothing
+/// ([`smoothed_region`]).
+const SIMPLIFY_TOLERANCE: f64 = 0.3;
+
+/// The region polygon smoothed for the 2D planner, or empty under the
+/// Legacy cleanup (the planner then plans the region itself).
+fn smoothed_region(
     region_polygon: &crate::polygon::Polygon2,
     params_2d: &crate::adaptive::AdaptiveParams,
 ) -> Vec<crate::polygon::Polygon2> {
@@ -2460,9 +2506,7 @@ fn planner_outlines(
     // Stock left at the boundary is bounded by SIMPLIFY_INSET +
     // SIMPLIFY_TOLERANCE ≈ 0.6 mm — well within typical 0.5–1 mm
     // radial-stock-to-leave allowances for a roughing pass.
-    const SIMPLIFY_INSET: f64 = 0.3;
-    const SIMPLIFY_TOLERANCE: f64 = 0.3;
-    let smoothed_polygons: Vec<crate::polygon::Polygon2> = if !matches!(
+    if !matches!(
         params_2d.cleanup_strategy,
         crate::adaptive::CleanupStrategy::Legacy
     ) {
@@ -2487,7 +2531,17 @@ fn planner_outlines(
             .collect::<Vec<_>>()
     } else {
         Vec::new()
-    };
+    }
+}
+
+/// The outlines the 2D planner plans for one region: each smoothed
+/// polygon of the region, split into one outline per piece of its inset
+/// by the tool radius (G-ADAPT3DPIECES, D2).
+fn planner_outlines(
+    region_polygon: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+) -> Vec<crate::polygon::Polygon2> {
+    let smoothed_polygons = smoothed_region(region_polygon, params_2d);
     // G-ADAPT3DPIECES (D2): every smoothed polygon is planned, not only
     // the first, and each one whose inset by the tool radius splits is
     // planned piece by piece (`adaptive::inset_piece_outlines`, the one
@@ -2511,6 +2565,28 @@ fn planner_outlines(
         .collect()
 }
 
+/// Geodesic Adaptive (research C38 §16): record a piece the arm leaves to
+/// the job's rest contour pass (`why`: the F-038 forecast skipped it, or the field does
+/// not apply), with one `info` line (its level, region and area), so that
+/// the rest pass's coverage can be checked against it. The level's
+/// waterline cleanup skips a contour inside it (`waterline_cleanup`).
+fn leave_piece(
+    ctx: &ClearZLevelContext<'_>,
+    z_level: f64,
+    region_idx: usize,
+    piece: &crate::polygon::Polygon2,
+    why: &str,
+) {
+    tracing::info!(
+        z = z_level,
+        region = region_idx + 1,
+        area_mm2 = %format!("{:.1}", piece.area().abs()),
+        why,
+        "C38 piece left to the rest pass"
+    );
+    ctx.left_pieces.borrow_mut().push((z_level, piece.clone()));
+}
+
 /// Plan one outline: the 2D adaptive walk, its residue cleanup and the
 /// F-038 short-group filter. It appends the spiral's predicted engagement
 /// to `slice_eng_2d`.
@@ -2520,6 +2596,7 @@ fn planner_outlines(
 )]
 fn plan_one_outline(
     ctx: &ClearZLevelContext<'_>,
+    strategy: ClearingStrategy3d,
     params_2d: &crate::adaptive::AdaptiveParams,
     polygon_for_adaptive: &crate::polygon::Polygon2,
     debug: Option<&ToolpathDebugContext>,
@@ -2527,19 +2604,41 @@ fn plan_one_outline(
     dropped_short_regions: &mut usize,
     slice_eng_2d: &mut Vec<(P2, f64)>,
     cancel: &dyn CancelCheck,
-) -> Result<Vec<crate::adaptive::AdaptiveSegment>, Cancelled> {
+) -> Result<(Vec<crate::adaptive::AdaptiveSegment>, Vec<Option<f64>>), Cancelled> {
     // Stage 4 — collect the contour-spiral's per-point predicted
     // leading-arc engagement for this slice (empty for non-spiral
     // strategies). Keyed by 2D position below so it survives the
     // residue-cleanup segment reshuffling, then lifted to 3D and
     // appended to the per-toolpath planner-engagement sampler.
-    let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
-        polygon_for_adaptive,
-        params_2d,
-        cancel,
-        debug,
-        Some(slice_eng_2d),
-    )?;
+    // Geodesic Adaptive: the geodesic field plans the outline, with its
+    // planned clearing turns.
+    let geodesic_plan = if is_geodesic(strategy) {
+        crate::adaptive::geodesic::slice_segments(polygon_for_adaptive, params_2d, cancel)?
+    } else {
+        None
+    };
+    // Research C38 §16 (lead ruling 2026-10-27): a piece where the field
+    // does not apply (its seed of radius R does not fit) is edge work. The
+    // arm plans nothing there and leaves the piece to the job's rest pass;
+    // one `info` line per piece, so that the rest pass's coverage can be
+    // checked against it.
+    if geodesic_plan.is_none() && is_geodesic(strategy) {
+        leave_piece(ctx, z_level, region_idx, polygon_for_adaptive, "no field");
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let (segs_2d_raw, turns) = match geodesic_plan {
+        Some(plan) => (plan.segments, plan.turns),
+        None => (
+            crate::adaptive::adaptive_segments_with_debug(
+                polygon_for_adaptive,
+                params_2d,
+                cancel,
+                debug,
+                Some(slice_eng_2d),
+            )?,
+            Vec::new(),
+        ),
+    };
     // For non-Legacy cleanup strategies, run the same cleanup
     // post-process the 2D top-level entry point runs. adaptive3d
     // calls `adaptive_segments_with_debug` directly (not the
@@ -2548,88 +2647,63 @@ fn plan_one_outline(
     // early and leave residue uncleared — the cleanup catches it
     // with boundary walks + contour-parallel offsets + mop
     // patches.
-    let segs_2d_raw = match params_2d.cleanup_strategy {
-        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw,
-        crate::adaptive::CleanupStrategy::ResidueMop
-        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
-            crate::adaptive::path::apply_residue_mop_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
-        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
-            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
+    // Geodesic Adaptive (research C22): a plan with clearing turns takes
+    // the cleanup whose replay admits them (the same turn list and bound).
+    // With no turns the shipped cleanup runs.
+    let segs_2d_raw = if turns.is_empty() {
+        slice_cleanup(polygon_for_adaptive, params_2d, &segs_2d_raw)
+    } else {
+        crate::adaptive::geodesic::slice_cleanup(
+            polygon_for_adaptive,
+            params_2d,
+            segs_2d_raw,
+            &turns,
+        )
     };
+    // Geodesic Adaptive (research C12, C22): under the 2D pass load the
+    // replay admits a link only within the load and stamps it on the planner
+    // grid, as a cut at depth. The links stay `Link`s here;
+    // `clear_one_region` emits each one as a 3D keep-down link at the level
+    // (`geodesic::HeldLinks`).
 
-    // F-038: filter out tiny entry-plunge → cut groups before emission.
-    //
-    // The 2D adaptive emits its output as a sequence of segments shaped
-    // like:
-    //
-    //   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
-    //
-    // Each `Rapid` is the start of a new "pass" — downstream this becomes
-    // a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
-    // models the planner emits many of these passes, and a significant
-    // fraction cut < 5 mm of material before the next retract. On the
-    // Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
-    // of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
-    // overhead per 100 ms or less of real cutting.
-    //
-    // Group segments by Rapid boundary; if a group's total Cut XY length
-    // is below `min_region_cut_length_mm`, drop the whole group (the
-    // entry Rapid + its Cuts). The cutter never visits that micro-area;
-    // material is left for finishing passes (which is fine — these
-    // micro-bridges are below roughing resolution).
-    //
-    // Always keep the very first group (it provides the region's initial
-    // tool position). Always keep the last group's residual Marker/Link
-    // segments so the per-region debug spans stay coherent.
+    // F-038: filter out tiny entry-plunge → cut groups before emission
+    // (`filter_short_groups`).
     let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
-        let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
-        let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        for s in segs_2d_raw {
-            if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
-                groups.push(std::mem::take(&mut current));
+        let (kept_segs, dropped_first, group_total) =
+            filter_short_groups(segs_2d_raw, ctx.min_region_cut_length_mm, params_2d);
+        // Geodesic Adaptive (research C22a): the cleanup replayed its kept
+        // plan (`replay_kept_segments`) BEFORE this filter, so a link or a
+        // cut after a dropped group was admitted on that group's stamps. The
+        // kept plan is replayed again, as the cleanup does after its own
+        // filter, and filtered again, until no group drops: then the replay
+        // has read the plan that goes out. Each round drops at least one
+        // group, so the rounds are at most the groups there were.
+        let (kept_segs, dropped_more) = if is_geodesic(strategy)
+            && params_2d.keep_down_links == crate::adaptive::KeepDownLinks::WithinPassLoad
+        {
+            let mut kept = kept_segs;
+            let mut dropped_round = dropped_first;
+            let mut dropped_more = 0usize;
+            let mut rounds = 0usize;
+            while dropped_round > 0 && rounds < group_total {
+                let replayed = crate::adaptive::geodesic::slice_replay(
+                    polygon_for_adaptive,
+                    params_2d,
+                    kept,
+                    &turns,
+                );
+                let (next, dropped, _) =
+                    filter_short_groups(replayed, ctx.min_region_cut_length_mm, params_2d);
+                kept = next;
+                dropped_round = dropped;
+                dropped_more += dropped;
+                rounds += 1;
             }
-            current.push(s);
-        }
-        if !current.is_empty() {
-            groups.push(current);
-        }
-        let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        let mut dropped_groups: usize = 0;
-        let group_total = groups.len();
-        for (gi, group) in groups.into_iter().enumerate() {
-            let mut cut_len = 0.0_f64;
-            for seg in &group {
-                if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                    cut_len += crate::geo::polyline_length_2d(path_2d);
-                }
-            }
-            // Always keep the first group — it sets up the region's
-            // starting position. Drop interior + trailing groups
-            // below threshold; the trailing group on terrain runs
-            // is usually a sub-tool residual the finishing pass
-            // will cover anyway.
-            let _ = group_total;
-            let drop = gi > 0
-                && cut_len < ctx.min_region_cut_length_mm
-                && group
-                    .iter()
-                    .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
-            if drop {
-                dropped_groups += 1;
-                continue;
-            }
-            kept_segs.extend(group);
-        }
+            (kept, dropped_more)
+        } else {
+            (kept_segs, 0)
+        };
+        let dropped_groups = dropped_first + dropped_more;
         if dropped_groups > 0 {
             debug!(
                 z = z_level,
@@ -2645,7 +2719,348 @@ fn plan_one_outline(
     } else {
         segs_2d_raw
     };
-    Ok(segs_2d)
+    // Geodesic Adaptive (integration step 7.4, design part F): each planned
+    // turn and each departure window of the plan that goes out is a cut of
+    // its own, with the feed factor of its reading (`geodesic::feed_caps`).
+    // The other arms have no turns and are neither read nor split.
+    if is_geodesic(strategy) {
+        Ok(crate::adaptive::geodesic::feed_caps(
+            polygon_for_adaptive,
+            params_2d,
+            segs_2d,
+            &turns,
+        ))
+    } else {
+        let caps = vec![None; segs_2d.len()];
+        Ok((segs_2d, caps))
+    }
+}
+
+/// F-038: the groups of `segments` (a run from one `Rapid` to the next)
+/// less each one that cuts under `min_cut_mm`; returns the kept segments,
+/// the dropped groups and the groups there were.
+///
+/// The 2D adaptive emits its output as a sequence of segments shaped
+/// like:
+///
+///   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
+///
+/// Each `Rapid` is the start of a new "pass" — downstream this becomes
+/// a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
+/// models the planner emits many of these passes, and a significant
+/// fraction cut < 5 mm of material before the next retract. On the
+/// Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
+/// of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
+/// overhead per 100 ms or less of real cutting.
+///
+/// Group segments by Rapid boundary; if a group's total Cut XY length
+/// is below `min_region_cut_length_mm`, drop the whole group (the
+/// entry Rapid + its Cuts). The cutter never visits that micro-area;
+/// material is left for finishing passes (which is fine — these
+/// micro-bridges are below roughing resolution).
+///
+/// Always keep the very first group (it provides the region's initial
+/// tool position). Always keep the last group's residual Marker/Link
+/// segments so the per-region debug spans stay coherent.
+fn filter_short_groups(
+    segs_2d_raw: Vec<crate::adaptive::AdaptiveSegment>,
+    min_cut_mm: f64,
+    params_2d: &crate::adaptive::AdaptiveParams,
+) -> (Vec<crate::adaptive::AdaptiveSegment>, usize, usize) {
+    let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
+    let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+    for s in segs_2d_raw {
+        if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
+            groups.push(std::mem::take(&mut current));
+        }
+        current.push(s);
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+    let mut dropped_groups: usize = 0;
+    let group_total = groups.len();
+    for (gi, group) in groups.into_iter().enumerate() {
+        let mut cut_len = 0.0_f64;
+        for seg in &group {
+            if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                cut_len += crate::geo::polyline_length_2d(path_2d);
+            }
+        }
+        // Geodesic Adaptive (research C12/C22): the arm cuts each link (`HeldLinks`), so
+        // a link's length counts as cut length.
+        if params_2d.keep_down_links == crate::adaptive::KeepDownLinks::WithinPassLoad {
+            cut_len += crate::adaptive::geodesic::link_length(&group);
+        }
+        // Always keep the first group — it sets up the region's
+        // starting position. Drop interior + trailing groups
+        // below threshold; the trailing group on terrain runs
+        // is usually a sub-tool residual the finishing pass
+        // will cover anyway.
+        let drop = gi > 0
+            && cut_len < min_cut_mm
+            && group
+                .iter()
+                .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
+        if drop {
+            dropped_groups += 1;
+            continue;
+        }
+        kept_segs.extend(group);
+    }
+    (kept_segs, dropped_groups, group_total)
+}
+
+/// The shipped cleanup of one outline's 2D plan: the post-process the 2D
+/// top-level entry point runs, by `cleanup_strategy`.
+fn slice_cleanup(
+    polygon_for_adaptive: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+    segs_2d_raw: &[crate::adaptive::AdaptiveSegment],
+) -> Vec<crate::adaptive::AdaptiveSegment> {
+    match params_2d.cleanup_strategy {
+        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw.to_vec(),
+        crate::adaptive::CleanupStrategy::ResidueMop
+        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
+            crate::adaptive::path::apply_residue_mop_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                segs_2d_raw,
+            )
+        }
+        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
+            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                segs_2d_raw,
+            )
+        }
+    }
+}
+
+/// The margin (mm) beyond the tool radius by which the perimeter sweep of
+/// `clear_one_region` sits inside its region, so that the boundary clip
+/// cannot flip its points to rapids (O5b/O5c; see the sweep's comment).
+/// Geodesic Adaptive's grown 2D outline keeps the same margin (C31).
+const PERIMETER_INSET_MARGIN_MM: f64 = 0.25;
+
+/// Lift a 2D point of a level's plan to 3D: the level, raised over terrain
+/// that stands above it (the ONE level floor, `intended_floor::level_floor_z`).
+fn lift_to_level(
+    ctx: &ClearZLevelContext<'_>,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    p: P2,
+) -> P3 {
+    let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
+    let z = if surf_z == f64::NEG_INFINITY {
+        z_level
+    } else {
+        super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
+    };
+    P3::new(p.x, p.y, z)
+}
+
+/// The 2D planner's outlines of a grown region (Geodesic Adaptive, research C31): each
+/// grown polygon split into the pieces of its inset by the tool radius
+/// (G-ADAPT3DPIECES, the one split `planner_outlines` uses), with no
+/// smoothing.
+fn grown_planner_outlines(
+    grown: &[crate::polygon::Polygon2],
+    tool_radius: f64,
+) -> Vec<crate::polygon::Polygon2> {
+    grown
+        .iter()
+        .flat_map(|poly| {
+            let pieces = crate::adaptive::inset_piece_outlines(poly, tool_radius);
+            if pieces.is_empty() {
+                vec![poly.clone()]
+            } else {
+                pieces
+            }
+        })
+        .collect()
+}
+
+/// Geodesic Adaptive (research C31): the region's smoothed outline grown by
+/// `R - PERIMETER_INSET_MARGIN_MM`, as the 2D planner's material outline,
+/// or `None` (the shipped path: the smoothed region and the perimeter
+/// sweep).
+///
+/// The region is in tool-centre space at a wall (`build_material_bool_grid`
+/// reads the drop-cutter floor), and the 2D planner insets its outline by
+/// R. Given the smoothed region, its centres stay R plus the smoothing from
+/// the region boundary, and the shipped slice cuts the band between with
+/// the perimeter sweep, a full slot (C30: 1026 mm over the bound on Corne).
+/// Given the smoothed region grown by `R - m`, the 2D tool-centre region is
+/// the smoothed region inset by `m`, so the field and the 2D cleanup open
+/// the band under the 2D pass load and no sweep is cut.
+///
+/// Why the smoothing comes first (D19, P3_C22 11.7): the region boundary
+/// is the tool-centre limit only to the grid. Marching squares puts it at
+/// the midpoint of an in and an out cell centre, so the true limit is
+/// within half a planner cell of it; the lift reads the nearest heightmap
+/// cell. Grown from the raw region, the closing also fills the staircase
+/// notches, and centres at the 2D boundary read the out cells (the rim).
+/// The smoothing (`SIMPLIFY_INSET`, then the RDP) moves the outline inside
+/// and removes the staircase.
+///
+/// The region keeps the shipped path, with one `info` line that says why,
+/// when:
+/// - the smoothing gives no outline, or the grow gives none;
+/// - the inside margin `SIMPLIFY_INSET + m` is under one planner cell
+///   (`cell`): the reach of an out cell's nearest read, half a cell, plus
+///   the boundary error, up to half a cell (the lead's condition);
+/// - the inset outline splits into more polygons (the shortfall inset,
+///   below, cut a neck);
+/// - the measured margin, the least distance between the smoothed and the
+///   raw boundaries plus `m`, is under one planner cell (the same reach as
+///   the nominal condition) after the shortfall inset. The RDP can move
+///   the smoothed outline back out by up to its tolerance, so the nominal
+///   inset is not a bound. Where the measured margin is short, the smoothed
+///   outline is first inset by the shortfall (`cell - measured`), once,
+///   region-wide, and measured again;
+/// - the closing guard: growing by `R - m` and insetting by R closes any
+///   gap narrower than about 2R. The 2D tool-centre region (the grown
+///   outline inset by R) may exceed the smoothed region inset by `m` by at
+///   most one planner cell times the smoothed boundary length.
+///
+/// No new constant: R, `m`, the two smoothing values and the planner cell.
+fn grown_outlines(
+    ctx: &ClearZLevelContext<'_>,
+    region_polygon: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+    cell: f64,
+    (z_level, region_idx): (f64, usize),
+) -> Option<Vec<crate::polygon::Polygon2>> {
+    if !is_geodesic(ctx.clearing_strategy) {
+        return None;
+    }
+    let r = ctx.tool_radius;
+    let m = PERIMETER_INSET_MARGIN_MM;
+    let separation = |polys: &[crate::polygon::Polygon2]| {
+        polys
+            .iter()
+            .map(|poly| boundary_separation(poly, region_polygon))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let smoothed = smoothed_region(region_polygon, params_2d);
+    // The shortfall inset: where the RDP has brought the smoothed outline
+    // back within `cell - m` of the raw boundary, inset it by the
+    // shortfall, so that every point of it stands at least `cell - m`
+    // inside the raw region.
+    let measured_before = separation(smoothed.as_slice()) + m;
+    // The offset flattens its arc joins on the input side of the true
+    // offset, up to `FlattenPolicy::UNTOLERANCED_MM` (polygon.rs, P6.0): an
+    // inset can stand that much less inside than asked. So the inset adds
+    // that budget, else `measured_after` lands a few micrometres under the
+    // cell (D19b).
+    let shortfall_mm = if measured_before < cell {
+        cell - measured_before + crate::polygon::FlattenPolicy::UNTOLERANCED_MM
+    } else {
+        0.0
+    };
+    let pieces_before = smoothed.len();
+    let smoothed: Vec<crate::polygon::Polygon2> = if shortfall_mm > 0.0 {
+        smoothed
+            .iter()
+            .flat_map(|poly| crate::polygon::offset_polygon(poly, shortfall_mm))
+            .collect()
+    } else {
+        smoothed
+    };
+    let inset_split = smoothed.len() > pieces_before;
+    let measured_after = separation(smoothed.as_slice()) + m;
+    let grown: Vec<crate::polygon::Polygon2> = smoothed
+        .iter()
+        .flat_map(|poly| {
+            crate::polygon::OffsetRingSet::from_polygon(poly)
+                .offset(-(r - m))
+                .to_polygons(crate::polygon::FlattenPolicy::untoleranced())
+        })
+        .collect();
+    let centre_area: f64 = grown
+        .iter()
+        .flat_map(|g| crate::polygon::offset_polygon(g, r))
+        .map(|p| p.area())
+        .sum();
+    let target_area: f64 = smoothed
+        .iter()
+        .flat_map(|poly| crate::polygon::offset_polygon(poly, m))
+        .map(|p| p.area())
+        .sum();
+    let boundary_mm: f64 = smoothed
+        .iter()
+        .flat_map(polygon_rings)
+        .map(ring_length)
+        .sum();
+    let allowed_mm2 = cell * boundary_mm;
+    let excess_mm2 = centre_area - target_area;
+    let nominal_margin = SIMPLIFY_INSET + m;
+    let decision = if smoothed.is_empty() || grown.is_empty() {
+        "no smoothed or grown outline: shipped sweep"
+    } else if inset_split {
+        "the shortfall inset split the outline: shipped sweep"
+    } else if nominal_margin < cell {
+        "inside margin under one planner cell: shipped sweep"
+    } else if measured_after < cell {
+        "measured margin under one planner cell: shipped sweep"
+    } else if excess_mm2 > allowed_mm2 {
+        "closing guard: shipped sweep"
+    } else {
+        "grown, no sweep"
+    };
+    let keep_grown = decision == "grown, no sweep";
+    tracing::info!(
+        z = z_level,
+        region = region_idx + 1,
+        cell_mm = cell,
+        nominal_margin_mm = %format!("{nominal_margin:.3}"),
+        measured_before_mm = %format!("{measured_before:.3}"),
+        shortfall_inset_mm = %format!("{shortfall_mm:.3}"),
+        measured_after_mm = %format!("{measured_after:.3}"),
+        region_area_mm2 = %format!("{:.1}", region_polygon.area()),
+        centre_area_mm2 = %format!("{centre_area:.1}"),
+        target_area_mm2 = %format!("{target_area:.1}"),
+        excess_mm2 = %format!("{excess_mm2:.2}"),
+        allowed_mm2 = %format!("{allowed_mm2:.2}"),
+        decision,
+        "C31 region opening"
+    );
+    keep_grown.then_some(grown)
+}
+
+/// The rings of a polygon: its exterior, then its holes.
+fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
+    std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
+}
+
+/// The length (mm) of a closed ring.
+fn ring_length(ring: &[P2]) -> f64 {
+    ring.iter()
+        .zip(ring.iter().cycle().skip(1))
+        .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
+        .sum()
+}
+
+/// The least distance (mm) between the boundaries of `a` and `b` (every
+/// ring of each, closed). Two boundaries that do not cross come nearest at
+/// a vertex of one of them, so each vertex of each is read against every
+/// segment of the other.
+fn boundary_separation(a: &crate::polygon::Polygon2, b: &crate::polygon::Polygon2) -> f64 {
+    let one_way = |from: &crate::polygon::Polygon2, to: &crate::polygon::Polygon2| {
+        polygon_rings(from)
+            .flatten()
+            .map(|p| {
+                polygon_rings(to)
+                    .flat_map(|ring| ring.iter().zip(ring.iter().cycle().skip(1)))
+                    .map(|(s, e)| crate::geo::point_to_segment_distance(p, s, e))
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    one_way(a, b).min(one_way(b, a))
 }
 
 /// Stage 2 — clear ONE region: the cut-length forecast, the perimeter
@@ -2669,7 +3084,6 @@ fn clear_one_region(
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let sink = &mut emission.sink;
-    let planner_eng = &mut *emission.planner_eng;
     let level_metrics = &mut *emission.level_metrics;
     let cut_count = &mut *emission.cut_count;
     let dropped_short_regions = &mut *emission.dropped_short_regions;
@@ -2680,15 +3094,7 @@ fn clear_one_region(
     let region_total = plan.region_total;
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
-    let lift = |p: P2| -> P3 {
-        let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
-        let z = if surf_z == f64::NEG_INFINITY {
-            z_level
-        } else {
-            super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
-        };
-        P3::new(p.x, p.y, z)
-    };
+    let lift = |p: P2| lift_to_level(ctx, surface_hm, z_level, p);
 
     let region_scope = level_ctx.as_ref().map(|debug_ctx| {
         debug_ctx.start_span(
@@ -2714,6 +3120,10 @@ fn clear_one_region(
     // call it twice (here, and again after the perimeter sweep is
     // emitted) at no risk of state divergence. We accept the doubled
     // 2D-adaptive cost as the price for the up-front decision.
+    //
+    // C38 §16: Geodesic Adaptive takes this forecast too. It clears the
+    // body only, and the strips the forecast reads as 0 go to the job's
+    // edge contour pass.
     if ctx.min_region_cut_length_mm > 0.0 {
         const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
         let inset_polygons_forecast = crate::polygon::offset_polygon(
@@ -2775,6 +3185,11 @@ fn clear_one_region(
                 area_mm2 = region_polygon.area().abs(),
                 "F-038: skipping micro-region (forecast cut length below threshold)"
             );
+            // Geodesic Adaptive (research C38 §16): the arm leaves this region to the rest
+            // contour pass, as a piece where the field does not apply.
+            if is_geodesic(ctx.clearing_strategy) {
+                leave_piece(ctx, z_level, region_idx, region_polygon, "F-038 forecast");
+            }
             *dropped_short_regions += 1;
             if let Some(scope) = region_scope.as_ref() {
                 scope.set_counter("skipped_f038", 1.0);
@@ -2809,9 +3224,35 @@ fn clear_one_region(
     // result on edge-case points, converting these cuts to rapids and
     // leaving the boundary band unstamped — which is exactly the
     // wanaka 18mm-DOC failure mode (O5b/O5c).
-    const PERIMETER_INSET_MARGIN_MM: f64 = 0.25;
-    let inset_polygons =
-        crate::polygon::offset_polygon(region_polygon, ctx.tool_radius + PERIMETER_INSET_MARGIN_MM);
+    //
+    // Geodesic Adaptive (research C31): when the 2D planner gets the region grown by
+    // `R - PERIMETER_INSET_MARGIN_MM` (`grown_outlines`), its own
+    // plan opens this band under the 2D pass load, and no sweep is cut.
+    let grown = grown_outlines(
+        ctx,
+        region_polygon,
+        params_2d,
+        sink.material_stock.z_grid.cell_size,
+        (z_level, region_idx),
+    )
+    // Geodesic Adaptive (research C38 item B): the grow stops at the stock box, where
+    // no material stands beyond the edge.
+    .and_then(|grown| super::outer_band::clip_to_stock_box(grown, &*sink.material_stock))
+    // C38 §13.7: and at the reach of the boundary clip, so that nothing is
+    // planned where the clip would drop it.
+    .and_then(|grown| {
+        super::outer_band::clip_to_centre_reach(
+            grown,
+            ctx.centre_clip,
+            ctx.tool_radius,
+            PERIMETER_INSET_MARGIN_MM,
+        )
+    });
+    let inset_polygons = if grown.is_some() {
+        Vec::new()
+    } else {
+        crate::polygon::offset_polygon(region_polygon, ctx.tool_radius + PERIMETER_INSET_MARGIN_MM)
+    };
     for inset in &inset_polygons {
         if inset.exterior.len() >= 3 {
             // simplify_path_3d (RDP) early-returns on zero-length
@@ -2871,22 +3312,79 @@ fn clear_one_region(
         }
     }
 
+    // G-ADAPT3DPIECES (D2): the 2D plan of the region and its emission.
+    // The outlines are the region's own (`planner_outlines`), or (research
+    // arm C31) the grown region split into its pieces.
+    let outlines = match grown {
+        Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
+        None => planner_outlines(region_polygon, params_2d),
+    };
+    let piece_debug = region_scope.as_ref().map(|s| s.context());
+    plan_and_emit_region(
+        ctx,
+        plan,
+        emission,
+        &outlines,
+        region_idx,
+        ctx.clearing_strategy,
+        piece_debug.as_ref(),
+        cancel,
+    )
+}
+
+/// The region body after the perimeter sweep: the 2D plan of each of the
+/// region's `outlines` (`plan_one_outline` with the slice generator of
+/// `strategy`), then its lift into 3D through the level's sink, with the
+/// stamping, the held links and the planner engagement. Geodesic Adaptive's
+/// pick (C29) runs it twice on scratch state.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the arguments are the per-region state of `clear_one_region`, passed through unchanged."
+)]
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every `path_2d[i]` and `pts[i]` below indexes a vector this function just built, at an index its own `len()` guard admits."
+)]
+fn plan_and_emit_region(
+    ctx: &ClearZLevelContext<'_>,
+    plan: &RegionClearPlan<'_>,
+    emission: &mut LevelEmission<'_>,
+    outlines: &[crate::polygon::Polygon2],
+    region_idx: usize,
+    strategy: ClearingStrategy3d,
+    piece_debug: Option<&ToolpathDebugContext>,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    let sink = &mut emission.sink;
+    let planner_eng = &mut *emission.planner_eng;
+    let level_metrics = &mut *emission.level_metrics;
+    let cut_count = &mut *emission.cut_count;
+    let dropped_short_regions = &mut *emission.dropped_short_regions;
+    let surface_hm = plan.surface_hm;
+    let z_level = plan.z_level;
+    let params_2d = plan.params_2d;
+    let lift = |p: P2| lift_to_level(ctx, surface_hm, z_level, p);
+
     // G-ADAPT3DPIECES (D2): the planner plans one piece of the inset of
     // the polygon it gets, so the region is planned outline by outline.
     let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
     let mut segs_2d: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-    let piece_debug = region_scope.as_ref().map(|s| s.context());
-    for outline in planner_outlines(region_polygon, params_2d) {
-        segs_2d.extend(plan_one_outline(
+    // Geodesic Adaptive: the feed factor of each 2D segment (`None`: no cap).
+    let mut caps_2d: Vec<Option<f64>> = Vec::new();
+    for outline in outlines {
+        let (segs, caps) = plan_one_outline(
             ctx,
+            strategy,
             params_2d,
-            &outline,
-            piece_debug.as_ref(),
+            outline,
+            piece_debug,
             (z_level, region_idx),
             dropped_short_regions,
             &mut slice_eng_2d,
             cancel,
-        )?);
+        )?;
+        segs_2d.extend(segs);
+        caps_2d.extend(caps);
     }
     // Spatial lookup: quantised 2D position → predicted engagement.
     // Positions are exact f64 from the spiral's own emit, so a
@@ -2896,7 +3394,70 @@ fn clear_one_region(
         .map(|(p, e)| ((quantize_coord(p.x), quantize_coord(p.y)), *e))
         .collect();
 
-    for seg in segs_2d {
+    // Geodesic Adaptive (research C22, C26): each 2D keep-down link after a
+    // known position is held at depth, as the 2D plan has it
+    // (`geodesic::HeldLinks`).
+    // C26b: it goes out as one 3D keep-down link (a feed tagged `Linking`,
+    // stamped as every link is) only when every lifted point of it is at
+    // the level. A link that crosses terrain above the level would climb
+    // the wall in one draped move, so it is lifted as a cut held at depth
+    // (C22): the large-Z split below retracts it at the wall.
+    let mut held_links = (params_2d.keep_down_links
+        == crate::adaptive::KeepDownLinks::WithinPassLoad)
+        .then(|| crate::adaptive::geodesic::HeldLinks::new(params_2d));
+    // Geodesic Adaptive (design part F): a capped 2D cut goes out between a
+    // `FeedCapStart` and a `FeedCapEnd` marker, and the emitter writes the
+    // cap on the moves of the 3D cuts between them (`segments_to_toolpath`).
+    let mut cap_open = false;
+    for (seg, cap) in segs_2d.into_iter().zip(caps_2d) {
+        if std::mem::take(&mut cap_open) {
+            sink.emit(
+                ctx,
+                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+            );
+        }
+        if let Some(factor) = cap {
+            sink.emit(
+                ctx,
+                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapStart { factor }),
+            );
+            cap_open = true;
+        }
+        let (seg, held) = match held_links.as_mut() {
+            Some(links) => match links.next(seg) {
+                (_, Some(path_2d)) => {
+                    let lifted: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                    if lifted.iter().all(|p| p.z <= z_level) {
+                        if let Some(&end) = lifted.last() {
+                            // C38 §14: the keep-down proof on the swept
+                            // disc (`keep_down_excess`). A held link whose
+                            // disc meets a column above its slab goes out
+                            // as an entry instead.
+                            let from = sink.cursor.tool_pos.or(lifted.first().copied());
+                            let refused = from.is_some_and(|from| {
+                                super::keep_down::keep_down_excess(
+                                    sink.material_stock,
+                                    from,
+                                    end,
+                                    ctx.tool_radius,
+                                    z_level + ctx.depth_per_pass + ctx.stay_down_clearance_mm,
+                                )
+                                .is_some()
+                            });
+                            if refused {
+                                sink.emit(ctx, Adaptive3dSegment::Rapid(end));
+                            } else {
+                                sink.emit(ctx, Adaptive3dSegment::Link(end));
+                            }
+                        }
+                        continue;
+                    }
+                    (crate::adaptive::AdaptiveSegment::Cut(path_2d), true)
+                }
+                (seg, None) => (seg, false),
+            },
+            None => (seg, false),
+        };
         match seg {
             crate::adaptive::AdaptiveSegment::Cut(path_2d) => {
                 if path_2d.is_empty() {
@@ -2928,15 +3489,32 @@ fn clear_one_region(
                 // cells the actual G-code never cuts, leaving
                 // visible streaks of uncut material in the sim.
                 const AIR_THRESHOLD_MM: f64 = 0.2;
+                // Geodesic Adaptive (research C12, C18): a point is engaged when stock
+                // stands above it anywhere under the cutter disc. The
+                // centre read calls a cut air where its centre runs over
+                // cleared stock and its disc still cuts (the starter spiral
+                // inside its plunge hole); the demoted run then leaves stock
+                // that the next cut meets at 0.75 of D. The shipped arms
+                // keep the centre read (byte parity).
+                let disc_read = is_geodesic(ctx.clearing_strategy);
                 let mut engaged: Vec<bool> = path_3d
                     .iter()
-                    .map(
-                        |p| match sample_stock_top_at(sink.material_stock, p.x, p.y) {
-                            Some(top) => top > p.z + AIR_THRESHOLD_MM,
-                            None => false,
-                        },
-                    )
+                    .map(|p| {
+                        let top = if disc_read {
+                            sink.material_stock
+                                .max_top_z_in_disc(p.x, p.y, ctx.tool_radius)
+                        } else {
+                            sample_stock_top_at(sink.material_stock, p.x, p.y)
+                        };
+                        top.is_some_and(|z| z > p.z + AIR_THRESHOLD_MM)
+                    })
                     .collect();
+                // Geodesic Adaptive (research C22/C26b): a held link that crosses terrain
+                // above the level is a feed through the band the 2D plan has
+                // cut; it is never "air". The large-Z split still applies.
+                if held {
+                    engaged.fill(true);
+                }
                 // Re-promote short air runs back to engaged: rapid-mode
                 // is only faster than feed-mode above a crossover
                 // length, because each demotion carries a full
@@ -3159,6 +3737,12 @@ fn clear_one_region(
             }
         }
     }
+    if cap_open {
+        sink.emit(
+            ctx,
+            Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+        );
+    }
 
     Ok(())
 }
@@ -3303,9 +3887,15 @@ pub(super) fn clear_z_level_agent_2d_slice(
         } else {
             TROCHOID_CAP_MULT_3D
         },
-        // Every 2D Link is lifted to a 3D retract below, so a link never
-        // cuts here: keep the corridor heuristic and stamp nothing.
-        keep_down_links: crate::adaptive::KeepDownLinks::RetractedByCaller,
+        // Every 2D Link of a shipped arm is lifted to a 3D retract below, so
+        // a link never cuts here: keep the corridor heuristic and stamp
+        // nothing. Geodesic Adaptive (research C12) plans under the 2D pass load and
+        // emits its links as cuts (`plan_one_outline`).
+        keep_down_links: if is_geodesic(ctx.clearing_strategy) {
+            crate::adaptive::KeepDownLinks::WithinPassLoad
+        } else {
+            crate::adaptive::KeepDownLinks::RetractedByCaller
+        },
         entry_helix_radius: 0.0,
     };
 

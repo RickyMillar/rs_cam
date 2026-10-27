@@ -484,6 +484,51 @@ pub(super) fn subdivide_each(path: &[P2], max_step: f64, mut each: impl FnMut(P2
     }
 }
 
+/// Geodesic Adaptive (research C22a): `segments` replayed by [`replay_kept_segments`] on a
+/// fresh grid, as the cleanups' step 3 replays their kept segments (the
+/// same grid set-up, the same [`LinkLoad`], and the same `turns`). The 3D
+/// Geodesic Adaptive slice calls it after the F-038 group filter
+/// (`adaptive3d/clearing.rs`), so that a link or cut admitted over a
+/// dropped group's ground is decided again on ground the emitted plan
+/// cut. `segments` unchanged when the polygon has no machinable area.
+pub(crate) fn replay_after_group_filter(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: Vec<AdaptiveSegment>,
+    measure: PassLoadMeasure,
+    turns: &[(P2, P2)],
+) -> Vec<AdaptiveSegment> {
+    let cell_size = planner_cell_size(params.tool_radius, params.tolerance);
+    let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
+    if params.keep_down_links == KeepDownLinks::WithinPassLoad {
+        grid.keep_fringe(polygon);
+    }
+    if let Some(mask) = &params.standing_material {
+        grid.seed_from_material_mask(mask);
+    }
+    let machinable_vec = crate::polygon::offset_polygon(polygon, params.tool_radius);
+    let Some(machinable) = machinable_vec.first() else {
+        return segments;
+    };
+    let machinable_mask = MaterialGrid::build_machinable_mask(
+        machinable,
+        grid.origin_x,
+        grid.origin_y,
+        grid.rows,
+        grid.cols,
+        grid.cell_size,
+    );
+    let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
+    let turn_load;
+    let replay_load = if turns.is_empty() {
+        &link_load
+    } else {
+        turn_load = link_load.with_turns(turns, params.stepover, cell_size);
+        &turn_load
+    };
+    replay_kept_segments(segments, &mut grid, &machinable_mask, replay_load).0
+}
+
 /// G-ADAPTPASSLOAD: emit the cutter-centre polyline `path` as cutting spans
 /// that each hold the pass load, splitting it where a step would not.
 ///

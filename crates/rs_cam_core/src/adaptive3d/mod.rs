@@ -26,6 +26,7 @@ mod centre_clip;
 mod clearing;
 mod intended_floor;
 mod keep_down;
+mod outer_band;
 mod path;
 mod region_map;
 mod search;
@@ -86,6 +87,12 @@ pub enum ClearingStrategy3d {
     /// the AgentSearch slice dispatch with the spiral as the 2D
     /// generator; falls back to the agent where no starter pocket fits.
     ContourSpiral,
+    /// Geodesic Adaptive (integration step 7.4): the 2D geodesic-wavefront
+    /// plan (`adaptive::geodesic`, C35 plan A) plans each slice piece
+    /// through the AgentSearch slice dispatch. It clears the body: a piece
+    /// where the field does not apply is left to a rest pass. Its planned
+    /// turns carry a feed cap (`Move::feed_cap`).
+    GeodesicAdaptive,
 }
 
 impl From<crate::compute::operation_configs::RegionOrdering> for RegionOrdering {
@@ -310,16 +317,35 @@ pub enum KeepDownRoute {
     CutFeed,
 }
 
-/// The step split a run uses: the parameter, else the strategy's default
-/// ([`StepSplit::PathShape`] for every shipped strategy).
+/// The step split a run uses: the parameter, else the strategy's default:
+/// [`StepSplit::StockDepth`] for Geodesic Adaptive (INTEGRATION_PLAN §8,
+/// the D43 load split), [`StepSplit::PathShape`] for every other strategy.
 fn effective_step_split(params: &Adaptive3dParams) -> StepSplit {
-    params.linking.step_split.unwrap_or_default()
+    match params.clearing_strategy {
+        ClearingStrategy3d::GeodesicAdaptive => {
+            params.linking.step_split.unwrap_or(StepSplit::StockDepth)
+        }
+        ClearingStrategy3d::AgentSearch
+        | ClearingStrategy3d::ContourParallel
+        | ClearingStrategy3d::Adaptive
+        | ClearingStrategy3d::ContourSpiral => params.linking.step_split.unwrap_or_default(),
+    }
 }
 
 /// The routed keep-down travel a run uses: the parameter, else the
-/// strategy's default ([`KeepDownRoute::Off`] for every shipped strategy).
+/// strategy's default: [`KeepDownRoute::CutFeed`] for Geodesic Adaptive
+/// (research §16 Part B), [`KeepDownRoute::Off`] for every other strategy.
 fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
-    params.linking.keep_down_route.unwrap_or_default()
+    match params.clearing_strategy {
+        ClearingStrategy3d::GeodesicAdaptive => params
+            .linking
+            .keep_down_route
+            .unwrap_or(KeepDownRoute::CutFeed),
+        ClearingStrategy3d::AgentSearch
+        | ClearingStrategy3d::ContourParallel
+        | ClearingStrategy3d::Adaptive
+        | ClearingStrategy3d::ContourSpiral => params.linking.keep_down_route.unwrap_or_default(),
+    }
 }
 
 /// Parameters for 3D adaptive clearing.
@@ -368,6 +394,35 @@ pub struct Adaptive3dParams {
     /// When Some, used as starting material instead of a fresh block at
     /// `Adaptive3dDepth::stock_top_z`.
     pub initial_stock: Option<TriDexelStock>,
+}
+
+impl Adaptive3dParams {
+    /// The chord tolerance (mm) of the RDP that simplifies each emitted cut.
+    /// The emitter, the waterline cleanup and the planner stamp all read
+    /// this one value (G-PLANSIMGAP). The rule is ONE function,
+    /// [`Adaptive3dGeometry::chord_tolerance`], through
+    /// [`Adaptive3dGeometry::cut_simplify_tolerance`]; every shipped arm
+    /// uses it unchanged.
+    ///
+    /// Geodesic Adaptive (research C26, G-RDPLOAD): the same value, capped at the load
+    /// margin of a straight pass (`adaptive::geodesic::slice_load_margin`,
+    /// `c·D - s`). The 2D load rule judged the walked wraps; a chord whose
+    /// sagitta is over that margin makes the next pass meet more than
+    /// `c·D` at mid-chord. The cap only lowers the tolerance, so the model
+    /// gouge guard, which reads the uncapped rule (G-ROUGHGOUGE), stays on
+    /// the safe side.
+    #[must_use]
+    pub fn emission_chord_tolerance(&self) -> f64 {
+        let chord = self.geometry.cut_simplify_tolerance();
+        if self.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive {
+            return chord.min(crate::adaptive::geodesic::slice_load_margin(
+                self.geometry.stepover,
+                self.geometry.tool_radius,
+                self.geometry.tolerance,
+            ));
+        }
+        chord
+    }
 }
 
 // SurfaceHeightmap is now in crate::surface::slope (shared across finishing strategies)
@@ -464,6 +519,16 @@ pub enum Adaptive3dRuntimeEvent {
         yield_ratio: f64,
         short: bool,
     },
+    /// Geodesic Adaptive (integration step 7.4, design part F): the cuts up
+    /// to the next [`Self::FeedCapEnd`] lie on one planned turn or one run
+    /// of departure windows, and run at `factor` of the feed. The emitter
+    /// consumes the pair: it writes the lowered feed and `Move::feed_cap`
+    /// on the cut moves between them, and adds no annotation.
+    FeedCapStart {
+        factor: f64,
+    },
+    /// The end of a [`Self::FeedCapStart`] run.
+    FeedCapEnd,
 }
 
 impl Adaptive3dRuntimeEvent {
@@ -476,7 +541,9 @@ impl Adaptive3dRuntimeEvent {
             | Self::WaterlineCleanup
             | Self::PassEntry { .. }
             | Self::PassPreflightSkip { .. }
-            | Self::PassSummary { .. } => {}
+            | Self::PassSummary { .. }
+            | Self::FeedCapStart { .. }
+            | Self::FeedCapEnd => {}
         }
     }
 
@@ -536,6 +603,8 @@ impl Adaptive3dRuntimeEvent {
                     )
                 }
             }
+            Self::FeedCapStart { factor } => format!("Feed cap {factor:.3} of the feed"),
+            Self::FeedCapEnd => "Feed cap end".to_owned(),
         }
     }
 }
