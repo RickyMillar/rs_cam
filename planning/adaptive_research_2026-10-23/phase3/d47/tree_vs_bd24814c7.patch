@@ -1,0 +1,278 @@
+diff --git a/crates/rs_cam_core/src/session/CLAUDE.md b/crates/rs_cam_core/src/session/CLAUDE.md
+index 7de78514f..9f50a32a5 100644
+--- a/crates/rs_cam_core/src/session/CLAUDE.md
++++ b/crates/rs_cam_core/src/session/CLAUDE.md
+@@ -37,4 +37,4 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
+ 
+ `cargo test -p rs_cam_core -q --test <name>`, one per name (W2.5: viz `export_states_the_feed_stage_w2_5`): `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
+ `adopt_result_rejects_stale_completion`, `the_planner_is_one_command_f040`, `the_adopt_modulates_as_run_simulation_does_f115`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
+-`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, O-PICK/GT-Q8 `a_pick_replaces_the_default_rule_o_pick`, Q2 `the_first_face_pick_sets_each_face_floor_q2`, UX-8 `a_picked_face_sets_the_floor_ux8`, GT-3 `rule_offers_read_one_picked_item_gt3`, UX-7b `a_default_step_pocket_never_cuts_below_a_ring_ux7b` (`--features step`), S11 `unset_values_refuse_s11`, Chamfer Clearance `a_step_chamfer_stops_short_of_a_wall_chamferclear` (`--features step`), open sides `a_pocket_cuts_past_open_sides_opensides` (`--features step`), P6.7 `--lib add_bore_from_drill_copies_the_drill_p6_7`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`, P4.7 `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), P4.8 `import_reports_joins_and_open_shapes_p4_8`, P4.9 `drawing_edits_replay_on_reimport_p4_9`, Heights and floor: `one_heights_resolver_for_every_surface_p3_1`, UX-1/UX-1b `a_face_top_never_starts_below_the_stock_top_ux1`, UX-1c `a_buried_face_refuses_a_one_depth_op_ux1c`, `a_retired_floor_key_is_named_p3_2`, `the_floor_reaches_the_motion_g_bottompin`, F015 `an_unknown_z_datum_is_refused_at_load_f015`, F034/F053 `every_project_table_refuses_an_unknown_key_f034`, W6b `a_value_outside_its_domain_is_refused_at_every_door_w6b`, F033 viz `one_height_order_rule_for_every_surface_f033`, F31 `the_auto_stock_fits_every_model_f31`, F19 `the_drill_cuts_from_the_top_the_heights_show_f19` (`--features step`).
++`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, O-PICK/GT-Q8 `a_pick_replaces_the_default_rule_o_pick`, Q2 `the_first_face_pick_sets_each_face_floor_q2`, UX-8 `a_picked_face_sets_the_floor_ux8`, GT-3 `rule_offers_read_one_picked_item_gt3`, UX-7b `a_default_step_pocket_never_cuts_below_a_ring_ux7b` (`--features step`), S11 `unset_values_refuse_s11`, Chamfer Clearance `a_step_chamfer_stops_short_of_a_wall_chamferclear` (`--features step`), open sides `a_pocket_cuts_past_open_sides_opensides` (`--features step`), P6.7 `--lib add_bore_from_drill_copies_the_drill_p6_7`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`, P4.7 `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), P4.8 `import_reports_joins_and_open_shapes_p4_8`, P4.9 `drawing_edits_replay_on_reimport_p4_9`, Heights and floor: `one_heights_resolver_for_every_surface_p3_1`, UX-1/UX-1b `a_face_top_never_starts_below_the_stock_top_ux1`, UX-1c `a_buried_face_refuses_a_one_depth_op_ux1c`, `a_retired_floor_key_is_named_p3_2`, `the_floor_reaches_the_motion_g_bottompin`, F015 `an_unknown_z_datum_is_refused_at_load_f015`, F034/F053 `every_project_table_refuses_an_unknown_key_f034`, W6b `a_value_outside_its_domain_is_refused_at_every_door_w6b`, F033 viz `one_height_order_rule_for_every_surface_f033`, F31 `the_auto_stock_fits_every_model_f31`, F19 `the_drill_cuts_from_the_top_the_heights_show_f19` (`--features step`), D47 `a_skipped_op_does_not_stale_the_export_d47` (the export gate judges the emitted toolpaths only).
+diff --git a/crates/rs_cam_core/src/session/compute/export.rs b/crates/rs_cam_core/src/session/compute/export.rs
+index 09f6855d6..120e06e0b 100644
+--- a/crates/rs_cam_core/src/session/compute/export.rs
++++ b/crates/rs_cam_core/src/session/compute/export.rs
+@@ -85,12 +85,37 @@ impl ProjectSession {
+         if !gouge_rows.is_empty() {
+             return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
+         }
++        // D47 (G-RESTSTALE): the load gate judges the toolpaths the program
++        // emits. An enabled toolpath outside `emitted` (a CLI `--skip`, a
++        // setup the export leaves out) has no result, so the simulation did
++        // not carve it and the program does not cut it. Its row read
++        // `StaleSimulation` and refused the whole export.
++        let emitted_ids: Vec<crate::ids::ToolpathId> = emitted
++            .iter()
++            .filter_map(|idx| self.toolpath_configs.get(*idx))
++            .map(|tc| tc.id)
++            .collect();
++        let report = crate::tool_load::ToolLoadReport {
++            per_toolpath: report
++                .per_toolpath
++                .iter()
++                .filter(|verdict| emitted_ids.contains(&verdict.toolpath_id))
++                .cloned()
++                .collect(),
++        };
+         let post_config = &self.post;
+         let post = post_config.format.definition();
+         let crate::gcode::CheckedProgram {
+             mut gcode,
+             load_outcome,
+-        } = crate::gcode::emit_checked(&phases, post, post_config.safe_z, report, policy, overlay)?;
++        } = crate::gcode::emit_checked(
++            &phases,
++            post,
++            post_config.safe_z,
++            &report,
++            policy,
++            overlay,
++        )?;
+ 
+         let machine_safety = validate_machine_safety(
+             &gcode,
+diff --git a/crates/rs_cam_core/tests/a_skipped_op_does_not_stale_the_export_d47.rs b/crates/rs_cam_core/tests/a_skipped_op_does_not_stale_the_export_d47.rs
+new file mode 100644
+index 000000000..9b8ecc93d
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_skipped_op_does_not_stale_the_export_d47.rs
+@@ -0,0 +1,219 @@
++//! D47 (G-RESTSTALE, `planning/adaptive_research_2026-10-23/DEFECTS.md`):
++//! the export load gate judges the toolpaths the program emits.
++//!
++//! The D45 runs refused every G-code export with "cached simulation is
++//! stale". The stale row was never the `DerivedRestRegions` consumer: it was
++//! the enabled operation that the run skipped (`--skip 4`, or an operation in
++//! a setup that `--setup` left out). A skipped operation has no result, so
++//! the simulation does not carve it and the program does not emit it. The
++//! per-operation freshness rule reads "no result" as stale, and the gate
++//! refused the whole export on that row.
++//!
++//! The session here is the D44 channel pair (a 3D Rough with its rest
++//! analysis on, and a contour-parallel rough whose boundary is that rough's
++//! derived rest regions) and a third enabled rough that the run skips:
++//! 1. generate the pair, simulate with the third op skipped, export with NO
++//!    override: the export succeeds and emits the pair only;
++//! 2. the same session with nothing skipped exports with no override too:
++//!    the consumer itself does not stale the simulation;
++//! 3. the gate is not weaker: an emitted operation edited after the
++//!    simulation still refuses with `StaleSimulation`.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource, StockSource};
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
++use rs_cam_core::gcode::{ExportRefusal, ToolLoadExportPolicy};
++use rs_cam_core::ids::{ToolId, ToolpathId};
++use rs_cam_core::session::{
++    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, ReplaceToolpathConfigArgs,
++    SimulationOptions, SimulationResolution,
++};
++use std::sync::atomic::AtomicBool;
++
++// The stepped pocket of `a_derived_rest_rough_cuts_only_the_leftovers_d44`.
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++const WIDE_HALF_X: f64 = 34.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++const TOOL_DIAMETER: f64 = 6.0;
++const SIM_CELL: f64 = 0.5;
++
++fn rough(strategy: ClearingStrategy) -> OperationConfig {
++    OperationConfig::Adaptive3d(Adaptive3dConfig {
++        stepover: 2.0,
++        depth_per_pass: 3.0,
++        clearing_strategy: strategy,
++        ..Adaptive3dConfig::default()
++    })
++}
++
++/// Op 0 the rough (rest analysis on), op 1 its `DerivedRestRegions`
++/// consumer, op 2 an enabled rough that a run may skip.
++fn session() -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH {
++            FLOOR_Z
++        } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
++    let tool_id = ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(mesh_model(mesh, "channel"));
++    let mut op0 = toolpath_config(
++        "rough",
++        rough(ClearingStrategy::AgentSearch),
++        tool_id,
++        model_id,
++    );
++    op0.rest_analysis.enabled = true;
++    let index0 = builder.add_toolpath(0, op0).expect("add the rough");
++    let mut session = builder.build();
++    let source_toolpath_id = session.toolpath_configs()[index0].id;
++    let mut op1 = toolpath_config(
++        "edges, CP rest",
++        rough(ClearingStrategy::ContourParallel),
++        tool_id,
++        model_id,
++    );
++    op1.stock_source = StockSource::default();
++    op1.boundary = BoundaryConfig {
++        enabled: true,
++        source: BoundarySource::DerivedRestRegions { source_toolpath_id },
++        ..BoundaryConfig::default()
++    };
++    let op2 = toolpath_config(
++        "skipped",
++        rough(ClearingStrategy::ContourParallel),
++        tool_id,
++        model_id,
++    );
++    for op in [op1, op2] {
++        let _ = session
++            .apply(Command::AddToolpath(AddToolpathArgs {
++                setup_index: 0,
++                config: Box::new(op),
++            }))
++            .expect("add an op");
++    }
++    session
++}
++
++fn generate(session: &mut ProjectSession, index: usize) {
++    let cancel = AtomicBool::new(false);
++    if let Err(e) = session.generate_toolpath(index, &cancel) {
++        panic!("generating toolpath {index}: {e}");
++    }
++}
++
++fn simulate(session: &mut ProjectSession, skip_ids: Vec<ToolpathId>) {
++    let cancel = AtomicBool::new(false);
++    session
++        .run_simulation(
++            &SimulationOptions {
++                resolution: SimulationResolution::Fixed(SIM_CELL),
++                skip_ids,
++                ..SimulationOptions::default()
++            },
++            &cancel,
++        )
++        .expect("simulate");
++}
++
++fn export(session: &ProjectSession) -> Result<String, ExportRefusal> {
++    let trace = session
++        .simulation_result()
++        .and_then(|s| s.cut_trace.as_deref());
++    session
++        .export_gcode_checked(trace, ToolLoadExportPolicy::default())
++        .map(|exported| exported.gcode)
++}
++
++#[test]
++fn a_skipped_op_does_not_stale_the_export() {
++    // 1. Op 2 is skipped: it has no result and the program does not hold it.
++    let mut skipped = session();
++    generate(&mut skipped, 0);
++    generate(&mut skipped, 1);
++    assert!(
++        skipped.result_at(1).is_some(),
++        "the consumer did not generate"
++    );
++    let skip_id = skipped.toolpath_configs()[2].id;
++    simulate(&mut skipped, vec![skip_id]);
++    let gcode = match export(&skipped) {
++        Ok(gcode) => gcode,
++        Err(refusal) => panic!("the export with a skipped op refused:\n{refusal}"),
++    };
++    assert!(
++        gcode.contains("rough") && gcode.contains("edges, CP rest"),
++        "the program does not hold the pair"
++    );
++    assert!(
++        !gcode.contains("skipped"),
++        "the program holds the skipped op"
++    );
++
++    // 2. Nothing skipped: the consumer does not stale the simulation.
++    let mut all = session();
++    for index in 0..3 {
++        generate(&mut all, index);
++    }
++    simulate(&mut all, Vec::new());
++    if let Err(refusal) = export(&all) {
++        panic!("the export with nothing skipped refused:\n{refusal}");
++    }
++
++    // 3. An emitted op edited after the simulation still refuses as stale.
++    // The edit drops the stored simulation, so the export is handed the
++    // trace of the run before the edit, as the GUI holds its own copy.
++    let old_trace = skipped
++        .simulation_result()
++        .and_then(|s| s.cut_trace.clone())
++        .expect("the cut trace of the run");
++    let mut config = skipped.toolpath_configs()[1].clone();
++    if let OperationConfig::Adaptive3d(params) = &mut config.operation {
++        params.stepover *= 0.5;
++    }
++    let _ = skipped
++        .apply(Command::ReplaceToolpathConfig(ReplaceToolpathConfigArgs {
++            index: 1,
++            config: Box::new(config),
++        }))
++        .expect("edit the consumer");
++    generate(&mut skipped, 1);
++    let edited = format!("toolpath {}:", skipped.toolpath_configs()[1].id);
++    match skipped.export_gcode_checked(Some(&old_trace), ToolLoadExportPolicy::default()) {
++        Err(ExportRefusal::StaleSimulation { rows }) => assert!(
++            !rows.is_empty() && rows.iter().all(|row| row.contains(&edited)),
++            "the stale rows do not name the edited op only: {rows:?}"
++        ),
++        other => panic!(
++            "an edited emitted op did not refuse as stale: {:?}",
++            other.map(|exported| exported.gcode.len())
++        ),
++    }
++}

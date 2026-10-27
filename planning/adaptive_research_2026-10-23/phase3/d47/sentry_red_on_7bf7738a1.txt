@@ -1,0 +1,14 @@
+  toolpath 2: chipload: simulation trace is stale — re-run simulation
+  toolpath 2: power: simulation trace is stale — re-run simulation
+  toolpath 2: deflection: simulation trace is stale — re-run simulation
+  toolpath 2: depth of cut: simulation trace is stale — re-run simulation
+Run simulation, then export again. To export against the stale evidence anyway: MCP `accept_unmodeled_tool_load: true`, CLI `--accept-unmodeled-tool-load`, or the GUI pre-flight checkbox "Accept unmodeled criteria".
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_skipped_op_does_not_stale_the_export
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.76s
+
+error: test failed, to rerun pass `-p rs_cam_core --test a_skipped_op_does_not_stale_the_export_d47`
