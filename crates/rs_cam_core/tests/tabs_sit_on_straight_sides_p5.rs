@@ -437,12 +437,17 @@ fn tabs_lifts_match_apply_tabs_for_the_same_points_p5() {
     let got = cut_tabs(&tp);
     assert_eq!(got.len(), 1);
 
+    // G-FEEDSFIXTURE (D46): the session fixture fills the feeds the op
+    // leaves unset (`compute::fixture_values`, S11); the kernel run here
+    // takes the same values.
+    let mut filled = OperationConfig::Profile(cfg.clone());
+    rs_cam_core::compute::fixture_values::fill_unset(&mut filled);
     let params = ProfileParams {
         tool_radius: R,
         side: cfg.side,
         cut_depth: Z,
-        feed_rate: cfg.feed_rate.expect("S11: the fixture sets it"),
-        plunge_rate: cfg.plunge_rate.expect("S11: the fixture sets it"),
+        feed_rate: filled.feed_rate().expect("S11: the fixture sets it"),
+        plunge_rate: filled.plunge_rate().expect("S11: the fixture sets it"),
         safe_z: 10.0,
         climb: cfg.climb,
         compensate_in_controller: false,

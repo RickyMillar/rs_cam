@@ -171,6 +171,10 @@ fn unified_finish_op() -> OperationConfig {
 }
 
 fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
+    // G-FEEDSFIXTURE (D46): the fixture states the feeds the op leaves
+    // unset, as the shared helper does (`compute::fixture_values`, S11).
+    let mut op = op;
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),

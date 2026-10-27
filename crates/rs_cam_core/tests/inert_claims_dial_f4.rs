@@ -157,7 +157,10 @@ fn stock() -> StockConfig {
 }
 
 fn toolpath(cfg: UnifiedFinishConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
-    let op = OperationConfig::UnifiedFinish(cfg);
+    let mut op = OperationConfig::UnifiedFinish(cfg);
+    // G-FEEDSFIXTURE (D46): the fixture states the feeds the op leaves
+    // unset, as the shared helper does (`compute::fixture_values`, S11).
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
