@@ -6,8 +6,8 @@
   frontier hop, mop, links, emission; `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
   `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points;
   `geodesic/` Geodesic Adaptive, the 2D plan (its own `CLAUDE.md`).
-- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs` (candidate (a), the research
-  branch's file at 607e52730 less SlabField and the 3D slice); render harness `tests/adaptive_geodesic_2d_renders_g1.rs`.
+- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs`, test support of `geodesic/`
+  (readouts, cascade, `run_2d`; it plans nothing); render harness `tests/adaptive_geodesic_2d_renders_g1.rs`.
 
 ## Invariants
 

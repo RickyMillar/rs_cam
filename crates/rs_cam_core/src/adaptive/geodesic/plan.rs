@@ -27,17 +27,17 @@ use crate::adaptive::{
 // ── The producer ───────────────────────────────────────────────────────
 
 /// The planner input every producer of one piece shares.
-pub(super) struct PieceSetup {
-    pub(super) grid: MaterialGrid,
-    pub(super) mask: Vec<bool>,
-    pub(super) link_load: LinkLoad,
+pub(crate) struct PieceSetup {
+    pub(crate) grid: MaterialGrid,
+    pub(crate) mask: Vec<bool>,
+    pub(crate) link_load: LinkLoad,
 }
 
 impl PieceSetup {
     /// The set-up of `adaptive_segments_with_debug` (`path.rs`) for
     /// `polygon`: the material grid, its fringe, the machinable mask and the
     /// link load. `None` when the inset by the tool radius is empty.
-    pub(super) fn new(polygon: &Polygon2, params: &AdaptiveParams, cell: f64) -> Option<Self> {
+    pub(crate) fn new(polygon: &Polygon2, params: &AdaptiveParams, cell: f64) -> Option<Self> {
         let machinable = offset_polygon(polygon, params.tool_radius)
             .into_iter()
             .next()?;
@@ -67,7 +67,7 @@ impl PieceSetup {
 
 /// The planner cell of `params` (`path.rs`, [`planner_cell_size`], the one
 /// source of the planner lattice).
-pub(super) fn planner_cell(params: &AdaptiveParams) -> f64 {
+pub(crate) fn planner_cell(params: &AdaptiveParams) -> f64 {
     planner_cell_size(params.tool_radius, params.tolerance)
 }
 
@@ -79,6 +79,51 @@ pub(super) struct Produced {
     /// The planned clearing turns, each a straight step no longer than
     /// [`turn_bound`].
     pub(super) turns: Vec<(P2, P2)>,
+    /// Research test support ([`research_plan_piece`]): the wraps in
+    /// cutting order, the core spiral, the seed, `K` and the level count.
+    #[cfg(feature = "research")]
+    pub(super) research: ResearchPlan,
+}
+
+/// Research test support (`research_geodesic.rs`, `research` feature): the
+/// raw plan of one piece that the research readouts and the 2D harness read
+/// (before the cleanup). No product path reads it.
+#[cfg(feature = "research")]
+#[derive(Clone)]
+pub(crate) struct ResearchPlan {
+    /// The starter pocket, then the core spiral and the wraps.
+    pub(crate) segments: Vec<AdaptiveSegment>,
+    /// The planned clearing turns.
+    pub(crate) turns: Vec<(P2, P2)>,
+    /// The wraps in cutting order, oriented.
+    pub(crate) wraps: Vec<Vec<P2>>,
+    /// The core spiral (empty without core levels).
+    pub(crate) spiral: Vec<P2>,
+    /// The seed (the starter pocket's centre).
+    pub(crate) seed: P2,
+    /// `K`: the levels the core spiral cut.
+    pub(crate) spiral_levels: usize,
+    /// The levels of the field.
+    pub(crate) levels: usize,
+}
+
+/// Research test support: [`plan_piece`] with its raw plan for the research
+/// readouts ([`ResearchPlan`]). `None` where the field does not apply.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires.
+#[cfg(feature = "research")]
+pub(crate) fn research_plan_piece(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    cancel: &dyn CancelCheck,
+) -> Result<Option<ResearchPlan>, Cancelled> {
+    Ok(plan_piece(polygon, params, cancel)?.map(|p| ResearchPlan {
+        segments: p.segments,
+        turns: p.turns,
+        ..p.research
+    }))
 }
 
 /// Append `path` to the cutting run `run` from the cutter position `cur`:
@@ -233,10 +278,23 @@ pub(super) fn plan_piece(
     if run.len() >= 2 {
         segments.push(AdaptiveSegment::Cut(run));
     }
-    Ok(Some(Produced { segments, turns }))
+    Ok(Some(Produced {
+        #[cfg(feature = "research")]
+        research: ResearchPlan {
+            segments: Vec::new(),
+            turns: Vec::new(),
+            wraps: wraps.iter().map(|w| w.pts.clone()).collect(),
+            spiral: spiral.clone(),
+            seed,
+            spiral_levels,
+            levels: field.levels.len().saturating_sub(1),
+        },
+        segments,
+        turns,
+    }))
 }
 
-pub(super) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> AdaptiveParams {
+pub(crate) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> AdaptiveParams {
     AdaptiveParams {
         tool_radius: params.tool_radius,
         stepover: params.stepover,
@@ -261,7 +319,7 @@ pub(super) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> 
 /// (`mod.rs`): the same dispatch on the cleanup strategy.
 /// C14: the replay of the kept segments admits the planned clearing turns
 /// `turns` (empty for every column before C14).
-pub(super) fn cleaned(
+pub(crate) fn cleaned(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: Vec<AdaptiveSegment>,

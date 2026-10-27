@@ -2,9 +2,10 @@
 //! step7_design.md` §2, §5): the plan of the product preset is pinned to the
 //! research reference.
 //!
-//! The product preset is C35 plan A (INTEGRATION_PLAN Q8, D52): the options
-//! of `GeodesicOptions::C35_SPIRAL_PICK` with the replay pick off and the
-//! default arc ends. The research module (`research_geodesic.rs`, ported
+//! The product preset is C35 plan A (INTEGRATION_PLAN Q8, D52): the
+//! research preset `C35_SPIRAL_PICK` with the replay pick off and the default
+//! arc ends. Step 7.3d deleted the research options; `Candidate2d::Geodesic`
+//! of the harness door now plans that preset only. The research module (`research_geodesic.rs`, ported
 //! from the research branch at 607e52730, the same file as at 453d52571)
 //! plans the two development shapes of the 2D harness
 //! (`adaptive_geodesic_2d_renders_g1`) with those options, through the 2D
@@ -34,7 +35,7 @@ mod common;
 
 use common::fingerprint::fnv1a_debug;
 use rs_cam_core::adaptive::geodesic::geodesic_toolpath;
-use rs_cam_core::adaptive::research_geodesic::{Candidate2d, GeodesicOptions, run_2d};
+use rs_cam_core::adaptive::research_geodesic::{Candidate2d, run_2d};
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
@@ -47,9 +48,6 @@ use rs_cam_core::toolpath::Toolpath;
 
 /// The fixture end mill of the 2D harness.
 const TOOL_DIAMETER_MM: f64 = 6.0;
-
-/// The product preset: C35 plan A.
-const PRESET: GeodesicOptions = GeodesicOptions::C35_SPIRAL_PICK.pick_variants().0;
 
 /// The largest closed region of the fixture's drawing and its end mill (as
 /// `adaptive_geodesic_2d_renders_g1::fixture`).
@@ -143,7 +141,7 @@ const PINS: &[(&str, &str, (usize, u64))] = &[
 fn the_research_reference_of_the_product_preset_is_pinned() {
     for &(shape, project, pin) in PINS {
         let (outline, tool) = fixture(project);
-        let run = run_2d(&outline, &params(&tool), Candidate2d::Geodesic(PRESET));
+        let run = run_2d(&outline, &params(&tool), Candidate2d::Geodesic);
         assert_eq!(
             plan_fingerprint(&run.toolpath),
             pin,
@@ -159,7 +157,7 @@ fn the_product_door_plans_the_reference() {
     for &(shape, project, _) in PINS {
         let (outline, tool) = fixture(project);
         let params = params(&tool);
-        let reference = run_2d(&outline, &params, Candidate2d::Geodesic(PRESET)).toolpath;
+        let reference = run_2d(&outline, &params, Candidate2d::Geodesic).toolpath;
         let product = geodesic_toolpath(&outline, &params, &|| false).expect("no cancel");
         assert_eq!(
             shape_fingerprint(&product),

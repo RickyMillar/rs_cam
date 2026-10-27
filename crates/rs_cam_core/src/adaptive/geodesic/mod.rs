@@ -99,9 +99,18 @@ use super::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
 
 mod field;
 mod plan;
+#[cfg(test)]
+mod tests;
 mod wraps;
 
 use plan::{cleaned, params_with, plan_piece};
+
+// Research test support (`research_geodesic.rs`): the raw plan of one piece
+// and the piece set-up and cleanup the research readouts replay.
+#[cfg(feature = "research")]
+pub(crate) use plan::params_with as research_params_with;
+#[cfg(feature = "research")]
+pub(crate) use plan::{PieceSetup, ResearchPlan, planner_cell, research_plan_piece};
 
 /// The Geodesic Adaptive toolpath of `outline` with `params`: each inset
 /// piece (`inset_piece_outlines`, as the 2D adapter splits it) planned by

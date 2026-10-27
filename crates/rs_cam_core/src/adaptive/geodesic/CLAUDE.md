@@ -12,7 +12,11 @@ The research's candidate (a) with the one preset that ships: C35 plan A
 - `wraps.rs` the chains, the meeting-line trim, the cutting order, the core
   spiral and its spacing law.
 - `plan.rs` one piece: starter pocket, field, core spiral, wraps, planned
-  turns (`plan_piece`), and the 2D cleanup (`cleaned`).
+  turns (`plan_piece`), and the 2D cleanup (`cleaned`). Its
+  `#[cfg(feature = "research")]` door `research_plan_piece` is research
+  test support only (`../research_geodesic.rs`).
+- `tests.rs` unit tests of the field, the chaining, the spacing, the
+  star test and the core's loops.
 
 ## Invariants
 
@@ -23,8 +27,7 @@ The research's candidate (a) with the one preset that ships: C35 plan A
 - The plan holds the 2D pass load through the shared cleanup
   (`../path.rs`); the only exemption is a planned turn no longer than
   `turn_bound`, admitted by `LinkLoad::admits_turn`.
-- No typed constant: each rule names its derivation (module doc, "Derived
-  constants").
+- No typed constant: each rule names its derivation (module doc).
 - The plan equals the research reference move by move (feeds aside); a
   moved pin is a defect, never a re-pin.
 
@@ -33,4 +36,5 @@ The research's candidate (a) with the one preset that ships: C35 plan A
 - `cargo test -p rs_cam_core -q --features research,test-support --test the_geodesic_preset_keeps_its_plan_s7_3`
   (the reference pins on the star and the pocket, and the door against the
   reference).
+- `cargo test -p rs_cam_core -q --lib adaptive::geodesic` (the unit tests).
 - The 2D engine's sentries in `../CLAUDE.md` (the cleanup is shared).
