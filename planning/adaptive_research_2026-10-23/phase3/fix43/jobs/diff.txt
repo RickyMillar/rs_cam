@@ -1,0 +1,5 @@
+toolpath 1: boundary.offset: 6.0 -> 0.0
+toolpath 3: enabled: True -> False
+toolpath 4: enabled: True -> False
+toolpath 5: NEW (3D Rough 1 (edges, CP rest); copy of toolpath 1 with stock_source 'from_remaining_stock', boundary offset 6.0)
+non-setup fields equal: True

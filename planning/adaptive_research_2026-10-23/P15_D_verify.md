@@ -6150,3 +6150,61 @@ axial engagement > DPP + 0.05.
   export"; the rigidity rule of thumb).
 
 Sims deleted. Worktree clean, detached at 607e52730. Not committed.
+
+## D62: do shipped CP-only jobs breach one DPP in their rest ops? (fix43, master 67257dc20)
+
+**Verdict: no G-RESTDOC-sized breach on the shipped path. A CP rest op after a CP op 1 anchors its levels at the stock it
+meets: the planted band case starts at 17.0 = 23 − one DPP, and cuts at most 7.73 mm (2.6 % of its volume over DPP,
+against op 1's own 1.2 %). Corne CP's 3 mm copy op has a small breach: 416 of 3183 mm³ (13 %) over its DPP 3.0, max 12.0
+mm. So the 14.04 anchor of D61 belongs to the research / geodesic op 1 as the source, not to the CP rest op as such. Its
+cause is not isolated.**
+
+**Setup.** Fixture worktree detached at master 67257dc20 (clean); release build without the research feature, run
+directly; no env, no override. `fix42/depth_by_level.py` copied to `fix43/` with one change: op 1 gets its own DPP (4th
+argument). In D61 that made no difference, because op 1 and the edge op had the same DPP there. Sims deleted.
+
+**1. Corne CP (`fix26/jobs/k_contour_parallel.toml` = k_cp_fix6job, `--setup 0 --skip 4`).** Clocks equal fix26 (op 1
+1427.2 s, copy 1413.6 s).
+- Export REFUSED on master: "cached simulation is stale … toolpath 4: chipload: simulation trace is stale". This is
+  G-RESTSTALE, the skipped waterline. Its fix (13caf4b29, integration step 1c) is not on master yet. The sim was written
+  before the export, so the depths are read.
+- Op 1 (CP, DPP 6.0): max axial 11.25 mm, 7934 of 274938 mm³ (2.9 %) over DPP (G-AXIALDOC).
+- Copy op (CP, 3 mm, DPP 3.0, from_remaining_stock; levels "count=6 z_top=15.5"): max axial 12.0 mm, 416 of 3183 mm³
+  (13.1 %) over DPP, 332 samples:
+  - Z ~6: 44 samples up to 12.0 mm, 100 mm³ over;
+  - Z ~7–14: a few samples at 7.93 mm (under 1 mm³ each bin);
+  - Z ~0–3: 3.39–3.5 mm (0.4–0.5 over), 292 mm³.
+  So the shipped rest op breaches its DPP by up to 4× at a few places, on a small volume. It is not a whole first level
+  as in D61.
+
+**2. wanaka CP (`phase0/projects/wanaka200_contour_parallel.toml`, cp_alone_0.6).** Setup 0 has no enabled op on
+remaining stock:
+- 1 Pin Drill (skipped in cp_alone);
+- 2 Back Rough (fresh);
+- 3 Holes, 4 Rivers and 5 Lakes are `enabled = false`. Rivers and Lakes are V-bit project_curve on remaining stock, not a
+  rest rough.
+Nothing to measure.
+
+**3. Planted: a CP rest op that meets a band taller than one DPP** (`fix43/make_planted.py` →
+`jobs/corne_cp_planted_band.toml`; diff by toolpath id in `jobs/diff.txt`). From k_contour_parallel.toml:
+- op 1 (CP) boundary offset 6.0 → 0.0, so the band 3–9 mm outside the wall stays at the stock top 23;
+- a new op 5 = op 1 on `from_remaining_stock` with the shipped silhouette + 6 mm;
+- the copy op and the waterline disabled.
+Run with `--setup 0`, export passed (no skip, so no G-RESTSTALE).
+
+| op | levels | max axial | removed | over DPP 6.0 |
+|---|---|---|---|---|
+| op 1 (CP, offset 0) | count=4 z_top 17.0 | 7.5 | 205847 mm³ | 2464 mm³ (1.2 %) |
+| op 5 (CP rest, offset 6) | count=4 z_top 17.0 | 7.73 | 70049 mm³ | 1796 mm³ (2.6 %); Z 17: max 6.0, 0 over; Z 11: max 6.39, 1787 over; Z 5: max 7.73, 9 over |
+
+The CP rest op reads the band: its first level is 17.0 = 23 − 6, and the 23 → 17 pass is exactly one DPP.
+
+**Reading.**
+- The same CP rest code with a research or geodesic op 1 as the source anchors at z_top 14.04: D41 (silhouette boundary)
+  and D45/D49/D60 (derived regions) all show "Z levels computed count=4 z_top=14.04". After a CP op 1 it anchors at 17.0.
+  So what sets the anchor too low depends on what op 1 leaves or publishes, not on the rest op's boundary.
+- 14.04 is not an op-1 level (17 / 11 / 5 / 0.5). Where it comes from is not traced here.
+- G-RESTDOC stays a defect of the research / product pair. The shipped CP copy op has its own small over-DPP spots (12 mm
+  at Z ~6, 100 mm³), in the G-AXIALDOC class.
+
+Not committed. Worktree clean, detached at 67257dc20.
