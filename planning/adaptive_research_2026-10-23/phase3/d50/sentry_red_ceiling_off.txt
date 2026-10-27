@@ -1,0 +1,10 @@
+rough: 2 regions, left stock top 7.000
+consumer: 52 moves, passes (start, z, index) [(21, 4.0, 2)], 12 cuts before the floor pass
+
+thread 'a_rest_consumer_starts_at_the_left_stock_top' (1946531) panicked at crates/rs_cam_core/tests/a_rest_consumer_starts_at_the_left_stock_top_d50.rs:256:5:
+the consumer cuts before its floor pass, at Z [7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0, 7.0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.32s
+
+error: test failed, to rerun pass `-p rs_cam_core --test a_rest_consumer_starts_at_the_left_stock_top_d50`
