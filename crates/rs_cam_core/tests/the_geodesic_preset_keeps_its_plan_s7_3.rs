@@ -17,9 +17,13 @@
 //! plan. The pins were checked on both trees: the research branch at
 //! 607e52730 and this branch give the same numbers.
 //!
-//! The product module `adaptive::geodesic` (step 7.3 parts b and c) must give
-//! the same plan, bit for bit. A pin that moves is a port defect: report it,
-//! do not re-pin.
+//! The product door `adaptive::geodesic::geodesic_toolpath` (step 7.3b) must
+//! give the same plan, bit for bit, less one research instrument: `run_2d`
+//! lowers the feed of each planned turn's moves from its own readout
+//! (`apply_turn_feeds`), which the door does not (the feed factor on the cut
+//! replaces it, design part F). That instrument changes only the feed of
+//! linear moves, so the door's plan is compared with the feed values left
+//! out. A pin that moves is a port defect: report it, do not re-pin.
 
 #![expect(
     clippy::expect_used,
@@ -29,6 +33,7 @@
 mod common;
 
 use common::fingerprint::fnv1a_debug;
+use rs_cam_core::adaptive::geodesic::geodesic_toolpath;
 use rs_cam_core::adaptive::research_geodesic::{Candidate2d, GeodesicOptions, run_2d};
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
 use rs_cam_core::compute::catalog::OperationType;
@@ -108,6 +113,17 @@ fn plan_fingerprint(tp: &Toolpath) -> (usize, u64) {
     (tp.moves.len(), fnv1a_debug(&fields))
 }
 
+/// [`plan_fingerprint`] with every feed value set to 0: the plan's
+/// geometry, move kinds and intents.
+fn shape_fingerprint(tp: &Toolpath) -> (usize, u64) {
+    let fields: Vec<_> = tp
+        .moves
+        .iter()
+        .map(|m| (m.target, m.move_type.with_feed_rate(0.0), m.intent))
+        .collect();
+    (tp.moves.len(), fnv1a_debug(&fields))
+}
+
 /// The reference plan of the product preset on each harness shape:
 /// `(shape, fixture, (moves, hash))`.
 const PINS: &[(&str, &str, (usize, u64))] = &[
@@ -132,6 +148,23 @@ fn the_research_reference_of_the_product_preset_is_pinned() {
             plan_fingerprint(&run.toolpath),
             pin,
             "{shape}: the reference plan of C35 plan A moved"
+        );
+    }
+}
+
+/// The product door plans what the research reference plans, move by move,
+/// with the feed values left out (module doc).
+#[test]
+fn the_product_door_plans_the_reference() {
+    for &(shape, project, _) in PINS {
+        let (outline, tool) = fixture(project);
+        let params = params(&tool);
+        let reference = run_2d(&outline, &params, Candidate2d::Geodesic(PRESET)).toolpath;
+        let product = geodesic_toolpath(&outline, &params, &|| false).expect("no cancel");
+        assert_eq!(
+            shape_fingerprint(&product),
+            shape_fingerprint(&reference),
+            "{shape}: the product door does not plan the reference"
         );
     }
 }

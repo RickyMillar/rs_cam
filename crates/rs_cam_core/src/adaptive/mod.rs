@@ -14,10 +14,13 @@
 //!
 //! Reference: research/02_algorithms.md §5
 
-mod material_grid;
-pub(crate) mod path;
 /// Research candidate (a) of the adaptive research 2026-10-23: the
 /// geodesic-wavefront field for 2D clearing. No product path calls it.
+/// Geodesic Adaptive: the 2D plan of the geodesic-wavefront clearing
+/// (integration step 7.3). The 3D variant (step 7.4) is its first caller.
+pub mod geodesic;
+mod material_grid;
+pub(crate) mod path;
 #[cfg(feature = "research")]
 pub mod research_geodesic;
 mod search;
