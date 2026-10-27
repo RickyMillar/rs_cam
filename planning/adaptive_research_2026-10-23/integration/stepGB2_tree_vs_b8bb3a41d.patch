@@ -1,0 +1,416 @@
+diff --git a/crates/rs_cam_viz/src/state/runtime.rs b/crates/rs_cam_viz/src/state/runtime.rs
+index 7134cc2b4..c14421a19 100644
+--- a/crates/rs_cam_viz/src/state/runtime.rs
++++ b/crates/rs_cam_viz/src/state/runtime.rs
+@@ -108,9 +108,20 @@ pub struct ToolpathRuntime {
+     pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
+     pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
+     pub debug_trace_path: Option<PathBuf>,
++    /// G-B2: the feed caps of the stored result, counted once per result.
++    /// Read it through [`Self::caps`].
++    pub cap_memo: CapMemo,
+ }
+ 
+ impl ToolpathRuntime {
++    /// G-B2: the feed caps of the stored result, or `None` when no result
++    /// or no capped move. The moves are counted once per result: the
++    /// memo keys on the result's toolpath allocation.
++    #[must_use]
++    pub fn caps(&self) -> Option<CapFigures> {
++        self.cap_memo.caps(self.run.result())
++    }
++
+     /// Create runtime state for a new toolpath with sensible defaults.
+     pub fn new(auto_regen: bool) -> Self {
+         Self {
+@@ -124,7 +135,76 @@ impl ToolpathRuntime {
+             debug_trace: None,
+             semantic_trace: None,
+             debug_trace_path: None,
++            cap_memo: CapMemo::default(),
++        }
++    }
++}
++
++// ── The feed caps of a stored result (G-B, G-B2) ──────────────────────
++
++/// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
++/// moves, not the emitted ones, so a surface that prints them says
++/// "planned".
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct CapFigures {
++    pub count: usize,
++    pub min_feed_mm_min: f64,
++}
++
++impl CapFigures {
++    /// `None` when no move of `tp` carries a cap.
++    #[must_use]
++    pub fn of(tp: &rs_cam_core::toolpath::Toolpath) -> Option<Self> {
++        let mut caps = tp.moves.iter().filter_map(|m| m.feed_cap);
++        let first = caps.next()?;
++        let (count, min_feed_mm_min) = caps.fold((1, first), |(n, low), cap| (n + 1, low.min(cap)));
++        Some(Self {
++            count,
++            min_feed_mm_min,
++        })
++    }
++
++    /// The one hover line of the Generate row's figures.
++    #[must_use]
++    pub fn line(self) -> String {
++        format!(
++            "{} moves at a load cap (planned), lowest {:.0} mm/min",
++            self.count, self.min_feed_mm_min
++        )
++    }
++}
++
++/// The [`CapFigures`] of the last result that [`ToolpathRuntime::caps`]
++/// read. A frame reads the caps from `&AppState` (the legend, the panel
++/// inputs), so the memo writes through a lock. The key is a `Weak` of the
++/// result's toolpath: a new result has a new allocation, and a `Weak`
++/// keeps the old allocation alive, so its address is not reused.
++#[derive(Debug, Default)]
++pub struct CapMemo(std::sync::Mutex<Option<CapMemoEntry>>);
++
++#[derive(Debug)]
++struct CapMemoEntry {
++    key: std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>,
++    caps: Option<CapFigures>,
++}
++
++impl CapMemo {
++    fn caps(&self, result: Option<&super::toolpath::ToolpathResult>) -> Option<CapFigures> {
++        let result = result?;
++        let Ok(mut slot) = self.0.lock() else {
++            return CapFigures::of(result.toolpath());
++        };
++        if let Some(entry) = slot.as_ref()
++            && std::sync::Weak::ptr_eq(&entry.key, &Arc::downgrade(&result.annotated))
++        {
++            return entry.caps;
+         }
++        let caps = CapFigures::of(result.toolpath());
++        *slot = Some(CapMemoEntry {
++            key: Arc::downgrade(&result.annotated),
++            caps,
++        });
++        caps
+     }
+ }
+ 
+diff --git a/crates/rs_cam_viz/src/ui/overlays/legend_rail.rs b/crates/rs_cam_viz/src/ui/overlays/legend_rail.rs
+index 0de69cc12..154ee6e4c 100644
+--- a/crates/rs_cam_viz/src/ui/overlays/legend_rail.rs
++++ b/crates/rs_cam_viz/src/ui/overlays/legend_rail.rs
+@@ -947,7 +947,15 @@ impl Key {
+ /// The colour key of `line`, or `None` for a status line.
+ fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
+     match line {
+-        RailLine::Scale(legend) => Some(scale_key(*legend)),
++        RailLine::Scale(legend) => {
++            let key = scale_key(*legend);
++            let moves = matches!(legend, Legend::Engagement | Legend::AdvancePerTooth);
++            Some(if moves && capped_moves_drawn(state) {
++                with_capped_move_entry(key)
++            } else {
++                key
++            })
++        }
+         RailLine::Categories(kind) => Some(categories_key(state, *kind)),
+         RailLine::Status(_) => None,
+     }
+@@ -959,6 +967,28 @@ pub fn key_colours(state: &AppState, line: &RailLine) -> Vec<[f32; 3]> {
+     line_key(state, line).map_or_else(Vec::new, |key| key.colours())
+ }
+ 
++/// Every label the hover detail of `line` shows in its key, in key order:
++/// the lead, the gradient end labels, the tail, or each entry. A status
++/// line shows none.
++pub fn key_labels(state: &AppState, line: &RailLine) -> Vec<String> {
++    match line_key(state, line) {
++        Some(Key::Ramp {
++            lead,
++            left,
++            right,
++            tail,
++            ..
++        }) => lead
++            .into_iter()
++            .map(|(label, _)| label)
++            .chain([left, right])
++            .chain(tail.into_iter().map(|(label, _)| label))
++            .collect(),
++        Some(Key::Entries(entries)) => entries.into_iter().map(|(label, _)| label).collect(),
++        None => Vec::new(),
++    }
++}
++
+ /// Every colour the chip swatch of `line` paints, in order.
+ pub fn swatch_colours(state: &AppState, line: &RailLine) -> Vec<egui::Color32> {
+     match chip_swatch(state, line) {
+@@ -1123,13 +1153,9 @@ fn scale_key(legend: Legend) -> Key {
+             use crate::render::toolpath_render::engagement_color;
+             // The ramp input is `feed / nominal feed`, and the strip spans
+             // 0 to 1.5 of it.
+-            with_ends(
+-                ramp("0 %", "150 % of nominal feed", |t| {
+-                    engagement_color(f64::from(t) * 1.5, 1.0)
+-                }),
+-                Vec::new(),
+-                vec![capped_move_entry()],
+-            )
++            ramp("0 %", "150 % of nominal feed", |t| {
++                engagement_color(f64::from(t) * 1.5, 1.0)
++            })
+         }
+         Legend::AdvancePerTooth => {
+             use crate::render::toolpath_render::advance_per_tooth_segment_color;
+@@ -1154,7 +1180,6 @@ fn scale_key(legend: Legend) -> Key {
+                         Some(AdvancePerToothMm::new(0.05)),
+                     )),
+                 ),
+-                capped_move_entry(),
+             ])
+         }
+         Legend::TierMap(tier_count) => {
+@@ -1337,6 +1362,47 @@ fn capped_move_entry() -> LegendEntry {
+     (CAPPED_MOVE_LABEL.to_owned(), None)
+ }
+ 
++/// True when a drawn toolpath holds a capped move (G-B2). The legend
++/// shows the capped-move entry only then. `ToolpathRuntime::caps` counts
++/// the moves once per result, so this does not scan the moves each frame.
++pub fn capped_moves_drawn(state: &AppState) -> bool {
++    registry::drawn_toolpaths(state).into_iter().any(|(_, id)| {
++        state
++            .gui
++            .toolpath_rt
++            .get(&id)
++            .and_then(crate::state::runtime::ToolpathRuntime::caps)
++            .is_some()
++    })
++}
++
++/// `key` with the capped-move entry at its end: the ramp's tail, or the
++/// last entry.
++fn with_capped_move_entry(key: Key) -> Key {
++    match key {
++        Key::Ramp {
++            lead,
++            left,
++            right,
++            colours,
++            mut tail,
++        } => {
++            tail.push(capped_move_entry());
++            Key::Ramp {
++                lead,
++                left,
++                right,
++                colours,
++                tail,
++            }
++        }
++        Key::Entries(mut entries) => {
++            entries.push(capped_move_entry());
++            Key::Entries(entries)
++        }
++    }
++}
++
+ /// The entries of a categorical legend, in drawing order. For the
+ /// collisions the two entries are the ends of the density ramp.
+ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> {
+@@ -1384,7 +1450,7 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry>
+             if spans.show_dressup {
+                 entries.push(("dressup".to_owned(), base.map(mirrored::dressup_rgb)));
+             }
+-            if state.viewport.show_cutting {
++            if state.viewport.show_cutting && capped_moves_drawn(state) {
+                 entries.push(capped_move_entry());
+             }
+             entries
+diff --git a/crates/rs_cam_viz/src/ui/properties/mod.rs b/crates/rs_cam_viz/src/ui/properties/mod.rs
+index 811dcd223..0cb6c2d3e 100644
+--- a/crates/rs_cam_viz/src/ui/properties/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/mod.rs
+@@ -425,6 +425,9 @@ pub(crate) struct ToolpathPanelInputs {
+     /// W2.5 (D10): the feed stage of the stored result, the one export
+     /// emits. `None` when the toolpath has no stored result.
+     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
++    /// G-B: the feed caps of the stored result, counted once per result
++    /// (`ToolpathRuntime::caps`). `None` when no move has a cap.
++    pub caps: Option<crate::state::runtime::CapFigures>,
+     /// Operator ruling 2026-10-15: this rest toolpath's current comparison
+     /// with fresh stock, when one was asked for
+     /// (`ProjectSession::current_rest_fresh_comparisons`).
+@@ -801,6 +804,10 @@ pub(crate) fn toolpath_panel_inputs(
+         reach: reach_summary,
+         freshness: freshness_for_tp,
+         feed_stage,
++        caps: gui
++            .toolpath_rt
++            .get(&id)
++            .and_then(crate::state::runtime::ToolpathRuntime::caps),
+         rest_fresh,
+         shoe: shoe_row_inputs(id, session, gui),
+     }
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index 05f90d28e..791b11353 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -1255,7 +1255,7 @@ fn the_blocked_state_word_fits_its_slot_f22() {
+ /// stored result: the count and the lowest cap, as planned moves.
+ #[test]
+ fn the_figures_hover_names_the_feed_caps_g_b() {
+-    use super::toolpath_panel::CapFigures;
++    use crate::state::runtime::CapFigures;
+     use rs_cam_core::geo::P3;
+     use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+     let mut tp = Toolpath::new();
+@@ -1273,6 +1273,27 @@ fn the_figures_hover_names_the_feed_caps_g_b() {
+         caps.line(),
+         "2 moves at a load cap (planned), lowest 1200 mm/min"
+     );
++
++    // G-B2: the runtime memo counts once per result and follows a new one.
++    let result = |tp: Toolpath| {
++        crate::state::runtime::ToolpathRun::Done(crate::state::toolpath::ToolpathResult {
++            annotated: std::sync::Arc::new(
++                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
++            ),
++            stats: Default::default(),
++            debug_trace: None,
++            semantic_trace: None,
++            debug_trace_path: None,
++            drill_op: None,
++        })
++    };
++    let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
++    assert_eq!(rt.caps(), None, "no result, no caps");
++    rt.run = result(tp.clone());
++    assert_eq!(rt.caps(), Some(caps));
++    assert_eq!(rt.caps(), Some(caps), "the memo answers the second read");
++    rt.run = result(Toolpath::new());
++    assert_eq!(rt.caps(), None, "a new result with no cap clears the memo");
+ }
+ 
+ /// R-E (operator ruling 2026-10-23): one hole is ONE row, with one text,
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 623624b89..2081fd2ad 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -120,10 +120,7 @@ pub(super) fn draw_toolpath_panel(
+         blocking: blocking.as_ref(),
+         moves: entry.run.result().map(|result| result.stats.move_count),
+         feed_stage: inputs.feed_stage,
+-        caps: entry
+-            .run
+-            .result()
+-            .and_then(|result| CapFigures::of(result.toolpath())),
++        caps: inputs.caps,
+     };
+     if draw_generate_row(ui, &header) {
+         events.push(AppEvent::GenerateToolpath(entry.id));
+@@ -1189,36 +1186,7 @@ pub(super) struct HeaderRow<'a> {
+     pub moves: Option<usize>,
+     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+     /// G-B: the moves of the stored result that carry a feed cap.
+-    pub caps: Option<CapFigures>,
+-}
+-
+-/// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
+-/// moves, not the emitted ones, so the hover says "planned".
+-#[derive(Clone, Copy, Debug, PartialEq)]
+-pub(super) struct CapFigures {
+-    pub count: usize,
+-    pub min_feed_mm_min: f64,
+-}
+-
+-impl CapFigures {
+-    /// `None` when no move of `tp` carries a cap.
+-    pub fn of(tp: &rs_cam_core::toolpath::Toolpath) -> Option<Self> {
+-        let mut caps = tp.moves.iter().filter_map(|m| m.feed_cap);
+-        let first = caps.next()?;
+-        let (count, min_feed_mm_min) = caps.fold((1, first), |(n, low), cap| (n + 1, low.min(cap)));
+-        Some(Self {
+-            count,
+-            min_feed_mm_min,
+-        })
+-    }
+-
+-    /// The one hover line of the figures.
+-    pub fn line(self) -> String {
+-        format!(
+-            "{} moves at a load cap (planned), lowest {:.0} mm/min",
+-            self.count, self.min_feed_mm_min
+-        )
+-    }
++    pub caps: Option<crate::state::runtime::CapFigures>,
+ }
+ 
+ impl HeaderRow<'_> {
+diff --git a/crates/rs_cam_viz/tests/the_dock_states_read_live_state_g_vpstate.rs b/crates/rs_cam_viz/tests/the_dock_states_read_live_state_g_vpstate.rs
+index 59fd86ff5..b62b2a2ea 100644
+--- a/crates/rs_cam_viz/tests/the_dock_states_read_live_state_g_vpstate.rs
++++ b/crates/rs_cam_viz/tests/the_dock_states_read_live_state_g_vpstate.rs
+@@ -670,6 +670,57 @@ fn every_active_encoding_has_a_real_legend_g_vpstate() {
+     );
+ }
+ 
++/// G-B2: the legend names the capped-move dash only when a drawn toolpath
++/// holds a capped move. With no cap, no line of the rail carries it.
++#[test]
++fn the_capped_move_entry_shows_only_with_a_cap_g_b2() {
++    let has_entry = |state: &AppState| {
++        legend_rail::active_lines(state).iter().any(|line| {
++            legend_rail::key_labels(state, line)
++                .iter()
++                .any(|label| label == legend_rail::CAPPED_MOVE_LABEL)
++        })
++    };
++    let mut palette = legend_fixture();
++    let mut engagement = legend_fixture();
++    registry::set_overlay(&mut engagement, row("move_colour_engagement"), true);
++    for (mode, state) in [("palette", &mut palette), ("engagement", &mut engagement)] {
++        assert!(!has_entry(state), "{mode}: no capped move, no entry");
++        // Non-vacuity: the fixture draws a move legend to hold the entry.
++        let lines = legend_rail::active_lines(state);
++        assert!(
++            lines.iter().any(|line| matches!(
++                line,
++                RailLine::Categories(legend_rail::Categories::Moves)
++            ) || line.key() == "move_colour_engagement"),
++            "{mode}: no move legend: {lines:?}"
++        );
++        let mut capped = annotated(true);
++        let cut = capped
++            .toolpath
++            .moves
++            .iter_mut()
++            .rev()
++            .find(|m| m.move_type.is_cutting())
++            .expect("the sample path cuts");
++        cut.feed_cap = Some(600.0);
++        for rt in state.gui.toolpath_rt.values_mut() {
++            rt.run = ToolpathRun::Done(ToolpathResult {
++                annotated: Arc::new(capped.clone()),
++                stats: Default::default(),
++                debug_trace: None,
++                semantic_trace: None,
++                debug_trace_path: None,
++                drill_op: None,
++            });
++        }
++        assert!(
++            has_entry(state),
++            "{mode}: a capped move draws, so the entry shows"
++        );
++    }
++}
++
+ /// A data-less mode that paints a substitute colour gets a status line,
+ /// never a scale legend (inventory §2.3, items 3 and 4).
+ #[test]
