@@ -1,0 +1,119 @@
+{
+ "run": "fix31/A_s1p2",
+ "c40_records": 1069,
+ "descent_moves": 2505,
+ "z_offset_move_end_minus_record": 0.15,
+ "air_quantum_mm3": 0.027,
+ "causes": {
+  "LargeZ": {
+   "c40_records": 860,
+   "records_matched": 830,
+   "descent_moves": 1609,
+   "time_s": 371.4,
+   "air_share": 0.175,
+   "median_move_len_mm": 4.75,
+   "median_drop_mm": 5.0
+  },
+  "Reentry2d/Turn": {
+   "c40_records": 90,
+   "records_matched": 90,
+   "descent_moves": 288,
+   "time_s": 81.4,
+   "air_share": 0.561,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 6.5
+  },
+  "unmatched": {
+   "c40_records": 0,
+   "records_matched": 0,
+   "descent_moves": 386,
+   "time_s": 28.3,
+   "air_share": 0.896,
+   "median_move_len_mm": 4.75,
+   "median_drop_mm": null
+  },
+  "Reentry2d/OverBound": {
+   "c40_records": 39,
+   "records_matched": 39,
+   "descent_moves": 74,
+   "time_s": 22.2,
+   "air_share": 0.296,
+   "median_move_len_mm": 5.29,
+   "median_drop_mm": 6.5
+  },
+  "Reentry2d/Mixed": {
+   "c40_records": 20,
+   "records_matched": 17,
+   "descent_moves": 45,
+   "time_s": 13.8,
+   "air_share": 0.387,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 6.5
+  },
+  "Waterline": {
+   "c40_records": 34,
+   "records_matched": 25,
+   "descent_moves": 36,
+   "time_s": 6.4,
+   "air_share": 0.287,
+   "median_move_len_mm": 1.99,
+   "median_drop_mm": 3.0
+  },
+  "HeldLinkRefused": {
+   "c40_records": 7,
+   "records_matched": 5,
+   "descent_moves": 15,
+   "time_s": 5.4,
+   "air_share": 0.387,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 12.5
+  },
+  "LargeZHeld": {
+   "c40_records": 7,
+   "records_matched": 7,
+   "descent_moves": 21,
+   "time_s": 5.1,
+   "air_share": 0.389,
+   "median_move_len_mm": 5.64,
+   "median_drop_mm": 5.88
+  },
+  "Reentry2d/CoreHandOff": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 13,
+   "time_s": 3.6,
+   "air_share": 0.277,
+   "median_move_len_mm": 1.2,
+   "median_drop_mm": 6.5
+  },
+  "AirRun": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 11,
+   "time_s": 3.2,
+   "air_share": 0.968,
+   "median_move_len_mm": 1.75,
+   "median_drop_mm": 12.5
+  },
+  "Start": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 7,
+   "time_s": 1.8,
+   "air_share": 0.088,
+   "median_move_len_mm": 1.2,
+   "median_drop_mm": 6.5
+  },
+  "Reentry2d/ClosedSeam": {
+   "c40_records": 1,
+   "records_matched": 0,
+   "descent_moves": 0,
+   "time_s": 0.0,
+   "air_share": null,
+   "median_move_len_mm": null,
+   "median_drop_mm": 6.5
+  }
+ },
+ "total_time_s": 542.6,
+ "total_air_share": 0.291
+}

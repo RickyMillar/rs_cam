@@ -1,0 +1,5 @@
+applied:  4 files changed, 116 insertions(+), 1 deletion(-)
+d36 field_corne rc=0 236s; Toolpaths: 3  |  Cutting: 61140mm  |  Rapid: 28245mm  |  Time: 2405s
+program.nc == fix25 body_cp_field
+restored: 7b7a8df6c, 0 changes
+D36DONE

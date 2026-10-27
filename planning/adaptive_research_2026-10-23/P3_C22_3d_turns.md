@@ -3636,3 +3636,321 @@ Source: `phase3/fix25/body_cp_field/corne/stdout_plain.txt` against `phase3/fix2
    - no region the field-off run plans is left to the rest pass.
 3. **A research counter to confirm the reading before the fix ships:** per level, the steps the walk refuses under the field, split by whether the read crossed the ceiling with or without its AIR cells. If the AIR share is not the cause, (1) is wrong and I say so.
 4. **The cascade:** under the field the C22a replay should not keep dropping. Item (1) should remove most fragments. If the cascade stays, the replay's rounds need a bound tied to the planned groups. That is a separate proposal, after (3).
+
+### 18.10 D36: the counter refutes my §18.9 reading (2026-10-27)
+
+D9 ran the counter patch (`phase3/d36/tree_vs_7b7a8df6c_counter.patch`, md5 b4ab9db4…) on Corne op 1 with the field on. `program.nc` is byte-identical to fix25. Source: `phase3/d36/field_corne/stdout_plain.txt`.
+
+| z | reads | over only with AIR | over on own cells | own / reads |
+|---|---|---|---|---|
+| 17.0 | 2 414 499 | 68 | 1 238 323 | 51.3 % |
+| 11.0 | 1 732 474 | 54 | 1 316 144 | 76.0 % |
+| 5.0 | 593 233 | 56 | 558 504 | 94.1 % |
+| 0.5 | 1 886 | 0 | 994 | 52.7 % |
+
+- **The AIR cells are not the cause.** They put 68 / 54 / 56 / 0 reads over the ceiling, against 0.56–1.32 million reads over on the plan's own cells.
+- So §18.9 item 1 (read only the plan's own cells) would change almost nothing. **It is withdrawn,** and item 2 (the islands sentry, built for item 1) with it.
+- The fact the table shows: under the field, 51–94 % of all load reads on the plan's own cells are over the ceiling. Without the field, the same plan fragments 100× less. The field's per-strip load on the body's own stock reads over the ceiling far more often than the flat width read does. The counter does not say why.
+- As ruled, I propose nothing until the lead replies.
+
+### 18.11 Why own-cell reads go over the ceiling at Z 17 (read only, 2026-10-27; low priority)
+
+**The lead's hypothesis (h(u) not clamped to the slab top) is not the cause at Z 17.**
+- `research_slab_field` takes the planner stock's top unclamped (`adaptive3d/clearing.rs:3096`, `top.push(grid.top_z_at(row, col)…)`).
+- But at Corne's first level the stock top is Z 23 (D36 log: "floor_top=Some(23.0)" at Z 17), and the level is Z 17 with DPP 6.0 ("z_top=17.0 … depth_per_pass=6.0"). So `top − tip = 6.0 = DPP` exactly: the clamp would change nothing there.
+- At Z 11 and Z 5 the reads see up to 12 and 18 mm. That is real stock: the field run's Z 17 cut almost nothing, so the tool meets it. A clamp would hide a real load. Those levels are a consequence of Z 17, not a second cause.
+
+**The cause the code proves: the per-strip sum reads one planner cell wider than the width read, at a full pass.**
+- The flat width read (`adaptive/search.rs:874`) is the EXTENT between the outermost cell centres, `(hi − lo) / D`. On the 0.5 mm lattice, a band holding `n` cell centres across the heading reads `(n − 1) · cell`.
+- The per-strip load (`adaptive/search.rs:816`, `:831`; `adaptive/slab_field.rs:225–228`; `adaptive/material_grid.rs:225`) gives each of the same `n` centres a strip one cell wide: `n · cell`. At full depth `L = n · cell / D`, one cell (`cell / D = 0.083`) more than the width read.
+- §18.1's claim "at a full pass L = w / D" is therefore wrong on the lattice: it holds for the integral, not for these two lattice readings.
+- At the commanded stepover s = 2 a steady side cut holds 5 cell centres across (`2 / 0.5 + 1`):
+  - width read 2.0 mm → 0.333, under c = 0.3626 (2.176 mm);
+  - strip sum 2.5 mm → 0.417, **over c**.
+
+  So under the field, every steady pass at the commanded stepover reads over the ceiling. The plan is refused and fragments. That matches D36: 51.3 % of all reads at Z 17 are over on own cells, and the 100× groups of §18.9.
+- The same offset explains the cost on the slope test (§18.8): 1929 moves against 911.
+- The judge reads at its exact pitch (0.05 mm), so its offset is only 0.008 and its verdicts stand.
+
+**Proposed fix (not built; the lead decides):**
+- Integrate the strips the way the width read measures: the trapezoid over the strip centres. That is, the sum over adjacent strip pairs of `mrr_cross_section_mm2(mean of the two depths, cell)`.
+  - A full-depth band of `n` centres then reads `(n − 1) · cell · DPP`, equal to the width read.
+  - A thin layer `t` still reads `t / DPP` per mm of extent.
+  - It is the same function per strip, with no new number.
+- Sentry: on a straight side cut at full depth on the flat grid with a field attached, the load read equals `compute_swept_width` to the last bit, at every stepover from 1 to 6 cells.
+- Re-run the slope and shelf tests, and Corne field-on (through D9).
+
+### 18.12 D39: the trapezoid strip sum built; the sentry green, the shelf test RED (2026-10-27)
+
+Patch: `phase3/d39/tree_vs_7b7a8df6c.patch`, md5 6bdce2f997099fd846aca205ba432874. It is on 7b7a8df6c and includes the accepted D36 counter. Baseline md5s: `phase3/d39/baseline_md5_d36_counter.txt`.
+
+**Build:**
+- `SlabField::strips_load` (`adaptive/slab_field.rs`) integrates `(strip index, depth)` pairs by the trapezoid. Each pair of neighbouring strips adds `mrr_cross_section_mm2(mean depth, pitch)`; a gap adds nothing.
+- Callers: `MaterialGrid::slab_strips_load` (`adaptive/material_grid.rs:222–229`), and `swept_width_on` (`adaptive/search.rs:831`, the read; `:835`, the research counter's own-cells read).
+
+**Sentries** (`adaptive/search.rs`, `engagement_measure_tests`):
+- `the_field_load_at_a_full_pass_is_the_swept_width`: bit for bit equal to `compute_swept_width` at stepovers of 1–6 cells. GREEN.
+- `a_thin_layer_reads_its_depth_over_the_pass`: `t / DPP` of the full-depth load within the `f32` precision of the tops. GREEN.
+
+**Gates:**
+- Both core clippy commands clean.
+- Emission parity green, plain and research.
+- Field OFF: the base rows of the slope and shelf tests are unchanged (911 / 2794 / 1155 moves, same counts). The change sits only inside the field branch.
+
+**Tests (judge: C18's per-strip area judge):**
+
+| | before (D34 strip sum) | after (D39 trapezoid) |
+|---|---|---|
+| slope, spiral_pick, field: over / moves / entries | 0 / 1929 / 22 | 0 / 1880 / 19 |
+| slope, AgentSearch, field | 239 | 239 |
+| shelf, oneway, field: over / moves | 0 / 2904 | 0 / 2779 |
+| shelf, spiral_pick, field: over / moves | 0 / 1225 | **5** / 1113 (exact load peaks 0.871, 0.512, 0.526, 0.535, 0.475) |
+
+**Readings:**
+1. **The off-by-one cell was not the slope's cost.** Moves fall only from 1929 to 1880 against the base's 911. The slope's extra moves have another cause, not yet found.
+2. **The shelf test goes RED (spiral_pick 0 → 5).** With the trapezoid the planner reads the band at the width read's quantum (`(n − 1) · cell`), up to one cell under the true width. The judge integrates at 0.05 mm, close to the true width.
+   - The D34 strip sum read one cell OVER the width read, and that hid this margin: the planner held steps a cell narrower than the ceiling, and the judge saw them under the bound.
+   - Of the five overs:
+     - three meet the band beside the shelf's north side, with earlier passes 2.5 mm above (moves 670, 775, 798; exact widths 0.69–0.82, loads 0.475–0.535);
+     - one is move 374 again (§18.7);
+     - one is move 341, a lowered-feed move (F 374) at load 0.871 that the judge does not match as a turn.
+   - Load 0.53 at a width of 0.8 means the judge sees about 4 mm of stock there, not the 2.5 that the earlier passes leave. So some strips of those discs meet stock up to the Z 10 top. I have not found why the planner reads less there.
+3. So D39 makes the planner's full-pass read equal to the flat width read, as ruled. On the shelf, the margin the old over-read gave is gone, and the planner/judge disagreement of §18.7 is back.
+
+### 18.13 The shelf probe after D39 (read only, time-boxed; 2026-10-27)
+
+**What I could measure, and what I could not.** The per-strip tops at moves 670, 775 and 798 live inside the 2D planner and inside the oracle's lattice. Neither prints them. Printing them is a code change, and this probe is read only. So this section gives the cause that the CODE proves. It then names the one probe line that would put the tops side by side, if the lead wants numbers.
+
+**Why the planner reads the band lower: neither the lattice quantum nor the stamp order. The field branch drops the sub-cell (fringe) reading that the flat grid already has.**
+1. **The read.** The flat pass load guards slivers thinner than a cell: `measure_step` calls `compute_swept_width_with_slivers` (`adaptive/search.rs:1201`) against `sliver_ceiling`. That reads the fringe's standing sub-points (`SUB × SUB` per cell, G-ADAPTPASSLOAD round 3). The field branch of `swept_width_on` (`adaptive/search.rs:884`) returns before the `slivers` flag is read. **Under the field the sliver guard is gone.**
+2. **The stamp.** `SlabCells::lower` (`adaptive/material_grid.rs:51`, called at `:461` and `:556`) lowers a cell's ONE top to `tip + h` whenever the cell's CENTRE is under the cutter (`height(d_sq)` is `Some` for `d_sq ≤ R²`, `:57`). A cell whose centre is just inside an earlier pass's disc gets the pass's top over its whole area, while part of its area lies outside that disc, where the stock still stands to the top. The 3D stock has the opposite rule: its sliver-safe bound is lowered only for a cell the cutter covers completely (`dexel_stock/stamping.rs:344`, `FULL_COVERAGE`, applied at `:723`).
+3. **The start tops.** `research_slab_field` seeds the tops from the centre column, `top_z_at` (`adaptive3d/clearing.rs:3096`), not from the sliver-safe `conservative_top_at` (`stock/dexel.rs:752`). That is the same loss again, inherited from the 3D planner's own earlier stamps.
+
+At the shelf's north band, the earlier Z 7 passes leave a crescent of stock up to Z 10 just outside each disc. The planner (one top per cell, lowered by centre) reads it as cut to 7: depth 2.5. The judge (0.05 lattice) sees the crescent at depth 5.5. That fits the judge's loads: 0.475–0.535 at widths 0.69–0.82 means an average depth near 4 mm across the strips, between 2.5 and 5.5.
+
+**Move 341 (F 374, judge load 0.871):**
+- 374 = 1000 · 0.374, and `turn_feed_factor = c / engaged` gives engaged = 0.3626 / 0.374 = 0.97. So the move carries a record's lowered feed: a turn or a departure admitted over the ceiling and fed down.
+- The judge exempts only moves that `turn_moves` (`tests/adaptive3d_geodesic_arm_c12.rs:497`) matches on `research.turns`. The callers pass `&research.turns` only (`:2200`, `:2291`). The departure records are a separate summary (`Research3d::departures`, `adaptive3d/mod.rs:931`).
+- So a fed-down departure (or a turn whose emitted ends moved off its 2D segment) is judged as a plain cut. This is a judge-side gap (C18 and C12), not a planner load fault: the move's feed already holds its load.
+
+**Proposal (a): close the gap with the codebase's own sliver-safe rule (no new number):**
+1. The stamp lowers a cell's top only where the cutter covers the whole cell. On the fringe lattice the grid already keeps (`sub_offset`, `SUB`), that means every sub-point of the cell is under the cutter: the 2D image of `FULL_COVERAGE`. A partly covered cell keeps its top.
+2. The field's start tops read `conservative_top_at`, not `top_z_at`.
+3. The field branch keeps its trapezoid. The sliver guard then needs no copy: a cell with a crescent of standing stock keeps its full top, and the strip read sees it.
+4. Judge side (C18, C12): exempt the moves of the departure records as the turn records are (fed and capped), or report them apart.
+- **Risk, stated now:** (1) and (2) make the planner read MORE stock: every partly covered cell stays full. The slope's cost (1880 against 911 moves) may rise. The rerun of the slope, the shelf and Corne field-on (through D9) decides.
+
+**If (a) costs more than it holds, (b):** the field stays a research switch, off, and the shelf test's field assert is recorded as a known red, as for G-FACESLAB.
+
+**The lead's ruling (2026-10-27): (a) is the field's next step, parked.** D39 stays held and frozen (md5 6bdce2f997099fd846aca205ba432874). The field stays an off research switch. When it resumes:
+1. Full-coverage stamp: a cell's top is lowered only where every fringe sub-point is under the cutter.
+2. Start tops from `conservative_top_at`.
+3. The trapezoid as in D39.
+4. The judge gap on departure-fed moves goes to C12 (a DEFECTS row draft is sent).
+
+Risk, kept with the step: the planner reads more stock, so the slope's cost (1880 against 911 moves) may rise. The slope, shelf and Corne field-on reruns decide between (a) and (b).
+
+**One probe line, if the lead wants the tops first:** in the C12 test's judge, print the oracle's per-strip tops at the three moves. Beside them, in a research log, print the planner's per-strip tops at the same read points.
+
+
+## 19. The LargeZ descents (read only until D38 reports; 2026-10-27)
+
+### 19.1 Where the split is, what triggers it, and where its numbers come from
+
+**Where:** `plan_and_emit_region` (`adaptive3d/clearing.rs:4303`), in the lift of each 2D `Cut` (`adaptive3d/clearing.rs:4570–4589`, and the emit at `:4630–4690`):
+- `PLUNGE_SLOPE_LIMIT = 0.3` (`:4570`);
+- `Z_DROP_FLOOR_MM = 1.0` (`:4571`);
+- `z_drop_threshold = max(1.1 · DPP, 1.0)` (`:4572`).
+
+Between two consecutive lifted points, the rule is `shape_split = |dz| > z_drop_threshold || |dz| / xy > 0.3` (`:4589`). A pure-vertical step (no XY) counts as slope ∞.
+
+Under `StepSplit::PathShape` (the default again since §16.14) `large_z = shape_split`. The run up to the step is flushed as a `Cut`, and the step's far point is emitted as an entry (`Adaptive3dSegment::Rapid(p3)`, cause `LargeZ`, or `LargeZHeld` on a held link; `:4672–4685`). `LevelSink::emit` then plans that entry (`plan_entry`):
+- a `RapidWithFloor` with a stock floor;
+- a keep-down proof when the step lies within the stay-down distance;
+- the emitter's `stay_down_link_z` (`adaptive3d/path.rs:1386`) decides keep-down against retract;
+- Part B's router (`routed_entry`) may replace the travel when its full-disc proof holds.
+
+**What triggers it on Corne:** DPP 6.0, so `|dz| > 6.6 mm`, or any slope over 0.3 (about 16.7°) between two points of the draped path. The drape densifies to at most R (`drape_path_to_leave`). So a cut that crosses a feature edge steeper than 16.7° over 3 mm of travel (a rise of more than 0.9 mm per R) is split, whatever the stock does there.
+
+**Where the numbers come from: typed, not derived or cited.**
+- The rule entered in commit 01e383418 ("WIP: AgentSearch investigation (O5b/O5c/O6)", 2026-05-05). Its comment reads "slope > 0.3 (≈17°) — cutter is plunging more…" and "|dz| > one pass depth × 1.1 — pathological…", and its note ("Fix shipped: … `|dz| > depth_per_pass × 1.1` OR `descent_slope > 0.3`") gives no source.
+- The 1 mm floor came later, with the reason in the comment at `:4561–4568` (small DPP over-split), and also no source.
+- `adaptive3d/tests.rs:430` pins the 1.1 factor as a test bound, not as a derivation.
+- By the operator's rule ("never type a number from memory"), all three are unsourced constants. The 1.1 factor and the 1 mm floor are not used anywhere else in the shared code.
+
+**Which strategies split on this rule:** only the strategies planned by `clear_z_level_agent_2d_slice`, that is AgentSearch, ContourSpiral and the research arm (`Geodesic`). ContourParallel (`clear_z_level_contour_parallel`, `:1753`) and Adaptive (`clear_z_level_adaptive`, `:2139`) emit each lifted path whole (`Cut(path_3d)` at `:1948`, `:2100`, `:2289`). They split at no Z step, so the operator's CP baseline does not pay this cost.
+
+**What the shared code could do in place of a retract and plunge-feed entry** (candidates only; the design waits for D38):
+1. **Cut the step as a 3D move under the load read.** This is Part A's place (`StepSplit::StockDepth`). It was ruled off in §16.14, because the width read could not tell a thin descent layer from a load. Under the §18 area load, a descent's layer reads `t / DPP` and a deep side cut stays held. So a Part A that reads the area load (`step_swept_width` replaced by the one per-strip read, §18.2 item 6) could keep the light descents and split only the loaded ones. This needs the slab heights along the step, which the 3D stock already has.
+2. **Route the drop through cleared stock with Part B** (`routed_entry`). It already replaces the TRAVEL when its full-disc proof holds. D38's router-on run says how often the proof holds at LargeZ points.
+3. **Keep the entry, cheaper:** where the step lands on stock, the entry cut is real. D38's air/stock split per cause says how many LargeZ entries plunge into stock (cut needed) and how many into air (the travel is the whole cost).
+4. **Derive the threshold.** The geometric question the split answers is whether the straight chord between the two lifted points gouges the part or runs through uncut stock. The drape already answers the first (the emitter drapes every chord). The planner stock answers the second (`step_axial_depth`, `step_swept_width`). A rule built on those two reads needs no 0.3, 1.1 or 1 mm.
+
+### 19.2 D38: where the LargeZ entries land, and the design (2026-10-27)
+
+D9's D38 (P15 "## D38"):
+- LargeZ is 860 of 1069 op-1 entries, 371.4 s.
+- 82.5 % of that time is vertical peck plunges into stock at the plunge rate (750 mm/min), median drop 5.0 mm.
+- The router changes nothing: it tried 2397 times, took 10, and refused 1711 because the travel crosses stock.
+- By place: outside the case wall 380, switch holes 347 (3–5 per hole), inside the case 133.
+
+**Where they land** (`phase3/fix28/c22/largez_landings.py` → `largez_landings.json`, from the C40 lines; levels Z 17 / 11 / 5 / 0.5, stock top 23, DPP 6):
+
+| landing Z | entries | drop | what it is |
+|---|---|---|---|
+| 4.0 | 185 | 1.5 | a flat face at 3.5 (+ leave), between the levels 5 and 0.5 |
+| 18.5 | 160 | 5.0 | a flat face at 18.0 (+ leave), above the level 17 |
+| 0.5 | 118 | 5.0 | the level floor, on the far side of a crossing |
+| 17.0 | 108 | 6.5 | the level floor, on the far side of a crossing |
+| 17.0–18.5, spread | 289 | 5.1–6.5 | the draped rim between the two (not one flat height) |
+
+**Reading.** Most LargeZ entries come from passes that cross a FLAT face lying between two levels: Z 18.0 above the first level, Z 3.5 between the last two.
+- That face is in the lower level's region: it has stock above its floor. So the 2D loops run across it; the drape lifts them onto it and drops them off its edges, and each drop is a split and a plunge.
+- This is G-FACESLAB at a flat face. One crossing gives one entry per loop per level, which is the lead's reading of the plot.
+
+**Design (in order; option (4) direction, no typed number):**
+1. **Measure first, no code: Detect Flat on Corne (D9).** The shared engine already inserts a Z level at each flat shelf height (`Adaptive3dDepth::detect_flat_areas`, `adaptive3d/path.rs:962`). The Corne job has it off (`fix26/jobs/k_body_cp_edges.toml:147`, `detect_flat_areas = false`).
+   - With it on, the faces at 18.0 and 3.5 are cut flat at their own levels. At the levels below, those cells hold no stock above their floor, so they leave the region and the loops stop crossing them.
+   - P: the landings at 18.5 (160) and 4.0 (185) fall to near 0, and the floor landings that came from those crossings (17.0: 108, 0.5: 118) fall with them. The draped-rim 289 stays.
+   - Cost: two more levels (each cuts only its shelf).
+   - The feature is existing, generic, and on the operator's own job setting, so it adds no number. If P holds, the right step is the operator's choice of the flag, not code.
+2. **For what stays (the draped rim, ~289): replace the typed split rule by the two questions it stands for** (§19.1 item 4):
+   - Does the straight chord between two lifted points gouge? The emitter's drape already answers this; the split need not.
+   - Does the chord run through stock the load cannot take? Read it with the one load definition (the per-strip area load of §18, with D39's trapezoid when the field resumes; on the 3D stock here).
+   - Split only where the step's load is over the ceiling. A step over a draped rim that lands on the rim (light, a thin layer) is cut in place. A step that drops a full pass into fresh stock is still split.
+   - This is Part A on the area load: generic, no 0.3, 1.1 or 1 mm. It touches the same three strategies (AgentSearch, ContourSpiral, the research arm).
+3. **Where a split stays and lands in stock, keep the vertical plunge.** At 750 mm/min a 5 mm plunge takes 0.4 s, and no ramp at the job's 10° is faster (a 5 mm ramp at 10° is 28 mm of travel). So the entry style is not where the time is.
+
+**Not proposed:** a hole as its own region opened by one helix. With Detect Flat, the plate top is cut flat at Z 18.0. At the levels below, each switch hole is already a separate region with no rim to cross, so the 3–5 rim entries per hole should go without a special case. P1 tests that.
+
+### 19.3 The §19 design: no vertical plunge into stock at a split (2026-10-27; no code)
+
+The lead's ruling: each LargeZ entry is a VERTICAL plunge at 750 mm/min (D38: the median move length equals the drop), and 306 s of 371 s goes into stock. That is a tool-safety defect in the "careful" op. **My §19.2 item 3 ("keep the vertical plunge") is withdrawn.**
+
+All numbers are from D38 (P15 "## D38", 19f869e08) and `phase3/fix28/c22/largez_landings.json`.
+
+**Part 0, measure first (no code): Detect Flat on Corne.** This is §19.2 item 1.
+- The faces at Z 18.0 and Z 3.5 between levels cause 345 landings (160 + 185), plus up to 226 floor landings on their far sides (108 + 118): at most 571 of the 860 LargeZ entries, about 246 s by share.
+- If Detect Flat removes those crossings, parts 1–3 work only on what is left.
+
+**Part 1, option (4): no split where the step is light.**
+- Where: `plan_and_emit_region`, the step test at `adaptive3d/clearing.rs:4570–4589`. The typed `shape_split` (0.3, 1.1, 1 mm) is replaced by:
+  - the gouge question, which the emitter's drape already answers;
+  - the load question: the step's per-strip area load (§18; on the 3D planner stock, `step_axial_depth` and the strip read along the step) against the pass ceiling `c`.
+- Split only where the load is over `c`. Otherwise the step stays in the cut as a 3D move.
+- Expected: the LargeZ steps that land in cleared stock. D38 puts 17.5 % of LargeZ time in air, about 65 s, roughly 150 entries by share. The steps that drop into fresh stock read over `c` (a full-depth descent reads near a slot) and stay split: part 2 handles them.
+- Shared code: the lift in `plan_and_emit_region`, used by AgentSearch, ContourSpiral and the research arm.
+- No new number: `c`, DPP and the one load function.
+
+**Part 2: where a split stays, enter through the shared entry code; never a vertical plunge into stock.**
+- Where: the entry emitter `adaptive3d/path.rs:1799–1830`. It emits `params.entry_style` for every entry; Plunge is `emit_peck_plunge`.
+- Rule: an entry whose descent passes through planner stock (`descent_floor > entry.z`, the existing test at `:1799`) and that comes from a split takes the job's ramp. That is `crate::dressup::emit_ramp` with the job's `ramp_angle_deg` (Corne: 10°), the existing `entry_safety` stock awareness (G-RAMPTERRAIN), and the direction of the cut that follows (not the fixed `(1.0, 0.0)` of `:1820`). Where the ramp does not fit, it takes `emit_helix` at the starter's radius `R` (the 2D starter lap). The split's entry carries a marker so that the emitter knows it.
+- Expected: removes every vertical plunge into stock at a split, 306 s of plunges (about 700 entries after part 1).
+- Cost: stated, not hidden. A 5 mm drop at 10° is 28.4 mm of ramp. At the plunge rate (750 mm/min) that is 2.3 s, against 0.4 s for the peck. Along the following cut, part of that travel is cut the pass needs anyway. Upper bound: about +1300 s on Corne op 1 before Part 0. The D-run measures it.
+- Shared code: the 3D entry emitter, used by every Adaptive3d strategy. The rule acts only on split entries, which AgentSearch, ContourSpiral and the arm make.
+
+**Part 3: the switch holes (347 entries, 3–5 per hole).**
+- A per-hole region with one helix is better than one re-entry per wrap crossing: one entry per hole per level against 3–5.
+- It should come from Part 0 with no special code. Once the plate top (the Z 18.0 face) is cut at its own shelf level, a hole whose walls stand above a lower level is its own region at that level. The arm's region entry is the starter pocket's helical lap.
+- If Part 0 leaves the holes joined to a larger region (a hole open to the case interior below the plate), the crossings stay, and parts 1–2 apply to them. I propose no hole-specific code before the Part 0 run shows which.
+
+**Part 4: the Reentry2d/Turn row (90 entries at y = −68.264).**
+- It is one rule: one re-entry per wrap per level, at each open wrap's start on the ledge edge, 20 per level at Z 11 / 5 / 0.5.
+- The join is classed `JoinClass::Turn` at plan time (`adaptive/research_geodesic.rs:5606`): the turn fits the bound and the region. A Turn-class join becomes a 2D re-entry in only two places:
+  - (i) the one-way return: the keep-down `Link`s back along the arc just cut, judged by `feed_link_checked`, where "a refused one becomes a re-entry" (`:5589–5604`);
+  - (ii) the replay refusing the turn step itself (the C22a replay; `LinkLoad::admits_turn`).
+- The CLI log prints no per-join record of which one, and the turn records it prints are only the unfed ones. So the records alone cannot answer it.
+- D38's 56 % air share for this cause fits (i): the return runs over the band just cut. Proof needs one research log line per Turn-class join that ends in a re-entry, naming (i) or (ii) and the refusing reading. I propose that probe for the next D-run.
+
+**Sentries:**
+- Part 1: `the_stock_read_split_holds_the_exact_bound_on_draped_steps`, rerun with the area load: 0 over, and splits avoided > 0 on the descents into cleared stock.
+- Parts 1–2: a new sentry, **"no vertical plunge into stock at a split"**. On the shelf fixture and on a stepped-face fixture (a face between two levels): every entry move after a split that removes stock in the simulation has XY travel (it is not vertical).
+- Part 0: none (a job setting). Part 4: the probe line, then a sentry once the cause is known.
+
+**Parity plan:**
+- Parts 1 and 2 go behind generic parameters, off for every shipped strategy:
+  - part 1 is `Adaptive3dLinking::step_split`, the existing switch, now reading the area load;
+  - part 2 is one new linking parameter for the split entry. Its default is the job's entry style, which gives byte parity.
+- The research arm turns them on first.
+- `adaptive3d_emission_byte_parity` (plain and research) and the C12 field-off tests must stay byte-identical with the switches off.
+- AgentSearch and ContourSpiral adopt each part in its own later step, with a byte-parity check of the switch-off path and their own sentries.
+
+#### 19.3.1 The lead's rulings on §19.3, and the parts they change (2026-10-27; no code)
+
+- **Part 0 is ordered as D42** (D9): Detect Flat on op 1, for the arm at stepovers 1.2 and 2.1, and for CP at 1.2 (the flag must be fair to both).
+- **Part 2 is amended by the lead's ruling:** a plunge into stock stays only where its drop into stock is ≤ DPP, at the op's plunge feed, the same rule as the shipped entries. Otherwise the entry goes through the shared ramp/helix code.
+
+**How the design guarantees the bound:**
+- The shipped peck already holds each stroke to DPP. `emit_peck_plunge` (`adaptive3d/path.rs:164`) feeds down from `ladder_start` in steps of `dpp` (`:180`, `while current_z − entry.z > dpp`) at `params.plunge_rate`, with a retract between strokes. No single feed stroke is longer than DPP.
+- The split entry's stock depth is known before it is emitted: `descent_floor − entry.z`, where `descent_floor = descent_start_z(rapid_floor_z, …)` (`adaptive3d/path.rs:1531`, called at `:1748`).
+- `rapid_floor_z` is the planner's conservative (sliver-safe) stock top over the entry floor disc, `max_conservative_top_z_in_disc` (`adaptive3d/clearing.rs:1185`, in `plan_entry` `:1177`). That read errs high by construction, so `descent_floor − entry.z` is an upper bound on the stock the plunge cuts.
+- **Rule (Part 2, amended):** a split entry with `descent_floor − entry.z ≤ DPP` keeps the job's plunge (one stroke at the plunge feed, the shipped rule). A deeper one takes `emit_ramp` (or `emit_helix` where the ramp does not fit), as §19.3 Part 2. No new number: DPP and the plunge feed are the op's.
+- **The limit of the guarantee:** it is only as true as the planner stock. The three Corne rapid collisions (§16.12, a rapid floor under the simulated stock at (91.3, −1.13)) show one place where the planner stock reads low. There the bound could be exceeded without the planner knowing. That defect is open (the D32 probes target it). The bound is no stronger than its fix.
+- **D38's numbers under the amended rule:**
+  - most LargeZ drops are 5.0 mm (≤ 6), and their stock depth is at most the drop, so they keep the plunge at one stroke;
+  - the 17.0 landings drop 6.5 mm from Z 23.5, but their stock depth is 23 − 17 = 6.0 = DPP, so they also stay;
+  - so the amended Part 2 converts few entries on Corne at DPP 6. Its main effect is to forbid any multi-stroke peck into stock at a split. The D-run counts them (D38 has 1609 moves for 860 entries, so some entries are ladders).
+
+**Part 2's conversion: OPEN, deferred by the lead (2026-10-27).** Ramp or helix for split entries whose plunge cuts more than DPP of stock.
+- Corne D38: 0 such entries (the deepest drop is 6.5 = DPP + the 0.5 buffer).
+- wanaka: at most 184 (a drop over DPP + 0.5 in the C40 lines of fix22 and fix25; an upper bound, since the drop includes air).
+- Missing for a plunge-style job: the op's ramp angle in `Adaptive3dParams`, a floor read over the ramp/helix footprint (`plan_entry` reads `R` for plunge), and the planner's stamp mirror of the sweep. The direction fix (`adaptive3d/path.rs:1820`) goes with it.
+- D43 keeps the counter (`SplitStats::split_entries_over_dpp`) and the sentry `no_split_entry_plunges_more_than_a_pass_into_stock`.
+
+**Part 1 (option (4), Part A on the area load), the design:**
+- **Where:** the step test in `plan_and_emit_region`, `adaptive3d/clearing.rs:4570–4630`. `StepSplit::StockDepth` (`:4592`) already reads `step_axial_depth` (`:1346`) and `step_swept_width` (`:1375`). The width read is replaced by the one load: a new shared `step_load(stock, p, q, R, ...)` beside them. Along the step at half-cell samples (as `step_swept_width` does), it takes the cells of the disc whose conservative top stands above the sample's tip. It bins them in lateral strips one stock cell apart, keeping the deepest depth per strip. It integrates them by the trapezoid with the cutter's `geometry_hint().mrr_cross_section_mm2` over that of `(DPP, D)`. That is the same function and the same trapezoid as `SlabField::strips_load` (`adaptive/slab_field.rs`), which becomes a free function both call. The step splits when its load is over `c` (`pass_engagement_limit` → radial fraction, as at `:4596`).
+- **What leaves the code:** `shape_split`'s 0.3, 1.1 and 1 mm (`:4570–4572`) for the arm's rule. They stay only as the `PathShape` default, for byte parity.
+- **The gouge question:** a chord between two draped points can cut the part between them. The emitter re-drapes every emitted chord (`drape_path_to_leave`), so the cut follows the part. The split rule no longer needs to guard it.
+- **Sentries:**
+  - `the_stock_read_split_holds_the_exact_bound_on_draped_steps` and `the_width_read_splits_a_wide_draped_step` move to the load read: 0 over (C18's area judge), splits avoided > 0.
+  - New: a step that drops into cleared stock is kept (no entry); a step that drops a full pass into fresh stock is split.
+  - New, with Part 2: "no multi-stroke plunge into stock at a split".
+  - Shared: `the_field_load_at_a_full_pass_is_the_swept_width` stays the definition's sentry for the free `strips_load`.
+- **Parity:**
+  - `StepSplit::PathShape` stays every strategy's default, so shipped output is byte-identical (`adaptive3d_emission_byte_parity`, plain and research).
+  - The arm takes `StockDepth` on the load only through `RS_CAM_RESEARCH_STEP_SPLIT=stock_depth` or the parameter, still off by default until a D-run decides.
+  - AgentSearch and ContourSpiral adopt it in separate parity steps.
+- **Build:** nothing until D42 reports, as ruled.
+
+### 19.4 D43 built; the face-only level (design only); D42 noted (2026-10-27)
+
+**D43** (`phase3/d43/tree_vs_2039cf275.patch`, md5 e5fae4c00ae1db8d0c8bccd5e6bd44a1; my hunks only). It applies to a clean 2039cf275 and in either order with C12's D44 (`git apply --cached --check` on a temporary index). Baseline md5s are in `phase3/d43/baseline_md5_7b7a8df6c.txt`. Not committed.
+- **Shared load:** `adaptive::slab_field::strips_chip_load`, a free function. It integrates the strips by the trapezoid with `ToolGeometryHint::mrr_cross_section_mm2`, over that of `(DPP, D)`. Lib sentries:
+  - `a_full_pass_reads_the_extent_over_the_diameter`: bit for bit, 1–13 centres, flat and V-bit;
+  - `a_thin_layer_reads_its_depth_over_the_pass_and_a_gap_adds_nothing`.
+  - `SlabField::strips_load` is left as in D34 (the field is parked). D39's rebase moves it onto this function.
+- **Part 1:** `adaptive3d/clearing.rs::step_load` (with `StepLoadCutter`: the profile LUT, the chip contract, D and DPP) reads the step's chip-area load on the 3D planner stock. The `StepSplit::StockDepth` branch splits on `deep || step_load > c`. `step_swept_width` (the §16.9 width) is removed.
+- **Part 2 (counter only):** at each split entry, `SplitStats::{split_entries, split_entries_over_dpp, max_split_entry_stock_mm}` record the planner's conservative stock depth below the entry. One log line, "C22 split entries (stock below the entry, planner read)".
+  - The patch notes name the limit: the read is only as true as the planner stock, and §16.12's Corne rapid collisions are the known place where it reads low.
+  - **The ramp/helix conversion of entries deeper than DPP is not built.** On Corne D38, 0 split entries are deeper than DPP (the deepest drop is 6.5 = DPP + the 0.5 buffer). On wanaka, 184 have a drop over DPP + 0.5 (an upper bound: the drop includes air).
+  - Building it safely needs three things the 3D emitter lacks under `EntryStyle3d::Plunge`: the op's ramp angle (not in `Adaptive3dParams` for a plunge job), a floor read over the ramp or helix footprint (`plan_entry` reads `entry_floor_radius = R` for plunge), and a stamp mirror of the ramp or helix sweep.
+  - I ask the lead's ruling before building it. The direction fix (the next cut's direction, not `(1.0, 0.0)` at `adaptive3d/path.rs:1820`) belongs to that build.
+- **Part 4 probe:** "C22 2D re-entry cause" (`adaptive/path.rs`):
+  - at the capped walk's re-entry: "step refused" with the refused step's end, its reading, `c`, the planned turn it lay on (`LinkLoad::turn_under`, its length) and `turn_bound`; or "no link holds";
+  - at `replay_kept_segments`' refused link: "link refused" with its start.
+  - It prints only when the plan has turns (the research arm), so a shipped path prints nothing. It also prints in the C29 scratch variants and the F-038 forecasts; join it to the C37 lines by XY.
+- **Sentry:** `no_split_entry_plunges_more_than_a_pass_into_stock` (heavy; the stepped face of `stepped_face()` and the shelf; the arm under `PathShape` and under `StockDepth`).
+  - Every vertical `EntryPlunge` stroke that removes stock is at most DPP long (+ one sim cell), and no split entry reads deeper than DPP.
+  - GREEN. The deepest stroke is 6.000 = DPP. I checked once that it goes red when the bound is tightened.
+  - Numbers, `PathShape` → `StockDepth` (load): stepped face, entries 59 → 34 and split entries 77 → 28; shelf, entries 87 → 46 and split entries 126 → 21.
+- **Gates:**
+  - both core clippy commands clean;
+  - `adaptive3d_emission_byte_parity` green (plain and research);
+  - the plain C12 tests green; both Part A tests green on the load read (draped steps 0 over; shelf splits by load 11 / 21, spiral_pick over 1 against the base's 3);
+  - the field-off and default paths are untouched (Part 1 changes only the `StockDepth` branch, Part 2 and Part 4 are research logs).
+
+**The face-only level (design only):**
+- **Does `detect_flat_areas` carry the face region?** No. `flat_shelf_levels` (`adaptive3d/path.rs:37`) returns Z values only (`Vec<f64>`). The face is implicit: the heightmap cells whose surface Z falls in the shelf's histogram bin. It is thrown away once the level's Z is chosen (`:966–981`).
+- **Could the region builder limit the level to it?** Yes, with a part that already exists: the per-level `AreaMask`.
+  - `build_material_bool_grid` and `level_gate` (`adaptive3d/clearing.rs`) already take `mask: Option<&AreaMask>` (By Area), and `clear_z_level_agent_2d_slice` passes it through.
+  - A face-only level would carry a mask of the cells whose drop-cutter surface (tool-centre space, the heightmap the region already reads) lies in the shelf's bin. Those are the centres that ride on the face.
+  - The level then clears only the stock above the face, and at the lower levels the face cells hold no stock above their floor, so the loops no longer cross them.
+  - No new number: the bin is the existing histogram bin (`tolerance.max(0.05)`).
+- **Which strategies share it:** every Adaptive3d strategy. The Z plan (`step_levels` + `flat_shelf_levels`) and the level region (`build_material_bool_grid` with its mask) are shared by CP, Adaptive, AgentSearch, ContourSpiral and the arm.
+- **Against Part 1, on the numbers:**
+  - D42's full flat levels removed the face landings (Z 18.5: 160 → 7; Z 4.0: 185 → 12; LargeZ time 371 → 101 s at s1.2). But they cost +226 s (op 1), +348 s (op 5) and +249 s (the copy op), because each flat level plans the whole slice.
+  - A face-only level keeps the removal and pays only for the face cells' slab. The histogram count of the bin, over the total cells, bounds that cost; D42's log does not print it.
+  - Part 1 works on every step, flat face or not (the rim's 289 too). On the fixtures it halves the entries. Its Corne numbers come from the D43 run.
+  - My reading: they are complementary. Part 1 is the general rule; the face-only level removes the flat-face crossings before Part 1 has to judge them. Build Part 1's run first; design the face-only level's mask only if Corne still shows face landings with Part 1 on.
+
+**G-LEVELPHASE note (the lead's item 3):** with Detect Flat on, the s2.1 copy op was refused at export (deflection gate). Shifting the levels can push the copy op over the tool limit, not only cost time. Any level change (a full flat level, a face-only level, Part 1's changed splits) must be judged on the copy op's gates as well as on op 1.

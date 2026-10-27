@@ -1,0 +1,1812 @@
+{
+  "toolpath_id": 1,
+  "toolpath_name": "3D Rough 1",
+  "operation_type": "3D Adaptive",
+  "op_kind": "adaptive3d",
+  "tool": "6mm 2F flat",
+  "move_count": 845,
+  "cutting_distance_mm": 3788.108358093917,
+  "rapid_distance_mm": 729.6418061112869,
+  "debug_trace": {
+    "schema_version": 1,
+    "toolpath_name": "3D Rough 1",
+    "operation_label": "3D Adaptive",
+    "summary": {
+      "total_elapsed_us": 27337517,
+      "span_count": 26,
+      "hotspot_count": 0,
+      "dominant_span_kind": "core_generate",
+      "dominant_span_label": "3D Adaptive",
+      "dominant_span_elapsed_us": 27329450
+    },
+    "spans": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "core_generate",
+        "label": "3D Adaptive",
+        "start_us": 6,
+        "elapsed_us": 27329450,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 0,
+        "move_end": 937,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "surface_heightmap",
+        "label": "Surface heightmap",
+        "start_us": 977,
+        "elapsed_us": 27308014,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "cols": 307.0,
+          "rows": 224.0
+        }
+      },
+      {
+        "id": 3,
+        "parent_id": 1,
+        "kind": "border_clear",
+        "label": "Border clear",
+        "start_us": 22587,
+        "elapsed_us": 27286261,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "cells": 530.0
+        }
+      },
+      {
+        "id": 4,
+        "parent_id": 1,
+        "kind": "z_level_plan",
+        "label": "Compute Z levels",
+        "start_us": 136010,
+        "elapsed_us": 27172837,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "count": 4.0,
+          "level_top": 23.0,
+          "z_bottom": 0.5,
+          "z_top": 17.0
+        }
+      },
+      {
+        "id": 5,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 17.000 (1/4)",
+        "start_us": 137434,
+        "elapsed_us": 14067312,
+        "xy_bbox": null,
+        "z_level": 17.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 52387.0,
+          "floor_cells_surf_above": 16381.0,
+          "floor_cells_total": 68768.0,
+          "floor_cells_with_material": 42277.0,
+          "floor_cells_with_material_post": 41485.0,
+          "material_remaining_post": 0.7918949357665069,
+          "material_remaining_pre": 0.8070131902953023,
+          "planner_cut_mm": 146.16699259470934,
+          "planner_cut_path_points": 567.0,
+          "planner_cut_segments": 48.0,
+          "planner_link_segments": 0.0,
+          "planner_rapid_segments": 28.0
+        }
+      },
+      {
+        "id": 6,
+        "parent_id": 1,
+        "kind": "z_level",
+        "label": "Z 17.000",
+        "start_us": 137731,
+        "elapsed_us": 14066883,
+        "xy_bbox": null,
+        "z_level": 17.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "agent_walk_cut_length_mm": 198.71345866304526,
+          "coalesced_entries_f038": 37.0,
+          "cut_segments": 48.0,
+          "dropped_short_regions_f038": 7914.0,
+          "perimeter_sweep_length_mm": 0.0,
+          "region_count": 1.0,
+          "remaining_before": 0.8529839460214053
+        }
+      },
+      {
+        "id": 7,
+        "parent_id": 6,
+        "kind": "agent2d_region",
+        "label": "region 1/1 @ Z 17.000",
+        "start_us": 138369,
+        "elapsed_us": 14066222,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 8,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 17.000",
+        "start_us": 14204766,
+        "elapsed_us": 4902,
+        "xy_bbox": null,
+        "z_level": 17.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 2.0
+        }
+      },
+      {
+        "id": 9,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 11.000 (2/4)",
+        "start_us": 14209675,
+        "elapsed_us": 7684404,
+        "xy_bbox": null,
+        "z_level": 11.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 52374.0,
+          "floor_cells_surf_above": 16394.0,
+          "floor_cells_total": 68768.0,
+          "floor_cells_with_material": 42264.0,
+          "floor_cells_with_material_post": 41836.0,
+          "material_remaining_post": 0.798793294382709,
+          "material_remaining_pre": 0.8069652881200595,
+          "planner_cut_mm": 119.4020664971279,
+          "planner_cut_path_points": 749.0,
+          "planner_cut_segments": 20.0,
+          "planner_link_segments": 0.0,
+          "planner_rapid_segments": 1.0
+        }
+      },
+      {
+        "id": 10,
+        "parent_id": 1,
+        "kind": "z_level",
+        "label": "Z 11.000",
+        "start_us": 14209999,
+        "elapsed_us": 7683913,
+        "xy_bbox": null,
+        "z_level": 11.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "agent_walk_cut_length_mm": 119.40206649712796,
+          "coalesced_entries_f038": 0.0,
+          "cut_segments": 20.0,
+          "dropped_short_regions_f038": 372.0,
+          "perimeter_sweep_length_mm": 0.0,
+          "region_count": 3.0,
+          "remaining_before": 0.707567473243369
+        }
+      },
+      {
+        "id": 11,
+        "parent_id": 10,
+        "kind": "agent2d_region",
+        "label": "region 1/3 @ Z 11.000",
+        "start_us": 14227641,
+        "elapsed_us": 6258,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 12,
+        "parent_id": 10,
+        "kind": "agent2d_region",
+        "label": "region 2/3 @ Z 11.000",
+        "start_us": 14233901,
+        "elapsed_us": 5137,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 13,
+        "parent_id": 10,
+        "kind": "agent2d_region",
+        "label": "region 3/3 @ Z 11.000",
+        "start_us": 14239039,
+        "elapsed_us": 7654861,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 14,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 11.000",
+        "start_us": 21894090,
+        "elapsed_us": 3490,
+        "xy_bbox": null,
+        "z_level": 11.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 1.0
+        }
+      },
+      {
+        "id": 15,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 5.000 (3/4)",
+        "start_us": 21897583,
+        "elapsed_us": 4993595,
+        "xy_bbox": null,
+        "z_level": 5.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 52374.0,
+          "floor_cells_surf_above": 16394.0,
+          "floor_cells_total": 68768.0,
+          "floor_cells_with_material": 42264.0,
+          "floor_cells_with_material_post": 41835.0,
+          "material_remaining_post": 0.7987742009393974,
+          "material_remaining_pre": 0.8069652881200595,
+          "planner_cut_mm": 72.39115049383494,
+          "planner_cut_path_points": 428.0,
+          "planner_cut_segments": 19.0,
+          "planner_link_segments": 0.0,
+          "planner_rapid_segments": 1.0
+        }
+      },
+      {
+        "id": 16,
+        "parent_id": 1,
+        "kind": "z_level",
+        "label": "Z 5.000",
+        "start_us": 21897779,
+        "elapsed_us": 4993118,
+        "xy_bbox": null,
+        "z_level": 5.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "agent_walk_cut_length_mm": 72.39115049383501,
+          "coalesced_entries_f038": 0.0,
+          "cut_segments": 19.0,
+          "dropped_short_regions_f038": 4890.0,
+          "perimeter_sweep_length_mm": 0.0,
+          "region_count": 3.0,
+          "remaining_before": 0.7062441833410888
+        }
+      },
+      {
+        "id": 17,
+        "parent_id": 16,
+        "kind": "agent2d_region",
+        "label": "region 1/3 @ Z 5.000",
+        "start_us": 21914875,
+        "elapsed_us": 5824,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 18,
+        "parent_id": 16,
+        "kind": "agent2d_region",
+        "label": "region 2/3 @ Z 5.000",
+        "start_us": 21920699,
+        "elapsed_us": 4957,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 19,
+        "parent_id": 16,
+        "kind": "agent2d_region",
+        "label": "region 3/3 @ Z 5.000",
+        "start_us": 21925657,
+        "elapsed_us": 4965194,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 20,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 5.000",
+        "start_us": 26891264,
+        "elapsed_us": 3705,
+        "xy_bbox": null,
+        "z_level": 5.0,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 1.0
+        }
+      },
+      {
+        "id": 21,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 0.500 (4/4)",
+        "start_us": 26894973,
+        "elapsed_us": 410058,
+        "xy_bbox": null,
+        "z_level": 0.5,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 19887.0,
+          "floor_cells_surf_above": 48881.0,
+          "floor_cells_total": 68768.0,
+          "floor_cells_with_material": 9777.0,
+          "floor_cells_with_material_post": 9777.0,
+          "material_remaining_post": 0.49162769648514104,
+          "material_remaining_pre": 0.49162769648514104,
+          "planner_cut_mm": 0.0,
+          "planner_cut_path_points": 0.0,
+          "planner_cut_segments": 0.0,
+          "planner_link_segments": 0.0,
+          "planner_rapid_segments": 0.0
+        }
+      },
+      {
+        "id": 22,
+        "parent_id": 1,
+        "kind": "z_level",
+        "label": "Z 0.500",
+        "start_us": 26895206,
+        "elapsed_us": 409694,
+        "xy_bbox": null,
+        "z_level": 0.5,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "agent_walk_cut_length_mm": 0.0,
+          "coalesced_entries_f038": 0.0,
+          "cut_segments": 0.0,
+          "dropped_short_regions_f038": 2.0,
+          "perimeter_sweep_length_mm": 0.0,
+          "region_count": 3.0,
+          "remaining_before": 0.7057788506281991
+        }
+      },
+      {
+        "id": 23,
+        "parent_id": 22,
+        "kind": "agent2d_region",
+        "label": "region 1/3 @ Z 0.500",
+        "start_us": 26911623,
+        "elapsed_us": 5532,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 24,
+        "parent_id": 22,
+        "kind": "agent2d_region",
+        "label": "region 2/3 @ Z 0.500",
+        "start_us": 26917156,
+        "elapsed_us": 4915,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {
+          "forecast_cut_length_mm": 0.0,
+          "skipped_f038": 1.0
+        }
+      },
+      {
+        "id": 25,
+        "parent_id": 22,
+        "kind": "agent2d_region",
+        "label": "region 3/3 @ Z 0.500",
+        "start_us": 26922072,
+        "elapsed_us": 382808,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 844,
+        "move_end": 844,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 26,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 0.500",
+        "start_us": 27305036,
+        "elapsed_us": 3795,
+        "xy_bbox": null,
+        "z_level": 0.5,
+        "move_start": null,
+        "move_end": null,
+        "exit_reason": null,
+        "counters": {
+          "contours": 31.0,
+          "traced": 0.0
+        }
+      }
+    ],
+    "hotspots": [],
+    "annotations": [
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 17.0 (1/4)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 0 — plunge entry at (55.3, -49.8) Z 17.0"
+      },
+      {
+        "move_index": 97,
+        "label": "Pass 1 — keep-down link at (72.8, -83.8) Z 17.0"
+      },
+      {
+        "move_index": 112,
+        "label": "Pass 2 — plunge entry at (25.2, -105.7) Z 18.5"
+      },
+      {
+        "move_index": 118,
+        "label": "Pass 3 — keep-down link at (27.3, -106.2) Z 17.6"
+      },
+      {
+        "move_index": 123,
+        "label": "Pass 4 — keep-down link at (27.5, -105.7) Z 17.9"
+      },
+      {
+        "move_index": 127,
+        "label": "Pass 5 — keep-down link at (28.0, -105.9) Z 17.7"
+      },
+      {
+        "move_index": 131,
+        "label": "Pass 6 — keep-down link at (28.1, -105.2) Z 18.2"
+      },
+      {
+        "move_index": 136,
+        "label": "Pass 7 — plunge entry at (141.3, -48.8) Z 17.0"
+      },
+      {
+        "move_index": 151,
+        "label": "Pass 8 — keep-down link at (150.0, -72.4) Z 18.0"
+      },
+      {
+        "move_index": 155,
+        "label": "Pass 9 — keep-down link at (149.4, -71.6) Z 18.5"
+      },
+      {
+        "move_index": 160,
+        "label": "Pass 10 — keep-down link at (149.9, -74.4) Z 17.2"
+      },
+      {
+        "move_index": 168,
+        "label": "Pass 11 — keep-down link at (148.2, -75.1) Z 18.0"
+      },
+      {
+        "move_index": 172,
+        "label": "Pass 12 — keep-down link at (148.8, -75.4) Z 17.4"
+      },
+      {
+        "move_index": 178,
+        "label": "Pass 13 — keep-down link at (149.8, -73.4) Z 17.6"
+      },
+      {
+        "move_index": 182,
+        "label": "Pass 14 — keep-down link at (149.8, -72.0) Z 18.1"
+      },
+      {
+        "move_index": 186,
+        "label": "Pass 15 — keep-down link at (149.4, -71.9) Z 18.5"
+      },
+      {
+        "move_index": 190,
+        "label": "Pass 16 — keep-down link at (147.8, -75.0) Z 18.5"
+      },
+      {
+        "move_index": 194,
+        "label": "Pass 17 — keep-down link at (150.1, -74.0) Z 17.1"
+      },
+      {
+        "move_index": 200,
+        "label": "Pass 18 — keep-down link at (149.1, -73.1) Z 18.4"
+      },
+      {
+        "move_index": 204,
+        "label": "Pass 19 — keep-down link at (150.0, -73.2) Z 17.6"
+      },
+      {
+        "move_index": 208,
+        "label": "Pass 20 — keep-down link at (150.0, -74.7) Z 17.0"
+      },
+      {
+        "move_index": 214,
+        "label": "Pass 21 — keep-down link at (149.7, -75.3) Z 17.0"
+      },
+      {
+        "move_index": 220,
+        "label": "Pass 22 — keep-down link at (148.6, -75.3) Z 17.8"
+      },
+      {
+        "move_index": 225,
+        "label": "Pass 23 — keep-down link at (149.3, -74.6) Z 17.5"
+      },
+      {
+        "move_index": 230,
+        "label": "Pass 24 — keep-down link at (149.1, -75.6) Z 17.0"
+      },
+      {
+        "move_index": 236,
+        "label": "Pass 25 — keep-down link at (149.1, -73.6) Z 18.1"
+      },
+      {
+        "move_index": 240,
+        "label": "Pass 26 — keep-down link at (148.4, -74.3) Z 18.4"
+      },
+      {
+        "move_index": 244,
+        "label": "Pass 27 — keep-down link at (149.6, -72.2) Z 18.2"
+      },
+      {
+        "move_index": 249,
+        "label": "Pass 28 — plunge entry at (20.3, -105.6) Z 17.5"
+      },
+      {
+        "move_index": 249,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 329,
+        "label": "Pass 29 — plunge entry at (26.3, -96.6) Z 17.0"
+      },
+      {
+        "move_index": 454,
+        "label": "Adaptive Z 11.0 (2/4)"
+      },
+      {
+        "move_index": 454,
+        "label": "Pass 30 — plunge entry at (51.3, -50.8) Z 11.0"
+      },
+      {
+        "move_index": 602,
+        "label": "Pass 31 — plunge entry at (26.3, -96.6) Z 11.0"
+      },
+      {
+        "move_index": 602,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 727,
+        "label": "Adaptive Z 5.0 (3/4)"
+      },
+      {
+        "move_index": 727,
+        "label": "Pass 32 — plunge entry at (51.3, -50.8) Z 5.0"
+      },
+      {
+        "move_index": 814,
+        "label": "Pass 33 — plunge entry at (26.3, -96.6) Z 5.0"
+      },
+      {
+        "move_index": 814,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 937,
+        "label": "Adaptive Z 0.5 (4/4)"
+      },
+      {
+        "move_index": 937,
+        "label": "Waterline cleanup"
+      }
+    ]
+  },
+  "semantic_trace": {
+    "schema_version": 1,
+    "toolpath_name": "3D Rough 1",
+    "operation_label": "3D Adaptive",
+    "summary": {
+      "item_count": 44,
+      "move_linked_item_count": 37
+    },
+    "items": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "operation",
+        "label": "3D Adaptive",
+        "move_start": 0,
+        "move_end": 844,
+        "xy_bbox": {
+          "min_x": 2.8167701218357375,
+          "max_x": 150.52165663804976,
+          "min_y": -106.72406929681323,
+          "max_y": -0.6284817528181321
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 3,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 1 plunge entry",
+        "move_start": 0,
+        "move_end": 4,
+        "xy_bbox": {
+          "min_x": 55.31372880935669,
+          "max_x": 55.31372880935669,
+          "min_y": -49.8155441120563,
+          "max_y": -49.8155441120563
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 55.31372880935669,
+            "entry_y": -49.8155441120563,
+            "entry_z": 17.0,
+            "pass_index": 0,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 44,
+        "parent_id": null,
+        "kind": "boundary_clip",
+        "label": "Boundary clip",
+        "move_start": 0,
+        "move_end": 844,
+        "xy_bbox": {
+          "min_x": 2.8167701218357375,
+          "max_x": 150.52165663804976,
+          "min_y": -106.72406929681323,
+          "max_y": -0.6284817528181321
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "containment": "center",
+            "keep_out_count": 0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 4,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 2 keep-down link",
+        "move_start": 72,
+        "move_end": 76,
+        "xy_bbox": {
+          "min_x": 58.307030533593334,
+          "max_x": 72.81372880935669,
+          "min_y": -83.8155441120563,
+          "max_y": -51.708393432294834
+        },
+        "z_min": 17.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 72.81372880935669,
+            "entry_y": -83.8155441120563,
+            "entry_z": 17.0,
+            "pass_index": 1,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 5,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 3 plunge entry",
+        "move_start": 87,
+        "move_end": 90,
+        "xy_bbox": {
+          "min_x": 25.19070038027021,
+          "max_x": 72.4307436631293,
+          "min_y": -105.6614250370159,
+          "max_y": -82.9845619747737
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 25.19070038027021,
+            "entry_y": -105.6614250370159,
+            "entry_z": 18.5,
+            "pass_index": 2,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 6,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 4 keep-down link",
+        "move_start": 93,
+        "move_end": 95,
+        "xy_bbox": {
+          "min_x": 27.320897939494316,
+          "max_x": 27.381852805505353,
+          "min_y": -106.22657692989347,
+          "max_y": -105.89351930492415
+        },
+        "z_min": 17.55546316382855,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 27.320897939494316,
+            "entry_y": -106.22657692989347,
+            "entry_z": 17.55546316382855,
+            "pass_index": 3,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 7,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 5 keep-down link",
+        "move_start": 98,
+        "move_end": 100,
+        "xy_bbox": {
+          "min_x": 27.318347816763186,
+          "max_x": 27.504293244883602,
+          "min_y": -106.19497967634645,
+          "max_y": -105.7458218792561
+        },
+        "z_min": 17.585871857215302,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 27.504293244883602,
+            "entry_y": -105.7458218792561,
+            "entry_z": 17.943236900448113,
+            "pass_index": 4,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 8,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 6 keep-down link",
+        "move_start": 102,
+        "move_end": 104,
+        "xy_bbox": {
+          "min_x": 26.79253404786265,
+          "max_x": 27.961598130082592,
+          "min_y": -105.98225124599401,
+          "max_y": -105.91111445954547
+        },
+        "z_min": 17.729533143942206,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 27.961598130082592,
+            "entry_y": -105.91111445954547,
+            "entry_z": 17.729533143942206,
+            "pass_index": 5,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 9,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 7 keep-down link",
+        "move_start": 106,
+        "move_end": 108,
+        "xy_bbox": {
+          "min_x": 27.595674902016242,
+          "max_x": 28.113474671163257,
+          "min_y": -105.6944981157007,
+          "max_y": -105.1554477956445
+        },
+        "z_min": 17.93600864060335,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 28.113474671163257,
+            "entry_y": -105.1554477956445,
+            "entry_z": 18.176354590932235,
+            "pass_index": 6,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 10,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 8 plunge entry",
+        "move_start": 111,
+        "move_end": 116,
+        "xy_bbox": {
+          "min_x": 28.131709149504438,
+          "max_x": 141.3137288093567,
+          "min_y": -105.1843715277082,
+          "max_y": -48.8155441120563
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 141.3137288093567,
+            "entry_y": -48.8155441120563,
+            "entry_z": 17.0,
+            "pass_index": 7,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 11,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 9 keep-down link",
+        "move_start": 126,
+        "move_end": 128,
+        "xy_bbox": {
+          "min_x": 140.20917404711463,
+          "max_x": 150.03541561616842,
+          "min_y": -72.37853406783039,
+          "max_y": -48.75832650750282
+        },
+        "z_min": 17.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 150.03541561616842,
+            "entry_y": -72.37853406783039,
+            "entry_z": 17.979835848967813,
+            "pass_index": 8,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 12,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 10 keep-down link",
+        "move_start": 130,
+        "move_end": 132,
+        "xy_bbox": {
+          "min_x": 149.40638780487777,
+          "max_x": 149.6566290634075,
+          "min_y": -71.6341697025243,
+          "max_y": -70.92714826541688
+        },
+        "z_min": 18.378312855082306,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.40638780487777,
+            "entry_y": -71.6341697025243,
+            "entry_z": 18.5,
+            "pass_index": 9,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 13,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 11 keep-down link",
+        "move_start": 135,
+        "move_end": 139,
+        "xy_bbox": {
+          "min_x": 149.54115018144557,
+          "max_x": 149.93846059592383,
+          "min_y": -74.3783697753212,
+          "max_y": -72.98483094648157
+        },
+        "z_min": 17.173254954676203,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.93846059592383,
+            "entry_y": -74.3783697753212,
+            "entry_z": 17.173254954676203,
+            "pass_index": 10,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 14,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 12 keep-down link",
+        "move_start": 143,
+        "move_end": 145,
+        "xy_bbox": {
+          "min_x": 148.23696812589537,
+          "max_x": 148.56943445036515,
+          "min_y": -75.71300750004785,
+          "max_y": -75.11813662011957
+        },
+        "z_min": 17.33620343410656,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 148.23696812589537,
+            "entry_y": -75.11813662011957,
+            "entry_z": 17.98356100605214,
+            "pass_index": 11,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 15,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 13 keep-down link",
+        "move_start": 147,
+        "move_end": 151,
+        "xy_bbox": {
+          "min_x": 148.54039467208446,
+          "max_x": 148.84382121827355,
+          "min_y": -75.4093581432747,
+          "max_y": -75.26374738169713
+        },
+        "z_min": 17.41671059063434,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 148.84382121827355,
+            "entry_y": -75.4093581432747,
+            "entry_z": 17.41671059063434,
+            "pass_index": 12,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 16,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 14 keep-down link",
+        "move_start": 153,
+        "move_end": 155,
+        "xy_bbox": {
+          "min_x": 149.67394511849025,
+          "max_x": 149.82524295477162,
+          "min_y": -74.16000058425126,
+          "max_y": -73.42541977539727
+        },
+        "z_min": 17.37477694486715,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.82524295477162,
+            "entry_y": -73.42541977539727,
+            "entry_z": 17.641864763090318,
+            "pass_index": 13,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 17,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 15 keep-down link",
+        "move_start": 157,
+        "move_end": 159,
+        "xy_bbox": {
+          "min_x": 149.83758290390819,
+          "max_x": 149.97654079105303,
+          "min_y": -72.6908389665433,
+          "max_y": -71.95382424104574
+        },
+        "z_min": 17.82141470257163,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.83758290390819,
+            "entry_y": -71.95382424104574,
+            "entry_z": 18.102270402376867,
+            "pass_index": 14,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 18,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 16 keep-down link",
+        "move_start": 161,
+        "move_end": 163,
+        "xy_bbox": {
+          "min_x": 149.44137272201232,
+          "max_x": 149.69862501676334,
+          "min_y": -71.92131023012931,
+          "max_y": -71.21680951554818
+        },
+        "z_min": 18.30736909635037,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.44137272201232,
+            "entry_y": -71.92131023012931,
+            "entry_z": 18.5,
+            "pass_index": 15,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 19,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 17 keep-down link",
+        "move_start": 165,
+        "move_end": 167,
+        "xy_bbox": {
+          "min_x": 147.77220116055554,
+          "max_x": 149.1841204272613,
+          "min_y": -75.03561530362175,
+          "max_y": -72.62581094471045
+        },
+        "z_min": 18.47647376297197,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 147.77220116055554,
+            "entry_y": -75.03561530362175,
+            "entry_z": 18.499333888329122,
+            "pass_index": 16,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 20,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 18 keep-down link",
+        "move_start": 169,
+        "move_end": 173,
+        "xy_bbox": {
+          "min_x": 148.57757478868254,
+          "max_x": 150.0663824755169,
+          "min_y": -73.9530594854067,
+          "max_y": -73.77016150394452
+        },
+        "z_min": 17.123762653734936,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 150.0663824755169,
+            "entry_y": -73.9530594854067,
+            "entry_z": 17.123762653734936,
+            "pass_index": 17,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 21,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 19 keep-down link",
+        "move_start": 175,
+        "move_end": 177,
+        "xy_bbox": {
+          "min_x": 149.12784960517806,
+          "max_x": 149.1755203514539,
+          "min_y": -75.15985883737453,
+          "max_y": -73.09326619561187
+        },
+        "z_min": 17.23215079615656,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.12784960517806,
+            "entry_y": -73.09326619561187,
+            "entry_z": 18.35930833420639,
+            "pass_index": 18,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 22,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 20 keep-down link",
+        "move_start": 179,
+        "move_end": 181,
+        "xy_bbox": {
+          "min_x": 149.67778098991428,
+          "max_x": 150.0109354192064,
+          "min_y": -73.16024541056903,
+          "max_y": -71.69771058149895
+        },
+        "z_min": 17.641864763090318,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 150.0109354192064,
+            "entry_y": -73.16024541056903,
+            "entry_z": 17.641864763090318,
+            "pass_index": 19,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 23,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 21 keep-down link",
+        "move_start": 183,
+        "move_end": 187,
+        "xy_bbox": {
+          "min_x": 150.02532700138764,
+          "max_x": 150.03971858356888,
+          "min_y": -74.65996922829325,
+          "max_y": -73.91010731943115
+        },
+        "z_min": 17.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 150.03971858356888,
+            "entry_y": -74.65996922829325,
+            "entry_z": 17.0,
+            "pass_index": 20,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 24,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 22 keep-down link",
+        "move_start": 189,
+        "move_end": 193,
+        "xy_bbox": {
+          "min_x": 148.6320013496958,
+          "max_x": 149.6513225866222,
+          "min_y": -75.29538335916433,
+          "max_y": -75.17797713311388
+        },
+        "z_min": 17.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.6513225866222,
+            "entry_y": -75.29538335916433,
+            "entry_z": 17.0,
+            "pass_index": 21,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 25,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 23 keep-down link",
+        "move_start": 195,
+        "move_end": 198,
+        "xy_bbox": {
+          "min_x": 148.19153915795744,
+          "max_x": 148.5580643470888,
+          "min_y": -75.64039399870425,
+          "max_y": -75.3003068249793
+        },
+        "z_min": 17.65740763124688,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 148.5580643470888,
+            "entry_y": -75.3003068249793,
+            "entry_z": 17.793578999609885,
+            "pass_index": 22,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 26,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 24 keep-down link",
+        "move_start": 200,
+        "move_end": 202,
+        "xy_bbox": {
+          "min_x": 148.9245895362201,
+          "max_x": 149.29111472535146,
+          "min_y": -74.96021965125433,
+          "max_y": -74.62013247752938
+        },
+        "z_min": 17.46600153748112,
+        "z_max": 18.48356056213379,
+        "params": {
+          "values": {
+            "entry_x": 149.29111472535146,
+            "entry_y": -74.62013247752938,
+            "entry_z": 17.46600153748112,
+            "pass_index": 23,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 27,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 25 keep-down link",
+        "move_start": 205,
+        "move_end": 209,
+        "xy_bbox": {
+          "min_x": 148.5850113499323,
+          "max_x": 149.14887180214197,
+          "min_y": -75.64801753310793,
+          "max_y": -74.25803142151044
+        },
+        "z_min": 17.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.14887180214197,
+            "entry_y": -75.64801753310793,
+            "entry_z": 17.0,
+            "pass_index": 24,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 28,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 26 keep-down link",
+        "move_start": 211,
+        "move_end": 213,
+        "xy_bbox": {
+          "min_x": 149.09362165970128,
+          "max_x": 149.2438513746012,
+          "min_y": -75.17194990152913,
+          "max_y": -73.63138821111028
+        },
+        "z_min": 17.169905682291333,
+        "z_max": 19.0,
+        "params": {
+          "values": {
+            "entry_x": 149.09362165970128,
+            "entry_y": -73.63138821111028,
+            "entry_z": 18.140558283650822,
+            "pass_index": 25,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 29,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 27 keep-down link",
+        "move_start": 215,
+        "move_end": 217,
+        "xy_bbox": {
+          "min_x": 148.10127305060666,
+          "max_x": 148.38476749097657,
+          "min_y": -74.75621897083725,
+          "max_y": -74.34435624822285
+        },
+        "z_min": 18.32021348518843,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 148.38476749097657,
+            "entry_y": -74.34435624822285,
+            "entry_z": 18.435682357156747,
+            "pass_index": 26,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 30,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 28 keep-down link",
+        "move_start": 219,
+        "move_end": 222,
+        "xy_bbox": {
+          "min_x": 148.6682619313465,
+          "max_x": 149.57476130646006,
+          "min_y": -73.93249352560845,
+          "max_y": -72.15612911692509
+        },
+        "z_min": 18.249683129108394,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 149.57476130646006,
+            "entry_y": -72.15612911692509,
+            "entry_z": 18.249683129108394,
+            "pass_index": 27,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 32,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 29 plunge entry",
+        "move_start": 224,
+        "move_end": 229,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 149.61066759583719,
+          "min_y": -105.60864631305658,
+          "max_y": -71.40698911773724
+        },
+        "z_min": 17.499999999949996,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.31372880935669,
+            "entry_y": -105.60864631305658,
+            "entry_z": 17.499999999949996,
+            "pass_index": 28,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 33,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 30 plunge entry",
+        "move_start": 306,
+        "move_end": 311,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 26.31372880935669,
+          "min_y": -105.60864631305658,
+          "max_y": -96.59107155641246
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 26.31372880935669,
+            "entry_y": -96.59107155641246,
+            "entry_z": 17.0,
+            "pass_index": 29,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 35,
+        "parent_id": 34,
+        "kind": "entry",
+        "label": "Pass 31 plunge entry",
+        "move_start": 431,
+        "move_end": 438,
+        "xy_bbox": {
+          "min_x": 26.31372880935669,
+          "max_x": 51.34777549821192,
+          "min_y": -96.59107155641246,
+          "max_y": -50.76384091144064
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 51.34777549821192,
+            "entry_y": -50.76384091144064,
+            "entry_z": 11.0,
+            "pass_index": 30,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 37,
+        "parent_id": 34,
+        "kind": "entry",
+        "label": "Pass 32 plunge entry",
+        "move_start": 529,
+        "move_end": 536,
+        "xy_bbox": {
+          "min_x": 26.31372880935669,
+          "max_x": 49.98266465106166,
+          "min_y": -96.59107155641246,
+          "max_y": -47.88693074506682
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 26.31372880935669,
+            "entry_y": -96.59107155641246,
+            "entry_z": 11.0,
+            "pass_index": 31,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 39,
+        "parent_id": 38,
+        "kind": "entry",
+        "label": "Pass 33 plunge entry",
+        "move_start": 654,
+        "move_end": 659,
+        "xy_bbox": {
+          "min_x": 26.31372880935669,
+          "max_x": 51.34777549821192,
+          "min_y": -96.59107155641246,
+          "max_y": -50.76384091144064
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 51.34777549821192,
+            "entry_y": -50.76384091144064,
+            "entry_z": 5.0,
+            "pass_index": 32,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 41,
+        "parent_id": 38,
+        "kind": "entry",
+        "label": "Pass 34 plunge entry",
+        "move_start": 721,
+        "move_end": 730,
+        "xy_bbox": {
+          "min_x": 26.31372880935669,
+          "max_x": 49.98266465106164,
+          "min_y": -96.59107155641246,
+          "max_y": -47.88693074506683
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 26.31372880935669,
+            "entry_y": -96.59107155641246,
+            "entry_z": 5.0,
+            "pass_index": 33,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 43,
+        "parent_id": 42,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": 844,
+        "move_end": 844,
+        "xy_bbox": {
+          "min_x": 26.31372880935669,
+          "max_x": 26.31372880935669,
+          "min_y": -96.59107155641246,
+          "max_y": -96.59107155641246
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": 1
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 17.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "agent_walk_cut_length_mm": 198.71345866304526,
+            "dropped_micro_region_count": 0,
+            "level_index": 1,
+            "level_total": 4,
+            "marching_squares_regions": 1,
+            "perimeter_sweep_length_mm": 0.0,
+            "region_areas_mm2": [
+              13841.625
+            ],
+            "residual_cleanup_cell_count": 0,
+            "z_level": 17.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 31,
+        "parent_id": 2,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 34,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 11.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "agent_walk_cut_length_mm": 119.40206649712796,
+            "dropped_micro_region_count": 0,
+            "level_index": 2,
+            "level_total": 4,
+            "marching_squares_regions": 3,
+            "perimeter_sweep_length_mm": 0.0,
+            "region_areas_mm2": [
+              8408.375,
+              1514.75,
+              1418.5
+            ],
+            "residual_cleanup_cell_count": 0,
+            "z_level": 11.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 36,
+        "parent_id": 34,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 38,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 5.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "agent_walk_cut_length_mm": 72.39115049383501,
+            "dropped_micro_region_count": 0,
+            "level_index": 3,
+            "level_total": 4,
+            "marching_squares_regions": 3,
+            "perimeter_sweep_length_mm": 0.0,
+            "region_areas_mm2": [
+              8408.375,
+              1514.75,
+              1395.75
+            ],
+            "residual_cleanup_cell_count": 0,
+            "z_level": 5.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 40,
+        "parent_id": 38,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 42,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 0.50",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "agent_walk_cut_length_mm": 0.0,
+            "dropped_micro_region_count": 0,
+            "level_index": 4,
+            "level_total": 4,
+            "marching_squares_regions": 3,
+            "perimeter_sweep_length_mm": 0.0,
+            "region_areas_mm2": [
+              8408.375,
+              1514.75,
+              1387.75
+            ],
+            "residual_cleanup_cell_count": 0,
+            "z_level": 0.5
+          }
+        },
+        "debug_span_id": 21
+      }
+    ]
+  },
+  "collision_count": 0,
+  "rapid_collision_count": 0,
+  "min_safe_stickout": null,
+  "truncated_core_mm2": null,
+  "untouched_material_mm2": null,
+  "reached_uncut_estimate_mm2": null,
+  "unmachined_band_area_mm2": null,
+  "tip_float_points": null,
+  "max_tip_float_mm": null,
+  "monotone_cells": null,
+  "source_stock": null
+}

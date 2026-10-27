@@ -1,0 +1,4 @@
+53f83ae03e82c26dea551c9b1ac752c1  crates/rs_cam_core/src/adaptive/slab_field.rs
+d0092a7c350296e885580f59769af8b4  crates/rs_cam_core/src/adaptive/material_grid.rs
+c6afdc541953dd2b8f0ea208ec4dab73  crates/rs_cam_core/src/adaptive/search.rs
+2d923aab2ad9faa10ae613b0f4e4f17b  crates/rs_cam_core/src/adaptive3d/clearing.rs

@@ -1,0 +1,70 @@
+Measurability:
+  NOT MEASURED  radial engagement on toolpath 3 — 76% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 5.625 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  air-cut % on toolpath 3 — 76% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 5.625 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  chip engagement on toolpath 3 — 76% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 5.625 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+
+Safety (3):
+  "3D Rough 1 (copy)": the rough leaves 1268 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1244 of them against a wall: 855.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 1.06 mm high, 0.30 mm wide, 0.4 mm2 at (90.0, -5.5); 1.01 mm high, 0.30 mm wide, 0.3 mm2 at (24.6, -10.6); 1.00 mm high, 0.30 mm wide, 0.7 mm2 at (63.6, -5.8); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (87.9, -77.5); 0.92 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -4.9); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (65.7, -5.2); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (15.0, -91.9); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (87.3, -78.1); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (27.9, -102.4); and 1258 more. 363 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1": the rough leaves 617 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 597 of them against a wall: 5052.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 1.01 mm high, 0.30 mm wide, 0.3 mm2 at (24.6, -10.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (63.6, -5.8); 1.00 mm high, 0.30 mm wide, 0.3 mm2 at (64.8, -5.5); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (87.9, -77.5); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -4.9); 0.91 mm high, 0.30 mm wide, 0.2 mm2 at (89.7, -5.2); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (65.7, -5.2); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (87.3, -78.1); and 607 more. 2 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1 (edges, CP rest)": the rough leaves 35 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 35 of them against a wall: 382.9 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 22.50 mm high, 0.55 mm wide, 12.5 mm2 at (13.2, -109.3) at a wall; 22.50 mm high, 0.90 mm wide, 71.7 mm2 at (36.9, -109.3) at a wall; 22.50 mm high, 0.55 mm wide, 24.7 mm2 at (153.3, -4.9) at a wall; 22.50 mm high, 0.55 mm wide, 25.3 mm2 at (0.3, -4.3) at a wall; 17.06 mm high, 0.55 mm wide, 95.4 mm2 at (110.7, -9.4) at a wall; 16.74 mm high, 0.55 mm wide, 68.0 mm2 at (24.9, -10.0) at a wall; 16.53 mm high, 0.30 mm wide, 14.9 mm2 at (78.6, -3.1) at a wall; 16.53 mm high, 0.55 mm wide, 2.8 mm2 at (84.6, -82.9) at a wall; 16.53 mm high, 0.90 mm wide, 27.4 mm2 at (49.2, -94.3) at a wall; 16.50 mm high, 0.55 mm wide, 9.6 mm2 at (32.4, -100.6) at a wall; and 25 more. 24 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Act on (2):
+  crosses standing material deeper than this pass was planned to cut: 9.6% of cutting samples remove more than the commanded 6.00 mm depth per pass by over 0.300 mm, peaking at 8.96 mm
+  WARNING: high air cutting on '3D Rough 1 (edges, CP rest)' is 47% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  810.4s wasted around (69.9, -43.0, 1.4) — engagement 0.03
+  256.6s wasted around (12.9, -21.0, 4.0) — engagement 0.17
+  146.7s wasted around (86.3, -85.7, 16.6) — engagement 0.14
+  4.0s wasted around (62.6, -0.4, 1.4) — engagement 0.00
+  3.8s wasted around (62.6, -0.4, 12.5) — engagement 0.00
+  3.3s wasted around (140.7, -67.5, 5.2) — engagement 0.03
+  3.2s wasted around (92.0, -0.4, 1.3) — engagement 0.00
+  3.1s wasted around (92.0, -0.4, 8.3) — engagement 0.00
+  3.1s wasted around (62.6, -0.4, 16.7) — engagement 0.00
+  2.9s wasted around (50.3, -14.4, 9.8) — engagement 0.03
+  2.8s wasted around (102.8, -12.8, 5.2) — engagement 0.04
+  2.8s wasted around (140.7, -67.5, 8.2) — engagement 0.16
+  2.7s wasted around (53.3, -98.5, 1.8) — engagement 0.00
+  2.6s wasted around (27.2, -95.2, 9.8) — engagement 0.06
+  2.6s wasted around (53.3, -98.5, 5.4) — engagement 0.00
+  2.4s wasted around (29.9, -15.1, 6.7) — engagement 0.22
+  2.4s wasted around (50.3, -14.4, 6.8) — engagement 0.18
+  2.3s wasted around (92.0, -0.4, 9.5) — engagement 0.00
+  2.3s wasted around (62.6, -0.4, 17.6) — engagement 0.00
+  2.3s wasted around (102.8, -12.8, 8.2) — engagement 0.19
+  2.2s wasted around (84.2, -70.8, 9.8) — engagement 0.04
+  2.2s wasted around (12.9, -17.3, 5.2) — engagement 0.04
+  2.0s wasted around (140.7, -67.5, 13.1) — engagement 0.23
+  1.7s wasted around (24.8, -99.2, 8.2) — engagement 0.24
+  1.3s wasted around (36.0, -27.1, 1.4) — engagement 0.02
+  1.2s wasted around (114.2, -30.7, 4.1) — engagement 0.00
+  1.2s wasted around (114.5, -30.1, 4.1) — engagement 0.00
+  1.2s wasted around (24.8, -99.2, 10.4) — engagement 0.32
+  1.0s wasted around (105.8, -25.3, 4.1) — engagement 0.00
+  1.0s wasted around (36.5, -55.3, 4.1) — engagement 0.00
+  ... 732 more not shown
+
+Counts: 294696 samples | 109567 flagged-air + 15528 flagged-low (per SAMPLE) | 13656 issue runs (COALESCED, the legacy "issue_count") | 762 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 3: depth of cut, peak 14.5000 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 4: chipload: simulation trace is stale — re-run simulation
+  toolpath 4: power: simulation trace is stale — re-run simulation
+  toolpath 4: deflection: simulation trace is stale — re-run simulation
+  toolpath 4: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 3  |  Cutting: 55925mm  |  Rapid: 30518mm  |  Time: 3238s
+Air cutting: 50.8% of total runtime  |  Avg engagement: 0.16  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [ ] #1 3D Rough 1 (3D Adaptive) — 6947 moves, 0 collisions
+      kinematics: 90% of commanded (79% feed-bound → +11% at ×1.30, 21% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #5 3D Rough 1 (edges, CP rest) (3D Adaptive) — 1511 moves, 0 collisions
+      kinematics: 94% of commanded (85% feed-bound → +14% at ×1.30, 15% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #3 3D Rough 1 (copy) (3D Adaptive) — 6440 moves, 0 collisions
+      kinematics: 91% of commanded (87% feed-bound → +18% at ×1.30, 13% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 50.8% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix31/B_s2p1

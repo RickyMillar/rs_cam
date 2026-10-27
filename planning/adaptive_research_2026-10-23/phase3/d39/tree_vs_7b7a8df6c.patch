@@ -1,0 +1,363 @@
+diff --git a/crates/rs_cam_core/src/adaptive/material_grid.rs b/crates/rs_cam_core/src/adaptive/material_grid.rs
+index 1effa5cd9..ebbfb091d 100644
+--- a/crates/rs_cam_core/src/adaptive/material_grid.rs
++++ b/crates/rs_cam_core/src/adaptive/material_grid.rs
+@@ -203,13 +203,29 @@ impl MaterialGrid {
+             .map_or(0.0, |(r, c)| self.slab_depth(r * self.cols + c, tip, d_sq))
+     }
+ 
+-    /// The load of the strip depths `depths_mm` (strips one cell wide)
+-    /// under the attached field ([`SlabField::strips_load`]); `None` with
+-    /// no field.
+-    pub(super) fn slab_strips_load(&self, depths_mm: impl IntoIterator<Item = f64>) -> Option<f64> {
++    /// True when cell `idx` is outside the plan's polygon (the flat grid's
++    /// AIR). Research (§18.9 counter).
++    #[cfg(feature = "research")]
++    pub(super) fn is_air(&self, idx: usize) -> bool {
++        self.cells.get(idx).is_none_or(|&c| c == CELL_AIR)
++    }
++
++    /// Research (§18.9): the read counter of the attached field.
++    #[cfg(feature = "research")]
++    pub(super) fn slab_read_counter(&self) -> Option<&super::slab_field::SlabReadCounter> {
++        self.slab.as_ref().and_then(|s| s.field.read_counter())
++    }
++
++    /// The load of the strips `strips` (`(strip index, depth mm)` in index
++    /// order, one cell apart) under the attached field
++    /// ([`SlabField::strips_load`]); `None` with no field.
++    pub(super) fn slab_strips_load(
++        &self,
++        strips: impl IntoIterator<Item = (i64, f64)>,
++    ) -> Option<f64> {
+         self.slab
+             .as_ref()
+-            .map(|s| s.field.strips_load(depths_mm, self.cell_size))
++            .map(|s| s.field.strips_load(strips, self.cell_size))
+     }
+ 
+     /// Keep a fringe from now on (the 2D pass-load rule): each cell carries
+diff --git a/crates/rs_cam_core/src/adaptive/search.rs b/crates/rs_cam_core/src/adaptive/search.rs
+index 986c38124..57a01e2ce 100644
+--- a/crates/rs_cam_core/src/adaptive/search.rs
++++ b/crates/rs_cam_core/src/adaptive/search.rs
+@@ -230,7 +230,7 @@ mod engagement_measure_tests {
+     //! measure in the same units as `target_engagement_fraction` must
+     //! read `α/2π` at the next position.
+ 
+-    use super::super::material_grid::{CELL_CLEARED, MaterialGrid};
++    use super::super::material_grid::{CELL_CLEARED, CELL_MATERIAL, MaterialGrid};
+     use super::{
+         EngagementMeasure, PassLoad, compute_engagement, compute_engagement_arc,
+         compute_swept_width, search_direction_with_metrics,
+@@ -410,6 +410,90 @@ mod engagement_measure_tests {
+         }
+     }
+ 
++    /// §18.11 (D39): the steady-state scene of [`steady_state_grid`] with a
++    /// 3D level's heights attached: tip 0 everywhere, stock `top` on every
++    /// cell the scene holds as material, none elsewhere. Depth/Pass `dpp`,
++    /// a flat end mill of radius R.
++    fn with_slab(mut grid: MaterialGrid, top: f64, dpp: f64) -> MaterialGrid {
++        use super::super::slab_field::SlabField;
++        let n = grid.rows * grid.cols;
++        let tops: Vec<f32> = grid
++            .cells
++            .iter()
++            .map(|&c| {
++                if c == CELL_MATERIAL {
++                    top as f32
++                } else {
++                    f32::NEG_INFINITY
++                }
++            })
++            .collect();
++        let cutter = crate::tool::FlatEndmill::new(2.0 * R, 25.0);
++        let lut = crate::stock::radial_profile::RadialProfileLUT::from_cutter(
++            &cutter,
++            crate::stock::radial_profile::LUT_SAMPLES,
++        );
++        let field = SlabField::new(
++            grid.origin_x,
++            grid.origin_y,
++            grid.cell_size,
++            grid.rows,
++            grid.cols,
++            vec![0.0; n],
++            tops,
++            0.1,
++            dpp,
++            2.0 * R,
++            crate::feeds::ToolGeometryHint::Flat,
++            lut,
++        )
++        .expect("the field fits the grid");
++        grid.attach_slab(&std::sync::Arc::new(field));
++        grid
++    }
++
++    /// §18.11 (D39) sentry: at a full pass (stock one Depth/Pass deep) the
++    /// field's chip-area load of a steady side cut is the flat swept-width
++    /// read, bit for bit, at every stepover from one to six cells. The
++    /// per-strip sum read one cell wider before the trapezoid (§18.11).
++    #[test]
++    fn the_field_load_at_a_full_pass_is_the_swept_width() {
++        const DPP: f64 = 3.0;
++        for cells in 1..=6 {
++            let stepover = f64::from(cells) * CELL;
++            let (grid, nx, ny) = steady_state_grid(stepover);
++            let flat = compute_swept_width(&grid, nx, ny, R, 0.0);
++            let field = with_slab(grid, DPP, DPP);
++            let load = compute_swept_width(&field, nx, ny, R, 0.0);
++            assert_eq!(
++                load.to_bits(),
++                flat.to_bits(),
++                "stepover {stepover}: field load {load}, swept width {flat}"
++            );
++        }
++    }
++
++    /// §18.11 (D39): a layer `t` thinner than a pass reads `t / DPP` of the
++    /// full-depth load of the same cut, to the precision the field keeps its
++    /// tops in (`f32`: a relative `f32::EPSILON`).
++    #[test]
++    fn a_thin_layer_reads_its_depth_over_the_pass() {
++        const DPP: f64 = 3.0;
++        for t in [0.1, 0.5, 1.5] {
++            for cells in [2, 4, 6] {
++                let stepover = f64::from(cells) * CELL;
++                let (grid, nx, ny) = steady_state_grid(stepover);
++                let full = compute_swept_width(&with_slab(grid.clone(), DPP, DPP), nx, ny, R, 0.0);
++                let thin = compute_swept_width(&with_slab(grid, t, DPP), nx, ny, R, 0.0);
++                let want = full * t / DPP;
++                assert!(
++                    (thin - want).abs() <= want * f64::from(f32::EPSILON),
++                    "layer {t} at stepover {stepover}: {thin}, want {want}"
++                );
++            }
++        }
++    }
++
+     /// The fine lattice the plan's quadrature claims are checked on: the
+     /// disk-area reading at R / 60 is the continuous area fraction to a few
+     /// thousandths; the production lattice (R / 6) moves it by up to half a
+@@ -793,12 +877,15 @@ fn swept_width_on(
+         hi = hi.max(u);
+     };
+     // §18.6 (per strip): with a 3D level's heights the reading is the load
+-    // of the power gate's chip cross-section summed over lateral strips one
+-    // cell wide (`SlabField::strips_load`): each strip's depth is the
+-    // deepest stock above this centre's tip (§17) in it. At a full pass it
+-    // is the width.
++    // of the power gate's chip cross-section integrated across lateral
++    // strips one cell apart by the trapezoid (`SlabField::strips_load`):
++    // each strip's depth is the deepest stock above this centre's tip (§17)
++    // in it. At a full pass it is the width read below (§18.11).
+     if let Some(t) = grid.slab_tip(cx, cy) {
+         let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
++        #[cfg(feature = "research")]
++        let mut strips_own: std::collections::BTreeMap<i64, f64> =
++            std::collections::BTreeMap::new();
+         for row in row_min..=row_max {
+             let dy = grid.origin_y + row as f64 * grid.cell_size - cy;
+             for col in col_min..=col_max {
+@@ -807,18 +894,30 @@ fn swept_width_on(
+                 if d_sq > r_sq || is_swept(cx + dx, cy + dy) {
+                     continue;
+                 }
+-                let depth = grid.slab_depth(row * grid.cols + col, t, d_sq);
++                let idx = row * grid.cols + col;
++                let depth = grid.slab_depth(idx, t, d_sq);
+                 if depth > 0.0 {
+                     let strip = ((dx * sx + dy * sy) / grid.cell_size).round() as i64;
+                     let deepest = strips.entry(strip).or_insert(0.0);
+                     *deepest = deepest.max(depth);
++                    // §18.9 counter: the same read without the AIR cells.
++                    #[cfg(feature = "research")]
++                    if !grid.is_air(idx) {
++                        let own = strips_own.entry(strip).or_insert(0.0);
++                        *own = own.max(depth);
++                    }
+                 }
+             }
+         }
+         if strips.is_empty() {
+             return 0.0;
+         }
+-        let load = grid.slab_strips_load(strips.into_values()).unwrap_or(0.0);
++        let load = grid.slab_strips_load(strips).unwrap_or(0.0);
++        #[cfg(feature = "research")]
++        if let Some(counter) = grid.slab_read_counter() {
++            let own = grid.slab_strips_load(strips_own).unwrap_or(0.0);
++            counter.record(load, own);
++        }
+         return load.max(SWEPT_WIDTH_PRESENT);
+     }
+     for row in row_min..=row_max {
+diff --git a/crates/rs_cam_core/src/adaptive/slab_field.rs b/crates/rs_cam_core/src/adaptive/slab_field.rs
+index 000c2fb53..cc198a2b6 100644
+--- a/crates/rs_cam_core/src/adaptive/slab_field.rs
++++ b/crates/rs_cam_core/src/adaptive/slab_field.rs
+@@ -57,6 +57,49 @@ pub struct SlabField {
+     chip: ToolGeometryHint,
+     /// The cutter's radial profile: its height above the tip at a radius.
+     profile: RadialProfileLUT,
++    /// Research (§18.9 counter): the load reads of the plans of this level.
++    #[cfg(feature = "research")]
++    read_counter: Option<std::sync::Arc<SlabReadCounter>>,
++}
++
++/// Research (§18.9): the load reads of one level under a field, and the
++/// reads over the pass ceiling, split by whether the cells the 2D grid holds
++/// as AIR (outside the plan's polygon) are needed to put them over.
++#[cfg(feature = "research")]
++#[derive(Debug, Default)]
++pub struct SlabReadCounter {
++    ceiling: f64,
++    reads: std::sync::atomic::AtomicUsize,
++    over_with_air: std::sync::atomic::AtomicUsize,
++    over_own: std::sync::atomic::AtomicUsize,
++}
++
++#[cfg(feature = "research")]
++impl SlabReadCounter {
++    /// Count one read: `all` with every cell, `own` with the AIR cells left
++    /// out.
++    pub(crate) fn record(&self, all: f64, own: f64) {
++        use std::sync::atomic::Ordering::Relaxed;
++        self.reads.fetch_add(1, Relaxed);
++        if all > self.ceiling {
++            if own > self.ceiling {
++                self.over_own.fetch_add(1, Relaxed);
++            } else {
++                self.over_with_air.fetch_add(1, Relaxed);
++            }
++        }
++    }
++
++    /// (reads, over the ceiling only with the AIR cells, over without them).
++    #[must_use]
++    pub fn counts(&self) -> (usize, usize, usize) {
++        use std::sync::atomic::Ordering::Relaxed;
++        (
++            self.reads.load(Relaxed),
++            self.over_with_air.load(Relaxed),
++            self.over_own.load(Relaxed),
++        )
++    }
+ }
+ 
+ impl SlabField {
+@@ -108,9 +151,30 @@ impl SlabField {
+             diameter,
+             chip,
+             profile,
++            #[cfg(feature = "research")]
++            read_counter: None,
+         })
+     }
+ 
++    /// Research (§18.9): count the load reads against the pass ceiling
++    /// `ceiling` ([`SlabReadCounter`]).
++    #[cfg(feature = "research")]
++    #[must_use]
++    pub fn with_read_counter(mut self, ceiling: f64) -> Self {
++        self.read_counter = Some(std::sync::Arc::new(SlabReadCounter {
++            ceiling,
++            ..SlabReadCounter::default()
++        }));
++        self
++    }
++
++    /// Research (§18.9): the read counter, when one is set.
++    #[cfg(feature = "research")]
++    #[must_use]
++    pub fn read_counter(&self) -> Option<&SlabReadCounter> {
++        self.read_counter.as_deref()
++    }
++
+     /// The nearest lattice node to `(x, y)`, or `None` off the lattice.
+     fn node(&self, x: f64, y: f64) -> Option<usize> {
+         let col = ((x - self.origin_x) / self.cell).round();
+@@ -152,17 +216,34 @@ impl SlabField {
+         self.tol
+     }
+ 
+-    /// The load of a cut whose lateral strips of width `strip_mm` engage
+-    /// the depths `depths_mm` (§18.6): the sum of the cutter's chip
+-    /// cross-section over the strips, over that of a full pass across the
++    /// The load of a cut whose lateral strips, `pitch_mm` apart, engage
++    /// the depths `strips` (`(strip index, depth mm)`, in index order;
++    /// §18.6, §18.11): the cutter's chip cross-section integrated across the
++    /// strip centres by the trapezoid, over that of a full pass across the
+     /// cutter, both from `ToolGeometryHint::mrr_cross_section_mm2` (the area
+     /// the power gate multiplies by feed).
++    ///
++    /// Each pair of neighbouring strips adds
++    /// `mrr_cross_section_mm2(mean of their depths, pitch)`; strips with a gap
++    /// between them add nothing across it. So a full-depth band of `n`
++    /// centres reads `(n − 1) · pitch` wide, the extent between its outermost
++    /// centres, which is what the flat width read measures
++    /// (`search.rs::swept_width_on`). Summing a whole strip per centre read
++    /// one pitch wider (§18.11).
+     #[must_use]
+-    pub fn strips_load(&self, depths_mm: impl IntoIterator<Item = f64>, strip_mm: f64) -> f64 {
+-        let area: f64 = depths_mm
+-            .into_iter()
+-            .map(|d| self.chip.mrr_cross_section_mm2(d, strip_mm))
+-            .sum();
++    pub fn strips_load(&self, strips: impl IntoIterator<Item = (i64, f64)>, pitch_mm: f64) -> f64 {
++        let mut area = 0.0_f64;
++        let mut prev: Option<(i64, f64)> = None;
++        for (index, depth) in strips {
++            if let Some((p_index, p_depth)) = prev
++                && index == p_index + 1
++            {
++                area += self
++                    .chip
++                    .mrr_cross_section_mm2(0.5 * (p_depth + depth), pitch_mm);
++            }
++            prev = Some((index, depth));
++        }
+         area / self
+             .chip
+             .mrr_cross_section_mm2(self.depth_per_pass, self.diameter)
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 0a1fb1d2d..8d2c1b293 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -3110,6 +3110,15 @@ fn research_slab_field(
+         hint,
+         ctx.lut.clone(),
+     )
++    .map(|field| {
++        // §18.9 counter: the reads against the pass ceiling, the radial
++        // fraction of `PassLoad::swept_width`.
++        field.with_read_counter(
++            crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
++                crate::adaptive::pass_engagement_limit(ctx.stepover, ctx.tool_radius),
++            ),
++        )
++    })
+     .map(std::sync::Arc::new)
+ }
+ 
+@@ -5288,6 +5297,18 @@ pub(super) fn clear_z_level_agent_2d_slice(
+         )?;
+     }
+ 
++    // §18.9 counter: one line per level with the field on.
++    #[cfg(feature = "research")]
++    if let Some(counter) = params_2d.slab_field.as_ref().and_then(|f| f.read_counter()) {
++        let (reads, over_with_air, over_own) = counter.counts();
++        tracing::info!(
++            z = z_level,
++            reads,
++            over_with_air,
++            over_own,
++            "C22 slab read counter (reads over the ceiling: only with the AIR cells, or without them)"
++        );
++    }
+     // The level end commits a trailing entry, as the coalescing pass kept it.
+     emission.sink.commit_pending(ctx);
+     let replaced_entries = emission.sink.replaced_entries;

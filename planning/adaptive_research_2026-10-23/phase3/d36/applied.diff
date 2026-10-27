@@ -1,0 +1,196 @@
+diff --git a/crates/rs_cam_core/src/adaptive/material_grid.rs b/crates/rs_cam_core/src/adaptive/material_grid.rs
+index 1effa5cd9..0f784a4cd 100644
+--- a/crates/rs_cam_core/src/adaptive/material_grid.rs
++++ b/crates/rs_cam_core/src/adaptive/material_grid.rs
+@@ -203,6 +203,19 @@ impl MaterialGrid {
+             .map_or(0.0, |(r, c)| self.slab_depth(r * self.cols + c, tip, d_sq))
+     }
+ 
++    /// True when cell `idx` is outside the plan's polygon (the flat grid's
++    /// AIR). Research (§18.9 counter).
++    #[cfg(feature = "research")]
++    pub(super) fn is_air(&self, idx: usize) -> bool {
++        self.cells.get(idx).is_none_or(|&c| c == CELL_AIR)
++    }
++
++    /// Research (§18.9): the read counter of the attached field.
++    #[cfg(feature = "research")]
++    pub(super) fn slab_read_counter(&self) -> Option<&super::slab_field::SlabReadCounter> {
++        self.slab.as_ref().and_then(|s| s.field.read_counter())
++    }
++
+     /// The load of the strip depths `depths_mm` (strips one cell wide)
+     /// under the attached field ([`SlabField::strips_load`]); `None` with
+     /// no field.
+diff --git a/crates/rs_cam_core/src/adaptive/search.rs b/crates/rs_cam_core/src/adaptive/search.rs
+index 986c38124..632fea468 100644
+--- a/crates/rs_cam_core/src/adaptive/search.rs
++++ b/crates/rs_cam_core/src/adaptive/search.rs
+@@ -799,6 +799,9 @@ fn swept_width_on(
+     // is the width.
+     if let Some(t) = grid.slab_tip(cx, cy) {
+         let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
++        #[cfg(feature = "research")]
++        let mut strips_own: std::collections::BTreeMap<i64, f64> =
++            std::collections::BTreeMap::new();
+         for row in row_min..=row_max {
+             let dy = grid.origin_y + row as f64 * grid.cell_size - cy;
+             for col in col_min..=col_max {
+@@ -807,11 +810,18 @@ fn swept_width_on(
+                 if d_sq > r_sq || is_swept(cx + dx, cy + dy) {
+                     continue;
+                 }
+-                let depth = grid.slab_depth(row * grid.cols + col, t, d_sq);
++                let idx = row * grid.cols + col;
++                let depth = grid.slab_depth(idx, t, d_sq);
+                 if depth > 0.0 {
+                     let strip = ((dx * sx + dy * sy) / grid.cell_size).round() as i64;
+                     let deepest = strips.entry(strip).or_insert(0.0);
+                     *deepest = deepest.max(depth);
++                    // §18.9 counter: the same read without the AIR cells.
++                    #[cfg(feature = "research")]
++                    if !grid.is_air(idx) {
++                        let own = strips_own.entry(strip).or_insert(0.0);
++                        *own = own.max(depth);
++                    }
+                 }
+             }
+         }
+@@ -819,6 +829,13 @@ fn swept_width_on(
+             return 0.0;
+         }
+         let load = grid.slab_strips_load(strips.into_values()).unwrap_or(0.0);
++        #[cfg(feature = "research")]
++        if let Some(counter) = grid.slab_read_counter() {
++            let own = grid
++                .slab_strips_load(strips_own.into_values())
++                .unwrap_or(0.0);
++            counter.record(load, own);
++        }
+         return load.max(SWEPT_WIDTH_PRESENT);
+     }
+     for row in row_min..=row_max {
+diff --git a/crates/rs_cam_core/src/adaptive/slab_field.rs b/crates/rs_cam_core/src/adaptive/slab_field.rs
+index 000c2fb53..c7047116c 100644
+--- a/crates/rs_cam_core/src/adaptive/slab_field.rs
++++ b/crates/rs_cam_core/src/adaptive/slab_field.rs
+@@ -57,6 +57,49 @@ pub struct SlabField {
+     chip: ToolGeometryHint,
+     /// The cutter's radial profile: its height above the tip at a radius.
+     profile: RadialProfileLUT,
++    /// Research (§18.9 counter): the load reads of the plans of this level.
++    #[cfg(feature = "research")]
++    read_counter: Option<std::sync::Arc<SlabReadCounter>>,
++}
++
++/// Research (§18.9): the load reads of one level under a field, and the
++/// reads over the pass ceiling, split by whether the cells the 2D grid holds
++/// as AIR (outside the plan's polygon) are needed to put them over.
++#[cfg(feature = "research")]
++#[derive(Debug, Default)]
++pub struct SlabReadCounter {
++    ceiling: f64,
++    reads: std::sync::atomic::AtomicUsize,
++    over_with_air: std::sync::atomic::AtomicUsize,
++    over_own: std::sync::atomic::AtomicUsize,
++}
++
++#[cfg(feature = "research")]
++impl SlabReadCounter {
++    /// Count one read: `all` with every cell, `own` with the AIR cells left
++    /// out.
++    pub(crate) fn record(&self, all: f64, own: f64) {
++        use std::sync::atomic::Ordering::Relaxed;
++        self.reads.fetch_add(1, Relaxed);
++        if all > self.ceiling {
++            if own > self.ceiling {
++                self.over_own.fetch_add(1, Relaxed);
++            } else {
++                self.over_with_air.fetch_add(1, Relaxed);
++            }
++        }
++    }
++
++    /// (reads, over the ceiling only with the AIR cells, over without them).
++    #[must_use]
++    pub fn counts(&self) -> (usize, usize, usize) {
++        use std::sync::atomic::Ordering::Relaxed;
++        (
++            self.reads.load(Relaxed),
++            self.over_with_air.load(Relaxed),
++            self.over_own.load(Relaxed),
++        )
++    }
+ }
+ 
+ impl SlabField {
+@@ -108,9 +151,30 @@ impl SlabField {
+             diameter,
+             chip,
+             profile,
++            #[cfg(feature = "research")]
++            read_counter: None,
+         })
+     }
+ 
++    /// Research (§18.9): count the load reads against the pass ceiling
++    /// `ceiling` ([`SlabReadCounter`]).
++    #[cfg(feature = "research")]
++    #[must_use]
++    pub fn with_read_counter(mut self, ceiling: f64) -> Self {
++        self.read_counter = Some(std::sync::Arc::new(SlabReadCounter {
++            ceiling,
++            ..SlabReadCounter::default()
++        }));
++        self
++    }
++
++    /// Research (§18.9): the read counter, when one is set.
++    #[cfg(feature = "research")]
++    #[must_use]
++    pub fn read_counter(&self) -> Option<&SlabReadCounter> {
++        self.read_counter.as_deref()
++    }
++
+     /// The nearest lattice node to `(x, y)`, or `None` off the lattice.
+     fn node(&self, x: f64, y: f64) -> Option<usize> {
+         let col = ((x - self.origin_x) / self.cell).round();
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 0a1fb1d2d..8d2c1b293 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -3110,6 +3110,15 @@ fn research_slab_field(
+         hint,
+         ctx.lut.clone(),
+     )
++    .map(|field| {
++        // §18.9 counter: the reads against the pass ceiling, the radial
++        // fraction of `PassLoad::swept_width`.
++        field.with_read_counter(
++            crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
++                crate::adaptive::pass_engagement_limit(ctx.stepover, ctx.tool_radius),
++            ),
++        )
++    })
+     .map(std::sync::Arc::new)
+ }
+ 
+@@ -5288,6 +5297,18 @@ pub(super) fn clear_z_level_agent_2d_slice(
+         )?;
+     }
+ 
++    // §18.9 counter: one line per level with the field on.
++    #[cfg(feature = "research")]
++    if let Some(counter) = params_2d.slab_field.as_ref().and_then(|f| f.read_counter()) {
++        let (reads, over_with_air, over_own) = counter.counts();
++        tracing::info!(
++            z = z_level,
++            reads,
++            over_with_air,
++            over_own,
++            "C22 slab read counter (reads over the ceiling: only with the AIR cells, or without them)"
++        );
++    }
+     // The level end commits a trailing entry, as the coalescing pass kept it.
+     emission.sink.commit_pending(ctx);
+     let replaced_entries = emission.sink.replaced_entries;

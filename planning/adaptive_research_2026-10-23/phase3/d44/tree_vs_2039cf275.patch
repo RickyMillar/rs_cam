@@ -1,0 +1,649 @@
+diff --git a/crates/rs_cam_core/Cargo.toml b/crates/rs_cam_core/Cargo.toml
+index 3447f0a4f..7bc5d531e 100644
+--- a/crates/rs_cam_core/Cargo.toml
++++ b/crates/rs_cam_core/Cargo.toml
+@@ -226,6 +226,15 @@ required-features = ["research", "test-support"]
+ name = "adaptive3d_geodesic_arm_c12"
+ required-features = ["research", "test-support"]
+ 
++# D44: the research arm states the regions it leaves to a rest pass.
++[[test]]
++name = "a_rough_publishes_the_regions_it_leaves_d44"
++required-features = ["research", "test-support"]
++
++[[test]]
++name = "a_derived_rest_rough_cuts_only_the_leftovers_d44"
++required-features = ["research", "test-support"]
++
+ # The test-door harnesses. Each one binds a `maps/` or `surface/` item behind
+ # the `test-support` feature, so each one needs that feature to compile. The
+ # audit row FLD-04 + FLD-05 listed seven of them; `rg` found eight
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index 26a1f16a6..85ee94aa3 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -606,6 +606,10 @@ pub(super) struct Adaptive3dSegmentsResult {
+     /// Research (C31): how the research arm opened each region.
+     #[cfg(feature = "research")]
+     pub research_openings: Vec<super::RegionOpening>,
++    /// Research (C38 §16, D44): the pieces the research arm left to the
++    /// rest pass, each with its Z level.
++    #[cfg(feature = "research")]
++    pub research_left_pieces: Vec<(f64, crate::polygon::Polygon2)>,
+     /// Research (C35): the core zones the research arm's spirals cut.
+     #[cfg(feature = "research")]
+     pub research_core_zones: Vec<super::CoreZoneRecord>,
+@@ -1283,6 +1287,8 @@ pub(super) fn adaptive_3d_segments(
+         #[cfg(feature = "research")]
+         research_openings: ctx.research_openings.take(),
+         #[cfg(feature = "research")]
++        research_left_pieces: ctx.research_left_pieces.take(),
++        #[cfg(feature = "research")]
+         research_core_zones: ctx.research_core_zones.take(),
+         #[cfg(feature = "research")]
+         research_joins: ctx.research_joins.take(),
+diff --git a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+index a1d1b1231..0e1a3f13a 100644
+--- a/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
++++ b/crates/rs_cam_core/src/adaptive3d/research_outer_band.rs
+@@ -64,6 +64,28 @@ pub(super) fn clip_to_stock_box(
+     (!out.is_empty()).then_some(out)
+ }
+ 
++/// D44 (P3_C12_derived_rest_regions.md §2): the XY regions a run left to
++/// the rest pass: the union over the levels of the pieces it left
++/// (`ClearZLevelContext::research_left_pieces`), grown by `grow` (one
++/// planner cell: a piece is a raster outline of the planner's region
++/// cells and can lie up to one cell inside the true region). `None` when
++/// the run left no piece. Geometry only (§13.8): a later step can take it
++/// for every strategy.
++pub(super) fn left_regions(pieces: &[(f64, Polygon2)], grow: f64) -> Option<Vec<Polygon2>> {
++    let all: Vec<Polygon2> = pieces.iter().map(|(_, p)| p.clone()).collect();
++    let union = Polygon2::union_all(&all);
++    let grown: Vec<Polygon2> = union
++        .iter()
++        .flat_map(|p| offset_polygon(p, -grow.max(0.0)))
++        .collect();
++    let out = if grown.is_empty() {
++        union
++    } else {
++        Polygon2::union_all(&grown)
++    };
++    (!out.is_empty()).then_some(out)
++}
++
+ /// G-CLIPAIR (§11 a): the boundary grown by the tool radius, the reach of a
+ /// disc whose centre is inside `boundary`, or `None` when the radius is not
+ /// usable or the grow is empty. The boundary clear then empties only the
+diff --git a/crates/rs_cam_core/src/compute/execute.rs b/crates/rs_cam_core/src/compute/execute.rs
+index 78ba987a8..af9dae736 100644
+--- a/crates/rs_cam_core/src/compute/execute.rs
++++ b/crates/rs_cam_core/src/compute/execute.rs
+@@ -715,9 +715,15 @@ pub(crate) fn execute_operation_annotated(
+     // extraction, a richer job than the generic pass below needs to redo.
+     // Only runs when a mesh (+ its spatial index) is present — 2D ops have
+     // no terrain to rest-analyze.
++    //
++    // D44: the precedence is per field. An op that stated only its rest
++    // REGIONS (a 3D Rough's leftovers, on demand) keeps them, and the
++    // generic pass attaches only its heatmap grid
++    // (`attach_generic_rest_analysis`). Pencil sets both fields and is
++    // left alone as before; an op that sets neither gets both as before.
+     if let Some(ra) = ctx.rest_analysis
+         && ra.enabled
+-        && generated.produced.has_no_rest_output()
++        && generated.produced.rest_grid.is_none()
+         && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
+     {
+         let reference_tool = ctx
+diff --git a/crates/rs_cam_core/src/compute/execute/dressup_apply.rs b/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
+index fe964698a..e4f445161 100644
+--- a/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
++++ b/crates/rs_cam_core/src/compute/execute/dressup_apply.rs
+@@ -179,7 +179,11 @@ pub(super) fn attach_generic_rest_analysis(
+         "generic rest analysis attached region set"
+     );
+     generated.produced.rest_grid = rf.produced.rest_grid;
+-    generated.produced.rest_regions = rf.produced.rest_regions;
++    // D44: an op that stated its own rest regions keeps them (one source of
++    // truth per field); the generic regions fill only an empty slot.
++    if generated.produced.rest_regions.is_none() {
++        generated.produced.rest_regions = rf.produced.rest_regions;
++    }
+ }
+ 
+ /// Why [`attach_generic_rest_analysis`] sizes the reach policy at
+diff --git a/crates/rs_cam_core/src/compute/execute/volumetric.rs b/crates/rs_cam_core/src/compute/execute/volumetric.rs
+index 19285e6ca..b7d8c14b0 100644
+--- a/crates/rs_cam_core/src/compute/execute/volumetric.rs
++++ b/crates/rs_cam_core/src/compute/execute/volumetric.rs
+@@ -169,8 +169,16 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
+     let VolumetricOutput {
+         toolpath,
+         annotations,
+-        produced,
++        mut produced,
+     } = op.plan(&inputs, &cancel, ctx.debug_ctx)?;
++    // D44: a planner may state the regions it left to a rest pass
++    // (`Produced::rest_regions`). They are published only on demand: when
++    // an enabled `DerivedRestRegions` boundary names this op, which turns
++    // its rest analysis on (`normalise_rest_analysis_demand`). With no
++    // demand the side channel is as before.
++    if !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
++        produced.rest_regions = None;
++    }
+     if let Some(sem) = ctx.semantic_ctx {
+         op.annotate(&annotations, &toolpath, sem);
+     }
+diff --git a/crates/rs_cam_core/src/trace/produced.rs b/crates/rs_cam_core/src/trace/produced.rs
+index 6257ebd8e..cfde6b761 100644
+--- a/crates/rs_cam_core/src/trace/produced.rs
++++ b/crates/rs_cam_core/src/trace/produced.rs
+@@ -44,6 +44,12 @@ pub struct Produced {
+     /// producers as [`Self::rest_grid`]; `None` otherwise. XY polygons.
+     /// This is the derived-boundary source for selective finishing (P2.2
+     /// `BoundarySource::DerivedRestRegions`).
++    ///
++    /// D44: a 3D Rough may state its own: the regions it left to a rest
++    /// pass (the research arm's left pieces), only when a
++    /// `DerivedRestRegions` boundary names it (`run_volumetric`). The
++    /// generic analysis then keeps them and attaches only its grid
++    /// (precedence per field, `compute/execute.rs`).
+     pub rest_regions: Option<Arc<Vec<Polygon2>>>,
+     /// The regions that a 3D Rough with By Area ordering detected (label
+     /// grid + region list), for the viewport overlay and MCP
+@@ -60,12 +66,6 @@ pub struct Produced {
+ }
+ 
+ impl Produced {
+-    /// True when no rest detector attached its output. The dispatch runs
+-    /// the generic rest analysis only then (P2.5: one source per toolpath).
+-    pub fn has_no_rest_output(&self) -> bool {
+-        self.rest_grid.is_none() && self.rest_regions.is_none()
+-    }
+-
+     /// Re-frame every coordinate-bearing field by `shift`.
+     ///
+     /// Destructures `self` field by field on purpose: a new field does not
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 54041e3..41ee1c2 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -1379,6 +1379,17 @@ fn output_and_turns(
+         params.depth.depth_per_pass,
+     );
+     let planner_engagement = result.planner_engagement;
++    // D44 (P3_C12_derived_rest_regions.md §2): the regions the run left to
++    // a rest pass, one XY union over the levels grown by one planner cell.
++    // The runner keeps them only on demand (`run_volumetric`).
++    #[cfg(feature = "research")]
++    let rest_regions = research_outer_band::left_regions(
++        &std::mem::take(&mut result.research_left_pieces),
++        (params.geometry.tool_radius / 6.0).max(params.geometry.tolerance),
++    )
++    .map(std::sync::Arc::new);
++    #[cfg(not(feature = "research"))]
++    let rest_regions = None;
+     if let Some(debug_ctx) = debug {
+         for annotation in &annotations {
+             debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
+@@ -1401,6 +1412,7 @@ fn output_and_turns(
+             produced: crate::trace::produced::Produced {
+                 planner_engagement,
+                 area_regions: result.area_regions.map(std::sync::Arc::new),
++                rest_regions,
+                 ..crate::trace::produced::Produced::default()
+             },
+         },
+diff --git a/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs b/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
+new file mode 100644
+index 000000000..41130ae56
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
+@@ -0,0 +1,211 @@
++//! D44 (`planning/adaptive_research_2026-10-23/P3_C12_derived_rest_regions.md`):
++//! the 3D Rough research arm states the regions it leaves to a rest pass
++//! (`Produced::rest_regions`), so that a following op with a
++//! `DerivedRestRegions` boundary plans only there.
++//!
++//! The planner states them on every research-arm run; the runner keeps them
++//! only on demand (`compute/execute/volumetric.rs`), which the session
++//! sentry of the job pair checks. Here, the planner alone:
++//! 1. a narrow channel the field cannot plan is left: the union covers it;
++//! 2. a stepped pocket: the wide pocket at the first level is cut, the
++//!    narrow channel below it is left. The union, made of the lower
++//!    level's piece, covers the channel's XY also at the first level,
++//!    where the arm records no piece (the Corne edge band at Z 17);
++//! 3. a pocket the arm plans everywhere leaves nothing: `None`.
++
++#![expect(
++    clippy::expect_used,
++    clippy::print_stderr,
++    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++
++use rs_cam_core::adaptive::research_geodesic::GeodesicOptions;
++use rs_cam_core::adaptive3d::{
++    Adaptive3dDepth, Adaptive3dGeometry, Adaptive3dLinking, Adaptive3dParams, ClearingStrategy3d,
++    EntryStyle3d, RegionOrdering, adaptive_3d_research_output_with_cancel,
++};
++use rs_cam_core::geo::P2;
++use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
++use rs_cam_core::polygon::Polygon2;
++use rs_cam_core::tool::FlatEndmill;
++
++const TOOL_RADIUS: f64 = 3.0;
++const STEPOVER: f64 = 2.0;
++const TOLERANCE: f64 = 0.1;
++const DEPTH_PER_PASS: f64 = 3.0;
++const STOCK_TO_LEAVE: f64 = 0.5;
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++/// The channel: about one stepover of tool-centre width, so the field's
++/// seed (a centre clearance of R) does not fit (as the C12 channel).
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++/// The wide shallow pocket of the stepped fixture: its floor lies above the
++/// second level, so only the first level cuts it.
++const WIDE_HALF_X: f64 = 34.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++/// The F-038 filter at the op default (`Adaptive3dConfig`); the forecast
++/// reads 0 on the channel and the arm leaves it.
++const MIN_REGION_CUT_LENGTH_MM: f64 = 15.0;
++
++fn params() -> Adaptive3dParams {
++    Adaptive3dParams {
++        entry_clearance_mm: 0.5,
++        ramp_feed_rate: None,
++        geometry: Adaptive3dGeometry {
++            tool_radius: TOOL_RADIUS,
++            envelope_radius: TOOL_RADIUS,
++            stepover: STEPOVER,
++            tolerance: TOLERANCE,
++            segment_merge_tolerance: None,
++            min_cutting_radius: 0.0,
++            boundary: None,
++            world_stock_xy_bbox: None,
++            centre_boundary: Vec::new(),
++        },
++        depth: Adaptive3dDepth {
++            depth_per_pass: DEPTH_PER_PASS,
++            stock_to_leave: STOCK_TO_LEAVE,
++            stock_top_z: TOP_Z,
++            z_floor: None,
++            detect_flat_areas: false,
++            slab_field: None,
++        },
++        linking: Adaptive3dLinking {
++            region_ordering: RegionOrdering::Global,
++            min_region_cut_length_mm: MIN_REGION_CUT_LENGTH_MM,
++            max_stay_down_distance_mm: None,
++            stay_down_clearance_mm: 0.5,
++            step_split: Default::default(),
++            keep_down_route: Default::default(),
++        },
++        feed_rate: 1000.0,
++        plunge_rate: 500.0,
++        safe_z: 15.0,
++        entry_style: EntryStyle3d::Plunge,
++        initial_stock: None,
++        clearing_strategy: ClearingStrategy3d::Geodesic(GeodesicOptions::C35_SPIRAL_PICK),
++        trochoid_cap_mult: 1.6,
++        engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
++        z_blend: false,
++    }
++}
++
++/// The regions the planner states for `mesh`.
++fn left_regions(mesh: &TriangleMesh) -> Option<Vec<Polygon2>> {
++    let index = SpatialIndex::build(mesh, 10.0);
++    let cutter = FlatEndmill::new(2.0 * TOOL_RADIUS, 25.0);
++    let (out, _) =
++        adaptive_3d_research_output_with_cancel(mesh, &index, &cutter, &params(), &|| false, None)
++            .expect("the plan is not cancelled");
++    out.produced.rest_regions.map(|r| r.as_ref().clone())
++}
++
++fn in_union(regions: &[Polygon2], p: P2) -> bool {
++    regions.iter().any(|r| r.contains_point(&p))
++}
++
++/// The points of the channel's tool-centre band: its centre line and the
++/// lines half a tool radius to each side, every 2 mm along it.
++fn channel_points() -> Vec<P2> {
++    let mut pts = Vec::new();
++    let mut x = -CHANNEL_HALF_LENGTH + TOOL_RADIUS;
++    while x <= CHANNEL_HALF_LENGTH - TOOL_RADIUS {
++        for y in [-0.5 * TOOL_RADIUS, 0.0, 0.5 * TOOL_RADIUS] {
++            pts.push(P2::new(x, y));
++        }
++        x += 2.0;
++    }
++    pts
++}
++
++fn in_channel(x: f64, y: f64) -> bool {
++    x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH
++}
++
++#[test]
++#[ignore = "heavy: plans three fixtures with the research arm; run with -- --ignored"]
++fn a_rough_publishes_the_regions_it_leaves() {
++    // 1. The channel alone.
++    let channel = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if in_channel(x, y) { FLOOR_Z } else { TOP_Z }
++    });
++    let regions = left_regions(&channel).expect("the arm leaves the channel and states it");
++    let area: f64 = regions.iter().map(|r| r.area().abs()).sum();
++    eprintln!("channel: {} regions, {area:.1} mm2", regions.len());
++    let missed: Vec<P2> = channel_points()
++        .into_iter()
++        .filter(|&p| !in_union(&regions, p))
++        .collect();
++    assert!(
++        missed.is_empty(),
++        "channel points outside the stated regions: {missed:?}"
++    );
++    // The union is the channel, not the board: a point well outside it is
++    // not in it.
++    assert!(
++        !in_union(
++            &regions,
++            P2::new(0.0, CHANNEL_HALF_WIDTH + 2.0 * TOOL_RADIUS)
++        ),
++        "the stated regions reach far outside the channel"
++    );
++
++    // 2. The stepped pocket: the wide pocket (cut at the first level) with
++    // the channel below it (left at the second level).
++    let stepped = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if in_channel(x, y) {
++            FLOOR_Z
++        } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let regions = left_regions(&stepped).expect("the arm leaves the channel below the wide pocket");
++    let area: f64 = regions.iter().map(|r| r.area().abs()).sum();
++    eprintln!("stepped: {} regions, {area:.1} mm2", regions.len());
++    let missed: Vec<P2> = channel_points()
++        .into_iter()
++        .filter(|&p| !in_union(&regions, p))
++        .collect();
++    assert!(
++        missed.is_empty(),
++        "channel points (also the first level's band) outside the stated regions: {missed:?}"
++    );
++    // The wide pocket the arm cut is not stated.
++    assert!(
++        !in_union(
++            &regions,
++            P2::new(
++                0.0,
++                0.5 * (WIDE_HALF_Y + CHANNEL_HALF_WIDTH + 2.0 * TOOL_RADIUS)
++            )
++        ),
++        "the stated regions hold the wide pocket the arm cut"
++    );
++
++    // 3. A pocket the arm plans everywhere states nothing.
++    let pocket = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let regions = left_regions(&pocket);
++    eprintln!(
++        "pocket: {:?}",
++        regions
++            .as_ref()
++            .map(|r| r.iter().map(|p| p.area().abs()).sum::<f64>())
++    );
++    assert!(regions.is_none(), "a fully planned pocket states regions");
++}
+diff --git a/crates/rs_cam_core/tests/a_derived_rest_rough_cuts_only_the_leftovers_d44.rs b/crates/rs_cam_core/tests/a_derived_rest_rough_cuts_only_the_leftovers_d44.rs
+new file mode 100644
+index 000000000..040f6ad85
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_derived_rest_rough_cuts_only_the_leftovers_d44.rs
+@@ -0,0 +1,229 @@
++//! D44 (`planning/adaptive_research_2026-10-23/P3_C12_derived_rest_regions.md`)
++//! through the session door, as the job runs it:
++//! 1. with no consumer (rest analysis off), the 3D Rough states no rest
++//!    regions: the side channel is as before (parity);
++//! 2. with a consumer (an enabled `DerivedRestRegions` boundary names the
++//!    rough, which turns its rest analysis on), the rough (on the stepped
++//!    pocket of `a_rough_publishes_the_regions_it_leaves_d44`) states the
++//!    regions it left (the channel below the wide pocket), and the generic
++//!    rest analysis keeps
++//!    them and attaches only its heatmap grid (precedence per field);
++//! 3. the consumer, a contour-parallel rough with that boundary, cuts only
++//!    inside the stated regions, and is not empty.
++//!
++//! The research arm is selected only by `RS_CAM_RESEARCH_ADAPTIVE3D_ARM`
++//! (read once per process; the workspace denies the `unsafe` that
++//! `std::env::set_var` needs), so the test runs with that variable set.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    clippy::print_stderr,
++    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource, StockSource};
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
++use rs_cam_core::geo::P2;
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::polygon::Polygon2;
++use rs_cam_core::session::{AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder};
++use std::sync::atomic::AtomicBool;
++
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++const WIDE_HALF_X: f64 = 34.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++const TOOL_DIAMETER: f64 = 6.0;
++/// The research arm the run must select.
++const ARM: &str = "geodesic_local_spiral_pick";
++
++fn rough(strategy: ClearingStrategy) -> OperationConfig {
++    OperationConfig::Adaptive3d(Adaptive3dConfig {
++        stepover: 2.0,
++        depth_per_pass: 3.0,
++        clearing_strategy: strategy,
++        ..Adaptive3dConfig::default()
++    })
++}
++
++/// The channel session: op 0 the rough (AgentSearch, so the research arm
++/// takes it), with its rest analysis `demand`; with `consumer`, op 1 a
++/// contour-parallel rough whose boundary is op 0's derived rest regions.
++fn session(demand: bool, consumer: bool) -> ProjectSession {
++    // The stepped pocket of sentry 1: the wide shallow pocket (cut at the
++    // first level) with the narrow channel below it (left at the second).
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH {
++            FLOOR_Z
++        } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
++    let tool_id = ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(mesh_model(mesh, "channel"));
++    let mut op0 = toolpath_config(
++        "rough",
++        rough(ClearingStrategy::AgentSearch),
++        tool_id,
++        model_id,
++    );
++    op0.rest_analysis.enabled = demand;
++    let index0 = builder.add_toolpath(0, op0).expect("add the rough");
++    let mut session = builder.build();
++    if consumer {
++        let source_toolpath_id = session.toolpath_configs()[index0].id;
++        let mut op1 = toolpath_config(
++            "edges, CP rest",
++            rough(ClearingStrategy::ContourParallel),
++            tool_id,
++            model_id,
++        );
++        op1.stock_source = StockSource::default();
++        op1.boundary = BoundaryConfig {
++            enabled: true,
++            source: BoundarySource::DerivedRestRegions { source_toolpath_id },
++            ..BoundaryConfig::default()
++        };
++        let _ = session
++            .apply(Command::AddToolpath(AddToolpathArgs {
++                setup_index: 0,
++                config: Box::new(op1),
++            }))
++            .expect("add the consumer");
++    }
++    session
++}
++
++fn generate(session: &mut ProjectSession, index: usize) {
++    let cancel = AtomicBool::new(false);
++    if let Err(e) = session.generate_toolpath(index, &cancel) {
++        panic!("generating toolpath {index}: {e}");
++    }
++}
++
++fn channel_points() -> Vec<P2> {
++    let mut pts = Vec::new();
++    let mut x = -CHANNEL_HALF_LENGTH + 3.0;
++    while x <= CHANNEL_HALF_LENGTH - 3.0 {
++        for y in [-1.5, 0.0, 1.5] {
++            pts.push(P2::new(x, y));
++        }
++        x += 2.0;
++    }
++    pts
++}
++
++#[test]
++#[ignore = "external: needs RS_CAM_RESEARCH_ADAPTIVE3D_ARM=geodesic_local_spiral_pick; run with -- --ignored"]
++fn a_derived_rest_rough_cuts_only_the_leftovers() {
++    assert_eq!(
++        std::env::var("RS_CAM_RESEARCH_ADAPTIVE3D_ARM").as_deref(),
++        Ok(ARM),
++        "run this test with RS_CAM_RESEARCH_ADAPTIVE3D_ARM={ARM}"
++    );
++
++    // 1. No consumer: no rest regions on the rough's result.
++    let mut alone = session(false, false);
++    generate(&mut alone, 0);
++    let result = alone.result_at(0).expect("the rough's result");
++    assert!(
++        result.annotated().produced.rest_regions.is_none(),
++        "the rough states rest regions with no consumer"
++    );
++
++    // 2. With a consumer: the rough states the channel, and the generic
++    // analysis keeps them and adds its grid.
++    let mut pair = session(true, true);
++    generate(&mut pair, 0);
++    let produced = &pair
++        .result_at(0)
++        .expect("the rough's result")
++        .annotated()
++        .produced;
++    let regions: Vec<Polygon2> = produced
++        .rest_regions
++        .as_deref()
++        .expect("the rough states the regions it left")
++        .clone();
++    let area: f64 = regions.iter().map(|r| r.area().abs()).sum();
++    eprintln!(
++        "rough: {} regions, {area:.1} mm2; heatmap grid {}",
++        regions.len(),
++        produced.rest_grid.is_some()
++    );
++    let missed: Vec<P2> = channel_points()
++        .into_iter()
++        .filter(|p| !regions.iter().any(|r| r.contains_point(p)))
++        .collect();
++    assert!(
++        missed.is_empty(),
++        "channel points outside the regions: {missed:?}"
++    );
++    // The regions are the arm's leftovers, not the generic valley set: the
++    // channel's tool-centre region (the channel inset by R, the region the
++    // planner plans) grown by one planner cell (R / 6).
++    let (r, cell) = (TOOL_DIAMETER / 2.0, TOOL_DIAMETER / 12.0);
++    let centre_area =
++        (2.0 * (CHANNEL_HALF_LENGTH - r + cell)) * (2.0 * (CHANNEL_HALF_WIDTH - r + cell));
++    assert!(
++        area > 0.8 * centre_area && area < 1.2 * centre_area,
++        "the stated area {area:.1} mm2 is not the channel's centre region ({centre_area:.1} mm2)"
++    );
++    assert!(
++        produced.rest_grid.is_some(),
++        "the generic analysis did not attach its grid beside the rough's regions"
++    );
++
++    // 3. The consumer cuts only inside the regions.
++    generate(&mut pair, 1);
++    let tp = &pair
++        .result_at(1)
++        .expect("the consumer's result")
++        .annotated()
++        .toolpath;
++    let tol = 0.5;
++    let mut cuts = 0usize;
++    let mut outside = Vec::new();
++    for w in tp.moves.windows(2) {
++        let (a, b) = (w[0].target, &w[1]);
++        if !b.move_type.is_cutting() || (b.target.x - a.x).hypot(b.target.y - a.y) < 1e-6 {
++            continue;
++        }
++        cuts += 1;
++        for q in [P2::new(a.x, a.y), P2::new(b.target.x, b.target.y)] {
++            if !regions.iter().any(|r| r.contains_point_eps(&q, tol)) {
++                outside.push((q.x, q.y));
++            }
++        }
++    }
++    eprintln!(
++        "consumer: {} moves, {cuts} cutting, {} ends outside",
++        tp.moves.len(),
++        outside.len()
++    );
++    assert!(cuts > 0, "the consumer cut nothing");
++    assert!(
++        outside.is_empty(),
++        "consumer cuts outside the regions: {outside:?}"
++    );
++}

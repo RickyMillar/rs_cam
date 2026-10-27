@@ -1,0 +1,619 @@
+diff --git a/crates/rs_cam_core/src/adaptive/path.rs b/crates/rs_cam_core/src/adaptive/path.rs
+index 1798dfdbb..f36c9bac6 100644
+--- a/crates/rs_cam_core/src/adaptive/path.rs
++++ b/crates/rs_cam_core/src/adaptive/path.rs
+@@ -222,6 +222,19 @@ impl LinkLoad {
+         })
+     }
+ 
++    /// Research (§19.3 Part 4 probe): the length of a planned clearing turn
++    /// the step from `a` to `b` lies on (both ends on its segment, as
++    /// [`Self::admits_turn`] reads it), whatever its length; `None` off
++    /// every turn.
++    #[cfg(feature = "research")]
++    fn turn_under(&self, a: P2, b: P2) -> Option<f64> {
++        self.turns.iter().find_map(|&(p, q)| {
++            (crate::geo::point_to_segment_distance(&a, &p, &q) < 1e-6
++                && crate::geo::point_to_segment_distance(&b, &p, &q) < 1e-6)
++                .then(|| (q.x - p.x).hypot(q.y - p.y))
++        })
++    }
++
+     /// True when the cutter centre may stand at `p`: exactly inside the
+     /// machinable region under the 2D rule, else the lattice read.
+     fn legal(&self, grid: &MaterialGrid, mask: &[bool], p: P2) -> bool {
+@@ -528,6 +541,10 @@ fn emit_capped_walk_with(
+     let mut kept_len = 0usize;
+     let mut air_run = 0usize;
+     let mut was_departing = false;
++    // §19.3 Part 4 probe: the last step this walk refused (its end, its
++    // reading, and the planned turn it lay on), for the re-entry it causes.
++    #[cfg(feature = "research")]
++    let mut last_refusal: Option<(P2, f64, Option<f64>)> = None;
+     let flush = |span: &mut Vec<P2>, out: &mut Vec<AdaptiveSegment>, spans: &mut usize| {
+         if span.len() >= 2 {
+             out.push(AdaptiveSegment::Cut(std::mem::take(span)));
+@@ -586,6 +603,10 @@ fn emit_capped_walk_with(
+                     air_run = 0;
+                 }
+             } else {
++                #[cfg(feature = "research")]
++                if !load.turns.is_empty() {
++                    last_refusal = Some((b, reading, load.turn_under(a, b)));
++                }
+                 if cut_only {
+                     span.truncate(kept_len);
+                 }
+@@ -611,6 +632,27 @@ fn emit_capped_walk_with(
+             continue;
+         }
+         if reenters {
++            // §19.3 Part 4 probe (research arm only: the turn list is empty
++            // on every shipped path): why this walk re-enters here.
++            #[cfg(feature = "research")]
++            if !load.turns.is_empty() {
++                let (refused_at, reading, turn) = last_refusal
++                    .take()
++                    .map_or((None, None, None), |(at, reading, turn)| {
++                        (Some(at), Some(reading), turn)
++                    });
++                tracing::info!(
++                    x = %format!("{:.3}", a.x),
++                    y = %format!("{:.3}", a.y),
++                    cause = if refused_at.is_some() { "step refused" } else { "no link holds" },
++                    refused_at = ?refused_at.map(|p| (p.x, p.y)),
++                    reading = ?reading,
++                    ceiling = load.pass.ceiling,
++                    on_turn_mm = ?turn,
++                    turn_bound_mm = load.turn_bound,
++                    "C22 2D re-entry cause"
++                );
++            }
+             out.push(AdaptiveSegment::Rapid(a));
+             load.stamp_entry(grid, a);
+         } else if here.is_some_and(|h| (a.x - h.x).hypot(a.y - h.y) >= 1e-6) {
+@@ -681,6 +723,18 @@ fn replay_kept_segments(
+                     out.push(AdaptiveSegment::Link(p));
+                     plunged_at = None;
+                 } else {
++                    // §19.3 Part 4 probe (research arm only): a refused
++                    // keep-down link, as the one-way return of a turn join.
++                    #[cfg(feature = "research")]
++                    if !load.turns.is_empty() {
++                        tracing::info!(
++                            x = %format!("{:.3}", p.x),
++                            y = %format!("{:.3}", p.y),
++                            cause = "link refused",
++                            from = ?here.map(|h| (h.x, h.y)),
++                            "C22 2D re-entry cause"
++                        );
++                    }
+                     // The refused link becomes a re-entry: its hole is cut.
+                     out.push(AdaptiveSegment::Rapid(p));
+                     load.stamp_entry(grid, p);
+diff --git a/crates/rs_cam_core/src/adaptive/slab_field.rs b/crates/rs_cam_core/src/adaptive/slab_field.rs
+index 000c2fb53..837018eee 100644
+--- a/crates/rs_cam_core/src/adaptive/slab_field.rs
++++ b/crates/rs_cam_core/src/adaptive/slab_field.rs
+@@ -168,3 +168,113 @@ impl SlabField {
+             .mrr_cross_section_mm2(self.depth_per_pass, self.diameter)
+     }
+ }
++
++/// The chip-area load of a cut (§18.6, §18.11; the one definition the
++/// planner and the judge agree, C43): the lateral strips `strips`
++/// (`(strip index, engaged depth mm)`, in index order, `pitch_mm` apart)
++/// integrated across the strip centres by the trapezoid with the cutter's
++/// chip cross-section `chip.mrr_cross_section_mm2` (the area the power gate
++/// multiplies by feed), over that of a full pass across the cutter,
++/// `mrr_cross_section_mm2(depth_per_pass, diameter)`.
++///
++/// Each pair of neighbouring strips adds `mrr_cross_section_mm2(mean of
++/// their depths, pitch)`; strips with a gap between them add nothing across
++/// it. So a full-depth band of `n` strip centres reads `(n − 1) · pitch`
++/// wide over the diameter: the extent between its outermost centres, the
++/// quantity the flat swept-width read measures (`search.rs::swept_width_on`).
++/// A layer `t` thinner than a pass reads `t / depth_per_pass` of that.
++#[must_use]
++pub fn strips_chip_load(
++    chip: ToolGeometryHint,
++    depth_per_pass: f64,
++    diameter: f64,
++    strips: impl IntoIterator<Item = (i64, f64)>,
++    pitch_mm: f64,
++) -> f64 {
++    let mut area = 0.0_f64;
++    let mut prev: Option<(i64, f64)> = None;
++    for (index, depth) in strips {
++        if let Some((p_index, p_depth)) = prev
++            && index == p_index + 1
++        {
++            area += chip.mrr_cross_section_mm2(0.5 * (p_depth + depth), pitch_mm);
++        }
++        prev = Some((index, depth));
++    }
++    area / chip.mrr_cross_section_mm2(depth_per_pass, diameter)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::strips_chip_load;
++    use crate::feeds::ToolGeometryHint;
++
++    /// §18.11 sentry of the one definition: at a full pass (every strip one
++    /// Depth/Pass deep) the load of `n` strip centres a cell apart is the
++    /// extent between the outermost centres over the diameter,
++    /// `(n − 1) · cell / D`, bit for bit, for 1 to 13 centres (a slot of a
++    /// 6 mm cutter on a 0.5 mm lattice), for the rectangular and the V-bit
++    /// cross-section (their shape factor cancels).
++    #[test]
++    fn a_full_pass_reads_the_extent_over_the_diameter() {
++        const D: f64 = 6.0;
++        const CELL: f64 = 0.5;
++        for chip in [
++            ToolGeometryHint::Flat,
++            ToolGeometryHint::VBit {
++                included_angle: 90.0,
++                tip_diameter: 0.0,
++            },
++        ] {
++            for dpp in [3.0, 6.0] {
++                for n in 1..=13_i64 {
++                    let load = strips_chip_load(chip, dpp, D, (0..n).map(|i| (i, dpp)), CELL);
++                    let extent = (n - 1) as f64 * CELL / D;
++                    assert_eq!(
++                        load.to_bits(),
++                        extent.to_bits(),
++                        "{chip:?}, DPP {dpp}, {n} centres: load {load}, extent {extent}"
++                    );
++                }
++            }
++        }
++    }
++
++    /// §18.11: a layer `t` across the strips reads `t / DPP` of the
++    /// full-pass load of the same strips; a gap between strips adds nothing
++    /// across it.
++    #[test]
++    fn a_thin_layer_reads_its_depth_over_the_pass_and_a_gap_adds_nothing() {
++        const D: f64 = 6.0;
++        const CELL: f64 = 0.5;
++        const DPP: f64 = 6.0;
++        for t in [0.1, 0.5, 1.5, 3.0] {
++            let full = strips_chip_load(
++                ToolGeometryHint::Flat,
++                DPP,
++                D,
++                (0..9).map(|i| (i, DPP)),
++                CELL,
++            );
++            let thin =
++                strips_chip_load(ToolGeometryHint::Flat, DPP, D, (0..9).map(|i| (i, t)), CELL);
++            assert!(
++                (thin - full * t / DPP).abs() <= 1e-15,
++                "layer {t}: {thin} against {}",
++                full * t / DPP
++            );
++        }
++        let split = strips_chip_load(
++            ToolGeometryHint::Flat,
++            DPP,
++            D,
++            [(0, DPP), (1, DPP), (5, DPP), (6, DPP)],
++            CELL,
++        );
++        assert_eq!(
++            split.to_bits(),
++            (2.0 * CELL / D).to_bits(),
++            "two bands of two centres"
++        );
++    }
++}
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 0a1fb1d2d..c8d1aab9a 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -1360,24 +1360,38 @@ pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64)
+         .fold(f64::NEG_INFINITY, f64::max)
+ }
+ 
+-/// §16.9: the widest swept width (mm) of a feed move from `p` to `q` with
+-/// a tool of `radius`, read on the 3D planner stock by the rule of the 2D
+-/// `swept_width_on`: at each sample along the move (every half cell, as
+-/// [`step_axial_depth`]), the grid cells inside the disc whose stock stands
+-/// above the tool's Z there plus `clearance` (the dexel allowance), spread
+-/// across the move's XY heading by this much. A cell the move has already
+-/// passed over counts at most at the Z the tool passed it (an earlier
+-/// sample within R cut it down to that Z, and no lower): a descent sweeps
+-/// nothing below its own path, so the stock it descends into still
+-/// counts. 0 for a move with no XY length (a pure rise or
+-/// drop has no side width; its depth is [`step_axial_depth`]'s). Any
+-/// strategy's draped cut can read it.
+-pub(super) fn step_swept_width(
++/// The cutter and the pass a step's load is read against (§19.3, Part 1):
++/// the cutter's radial profile, its chip cross-section contract, its
++/// diameter, and the op's Depth/Pass.
++pub(super) struct StepLoadCutter<'a> {
++    pub(super) lut: &'a RadialProfileLUT,
++    pub(super) chip: crate::feeds::ToolGeometryHint,
++    pub(super) diameter: f64,
++    pub(super) depth_per_pass: f64,
++}
++
++/// §19.3 Part 1: the highest chip-area load of a feed move from `p` to `q`
++/// with a tool of `radius`, read on the 3D planner stock by the one load
++/// definition (`adaptive::slab_field::strips_chip_load`, §18.6, §18.11).
++/// At each sample along the move (every half cell, as
++/// [`step_axial_depth`]), each grid cell inside the disc whose stock stands
++/// above the cutter there (its tip plus the profile height at the cell,
++/// plus `clearance`, the dexel allowance) engages its depth above the
++/// cutter; the cells are binned in lateral strips one cell apart across the
++/// move's XY heading, the deepest per strip. A cell an earlier sample of
++/// this move passed within R counts at most at that sample's Z (an earlier
++/// sample cut it down to its own Z, and no lower): a descent sweeps nothing
++/// below its own path, so the stock it descends into still counts. It
++/// replaces §16.9's swept width (`step_swept_width`), which read a width
++/// and could not tell a thin layer from a load. 0 for a move with no XY length (its depth is
++/// [`step_axial_depth`]'s). Any strategy's draped cut can read it.
++pub(super) fn step_load(
+     stock: &TriDexelStock,
+     p: P3,
+     q: P3,
+     radius: f64,
+     clearance: f64,
++    cutter: &StepLoadCutter<'_>,
+ ) -> f64 {
+     let grid = &stock.z_grid;
+     let cs = grid.cell_size;
+@@ -1391,13 +1405,13 @@ pub(super) fn step_swept_width(
+     let n = (len / (cs * 0.5).max(1e-3)).ceil().max(1.0) as usize;
+     let r_sq = radius * radius;
+     let r_cells = (radius / cs).ceil() as isize;
+-    let mut widest = 0.0_f64;
++    let mut highest = 0.0_f64;
+     for k in 0..=n {
+         let t = k as f64 / n as f64;
+         let (x, y, z) = (p.x + dx * t, p.y + dy * t, p.z + t * (q.z - p.z));
+         let col0 = ((x - grid.origin_u) / cs).round() as isize;
+         let row0 = ((y - grid.origin_v) / cs).round() as isize;
+-        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
++        let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+         for row in (row0 - r_cells)..=(row0 + r_cells) {
+             for col in (col0 - r_cells)..=(col0 + r_cells) {
+                 if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+@@ -1408,11 +1422,13 @@ pub(super) fn step_swept_width(
+                     grid.origin_v + row as f64 * cs,
+                 );
+                 let (ex, ey) = (cx - x, cy - y);
+-                if ex * ex + ey * ey > r_sq {
++                let d_sq = ex * ex + ey * ey;
++                let Some(h) = cutter.lut.height_at_dist_sq(d_sq) else {
++                    continue;
++                };
++                if d_sq > r_sq {
+                     continue;
+                 }
+-                // The cell's top after the earlier samples of this move: each
+-                // one within R cut it down to its own Z.
+                 let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
+                 for j in 0..k {
+                     let tj = j as f64 / n as f64;
+@@ -1421,19 +1437,25 @@ pub(super) fn step_swept_width(
+                         top = top.min(p.z + tj * (q.z - p.z));
+                     }
+                 }
+-                if top <= z + clearance {
++                let floor = z + h;
++                if top <= floor + clearance {
+                     continue;
+                 }
+-                let u = ex * nx + ey * ny;
+-                lo = lo.min(u);
+-                hi = hi.max(u);
++                let strip = ((ex * nx + ey * ny) / cs).round() as i64;
++                let deepest = strips.entry(strip).or_insert(0.0);
++                *deepest = deepest.max(top - floor);
+             }
+         }
+-        if hi >= lo {
+-            widest = widest.max(hi - lo);
+-        }
++        let load = crate::adaptive::slab_field::strips_chip_load(
++            cutter.chip,
++            cutter.depth_per_pass,
++            cutter.diameter,
++            strips,
++            cs,
++        );
++        highest = highest.max(load);
+     }
+-    widest
++    highest
+ }
+ 
+ /// Helper to push a segment and stamp its simulator-equivalent swept
+@@ -4587,27 +4609,34 @@ fn plan_and_emit_region(
+                             let ap =
+                                 step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
+                             let deep = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
+-                            // §16.9: a step within one pass deep is cut at
+-                            // feed only when its swept width also holds the
+-                            // pass ceiling c·D of the 2D load
+-                            // (`PassLoad::swept_width`: the radial fraction
+-                            // of the pass ceiling, times D).
+-                            let ceiling_width =
++                            // §19.3 Part 1 (§16.9 on the area load): a step
++                            // within one pass deep is cut at feed only when
++                            // its chip-area load (`step_load`, the one load
++                            // definition) also holds the pass ceiling c (the
++                            // radial fraction of `PassLoad::swept_width`).
++                            // A thin layer reads light; a full-depth drop
++                            // into fresh stock reads near a slot.
++                            let ceiling =
+                                 crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+                                     crate::adaptive::pass_engagement_limit(
+                                         ctx.stepover,
+                                         ctx.tool_radius,
+                                     ),
+-                                ) * 2.0
+-                                    * ctx.tool_radius;
++                                );
+                             let wide = !deep
+-                                && step_swept_width(
++                                && step_load(
+                                     sink.material_stock,
+                                     prev,
+                                     curr,
+                                     ctx.tool_radius,
+                                     ctx.stay_down_clearance_mm,
+-                                ) > ceiling_width;
++                                    &StepLoadCutter {
++                                        lut: ctx.lut,
++                                        chip: ctx.cutter.geometry_hint(),
++                                        diameter: 2.0 * ctx.tool_radius,
++                                        depth_per_pass: ctx.depth_per_pass,
++                                    },
++                                ) > ceiling;
+                             let split = deep || wide;
+                             #[cfg(feature = "research")]
+                             {
+@@ -4667,6 +4696,24 @@ fn plan_and_emit_region(
+                                     super::EntryCause::LargeZ
+                                 },
+                             );
++                            // §19.3 Part 2 (counter): the stock this split's
++                            // plunge cuts, by the read `plan_entry` floors it
++                            // on.
++                            #[cfg(feature = "research")]
++                            if let Some(top) = sink.material_stock.max_conservative_top_z_in_disc(
++                                p3.x,
++                                p3.y,
++                                ctx.entry_floor_radius,
++                            ) {
++                                let mut stats = ctx.research_split_stats.borrow_mut();
++                                let stock = (top - p3.z).max(0.0);
++                                stats.split_entries += 1;
++                                if stock > ctx.depth_per_pass {
++                                    stats.split_entries_over_dpp += 1;
++                                }
++                                stats.max_split_entry_stock_mm =
++                                    stats.max_split_entry_stock_mm.max(stock);
++                            }
+                             // `LevelSink::emit` plans the entry (`plan_entry`) on commit.
+                             let entry_seg = Adaptive3dSegment::Rapid(p3);
+                             sink.emit(ctx, entry_seg);
+diff --git a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+index fbff72a70..e83133497 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+@@ -2452,3 +2452,150 @@ fn the_slab_field_reads_the_floor_band_beside_a_shelf() {
+     }
+     assert!(failures.is_empty(), "{failures:#?}");
+ }
++
++/// §19.3 (D43): the pocket of [`pocket_with_island`] with no island and a
++/// flat face 1.5 mm above the floor over its middle third (`|x| <= 11`):
++/// with one level from the top, every loop that crosses the face drapes
++/// onto it and drops off its edges (the Corne LargeZ shape, §19.2).
++fn stepped_face() -> TriangleMesh {
++    height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= POCKET_HALF_X && y.abs() <= POCKET_HALF_Y {
++            if x.abs() <= 11.0 {
++                FLOOR_Z + 1.5
++            } else {
++                FLOOR_Z
++            }
++        } else {
++            TOP_Z
++        }
++    })
++}
++
++/// §19.3 Parts 1–2 (D43) sentry, "no plunge into stock deeper than a pass":
++/// on the stepped face and on the shelf, one level from the top, for the
++/// research arm under the path rule and under the stock-read rule on the
++/// area load, every vertical entry stroke (`EntryPlunge` with no XY travel)
++/// that removes stock in the simulation is at most one Depth/Pass long
++/// (plus one sim cell, the simulation's own quantum), and the planner reads no split
++/// entry whose plunge would cut more than one Depth/Pass
++/// (`SplitStats::split_entries_over_dpp`). The stroke rule is the shipped
++/// peck's (`adaptive3d/path.rs`, `emit_peck_plunge`); the planner read is
++/// the bound's guarantee as far as the planner stock is true (§19.3.1).
++#[test]
++#[ignore = "heavy: four one-level 3D plans and four dexel simulations; run by name with \
++            --ignored (§19.3 plunge depth)"]
++fn no_split_entry_plunges_more_than_a_pass_into_stock() {
++    let shelf = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.hypot(y) <= ISLAND_RADIUS {
++            TOP_Z
++        } else if (12.0..=30.0).contains(&x) && y.abs() <= 12.0 {
++            6.5
++        } else if x.abs() <= POCKET_HALF_X && y.abs() <= POCKET_HALF_Y {
++            FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut failures: Vec<String> = Vec::new();
++    for (name, mesh) in [("stepped face", stepped_face()), ("shelf", shelf)] {
++        let index = SpatialIndex::build(&mesh, 10.0);
++        for split in [StepSplit::PathShape, StepSplit::StockDepth] {
++            let mut p = params(ClearingStrategy3d::Geodesic(
++                GeodesicOptions::C35_SPIRAL_PICK,
++            ));
++            p.depth.depth_per_pass = TOP_Z - FLOOR_Z;
++            p.linking.step_split = Some(split);
++            p.linking.keep_down_route = Some(KeepDownRoute::Off);
++            let dpp = p.depth.depth_per_pass;
++            let (out, research) = plan(&mesh, &index, &p);
++            let stats = research.split_stats;
++            let tp = &out.toolpath;
++            let cutter = FlatEndmill::new(2.0 * TOOL_RADIUS, 25.0);
++            let b = &mesh.bbox;
++            let mut stock = TriDexelStock::from_stock(
++                b.min.x - TOOL_RADIUS,
++                b.min.y - TOOL_RADIUS,
++                b.max.x + TOOL_RADIUS,
++                b.max.y + TOOL_RADIUS,
++                b.min.z,
++                TOP_Z,
++                SIM_CELL,
++            );
++            let samples = stock
++                .simulate_toolpath_with_metrics_with_cancel(
++                    tp,
++                    &cutter,
++                    StockCutDirection::FromTop,
++                    ToolpathId::from_raw(0),
++                    12_000,
++                    2,
++                    3000.0,
++                    SIM_CELL,
++                    None,
++                    &[],
++                    &[],
++                    false,
++                    &|| false,
++                )
++                .expect("the simulation is not cancelled");
++            // The vertical strokes that remove stock in the simulation, by
++            // their length (the move's Z drop): the simulation samples a
++            // plunge in small Z steps and coalesces them, so the move's
++            // geometry, not a sample, is the stroke.
++            let mut stroke: BTreeMap<usize, (f64, [f64; 3])> = BTreeMap::new();
++            for s in &samples {
++                let m = s.move_index;
++                let (Some(mv), Some(prev)) = (
++                    tp.moves.get(m),
++                    m.checked_sub(1).and_then(|j| tp.moves.get(j)),
++                ) else {
++                    continue;
++                };
++                let from = prev.target;
++                let vertical = (mv.target.x - from.x).hypot(mv.target.y - from.y) < 1e-9;
++                if mv.intent != MoveIntent::EntryPlunge
++                    || !vertical
++                    || !s.is_cutting
++                    || s.removed_volume_est_mm3 <= 0.0
++                {
++                    continue;
++                }
++                stroke
++                    .entry(m)
++                    .or_insert((from.z - mv.target.z, s.position));
++            }
++            let strokes = stroke.len();
++            let deepest = stroke.values().map(|v| v.0).fold(0.0_f64, f64::max);
++            for (m, (depth, at)) in &stroke {
++                if *depth > dpp + SIM_CELL {
++                    failures.push(format!(
++                        "{name}, {split:?}: move {m} plunges {depth:.3} mm into stock at \
++                         ({:.2}, {:.2}), over the pass {dpp} (+ sim cell {SIM_CELL})",
++                        at[0], at[1]
++                    ));
++                }
++            }
++            eprintln!(
++                "{name}, {split:?}: {} moves, {} entries; step split made {} (by load {}), \
++                 avoided {}; split entries {} (over the pass {}, deepest planner read {:.3} mm); \
++                 plunge strokes into stock {strokes}, deepest {deepest:.3} mm",
++                tp.moves.len(),
++                entry_count(tp),
++                stats.made,
++                stats.width_split,
++                stats.avoided,
++                stats.split_entries,
++                stats.split_entries_over_dpp,
++                stats.max_split_entry_stock_mm
++            );
++            if stats.split_entries_over_dpp > 0 {
++                failures.push(format!(
++                    "{name}, {split:?}: {} split entries the planner reads as cutting more \
++                     than the pass {dpp} (deepest {:.3} mm)",
++                    stats.split_entries_over_dpp, stats.max_split_entry_stock_mm
++                ));
++            }
++        }
++    }
++    assert!(failures.is_empty(), "{failures:#?}");
++}
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 54041e3f0..0ffa0d6cf 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -378,8 +378,10 @@ pub enum StepSplit {
+     PathShape,
+     /// Split only where the tool's swept disc along the step meets stock
+     /// deeper than one Depth/Pass below its top (plus the stay-down
+-    /// clearance): the planner's own pass rule. A step through air or
+-    /// onto a face that holds at most a pass of stock is cut at feed.
++    /// clearance), or where the step's chip-area load (§19.3 Part 1, the
++    /// one load definition) passes the pass ceiling: the planner's own pass
++    /// rule. A step through air, or onto a face or down a slope that holds
++    /// a light layer, is cut at feed.
+     StockDepth,
+ }
+ 
+@@ -390,11 +392,22 @@ pub enum StepSplit {
+ #[derive(Debug, Clone, Copy, Default)]
+ pub struct SplitStats {
+     pub made: usize,
+-    /// §16.9: of `made`, the steps within one pass deep that split because
+-    /// their swept width passes the pass ceiling c·D.
++    /// §16.9, §19.3 Part 1: of `made`, the steps within one pass deep that
++    /// split because their chip-area load (`clearing::step_load`) passes
++    /// the pass ceiling c (the field keeps its §16.9 name).
+     pub width_split: usize,
+     pub avoided: usize,
+     pub max_ap_avoided_mm: f64,
++    /// §19.3 Part 2 (counter): the entries a split made (LargeZ and
++    /// LargeZHeld, any rule), those whose plunge cuts more than one
++    /// Depth/Pass of stock, and the deepest. The depth is the planner's
++    /// conservative stock top over the entry floor disc (the read
++    /// `plan_entry` floors the descent on) less the entry's Z: an upper
++    /// bound on the stock the plunge cuts, as far as the planner stock is
++    /// true (§16.12: the Corne rapid collisions are one place it reads low).
++    pub split_entries: usize,
++    pub split_entries_over_dpp: usize,
++    pub max_split_entry_stock_mm: f64,
+ }
+ 
+ /// Research (§16 Part B, instrument): the entries a routed keep-down travel
+@@ -1332,6 +1345,17 @@ fn research_turn_feeds(
+             "C22 step split (stock-read rule)"
+         );
+     }
++    // §19.3 Part 2 (counter): the split entries, and those whose plunge
++    // would cut more than one Depth/Pass of stock (a multi-stroke peck into
++    // stock), by the planner's conservative read.
++    if split_stats.split_entries > 0 {
++        tracing::info!(
++            split_entries = split_stats.split_entries,
++            over_dpp = split_stats.split_entries_over_dpp,
++            max_stock_mm = %format!("{:.3}", split_stats.max_split_entry_stock_mm),
++            "C22 split entries (stock below the entry, planner read)"
++        );
++    }
+     (
+         tp,
+         Research3d {

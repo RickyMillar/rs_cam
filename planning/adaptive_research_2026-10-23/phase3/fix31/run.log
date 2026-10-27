@@ -1,0 +1,22 @@
+tree = clean 7bf7738a1
+A_s1p2 rc=0 273s; Toolpaths: 3  |  Cutting: 77061mm  |  Rapid: 32600mm  |  Time: 4238s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix31/A_s1p2 tp 1: 197087 samples, 99265 read, 19 s
+  disk free 67G
+A_s2p1 rc=0 31s; Toolpaths: 3  |  Cutting: 58336mm  |  Rapid: 31486mm  |  Time: 3421s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix31/A_s2p1 tp 1: 123941 samples, 57589 read, 13 s
+  disk free 67G
+B_s1p2 rc=0 25s; Toolpaths: 3  |  Cutting: 73441mm  |  Rapid: 32280mm  |  Time: 3948s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix31/B_s1p2 tp 1: 185058 samples, 101503 read, 25 s
+  disk free 67G
+B_s2p1 rc=0 20s; Toolpaths: 3  |  Cutting: 55925mm  |  Rapid: 30518mm  |  Time: 3238s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix31/B_s2p1 tp 1: 115998 samples, 59255 read, 11 s
+  disk free 67G
+D45RUNSDONE

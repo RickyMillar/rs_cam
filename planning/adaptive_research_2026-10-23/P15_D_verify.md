@@ -5395,3 +5395,21 @@ Searched in the tree at 7b7a8df6c. Options and what each can do for op 5
 No existing option limits op 5 to the 0–9 mm band or to leftovers thicker
 than a threshold, so D42b made no run. The G-CPRAPID row in DEFECTS.md now
 also carries D41's rapid-order evidence.
+
+## D45: D43 (StockDepth split) + D44 (op 5 on DerivedRestRegions), Corne, fixtures fix31 (lead read; D9 ended at the console restart before it wrote this)
+
+Tree 7bf7738a1. Detect Flat off. Acceleration clock (summary), seconds. CP reference: k_cp_fix6job, op 1 1427, copy 1414, job 2841.
+
+| run | op 1 | op 5 | copy | op 1 + op 5 | job | op 1 LargeZ entries / s |
+|---|---|---|---|---|---|---|
+| A s1.2 (default split) | 1873 | 435 | 1931 | 2308 | 4238 | 860 / 371 |
+| A s2.1 | 1248 | 429 | 1744 | 1677 | 3421 | 481 / 213 |
+| B s1.2 (stock_depth) | 1613 | 436 | 1900 | 2049 | 3948 | 490 / 195 |
+| B s2.1 | 1076 | 429 | 1733 | 1505 | 3238 | 231 / 91 |
+
+- D44 works: op 5 cuts only the edge band (op5_B_s2p1.png). It clears 0 mm² in the switch holes and the case (D41: it lapped them). Band left after op 5: 0 at 3–9 mm, 192 mm² at 0–3 mm, as in D41. Op 5 falls from 608–763 s (D41) to 429–436 s.
+- Op 5 still spends 113–120 s in rapids (a few long diagonal crossings) and about 115 s cutting air beside the band (outer laps).
+- D43 Part 1 (B against A): op 1 −260 s at s1.2 and −172 s at s2.1. LargeZ entries fall by 43 % and 52 %.
+- B s2.1 against CP: op 1 + op 5 is +78 s (×1.05). The job is +397 s (×1.14). All of the job gap is now the copy op: 1733 against 1414 s (G-LEVELPHASE).
+- 2D re-entries: the y = −80.3 row is "step refused" at readings 0.22–0.32 against a ceiling of 0.219 (load, not turn length). The rest are "link refused".
+- EXPORT GATE: all four runs were refused with "cached simulation is stale — re-run simulation to verify load gates against current toolpath state". The runs used the override, so this G-code must not be machined. A DerivedRestRegions consumer probably regenerates after the simulation. This is not yet proven; filed as G-RESTSTALE.

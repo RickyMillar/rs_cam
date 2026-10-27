@@ -1,0 +1,4 @@
+fix31/A_s2p1/simulation.json res 0.3 ids [1, 5, 3] total 3421.5
+   tp 1 total 1248.2 cut 1150.3 rapid 97.9 air 472.9 vol 217769
+   tp 3 total 1743.9 cut 1281.4 rapid 462.6 air 1027.1 vol 5338
+   tp 5 total 429.3 cut 280.3 rapid 149.0 air 202.0 vol 56558

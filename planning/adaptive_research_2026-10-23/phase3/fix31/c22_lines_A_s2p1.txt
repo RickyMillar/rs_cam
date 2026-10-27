@@ -1,0 +1,195 @@
+C22 2D re-entry cause x=39.853 y=-3.316 cause="link refused" from=Some((13.055995995886157, -29.46529254073813))
+C22 2D re-entry cause x=47.489 y=-100.316 cause="link refused" from=Some((54.776219590200874, -98.8155441120563))
+C22 2D re-entry cause x=29.463 y=-3.316 cause="link refused" from=Some((34.11867797559926, -3.315544112056301))
+C22 2D re-entry cause x=3.314 y=-30.990 cause="link refused" from=Some((3.3137288093566895, -38.567752821331))
+C22 2D re-entry cause x=18.448 y=-5.816 cause="link refused" from=Some((21.810971139887354, -5.815544112056301))
+C22 2D re-entry cause x=3.314 y=-20.892 cause="link refused" from=Some((3.3137288093566895, -25.503601047962043))
+C22 2D re-entry cause x=3.314 y=-13.018 cause="link refused" from=Some((3.3137288093566895, -16.7862356428911))
+C22 2D re-entry cause x=44.814 y=-1.951 cause="link refused" from=Some((3.3137288093566895, -9.491660500194826))
+C22 2D re-entry cause x=77.183 y=-1.316 cause="link refused" from=Some((71.41475812961869, -1.3155441120563012))
+C22 2D re-entry cause x=86.019 y=-1.316 cause="link refused" from=Some((81.88742905128287, -1.3155441120563012))
+C22 2D re-entry cause x=93.296 y=-1.316 cause="link refused" from=Some((89.7863738743476, -1.3155441120563012))
+C22 2D re-entry cause x=114.692 y=-5.316 cause="link refused" from=Some((108.66714618197238, -1.3155441120563012))
+C22 2D re-entry cause x=136.582 y=-80.316 cause="step refused" refused_at=Some((136.58195649647408, -80.3155441120563)) reading=Some(0.4718835269184647) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=141.054 y=-80.316 cause="step refused" refused_at=Some((141.05351976091524, -80.3155441120563)) reading=Some(0.4728431955122157) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=149.814 y=-12.767 cause="link refused" from=Some((149.8137288093567, -18.98242895116677))
+C22 2D re-entry cause x=149.798 y=-7.316 cause="link refused" from=Some((146.7843895687539, -5.815544112056301))
+C22 2D re-entry cause x=145.499 y=-80.316 cause="step refused" refused_at=Some((145.49897723193146, -80.3155441120563)) reading=Some(0.3946495008434674) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=91.814 y=-82.511 cause="link refused" from=Some((149.8137288093567, -73.00159720106247))
+C22 2D re-entry cause x=78.578 y=-95.316 cause="link refused" from=Some((70.77464713815516, -96.3155441120563))
+C22 2D re-entry cause x=41.962 y=-101.316 cause="link refused" from=Some((56.31372880935669, -98.80846460367275))
+C22 2D re-entry cause x=3.314 y=-68.641 cause="link refused" from=Some((3.3137288093566895, -61.063335402781604))
+C22 2D re-entry cause x=3.314 y=-78.740 cause="link refused" from=Some((3.3137288093566895, -74.12748717615055))
+C22 2D re-entry cause x=30.764 y=-106.316 cause="link refused" from=Some((34.31372880935669, -105.48972872893191))
+C22 2D re-entry cause x=7.814 y=-92.263 cause="link refused" from=Some((3.3137288093566895, -82.8448525812215))
+C22 2D re-entry cause x=21.583 y=-106.316 cause="link refused" from=Some((25.889029763874476, -106.3155441120563))
+C22 2D re-entry cause x=14.814 y=-104.319 cause="link refused" from=Some((12.81372880935669, -100.05273416226244))
+C22 2D re-entry cause x=146.070 y=-80.759 cause="step refused" refused_at=Some((146.013877402351, -80.76329339461897)) reading=Some(0.49989118921901454) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=149.388 y=-6.784 cause="step refused" refused_at=Some((149.76133214338978, -7.147809193198603)) reading=Some(0.5008673033404674) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=39.853 y=-3.316 cause="link refused" from=Some((13.055995995886157, -29.46529254073813))
+C22 2D re-entry cause x=47.489 y=-100.316 cause="link refused" from=Some((54.776219590200874, -98.8155441120563))
+C22 2D re-entry cause x=29.463 y=-3.316 cause="link refused" from=Some((34.11867797559926, -3.315544112056301))
+C22 2D re-entry cause x=3.314 y=-30.990 cause="link refused" from=Some((3.3137288093566895, -38.567752821331))
+C22 2D re-entry cause x=18.448 y=-5.816 cause="link refused" from=Some((21.810971139887354, -5.815544112056301))
+C22 2D re-entry cause x=3.314 y=-20.892 cause="link refused" from=Some((3.3137288093566895, -25.503601047962043))
+C22 2D re-entry cause x=3.314 y=-13.018 cause="link refused" from=Some((3.3137288093566895, -16.7862356428911))
+C22 2D re-entry cause x=48.310 y=-1.316 cause="link refused" from=Some((3.3137288093566895, -9.491660500194826))
+C22 2D re-entry cause x=77.183 y=-1.316 cause="link refused" from=Some((71.41475812961869, -1.3155441120563012))
+C22 2D re-entry cause x=117.653 y=-5.816 cause="step refused" refused_at=Some((116.23321990308052, -5.646768476930687)) reading=Some(0.4571471213218729) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=125.256 y=-80.316 cause="step refused" refused_at=Some((125.31372880935669, -80.1820661483289)) reading=Some(0.39309909399614246) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.815 y=-80.316 cause="step refused" refused_at=Some((129.81542687053445, -80.3155441120563)) reading=Some(0.4007629010335115) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=134.335 y=-80.316 cause="step refused" refused_at=Some((134.33504282353098, -80.3155441120563)) reading=Some(0.4075284847876439) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=138.821 y=-80.316 cause="step refused" refused_at=Some((138.8213045012659, -80.3155441120563)) reading=Some(0.4134774081262412) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=143.279 y=-80.316 cause="step refused" refused_at=Some((143.3137288093567, -80.21547987814783)) reading=Some(0.41877821519209363) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=91.814 y=-82.511 cause="link refused" from=Some((148.0372018764085, -79.3155441120563))
+C22 2D re-entry cause x=78.578 y=-95.316 cause="link refused" from=Some((70.77464713815516, -96.3155441120563))
+C22 2D re-entry cause x=41.962 y=-101.316 cause="link refused" from=Some((56.31372880935669, -98.80846460367275))
+C22 2D re-entry cause x=3.314 y=-68.641 cause="link refused" from=Some((3.3137288093566895, -61.063335402781604))
+C22 2D re-entry cause x=3.314 y=-78.740 cause="link refused" from=Some((3.3137288093566895, -74.12748717615055))
+C22 2D re-entry cause x=30.764 y=-106.316 cause="link refused" from=Some((34.31372880935669, -105.48972872893191))
+C22 2D re-entry cause x=7.814 y=-92.263 cause="link refused" from=Some((3.3137288093566895, -82.8448525812215))
+C22 2D re-entry cause x=21.583 y=-106.316 cause="link refused" from=Some((25.889029763874476, -106.3155441120563))
+C22 2D re-entry cause x=14.814 y=-104.319 cause="link refused" from=Some((12.81372880935669, -100.05273416226244))
+C22 2D re-entry cause x=139.739 y=-5.816 cause="link refused" from=Some((12.535046863628063, -99.8155441120563))
+C22 2D re-entry cause x=149.814 y=-12.767 cause="link refused" from=Some((149.8137288093567, -18.98242895116677))
+C22 2D re-entry cause x=149.798 y=-7.316 cause="link refused" from=Some((146.7843895687539, -5.815544112056301))
+C22 2D re-entry cause x=22.084 y=-106.316 cause="step refused" refused_at=Some((13.368212751014568, -102.00672964677196)) reading=Some(0.41529781994658577) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=13.348 y=-74.497 cause="link refused" from=Some((13.347775498211917, -70.24588383162056))
+C22 2D re-entry cause x=21.848 y=-89.892 cause="link refused" from=Some((19.347775498211917, -85.05487165100234))
+C22 2D re-entry cause x=28.786 y=-94.264 cause="step refused" refused_at=Some((28.347775498211917, -94.03383708758201)) reading=Some(0.3838578615379172) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((19.038766421712857, -84.76384091144064))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 2D re-entry cause x=50.348 y=-14.374 cause="link refused" from=Some((13.347775498211917, -19.823732133249745))
+C22 2D re-entry cause x=71.183 y=-83.764 cause="link refused" from=Some((65.59153267622565, -84.26384091144064))
+C22 2D re-entry cause x=84.249 y=-70.764 cause="link refused" from=Some((80.19595324170196, -76.26384091144064))
+C22 2D re-entry cause x=66.915 y=-13.264 cause="link refused" from=Some((60.075994768149236, -13.263840911440639))
+C22 2D re-entry cause x=79.654 y=-10.764 cause="link refused" from=Some((75.84064311720793, -10.763840911440639))
+C22 2D re-entry cause x=97.119 y=-68.264 cause="step refused" refused_at=Some((97.11947354552036, -68.26384091144064)) reading=Some(0.47010419152500443) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=89.088 y=-13.264 cause="link refused" from=Some((83.15175054928324, -10.763840911440639))
+C22 2D re-entry cause x=101.590 y=-68.264 cause="step refused" refused_at=Some((101.59034465295213, -68.26384091144064)) reading=Some(0.47693379702545496) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=106.018 y=-68.264 cause="step refused" refused_at=Some((106.01827533170575, -68.26384091144064)) reading=Some(0.48015357089470917) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=114.781 y=-68.264 cause="step refused" refused_at=Some((114.78119892662694, -68.26384091144064)) reading=Some(0.4972665511636378) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=119.128 y=-68.264 cause="step refused" refused_at=Some((119.12818312726198, -68.26384091144064)) reading=Some(0.3832789886096207) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=123.458 y=-68.264 cause="step refused" refused_at=Some((123.45777052276463, -68.26384091144064)) reading=Some(0.4706891293304722) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=127.773 y=-68.264 cause="step refused" refused_at=Some((127.77289189863866, -68.26384091144064)) reading=Some(0.5093985561705393) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=132.076 y=-68.264 cause="step refused" refused_at=Some((132.07585907230796, -68.26384091144064)) reading=Some(0.4367663557029781) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((138.59417525771352, -18.26384091144064))
+C22 2D re-entry cause x=19.039 y=-84.764 cause="link refused" from=Some((25.847775498211917, -95.05000273767435))
+C22 2D re-entry cause x=73.784 y=-83.282 cause="link refused" from=Some((103.00937499846007, -13.971955666309858))
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=18.848 y=-84.581 cause="link refused" from=Some((13.347775498211917, -74.49726171867488))
+C22 2D re-entry cause x=65.592 y=-84.264 cause="link refused" from=Some((22.34681087866065, -90.26384091144064))
+C22 2D re-entry cause x=60.076 y=-13.264 cause="link refused" from=Some((50.34777549821192, -14.37445403818065))
+C22 2D re-entry cause x=87.986 y=-68.264 cause="step refused" refused_at=Some((86.66685379783546, -68.54804966637815)) reading=Some(0.5175905252090446) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=90.300 y=-68.264 cause="step refused" refused_at=Some((90.34777549821192, -68.15699331816133)) reading=Some(0.39029348318904217) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((140.34777549821192, -23.42995763485596))
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((71.34777549821192, -83.66490253318108))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=13.348 y=-74.497 cause="link refused" from=Some((13.347775498211917, -70.24588383162056))
+C22 2D re-entry cause x=21.848 y=-89.892 cause="link refused" from=Some((19.347775498211917, -85.05487165100234))
+C22 2D re-entry cause x=28.786 y=-94.264 cause="step refused" refused_at=Some((28.347775498211917, -94.03383708758201)) reading=Some(0.3838578615379172) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((19.038766421712857, -84.76384091144064))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 2D re-entry cause x=50.348 y=-14.374 cause="link refused" from=Some((13.347775498211917, -19.823732133249745))
+C22 2D re-entry cause x=71.183 y=-83.764 cause="link refused" from=Some((65.59153267622565, -84.26384091144064))
+C22 2D re-entry cause x=84.249 y=-70.764 cause="link refused" from=Some((80.19595324170196, -76.26384091144064))
+C22 2D re-entry cause x=66.915 y=-13.264 cause="link refused" from=Some((60.075994768149236, -13.263840911440639))
+C22 2D re-entry cause x=79.654 y=-10.764 cause="link refused" from=Some((75.84064311720793, -10.763840911440639))
+C22 2D re-entry cause x=97.119 y=-68.264 cause="step refused" refused_at=Some((97.11947354552036, -68.26384091144064)) reading=Some(0.47010419152500443) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=89.088 y=-13.264 cause="link refused" from=Some((83.15175054928324, -10.763840911440639))
+C22 2D re-entry cause x=101.590 y=-68.264 cause="step refused" refused_at=Some((101.59034465295213, -68.26384091144064)) reading=Some(0.47693379702545496) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=106.018 y=-68.264 cause="step refused" refused_at=Some((106.01827533170575, -68.26384091144064)) reading=Some(0.48015357089470917) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=114.781 y=-68.264 cause="step refused" refused_at=Some((114.78119892662694, -68.26384091144064)) reading=Some(0.4972665511636378) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=119.128 y=-68.264 cause="step refused" refused_at=Some((119.12818312726198, -68.26384091144064)) reading=Some(0.3832789886096207) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=123.458 y=-68.264 cause="step refused" refused_at=Some((123.45777052276463, -68.26384091144064)) reading=Some(0.4706891293304722) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=127.773 y=-68.264 cause="step refused" refused_at=Some((127.77289189863866, -68.26384091144064)) reading=Some(0.5093985561705393) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=132.076 y=-68.264 cause="step refused" refused_at=Some((132.07585907230796, -68.26384091144064)) reading=Some(0.4367663557029781) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((138.59417525771352, -18.26384091144064))
+C22 2D re-entry cause x=19.039 y=-84.764 cause="link refused" from=Some((25.847775498211917, -95.05000273767435))
+C22 2D re-entry cause x=73.784 y=-83.282 cause="link refused" from=Some((103.00937499846007, -13.971955666309858))
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=18.848 y=-84.581 cause="link refused" from=Some((13.347775498211917, -74.49726171867488))
+C22 2D re-entry cause x=65.592 y=-84.264 cause="link refused" from=Some((22.34681087866065, -90.26384091144064))
+C22 2D re-entry cause x=60.076 y=-13.264 cause="link refused" from=Some((50.34777549821192, -14.37445403818065))
+C22 2D re-entry cause x=87.986 y=-68.264 cause="step refused" refused_at=Some((86.66685379783546, -68.54804966637815)) reading=Some(0.5175905252090446) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=90.300 y=-68.264 cause="step refused" refused_at=Some((90.34777549821192, -68.15699331816133)) reading=Some(0.39029348318904217) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((140.34777549821192, -23.42995763485596))
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((71.34777549821192, -83.66490253318108))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=13.348 y=-74.497 cause="link refused" from=Some((13.347775498211917, -70.24588383162056))
+C22 2D re-entry cause x=21.848 y=-89.892 cause="link refused" from=Some((19.347775498211917, -85.05487165100234))
+C22 2D re-entry cause x=28.786 y=-94.264 cause="step refused" refused_at=Some((28.347775498211917, -94.03383708758201)) reading=Some(0.3838578615379172) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((19.038766421712857, -84.76384091144064))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 2D re-entry cause x=50.348 y=-14.374 cause="link refused" from=Some((13.347775498211917, -19.823732133249745))
+C22 2D re-entry cause x=71.183 y=-83.764 cause="link refused" from=Some((65.59153267622565, -84.26384091144064))
+C22 2D re-entry cause x=84.249 y=-70.764 cause="link refused" from=Some((80.19595324170196, -76.26384091144064))
+C22 2D re-entry cause x=66.915 y=-13.264 cause="link refused" from=Some((60.075994768149236, -13.263840911440639))
+C22 2D re-entry cause x=79.654 y=-10.764 cause="link refused" from=Some((75.84064311720793, -10.763840911440639))
+C22 2D re-entry cause x=97.119 y=-68.264 cause="step refused" refused_at=Some((97.11947354552036, -68.26384091144064)) reading=Some(0.47010419152500443) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=89.088 y=-13.264 cause="link refused" from=Some((83.15175054928324, -10.763840911440639))
+C22 2D re-entry cause x=101.590 y=-68.264 cause="step refused" refused_at=Some((101.59034465295213, -68.26384091144064)) reading=Some(0.47693379702545496) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=106.018 y=-68.264 cause="step refused" refused_at=Some((106.01827533170575, -68.26384091144064)) reading=Some(0.48015357089470917) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=114.781 y=-68.264 cause="step refused" refused_at=Some((114.78119892662694, -68.26384091144064)) reading=Some(0.4972665511636378) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=119.128 y=-68.264 cause="step refused" refused_at=Some((119.12818312726198, -68.26384091144064)) reading=Some(0.3832789886096207) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=123.458 y=-68.264 cause="step refused" refused_at=Some((123.45777052276463, -68.26384091144064)) reading=Some(0.4706891293304722) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=127.773 y=-68.264 cause="step refused" refused_at=Some((127.77289189863866, -68.26384091144064)) reading=Some(0.5093985561705393) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=132.076 y=-68.264 cause="step refused" refused_at=Some((132.07585907230796, -68.26384091144064)) reading=Some(0.4367663557029781) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((138.59417525771352, -18.26384091144064))
+C22 2D re-entry cause x=19.039 y=-84.764 cause="link refused" from=Some((25.847775498211917, -95.05000273767435))
+C22 2D re-entry cause x=73.784 y=-83.282 cause="link refused" from=Some((103.00937499846007, -13.971955666309858))
+C22 2D re-entry cause x=41.339 y=-15.764 cause="link refused" from=Some((20.44230182166646, -35.880549206591425))
+C22 2D re-entry cause x=40.697 y=-87.764 cause="link refused" from=Some((47.84777549821192, -86.9983125469911))
+C22 2D re-entry cause x=13.348 y=-65.066 cause="link refused" from=Some((13.347775498211917, -56.96321798301018))
+C22 2D re-entry cause x=18.848 y=-84.581 cause="link refused" from=Some((13.347775498211917, -74.49726171867488))
+C22 2D re-entry cause x=65.592 y=-84.264 cause="link refused" from=Some((22.34681087866065, -90.26384091144064))
+C22 2D re-entry cause x=60.076 y=-13.264 cause="link refused" from=Some((50.34777549821192, -14.37445403818065))
+C22 2D re-entry cause x=87.986 y=-68.264 cause="step refused" refused_at=Some((86.66685379783546, -68.54804966637815)) reading=Some(0.5175905252090446) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=90.300 y=-68.264 cause="step refused" refused_at=Some((90.34777549821192, -68.15699331816133)) reading=Some(0.39029348318904217) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=129.358 y=-17.764 cause="step refused" refused_at=Some((129.35815056276115, -17.76384091144064)) reading=Some(0.39670420565736175) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=136.369 y=-68.264 cause="step refused" refused_at=Some((136.4699274010115, -67.76384091144064)) reading=Some(0.4755481401429678) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=133.899 y=-17.764 cause="step refused" refused_at=Some((133.89935005236995, -17.76384091144064)) reading=Some(0.4034592362011913) ceiling=0.38047495006860516 on_turn_mm=None turn_bound_mm=3.3071067811865476
+C22 2D re-entry cause x=102.848 y=-13.269 cause="link refused" from=Some((140.34777549821192, -23.42995763485596))
+C22 2D re-entry cause x=13.348 y=-44.564 cause="link refused" from=Some((71.34777549821192, -83.66490253318108))
+C22 2D re-entry cause x=27.692 y=-17.764 cause="link refused" from=Some((35.30179590992147, -15.763840911440639))
+C22 2D re-entry cause x=13.348 y=-31.282 cause="link refused" from=Some((13.347775498211917, -36.461345288806925))
+C22 2D re-entry cause x=13.348 y=-23.270 cause="link refused" from=Some((13.347775498211917, -27.030420104206403))
+C22 split entries (stock below the entry, planner read) split_entries=1337 over_dpp=0 max_stock_mm=6.000

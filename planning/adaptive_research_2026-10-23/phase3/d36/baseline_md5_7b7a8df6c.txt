@@ -1,0 +1,5 @@
+c92abfb6553822459abeaedcf850b542  crates/rs_cam_core/src/adaptive/slab_field.rs
+fc6150575ea3f52f8d2ea72874234da5  crates/rs_cam_core/src/adaptive/material_grid.rs
+15eca51f96b1c2319e04a8e36dda20d2  crates/rs_cam_core/src/adaptive/search.rs
+02b513c83548878af448e407a591ac1f  crates/rs_cam_core/src/adaptive3d/clearing.rs
+b29393b8dfeef32529e8fd57cd64f446  crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
