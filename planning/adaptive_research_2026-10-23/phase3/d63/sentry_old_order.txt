@@ -1,0 +1,5 @@
+rest op: planned first level 1.000, first emitted pass 1.000 (band top 10), 3644 cutting samples, max axial 9.000 (DPP 3)
+rest op: planned first level 1.000, first emitted pass 1.000 (band top 10), 3644 cutting samples, max axial 9.000 (DPP 3)
+a_rest_op_plans_its_first_level_one_depth_under_the_band_d63 --- FAILED
+rest op: planned first level 7.000, first emitted pass 7.000 (band top 10), 6093 cutting samples, max axial 3.000 (DPP 3)
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.30s

@@ -1,0 +1,561 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index c873ab92d..03990965a 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -347,36 +347,35 @@ pub(super) fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLev
+ 
+ /// The Z where the level plan starts (G-LADDERANCHOR, plan Phase 2c).
+ ///
+-/// On fresh stock (`reads_prior_stock` false) it is `stock_top_z`, the top
+-/// of the stock box, as before. On prior stock it is the highest stock top
+-/// over the planner cells that still have material above
+-/// `surface + stock_to_leave` (the test of the material grid). The border
+-/// and the boundary clears run first, so a cell outside the mesh footprint
+-/// or outside the machining boundary does not count. The anchor is never
+-/// above `stock_top_z`. When no cell has material left, it is
+-/// `stock_top_z`.
++/// On fresh stock (`prior` `None`) it is `stock_top_z`, the top of the
++/// stock box, as before. On prior stock it is the highest stock top over
++/// the planner cells that still have material above `surface +
++/// stock_to_leave` (the test of the material grid), among the cells the
++/// tool can meet ([`PriorStockTops`]). D63 (G-RESTDOC): those are read
++/// after the border clear (a cell outside the mesh footprint does not
++/// count) and BEFORE the boundary clear. A disc centred on a `Center`
++/// containment line reaches one radius past the boundary, and stock a
++/// previous op left there counts; stock beyond the tool's reach does not.
++/// The anchor is never above `stock_top_z`. When no cell has material
++/// left, it is `stock_top_z`.
+ ///
+ /// Why: after a Face that took the stock from Z 14 to Z 12, a plan from
+ /// the box top put the first 8 mm level at Z 6, not at Z 4, and the
+ /// first level held 2 mm of air.
+ pub(super) fn level_anchor_z(
+-    material_stock: &TriDexelStock,
++    prior: Option<&PriorStockTops>,
+     surface_hm: &SurfaceHeightmap,
+     stock_to_leave: f64,
+     stock_top_z: f64,
+-    reads_prior_stock: bool,
+ ) -> f64 {
+-    if !reads_prior_stock {
++    let Some(prior) = prior else {
+         return stock_top_z;
+-    }
+-    let grid = &material_stock.z_grid;
++    };
+     let mut top = f64::NEG_INFINITY;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01) {
+-                top = top.max(super::stock_top_z_at(material_stock, row, col));
+-            }
++    for (row, col, cell_top) in prior.cells() {
++        let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
++        if cell_top > floor + 0.01 {
++            top = top.max(cell_top);
+         }
+     }
+     if top.is_finite() {
+@@ -386,6 +385,93 @@ pub(super) fn level_anchor_z(
+     }
+ }
+ 
++/// D63 (G-RESTDOC): the planner cells the tool can meet. A cell is in reach
++/// when its square touches a disc of `tool_radius` centred inside the
++/// centre containment `centre_boundary`. This is the sliver-safe test of
++/// the entry-floor read (`TriDexelStock::max_conservative_top_cell_in_disc`:
++/// the cell centre within the radius plus half a cell), built as the
++/// containment grown by the radius plus half a cell. `None`: no
++/// containment, every cell is in reach.
++///
++/// THE one test of "the stock the tool meets": the level anchor and the D50
++/// guard both read it, through [`PriorStockTops`].
++pub(super) fn tool_reach_cells(
++    stock: &TriDexelStock,
++    centre_boundary: &[crate::polygon::Polygon2],
++    tool_radius: f64,
++) -> Option<Vec<bool>> {
++    if centre_boundary.is_empty() {
++        return None;
++    }
++    let grid = &stock.z_grid;
++    let grow = tool_radius.max(0.0) + grid.cell_size * 0.5;
++    let reach: Vec<crate::polygon::Polygon2> = centre_boundary
++        .iter()
++        .flat_map(|p| crate::polygon::offset_polygon(p, -grow))
++        .collect();
++    let mut cells = Vec::with_capacity(grid.rows * grid.cols);
++    for row in 0..grid.rows {
++        for col in 0..grid.cols {
++            let (x, y) = grid.cell_to_world(row, col);
++            let p = crate::geo::P2::new(x, y);
++            cells.push(reach.iter().any(|q| q.contains_point(&p)));
++        }
++    }
++    Some(cells)
++}
++
++/// D63 (G-RESTDOC): the column tops of the cells in the tool's reach
++/// ([`tool_reach_cells`]), read from the planner stock after the border
++/// clear and BEFORE the boundary clear. The boundary clear keeps only the
++/// cells whose centre is inside the raw boundary, but a disc centred on a
++/// `Center` containment line reaches one radius beyond it: there a previous
++/// op can have left stock (the research arm's §16 stock-edge band). The
++/// level anchor and the D50 guard read this, so the first level sits at most
++/// one Depth/Pass under the highest stock the tool meets. Built on prior
++/// stock only; a fresh op reads no stock.
++pub(super) struct PriorStockTops {
++    /// Row-major; `None` for a cell out of reach or with no material.
++    tops: Vec<Option<f64>>,
++    cols: usize,
++}
++
++impl PriorStockTops {
++    pub(super) fn read(
++        stock: &TriDexelStock,
++        centre_boundary: &[crate::polygon::Polygon2],
++        tool_radius: f64,
++    ) -> Self {
++        let reach = tool_reach_cells(stock, centre_boundary, tool_radius);
++        let grid = &stock.z_grid;
++        let mut tops = Vec::with_capacity(grid.rows * grid.cols);
++        for row in 0..grid.rows {
++            for col in 0..grid.cols {
++                let in_reach = reach
++                    .as_ref()
++                    .is_none_or(|r| r.get(row * grid.cols + col).copied().unwrap_or(false));
++                tops.push(
++                    in_reach
++                        .then(|| crate::stock::dexel::ray_top(grid.ray(row, col)).map(f64::from))
++                        .flatten(),
++                );
++            }
++        }
++        Self {
++            tops,
++            cols: grid.cols,
++        }
++    }
++
++    /// `(row, col, top)` of every reach cell that holds material.
++    pub(super) fn cells(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
++        let cols = self.cols.max(1);
++        self.tops
++            .iter()
++            .enumerate()
++            .filter_map(move |(i, top)| top.map(|t| (i / cols, i % cols, t)))
++    }
++}
++
+ /// D50: the level anchor of a consumer of a source's derived rest regions
+ /// (`Adaptive3dDepth::rest_top_z`): the anchor rule with the source's left
+ /// stock top as its ceiling, on remaining stock only. On fresh stock the
+@@ -416,44 +502,28 @@ pub(super) fn rest_capped_level_top(
+ /// the first level would take the whole skin. Then the caller keeps the
+ /// anchor.
+ ///
+-/// A cell counts when its centre is inside the centre containment
+-/// (`Adaptive3dGeometry::centre_boundary`; empty: every cell): the level
+-/// plan sets the cut depth where the tool centre goes. A cell only under
+-/// the edge of the disc is cut at the drape of a centre beside it, with or
+-/// without the rest top, so it does not count. A cell's floor is THE level
+-/// floor ([`super::intended_floor::level_floor_z`]); a cell with no
+-/// material above it is skipped with the margin `level_anchor_z` uses.
++/// D63 (G-RESTDOC): the cells are the ones the tool can meet, with the
++/// stock before the boundary clear ([`PriorStockTops`], the same read as
++/// the anchor). A cell under the edge of the disc counts: a first level
++/// takes the stock there in one pass too (Corne op 5, D61). A cell's floor
++/// is THE level floor ([`super::intended_floor::level_floor_z`]); a cell
++/// with no material above it is skipped with the margin `level_anchor_z`
++/// uses.
+ pub(super) fn rest_ceiling_keeps_doc(
+-    material_stock: &TriDexelStock,
++    prior: &PriorStockTops,
+     surface_hm: &SurfaceHeightmap,
+     params: &Adaptive3dParams,
+     first_level: f64,
+ ) -> bool {
+-    let reach = &params.geometry.centre_boundary;
+     let limit = params.depth.depth_per_pass + params.geometry.tolerance;
+-    let grid = &material_stock.z_grid;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            if !reach.is_empty() {
+-                let (x, y) = grid.cell_to_world(row, col);
+-                let p = crate::geo::P2::new(x, y);
+-                if !reach.iter().any(|q| q.contains_point(&p)) {
+-                    continue;
+-                }
+-            }
+-            let floor = super::intended_floor::level_floor_z(
+-                surface_hm.z_or_bbox_floor_at(row, col),
+-                params.depth.stock_to_leave,
+-                first_level,
+-            );
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01)
+-                && super::stock_top_z_at(material_stock, row, col) - floor > limit
+-            {
+-                return false;
+-            }
+-        }
+-    }
+-    true
++    prior.cells().all(|(row, col, top)| {
++        let floor = super::intended_floor::level_floor_z(
++            surface_hm.z_or_bbox_floor_at(row, col),
++            params.depth.stock_to_leave,
++            first_level,
++        );
++        top <= floor + 0.01 || top - floor <= limit
++    })
+ }
+ 
+ /// The levels from `z_top` down to `z_bot`: `z_top - step`,
+@@ -969,6 +1039,17 @@ pub(super) fn adaptive_3d_segments(
+         scope.set_counter("cells", border_cleared as f64);
+     }
+ 
++    // D63 (G-RESTDOC): on prior stock, the column tops the tool can meet,
++    // read now, after the border clear and before the boundary clear. The
++    // level anchor and the D50 guard read them (`PriorStockTops`).
++    let prior_tops = params.initial_stock.is_some().then(|| {
++        PriorStockTops::read(
++            &material_stock,
++            &params.geometry.centre_boundary,
++            tool_radius,
++        )
++    });
++
+     // Boundary clip on the internal stock. When a 2D boundary polygon is
+     // provided (e.g. the model silhouette inset by tool_radius), clear
+     // cells whose center is outside the boundary. This forces the bool-grid
+@@ -1061,11 +1142,10 @@ pub(super) fn adaptive_3d_segments(
+     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
+     // top of the material it can still cut, not at the stock box top.
+     let level_top = level_anchor_z(
+-        &material_stock,
++        prior_tops.as_ref(),
+         &surface_hm,
+         params.depth.stock_to_leave,
+         params.depth.stock_top_z,
+-        params.initial_stock.is_some(),
+     );
+     // D50: a consumer of a source's derived rest regions starts no higher
+     // than the top of the stock the source left in them, but only while no
+@@ -1078,12 +1158,14 @@ pub(super) fn adaptive_3d_segments(
+         params.initial_stock.is_some(),
+     );
+     let level_top = if capped < anchor
+-        && !rest_ceiling_keeps_doc(
+-            &material_stock,
+-            &surface_hm,
+-            params,
+-            (capped - params.depth.depth_per_pass).max(z_bottom),
+-        ) {
++        && prior_tops.as_ref().is_some_and(|prior| {
++            !rest_ceiling_keeps_doc(
++                prior,
++                &surface_hm,
++                params,
++                (capped - params.depth.depth_per_pass).max(z_bottom),
++            )
++        }) {
+         debug!(
+             anchor,
+             capped,
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index 2a19833ce..e9a329825 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -2440,7 +2440,8 @@ fn level_anchor_reads_the_top_of_the_prior_stock() {
+         -1.0,
+     );
+     let anchor = |stock: &TriDexelStock, prior: bool| {
+-        super::path::level_anchor_z(stock, &hm, 0.5, 14.0, prior)
++        let tops = prior.then(|| super::path::PriorStockTops::read(stock, &[], 0.0));
++        super::path::level_anchor_z(tops.as_ref(), &hm, 0.5, 14.0)
+     };
+     // Fresh stock: the box top, whatever the stock holds.
+     assert_eq!(anchor(&stock, false), 14.0);
+@@ -2510,25 +2511,75 @@ fn a_rest_ceiling_keeps_one_depth_per_pass_d50() {
+     )];
+     // The first level under the skin: the cell floor is the leave.
+     let first = 0.0;
+-    assert!(!super::path::rest_ceiling_keeps_doc(
+-        &stock,
+-        &hm,
+-        &params_with(1.0, skin_side.clone()),
+-        first
+-    ));
+-    assert!(super::path::rest_ceiling_keeps_doc(
+-        &stock,
+-        &hm,
+-        &params_with(2.0, skin_side),
+-        first
+-    ));
++    let keeps = |params: &Adaptive3dParams| {
++        let prior = super::path::PriorStockTops::read(
++            &stock,
++            &params.geometry.centre_boundary,
++            params.geometry.tool_radius,
++        );
++        super::path::rest_ceiling_keeps_doc(&prior, &hm, params, first)
++    };
++    assert!(!keeps(&params_with(1.0, skin_side.clone())));
++    assert!(keeps(&params_with(2.0, skin_side)));
+     // No containment: every cell counts, the block too.
+-    assert!(!super::path::rest_ceiling_keeps_doc(
+-        &stock,
+-        &hm,
+-        &params_with(2.0, Vec::new()),
+-        first
+-    ));
++    assert!(!keeps(&params_with(2.0, Vec::new())));
++}
++
++/// D63 (G-RESTDOC): the anchor reads the stock the tool meets. A band
++/// within one tool radius beyond the centre containment counts (a disc
++/// centred on the containment line cuts it); stock beyond the tool's reach
++/// does not. The read is the shared `tool_reach_cells` test (radius plus
++/// half a cell).
++#[test]
++fn the_anchor_reads_the_stock_the_tool_meets_d63() {
++    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
++    let cutter = flat_cutter();
++    let cell_size = 0.5;
++    let box_top = 14.0;
++    let cut_top = 2.0_f64;
++    let leave = 0.5;
++    let tool_radius = default_params().geometry.tool_radius;
++    let containment = vec![crate::polygon::Polygon2::rectangle(-15.0, -15.0, 0.0, 15.0)];
++    let anchor_with_band = |band: &dyn Fn(f64) -> bool| {
++        let mut stock =
++            TriDexelStock::from_stock(-20.0, -20.0, 20.0, 20.0, -1.0, box_top, cell_size);
++        for row in 0..stock.z_grid.rows {
++            for col in 0..stock.z_grid.cols {
++                let (x, _) = stock.z_grid.cell_to_world(row, col);
++                if !band(x) {
++                    crate::stock::dexel::ray_subtract_above(
++                        stock.z_grid.ray_mut(row, col),
++                        cut_top as f32,
++                    );
++                }
++            }
++        }
++        let hm = SurfaceHeightmap::from_mesh(
++            &mesh,
++            &si,
++            &cutter,
++            stock.z_grid.origin_u,
++            stock.z_grid.origin_v,
++            stock.z_grid.rows,
++            stock.z_grid.cols,
++            cell_size,
++            -1.0,
++        );
++        let prior = super::path::PriorStockTops::read(&stock, &containment, tool_radius);
++        super::path::level_anchor_z(Some(&prior), &hm, leave, box_top)
++    };
++    // A full-height band inside the tool's reach, beyond the containment.
++    let inside_reach = anchor_with_band(&|x| x > 0.0 && x < tool_radius);
++    assert!(
++        (inside_reach - box_top).abs() < 1e-6,
++        "the band in reach did not count: anchor {inside_reach}"
++    );
++    // The same band beyond the reach (radius plus one cell out).
++    let beyond = anchor_with_band(&|x| x > tool_radius + 2.0 * cell_size);
++    assert!(
++        (beyond - cut_top).abs() < 1e-6,
++        "stock beyond the reach counted: anchor {beyond}"
++    );
+ }
+ 
+ // ── By Area region map ───────────────────────────────────────────
+diff --git a/crates/rs_cam_core/tests/a_rest_op_starts_one_depth_under_the_band_it_meets_d63.rs b/crates/rs_cam_core/tests/a_rest_op_starts_one_depth_under_the_band_it_meets_d63.rs
+new file mode 100644
+index 000000000..ead28f3a0
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_rest_op_starts_one_depth_under_the_band_it_meets_d63.rs
+@@ -0,0 +1,181 @@
++//! D63 (G-RESTDOC, `planning/adaptive_research_2026-10-23/phase3/d63/`): a
++//! 3D Rough on remaining stock starts its levels at most one Depth/Pass
++//! under the highest stock its tool meets inside its containment, also
++//! where that stock is beyond its raw boundary.
++//!
++//! The stock stands well past the model. The source (op 0, contour
++//! parallel, `Center` on the silhouette, 1 mm leave) cuts out to the
++//! silhouette plus one tool radius, so a band beyond that stays at the stock
++//! top. The rest op (op 1, contour parallel on remaining stock, no leave) has
++//! the silhouette grown by half a tool radius with `Center` containment: its
++//! centre reaches that line, so its tool cuts the band out to one and a half
++//! radii, one radius past its raw boundary. (Half a radius keeps the corners
++//! of its raw line within the source's rounded reach, so no uncut corner
++//! stands inside the raw line.) Its boundary clear keeps only the cells inside the raw line,
++//! where only the source's 1 mm skin stands, so the level anchor used to read
++//! the skin: the first level sat at the plate, and the band was taken from
++//! the stock top in one pass. Now the anchor reads the
++//! stock the tool meets before the boundary clear, so the first level is at
++//! most one Depth/Pass under the ring top, and the simulated axial
++//! engagement of the rest op stays within one Depth/Pass (plus one
++//! simulation cell, the dexel quantisation of the reading).
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::print_stderr,
++    reason = "test code: an expect is how a test reports a failure; the test prints its measurements for the reader"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{
++    BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
++};
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::session::{
++    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SimulationOptions,
++    SimulationResolution,
++};
++use rs_cam_core::trace::toolpath_spans::{SpanKind, SpanPayload};
++use std::sync::atomic::AtomicBool;
++
++const TOP_Z: f64 = 10.0;
++const PLATE_Z: f64 = 1.0;
++const MESH_HALF: f64 = 30.0;
++const MESH_STEP: f64 = 0.5;
++const TOOL_DIAMETER: f64 = 6.0;
++const DEPTH_PER_PASS: f64 = 3.0;
++const SIM_CELL: f64 = 0.5;
++/// The source's axial leave: the skin inside the rest op's raw line.
++const SOURCE_LEAVE: f64 = 1.0;
++/// How far the stock stands past the model: wider than two tool radii, so a
++/// band stays beyond the source's reach and inside the rest op's.
++const STOCK_MARGIN: f64 = 8.0;
++
++fn rough(
++    leave: f64,
++    offset: f64,
++    stock_source: StockSource,
++) -> (OperationConfig, BoundaryConfig, StockSource) {
++    (
++        OperationConfig::Adaptive3d(Adaptive3dConfig {
++            stepover: 2.0,
++            depth_per_pass: DEPTH_PER_PASS,
++            stock_to_leave_axial: leave,
++            clearing_strategy: ClearingStrategy::ContourParallel,
++            ..Adaptive3dConfig::default()
++        }),
++        BoundaryConfig {
++            enabled: true,
++            source: BoundarySource::ModelSilhouette,
++            containment: BoundaryContainment::Center,
++            offset,
++        },
++        stock_source,
++    )
++}
++
++fn session() -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |_, _| PLATE_Z);
++    let mut stock = stock_over(MESH_HALF + STOCK_MARGIN, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
++    let tool_id = ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(mesh_model(mesh, "plate"));
++    let (op, boundary, stock_source) = rough(SOURCE_LEAVE, 0.0, StockSource::Fresh);
++    let mut op0 = toolpath_config("rough", op, tool_id, model_id);
++    op0.boundary = boundary;
++    op0.stock_source = stock_source;
++    let _ = builder.add_toolpath(0, op0).expect("add the rough");
++    let mut session = builder.build();
++    let (op, boundary, stock_source) =
++        rough(0.0, TOOL_DIAMETER / 4.0, StockSource::FromRemainingStock);
++    let mut op1 = toolpath_config("rest", op, tool_id, model_id);
++    op1.boundary = boundary;
++    op1.stock_source = stock_source;
++    let _ = session
++        .apply(Command::AddToolpath(AddToolpathArgs {
++            setup_index: 0,
++            config: Box::new(op1),
++        }))
++        .expect("add the rest op");
++    session
++}
++
++fn simulate(session: &mut ProjectSession) {
++    let cancel = AtomicBool::new(false);
++    session
++        .run_simulation(
++            &SimulationOptions {
++                resolution: SimulationResolution::Fixed(SIM_CELL),
++                ..SimulationOptions::default()
++            },
++            &cancel,
++        )
++        .expect("simulate");
++}
++
++#[test]
++fn a_rest_op_starts_one_depth_under_the_band_it_meets() {
++    let mut session = session();
++    let cancel = AtomicBool::new(false);
++    session
++        .generate_toolpath(0, &cancel)
++        .expect("generate the rough");
++    simulate(&mut session);
++    session
++        .generate_toolpath(1, &cancel)
++        .expect("generate the rest op");
++
++    // The first level of the rest op, from its depth passes.
++    let annotated = session
++        .result_at(1)
++        .expect("the rest op's result")
++        .annotated();
++    let first_level = annotated
++        .spans
++        .iter()
++        .filter_map(|span| match (span.kind, &span.payload) {
++            (SpanKind::DepthPass, Some(SpanPayload::DepthPass { z_level, .. })) => Some(*z_level),
++            _ => None,
++        })
++        .fold(f64::NEG_INFINITY, f64::max);
++
++    // The simulated axial engagement of the rest op's cuts.
++    simulate(&mut session);
++    let rest_id = session.toolpath_configs()[1].id;
++    let trace = session
++        .simulation_result()
++        .and_then(|s| s.cut_trace.as_deref())
++        .expect("the cut trace");
++    let (mut max_axial, mut cutting) = (0.0_f64, 0usize);
++    for sample in trace.samples.iter().filter(|s| s.toolpath_id == rest_id) {
++        if sample.removed_volume_est_mm3 > 0.0 {
++            cutting += 1;
++            max_axial = max_axial.max(sample.axial_engagement_mm);
++        }
++    }
++    eprintln!(
++        "rest op: first level {first_level:.3} (ring top {TOP_Z}), {cutting} cutting samples, max axial {max_axial:.3} (DPP {DEPTH_PER_PASS})"
++    );
++    assert!(
++        cutting > 0,
++        "the rest op cut nothing: the fixture tests nothing"
++    );
++    assert!(
++        first_level >= TOP_Z - DEPTH_PER_PASS - 1e-6,
++        "the rest op's first level {first_level:.3} is more than one Depth/Pass under the ring at {TOP_Z}"
++    );
++    assert!(
++        max_axial <= DEPTH_PER_PASS + SIM_CELL,
++        "the rest op cut {max_axial:.3} mm deep in one pass, more than one Depth/Pass ({DEPTH_PER_PASS})"
++    );
++}
