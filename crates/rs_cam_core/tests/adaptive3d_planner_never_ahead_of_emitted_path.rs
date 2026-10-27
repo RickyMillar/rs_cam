@@ -125,7 +125,7 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
         safe_z: SAFE_Z,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     }
 }

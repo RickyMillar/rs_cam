@@ -1637,11 +1637,11 @@ fn sweep_adaptive3d_clearing_strategy() {
         "adaptive3d",
         "clearing_strategy",
         serde_json::json!("contour_parallel"),
-        &[serde_json::json!("contour_spiral")],
+        &[serde_json::json!("geodesic_adaptive")],
         |ov| {
             let mut p = default_adaptive3d_params();
-            if ov.and_then(|v| v.as_str()) == Some("contour_spiral") {
-                p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
+            if ov.and_then(|v| v.as_str()) == Some("geodesic_adaptive") {
+                p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
                 &mesh,
@@ -1694,41 +1694,9 @@ fn sweep_adaptive3d_z_blend() {
     }
 }
 
-#[test]
-#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_adaptive3d_engagement_measure() {
-    // F1 A/B for the 3D AgentSearch dispatch (delegates per-slice to the
-    // 2D adaptive engine, so the measure flows through ClearZLevelContext).
-    let (mesh, index) = hemisphere_mesh();
-    let cutter = FlatEndmill::new(6.35, 25.0);
-    let result = run_sweep(
-        "adaptive3d",
-        "engagement_measure",
-        serde_json::json!("DiskArea"),
-        &[serde_json::json!("LeadingArc")],
-        |ov| {
-            let mut p = default_adaptive3d_params();
-            p.clearing_strategy = ClearingStrategy3d::AgentSearch;
-            if ov.is_some() {
-                p.engagement_measure = rs_cam_core::adaptive::EngagementMeasure::LeadingArc;
-            }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
-                &mesh,
-                &index,
-                &cutter,
-                &p,
-                &rs_cam_core::interrupt::NeverCancel,
-                None,
-            )
-            .expect("NeverCancel never cancels")
-            .toolpath
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("adaptive3d engagement_measure={}", v.value);
-        assert_any_change(&v.diff, &ctx);
-    }
-}
+// Removal step R4 (2026-10-28): `sweep_adaptive3d_engagement_measure`
+// swept the measure of the AgentSearch 2D sub-pass. No 3D Rough strategy
+// left reads `engagement_measure`, so the sweep went with AgentSearch.
 
 // ═══════════════════════════════════════════════════════════════════════
 // PENCIL SWEEPS

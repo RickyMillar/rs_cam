@@ -3808,13 +3808,10 @@ pub(super) fn clear_z_level_agent_2d_slice(
         standing_material: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
         engagement_measure: ctx.engagement_measure,
-        // ContourSpiral (3D) routes through this same dispatch with the
-        // spiral as the per-slice generator; AgentSearch keeps the agent.
-        path_strategy: if matches!(ctx.clearing_strategy, ClearingStrategy3d::ContourSpiral) {
-            crate::adaptive::PathStrategy2d::ContourSpiral
-        } else {
-            crate::adaptive::PathStrategy2d::Agent
-        },
+        // The 2D agent planner: the F-038 forecast plans with it, and the
+        // geodesic door sets the same value (`adaptive/geodesic/mod.rs`).
+        // ContourSpiral (3D) used the spiral here until removal step R4.
+        path_strategy: crate::adaptive::PathStrategy2d::Agent,
         // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
         // tuned const for any non-finite / non-positive value so a bad
         // config can never disable load capping outright.

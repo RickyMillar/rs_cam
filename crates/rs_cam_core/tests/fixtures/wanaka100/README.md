@@ -8,7 +8,7 @@ box, and a test that needs one (for example the stepover back-off in
 
 | File | Read by |
 |---|---|
-| `rivmap_export/terrain.stl` (11 MB) | the three Wanaka projects; `agent_search_axial_doc`, `wanaka_z_layer_render` |
+| `rivmap_export/terrain.stl` (11 MB) | the three Wanaka projects; `wanaka_z_layer_render` (`agent_search_axial_doc` left with AgentSearch in removal step R4) |
 | `rivmap_export/holes.dxf`, `rivmap_export/rivers.dxf`, `lakes.dxf` | the three Wanaka projects |
 | `wanaka_full_tuned.toml` | `feed_modulation_cycle_time_f036c` (not ignored: it skipped off the operator's machine, now it runs), `kinematics_histogram`, `machine_kinematics_cycle_time_f034`, `wanaka_axial_doc`, `wanaka_boundary_diag`, `wanaka_e2e_chipload_gate`, `wanaka_step4_fa_revalidation`, `wanaka_step5_mc_revalidation` |
 

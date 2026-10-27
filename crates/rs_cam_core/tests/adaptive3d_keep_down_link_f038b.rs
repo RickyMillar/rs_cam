@@ -191,7 +191,7 @@ fn make_params(
         safe_z: PEAK_Z + 5.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     }
 }

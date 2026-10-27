@@ -54,7 +54,8 @@
 //!   Printed, not asserted.
 //! - The departure of a straight plunge ([`departing_moves`]), as the 2D
 //!   walker exempts it.
-//! - The perimeter-sweep band, for the AgentSearch control only: the
+//! - The perimeter-sweep band, for a control on the slice pipeline only
+//!   (AgentSearch until removal step R4; no strategy left takes it): the
 //!   product strategy cuts no perimeter sweep where its 2D planner gets the
 //!   grown region (C31), so it is judged in the band.
 
@@ -659,7 +660,7 @@ fn simulate(mesh: &TriangleMesh, tp: &Toolpath) -> Vec<SimulationCutSample> {
 }
 
 /// `band_exempt`: whether the perimeter-sweep band is exempt (the
-/// AgentSearch control only, C31). `depth_per_pass`: the op's Depth/Pass,
+/// slice-pipeline control only, C31; no strategy left takes it). `depth_per_pass`: the op's Depth/Pass,
 /// the `d` of the load (C43). `feed_rate`: the commanded feed.
 fn read(
     mesh: &TriangleMesh,
@@ -931,8 +932,9 @@ fn over_moves(lines: &[String]) -> usize {
         .len()
 }
 
-/// The two-level judge. The AgentSearch arm on the same fixture is printed
-/// as a control and not asserted. For Geodesic Adaptive:
+/// The two-level judge. The Contour Parallel arm on the same fixture is
+/// printed as a control and not asserted (AgentSearch until removal step
+/// R4). For Geodesic Adaptive:
 ///
 /// 1. it cuts judged samples at two distinct Z levels;
 /// 2. no judged sample is over on the exact geometry (each screened
@@ -947,16 +949,16 @@ fn geodesic_adaptive_holds_the_pass_load_at_two_levels() {
     let mesh = pocket_with_island();
     let index = SpatialIndex::build(&mesh, 10.0);
 
-    let control_params = params(ClearingStrategy3d::AgentSearch);
+    let control_params = params(ClearingStrategy3d::ContourParallel);
     let control = plan(&mesh, &index, &control_params);
     let c = read(
         &mesh,
         &control,
-        true,
+        false,
         DEPTH_PER_PASS,
         control_params.feed_rate,
     );
-    eprintln!("{}", summary("control AgentSearch", &c));
+    eprintln!("{}", summary("control ContourParallel", &c));
 
     let p = geodesic();
     let out = plan(&mesh, &index, &p);

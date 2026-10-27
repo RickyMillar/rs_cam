@@ -238,7 +238,8 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         safe_z: stock_top_z + 16.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        // Removal step R4: Geodesic Adaptive (AgentSearch until then).
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     };
 

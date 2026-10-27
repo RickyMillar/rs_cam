@@ -253,7 +253,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         safe_z: stock_top_z + 5.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     };
 

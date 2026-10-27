@@ -522,11 +522,9 @@ fn clear_planned_level(
                 cancel,
             )?;
         }
-        // Geodesic Adaptive: the same slice dispatch, with the geodesic plan
-        // as the per-slice generator (`clearing.rs`, `plan_one_outline`).
-        ClearingStrategy3d::AgentSearch
-        | ClearingStrategy3d::ContourSpiral
-        | ClearingStrategy3d::GeodesicAdaptive => {
+        // Geodesic Adaptive: the slice dispatch, with the geodesic plan as
+        // the per-slice generator (`clearing.rs`, `plan_one_outline`).
+        ClearingStrategy3d::GeodesicAdaptive => {
             clear_z_level_agent_2d_slice(
                 ctx,
                 material_stock,

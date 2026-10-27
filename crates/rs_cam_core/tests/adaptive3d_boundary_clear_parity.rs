@@ -87,9 +87,9 @@ const SAFE_Z: f64 = 30.0;
 /// B1 — in-scope over-claim ceiling, as a fraction of the in-containment cell
 /// population. Measured 27.7% (ContourParallel) / 27.1% (AgentSearch).
 const MAX_IN_SCOPE_OVER_CLAIM_FRACTION: f64 = 0.30;
-/// B2 — emitted cutting-move endpoints fully outside the containment.
-/// Deterministic and strategy-independent: `waterline_cleanup` traces the same
-/// mesh contours whichever clearing strategy ran.
+/// B2 — emitted cutting-move endpoints fully outside the containment, for
+/// Contour Parallel. `waterline_cleanup` traces the same mesh contours
+/// whichever shipped strategy ran (AgentSearch read the same 135).
 ///
 /// Re-pinned 2026-10-02, 138 -> 135, cause G-FLUTETOP (`cd7c75f4`): the push
 /// cutter now adds one interval per triangle (the hull of its contacts), so
@@ -98,6 +98,13 @@ const MAX_IN_SCOPE_OVER_CLAIM_FRACTION: f64 = 0.30;
 /// `perf_golden_sim_metrics`: 166 -> 104 moves). The leak itself is
 /// unchanged: the contours still run outside the containment.
 const WATERLINE_LEAK_CUT_MOVES: usize = 135;
+/// B2 for Geodesic Adaptive. Pinned 2026-10-28 (removal step R4: the
+/// AgentSearch arm of this file, which read 135, moved to Geodesic
+/// Adaptive), measured on this fixture: 312. Geodesic Adaptive's level
+/// gives the waterline cleanup other contours (it skips the pieces it
+/// leaves, and its regions follow the outer-band clip), so its count is
+/// its own. The same leak (D4 F-B): a drop to 0 means F-B landed.
+const WATERLINE_LEAK_CUT_MOVES_GEODESIC: usize = 312;
 /// B4 — `planner_higher` inside the containment. The benign direction; a loose
 /// growth pin only (measured 9 / 38).
 const MAX_IN_SCOPE_PLANNER_HIGHER: u64 = 60;
@@ -229,6 +236,7 @@ impl ZoneTally {
 
 struct Measured {
     label: String,
+    strategy: ClearingStrategy3d,
     /// Cells inside `containment ⊖ r` — a cutter centre is allowed here.
     inside_eff: ZoneTally,
     /// Cells inside the containment but outside `containment ⊖ r`. Material
@@ -483,6 +491,7 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
 
     Measured {
         label: label.to_owned(),
+        strategy,
         inside_eff,
         band,
         outside,
@@ -578,12 +587,15 @@ fn assert_containment_parity_bars(m: &Measured) {
 
     // --- B2: the waterline leak. Exact, because a count over ~1500 moves is
     // sensitive to one move where a percentage is not.
+    let leak_pin = match m.strategy {
+        ClearingStrategy3d::ContourParallel => WATERLINE_LEAK_CUT_MOVES,
+        ClearingStrategy3d::GeodesicAdaptive => WATERLINE_LEAK_CUT_MOVES_GEODESIC,
+    };
     assert_eq!(
-        m.cut_moves_outside_containment, WATERLINE_LEAK_CUT_MOVES,
+        m.cut_moves_outside_containment, leak_pin,
         "[{label}] B2: {} emitted cutting-move endpoints land fully OUTSIDE the containment; the \
-         pin is {WATERLINE_LEAK_CUT_MOVES}. These are `waterline_cleanup` contours \
-         (`adaptive3d/clearing.rs`), which take no `boundary` parameter at all — the count is \
-         identical on both clearing strategies for exactly that reason. This is an EXACT bar: \
+         pin is {leak_pin}. These are `waterline_cleanup` contours \
+         (`adaptive3d/clearing.rs`), which take no `boundary` parameter at all. This is an EXACT bar: \
          change it only with a measurement, and a DROP to 0 means the D4 fix (F-B: pass \
          `params.geometry.boundary` into `waterline_cleanup`) landed — un-ignore the arm below rather \
          than re-baselining here.",
@@ -642,10 +654,10 @@ fn boundary_clear_parity_contour_parallel() {
 }
 
 #[test]
-fn boundary_clear_parity_agent_search() {
+fn boundary_clear_parity_geodesic_adaptive() {
     let m = measure(
-        "AgentSearch / boundary=left-half / clipped",
-        ClearingStrategy3d::AgentSearch,
+        "GeodesicAdaptive / boundary=left-half / clipped",
+        ClearingStrategy3d::GeodesicAdaptive,
         Some(&half_stock_boundary()),
     );
     report(&m);
@@ -759,8 +771,8 @@ fn boundary_clear_in_scope_overclaim_still_open_d4() {
             ClearingStrategy3d::ContourParallel,
         ),
         (
-            "AgentSearch / boundary=left-half / clipped",
-            ClearingStrategy3d::AgentSearch,
+            "GeodesicAdaptive / boundary=left-half / clipped",
+            ClearingStrategy3d::GeodesicAdaptive,
         ),
     ] {
         let m = measure(label, strategy, Some(&half_stock_boundary()));

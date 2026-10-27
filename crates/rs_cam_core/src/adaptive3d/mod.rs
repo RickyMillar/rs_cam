@@ -62,27 +62,18 @@ pub enum RegionOrdering {
 ///   bulk roughing where speed matters more than constant engagement.
 ///   The default.
 ///
-/// `AgentSearch` — per-step direction search with preflight skip and
-///   widen-band recovery. Slower to generate than ContourParallel but
-///   offers finer per-step control. No config value selects it since
-///   removal step R2; R4 removes it.
+/// `GeodesicAdaptive` — the geodesic-wavefront plan per slice piece.
 ///
-/// Removal step R3 (operator ruling 2026-10-28) removed `Adaptive`, the
-/// curvature-adjusted variable-offset EDT planner.
+/// The removal steps (operator ruling 2026-10-28) removed `Adaptive` (R3,
+/// the curvature-adjusted variable-offset EDT planner), `AgentSearch` and
+/// `ContourSpiral` (R4). Their slice pipeline and the 2D agent planner
+/// stay: Geodesic Adaptive plans through them (the F-038 forecast reads the
+/// 2D agent planner).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
-    /// Per-step direction search with preflight skip and widen-band
-    /// recovery. Slow to generate.
-    AgentSearch,
     /// Fast contour-parallel offset clearing via EDT (default).
     #[default]
     ContourParallel,
-    /// Constructive inside-out contour spiral per slice (Stage 1 of the
-    /// adaptive algorithm review): one continuous stay-down pass per
-    /// region with engagement bounded by wrap spacing. Routes through
-    /// the AgentSearch slice dispatch with the spiral as the 2D
-    /// generator; falls back to the agent where no starter pocket fits.
-    ContourSpiral,
     /// Geodesic Adaptive (integration step 7.4): the 2D geodesic-wavefront
     /// plan (`adaptive::geodesic`, C35 plan A) plans each slice piece
     /// through the AgentSearch slice dispatch. It clears the body: a piece
@@ -327,9 +318,7 @@ fn effective_step_split(params: &Adaptive3dParams) -> StepSplit {
         ClearingStrategy3d::GeodesicAdaptive => {
             params.linking.step_split.unwrap_or(StepSplit::StockDepth)
         }
-        ClearingStrategy3d::AgentSearch
-        | ClearingStrategy3d::ContourParallel
-        | ClearingStrategy3d::ContourSpiral => params.linking.step_split.unwrap_or_default(),
+        ClearingStrategy3d::ContourParallel => params.linking.step_split.unwrap_or_default(),
     }
 }
 
@@ -342,9 +331,7 @@ fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
             .linking
             .keep_down_route
             .unwrap_or(KeepDownRoute::CutFeed),
-        ClearingStrategy3d::AgentSearch
-        | ClearingStrategy3d::ContourParallel
-        | ClearingStrategy3d::ContourSpiral => params.linking.keep_down_route.unwrap_or_default(),
+        ClearingStrategy3d::ContourParallel => params.linking.keep_down_route.unwrap_or_default(),
     }
 }
 

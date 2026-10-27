@@ -338,7 +338,8 @@ fn test_adaptive_3d_hemisphere_multi_level() {
     );
 }
 
-/// DIAGNOSTIC: dump per-Cut-segment Z statistics for AgentSearch on a
+/// DIAGNOSTIC: dump per-Cut-segment Z statistics for the slice pipeline
+/// (Geodesic Adaptive since removal step R4; AgentSearch before) on a
 /// hemisphere. Used to verify that the Z-drop split fix in
 /// `clear_z_level_agent_2d_slice` is working — and to detect cases
 /// the threshold misses (e.g., cumulative descent across many small
@@ -346,9 +347,9 @@ fn test_adaptive_3d_hemisphere_multi_level() {
 ///
 /// Prints to stdout via `println!` (test-mode only; not subject to
 /// the production-code `print_stdout` lint). Run with:
-///   cargo test -p rs_cam_core --lib agent_search_z_drop_diag -- --nocapture
+///   cargo test -p rs_cam_core --lib geodesic_adaptive_z_drop_diag -- --nocapture
 #[test]
-fn agent_search_z_drop_diag() {
+fn geodesic_adaptive_z_drop_diag() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
     let params = {
@@ -358,7 +359,7 @@ fn agent_search_z_drop_diag() {
         p.depth.stock_to_leave = 0.5;
         p.geometry.tolerance = 0.5;
         p.geometry.stepover = 1.0;
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p
     };
 
@@ -413,7 +414,7 @@ fn agent_search_z_drop_diag() {
         }
     }
 
-    println!("\n=== AgentSearch Z-drop diagnostics (hemisphere) ===");
+    println!("\n=== GeodesicAdaptive Z-drop diagnostics (hemisphere) ===");
     println!("total Cut paths: {}", total_cut_paths);
     println!("max per-step |dz|: {:.3} mm", max_per_step_dz);
     println!(
@@ -1007,13 +1008,16 @@ fn test_low_yield_bail() {
 fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    // This test validates AgentSearch's observability — z_level /
-    // adaptive_pass spans and adaptive3d_pass hotspots are only
-    // emitted by clear_z_level() (the AgentSearch path), not by
-    // clear_z_level_contour_parallel.
+    // This test validates the slice pipeline's observability (Geodesic
+    // Adaptive since removal step R4, AgentSearch before): z_level and
+    // agent2d_region spans are emitted by the slice dispatch, not by
+    // clear_z_level_contour_parallel. Removal step R4: the 2D agent
+    // walker's adaptive_pass spans and hotspots came from AgentSearch
+    // planning each region with it; Geodesic Adaptive plans with its own
+    // field, so no 3D strategy emits them now (the 2D Adaptive op does).
     let params = {
         let mut p = default_params();
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p
     };
     let recorder = crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
@@ -1044,18 +1048,8 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
         "trace should include Z-level spans"
     );
     assert!(
-        trace.spans.iter().any(|span| span.kind == "adaptive_pass"),
-        "trace should include adaptive pass spans"
-    );
-    // Hotspot kind is "adaptive_pass" (emitted by the 2D adaptive
-    // which now drives AgentSearch slices) — the old 3D agent code
-    // emitted "adaptive3d_pass"; both are valid.
-    assert!(
-        trace
-            .hotspots
-            .iter()
-            .any(|hotspot| hotspot.kind == "adaptive_pass" || hotspot.kind == "adaptive3d_pass"),
-        "trace should record at least one adaptive hotspot"
+        trace.spans.iter().any(|span| span.kind == "agent2d_region"),
+        "trace should include the slice-region spans"
     );
     assert!(
         !trace.annotations.is_empty(),
@@ -1622,7 +1616,8 @@ const ABSTAIN_MAX_INTERIOR_PCT: f64 = 1.0;
 /// it. Re-run with `world_stock_xy_bbox` supplied — the configuration
 /// `compute::execute` has always used — and the count is **exactly
 /// zero** on both strategies. See
-/// `planner_sim_dexel_parity_agent_search_world_stock_declared`.
+/// `planner_sim_dexel_parity_geodesic_adaptive_world_stock_declared` (the
+/// AgentSearch test until removal step R4).
 ///
 /// The cap survives as a growth pin, tightened from 55% to 51% now
 /// that the value is understood and deterministic, and it is now the
@@ -2008,9 +2003,9 @@ fn run_planner_sim_parity_with_mesh(
 }
 
 #[test]
-#[ignore = "Probe: emitted Cut path point spacing on AgentSearch flat — distinguishes \
+#[ignore = "Probe: emitted Cut path point spacing on GeodesicAdaptive flat — distinguishes \
             spacing-too-coarse vs stamp-at-wrong-location"]
-fn agent_search_cut_path_point_spacing_probe() {
+fn geodesic_adaptive_cut_path_point_spacing_probe() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
     let tool_radius = 3.175_f64;
@@ -2030,7 +2025,7 @@ fn agent_search_cut_path_point_spacing_probe() {
     let params = {
         let mut p = default_params();
         p.initial_stock = Some(initial_stock);
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p.geometry.tool_radius = tool_radius;
         p.geometry.envelope_radius = tool_radius;
         p.depth.stock_top_z = stock_top_z;
@@ -2085,7 +2080,9 @@ fn agent_search_cut_path_point_spacing_probe() {
         }
     }
 
-    eprintln!("AgentSearch flat-plane Cut-path spacing probe (tool_radius = {tool_radius:.3} mm):");
+    eprintln!(
+        "GeodesicAdaptive flat-plane Cut-path spacing probe (tool_radius = {tool_radius:.3} mm):"
+    );
     eprintln!(
         "  Cut segments: {cut_segments_seen}, total path points: {total_path_points}, total gaps: {total_gaps}"
     );
@@ -2131,10 +2128,13 @@ fn agent_search_cut_path_point_spacing_probe() {
 
 #[test]
 #[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
-fn planner_sim_dexel_parity_flat_agent_search() {
-    let r = run_planner_sim_parity_flat(ClearingStrategy3d::AgentSearch, "AgentSearch flat");
+fn planner_sim_dexel_parity_flat_geodesic_adaptive() {
+    let r = run_planner_sim_parity_flat(
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive flat",
+    );
     eprintln!(
-        "FLAT AgentSearch: {}/{} cells diverge (max Δ {:.3}mm)",
+        "FLAT GeodesicAdaptive: {}/{} cells diverge (max Δ {:.3}mm)",
         r.divergent, r.total_cells, r.max_dz
     );
     // No assertion — diagnostic output. The hemisphere variants
@@ -2268,20 +2268,20 @@ fn run_planner_sim_parity_cut_only(
 
 #[test]
 #[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
-fn planner_sim_parity_cut_only_agent_search_flat() {
+fn planner_sim_parity_cut_only_geodesic_adaptive_flat() {
     let _ = run_planner_sim_parity_cut_only(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch flat",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive flat",
         make_flat_mesh(),
     );
 }
 
 #[test]
 #[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
-fn planner_sim_parity_cut_only_agent_search_hemisphere() {
+fn planner_sim_parity_cut_only_geodesic_adaptive_hemisphere() {
     let _ = run_planner_sim_parity_cut_only(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch hemisphere",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere",
         make_hemisphere_mesh(),
     );
 }
@@ -2334,12 +2334,15 @@ fn planner_sim_parity_cut_only_contour_parallel_hemisphere() {
 /// interior `planner_higher` cells; it has never been measured
 /// separately from (a).
 #[test]
-fn planner_sim_dexel_parity_agent_search() {
-    let r = run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
-    assert_parity_bars(&r, "AgentSearch hemisphere");
+fn planner_sim_dexel_parity_geodesic_adaptive() {
+    let r = run_planner_sim_parity(
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere",
+    );
+    assert_parity_bars(&r, "GeodesicAdaptive hemisphere");
 }
 
-/// The same two bars as `planner_sim_dexel_parity_agent_search`, and
+/// The same two bars as `planner_sim_dexel_parity_geodesic_adaptive`, and
 /// deliberately not a weaker set. This test was green throughout the
 /// seven weeks its sibling was red while carrying the identical
 /// defect at the identical 25 mm `max dz` — its old bar gated an
@@ -2403,10 +2406,10 @@ fn assert_no_over_claim_with_world_stock(strategy: ClearingStrategy3d, label: &s
 }
 
 #[test]
-fn planner_sim_dexel_parity_agent_search_world_stock_declared() {
+fn planner_sim_dexel_parity_geodesic_adaptive_world_stock_declared() {
     assert_no_over_claim_with_world_stock(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch hemisphere / world stock declared",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere / world stock declared",
     );
 }
 
@@ -2734,17 +2737,14 @@ fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
     assert!(!admits_capped_split(false, ceiling, ceiling, true, geo));
     // An engagement change keeps the split.
     assert!(!admits_capped_split(false, over, ceiling, false, geo));
-    // Every other strategy keeps the split.
-    for other in [
-        ClearingStrategy3d::AgentSearch,
-        ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::ContourSpiral,
-    ] {
-        assert!(
-            !admits_capped_split(false, over, ceiling, true, other),
-            "{other:?}"
-        );
-    }
+    // The other strategy keeps the split.
+    assert!(!admits_capped_split(
+        false,
+        over,
+        ceiling,
+        true,
+        ClearingStrategy3d::ContourParallel
+    ));
 }
 
 /// D65: the factor of a capped draped step is `c / L`, at most the factor

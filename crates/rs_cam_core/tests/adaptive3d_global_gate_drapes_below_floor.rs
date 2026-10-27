@@ -105,8 +105,7 @@ fn global_levels_drape_to_a_floor_between_two_levels() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::ContourSpiral,
-        ClearingStrategy3d::AgentSearch,
+        ClearingStrategy3d::GeodesicAdaptive,
     ] {
         let (tops, rows, cols, cell, origin_u, origin_v, ..) =
             debug_adaptive_3d_segments_for_f029_probe(
