@@ -150,7 +150,8 @@ pub fn geodesic_toolpath(
         let Some(plan) = plan_piece(piece, &params, cancel)? else {
             continue;
         };
-        let segments = cleaned(piece, &params, plan.segments, &plan.turns);
+        // D65: no capped rule here; this door writes no feed cap.
+        let segments = cleaned(piece, &params, plan.segments, &plan.turns, false);
         let region = (params.keep_down_links == KeepDownLinks::WithinPassLoad)
             .then(|| ToolCentreRegion::new(piece, params.tool_radius));
         let (tp, _) = segments_to_toolpath(&segments, &params, region.as_ref());

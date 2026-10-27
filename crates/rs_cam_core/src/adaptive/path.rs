@@ -61,6 +61,14 @@ pub(crate) fn turn_bound(stepover: f64, cell_size: f64) -> f64 {
     stepover + (1.0 + std::f64::consts::SQRT_2) * cell_size
 }
 
+/// D65: the load of the full-depth slot, the largest a step reads (a
+/// fraction of the diameter: the swept width `a_e / D`, or the area per mm
+/// over the diameter). A straight plunge's departure is a slot out of its
+/// own hole, and the op already cuts it at a capped feed
+/// (`PassLoad::departing`), so a step over the ceiling that reads at most a
+/// slot may go out at the capped feed too ([`LinkLoad::admits_capped`]).
+pub(crate) const FULL_SLOT_LOAD: f64 = 1.0;
+
 // ── Link vs retract ────────────────────────────────────────────────────
 
 /// Check if the straight line from `from` to `to` is safe to traverse at
@@ -137,6 +145,12 @@ pub(crate) struct LinkLoad {
     /// ([`turn_bound`]). Empty on every shipped path.
     turns: Vec<(P2, P2)>,
     turn_bound: f64,
+    /// D65 (Geodesic Adaptive only): the area-per-mm load
+    /// (`PassLoad::area_per_mm`) of the capped rule. With it, a step over
+    /// the ceiling whose load reads at most [`FULL_SLOT_LOAD`] is admitted
+    /// ([`Self::admits_capped`]); `geodesic::feed_caps` gives it the feed
+    /// `F · c / L`. `None` on every other path.
+    capped_area: Option<PassLoad>,
 }
 
 impl LinkLoad {
@@ -196,6 +210,7 @@ impl LinkLoad {
             region,
             turns: Vec::new(),
             turn_bound: 0.0,
+            capped_area: None,
         }
     }
 
@@ -207,6 +222,34 @@ impl LinkLoad {
         load.turns = turns.to_vec();
         load.turn_bound = turn_bound(stepover, cell_size);
         load
+    }
+
+    /// D65: a copy of `self` with the capped rule on (`capped`), reading
+    /// the area per mm of `stepover` on this lattice. `capped` false: an
+    /// unchanged copy.
+    fn with_capped(&self, capped: bool, stepover: f64, cell_size: f64) -> Self {
+        let mut load = self.clone();
+        if capped {
+            load.capped_area = Some(PassLoad::area_per_mm(stepover, self.tool_radius, cell_size));
+        }
+        load
+    }
+
+    /// D65: true when the capped rule is on and the step from `a` to `b`,
+    /// whose swept width reads `swept`, reads at most [`FULL_SLOT_LOAD`] on
+    /// both terms of the load (the swept width and the area per mm, as
+    /// `geodesic::slice::step_reading`). The caller admits it over the
+    /// ceiling; the geodesic feed caps then lower its feed to `F · c / L`.
+    pub(super) fn admits_capped(&self, grid: &MaterialGrid, a: P2, b: P2, swept: f64) -> bool {
+        let Some(area) = &self.capped_area else {
+            return false;
+        };
+        if swept > FULL_SLOT_LOAD {
+            return false;
+        }
+        let angle = (b.y - a.y).atan2(b.x - a.x);
+        super::search::measure_step(grid, a, b.x, b.y, self.tool_radius, angle, area)
+            <= FULL_SLOT_LOAD
     }
 
     /// True when the step from `a` to `b` lies on a planned clearing turn
@@ -497,6 +540,7 @@ pub(crate) fn replay_after_group_filter(
     segments: Vec<AdaptiveSegment>,
     measure: PassLoadMeasure,
     turns: &[(P2, P2)],
+    capped: bool,
 ) -> Vec<AdaptiveSegment> {
     let cell_size = planner_cell_size(params.tool_radius, params.tolerance);
     let mut grid = MaterialGrid::from_polygon(polygon, cell_size);
@@ -520,10 +564,12 @@ pub(crate) fn replay_after_group_filter(
     );
     let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
     let turn_load;
-    let replay_load = if turns.is_empty() {
+    let replay_load = if turns.is_empty() && !capped {
         &link_load
     } else {
-        turn_load = link_load.with_turns(turns, params.stepover, cell_size);
+        turn_load = link_load
+            .with_turns(turns, params.stepover, cell_size)
+            .with_capped(capped, params.stepover, cell_size);
         &turn_load
     };
     replay_kept_segments(segments, &mut grid, &machinable_mask, replay_load).0
@@ -628,7 +674,11 @@ fn emit_capped_walk_with(
         was_departing = departing;
         // Research (C14): a planned clearing turn is the one step admitted
         // over the ceiling; the list is empty on every shipped path.
-        let holds = reading <= step_pass.ceiling || load.admits_turn(a, b);
+        // D65: a step over the ceiling that reads at most a slot is admitted
+        // under the capped rule (Geodesic Adaptive), at a capped feed.
+        let holds = reading <= step_pass.ceiling
+            || load.admits_turn(a, b)
+            || load.admits_capped(grid, a, b, reading);
         let cuts = reading >= load.pass.presence;
         if !span.is_empty() {
             if holds {
@@ -1836,7 +1886,7 @@ pub(crate) fn apply_residue_mop_cleanup_with(
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
 ) -> Vec<AdaptiveSegment> {
-    apply_residue_mop_cleanup_turns(polygon, params, segments, measure, &[])
+    apply_residue_mop_cleanup_turns(polygon, params, segments, measure, &[], false)
 }
 
 /// [`apply_residue_mop_cleanup_with`] whose replay of the kept segments
@@ -1853,6 +1903,7 @@ pub(crate) fn apply_residue_mop_cleanup_turns(
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
     turns: &[(P2, P2)],
+    capped: bool,
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -1920,10 +1971,12 @@ pub(crate) fn apply_residue_mop_cleanup_turns(
     );
     let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
     let turn_load;
-    let replay_load = if turns.is_empty() {
+    let replay_load = if turns.is_empty() && !capped {
         &link_load
     } else {
-        turn_load = link_load.with_turns(turns, params.stepover, cell_size);
+        turn_load = link_load
+            .with_turns(turns, params.stepover, cell_size)
+            .with_capped(capped, params.stepover, cell_size);
         &turn_load
     };
     let (mut out, last_pos) = replay_kept_segments(out, &mut grid, &machinable_mask, replay_load);
@@ -1988,7 +2041,7 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_with(
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
 ) -> Vec<AdaptiveSegment> {
-    apply_contour_parallel_residue_cleanup_turns(polygon, params, segments, measure, &[])
+    apply_contour_parallel_residue_cleanup_turns(polygon, params, segments, measure, &[], false)
 }
 
 /// [`apply_contour_parallel_residue_cleanup_with`] whose replay of the
@@ -2001,6 +2054,7 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_turns(
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
     turns: &[(P2, P2)],
+    capped: bool,
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -2074,10 +2128,12 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_turns(
     );
     let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
     let turn_load;
-    let replay_load = if turns.is_empty() {
+    let replay_load = if turns.is_empty() && !capped {
         &link_load
     } else {
-        turn_load = link_load.with_turns(turns, stepover, cell_size);
+        turn_load = link_load
+            .with_turns(turns, stepover, cell_size)
+            .with_capped(capped, stepover, cell_size);
         &turn_load
     };
     let (mut out, mut last_pos) =
@@ -3497,8 +3553,83 @@ mod link_load_tests {
             region: None,
             turns: Vec::new(),
             turn_bound: 0.0,
+            capped_area: None,
         };
         (grid, mask, load)
+    }
+
+    /// D65: the stock cleared below y = −R/2, so a cut along y = 0 engages
+    /// three quarters of the diameter: over the ceiling (c ≈ 0.36 at s 2),
+    /// also in a running cut, and under a slot.
+    fn half_cleared() -> (MaterialGrid, Vec<bool>, LinkLoad) {
+        let (mut grid, mask, load) = scene();
+        let mut x = -30.0;
+        while x <= 30.0 {
+            grid.clear_circle(x, -R - R / 2.0, R);
+            x += grid.cell_size;
+        }
+        (grid, mask, load)
+    }
+
+    /// D65: the capped rule admits a step over the ceiling that reads at
+    /// most a slot; with the rule off the same step is refused; a reading
+    /// over a slot is refused with the rule on.
+    #[test]
+    fn a_step_over_the_ceiling_is_admitted_only_capped_and_up_to_a_slot_d65() {
+        let (grid, _mask, load) = half_cleared();
+        let (a, b) = (P2::new(-5.0, 0.0), P2::new(-3.5, 0.0));
+        let angle = 0.0;
+        let reading =
+            crate::adaptive::search::measure_step(&grid, a, b.x, b.y, R, angle, &load.pass);
+        assert!(
+            reading > load.pass.ceiling && reading <= super::FULL_SLOT_LOAD,
+            "the fixture must read over the ceiling {} and under a slot: {reading}",
+            load.pass.ceiling
+        );
+        let capped = load.with_capped(true, 2.0, grid.cell_size);
+        assert!(capped.admits_capped(&grid, a, b, reading));
+        assert!(!load.admits_capped(&grid, a, b, reading), "the rule is off");
+        assert!(
+            !load
+                .with_capped(false, 2.0, grid.cell_size)
+                .admits_capped(&grid, a, b, reading),
+            "with_capped(false) leaves the rule off"
+        );
+        assert!(!capped.admits_capped(&grid, a, b, 2.0 * super::FULL_SLOT_LOAD));
+    }
+
+    /// D65: the walker cuts a run along the half-cleared edge in one span
+    /// under the capped rule (one entry, then the cut), and refuses every
+    /// step of it with the rule off.
+    #[test]
+    fn the_walker_cuts_a_capped_run_in_one_span_d65() {
+        let path = [P2::new(-20.0, 0.0), P2::new(20.0, 0.0)];
+        let walk = |capped: bool| {
+            let (mut grid, mask, load) = half_cleared();
+            let load = load.with_capped(capped, 2.0, grid.cell_size);
+            let mut here = None;
+            let mut out = Vec::new();
+            emit_capped_walk_with(
+                &path, &mut grid, &mask, &load, &mut here, &mut out, false, None,
+            );
+            out
+        };
+        let count = |out: &[AdaptiveSegment]| {
+            (
+                out.iter()
+                    .filter(|s| matches!(s, AdaptiveSegment::Rapid(_)))
+                    .count(),
+                out.iter()
+                    .filter(|s| matches!(s, AdaptiveSegment::Cut(_)))
+                    .count(),
+            )
+        };
+        assert_eq!(count(&walk(true)), (1, 1), "capped: one entry, one span");
+        assert_eq!(
+            count(&walk(false)),
+            (0, 0),
+            "uncapped: every step is refused"
+        );
     }
 
     /// A link through standing stock is a slot: refused, and the grid is

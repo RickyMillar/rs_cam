@@ -25,16 +25,16 @@ The research's candidate (a), preset C35 plan A only (Q8, D52). Design:
   rest is private. Unreached code does not exist (no `dead_code` expects).
 - A cap reads `slice::step_reading`: the larger of the swept width and the
   area per mm (`L`); no matching of moves by position.
-- The plan holds the 2D pass load through the shared cleanup
-  (`../path.rs`); the only exemption is a planned turn no longer than
-  `turn_bound`, admitted by `LinkLoad::admits_turn`.
-- No typed constant: each rule names its derivation (module doc). The plan
-  equals the research move by move (feeds aside); a moved pin is a defect.
+- The plan holds the 2D pass load through the shared cleanup (`../path.rs`).
+  Exempt: a planned turn <= `turn_bound` (`admits_turn`); D65, 3D slice door
+  only (`cleaned(.., capped)`), a step <= `FULL_SLOT_LOAD` (`admits_capped`,
+  capped at `c / L` by `fed_runs`; the 3D twin is `admits_capped_split`).
+- No typed constant (module doc). The plan equals the research move by move
+  but for D65's capped steps (feeds aside); any other moved pin is a defect.
 
 ## Sentries
 
-- `cargo test -p rs_cam_core -q --features research,test-support --test the_geodesic_preset_keeps_its_plan_s7_3`
-  (the reference pins on the star and the pocket; the door against them).
+- `cargo test -p rs_cam_core -q --features research,test-support --test the_geodesic_preset_keeps_its_plan_s7_3` (the star and pocket pins).
 - `cargo test -p rs_cam_core -q --lib adaptive::geodesic` (the unit tests).
-- `... --test geodesic_adaptive_keeps_the_research_geometry_s7_4 --test a_geodesic_cap_survives_every_dressup_s7_4`
+- `... --test geodesic_adaptive_keeps_the_research_geometry_s7_4 --test a_geodesic_cap_survives_every_dressup_s7_4 --test a_geodesic_step_over_the_ceiling_is_cut_capped_d65`
 - The 2D engine's sentries in `../CLAUDE.md` (the cleanup is shared).

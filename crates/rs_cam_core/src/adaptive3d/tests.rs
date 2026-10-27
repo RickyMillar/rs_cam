@@ -2700,3 +2700,76 @@ fn the_step_reads_tell_a_full_pass_from_a_thin_layer() {
 
     assert_eq!(step_load(&fresh, p, p, 3.0, 0.0, &load_cutter), 0.0);
 }
+
+/// D65: the stock-read split admits a draped step as a capped cut only for
+/// Geodesic Adaptive, only when it is not deep, only when its load is over
+/// the ceiling and at most the full slot, and only inside one engaged run.
+/// A deep step and a step over the slot still split.
+#[test]
+fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
+    use super::clearing::admits_capped_split;
+    use crate::adaptive::path::FULL_SLOT_LOAD;
+    let ceiling = 0.38;
+    let over = (ceiling + FULL_SLOT_LOAD) / 2.0;
+    let geo = ClearingStrategy3d::GeodesicAdaptive;
+    assert!(admits_capped_split(false, over, ceiling, true, geo));
+    assert!(admits_capped_split(
+        false,
+        FULL_SLOT_LOAD,
+        ceiling,
+        true,
+        geo
+    ));
+    // A deep step splits, whatever its load.
+    assert!(!admits_capped_split(true, over, ceiling, true, geo));
+    // A step over the slot splits.
+    assert!(!admits_capped_split(
+        false,
+        2.0 * FULL_SLOT_LOAD,
+        ceiling,
+        true,
+        geo
+    ));
+    // A step at or under the ceiling is not split at all: no admission.
+    assert!(!admits_capped_split(false, ceiling, ceiling, true, geo));
+    // An engagement change keeps the split.
+    assert!(!admits_capped_split(false, over, ceiling, false, geo));
+    // Every other strategy keeps the split.
+    for other in [
+        ClearingStrategy3d::AgentSearch,
+        ClearingStrategy3d::ContourParallel,
+        ClearingStrategy3d::Adaptive,
+        ClearingStrategy3d::ContourSpiral,
+    ] {
+        assert!(
+            !admits_capped_split(false, over, ceiling, true, other),
+            "{other:?}"
+        );
+    }
+}
+
+/// D65: the factor of a capped draped step is `c / L`, at most the factor
+/// that holds its descent at the plunge rate, at most the open 2D cap, and
+/// never above 1.
+#[test]
+fn a_capped_draped_step_descends_no_faster_than_the_plunge_d65() {
+    use super::clearing::capped_step_factor;
+    let (feed, plunge) = (1000.0, 500.0);
+    let (ceiling, load) = (0.38, 0.5);
+    // A shallow step: the load factor binds.
+    let (a, b) = (P3::new(0.0, 0.0, 5.0), P3::new(10.0, 0.0, 4.5));
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, None);
+    assert!((f - ceiling / load).abs() < 1e-12, "shallow: {f}");
+    // A steep step: its descent rate F·f·|dz|/|step| is at most the plunge.
+    let (a, b) = (P3::new(0.0, 0.0, 10.0), P3::new(1.0, 0.0, 4.0));
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, None);
+    let len = (1.0_f64 + 36.0).sqrt();
+    assert!(feed * f * 6.0 / len <= plunge + 1e-9, "steep: {f}");
+    assert!(f < ceiling / load);
+    // An open 2D cap lower than both binds.
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, Some(0.1));
+    assert!((f - 0.1).abs() < 1e-12);
+    // A climbing step has no descent term.
+    let f = capped_step_factor(ceiling, load, b, a, feed, plunge, None);
+    assert!((f - ceiling / load).abs() < 1e-12, "climb: {f}");
+}

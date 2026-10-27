@@ -44,14 +44,16 @@ pub(crate) fn slice_segments(
     }))
 }
 
-/// The 2D cleanup of the plan, whose replay admits the planned turns.
+/// The 2D cleanup of the plan, whose replay admits the planned turns and,
+/// D65, a step over the ceiling that reads at most a slot ([`feed_caps`]
+/// caps its feed).
 pub(crate) fn slice_cleanup(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: Vec<AdaptiveSegment>,
     turns: &[(P2, P2)],
 ) -> Vec<AdaptiveSegment> {
-    cleaned(polygon, params, segments, turns)
+    cleaned(polygon, params, segments, turns, true)
 }
 
 /// The replay of the kept plan after the F-038 group filter
@@ -70,6 +72,7 @@ pub(crate) fn slice_replay(
         segments,
         PassLoadMeasure::SweptWidth,
         turns,
+        true,
     )
 }
 
@@ -273,6 +276,10 @@ fn fed_runs(
     };
     let mut turn_reads: Vec<Option<f64>> = vec![None; turns.len()];
     let mut departures: Vec<FedRun> = Vec::new();
+    // D65: the plan windows that hold a step the replay admitted over the
+    // ceiling under the capped rule (`LinkLoad::admits_capped`): a step off
+    // every turn and every departure whose swept width reads over c.
+    let mut capped: Vec<FedRun> = Vec::new();
     let mut here: Option<P2> = None;
     let mut plunged_at: Option<P2> = None;
     let mut clearing = false;
@@ -344,6 +351,29 @@ fn fed_runs(
                             if let Some(slot) = turn_reads.get_mut(k) {
                                 *slot = Some(slot.map_or(reading, |m: f64| m.max(reading)));
                             }
+                        } else if on_turn(a, b).is_none()
+                            && measure_step(
+                                &setup.grid,
+                                a,
+                                b.x,
+                                b.y,
+                                r,
+                                (b.y - a.y).atan2(b.x - a.x),
+                                &pass,
+                            ) > pass.ceiling
+                            && let (Some(&wa), Some(&wb)) = (path.get(window), path.get(window + 1))
+                        {
+                            let reading = step_reading(&setup.grid, a, b, r, &pass, &area);
+                            match capped.last_mut() {
+                                Some(c) if c.from == wa && c.to == wb => {
+                                    c.reading = c.reading.max(reading);
+                                }
+                                _ => capped.push(FedRun {
+                                    from: wa,
+                                    to: wb,
+                                    reading,
+                                }),
+                            }
                         }
                     }
                     setup.grid.clear_segment(a, b, r);
@@ -359,6 +389,9 @@ fn fed_runs(
         .zip(&turn_reads)
         .filter_map(|(&(from, to), read)| read.map(|reading| FedRun { from, to, reading }))
         .collect();
+    // D65: each capped window is a run of its own (a key of its own, as a
+    // turn), before the departure windows, which share one key.
+    runs.extend(capped);
     let first_departure = runs.len();
     runs.extend(departures);
     (runs, first_departure, pass.ceiling)

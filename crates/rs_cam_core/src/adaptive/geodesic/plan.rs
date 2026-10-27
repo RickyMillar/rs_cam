@@ -318,21 +318,25 @@ pub(crate) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> 
 /// The cleanup of `adaptive_toolpath_structured_annotated_traced_with_cancel`
 /// (`mod.rs`): the same dispatch on the cleanup strategy.
 /// C14: the replay of the kept segments admits the planned clearing turns
-/// `turns` (empty for every column before C14).
+/// `turns` (empty for every column before C14). D65: with `capped`, it also
+/// admits a step over the ceiling that reads at most a slot
+/// (`LinkLoad::admits_capped`); only the 3D slice door sets it, because only
+/// that door caps the feed of such a step (`slice::feed_caps`).
 pub(crate) fn cleaned(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: Vec<AdaptiveSegment>,
     turns: &[(P2, P2)],
+    capped: bool,
 ) -> Vec<AdaptiveSegment> {
     let m = PassLoadMeasure::SweptWidth;
     match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
-            apply_residue_mop_cleanup_turns(polygon, params, &segments, m, turns)
+            apply_residue_mop_cleanup_turns(polygon, params, &segments, m, turns, capped)
         }
-        CleanupStrategy::ContourParallelHybrid => {
-            apply_contour_parallel_residue_cleanup_turns(polygon, params, &segments, m, turns)
-        }
+        CleanupStrategy::ContourParallelHybrid => apply_contour_parallel_residue_cleanup_turns(
+            polygon, params, &segments, m, turns, capped,
+        ),
     }
 }

@@ -19,6 +19,13 @@
 //! `adaptive::geodesic::feed_caps`). The feed differences are in the step
 //! 7.4 report. A pin that moves is a port defect: report it, do not
 //! re-pin.
+//!
+//! D65 (`planning/adaptive_research_2026-10-23/phase3/d65/`, lead ruling
+//! 2026-10-28): the product leaves the research geometry ON PURPOSE where a
+//! step over the pass ceiling that reads at most a full slot is now cut at
+//! a capped feed instead of a re-entry. The pins below are the D65
+//! product's (the research numbers: 978, 2063, 1056, 0 moves). Every other
+//! move-by-move difference is still a defect.
 
 #![expect(
     clippy::expect_used,
@@ -167,11 +174,12 @@ fn fixtures() -> Vec<(&'static str, TriangleMesh, f64)> {
     ]
 }
 
-/// The research branch's geometry of each fixture, in [`fixtures`] order.
+/// The geometry of each fixture, in [`fixtures`] order: the research
+/// branch's, as D65 changed it (the capped steps; module doc).
 const PINS: [(usize, u64); 4] = [
-    (978, 14452218181729557987),
-    (2063, 3602713506842892098),
-    (1056, 14786195423799852005),
+    (957, 5931675112365951456),
+    (1976, 17577482464951561279),
+    (1008, 6172482053443525791),
     (0, 675868731199239589),
 ];
 

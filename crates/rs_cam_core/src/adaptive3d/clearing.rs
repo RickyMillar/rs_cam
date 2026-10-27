@@ -916,6 +916,55 @@ pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64)
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
+/// D65: whether a draped step that the stock-read split would split is cut
+/// instead at a capped feed ([`capped_step_factor`]): Geodesic Adaptive
+/// only, a step that is not `deep` (its axial engagement at most one
+/// Depth/Pass plus the clearance), whose chip-area load is over the ceiling
+/// (the split's own reason) and at most the full slot
+/// ([`crate::adaptive::path::FULL_SLOT_LOAD`]), inside one engaged run
+/// (`in_engaged_run`: no engagement change at the step). Every other split
+/// stays a split.
+pub(super) fn admits_capped_split(
+    deep: bool,
+    load: f64,
+    ceiling: f64,
+    in_engaged_run: bool,
+    strategy: ClearingStrategy3d,
+) -> bool {
+    !deep
+        && load > ceiling
+        && load <= crate::adaptive::path::FULL_SLOT_LOAD
+        && in_engaged_run
+        && is_geodesic(strategy)
+}
+
+/// D65: the feed factor of a draped step admitted as a capped cut (Geodesic
+/// Adaptive): the load factor `c / L` (`geodesic::feed_caps`'s law), at
+/// most the factor that holds the step's descent rate at the plunge rate
+/// (`plunge_rate · |step| / (|dz| · F)`, so a steep step goes down no
+/// faster than the plunge it replaces), and at most the 2D cap `outer` of
+/// the cut it lies on. Never above 1.
+pub(super) fn capped_step_factor(
+    ceiling: f64,
+    load: f64,
+    prev: P3,
+    curr: P3,
+    feed_rate: f64,
+    plunge_rate: f64,
+    outer: Option<f64>,
+) -> f64 {
+    let mut factor = if load > 0.0 { ceiling / load } else { 1.0 };
+    let dz = curr.z - prev.z;
+    if dz < 0.0 && feed_rate > 0.0 {
+        let len = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2) + dz * dz).sqrt();
+        factor = factor.min(plunge_rate * len / (-dz * feed_rate));
+    }
+    if let Some(outer) = outer {
+        factor = factor.min(outer);
+    }
+    factor.min(1.0)
+}
+
 /// The cutter and the pass a step's load is read against: the cutter's
 /// radial profile, its chip cross-section contract, its diameter, and the
 /// op's Depth/Pass.
@@ -3625,6 +3674,10 @@ fn plan_and_emit_region(
                     // pass ceiling c (the radial fraction of
                     // `PassLoad::swept_width`). A thin layer reads light; a
                     // full-depth drop into fresh stock reads near a slot.
+                    let engagement_change = engaged[i] != sub_engaged;
+                    // D65: the feed factor of a load split admitted as a
+                    // capped cut (`None`: split as before, or no split).
+                    let mut capped_step: Option<f64> = None;
                     let large_z = match ctx.step_split {
                         super::StepSplit::PathShape => shape_split,
                         super::StepSplit::StockDepth if shape_split => {
@@ -3638,7 +3691,7 @@ fn plan_and_emit_region(
                                         ctx.tool_radius,
                                     ),
                                 );
-                            deep || step_load(
+                            let load = step_load(
                                 sink.material_stock,
                                 prev,
                                 curr,
@@ -3650,11 +3703,71 @@ fn plan_and_emit_region(
                                     diameter: 2.0 * ctx.tool_radius,
                                     depth_per_pass: ctx.depth_per_pass,
                                 },
-                            ) > ceiling
+                            );
+                            // D65 (Geodesic Adaptive only): a load split that
+                            // is not deep and reads at most a slot is cut at
+                            // a capped feed, not split into an entry.
+                            if admits_capped_split(
+                                deep,
+                                load,
+                                ceiling,
+                                !engagement_change && sub_engaged,
+                                ctx.clearing_strategy,
+                            ) {
+                                capped_step = Some(capped_step_factor(
+                                    ceiling,
+                                    load,
+                                    prev,
+                                    curr,
+                                    ctx.feed_rate,
+                                    ctx.plunge_rate,
+                                    cap,
+                                ));
+                                false
+                            } else {
+                                deep || load > ceiling
+                            }
                         }
                         super::StepSplit::StockDepth => false,
                     };
-                    let engagement_change = engaged[i] != sub_engaged;
+                    if let Some(factor) = capped_step {
+                        // The run so far, then the step on its own between
+                        // cap markers, then the open 2D cap again.
+                        if i - sub_start >= 2 {
+                            sink.emit(ctx, Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()));
+                            *cut_count += 1;
+                        }
+                        if cap.is_some() {
+                            sink.emit(
+                                ctx,
+                                Adaptive3dSegment::Marker(
+                                    super::Adaptive3dRuntimeEvent::FeedCapEnd,
+                                ),
+                            );
+                        }
+                        sink.emit(
+                            ctx,
+                            Adaptive3dSegment::Marker(
+                                super::Adaptive3dRuntimeEvent::FeedCapStart { factor },
+                            ),
+                        );
+                        sink.emit(ctx, Adaptive3dSegment::Cut(vec![prev, curr]));
+                        *cut_count += 1;
+                        sink.emit(
+                            ctx,
+                            Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+                        );
+                        if let Some(outer) = cap {
+                            sink.emit(
+                                ctx,
+                                Adaptive3dSegment::Marker(
+                                    super::Adaptive3dRuntimeEvent::FeedCapStart { factor: outer },
+                                ),
+                            );
+                        }
+                        sub_start = i;
+                        continue;
+                    }
                     if large_z || engagement_change {
                         // Flush the current run.
                         let run_len = i - sub_start;

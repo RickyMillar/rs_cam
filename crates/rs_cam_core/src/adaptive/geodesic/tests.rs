@@ -607,3 +607,39 @@ fn the_area_term_binds_on_a_tight_turn() {
     assert_eq!(factor.to_bits(), (swept.ceiling / removal).to_bits());
     assert!(factor < feed_factor(swept.ceiling, width));
 }
+
+/// D65: `feed_caps` caps a step the replay admitted over the ceiling under
+/// the capped rule, at `c / L` below 1, and does not cap a step that reads
+/// at or under the ceiling. A straight cut through standing stock from an
+/// entry reads over the ceiling; a cut back half a radius beside it, inside
+/// the cleared slot, reads a quarter of the diameter, under the ceiling.
+/// (`feed_caps` matches a step to its run by position, so the walk back is
+/// beside the first cut, not on it.)
+#[test]
+fn feed_caps_caps_a_step_over_the_ceiling_d65() {
+    use crate::adaptive::AdaptiveSegment;
+
+    let params = test_params();
+    let square = Polygon2::rectangle(-30.0, -30.0, 30.0, 30.0);
+    let (a, b) = (P2::new(-15.0, 0.0), P2::new(15.0, 0.0));
+    let (b2, a2) = (P2::new(15.0, R / 2.0), P2::new(-15.0, R / 2.0));
+    let segments = vec![
+        AdaptiveSegment::Rapid(a),
+        AdaptiveSegment::Cut(vec![a, b]),
+        AdaptiveSegment::Link(b2),
+        AdaptiveSegment::Cut(vec![b2, a2]),
+    ];
+    let (out, caps) = super::slice::feed_caps(&square, &params, segments, &[]);
+    let cut_caps: Vec<Option<f64>> = out
+        .iter()
+        .zip(&caps)
+        .filter(|(s, _)| matches!(s, AdaptiveSegment::Cut(_)))
+        .map(|(_, c)| *c)
+        .collect();
+    let [first, second] = cut_caps.as_slice() else {
+        panic!("two cuts: {cut_caps:?}");
+    };
+    let first = first.expect("the cut through stock is capped");
+    assert!(first > 0.0 && first < 1.0, "{first}");
+    assert_eq!(*second, None, "the cut beside it reads under the ceiling");
+}

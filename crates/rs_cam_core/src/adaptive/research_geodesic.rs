@@ -1429,11 +1429,11 @@ fn cleaned(
     match params.cleanup_strategy {
         CleanupStrategy::Legacy => segments,
         CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
-            apply_residue_mop_cleanup_turns(polygon, params, &segments, m, turns)
+            apply_residue_mop_cleanup_turns(polygon, params, &segments, m, turns, false)
         }
-        CleanupStrategy::ContourParallelHybrid => {
-            apply_contour_parallel_residue_cleanup_turns(polygon, params, &segments, m, turns)
-        }
+        CleanupStrategy::ContourParallelHybrid => apply_contour_parallel_residue_cleanup_turns(
+            polygon, params, &segments, m, turns, false,
+        ),
     }
 }
 
