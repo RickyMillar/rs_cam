@@ -1,0 +1,91 @@
+{
+ "corne": {
+  "source": "P15 D37, D45, D49; clocks in phase3/fix26/three_clocks_*.json",
+  "cp": {
+   "op1": 1427.2,
+   "rest3": 1413.6,
+   "job": 2841.0
+  },
+  "geo_s2p1": {
+   "op1": 1075.5,
+   "edge": 453.9,
+   "rest3": 1732.8,
+   "job": 3262.2
+  },
+  "geo_s1p2_before": {
+   "op1": 1872.8,
+   "edge": 608.1,
+   "rest3": 1862.8,
+   "job": 4344.0
+  },
+  "load_cp": {
+   "stepover": 1.2,
+   "L_max": 1.031,
+   "L_p99": 1.008,
+   "L_p95": 0.781,
+   "own_bound": 0.327,
+   "mm_over_own_bound": 3512.4
+  },
+  "load_geo": {
+   "stepover": 2.1,
+   "L_max": 0.999,
+   "L_p99": 0.493,
+   "L_p95": 0.392,
+   "own_bound": 0.489,
+   "mm_over_own_bound": 171.3
+  }
+ },
+ "wanaka": {
+  "source": "P15 D47, D49, D51",
+  "cp": {
+   "job": 5776.8
+  },
+  "geo_s2p0": {
+   "job": 3184.2
+  },
+  "geo_s3p5": {
+   "op1": 1323.6,
+   "edge": 620.7,
+   "job": 1944.3
+  },
+  "load_cp": {
+   "stepover": 2.0,
+   "L_max": 2.62,
+   "L_p99": 1.0,
+   "L_p95": 0.4,
+   "own_bound": 0.471,
+   "mm_over_own_bound": 2258.3
+  },
+  "load_s2p0": {
+   "stepover": 2.0,
+   "L_max": 0.72,
+   "L_p99": 0.375,
+   "L_p95": 0.358,
+   "own_bound": 0.471,
+   "mm_over_own_bound": 107.4
+  },
+  "load_s3p5": {
+   "stepover": 3.5,
+   "L_max": 0.992,
+   "L_p99": 0.642,
+   "L_p95": 0.625,
+   "own_bound": 0.734,
+   "mm_over_own_bound": 16.2
+  },
+  "left_cp": {
+   "max": 3.24,
+   "p95": 0.85,
+   "area_over_0p6_mm2": 3010
+  },
+  "left_s2p0": {
+   "max": 3.17,
+   "p95": 0.92,
+   "area_over_0p6_mm2": 3760
+  },
+  "left_s3p5": {
+   "max": 3.58,
+   "p95": 1.18,
+   "area_over_0p6_mm2": 6190
+  }
+ }
+}
