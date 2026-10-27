@@ -1,0 +1,982 @@
+diff --git a/crates/rs_cam_core/src/compute/obstacle.rs b/crates/rs_cam_core/src/compute/obstacle.rs
+index 19c510959..5b1cca1a8 100644
+--- a/crates/rs_cam_core/src/compute/obstacle.rs
++++ b/crates/rs_cam_core/src/compute/obstacle.rs
+@@ -1450,6 +1450,7 @@ fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64
+         target: P3::new(first.target.x, first.target.y, plane),
+         move_type: MoveType::Rapid,
+         intent: crate::toolpath::MoveIntent::ObstacleClearance,
++        feed_cap: None,
+     };
+     toolpath.moves.insert(0, lift);
+     for entry in mapping.iter_mut().skip(1) {
+@@ -1718,6 +1719,7 @@ mod tests {
+                 feed_rate: 1000.0,
+             },
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         };
+         let permit = ObstaclePermit { view: &view };
+         assert!(view.point_allowed(start) && view.point_allowed(m.target));
+diff --git a/crates/rs_cam_core/src/compute/simulate.rs b/crates/rs_cam_core/src/compute/simulate.rs
+index 07960cbd7..6b73aa7df 100644
+--- a/crates/rs_cam_core/src/compute/simulate.rs
++++ b/crates/rs_cam_core/src/compute/simulate.rs
+@@ -963,11 +963,13 @@ pub(crate) fn hash_toolpath(toolpath: &Toolpath) -> u64 {
+             // F101: destructured, `..`-free, so a new `Move` field is a
+             // compile error here until someone decides. The intent is not
+             // hashed: it moves no material, and a saved trace whose hash
+-            // took it would read as stale.
++            // took it would read as stale. The feed cap is not hashed for
++            // the same reason: the feed the move carries is hashed.
+             let crate::toolpath::Move {
+                 target,
+                 move_type,
+                 intent: _,
++                feed_cap: _,
+             } = motion;
+             hash_f64_bits(hasher, target.x);
+             hash_f64_bits(hasher, target.y);
+@@ -1199,6 +1201,7 @@ pub fn group_toolpath_to_global(
+                     ),
+                     move_type: m.move_type,
+                     intent: m.intent,
++                    feed_cap: m.feed_cap,
+                 })
+                 .collect(),
+         },
+diff --git a/crates/rs_cam_core/src/compute/transform.rs b/crates/rs_cam_core/src/compute/transform.rs
+index f8e0778c9..1cc07de96 100644
+--- a/crates/rs_cam_core/src/compute/transform.rs
++++ b/crates/rs_cam_core/src/compute/transform.rs
+@@ -771,6 +771,7 @@ impl SetupTransformInfo {
+                     target,
+                     move_type,
+                     intent: m.intent,
++                    feed_cap: m.feed_cap,
+                 }
+             })
+             .collect();
+diff --git a/crates/rs_cam_core/src/dressup/CLAUDE.md b/crates/rs_cam_core/src/dressup/CLAUDE.md
+index 1b292d73c..d93fcdd2b 100644
+--- a/crates/rs_cam_core/src/dressup/CLAUDE.md
++++ b/crates/rs_cam_core/src/dressup/CLAUDE.md
+@@ -27,7 +27,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
+   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
+   fit `entry_containment`, arc fit inside it; under entry None a
+   `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
+-- The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT).
++- The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT). C38 §15: `Move::feed_cap` binds last in every feed stage (modulator, feedopt) and only lowers; arc fit and segment merge join only moves with equal caps.
+ - `tsp.rs`: a reordered group's fed first move is never fed from elsewhere
+   (G-TIERBURIAL); rapid travel never grows: a group keeps its order and
+   framing unless its rebuild is shorter, else the input comes out as is.
+@@ -36,5 +36,5 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
+ 
+ - `cargo test -p rs_cam_core -q --features test-support --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b --test the_tab_layout_is_the_cut_layout_p4_6`
+ - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
+-- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
++- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test a_feed_cap_binds_every_feed_stage_c38 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
+ - `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b --test a_lead_curls_away_from_the_part_p6_0c`
+diff --git a/crates/rs_cam_core/src/dressup/arcfit.rs b/crates/rs_cam_core/src/dressup/arcfit.rs
+index 03c53ec9c..bc78c43a1 100644
+--- a/crates/rs_cam_core/src/dressup/arcfit.rs
++++ b/crates/rs_cam_core/src/dressup/arcfit.rs
+@@ -185,6 +185,9 @@ pub(crate) fn fit_arcs_within(
+         // finishing pass never cut. Equality is strict: `Unknown` breaks
+         // against every tagged intent (Checkpoint F1 Q3).
+         let run_intent = m.intent;
++        // C38 §15: the feed cap is an equality term too, so the arc keeps
++        // the cap of every move it replaces.
++        let run_cap = m.feed_cap;
+         // G-ARCFITSCAN (2026-10-02): the run end is found LAZILY, one move
+         // past what the greedy loop below has already accepted. The old
+         // code scanned the whole same-feed run up front for every `i`; a
+@@ -207,9 +210,12 @@ pub(crate) fn fit_arcs_within(
+         let eligible = |k: usize| -> bool {
+             #[cfg(test)]
+             RUN_SCAN_READS.with(|c| c.set(c.get() + 1));
+-            match moves.get(k).map(|mv| (mv.move_type, mv.intent)) {
+-                Some((MoveType::Linear { feed_rate: f }, intent)) => {
+-                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent
++            match moves
++                .get(k)
++                .map(|mv| (mv.move_type, mv.intent, mv.feed_cap))
++            {
++                Some((MoveType::Linear { feed_rate: f }, intent, cap)) => {
++                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent && cap == run_cap
+                 }
+                 _ => false,
+             }
+@@ -286,6 +292,7 @@ pub(crate) fn fit_arcs_within(
+                         feed_rate,
+                     },
+                     intent: arc_intent,
++                    feed_cap: moves[i].feed_cap,
+                 });
+             } else {
+                 result.moves.push(Move {
+@@ -296,6 +303,7 @@ pub(crate) fn fit_arcs_within(
+                         feed_rate,
+                     },
+                     intent: arc_intent,
++                    feed_cap: moves[i].feed_cap,
+                 });
+             }
+             arc_positions.push(arc_idx);
+diff --git a/crates/rs_cam_core/src/dressup/condition.rs b/crates/rs_cam_core/src/dressup/condition.rs
+index a7a61cc9d..1822c6853 100644
+--- a/crates/rs_cam_core/src/dressup/condition.rs
++++ b/crates/rs_cam_core/src/dressup/condition.rs
+@@ -102,15 +102,18 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
+         // which without this term could carry a different intent. On a
+         // collinear run the whole thing collapsed to one move wearing the
+         // last block's label. Equality is strict here too: `Unknown` is not a
+-        // wildcard.
++        // wildcard. C38 §15: the feed cap is an equality term for the same
++        // reason.
+         let run_start = i;
+         let run_intent = moves[run_start].intent;
++        let run_cap = moves[run_start].feed_cap;
+         let mut end = run_start + 1;
+         while end < moves.len() {
+             match moves[end].move_type {
+                 MoveType::Linear { feed_rate: f }
+                     if (f - feed_rate).abs() < FEED_EPS
+                         && moves[end].intent == run_intent
++                        && moves[end].feed_cap == run_cap
+                         && !barriers.contains(&end) =>
+                 {
+                     end += 1;
+@@ -367,6 +370,39 @@ mod tests {
+         assert_eq!(last.intent, MoveIntent::Linking);
+     }
+ 
++    /// C38 §15: runs with different feed caps are not merged across the
++    /// change, so a merged move keeps the cap of every move it replaces.
++    #[test]
++    fn does_not_merge_across_feed_cap_change() {
++        let mut tp = Toolpath::new();
++        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
++        // Perfectly collinear, one feed, one intent. Only the cap
++        // distinguishes the halves.
++        for k in 1..=10 {
++            tp.feed_to(P3::new(k as f64, 0.0, 0.0), 1000.0);
++        }
++        for m in tp.moves.iter_mut().skip(1).take(5) {
++            m.feed_cap = Some(600.0);
++        }
++
++        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
++
++        assert_eq!(
++            cut_move_count(&out.toolpath),
++            2,
++            "one merged move per cap block, got {:?}",
++            out.toolpath.moves
++        );
++        let boundary = out
++            .toolpath
++            .moves
++            .iter()
++            .find(|m| (m.target.x - 5.0).abs() < 1e-9)
++            .expect("the cap boundary at x=5 must survive the merge");
++        assert_eq!(boundary.feed_cap, Some(600.0));
++        assert_eq!(out.toolpath.moves.last().unwrap().feed_cap, None);
++    }
++
+     /// Spans remap cleanly and invariants hold after a merge.
+     #[test]
+     fn remaps_spans_and_holds_invariants() {
+diff --git a/crates/rs_cam_core/src/dressup/feed_modulation.rs b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+index e04096bf9..bb2f38a46 100644
+--- a/crates/rs_cam_core/src/dressup/feed_modulation.rs
++++ b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+@@ -1013,6 +1013,17 @@ pub fn adaptive_feed_modulate_with_materials(
+             }
+         }
+ 
++        // C38 §15: the move's own feed cap (`Move::feed_cap`), which a
++        // planner sets where a load rule lowers the feed. It binds after
++        // every arm, the floor and the plunge guard, and it only lowers.
++        // With no cap (every shipped planner) nothing changes.
++        if let Some(cap) = toolpath.moves[i].feed_cap
++            && new_feed > cap
++        {
++            new_feed = cap;
++            binding = BindingConstraint::FeedCap;
++        }
++
+         outcome.per_move.insert(i, (new_feed, binding));
+         if (new_feed - commanded).abs() > 1e-6 {
+             toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);
+diff --git a/crates/rs_cam_core/src/dressup/feedopt.rs b/crates/rs_cam_core/src/dressup/feedopt.rs
+index 1f76dea01..2dd742079 100644
+--- a/crates/rs_cam_core/src/dressup/feedopt.rs
++++ b/crates/rs_cam_core/src/dressup/feedopt.rs
+@@ -254,8 +254,12 @@ fn optimize_feed_rates_inner(
+     // changes. Rebuilding via the intent-less `rapid_to`/`feed_to`/
+     // `arc_*_to` builders (the old approach) silently reset every move's
+     // intent to `MoveIntent::Unknown`, which is the S.1 bug this fixes.
++    //
++    // C38 §15: a move's own feed cap (`Move::feed_cap`) binds last, after
++    // the smoothing, and only lowers. With no cap nothing changes.
+     let mut output = toolpath.clone();
+     for (mv, &feed) in output.moves.iter_mut().zip(feed_rates.iter()) {
++        let feed = mv.feed_cap.map_or(feed, |cap| feed.min(cap));
+         mv.move_type = mv.move_type.with_feed_rate(feed);
+     }
+ 
+@@ -562,21 +566,25 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(1.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(2.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 3000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(3.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             },
+         ];
+ 
+diff --git a/crates/rs_cam_core/src/dressup/mod.rs b/crates/rs_cam_core/src/dressup/mod.rs
+index 9169b655d..35ef955df 100644
+--- a/crates/rs_cam_core/src/dressup/mod.rs
++++ b/crates/rs_cam_core/src/dressup/mod.rs
+@@ -965,6 +965,7 @@ pub fn optimize_entry_descents_with_provenance(
+                     target: P3::new(rapid_xy.0, rapid_xy.1, z),
+                     move_type: MoveType::Rapid,
+                     intent: MoveIntent::Linking,
++                    feed_cap: None,
+                 });
+                 splits += 1;
+             }
+@@ -987,6 +988,7 @@ pub fn optimize_entry_descents_with_provenance(
+                                     feed_rate: cfg.plunge_rate,
+                                 },
+                                 intent: MoveIntent::EntryPlunge,
++                                feed_cap: None,
+                             });
+                         }
+                         for point in &plan.points {
+@@ -996,6 +998,7 @@ pub fn optimize_entry_descents_with_provenance(
+                                     feed_rate: cfg.feed_rate,
+                                 },
+                                 intent: MoveIntent::EntryRamp,
++                                feed_cap: None,
+                             });
+                         }
+                         // `end_at_start` puts the last lap point on the run's
+@@ -1709,6 +1712,10 @@ pub fn apply_dogbones(
+                             );
+                             result.feed_to_with_intent(b, feed_rate, intent);
+                             let overcut_end = result.moves.len();
++                            // C38 §15: and the corner's feed cap.
++                            for m in result.moves.iter_mut().skip(overcut_start) {
++                                m.feed_cap = moves[i].feed_cap;
++                            }
+                             dogbone_ranges.push(overcut_start..overcut_end);
+                             emitted_overcut = true;
+                         }
+diff --git a/crates/rs_cam_core/src/dressup/tsp.rs b/crates/rs_cam_core/src/dressup/tsp.rs
+index 6d903d561..61d32c41d 100644
+--- a/crates/rs_cam_core/src/dressup/tsp.rs
++++ b/crates/rs_cam_core/src/dressup/tsp.rs
+@@ -828,18 +828,21 @@ mod tests {
+             target: P3::new(first.x, first.y, safe_z),
+             move_type: MoveType::Rapid,
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         for p in points {
+             moves.push(Move {
+                 target: *p,
+                 move_type: MoveType::Linear { feed_rate },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             });
+         }
+         moves.push(Move {
+             target: P3::new(last.x, last.y, safe_z),
+             move_type: MoveType::Rapid,
+             intent: crate::toolpath::MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         moves
+     }
+@@ -1549,6 +1552,7 @@ mod tests {
+                 target: P3::new(i as f64, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: crate::toolpath::MoveIntent::Unknown,
++                feed_cap: None,
+             })
+             .collect()
+     }
+diff --git a/crates/rs_cam_core/src/finish/surface_link.rs b/crates/rs_cam_core/src/finish/surface_link.rs
+index 91fe162b1..8947b1070 100644
+--- a/crates/rs_cam_core/src/finish/surface_link.rs
++++ b/crates/rs_cam_core/src/finish/surface_link.rs
+@@ -624,12 +624,13 @@ fn rotate_closed_loop(
+                 target: mv.target,
+                 move_type: body_type,
+                 intent: body_intent,
++                feed_cap: mv.feed_cap,
+             },
+         ));
+     }
+     // Close onto the new start, carrying the input's own closing index so the
+     // provenance stays a bijection over this fragment's moves.
+-    let (close_old, _) = moves.last()?;
++    let (close_old, close_move) = moves.last()?;
+     let new_start = cycle.get(best)?.1.target;
+     out.push((
+         *close_old,
+@@ -637,6 +638,7 @@ fn rotate_closed_loop(
+             target: new_start,
+             move_type: body_type,
+             intent: body_intent,
++            feed_cap: close_move.feed_cap,
+         },
+     ));
+     Some(out)
+diff --git a/crates/rs_cam_core/src/measurement.rs b/crates/rs_cam_core/src/measurement.rs
+index 935a1b2b9..1dd582382 100644
+--- a/crates/rs_cam_core/src/measurement.rs
++++ b/crates/rs_cam_core/src/measurement.rs
+@@ -936,11 +936,13 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(length, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 1000.0 },
+                 intent: MoveIntent::FinishingCut,
++                feed_cap: None,
+             },
+         ]
+     }
+@@ -1033,16 +1035,19 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(50.0, 0.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(50.0, 50.0, 5.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Retract,
++                feed_cap: None,
+             },
+         ];
+         let (area, provenance) = swept_footprint_area(&moves, 3.0, 0.5);
+@@ -1064,11 +1069,13 @@ mod tests {
+                 target: P3::new(0.0, 0.0, 0.0),
+                 move_type: MoveType::Rapid,
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+             Move {
+                 target: P3::new(20.0, 0.0, 0.0),
+                 move_type: MoveType::Linear { feed_rate: 800.0 },
+                 intent: MoveIntent::Linking,
++                feed_cap: None,
+             },
+         ];
+         let (area, _) = swept_footprint_area(&moves, 1.5, 0.25);
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index afb49a293..1a20742f7 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -1474,9 +1474,12 @@ fn regime_from_binding(
+         // mostly capped descents as a light cut. On a real path this
+         // binding is never dominant (plunges are a small minority of moves),
+         // so the arm is close to unreachable.
+-        Some(BindingConstraint::DeflectionMax | BindingConstraint::PlungeRate) => {
+-            LoadRegime::ToolLimited
+-        }
++        // C38 §15: a dominant `FeedCap` is a load rule on the tool.
++        Some(
++            BindingConstraint::DeflectionMax
++            | BindingConstraint::PlungeRate
++            | BindingConstraint::FeedCap,
++        ) => LoadRegime::ToolLimited,
+         Some(
+             BindingConstraint::PowerMax
+             | BindingConstraint::MachineMaxFeed
+diff --git a/crates/rs_cam_core/src/tool_load/verdict.rs b/crates/rs_cam_core/src/tool_load/verdict.rs
+index 04e24ec0e..9e5c78733 100644
+--- a/crates/rs_cam_core/src/tool_load/verdict.rs
++++ b/crates/rs_cam_core/src/tool_load/verdict.rs
+@@ -73,6 +73,12 @@ pub enum BindingConstraint {
+     /// sits at or below the plunge rate keeps the strategy's own binding, so
+     /// this variant always means "the plunge rate LOWERED this feed".
+     PlungeRate,
++    /// C38 §15 (2026-10-26). The move's own `Move::feed_cap` lowered the
++    /// feed: a planner set it where a load rule (a pass-load ceiling on a
++    /// turn or a slot) reduced the feed. It binds after every other bound,
++    /// so the modulator cannot lift such a move back to the chipload band.
++    /// No shipped planner writes a cap, so a shipped run never reports it.
++    FeedCap,
+ }
+ 
+ impl BindingConstraint {
+@@ -85,6 +91,7 @@ impl BindingConstraint {
+             BindingConstraint::KinematicReach => "kinematic-reach",
+             BindingConstraint::ChiploadMin => "chipload-min",
+             BindingConstraint::PlungeRate => "plunge-rate",
++            BindingConstraint::FeedCap => "feed-cap",
+         }
+     }
+ }
+diff --git a/crates/rs_cam_core/src/toolpath.rs b/crates/rs_cam_core/src/toolpath.rs
+index d9aa0f006..4a8f23b05 100644
+--- a/crates/rs_cam_core/src/toolpath.rs
++++ b/crates/rs_cam_core/src/toolpath.rs
+@@ -122,11 +122,36 @@ impl MoveType {
+ }
+ 
+ /// A single toolpath move to a target position.
+-#[derive(Debug, Clone)]
++#[derive(Clone)]
+ pub struct Move {
+     pub target: P3,
+     pub move_type: MoveType,
+     pub intent: MoveIntent,
++    /// The highest feed (mm/min) this move may carry, or `None` for no
++    /// limit. A planner writes it where a load rule lowers the feed of a
++    /// move (C38 §15). Every later stage that rewrites the feed
++    /// (`dressup::feed_modulation`, `dressup::feedopt`) keeps the feed at
++    /// or below it, so a stage that raises feeds cannot undo the rule. A
++    /// stage that rebuilds a move from others keeps the cap: the arc fit
++    /// and the segment merge join only moves with the same cap.
++    pub feed_cap: Option<f64>,
++}
++
++/// The derived form, except that `feed_cap` prints only when it is set. The
++/// test fingerprints (`tests/common/fingerprint.rs` and three local copies)
++/// hash this text, so a move with no cap prints exactly what it printed
++/// before the field existed, and every pinned hash stays valid.
++impl std::fmt::Debug for Move {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        let mut out = f.debug_struct("Move");
++        out.field("target", &self.target)
++            .field("move_type", &self.move_type)
++            .field("intent", &self.intent);
++        if let Some(cap) = self.feed_cap {
++            out.field("feed_cap", &cap);
++        }
++        out.finish()
++    }
+ }
+ 
+ /// Where the material is beside one closed pass, relative to the ring the
+@@ -282,6 +307,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::Rapid,
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -290,6 +316,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::Linear { feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -305,6 +332,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::ArcCW { i, j, feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -320,6 +348,7 @@ impl Toolpath {
+             target,
+             move_type: MoveType::ArcCCW { i, j, feed_rate },
+             intent,
++            feed_cap: None,
+         });
+     }
+ 
+@@ -1056,6 +1085,61 @@ fn merge_segments_skip_clamped(
+ mod tests {
+     use super::*;
+ 
++    /// C38 §15: a move with no feed cap prints the text the derived `Debug`
++    /// printed before the field existed, in the plain and the `#` forms, so
++    /// every pinned `Debug` fingerprint stays valid. A set cap prints.
++    #[test]
++    fn a_move_with_no_cap_prints_as_before_the_field() {
++        mod before {
++            /// The struct as it was before `feed_cap`, with the derive.
++            #[derive(Debug)]
++            pub struct Move {
++                pub target: crate::geo::P3,
++                pub move_type: crate::toolpath::MoveType,
++                pub intent: crate::toolpath::MoveIntent,
++            }
++        }
++        let move_types = [
++            MoveType::Rapid,
++            MoveType::Linear { feed_rate: 1234.5 },
++            MoveType::ArcCW {
++                i: 0.1,
++                j: -2.0,
++                feed_rate: 800.0,
++            },
++            MoveType::ArcCCW {
++                i: -0.3,
++                j: 1.0 / 3.0,
++                feed_rate: 600.0,
++            },
++        ];
++        for move_type in move_types {
++            let target = P3::new(1.0 / 7.0, -2.5, 1e-17);
++            let intent = MoveIntent::ClearingCut;
++            let now = Move {
++                target,
++                move_type,
++                intent,
++                feed_cap: None,
++            };
++            let old = before::Move {
++                target,
++                move_type,
++                intent,
++            };
++            assert_eq!(format!("{now:?}"), format!("{old:?}"));
++            assert_eq!(format!("{now:#?}"), format!("{old:#?}"));
++            // The two structs hold the same values (and the old fields are read).
++            assert!(old.target == now.target && old.move_type == now.move_type);
++            assert_eq!(old.intent, now.intent);
++            let capped = Move {
++                feed_cap: Some(600.0),
++                ..now
++            };
++            assert!(format!("{capped:?}").ends_with(", feed_cap: 600.0 }"));
++        }
++    }
++
+     #[test]
+     fn test_emit_path_segment_basic() {
+         let path = vec![
+diff --git a/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs b/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
+index 8c09c9cb0..afebf59fd 100644
+--- a/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
++++ b/crates/rs_cam_core/tests/an_entry_ramp_follows_the_arc_g_rampchord.rs
+@@ -71,6 +71,7 @@ fn ring_toolpath() -> Toolpath {
+             target: P3::new(start.x, start.y, SAFE_Z),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Linking,
++            feed_cap: None,
+         },
+         Move {
+             target: start,
+@@ -78,6 +79,7 @@ fn ring_toolpath() -> Toolpath {
+                 feed_rate: PLUNGE_RATE,
+             },
+             intent: MoveIntent::EntryPlunge,
++            feed_cap: None,
+         },
+     ];
+     for k in 1..=4 {
+@@ -90,12 +92,14 @@ fn ring_toolpath() -> Toolpath {
+                 feed_rate: CUT_FEED,
+             },
+             intent: MoveIntent::FinishingCut,
++            feed_cap: None,
+         });
+     }
+     moves.push(Move {
+         target: P3::new(start.x, start.y, SAFE_Z),
+         move_type: MoveType::Rapid,
+         intent: MoveIntent::Retract,
++        feed_cap: None,
+     });
+     Toolpath { moves }
+ }
+diff --git a/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs b/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
+index 30472a818..c5d4b7966 100644
+--- a/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
++++ b/crates/rs_cam_core/tests/chipload_boundary_g_chip_ulp.rs
+@@ -687,6 +687,9 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
+         // vertical-motion bound, not a chip-formation floor, so it does
+         // not answer rider 3 — the rubbing-floor clamp is still unnamed.
+         BindingConstraint::PlungeRate,
++        // C38 §15 (2026-10-26). A planner's per-move feed cap. It is a
++        // load-rule bound, not a chip-formation floor.
++        BindingConstraint::FeedCap,
+     ];
+     for v in all {
+         // Exhaustiveness guard: a new variant fails to compile here.
+@@ -697,7 +700,8 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
+             | BindingConstraint::PowerMax
+             | BindingConstraint::MachineMaxFeed
+             | BindingConstraint::KinematicReach
+-            | BindingConstraint::PlungeRate => {}
++            | BindingConstraint::PlungeRate
++            | BindingConstraint::FeedCap => {}
+         }
+         assert!(
+             !v.label().contains("rubbing"),
+diff --git a/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs b/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
+index fb4dc1c2c..04602014e 100644
+--- a/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
++++ b/crates/rs_cam_core/tests/conformal_spiral_synthetic_f2.rs
+@@ -11792,6 +11792,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
+             target: P3::new(0.0, 0.0, 0.0),
+             move_type: MoveType::Rapid,
+             intent,
++            feed_cap: None,
+         };
+         assert_eq!(
+             classify_move(&rapid),
+@@ -11804,6 +11805,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
+         target: P3::new(0.0, 0.0, 0.0),
+         move_type: MoveType::Linear { feed_rate: 500.0 },
+         intent,
++        feed_cap: None,
+     };
+     for (intent, expected) in [
+         (MoveIntent::FinishingCut, MoveClass::Cut),
+diff --git a/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs b/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
+index 9668bd30f..1d3d5d015 100644
+--- a/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
++++ b/crates/rs_cam_core/tests/exporter_span_classifier_x1.rs
+@@ -82,6 +82,7 @@ fn straight_run(n: usize) -> Toolpath {
+                 MoveType::Linear { feed_rate: FEED }
+             },
+             intent: MoveIntent::FinishingCut,
++            feed_cap: None,
+         });
+     }
+     tp
+diff --git a/crates/rs_cam_viz/src/app/gpu_upload.rs b/crates/rs_cam_viz/src/app/gpu_upload.rs
+index 12829ceb1..c0f06d35b 100644
+--- a/crates/rs_cam_viz/src/app/gpu_upload.rs
++++ b/crates/rs_cam_viz/src/app/gpu_upload.rs
+@@ -702,6 +702,7 @@ mod tests {
+             target: P3::new(1.0, 2.0, 3.0),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(4.0, 5.0, -2.0),
+@@ -711,6 +712,7 @@ mod tests {
+                 feed_rate: 1000.0,
+             },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         let annotated = AnnotatedToolpath {
+             toolpath: tp,
+diff --git a/crates/rs_cam_viz/src/controller/results_parity_tests.rs b/crates/rs_cam_viz/src/controller/results_parity_tests.rs
+index ca52be958..bed06605f 100644
+--- a/crates/rs_cam_viz/src/controller/results_parity_tests.rs
++++ b/crates/rs_cam_viz/src/controller/results_parity_tests.rs
+@@ -131,16 +131,19 @@ fn worker_result_with_findings() -> ToolpathResult {
+         target: rs_cam_core::geo::P3::new(0.0, 0.0, 5.0),
+         move_type: MoveType::Rapid,
+         intent: rs_cam_core::toolpath::MoveIntent::Unknown,
++        feed_cap: None,
+     });
+     toolpath.moves.push(Move {
+         target: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
+         move_type: MoveType::Linear { feed_rate: 1000.0 },
+         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
++        feed_cap: None,
+     });
+     toolpath.moves.push(Move {
+         target: rs_cam_core::geo::P3::new(10.0, 10.0, -1.0),
+         move_type: MoveType::Linear { feed_rate: 1000.0 },
+         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
++        feed_cap: None,
+     });
+     let mut annotated = AnnotatedToolpath::new(toolpath);
+     annotated.spans = vec![
+diff --git a/crates/rs_cam_viz/src/render/toolpath_render.rs b/crates/rs_cam_viz/src/render/toolpath_render.rs
+index a266e2e01..8ce747194 100644
+--- a/crates/rs_cam_viz/src/render/toolpath_render.rs
++++ b/crates/rs_cam_viz/src/render/toolpath_render.rs
+@@ -1040,16 +1040,19 @@ mod tests {
+             target: P3::new(0.0, 0.0, 0.0),
+             move_type: MoveType::Rapid,
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(1.0, 0.0, 0.0),
+             move_type: MoveType::Linear { feed_rate: 100.0 },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         tp.moves.push(Move {
+             target: P3::new(2.0, 0.0, 0.0),
+             move_type: MoveType::Linear { feed_rate: 100.0 },
+             intent: MoveIntent::Unknown,
++            feed_cap: None,
+         });
+         // Entry span covers move 1 only; default cut for move 2.
+         let spans = vec![Span::new(1, 2, SpanKind::Entry)];
+diff --git a/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs b/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
+index 4c48e2179..6d0f1d64d 100644
+--- a/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
++++ b/crates/rs_cam_viz/tests/an_arc_move_draws_on_its_arc_r_arc.rs
+@@ -56,6 +56,7 @@ fn mv(x: f64, y: f64, z: f64, move_type: MoveType) -> Move {
+         target: P3::new(x, y, z),
+         move_type,
+         intent: MoveIntent::Unknown,
++        feed_cap: None,
+     }
+ }
+ 
+diff --git a/crates/rs_cam_core/tests/a_feed_cap_binds_every_feed_stage_c38.rs b/crates/rs_cam_core/tests/a_feed_cap_binds_every_feed_stage_c38.rs
+new file mode 100644
+index 000000000..b1bd50595
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_feed_cap_binds_every_feed_stage_c38.rs
+@@ -0,0 +1,218 @@
++//! C38 §15 — a planner's per-move feed cap (`Move::feed_cap`) binds every
++//! feed stage, and a move with no cap is unchanged.
++//!
++//! The research arm lowers the feed of a turn or a slot step by a load
++//! rule (`F × c/w`). The feed modulation dressup (ConstrainedMax) then set
++//! the feed from the chipload band and the engagement alone, so it raised
++//! those moves back to the band limit (Corne D29: 1554 strip samples over
++//! the bound at F 4000). The cap is the generic fix: a stage that rewrites
++//! a feed keeps it at or below the cap.
++//!
++//! Each test runs one stage twice on the same moves: once with no cap on
++//! any move, once with a cap on one move. It asserts:
++//! 1. the capped move leaves the stage at the cap (or below it);
++//! 2. every move with no cap leaves the stage with the feed of the run
++//!    with no cap at all, bit for bit (the shipped parity);
++//! 3. a cap above the stage's feed changes nothing.
++
++#![expect(
++    clippy::unwrap_used,
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++use rs_cam_core::dexel_stock::TriDexelStock;
++use rs_cam_core::dressup::feed_modulation::{
++    BindingConstraint, ChiploadBand, ModulationContext, ModulationStrategy, PerMoveEngagement,
++    adaptive_feed_modulate,
++};
++use rs_cam_core::dressup::feedopt::{FeedOptParams, optimize_feed_rates};
++use rs_cam_core::geo::P3;
++use rs_cam_core::machine::kinematics::MachineKinematics;
++use rs_cam_core::tool::FlatEndmill;
++use rs_cam_core::toolpath::{MoveIntent, Toolpath};
++use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
++
++/// The commanded feed: the feed a load rule lowered (mm/min).
++const COMMANDED: f64 = 900.0;
++/// The index of the capped move (move 0 is the rapid).
++const CAPPED: usize = 2;
++
++fn cutting_ceiling(mm_min: f64) -> rs_cam_core::machine::CuttingCeilingMmMin {
++    rs_cam_core::machine::MachineProfile {
++        max_feed_mm_min: mm_min,
++        max_cutting_feed_mm_min: Some(mm_min),
++        ..rs_cam_core::machine::MachineProfile::default()
++    }
++    .cutting_ceiling()
++}
++
++fn ctx(k: &MachineKinematics, strategy: ModulationStrategy, banded: bool) -> ModulationContext<'_> {
++    ModulationContext {
++        spindle_rpm: 18_000.0,
++        flute_count: 2,
++        cutting_ceiling: cutting_ceiling(4000.0),
++        rapid_feed_mm_min: 10_000.0,
++        chipload_band: banded.then(|| ChiploadBand::new(0.02, 0.08).unwrap()),
++        kinematics: k,
++        strategy,
++        feed_scale: 1.0,
++        deflection_inputs: None,
++        power_inputs: None,
++        nominal_axial_doc_mm: 2.0,
++        // Every move here runs along +X with a 2 mm descent at most, which
++        // classifies as a ramp, so the plunge guard touches nothing.
++        plunge_rate_mm_min: 300.0,
++    }
++}
++
++/// A rapid, then four 50 mm cuts at `feed`; move `CAPPED` carries `cap`.
++fn straight(feed: f64, cap: Option<f64>) -> Toolpath {
++    let mut tp = Toolpath::new();
++    tp.rapid_to(P3::new(0.0, 0.0, 0.0));
++    for i in 0..4 {
++        let x = (i + 1) as f64 * 50.0;
++        tp.feed_to_with_intent(P3::new(x, 0.0, -2.0), feed, MoveIntent::ClearingCut);
++    }
++    tp.moves[CAPPED].feed_cap = cap;
++    tp
++}
++
++fn feeds(tp: &Toolpath) -> Vec<Option<f64>> {
++    tp.moves.iter().map(|m| m.move_type.feed_rate()).collect()
++}
++
++/// A full slot on every cutting move.
++fn engagements(tp: &Toolpath) -> Vec<PerMoveEngagement> {
++    tp.moves
++        .iter()
++        .map(|m| {
++            if m.move_type.is_cutting() {
++                PerMoveEngagement {
++                    radial_woc_fraction: 1.0,
++                    axial_doc_fraction: 1.0,
++                    axial_doc_mm: 2.0,
++                }
++            } else {
++                PerMoveEngagement::default()
++            }
++        })
++        .collect()
++}
++
++/// Run the modulator on `straight(COMMANDED, cap)`: the feeds out and the
++/// binding of the capped move.
++fn modulate(
++    strategy: ModulationStrategy,
++    banded: bool,
++    cap: Option<f64>,
++) -> (Vec<Option<f64>>, Option<BindingConstraint>) {
++    let k = MachineKinematics::shapeoko_xxl_stock();
++    let mut tp = straight(COMMANDED, cap);
++    let eng = engagements(&tp);
++    let outcome = adaptive_feed_modulate(&mut tp, &eng, &ctx(&k, strategy, banded)).unwrap();
++    let binding = outcome.per_move.get(&CAPPED).map(|&(_, b)| b);
++    (feeds(&tp), binding)
++}
++
++fn assert_cap_binds(strategy: ModulationStrategy, banded: bool, cap: f64) {
++    let (free, _) = modulate(strategy, banded, None);
++    let (capped, binding) = modulate(strategy, banded, Some(cap));
++    let free_feed = free[CAPPED].unwrap();
++    let capped_feed = capped[CAPPED].unwrap();
++    // The fixture must make the stage want more than the cap, or the test
++    // proves nothing.
++    assert!(
++        free_feed > cap + 1.0,
++        "{strategy:?} banded={banded}: with no cap the stage writes {free_feed}, \
++         not above the cap {cap}; the fixture does not test the cap"
++    );
++    assert!(
++        (capped_feed - cap).abs() < 1e-9,
++        "{strategy:?} banded={banded}: the capped move leaves at {capped_feed}, not at its cap {cap}"
++    );
++    assert_eq!(binding, Some(BindingConstraint::FeedCap));
++    for (i, (a, b)) in free.iter().zip(&capped).enumerate() {
++        if i != CAPPED {
++            assert_eq!(
++                a.map(f64::to_bits),
++                b.map(f64::to_bits),
++                "{strategy:?} banded={banded}: move {i} has no cap, yet its feed changed"
++            );
++        }
++    }
++    // A cap above what the stage writes changes nothing.
++    let (high, high_binding) = modulate(strategy, banded, Some(free_feed + 100.0));
++    let (_, free_binding) = modulate(strategy, banded, None);
++    assert_eq!(
++        high.iter().map(|f| f.map(f64::to_bits)).collect::<Vec<_>>(),
++        free.iter().map(|f| f.map(f64::to_bits)).collect::<Vec<_>>(),
++        "{strategy:?} banded={banded}: a cap above the feed changed a feed"
++    );
++    assert_eq!(high_binding, free_binding);
++}
++
++/// ConstrainedMax raises a full slot to the band limit, 0.08 × 18000 × 2
++/// = 2880 mm/min. The capped move keeps its 900.
++#[test]
++fn constrained_max_keeps_a_capped_move_at_its_cap() {
++    assert_cap_binds(ModulationStrategy::ConstrainedMax, true, COMMANDED);
++}
++
++/// BandMid targets the band middle; a cap under it binds.
++#[test]
++fn band_mid_keeps_a_capped_move_at_its_cap() {
++    let (free, _) = modulate(ModulationStrategy::BandMid, true, None);
++    let cap = free[CAPPED].unwrap() * 0.5;
++    assert_cap_binds(ModulationStrategy::BandMid, true, cap);
++}
++
++/// The bandless arm clamps the commanded feed to the machine ceiling. A
++/// cap under the commanded feed binds.
++#[test]
++fn the_bandless_arm_keeps_a_capped_move_at_its_cap() {
++    assert_cap_binds(ModulationStrategy::ConstrainedMax, false, COMMANDED * 0.5);
++}
++
++/// The feed optimisation dressup lifts a move in air to its ceiling
++/// (3000 mm/min). The capped move stays at its cap; the others are
++/// unchanged.
++#[test]
++fn feed_optimisation_keeps_a_capped_move_at_its_cap() {
++    let run = |cap: Option<f64>| {
++        let tool = FlatEndmill::new(6.0, 25.0);
++        // Stock far below the path: every move cuts air.
++        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 250.0, 10.0, -50.0, -40.0, 1.0);
++        let params = FeedOptParams {
++            nominal_feed_rate: 1000.0,
++            max_feed_rate: 3000.0,
++            min_feed_rate: 200.0,
++            ramp_rate: 500.0,
++            air_cut_threshold: 0.05,
++            plunge_rate_mm_min: None,
++        };
++        let tp = straight(COMMANDED, cap);
++        feeds(&optimize_feed_rates(AnnotatedToolpath::new(tp), &tool, &mut stock, &params).toolpath)
++    };
++    let free = run(None);
++    let capped = run(Some(COMMANDED));
++    assert!(
++        free[CAPPED].unwrap() > COMMANDED + 1.0,
++        "free feed {:?}",
++        free[CAPPED]
++    );
++    assert!(
++        (capped[CAPPED].unwrap() - COMMANDED).abs() < 1e-9,
++        "capped feed {:?}",
++        capped[CAPPED]
++    );
++    for (i, (a, b)) in free.iter().zip(&capped).enumerate() {
++        if i != CAPPED {
++            assert_eq!(
++                a.map(f64::to_bits),
++                b.map(f64::to_bits),
++                "move {i} has no cap, yet its feed changed"
++            );
++        }
++    }
++}
