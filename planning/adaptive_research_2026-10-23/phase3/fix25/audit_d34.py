@@ -1,5 +1,5 @@
 """D34: a copy of fix11/audit.py. One change: an op section with exactly
-move_count lines (a later op: no move-0 line) maps line k to move k + 1.
+move_count lines (a later op: no move-0 line) maps line k to move k (D35: fixed from k + 1; fix26/map_check.py).
 
 C36: a kinematic audit of one rough op that trusts no intent label.
 
@@ -106,8 +106,8 @@ def audit(run_dir, sim_dir, op, tp_glob, nominal_mrr):
     tp = json.load(open(tpf)); n = tp["move_count"]; tpid = int(re.search(r"tp_(\d+)_", os.path.basename(tpf)).group(1))
     allm = op_moves(os.path.join(run_dir, "program.nc"), op)
     assert len(allm) - n in (0, 1, 2), (len(allm), n)
-    if len(allm) == n:   # D34: a later op's section has no move-0 line; its line 0 is move 1 (checked on fix25 body_cp/corne tp 5)
-        mv = [allm[0]] + allm[:n - 1]
+    if len(allm) == n:   # a later op's section has n lines: line k is move k (D35 fix26/map_check.py; D34's k + 1 was wrong)
+        mv = allm[:n]
     else:
         mv = allm[1:n + 1]                      # move i = command line i + 1 of the op section
     sim = json.load(open(os.path.join(sim_dir, "simulation.json")))

@@ -1,0 +1,37 @@
+{
+ "run": "fix26/k_cp_fix6job_wl_off",
+ "tp": 1,
+ "summary_total_s": 1427.2,
+ "samples_total_s": 973.2,
+ "program_total_s": 973.8,
+ "classes": {
+  "cutting": {
+   "moves": 7394,
+   "moves_under_1mm": 1603,
+   "samples_s": 805.5,
+   "program_s": 805.4,
+   "summary_s": 1198.7
+  },
+  "entry": {
+   "moves": 111,
+   "moves_under_1mm": 52,
+   "samples_s": 19.0,
+   "program_s": 19.0,
+   "summary_s": 22.5
+  },
+  "linking": {
+   "moves": 260,
+   "moves_under_1mm": 9,
+   "samples_s": 36.2,
+   "program_s": 36.2,
+   "summary_s": 47.2
+  },
+  "rapid": {
+   "moves": 241,
+   "moves_under_1mm": 22,
+   "samples_s": 112.5,
+   "program_s": 113.1,
+   "summary_s": 158.7
+  }
+ }
+}

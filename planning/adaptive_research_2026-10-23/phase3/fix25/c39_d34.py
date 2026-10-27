@@ -58,7 +58,7 @@ out = {}
 cache = {}
 for name, rd, sd, op, rapid, tid in RUNS:
     tp = json.load(open(glob.glob(os.path.join(P3, rd, f"tp_{tid}_*.json"))[0])); n = tp["move_count"]
-    allm = op_moves(os.path.join(P3, rd, "program.nc"), op); mv = [allm[0]] + allm[:n - 1] if len(allm) == n else allm[1:n + 1]   # a later op has no move-0 line (audit_d34.py)
+    allm = op_moves(os.path.join(P3, rd, "program.nc"), op); mv = allm[:n] if len(allm) == n else allm[1:n + 1]   # a later op: line k is move k (D35 fix26/map_check.py)
     if sd not in cache:
         cache.clear(); cache[sd] = json.load(open(os.path.join(P3, sd, "simulation.json")))
     sim = cache[sd]

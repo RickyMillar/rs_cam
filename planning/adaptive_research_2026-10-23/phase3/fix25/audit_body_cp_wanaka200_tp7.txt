@@ -1,9 +1,9 @@
 == ../fix25/body_cp/wanaka200 '2 Back Rough [edges, CP rest]': 6038 moves; sim cell 0.6 mm, sample step 0.6 mm, volume quantum 0.216 mm3
-1. descent events into stock (a vertical fed descent at one XY, pecks included, that removes > quantum): 398 (drop median 1.174 mm, max 17.728 mm, 93.7 s); labels {'retract / plunge entry': 39, 'retract / keep-down link': 11, 'clearing_cut / no entry span': 277, 'entry_plunge / keep-down link': 71}
-   moves: descents into stock (fed, Z down, removes > quantum) 714; vertical 432 (removed 503.3 mm3, drop median 1.015 mm, max 5.695 mm)
-   labels of the vertical descents (intent / span style): {'clearing_cut / no entry span': 366, 'entry_plunge / keep-down link': 66}
+1. descent events into stock (a vertical fed descent at one XY, pecks included, that removes > quantum): 754 (drop median 1.464 mm, max 17.728 mm, 569.5 s); labels {'entry_plunge / plunge entry': 417, 'entry_plunge / keep-down link': 271, 'linking / keep-down link': 66}
+   moves: descents into stock (fed, Z down, removes > quantum) 1284; vertical 901 (removed 2419.9 mm3, drop median 1.817 mm, max 5.96 mm)
+   labels of the vertical descents (intent / span style): {'entry_plunge / plunge entry': 518, 'entry_plunge / keep-down link': 383}
    planar junctions (both moves travel in XY) 470; planar reversals 63; planar histogram [38, 77, 58, 16, 52, 87, 79, 49, 14]
 2. junctions at feed 2166; reversals (turn > 90 deg) 554; turns of exactly 90 deg 476; Z reversals 677
    turn histogram (deg, bins (lo, hi]): (0,1] 117, (1,5] 77, (5,15] 58, (15,30] 16, (30,45] 67, (45,60] 249, (60,90] 1028, (90,135] 536, (135,180] 18
 3. MRR time histogram (mm3/s): [0,1e-09) 1088.7 s, [1e-09,25) 291.3 s, [25,50) 17.6 s, [50,100) 8.9 s, [100,200) 4.1 s, [200,400) 1.5 s, [400,800) 0.1 s, [800,1600) 0.0 s, [1600,inf) 0.0 s; p50 0.0, p95 10.7, p99 51.5, max 742.3; nominal 182.0: 2.0 s over, 0.1 s over 2x
-4. time split (s): {'cut': 93.7, 'fed in air': 224.3, 'lift feed': 80.8, 'plunge feed': 45.8, 'rapid': 967.6}; sum 1412.2 of sim runtime 2161.2
+4. time split (s): {'cut': 50.0, 'fed in air': 102.4, 'lift feed': 170.5, 'plunge feed': 582.5, 'rapid': 506.9}; sum 1412.2 of sim runtime 2161.2

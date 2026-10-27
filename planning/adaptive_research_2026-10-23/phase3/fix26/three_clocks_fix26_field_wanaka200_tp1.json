@@ -1,0 +1,37 @@
+{
+ "run": "fix26/field_wanaka200",
+ "tp": 1,
+ "summary_total_s": 1676.4,
+ "samples_total_s": 1404.0,
+ "program_total_s": 1405.2,
+ "classes": {
+  "cutting": {
+   "moves": 1288,
+   "moves_under_1mm": 685,
+   "samples_s": 83.7,
+   "program_s": 83.7,
+   "summary_s": 111.8
+  },
+  "entry": {
+   "moves": 1787,
+   "moves_under_1mm": 76,
+   "samples_s": 990.6,
+   "program_s": 990.6,
+   "summary_s": 1038.2
+  },
+  "linking": {
+   "moves": 1141,
+   "moves_under_1mm": 527,
+   "samples_s": 302.9,
+   "program_s": 302.9,
+   "summary_s": 373.4
+  },
+  "rapid": {
+   "moves": 1289,
+   "moves_under_1mm": 1208,
+   "samples_s": 26.9,
+   "program_s": 28.0,
+   "summary_s": 153.1
+  }
+ }
+}

@@ -1,0 +1,1511 @@
+{
+ "holes": 83,
+ "per_hole": {
+  "1": {
+   "x": 28.3,
+   "y": -90.0,
+   "body_cp": {
+    "ramp_moves": 8,
+    "ramp_s": 3.5,
+    "left_over_0.8_mm2": 5.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 4.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "2": {
+   "x": 19.6,
+   "y": -85.0,
+   "body_cp": {
+    "ramp_moves": 22,
+    "ramp_s": 24.8,
+    "left_over_0.8_mm2": 14.9,
+    "left_peak_mm": 14.5,
+    "left_peak_top_z": 18.5
+   },
+   "cp_fix6job": {
+    "ramp_moves": 15,
+    "ramp_s": 14.6,
+    "left_over_0.8_mm2": 15.1,
+    "left_peak_mm": 14.5,
+    "left_peak_top_z": 18.5
+   }
+  },
+  "3": {
+   "x": 36.9,
+   "y": -85.0,
+   "body_cp": {
+    "ramp_moves": 15,
+    "ramp_s": 6.5,
+    "left_over_0.8_mm2": 7.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 6.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "4": {
+   "x": 54.3,
+   "y": -85.0,
+   "body_cp": {
+    "ramp_moves": 40,
+    "ramp_s": 41.8,
+    "left_over_0.8_mm2": 23.2,
+    "left_peak_mm": 14.5,
+    "left_peak_top_z": 18.5
+   },
+   "cp_fix6job": {
+    "ramp_moves": 29,
+    "ramp_s": 25.5,
+    "left_over_0.8_mm2": 16.5,
+    "left_peak_mm": 14.5,
+    "left_peak_top_z": 18.5
+   }
+  },
+  "5": {
+   "x": 28.3,
+   "y": -80.0,
+   "body_cp": {
+    "ramp_moves": 5,
+    "ramp_s": 2.1,
+    "left_over_0.8_mm2": 5.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 5.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "6": {
+   "x": 45.6,
+   "y": -80.0,
+   "body_cp": {
+    "ramp_moves": 6,
+    "ramp_s": 2.7,
+    "left_over_0.8_mm2": 13.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 3,
+    "ramp_s": 1.7,
+    "left_over_0.8_mm2": 7.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "7": {
+   "x": 62.9,
+   "y": -80.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.3,
+    "left_over_0.8_mm2": 3.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 2.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "8": {
+   "x": 19.6,
+   "y": -75.0,
+   "body_cp": {
+    "ramp_moves": 8,
+    "ramp_s": 3.5,
+    "left_over_0.8_mm2": 9.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.2,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "9": {
+   "x": 54.3,
+   "y": -75.0,
+   "body_cp": {
+    "ramp_moves": 18,
+    "ramp_s": 8.0,
+    "left_over_0.8_mm2": 15.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 9,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "10": {
+   "x": 71.6,
+   "y": -75.0,
+   "body_cp": {
+    "ramp_moves": 16,
+    "ramp_s": 7.1,
+    "left_over_0.8_mm2": 7.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 8,
+    "ramp_s": 4.5,
+    "left_over_0.8_mm2": 3.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "12": {
+   "x": 28.3,
+   "y": -70.0,
+   "body_cp": {
+    "ramp_moves": 9,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 14.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 8.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "13": {
+   "x": 45.6,
+   "y": -70.0,
+   "body_cp": {
+    "ramp_moves": 6,
+    "ramp_s": 2.7,
+    "left_over_0.8_mm2": 11.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 3,
+    "ramp_s": 1.7,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "14": {
+   "x": 62.9,
+   "y": -70.0,
+   "body_cp": {
+    "ramp_moves": 14,
+    "ramp_s": 6.2,
+    "left_over_0.8_mm2": 9.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 7.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "16": {
+   "x": 19.6,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 2.9,
+    "left_over_0.8_mm2": 4.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "17": {
+   "x": 36.9,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 10.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 15.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "18": {
+   "x": 54.3,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 4.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "19": {
+   "x": 71.6,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.5,
+    "left_over_0.8_mm2": 5.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 5.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "20": {
+   "x": 88.9,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 3.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 4.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "21": {
+   "x": 106.2,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 13.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 12.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "22": {
+   "x": 123.5,
+   "y": -65.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.9,
+    "left_over_0.8_mm2": 12.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 11.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "23": {
+   "x": 28.3,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 9.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "24": {
+   "x": 45.6,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 11.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 11.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "25": {
+   "x": 62.9,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 2.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 2.9,
+    "left_over_0.8_mm2": 4.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "26": {
+   "x": 80.2,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 7.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "27": {
+   "x": 97.6,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 5.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 5.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "28": {
+   "x": 114.9,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.3,
+    "left_over_0.8_mm2": 7.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 11.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "29": {
+   "x": 132.2,
+   "y": -60.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.9,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 11.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "30": {
+   "x": 19.6,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 8,
+    "ramp_s": 3.5,
+    "left_over_0.8_mm2": 14.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 12.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "31": {
+   "x": 36.9,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "32": {
+   "x": 54.3,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 8.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 10.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "33": {
+   "x": 71.6,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 18,
+    "ramp_s": 8.2,
+    "left_over_0.8_mm2": 7.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 10,
+    "ramp_s": 5.6,
+    "left_over_0.8_mm2": 7.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "34": {
+   "x": 88.9,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 4.8,
+    "left_over_0.8_mm2": 7.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 7.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "35": {
+   "x": 106.2,
+   "y": -55.0,
+   "body_cp": {
+    "ramp_moves": 8,
+    "ramp_s": 3.5,
+    "left_over_0.8_mm2": 5.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "36": {
+   "x": 28.3,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 16.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "37": {
+   "x": 45.6,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 6.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "38": {
+   "x": 62.9,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 5.0,
+    "left_over_0.8_mm2": 3.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 3.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "39": {
+   "x": 80.2,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 14,
+    "ramp_s": 6.2,
+    "left_over_0.8_mm2": 5.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 4.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "40": {
+   "x": 97.6,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.3,
+    "left_over_0.8_mm2": 3.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 4.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "41": {
+   "x": 114.9,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 5.0,
+    "left_over_0.8_mm2": 6.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 7.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "42": {
+   "x": 132.2,
+   "y": -50.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.3,
+    "left_over_0.8_mm2": 6.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 3.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "44": {
+   "x": 19.6,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 7,
+    "ramp_s": 3.0,
+    "left_over_0.8_mm2": 3.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 3,
+    "ramp_s": 1.7,
+    "left_over_0.8_mm2": 5.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "45": {
+   "x": 36.9,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 6,
+    "ramp_s": 2.7,
+    "left_over_0.8_mm2": 7.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 3,
+    "ramp_s": 1.7,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "46": {
+   "x": 54.3,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 6,
+    "ramp_s": 2.7,
+    "left_over_0.8_mm2": 4.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 3,
+    "ramp_s": 1.7,
+    "left_over_0.8_mm2": 7.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "47": {
+   "x": 71.6,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 14,
+    "ramp_s": 6.2,
+    "left_over_0.8_mm2": 6.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 3.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "48": {
+   "x": 88.9,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 4.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 6.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "49": {
+   "x": 106.2,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 7.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 15.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "50": {
+   "x": 123.5,
+   "y": -45.0,
+   "body_cp": {
+    "ramp_moves": 16,
+    "ramp_s": 7.1,
+    "left_over_0.8_mm2": 13.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 8,
+    "ramp_s": 4.5,
+    "left_over_0.8_mm2": 11.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "51": {
+   "x": 28.3,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 11.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "52": {
+   "x": 45.6,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 7,
+    "ramp_s": 3.2,
+    "left_over_0.8_mm2": 12.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.2,
+    "left_over_0.8_mm2": 12.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "53": {
+   "x": 62.9,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 13.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 11.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "54": {
+   "x": 80.2,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 14.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 12.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "55": {
+   "x": 97.6,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 9,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 8.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 6.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "56": {
+   "x": 114.9,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.8,
+    "left_over_0.8_mm2": 5.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 14.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "57": {
+   "x": 132.2,
+   "y": -40.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.3,
+    "left_over_0.8_mm2": 6.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 4.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "58": {
+   "x": 19.6,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.2,
+    "left_over_0.8_mm2": 5.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 4.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "59": {
+   "x": 36.9,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 16.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 13.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "60": {
+   "x": 54.3,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 8.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 4.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "61": {
+   "x": 71.6,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 5.6,
+    "left_over_0.8_mm2": 5.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 4.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "62": {
+   "x": 88.9,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.6,
+    "left_over_0.8_mm2": 3.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 4.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "63": {
+   "x": 106.2,
+   "y": -35.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 5.0,
+    "left_over_0.8_mm2": 13.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 12.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "65": {
+   "x": 28.3,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.6,
+    "left_over_0.8_mm2": 15.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 8.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "66": {
+   "x": 62.9,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 15,
+    "ramp_s": 6.5,
+    "left_over_0.8_mm2": 7.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 5.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "67": {
+   "x": 80.2,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 5.0,
+    "left_over_0.8_mm2": 6.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 7.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "68": {
+   "x": 97.6,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 16,
+    "ramp_s": 6.8,
+    "left_over_0.8_mm2": 6.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 4.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "69": {
+   "x": 114.9,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 5.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 2.9,
+    "left_over_0.8_mm2": 11.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "70": {
+   "x": 132.2,
+   "y": -30.0,
+   "body_cp": {
+    "ramp_moves": 15,
+    "ramp_s": 6.5,
+    "left_over_0.8_mm2": 13.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 4.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "72": {
+   "x": 19.6,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 8,
+    "ramp_s": 3.3,
+    "left_over_0.8_mm2": 7.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 12.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "73": {
+   "x": 36.9,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 9,
+    "ramp_s": 4.1,
+    "left_over_0.8_mm2": 7.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "74": {
+   "x": 54.3,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 15.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 2,
+    "ramp_s": 1.1,
+    "left_over_0.8_mm2": 8.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "75": {
+   "x": 71.6,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.6,
+    "left_over_0.8_mm2": 14.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 6,
+    "ramp_s": 3.4,
+    "left_over_0.8_mm2": 11.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "76": {
+   "x": 88.9,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 4.8,
+    "left_over_0.8_mm2": 6.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.3,
+    "left_over_0.8_mm2": 7.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "77": {
+   "x": 106.2,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 6.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 11.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "78": {
+   "x": 123.5,
+   "y": -25.0,
+   "body_cp": {
+    "ramp_moves": 17,
+    "ramp_s": 7.6,
+    "left_over_0.8_mm2": 7.3,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 9,
+    "ramp_s": 5.1,
+    "left_over_0.8_mm2": 12.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "79": {
+   "x": 28.3,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 14,
+    "ramp_s": 6.2,
+    "left_over_0.8_mm2": 5.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 7.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "80": {
+   "x": 45.6,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.2,
+    "left_over_0.8_mm2": 7.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 2.2,
+    "left_over_0.8_mm2": 15.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "81": {
+   "x": 62.9,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 10,
+    "ramp_s": 4.4,
+    "left_over_0.8_mm2": 4.7,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 4.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "82": {
+   "x": 80.2,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 17,
+    "ramp_s": 7.4,
+    "left_over_0.8_mm2": 5.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 8,
+    "ramp_s": 4.5,
+    "left_over_0.8_mm2": 6.1,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "83": {
+   "x": 97.6,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 4.5,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 4.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "84": {
+   "x": 114.9,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 11,
+    "ramp_s": 4.7,
+    "left_over_0.8_mm2": 6.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 7.4,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "85": {
+   "x": 132.2,
+   "y": -20.0,
+   "body_cp": {
+    "ramp_moves": 13,
+    "ramp_s": 5.9,
+    "left_over_0.8_mm2": 5.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 5.9,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "86": {
+   "x": 54.3,
+   "y": -15.0,
+   "body_cp": {
+    "ramp_moves": 7,
+    "ramp_s": 3.0,
+    "left_over_0.8_mm2": 9.8,
+    "left_peak_mm": 13.0,
+    "left_peak_top_z": 17.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 4,
+    "ramp_s": 1.8,
+    "left_over_0.8_mm2": 11.8,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "87": {
+   "x": 71.6,
+   "y": -15.0,
+   "body_cp": {
+    "ramp_moves": 15,
+    "ramp_s": 6.5,
+    "left_over_0.8_mm2": 4.0,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 7,
+    "ramp_s": 3.9,
+    "left_over_0.8_mm2": 3.2,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  },
+  "88": {
+   "x": 88.9,
+   "y": -15.0,
+   "body_cp": {
+    "ramp_moves": 12,
+    "ramp_s": 6.4,
+    "left_over_0.8_mm2": 4.0,
+    "left_peak_mm": 13.0,
+    "left_peak_top_z": 17.0
+   },
+   "cp_fix6job": {
+    "ramp_moves": 5,
+    "ramp_s": 2.8,
+    "left_over_0.8_mm2": 4.6,
+    "left_peak_mm": 3.5,
+    "left_peak_top_z": 4.0
+   }
+  }
+ },
+ "total body_cp": {
+  "ramp_moves_in_holes": 945,
+  "ramp_s_in_holes": 454.7,
+  "left_over_0.8_mm2_in_holes": 697.4,
+  "holes_with_left_over_1mm2": 83
+ },
+ "total cp_fix6job": {
+  "ramp_moves_in_holes": 476,
+  "ramp_s_in_holes": 279.4,
+  "left_over_0.8_mm2_in_holes": 658.4,
+  "holes_with_left_over_1mm2": 83
+ }
+}

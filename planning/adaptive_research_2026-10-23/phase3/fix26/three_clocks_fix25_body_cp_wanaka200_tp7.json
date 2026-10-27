@@ -1,0 +1,37 @@
+{
+ "run": "fix25/body_cp/wanaka200",
+ "tp": 7,
+ "summary_total_s": 2161.2,
+ "samples_total_s": 1412.2,
+ "program_total_s": 1266.3,
+ "classes": {
+  "cutting": {
+   "moves": 1191,
+   "moves_under_1mm": 812,
+   "samples_s": 63.4,
+   "program_s": 41.9,
+   "summary_s": 73.0
+  },
+  "entry": {
+   "moves": 1438,
+   "moves_under_1mm": 365,
+   "samples_s": 578.0,
+   "program_s": 578.0,
+   "summary_s": 613.3
+  },
+  "linking": {
+   "moves": 793,
+   "moves_under_1mm": 213,
+   "samples_s": 263.9,
+   "program_s": 139.2,
+   "summary_s": 195.9
+  },
+  "rapid": {
+   "moves": 2616,
+   "moves_under_1mm": 578,
+   "samples_s": 506.9,
+   "program_s": 507.1,
+   "summary_s": 1279.0
+  }
+ }
+}

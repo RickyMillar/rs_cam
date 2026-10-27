@@ -4912,3 +4912,166 @@ analysis: body_cp/corne, body_cp_field/corne, body_cp_field/wanaka200,
 cp_alone/wanaka200. Kept: body_cp/wanaka200 and cp_alone_0.6/wanaka200
 (the wanaka band), cp_alone/corne and cp_fix6job/corne (the open
 job-file field). Fixture worktree restored: clean 3181ae54f.
+
+## D35: where the body + CP-edges time goes; the sim-feed field; the three clocks; Corne with acceleration (fix26, tree 7b7a8df6c)
+
+Tree: the fixture worktree at clean 7b7a8df6c (detached). 7b7a8df6c equals
+3181ae54f + the D34 patch + its two new files (diff with index lines removed).
+The fix26 rerun of body_cp/corne gives program.nc byte-identical to fix25
+and 3394.08 s; the field-on reruns (Corne, wanaka 0.6) are byte-identical too.
+
+**1. Fair baseline.** `corne_job_corrected_c12_body_cp_edges.toml` against
+fix6's `corne_job_corrected_c12_contour_parallel.toml` (tomllib, field by
+field): only the new op 5, and op 1's `clearing_strategy` (agent_search
+against contour_parallel; the research arm variable replaces it at run
+time). Stock box, aggressiveness, entry_clearance_mm, the waterline and the
+copy op are the same. The Corne CP baseline is cp_fix6job (2022.1 s), not
+cp_alone (1563.6 s).
+
+**2. Time split** (`fix26/time_split.py`: trace samples by label; s; descents
+from `fix25/audit_d34.py`):
+
+| op | cut | plunge/ramp | link at feed | rapid | total | descents |
+|---|---|---|---|---|---|---|
+| Corne body_cp op 1 | 726.8 | 542.6 | 58.8 | 72.8 | 1401.1 | 1050 |
+| Corne body_cp CP rest (op 5) | 248.6 | 56.5 | 27.6 | 148.4 | 481.1 | 19 |
+| Corne body_cp copy | 1146.8 (helix 984.1) | 102.4 | 1.8 | 260.9 | 1511.9 | 70 |
+| Corne cp_fix6job op 1 | 805.5 | 30.5 | 24.7 | 112.5 | 973.2 | 41 |
+| Corne cp_fix6job copy | 807.4 (helix 690.4) | 36.2 | 1.9 | 203.5 | 1049.0 | 37 |
+| wanaka body_cp op 1 (0.6) | 1008.3 | 1638.0 | 201.1 | 15.6 | 2862.9 * | 2086 |
+| wanaka body_cp CP rest | 63.4 | 752.9 | 89.0 | 506.9 | 1412.2 * | 754 |
+| wanaka cp_alone_0.6 op 1 | 3574.2 | 1228.7 | 891.7 | 951.2 | 6645.8 * | 1223 |
+
+\* the sample clock; see item 5 for the published clock.
+
+- (a) The copy op is NOT the same G-code: body_cp 5989 moves, 1514.2 s at
+  its own F; cp_fix6job 5347 moves, 1051.3 s. The difference is ramp-downs at
+  F375 (the copy op's plunge_rate): 818.8 against 582.4 s (1190 against 718
+  ramps), plus F375 plunges 100.4 against 35.8 s. Cause: G-LEVELPHASE (item 4).
+- (b) Corne body op 1 (1401 s) against CP op 1 (973 s): the cut time is about
+  the same (726.8 against 805.5 s). The difference is plunge/ramp feed:
+  542.6 against 30.5 s, from 1050 descents (1005 keep-down-link descents,
+  median drop 5.2 mm, 462.0 s) against 41. Link at feed adds 34 s.
+
+**3. The sim-feed field: the waterline op's `enabled` flag.** Four runs of
+fix6's file, one field each moved to the phase0 value (`fix26/jobs/s*.toml`;
+program.nc byte-identical in all four):
+
+| run | field | cycle | copy op |
+|---|---|---|---|
+| s1 | stock box x, y, origin_x | 2022.1 | 1049.0 |
+| s2 | machine aggressiveness 0.85 | 2022 | — |
+| s3 | entry_clearance_mm, fine_stepdown, mill_shallow_areas | 2022.1 | 1049.0 |
+| s4 | waterline (op 4) enabled = false | 1563.6 | 590.5 |
+
+The waterline comes after the copy op and `--skip 4` skips it, but when it is
+enabled the plan runs 3 simulations, not 2 ("generation plan finished steps=5
+simulations=3" against "steps=3 simulations=2"). The trace of the last
+simulated op keeps the commanded feeds from before the modulation (the copy
+op reads 2429 mm/min on all its cut samples); the G-code has the modulated
+feeds (582.4 s of F375 ramp-downs). The program time is correct for that
+G-code; the trace is wrong. Filed as **G-SIMFEED** (refines G-SIMCYCLE). With
+the kinematics block (item 6), the waterline-off run gives the same summary
+(copy op 1413.6 s in both; program.nc identical) while its samples drop to
+590.5 s: the integrator clock is immune.
+
+**4. The copy op's extra ramps** (`fix26/copy_ramps.py`, `hole_leftover.py`,
+`img/copy_ramps.png`, `img/hole_leftover.png`):
+- The ramps are in the 83 switch holes (1123 / 651 ramp moves inside the
+  wall) and 0–3 mm outside (107 / 94 s); 0 s in the 3–6.2 mm band of the F-038 strips.
+- 92 % of the F375 ramp time is at points with ≤ 0.8 mm left (752.6 of 818.8 s;
+  564.2 of 582.4 s). Filed as **G-AIRRAMP**.
+- Per hole: body_cp median 11 ramps, 5.0 s (max 40, 41.8 s); cp_fix6job 5,
+  2.8 s (max 29, 25.5 s). The stock left per hole before the copy op is the
+  same: area over 0.8 mm median 7.2 against 7.4 mm² (totals 697.4 / 658.4),
+  peak 3.5 mm median (max 14.5 both), peak tops at Z 3.5–5.5 (79 / 81 holes).
+  No op-1 log line names a hole; both strategies leave the same crescents.
+- The cause is the copy op's level grid: z_top 14.0097 (levels 14, 11, 8, 5,
+  2, 0.5) after op 1 + op 5, against 15.5 (15.5 … 3.5, 0.5) after CP's op 1.
+  The Z 2.0 level lies under the crescent tops and ends 477 ramps; CP's Z 3.5
+  ends 18 (+459; hole total +469). Filed as **G-LEVELPHASE**.
+
+**5. The three clocks** (`fix26/three_clocks.py`; s):
+- samples: the trace's segment times (the commanded feed; no acceleration;
+  `stock/simulation_cut/reporting.rs:14-70`).
+- program: program.nc at its own F, G0 at max_feed_mm_min; no acceleration.
+- summary: `runtime_by_intent` from the kinematics integrator
+  (`machine/kinematics.rs:1177`, through `compute/simulate.rs:2456` and
+  `stock/simulation_cut/reporting.rs:161`): the emitted feeds plus the
+  machine's acceleration and junction deviation. Only when the machine has a
+  `[job.machine.kinematics]` block; otherwise summary = samples.
+
+| wanaka (0.6) | class | samples | program | summary |
+|---|---|---|---|---|
+| body_cp op 1 | cutting | 1008.3 | 1008.4 | 1178.9 |
+| | entry | 1312.2 | 1312.2 | 1362.0 |
+| | linking (961 of 4568 moves < 1 mm) | 526.9 | 526.9 | 804.7 |
+| | rapid (735 of 783 < 1 mm) | 15.6 | 16.7 | 92.5 |
+| | **total** | 2862.9 | 2864.1 | 3438.1 |
+| body_cp CP rest | cutting | 63.4 | 41.9 | 73.0 |
+| | entry | 578.0 | 578.0 | 613.3 |
+| | linking | 263.9 | 139.2 | 195.9 |
+| | rapid (2616 moves) | 506.9 | 507.1 | 1279.0 |
+| | **total** | 1412.2 | 1266.3 | 2161.2 |
+| cp_alone_0.6 op 1 | cutting | 3574.2 | 1336.7 | 1524.2 |
+| | entry | 805.6 | 805.6 | 856.0 |
+| | linking | 1314.8 | 1220.0 | 1303.4 |
+| | rapid (3653 moves) | 951.2 | 951.6 | 2093.1 |
+| | **total** | 6645.8 | 4313.9 | 5776.8 |
+| field CP rest (rerun) | **total** | 5507.0 | 3415.6 | 4989.3 |
+| field op 1 (rerun) | **total** | 1404.0 | 1405.2 | 1676.4 |
+
+- samples − program: G-SIMFEED. It shows only on the last op of a run (CP
+  rest, cp_alone op 1: cutting 3574 against 1337 s); an earlier op agrees.
+- summary − program: acceleration. Most of it is in short moves: rapids
+  (×2.2–5.5), linking (×1.07–1.53), and op-1 cutting ×1.14–1.17.
+- Which clock does the machine follow: the G-code at its own F with the
+  machine's acceleration. In the repo that is the summary (the integrator).
+  The repo's record against a real wall clock: the wanaka Back Rough
+  calibration, 827 s measured, the integrator predicts 1053 s (×1.27, with
+  the per-axis rate caps; `machine/kinematics.rs:357-372`). The fixture's
+  kinematics block has no `max_rate_xyz_mm_min`. So the machine time is
+  below the summary and above the program time. All wanaka cycles in D26–D34
+  are the summary clock (summary.json `total_runtime_s`), so the wanaka
+  comparisons stand. Corne cycles have no acceleration (item 6).
+
+**6. Corne with the wanaka machine's kinematics block** (`fix26/jobs/k_*.toml`:
+the block copied byte for byte; nothing else changed). The copy op's G-code
+changes with the block (the modulation reads it); op 1 and op 5 do not.
+
+| op | samples | program | summary (acceleration) |
+|---|---|---|---|
+| body_cp op 1 | 1401.1 | 1402.6 | 1872.8 |
+| body_cp op 5 | 481.1 | 481.3 | 608.1 |
+| body_cp copy | 1492.3 | 1494.9 | 1862.8 |
+| cp_fix6job op 1 | 973.2 | 973.8 | 1427.2 |
+| cp_fix6job copy | 1046.7 | 1049.3 | 1413.6 |
+| job: body_cp / cp_fix6job | | | 4344 / 2841 |
+
+**The Corne loss without the copy op** (op 1 + op 5 against CP op 1):
+- no acceleration: 1882.2 against 973.2 s, +909.0 s (×1.93);
+- with acceleration: 2480.9 against 1427.2 s, +1053.7 s (×1.74).
+- Acceleration adds 471.7 s to body op 1 (linking +200.5 on 707 short
+  moves; cutting +162.6) and 454.0 s to CP op 1 (cutting +393.3: CP's 5373
+  planar turns over 30°). So acceleration does not change the verdict: the
+  loss is the body op's 1050 descents (542.6 s plunge/ramp), on either clock.
+- The copy op apart (G-LEVELPHASE): +462.9 s without acceleration, +449.2 s with it.
+
+**Corrected D34 rows** (my D34 audit mapped a later op's G-code line k to
+move k + 1; the right map is line k = move k, `fix26/map_check.py`: Corne
+tp 5 +0 agrees 1745/1774, wanaka tp 7 5646/6037; fixed in
+`fix25/audit_d34.py`, `fix25/c39_d34.py`. The "## D34" text is not edited):
+
+| CP rest op | descents D34 → D35 | plunge share D34 → D35 |
+|---|---|---|
+| Corne body_cp tp 5 | 34 → 19 | 2.1 % → 8.9 % |
+| Corne field tp 5 | 123 → 108 | 1.7 % → 8.1 % |
+| wanaka body_cp tp 7 | 398 → 754 | 2.1 % → 27.0 % |
+| wanaka field tp 7 | 792 → 1016 | 2.9 % → 17.7 % |
+
+Turns over 30° and reversals do not change. The op-1 rows and c39's
+program_s do not change.
+
+Simulation files: deleted after reading, all of fix26 and fix25's
+cp_alone/corne and cp_fix6job/corne. Kept: fix25 body_cp/wanaka200 and
+cp_alone_0.6/wanaka200 (the wanaka band is still open). Not committed.

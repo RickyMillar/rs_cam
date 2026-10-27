@@ -1,0 +1,37 @@
+{
+ "run": "fix26/k_cp_fix6job_corne",
+ "tp": 3,
+ "summary_total_s": 1413.6,
+ "samples_total_s": 1046.7,
+ "program_total_s": 1049.3,
+ "classes": {
+  "cutting": {
+   "moves": 4544,
+   "moves_under_1mm": 1530,
+   "samples_s": 805.1,
+   "program_s": 805.1,
+   "summary_s": 1053.3
+  },
+  "entry": {
+   "moves": 217,
+   "moves_under_1mm": 147,
+   "samples_s": 35.8,
+   "program_s": 35.8,
+   "summary_s": 38.9
+  },
+  "linking": {
+   "moves": 13,
+   "moves_under_1mm": 1,
+   "samples_s": 2.2,
+   "program_s": 2.2,
+   "summary_s": 3.1
+  },
+  "rapid": {
+   "moves": 573,
+   "moves_under_1mm": 33,
+   "samples_s": 203.5,
+   "program_s": 206.1,
+   "summary_s": 318.3
+  }
+ }
+}

@@ -1,0 +1,37 @@
+{
+ "run": "fix26/k_body_cp_corne",
+ "tp": 5,
+ "summary_total_s": 608.1,
+ "samples_total_s": 481.1,
+ "program_total_s": 481.3,
+ "classes": {
+  "cutting": {
+   "moves": 1193,
+   "moves_under_1mm": 228,
+   "samples_s": 248.6,
+   "program_s": 248.6,
+   "summary_s": 310.7
+  },
+  "entry": {
+   "moves": 128,
+   "moves_under_1mm": 87,
+   "samples_s": 15.2,
+   "program_s": 15.2,
+   "summary_s": 18.9
+  },
+  "linking": {
+   "moves": 175,
+   "moves_under_1mm": 57,
+   "samples_s": 68.9,
+   "program_s": 68.8,
+   "summary_s": 73.6
+  },
+  "rapid": {
+   "moves": 287,
+   "moves_under_1mm": 17,
+   "samples_s": 148.4,
+   "program_s": 148.7,
+   "summary_s": 204.8
+  }
+ }
+}

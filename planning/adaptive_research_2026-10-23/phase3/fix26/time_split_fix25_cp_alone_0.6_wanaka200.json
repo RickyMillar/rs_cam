@@ -1,0 +1,22 @@
+{
+ "1": {
+  "rapid": 951.2,
+  "plunge/ramp": 1228.7,
+  "cut": 3574.2,
+  "link at feed": 891.7,
+  "cut: helix": 1174.0,
+  "sum": 6645.8,
+  "summary_runtime_s": 5776.8,
+  "helix_cut_time_by_feed": {
+   "1000": 1174.0
+  },
+  "descents (audit)": 1223,
+  "audit_split_s": {
+   "cut": 3580.5,
+   "fed in air": 885.4,
+   "lift feed": 279.6,
+   "plunge feed": 949.1,
+   "rapid": 951.2
+  }
+ }
+}
