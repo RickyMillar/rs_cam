@@ -1,0 +1,7 @@
+adaptive3d::path::tests::air_above_real_stock_feeds_then_pecks_d55 --- FAILED
+adaptive3d::path::tests::a_plunge_through_cleared_air_is_one_stroke_d55 --- FAILED
+thread 'adaptive3d::path::tests::air_above_real_stock_feeds_then_pecks_d55' (2694863) panicked at crates/rs_cam_core/src/adaptive3d/path.rs:2332:9:
+the first feed ends at 7.5, not at the contact start 6.5
+thread 'adaptive3d::path::tests::a_plunge_through_cleared_air_is_one_stroke_d55' (2694862) panicked at crates/rs_cam_core/src/adaptive3d/path.rs:2273:9:
+assertion `left == right` failed: the air column pecked: [(10.5, 7.5), (8.0, 4.5), (5.0, 1.5), (2.0, 0.0)]
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 2712 filtered out; finished in 0.00s

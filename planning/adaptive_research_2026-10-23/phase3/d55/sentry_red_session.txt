@@ -1,0 +1,8 @@
+rest op: 49 moves, entry sites (strokes, top, bottom) [(2, 7.5, 4.0)]
+
+thread 'a_rest_entry_does_not_peck_through_cleared_air' (2734302) panicked at crates/rs_cam_core/tests/a_rest_entry_does_not_peck_through_cleared_air_d55.rs:185:5:
+assertion `left == right` failed: a rest entry pecked down through cleared air: up to 2 strokes at one site
+  left: 2
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.66s
+
