@@ -1,0 +1,318 @@
+   0.003213775s  INFO rs_cam_core::session::project_file: Loaded mesh model name=Corne Case Hex.stl tris=6724
+   0.005951335s  INFO rs_cam_cli::project: Loaded project name=corne_job tools=2 models_loaded=true setups=2
+   0.040851350s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=13
+   0.135136646s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Z levels computed count=4 z_top=17.0 z_bottom=0.5 depth_per_pass=6.0
+   0.138033276s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=17.0 remaining_cells=55367 mat_count=55367 rows=226 cols=309 max_dist_cells=99.14131328563285 tool_radius_cells=6.0 stepover_cells=2.4
+   0.199565099s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=17.0 elapsed_ms=4
+   0.200763098s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=11.0 remaining_cells=38973 mat_count=38973 rows=226 cols=309 max_dist_cells=73.00684899377592 tool_radius_cells=6.0 stepover_cells=2.4
+   0.245065027s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=11.0 elapsed_ms=5
+   0.246651576s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=5.0 remaining_cells=38973 mat_count=38973 rows=226 cols=309 max_dist_cells=73.00684899377592 tool_radius_cells=6.0 stepover_cells=2.4
+   0.291633462s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=5.0 elapsed_ms=4
+   0.292667203s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=0.5 remaining_cells=38973 mat_count=38973 rows=226 cols=309 max_dist_cells=73.00684899377592 tool_radius_cells=6.0 stepover_cells=2.4
+   0.338143638s DEBUG generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=31 traced=31 z=0.5 elapsed_ms=5
+   0.445331473s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C38 feed caps exact=0 chain=0
+   0.445400452s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=18.564 y=-108.816 z=17.000 drop_mm=6.500
+   0.445408497s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=89.064 y=-77.316 z=18.500 drop_mm=5.000
+   0.445411793s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=21.564 y=-100.316 z=18.500 drop_mm=5.000
+   0.445414569s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=24.564 y=-95.816 z=17.000 drop_mm=6.500
+   0.445417063s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-105.609 z=17.500 drop_mm=1.500
+   0.445419859s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-96.591 z=17.000 drop_mm=2.000
+   0.445422463s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=18.564 y=-108.816 z=11.000 drop_mm=6.500
+   0.445425118s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=24.564 y=-96.316 z=11.000 drop_mm=8.000
+   0.445428034s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=19.064 y=-107.816 z=11.000 drop_mm=0.500
+   0.445431621s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=46.564 y=-99.316 z=11.000 drop_mm=0.500
+   0.445434917s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-94.816 z=11.000 drop_mm=6.500
+   0.445437862s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=76.564 y=-94.816 z=11.000 drop_mm=0.500
+   0.445441870s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=144.564 y=-79.816 z=11.000 drop_mm=0.500
+   0.445444495s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=1.564 y=-10.316 z=11.000 drop_mm=0.500
+   0.445447020s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=151.064 y=-10.316 z=11.000 drop_mm=0.500
+   0.445449484s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-5.316 z=11.000 drop_mm=0.500
+   0.445451929s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=113.064 y=-5.316 z=11.000 drop_mm=0.500
+   0.445454373s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=43.564 y=-3.316 z=11.000 drop_mm=0.500
+   0.445456858s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=110.564 y=-2.816 z=11.000 drop_mm=0.500
+   0.445459443s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=62.564 y=-0.816 z=11.000 drop_mm=0.500
+   0.445461897s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=92.064 y=-0.816 z=11.000 drop_mm=0.500
+   0.445464442s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.564 y=-92.816 z=11.000 drop_mm=6.500
+   0.445466697s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-106.184 z=17.000 drop_mm=1.000
+   0.445470073s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-96.591 z=11.000 drop_mm=8.000
+   0.445472608s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=18.564 y=-108.816 z=5.000 drop_mm=6.500
+   0.445476004s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=24.564 y=-96.316 z=5.000 drop_mm=14.000
+   0.445486965s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=19.064 y=-107.816 z=5.000 drop_mm=0.500
+   0.445489620s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=46.564 y=-99.316 z=5.000 drop_mm=0.500
+   0.445492535s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-94.816 z=5.000 drop_mm=6.500
+   0.445496212s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=76.564 y=-94.816 z=5.000 drop_mm=0.500
+   0.445500350s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=144.564 y=-79.816 z=5.000 drop_mm=0.500
+   0.445504227s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=1.564 y=-10.316 z=5.000 drop_mm=0.500
+   0.445508164s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=151.064 y=-10.316 z=5.000 drop_mm=0.500
+   0.445511771s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-5.316 z=5.000 drop_mm=0.500
+   0.445515027s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=113.064 y=-5.316 z=5.000 drop_mm=0.500
+   0.445518714s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=43.564 y=-3.316 z=5.000 drop_mm=0.500
+   0.445522591s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=110.564 y=-2.816 z=5.000 drop_mm=0.500
+   0.445526118s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=62.564 y=-0.816 z=5.000 drop_mm=0.500
+   0.445529975s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=92.064 y=-0.816 z=5.000 drop_mm=0.500
+   0.445532540s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.564 y=-92.816 z=5.000 drop_mm=6.500
+   0.445535987s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-106.184 z=17.000 drop_mm=1.000
+   0.445539032s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-96.591 z=5.000 drop_mm=14.000
+   0.445542469s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=18.564 y=-108.816 z=0.500 drop_mm=5.000
+   0.445545094s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=24.564 y=-96.316 z=4.000 drop_mm=15.000
+   0.445548460s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=19.064 y=-107.816 z=0.500 drop_mm=0.500
+   0.445552177s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=46.564 y=-99.316 z=0.500 drop_mm=0.500
+   0.445557277s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-94.816 z=4.000 drop_mm=1.500
+   0.445560443s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=76.564 y=-94.816 z=0.500 drop_mm=0.500
+   0.445563929s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=144.564 y=-79.816 z=0.500 drop_mm=0.500
+   0.445567245s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=1.564 y=-10.316 z=0.500 drop_mm=0.500
+   0.445571794s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=151.064 y=-10.316 z=0.500 drop_mm=0.500
+   0.445574349s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=25.064 y=-5.316 z=0.500 drop_mm=0.500
+   0.445577434s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=113.064 y=-5.316 z=0.500 drop_mm=0.500
+   0.445582524s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=43.564 y=-3.316 z=0.500 drop_mm=0.500
+   0.445585460s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=110.564 y=-2.816 z=0.500 drop_mm=0.500
+   0.445589537s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=62.564 y=-0.816 z=0.500 drop_mm=0.500
+   0.445594577s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=92.064 y=-0.816 z=0.500 drop_mm=0.500
+   0.445599316s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=51.814 y=-84.566 z=4.000 drop_mm=1.500
+   0.445603884s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=26.564 y=-89.816 z=4.000 drop_mm=1.500
+   0.445607381s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=29.064 y=-79.816 z=0.500 drop_mm=5.000
+   0.445610847s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=51.564 y=-72.316 z=4.000 drop_mm=1.500
+   0.445616899s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=61.064 y=-58.316 z=4.000 drop_mm=1.500
+   0.445620435s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=47.814 y=-42.566 z=4.000 drop_mm=1.500
+   0.445623471s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=42.814 y=-59.066 z=4.000 drop_mm=1.500
+   0.445627098s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-106.184 z=17.000 drop_mm=1.000
+   0.445632257s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-80.959 z=0.500 drop_mm=4.000
+   0.445635744s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-75.802 z=4.000 drop_mm=0.500
+   0.445639571s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-76.007 z=4.000 drop_mm=0.500
+   0.445643038s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-65.802 z=4.000 drop_mm=0.500
+   0.445647326s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-65.370 z=0.500 drop_mm=4.000
+   0.445651023s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-66.007 z=4.000 drop_mm=0.500
+   0.445654840s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=89.314 y=-66.007 z=4.000 drop_mm=0.500
+   0.445658988s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-60.959 z=0.500 drop_mm=4.000
+   0.445663246s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=80.314 y=-61.007 z=4.000 drop_mm=0.500
+   0.445667423s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=98.314 y=-60.702 z=0.500 drop_mm=4.000
+   0.445670720s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-50.959 z=0.500 drop_mm=4.000
+   0.445673976s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=80.314 y=-51.007 z=4.000 drop_mm=0.500
+   0.445676771s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=98.314 y=-50.702 z=0.500 drop_mm=4.000
+   0.445680127s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-50.470 z=4.000 drop_mm=0.500
+   0.445690006s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-45.802 z=0.500 drop_mm=4.000
+   0.445693412s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-46.007 z=4.000 drop_mm=0.500
+   0.445697029s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=89.314 y=-46.007 z=4.000 drop_mm=0.500
+   0.445699985s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-35.802 z=0.500 drop_mm=4.000
+   0.445704463s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-35.370 z=0.500 drop_mm=4.000
+   0.445707489s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-36.007 z=0.500 drop_mm=4.000
+   0.445711246s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=89.314 y=-36.007 z=4.000 drop_mm=0.500
+   0.445714281s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-30.959 z=4.000 drop_mm=0.500
+   0.445718269s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=80.314 y=-31.007 z=4.000 drop_mm=0.500
+   0.445720964s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=98.314 y=-30.702 z=0.500 drop_mm=4.000
+   0.445725232s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-20.959 z=0.500 drop_mm=4.000
+   0.445728238s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=80.314 y=-21.007 z=4.000 drop_mm=0.500
+   0.445736694s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=98.314 y=-20.702 z=0.500 drop_mm=4.000
+   0.445741042s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-20.470 z=4.000 drop_mm=0.500
+   0.445744097s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-16.007 z=0.500 drop_mm=4.000
+   0.445748856s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=89.314 y=-16.007 z=4.000 drop_mm=0.500
+   0.445753014s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: C40 entry summary entries=95 by_kind_cause={(LiftOver, None): 22, (Plunge, None): 36, (Plunge, Some(Waterline)): 37} drop_1mm_by_cause={None: 22, Some(Waterline): 21}
+   0.445876386s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=8001 annotations=103 cutting_mm=43800.77352379819 rapid_mm=7499.398958720629 planner_eng_samples=0
+   0.446275605s  WARN generate_toolpath{index=0}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports operations that start from flat stock, not mesh-derived surfaces. toolpath=3D Rough 1
+   0.793541683s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=20
+   1.078081745s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Z levels computed count=6 z_top=15.5 z_bottom=0.5 depth_per_pass=3.0
+   1.083770317s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=15.5 remaining_cells=4 mat_count=4 rows=374 cols=513 max_dist_cells=1.0 tool_radius_cells=5.0 stepover_cells=2.0
+   1.090231179s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=15.5 elapsed_ms=5
+   1.090721820s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: CP: skipping — no material remaining z=12.5 cells=2
+   1.096348897s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=12.5 elapsed_ms=5
+   1.096877179s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: CP: skipping — no material remaining z=9.5 cells=2
+   1.102010077s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=9.5 elapsed_ms=4
+   1.102499687s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: CP: skipping — no material remaining z=6.5 cells=2
+   1.108063725s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=2 traced=2 z=6.5 elapsed_ms=5
+   1.110408488s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=3.5 remaining_cells=7 mat_count=7 rows=374 cols=513 max_dist_cells=1.0 tool_radius_cells=5.0 stepover_cells=2.0
+   1.122846724s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=84 traced=84 z=3.5 elapsed_ms=11
+   1.125309448s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Contour-parallel EDT: generating offset contours z=0.5 remaining_cells=41 mat_count=41 rows=374 cols=513 max_dist_cells=1.0 tool_radius_cells=5.0 stepover_cells=2.0
+   1.140083711s DEBUG generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: Waterline cleanup (slope-filtered) total=84 traced=84 z=0.5 elapsed_ms=13
+   1.154105521s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C38 feed caps exact=0 chain=0
+   1.154161025s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=110.114 y=-10.016 z=18.443 drop_mm=0.557
+   1.154175111s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154185741s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=24.814 y=-99.185 z=15.500 drop_mm=3.500
+   1.154191402s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154213083s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=24.814 y=-99.185 z=12.500 drop_mm=6.500
+   1.154218924s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154224865s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=24.814 y=-99.185 z=9.500 drop_mm=9.500
+   1.154229984s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154236958s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=24.814 y=-99.185 z=6.500 drop_mm=12.500
+   1.154242528s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154251004s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-92.507 z=4.000 drop_mm=0.500
+   1.154253929s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-87.507 z=4.000 drop_mm=0.500
+   1.154258558s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-87.193 z=4.000 drop_mm=0.500
+   1.154265671s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-87.507 z=4.000 drop_mm=0.500
+   1.154270270s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-82.507 z=4.000 drop_mm=0.500
+   1.154277904s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-82.507 z=4.000 drop_mm=0.500
+   1.154281802s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-82.507 z=4.000 drop_mm=0.500
+   1.154289196s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-77.507 z=4.000 drop_mm=0.500
+   1.154293013s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-77.507 z=4.000 drop_mm=0.500
+   1.154298583s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-77.507 z=4.000 drop_mm=0.500
+   1.154302160s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-71.605 z=3.500 drop_mm=1.000
+   1.154308312s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-72.507 z=4.000 drop_mm=0.500
+   1.154313632s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=60.814 y=-71.360 z=3.500 drop_mm=1.000
+   1.154319112s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154321767s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-67.193 z=4.000 drop_mm=0.500
+   1.154328249s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-67.507 z=4.000 drop_mm=0.500
+   1.154336134s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-66.949 z=3.500 drop_mm=1.000
+   1.154341824s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154347034s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154352104s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-67.507 z=4.000 drop_mm=0.500
+   1.154357033s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154362714s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-62.507 z=4.000 drop_mm=0.500
+   1.154367302s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-62.507 z=4.000 drop_mm=0.500
+   1.154372101s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154377011s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154381539s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=114.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154386468s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-62.507 z=4.000 drop_mm=0.500
+   1.154400976s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-57.507 z=4.000 drop_mm=0.500
+   1.154405284s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-57.193 z=3.500 drop_mm=1.000
+   1.154410423s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-57.507 z=4.000 drop_mm=0.500
+   1.154415002s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-56.949 z=4.000 drop_mm=0.500
+   1.154419891s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-57.507 z=4.000 drop_mm=0.500
+   1.154424740s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=104.314 y=-56.705 z=3.500 drop_mm=1.000
+   1.154429930s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154434118s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154439127s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154443405s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154448254s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154453003s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-52.293 z=3.500 drop_mm=1.000
+   1.154460858s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154464916s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154469855s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=36.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154473892s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.154479363s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.154484052s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154489432s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154493810s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.154499370s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-41.605 z=3.500 drop_mm=1.000
+   1.154504811s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-42.507 z=4.000 drop_mm=0.500
+   1.154509529s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=60.814 y=-41.360 z=3.500 drop_mm=1.000
+   1.154516623s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-42.507 z=4.000 drop_mm=0.500
+   1.154519248s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-42.507 z=4.000 drop_mm=0.500
+   1.154524528s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-42.293 z=3.500 drop_mm=1.000
+   1.154528846s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-42.507 z=4.000 drop_mm=0.500
+   1.154534166s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.154538223s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-37.193 z=4.000 drop_mm=0.500
+   1.154543393s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-37.507 z=4.000 drop_mm=0.500
+   1.154547421s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-36.949 z=4.000 drop_mm=0.500
+   1.154552330s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.154556357s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.154561307s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.154567388s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-32.507 z=4.000 drop_mm=0.500
+   1.154571416s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.154576605s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.154580823s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=114.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.154585702s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-32.507 z=4.000 drop_mm=0.500
+   1.154589750s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-27.507 z=4.000 drop_mm=0.500
+   1.154594669s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-27.193 z=4.000 drop_mm=0.500
+   1.154599098s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-27.507 z=4.000 drop_mm=0.500
+   1.154603596s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-26.949 z=4.000 drop_mm=0.500
+   1.154608205s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-27.507 z=4.000 drop_mm=0.500
+   1.154612733s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=104.314 y=-26.705 z=3.500 drop_mm=1.000
+   1.154619115s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-27.507 z=4.000 drop_mm=0.500
+   1.154625577s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-22.507 z=4.000 drop_mm=0.500
+   1.154629645s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.154634594s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.154643200s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-22.507 z=4.000 drop_mm=0.500
+   1.154647869s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-22.507 z=4.000 drop_mm=0.500
+   1.154654051s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-22.293 z=4.000 drop_mm=0.500
+   1.154658269s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.154663519s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-17.507 z=4.000 drop_mm=0.500
+   1.154668067s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-17.507 z=4.000 drop_mm=0.500
+   1.154673197s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-17.507 z=4.000 drop_mm=0.500
+   1.154677976s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=53.114 y=-82.616 z=0.500 drop_mm=4.000
+   1.154684658s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=36.314 y=-67.316 z=0.500 drop_mm=4.000
+   1.154688796s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=126.014 y=-45.116 z=0.500 drop_mm=4.000
+   1.154693986s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=113.714 y=-42.416 z=0.500 drop_mm=4.000
+   1.154701360s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=107.714 y=-22.616 z=0.500 drop_mm=4.000
+   1.154705287s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=LiftOver cause=None join=None x=122.114 y=-22.616 z=0.500 drop_mm=4.000
+   1.154710607s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=None join=None x=44.414 y=-22.316 z=0.500 drop_mm=4.000
+   1.154714705s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=20.314 y=-104.365 z=17.000 drop_mm=0.500
+   1.154719874s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-92.507 z=4.000 drop_mm=0.500
+   1.154727058s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-87.507 z=4.000 drop_mm=0.500
+   1.154733680s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-87.193 z=0.500 drop_mm=4.000
+   1.154738149s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-87.507 z=4.000 drop_mm=0.500
+   1.154744320s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-82.507 z=4.000 drop_mm=0.500
+   1.154750722s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-82.507 z=4.000 drop_mm=0.500
+   1.154754770s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-82.507 z=4.000 drop_mm=0.500
+   1.154759739s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-77.507 z=4.000 drop_mm=0.500
+   1.154766923s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-77.507 z=4.000 drop_mm=0.500
+   1.154774036s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-77.507 z=4.000 drop_mm=0.500
+   1.154778995s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-71.605 z=0.500 drop_mm=4.000
+   1.154782933s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-72.507 z=4.000 drop_mm=0.500
+   1.154787642s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=60.814 y=-71.360 z=0.500 drop_mm=4.000
+   1.154792541s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154798642s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-67.193 z=0.500 drop_mm=4.000
+   1.154803151s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-67.507 z=4.000 drop_mm=0.500
+   1.154809974s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-66.949 z=0.500 drop_mm=4.000
+   1.154814622s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154819922s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-67.507 z=4.000 drop_mm=0.500
+   1.154827286s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-67.507 z=4.000 drop_mm=0.500
+   1.154834660s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154841573s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-62.507 z=4.000 drop_mm=0.500
+   1.154849508s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-62.507 z=0.500 drop_mm=4.000
+   1.154855990s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154861090s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154866480s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=114.814 y=-62.507 z=4.000 drop_mm=0.500
+   1.154870988s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-62.507 z=4.000 drop_mm=0.500
+   1.154877480s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-57.507 z=4.000 drop_mm=0.500
+   1.154881919s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-57.193 z=0.500 drop_mm=4.000
+   1.154887148s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-57.507 z=4.000 drop_mm=0.500
+   1.154899842s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-56.949 z=4.000 drop_mm=0.500
+   1.154920511s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-57.507 z=4.000 drop_mm=0.500
+   1.154936501s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=104.314 y=-56.705 z=0.500 drop_mm=4.000
+   1.154943484s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154950147s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154958673s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154963101s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154968491s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-52.507 z=4.000 drop_mm=0.500
+   1.154977959s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-52.293 z=0.500 drop_mm=4.000
+   1.154982327s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-52.507 z=4.000 drop_mm=0.500
+   1.154987567s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154991915s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=36.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.154997155s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.155000982s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.155005922s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.155009979s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-47.507 z=4.000 drop_mm=0.500
+   1.155014928s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-47.507 z=4.000 drop_mm=0.500
+   1.155023925s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=26.314 y=-41.605 z=0.500 drop_mm=4.000
+   1.155028754s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-42.507 z=4.000 drop_mm=0.500
+   1.155038342s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=60.814 y=-41.360 z=0.500 drop_mm=4.000
+   1.155044484s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-42.507 z=4.000 drop_mm=0.500
+   1.155048361s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-42.507 z=4.000 drop_mm=0.500
+   1.155053581s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-42.293 z=0.500 drop_mm=4.000
+   1.155058500s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-42.507 z=4.000 drop_mm=0.500
+   1.155063409s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.155067397s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-37.193 z=0.500 drop_mm=4.000
+   1.155072476s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-37.507 z=4.000 drop_mm=0.500
+   1.155080892s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-36.949 z=4.000 drop_mm=0.500
+   1.155091642s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.155098686s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=105.814 y=-37.507 z=4.000 drop_mm=0.500
+   1.155107943s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.155113564s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-32.507 z=0.500 drop_mm=4.000
+   1.155122030s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.155127099s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.155132139s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=114.814 y=-32.507 z=4.000 drop_mm=0.500
+   1.155137398s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-32.507 z=4.000 drop_mm=0.500
+   1.155143320s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=18.814 y=-27.507 z=4.000 drop_mm=0.500
+   1.155147557s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=35.314 y=-27.193 z=4.000 drop_mm=0.500
+   1.155152827s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-27.507 z=4.000 drop_mm=0.500
+   1.155156865s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=69.814 y=-26.949 z=4.000 drop_mm=0.500
+   1.155161764s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-27.507 z=4.000 drop_mm=0.500
+   1.155166102s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=104.314 y=-26.705 z=0.500 drop_mm=4.000
+   1.155172434s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=122.314 y=-27.507 z=4.000 drop_mm=0.500
+   1.155179157s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=27.814 y=-22.507 z=4.000 drop_mm=0.500
+   1.155183144s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=44.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.155188054s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=62.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.155192472s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=78.814 y=-22.507 z=0.500 drop_mm=4.000
+   1.155197411s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=96.814 y=-22.507 z=4.000 drop_mm=0.500
+   1.155205396s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=113.314 y=-22.293 z=4.000 drop_mm=0.500
+   1.155210275s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=131.314 y=-22.507 z=4.000 drop_mm=0.500
+   1.155215215s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=53.314 y=-17.507 z=4.000 drop_mm=0.500
+   1.155219873s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=71.314 y=-17.507 z=4.000 drop_mm=0.500
+   1.155224111s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry kind=Plunge cause=Some(Waterline) join=None x=87.814 y=-17.507 z=4.000 drop_mm=0.500
+   1.155232287s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: C40 entry summary entries=184 by_kind_cause={(LiftOver, None): 4, (Plunge, None): 4, (Plunge, Some(Waterline)): 176} drop_1mm_by_cause={None: 7, Some(Waterline): 30}
+   1.155541066s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=5355 annotations=196 cutting_mm=14437.51532389325 rapid_mm=13569.272571855485 planner_eng_samples=0
+   1.156207468s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=3D Rough 1 (copy)
+   1.997415778s  INFO rs_cam_cli::project: generation plan finished steps=5 simulations=3 blocked=0
+   1.997464820s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=3 hits=0 entries_reused=0
+   3.641371928s  INFO rs_cam_cli::project: Wrote simulation artifact path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix27/scp/simulation.json
+   4.402886210s  INFO rs_cam_cli::project: Wrote project summary path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix27/scp/summary.json
+   4.402983483s  INFO rs_cam_cli::project: Wrote G-code path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix27/scp/program.nc bytes=394413 modulated=true kinematics_injected=false

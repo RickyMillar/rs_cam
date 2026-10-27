@@ -1,0 +1,87 @@
+{
+ "LargeZ | outside wall": {
+  "c40_records": 380,
+  "time_s": 200.9,
+  "air_share": 0.18
+ },
+ "LargeZ | switch hole": {
+  "c40_records": 347,
+  "time_s": 101.6,
+  "air_share": 0.177
+ },
+ "LargeZ | inside case": {
+  "c40_records": 133,
+  "time_s": 68.8,
+  "air_share": 0.156
+ },
+ "Reentry2d | inside case": {
+  "c40_records": 72,
+  "time_s": 60.2,
+  "air_share": 0.55
+ },
+ "Reentry2d | switch hole": {
+  "c40_records": 45,
+  "time_s": 39.9,
+  "air_share": 0.576
+ },
+ "Reentry2d | outside wall": {
+  "c40_records": 37,
+  "time_s": 21.0,
+  "air_share": 0.121
+ },
+ "link plunge (no C40) | switch hole": {
+  "c40_records": 0,
+  "time_s": 10.5,
+  "air_share": 0.879
+ },
+ "link plunge (no C40) | outside wall": {
+  "c40_records": 0,
+  "time_s": 9.3,
+  "air_share": 0.894
+ },
+ "link plunge (no C40) | inside case": {
+  "c40_records": 0,
+  "time_s": 8.4,
+  "air_share": 0.92
+ },
+ "LargeZHeld | outside wall": {
+  "c40_records": 7,
+  "time_s": 5.1,
+  "air_share": 0.389
+ },
+ "HeldLinkRefused | inside case": {
+  "c40_records": 4,
+  "time_s": 4.3,
+  "air_share": 0.35
+ },
+ "Waterline | switch hole": {
+  "c40_records": 30,
+  "time_s": 3.9,
+  "air_share": 0.241
+ },
+ "AirRun | inside case": {
+  "c40_records": 3,
+  "time_s": 3.2,
+  "air_share": 0.968
+ },
+ "Waterline | inside case": {
+  "c40_records": 3,
+  "time_s": 2.0,
+  "air_share": 0.434
+ },
+ "Start | switch hole": {
+  "c40_records": 4,
+  "time_s": 1.8,
+  "air_share": 0.088
+ },
+ "HeldLinkRefused | switch hole": {
+  "c40_records": 3,
+  "time_s": 1.1,
+  "air_share": 0.53
+ },
+ "Waterline | outside wall": {
+  "c40_records": 1,
+  "time_s": 0.5,
+  "air_share": 0.05
+ }
+}

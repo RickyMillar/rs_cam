@@ -5075,3 +5075,154 @@ program_s do not change.
 Simulation files: deleted after reading, all of fix26 and fix25's
 cp_alone/corne and cp_fix6job/corne. Kept: fix25 body_cp/wanaka200 and
 cp_alone_0.6/wanaka200 (the wanaka band is still open). Not committed.
+
+## D36: C22 §18.9 slab read counter, Corne field on (op 1) — the over-ceiling reads are own cells, not AIR
+
+`d36/tree_vs_7b7a8df6c_counter.patch` (md5 b4ab9db4769f46172c7980db60b86c50,
+4 files, research only) on a clean 7b7a8df6c in the fixture worktree; fix25's
+body_cp_field Corne job, `RS_CAM_RESEARCH_SLAB_FIELD=on`, fix25 flags
+(`d36/run_d36.sh`). rc 0, 236 s, cycle 2405 s. **program.nc is byte-identical
+to fix25 body_cp_field** (the counter does not change the output). Worktree
+restored: clean 7b7a8df6c, 0 changes.
+
+Op 1 (`index=0`), the three lines joined by z (two F-038 / C22a lines per
+level: the plan is built twice, the C29 pick's two variants):
+
+| z | region | reads | over, only with AIR | over, own cells | over_own / reads | F-038 dropped / groups | C22a rounds (dropped first + more) |
+|---|---|---|---|---|---|---|---|
+| 17.0 | 1 | 2414499 | 68 | 1238323 | 51.3 % | 5230 / 4966; 7914 / 5911 | 6 (4894 + 336); 10 (5718 + 2196) |
+| 11.0 | 3 | 1732474 | 54 | 1316144 | 76.0 % | 370 / 163; 3754 / 3437 | 4 (128 + 242); 4 (3381 + 373) |
+| 5.0 | 3 | 593233 | 56 | 558504 | 94.1 % | 680 / 166; 4888 / 4563 | 4 (129 + 551); 2 (4513 + 375) |
+| 0.5 | — | 1886 | 0 | 994 | 52.7 % | — | — |
+
+Reading: the reads that cross the ceiling only because of AIR cells are
+68 / 54 / 56 / 0 per level, against 0.56–1.32 million that cross it on the
+plan's own cells. C22 §18.9 item 1 (read only the plan's own cells) would
+change at most those few reads, so by C22's own test (item 3) the AIR share
+is not the cause of the refusals and the cascade.
+
+## D37: the op-1 stepover sweep against CP at equal peak load (fix27, tree 7b7a8df6c)
+
+**The parameter and the bound.** Op 1's `stepover` sets the geodesic load
+ceiling: `PassLoad::swept_width` (`adaptive/search.rs:966`) takes the target
+arc `target_engagement_fraction(s, R)` (`ops/adaptive_shared.rs:10`), the
+ceiling `× 1.05` (`search.rs:618`), as a radial fraction
+(`ops/adaptive_shared.rs:36`). The 0.471 bound is the C12 test's exact bound
+at ITS stepover 2.0 (`tests/adaptive3d_geodesic_arm_c12.rs:213`: ceiling
+0.3626 + (0.5 + 0.1 + 0.05)/6). At Corne's s 1.2 the same rule gives
+0.2189 + 0.1083 = **0.327**; at 1.5 / 1.8 / 2.1: 0.381 / 0.435 / 0.489.
+CP's op 1 has stepover 1.2 too (`corne_job_corrected_c12_contour_parallel.toml:126`).
+
+**Runs** (`fix27/run_fix27.sh`): `fix26/jobs/k_body_cp_edges.toml` (the
+wanaka kinematics block) with op 1's stepover 1.2 × 1.0 / 1.25 / 1.5 / 1.75
+(`fix27/jobs/k_body_cp_edges_s*.toml`, nothing else changed), and the CP
+reference `fix26/jobs/k_contour_parallel.toml`. The area oracle
+(`fix27/area_oracle.py`, one change: the screen `AREA_SCREEN`, here 0) reads
+EVERY clearing cutting sample of op 1 (57589–100021 per run), so the
+percentiles are of the whole op, weighted by XY step (`fix27/sweep_table.py`).
+Note: with the full read, s 1.2's mm over 0.471 is 78.8 (D34's screened read: 63.6).
+
+| op 1 | s | L max | L p99 | L p95 | mm > 0.327 | mm > 0.471 | mm > own bound | op 1 accel (s) | op 5 accel | op 1 + op 5 accel | descents | plunge share* |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CP | 1.2 | 1.031 | 1.008 | 0.781 | 3512.4 | 2426.8 | 3512.4 (0.327) | 1427.2 | — | 1427.2 | 41 | 1.9 % |
+| geodesic | 1.2 | 0.925 | 0.275 | 0.225 | 153.4 | 78.8 | 153.4 (0.327) | 1872.8 | 608.1 | 2480.9 | 1050 | 24.7 % |
+| geodesic | 1.5 | 0.942 | 0.333 | 0.283 | 240.9 | 94.0 | 149.4 (0.381) | 1632.7 | 620.0 | 2252.7 | 876 | 24.9 % |
+| geodesic | 1.8 | 0.913 | 0.408 | 0.333 | 1529.2 | 133.5 | 158.9 (0.435) | 1418.3 | 620.8 | 2039.1 | 723 | 22.4 % |
+| geodesic | 2.1 | 0.999 | 0.474 | 0.392 | 7988.4 | 166.6 | 153.8 (0.489) | 1248.2 | 762.7 | 2010.9 | 634 | 23.1 % |
+
+\* plunge feed over the op's acceleration-clock runtime (D35's shares used the no-acceleration clock).
+Program time at its own F (no acceleration), op 1: CP 973.8; geodesic 1402.6 / 1222.6 / 1051.0 / 926.8.
+
+- **No matched point inside the sweep.** CP op 1's p99 is 1.008 (its p95
+  0.781): CP runs full-width cuts on a fifth of its path. The geodesic p99
+  rises 0.275 → 0.474 over s 1.2 → 2.1, about 0.22 per mm; a straight
+  extrapolation reaches 1.008 at s ≈ 4.5 mm (0.75 D), outside the sweep and
+  not measured. The geodesic max is 0.91–1.00 at every stepover (single
+  peaks), already about CP's 1.031.
+- The geodesic holds its own bound at every stepover: 149–159 mm over it.
+- **Time:** the geodesic op 1 alone is below CP's op 1 from s 2.1 (1248.2
+  against 1427.2 s), but op 5 grows (608 → 763 s), so op 1 + op 5 stays above
+  CP: 2010.9 against 1427.2 s at s 2.1 (+583.7 s, ×1.41); at s 1.2 +1053.7 s
+  (×1.74). Descents fall 1050 → 634; the plunge share stays 22–25 %.
+- **Chip thinning:** `feeds/geometry.rs:17` (RCTF) gives ×1.25 / 1.155 /
+  1.091 / 1.048 at s 1.2 / 1.5 / 1.8 / 2.1 (ae/D 0.2–0.35) and ×1.0 at CP's
+  peak (ae/D ≥ 0.5). No feed path applies it here: Suggest reports it only
+  (`feeds/mod.rs:2196`, G-CHIPTHIN-HALFFIX, operator 2026-08-19), the
+  modulator deleted its own (`dressup/feed_modulation.rs:480`), and
+  `dressup/feedopt.rs:76` is skipped for these ops (the log's "Skipping feed
+  optimization" lines). No feed was changed.
+
+Simulation files deleted after each run's analysis. Not committed.
+
+## D38: why Corne body_cp op 1 has 1050 descents (fix28, tree 7b7a8df6c)
+
+Runs (`fix28/run_fix28.sh`, `run_fix28b.sh`): `fix26/jobs/k_body_cp_edges.toml`.
+**The research arm's keep-down router defaults to CutFeed**
+(`adaptive3d/mod.rs:523-528`), so the run with the variable unset
+(`route_default_cut_feed`, program.nc == fix26 k_body_cp_corne) and the
+`cut_feed` run give the same G-code. `route_off` sets
+`RS_CAM_RESEARCH_KEEP_DOWN_ROUTE=off`.
+
+| router | descents | plunge feed (s) | op 1 accel (s) | op 1 program (s) | route line |
+|---|---|---|---|---|---|
+| CutFeed (default) | 1050 | 462.6 | 1872.8 | 1402.6 | tried 2397, taken 10, refused_into_stock 1711, travel 13.8 mm |
+| off | 1052 | 462.8 | 1873.4 | 1403.0 | — |
+
+The router changes 2 descents and 0.6 s: it takes 10 of 2397 tries, and
+refuses 1711 because the travel would cross stock.
+
+**Descents by C40 cause** (`fix28/descent_causes.py`: the 'plunge/ramp'
+trace samples of op 1 grouped by move; each move takes the C40 entry record
+at its XY whose end is at or below the move's end (a peck ladder belongs to
+the run that ends below it); air = samples that remove ≤ 0.027 mm³). Default
+router; the off run is within 0.3 s per cause.
+
+| cause | C40 entries | moves | plunge/ramp s | air share | air s | median move mm | median drop mm |
+|---|---|---|---|---|---|---|---|
+| LargeZ (a draped cut split at a large Z step) | 860 | 1609 | 371.4 | 17.5 % | 65.0 | 4.75 | 5.0 |
+| Reentry2d / Turn | 90 | 288 | 81.4 | 56.1 % | 45.7 | 5.7 | 6.5 |
+| link plunges (no C40 record; keep-down links) | — | 385 | 28.3 | 89.6 % | 25.3 | 4.75 | — |
+| Reentry2d / OverBound | 39 | 74 | 22.2 | 29.6 % | 6.6 | 5.29 | 6.5 |
+| Reentry2d / Mixed | 20 | 45 | 13.8 | 38.7 % | 5.3 | 5.7 | 6.5 |
+| Waterline | 34 | 36 | 6.4 | 28.7 % | 1.8 | 1.99 | 3.0 |
+| HeldLinkRefused | 7 | 15 | 5.4 | 38.7 % | 2.1 | 5.7 | 12.5 |
+| LargeZHeld | 7 | 21 | 5.1 | 38.9 % | 2.0 | 5.64 | 5.88 |
+| Reentry2d / CoreHandOff | 4 | 13 | 3.6 | 27.7 % | 1.0 | 1.2 | 6.5 |
+| AirRun | 3 | 11 | 3.2 | 96.8 % | 3.1 | 1.75 | 12.5 |
+| Start | 4 | 7 | 1.8 | 8.8 % | 0.2 | 1.2 | 6.5 |
+| **total** | 1069 | 2505 | 542.6 | 29.1 % | 158.1 | | |
+
+The median move length equals the drop: the descents are vertical plunges
+at the plunge rate (750 mm/min), not ramps. No C40 cause is named "new
+region", "new level", "F-038 replay", "left piece" or "Clip" in this run:
+the Clip and Link2d / Sweep causes have 0 records; level and region starts
+are the 4 Start records.
+
+Where (`fix28/descent_places.py`; switch hole = the hole components grown
+1 mm; outside = beyond the hole-filled silhouette):
+
+| cause | outside the wall | switch holes | inside the case |
+|---|---|---|---|
+| LargeZ entries (time s, air) | 380 (200.9, 18 %) | 347 (101.6, 18 %) | 133 (68.8, 16 %) |
+| Reentry2d entries | 37 (21.0, 12 %) | 45 (39.9, 58 %) | 72 (60.2, 55 %) |
+| link plunges (time s) | 9.3 | 10.5 | 8.4 |
+
+Plot: `phase3/fix28/img/descents_default_cut_feed.png` (entries by cause,
+size = drop): LargeZ forms the ring along the outside of the case wall,
+three to five entries in every switch hole, and a line along the inner wall.
+
+**Which fix owns which cause:**
+- The router (Part B) removes none in practice: 10 of 2397 routes, 1711
+  refused into stock. Its rule (travel only over cut ground) cannot route
+  round a LargeZ split, because the split's far side stands in stock.
+- A G-AIRRAMP-type fix (descend at cut feed while the disc reads no stock
+  above the tip) can reach only the air time: 158.1 s of 542.6 s in total.
+  Most of it is in Reentry2d/Turn (45.7 s), the link plunges (25.3 s) and
+  LargeZ's air part (65.0 s).
+- LargeZ's stock part, 306 s (82.5 % of its time), is a real plunge into
+  stock at every split of a draped cut. It needs the split not to make a
+  plunge: a ramp or helix entry, or a split rule that does not lift
+  (C22 §16 Part A, `RS_CAM_RESEARCH_STEP_SPLIT`). Sent to C22-3d-turns (the
+  lead's assignment).
+
+Simulation files deleted. Not committed.

@@ -1,0 +1,5 @@
+tree = clean 7b7a8df6c
+route_off rc=0 232s; Toolpaths: 3  |  Cutting: 79560mm  |  Rapid: 32148mm  |  Time: 4344s
+route_cut_feed rc=0 74s; Toolpaths: 3  |  Cutting: 79560mm  |  Rapid: 32148mm  |  Time: 4344s
+route_off program == fix26 k_body_cp_corne
+D38RUNSDONE

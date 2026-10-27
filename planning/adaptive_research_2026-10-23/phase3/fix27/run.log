@@ -1,0 +1,17 @@
+tree = clean 7b7a8df6c
+scp rc=0 5s; Toolpaths: 2  |  Cutting: 58238mm  |  Rapid: 21069mm  |  Time: 2841s
+fix27/scp tp 1: 174529 samples, 100021 read, 19 s
+  disk free 70G
+s1p2 rc=0 25s; Toolpaths: 3  |  Cutting: 79560mm  |  Rapid: 32148mm  |  Time: 4344s
+fix27/s1p2 tp 1: 197087 samples, 99265 read, 27 s
+  disk free 70G
+s1p5 rc=0 34s; Toolpaths: 3  |  Cutting: 69585mm  |  Rapid: 28725mm  |  Time: 3762s
+fix27/s1p5 tp 1: 165522 samples, 80226 read, 19 s
+  disk free 70G
+s1p8 rc=0 39s; Toolpaths: 3  |  Cutting: 64041mm  |  Rapid: 27679mm  |  Time: 3504s
+fix27/s1p8 tp 1: 147131 samples, 67231 read, 15 s
+  disk free 70G
+s2p1 rc=0 45s; Toolpaths: 3  |  Cutting: 59111mm  |  Rapid: 33501mm  |  Time: 3543s
+fix27/s2p1 tp 1: 123941 samples, 57589 read, 13 s
+  disk free 70G
+D37RUNSDONE
