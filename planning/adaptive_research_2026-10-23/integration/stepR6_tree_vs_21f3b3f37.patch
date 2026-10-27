@@ -1,0 +1,556 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index 92bb9c1da..e76e8e100 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -30,7 +30,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ | 2.5D | Bore (`bore`) | `ops/bore.rs` | Yes | No | Shipped (2026-10-22, geometry selection P6.6). A helix mills each picked circle to its drawn size: the tool centre runs on `r = (d - D) / 2`, so the wall stands at `d / 2`. The op cuts a circle larger than the tool and at most two tool diameters (one helix then reaches the centre, so no core is left). Under the default rule it leaves out a circle of the tool size, a smaller circle and a circle of more than two tool diameters, with one note each that names the fix ("drill it with a Drill op", "use a smaller tool, or a Drill with a tool of the circle size", "use a Pocket on the circle or a larger tool"); a picked misfit circle refuses by item. A point states no size, so a Bore does not cut it. The helix descends in whole turns of at most `pitch` (default 1 mm, the dressup helix pitch), counter-clockwise for `climb`, then cuts one turn on the floor. A `finish_allowance` above zero cuts the helix at `r - a`, then one floor turn and a helix up the wall at `r`. The floor is the op floor (`floor`, as Pocket); `Floor::StockBottom` gives a through hole. A flat or bull-nose end mill only. The helix runs at the ramp feed, else the plunge rate; the feeds rows are those of the 2.5D clearing family (Pocket, Roughing); the feeds matrix gains 40 Bore cells (16 ship: end mill and bull nose; 24 refuse), 1000 in all. The dressups that add an entry, a lead or a link are stripped. With stock source "remaining stock" each hole starts at the highest remaining stock within the hole radius of its centre, and a hole with no stock above its floor is dropped. The simulation sweeps the moves and the export writes them as moves (not a drill cycle). Sentry: `a_bore_cuts_the_stated_size_p6_6` |
+ | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped. Runs on the Layered runner (W3.5, 2026-10-15): one level, `top_z - (w + t) / tan(a)`, from the tool angle. With stock source "remaining stock" the chamfer is skipped when no material stands within `w + t` of its tip path above that level (an edge a prior op removed); it is never clipped, because a clipped ring would start its bevel in the middle of an edge (G-RESTLEVELS claim 11). R-C and F21 (operator ruling 2026-10-23, SAFETY): each outline cuts one level below ITS OWN top: a drawing area below the op Top Z (as before), a mesh face below its plane under an auto top, a STEP edge below its Z. On a STEP model the Chamfer bevels the convex top edges only (`ItemUse::Edges`): the STEP door states the form of each ring, chain, circle and up face from the two faces at each segment (`selection::EdgeForm`); the default takes the convex top edge chains and rims (not the face rings, a departure from ruling Q3 for Chamfer only); a pick of a concave edge, of a bottom edge, or of any model edge in a Bottom or side setup refuses `NotAConvexEdge` by name. A model edge takes its material side from the model, so the Side dial applies to drawing areas only; an open edge is cut in its point order with no chord. Each item refuses `BuriedFace` against its own Z (fresh stock: the lowest item; remaining stock: each area and a band of `w + 2 t` round each edge). The model gouge guard reads a Chamfer (`Bevel`): a cut deeper than the bevel depth `w / tan(a)` below the V-bit CL Z gouges (an edge that runs into a wall); it does not see a cut into another face that is shallower than the bevel depth. Break: a STEP Chamfer default changes from the face rings to the convex chains. Sentry: `a_step_chamfer_cuts_convex_edges_only_rc` (`--features step`). |
+ | 3D | Parallel finish | `dropcutter.rs` | Yes | Yes | Shipped |
+-| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only). Sentry: `a_retired_clearing_strategy_is_named_r2`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
++| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The fields `trochoid_cap_mult` and `engagement_measure` stay load-only (removal step R6): no strategy reads them, their help says so, and saved projects load unchanged (sentry `--lib the_load_only_fields_do_not_change_the_toolpath_r6`). The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only). Sentry: `a_retired_clearing_strategy_is_named_r2`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
+ | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
+ | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
+ | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped. `iso_field` dial (2026-09-03, default off): rings from the iso-scallop field — per-point spacing, spec-correct cosine slope law, completion by construction; measured 0.875× the unified op's time at 2.5 pp better envelope coverage on terrain (`planning/metrology_2026-09-02/FINDINGS.md` §M7–M8) |
+diff --git a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+index f4e75dd5d..c3c113744 100644
+--- a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
++++ b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+@@ -2,8 +2,8 @@
+ 
+ ## Files
+ 
+-- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). AgentSearch
+-  slice (CUT-09): `detect_and_order_regions`, `clear_one_region` into a
++- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). The slice
++  (`clear_z_level_slice`, CUT-09): `detect_and_order_regions`, `clear_one_region` into a
+   `LevelSink` (new per-region work here), `coalesce_level_entries` (check).
+ - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
+   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
+@@ -13,9 +13,9 @@
+ 
+ ## Invariants
+ 
+-- All `ClearingStrategy3d` variants are live (keep the AgentSearch arm; it
+-  emits UNTAGGED descents). `GeodesicAdaptive` plans each slice piece with
+-  `../adaptive/geodesic`; `FeedCapStart`/`End` markers carry each cap to its cut.
++- `ClearingStrategy3d` is `ContourParallel` and `GeodesicAdaptive` (removal R1-R6). `GeodesicAdaptive` plans each slice piece with
++  `../adaptive/geodesic`; `FeedCapStart`/`End` markers carry each cap to its cut. The F-038 forecast keeps the 2D agent planner.
++- `trochoid_cap_mult` and `engagement_measure` are load-only: no strategy reads them.
+ - `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D). Entries
+   read floor and proof from the planner stock (`plan_entry`); no link feeds down into stock.
+ - `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group. `linking.step_split` / `keep_down_route` `None` keep today's rule (`PathShape`, `Off`; the geodesic arm: `StockDepth`, `CutFeed`); a route replaces the travel, never the entry's cut (§16.7); `StockDepth` reads `chip_load_fraction`.
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 5abb473b1..fd5ba5f2e 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -41,17 +41,10 @@ use crate::toolpath::simplify_path_3d;
+ /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
+ pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
+ 
+-/// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
+-/// Loops fire when predicted leading-arc engagement exceeds
+-/// `target × this`: 1.2 is flattest-possible load but high travel; 1.6 is
+-/// the balanced knee — load still flat (p99 well under the spiky
+-/// strategies) while cutting ~25-30% less distance. See the trochoid-cap
+-/// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+-///
+-/// As of the "Optimal load + Nibble" UI reframe this is operator-tunable
+-/// via `Adaptive3dConfig::trochoid_cap_mult` (GUI "Nibble" dial); the
+-/// const remains the default and a sanity fallback for any context built
+-/// with a non-finite or non-positive cap.
++/// The fallback for a non-finite or non-positive `trochoid_cap_mult`. The
++/// slice's 2D planner (`PathStrategy2d::Agent`) does not read the cap; the
++/// removed ContourSpiral strategy read it (removal step R4). The value is
++/// the default of the load-only `Adaptive3dConfig::trochoid_cap_mult`.
+ const TROCHOID_CAP_MULT_3D: f64 = 1.6;
+ 
+ // ── Region detection ──────────────────────────────────────────────────
+@@ -370,11 +363,11 @@ pub(super) struct ClearZLevelContext<'a> {
+     /// its internal dexel state (parity with the simulator replay).
+     pub(super) safe_z: f64,
+     pub(super) clearing_strategy: ClearingStrategy3d,
+-    /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
+-    /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value
+-    /// is operator-tunable; the const survives as the in-engine fallback.
++    /// Load-only: passed to the slice's 2D params, which do not read it
++    /// (`PathStrategy2d::Agent`).
+     pub(super) trochoid_cap_mult: f64,
+-    /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
++    /// Load-only: passed to the slice's 2D params, which do not read it
++    /// (`KeepDownLinks::WithinPassLoad`, `adaptive::path::pass_load_for`).
+     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
+     pub(super) z_blend: bool,
+     /// Minimum corner radius for `blend_corners_3d` — needed inside
+@@ -384,8 +377,8 @@ pub(super) struct ClearZLevelContext<'a> {
+     pub(super) min_cutting_radius: f64,
+     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
+     /// squares region must produce in its 2D adaptive sub-pass before the
+-    /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
+-    /// disable. See `clear_z_level_agent_2d_slice` for the apply site.
++    /// slice commits an entry plunge to it. Set to 0.0 to
++    /// disable. See `clear_z_level_slice` for the apply site.
+     pub(super) min_region_cut_length_mm: f64,
+     /// The disc radius of an entry's rapid floor read; see
+     /// `path.rs::entry_floor_radius`.
+@@ -1476,7 +1469,7 @@ pub(super) fn clear_z_level_contour_parallel(
+                 // gate, z_blend=true produced Link moves that crossed
+                 // uncut terrain between rings at different Z heights
+                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
+-                // matches the one in clear_z_level (the AgentSearch path).
++                // matches the one in clear_z_level_slice.
+                 let should_link = cursor
+                     .last_pos
+                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
+@@ -1861,7 +1854,7 @@ pub(super) fn waterline_cleanup(
+     Ok(())
+ }
+ 
+-// ── 2.5D slice adaptive (AgentSearch strategy) ─────────────────────────
++// ── 2.5D slice adaptive (GeodesicAdaptive strategy) ────────────────────
+ 
+ /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
+ /// anchor for region-ordering. Vertex-average, not the area-weighted
+@@ -1930,15 +1923,14 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
+     0.5 * acc
+ }
+ 
+-/// AgentSearch via 2.5D slices: at each Z-level, extract the 2D
+-/// material polygon via marching squares, then run the proven 2D
+-/// `adaptive_segments_with_debug` on it. Lift the resulting 2D path
+-/// back to 3D (Z clamped to `z_level` or surface+stock_to_leave) and
+-/// stamp the dexel stock along it.
++/// Geodesic Adaptive via 2.5D slices: at each Z-level, extract the 2D
++/// material polygon via marching squares, then plan each piece with the
++/// 2D geodesic plan (`plan_one_outline`). The F-038 forecast still runs
++/// the 2D agent planner (`adaptive_segments_with_debug`). Lift the
++/// resulting 2D path back to 3D (Z clamped to `z_level` or
++/// surface+stock_to_leave) and stamp the dexel stock along it.
+ ///
+-/// This replaces the ~700-line 3D agent-based search that struggled
+-/// with surface-following, axial engagement, and boundary walking by
+-/// delegating to the working 2D adaptive implementation. The trade-off
++/// The trade-off
+ /// is that the tool stays at a fixed Z within each slab (no per-step
+ /// terrain follow) — acceptable for roughing; finish passes handle
+ /// the staircase.
+@@ -1980,7 +1972,7 @@ pub(super) fn air_run_crossover_mm(
+ /// The regions one Z level clears, in the order the cutter visits them, and
+ /// the plan metrics the detection stage already knows.
+ ///
+-/// CUT-09: the product of stage 1 of `clear_z_level_agent_2d_slice`.
++/// CUT-09: the product of stage 1 of `clear_z_level_slice`.
+ struct OrderedRegions {
+     regions: Vec<crate::polygon::Polygon2>,
+     metrics: ZLevelPlanMetrics,
+@@ -2153,7 +2145,7 @@ fn detect_and_order_regions(
+ /// The accumulators a Z level appends to, plus the two counters and
+ /// the metrics record its stages share.
+ ///
+-/// CUT-09: `clear_z_level_agent_2d_slice` used to carry these as four
++/// CUT-09: `clear_z_level_slice` used to carry these as four
+ /// separate `&mut` parameters, which is what made it need
+ /// `clippy::too_many_arguments`.
+ struct LevelEmission<'a> {
+@@ -2163,7 +2155,7 @@ struct LevelEmission<'a> {
+     dropped_short_regions: &'a mut usize,
+ }
+ 
+-/// The one door every segment of an AgentSearch / ContourSpiral level goes
++/// The one door every segment of a Geodesic Adaptive level goes
+ /// through into the plan and the planner stock.
+ ///
+ /// G-PHANTOMSTAMP: with the F-038 gate on (`min_region_cut_length_mm > 0`)
+@@ -3333,7 +3325,7 @@ fn plan_and_emit_region(
+                 // 1mm floor: at small depth_per_pass (e.g. 0.5mm) the
+                 // 1.1× factor gives a 0.55mm threshold, and any natural
+                 // terrain undulation > 0.55mm between consecutive
+-                // samples chops the path. AgentSearch then plans many
++                // samples chops the path. The slice then plans many
+                 // short paths instead of one long sweep, and the
+                 // linker may not stitch them all up. The floor
+                 // preserves the safety logic without over-splitting.
+@@ -3592,7 +3584,7 @@ fn coalesce_level_entries(
+     clippy::too_many_arguments,
+     reason = "each parameter is a separate input that the callers supply"
+ )]
+-pub(super) fn clear_z_level_agent_2d_slice(
++pub(super) fn clear_z_level_slice(
+     ctx: &ClearZLevelContext<'_>,
+     material_stock: &mut TriDexelStock,
+     surface_hm: &SurfaceHeightmap,
+@@ -3674,9 +3666,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
+         // geodesic door sets the same value (`adaptive/geodesic/mod.rs`).
+         // ContourSpiral (3D) used the spiral here until removal step R4.
+         path_strategy: crate::adaptive::PathStrategy2d::Agent,
+-        // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
+-        // tuned const for any non-finite / non-positive value so a bad
+-        // config can never disable load capping outright.
++        // Not read by the agent planner; the guard keeps the value valid.
+         trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
+             ctx.trochoid_cap_mult
+         } else {
+diff --git a/crates/rs_cam_core/src/adaptive3d/intended_floor.rs b/crates/rs_cam_core/src/adaptive3d/intended_floor.rs
+index eb512aadb..844528dc4 100644
+--- a/crates/rs_cam_core/src/adaptive3d/intended_floor.rs
++++ b/crates/rs_cam_core/src/adaptive3d/intended_floor.rs
+@@ -9,7 +9,7 @@
+ //!   Z under it.
+ //! * One level at `z_level` cuts a centre down to [`level_floor_z`]:
+ //!   `max(surface + stock_to_leave, z_level)`. The material test
+-//!   (`clearing.rs::cell_has_material`), the AgentSearch lift and the
++//!   (`clearing.rs::cell_has_material`), the Geodesic Adaptive lift and the
+ //!   ContourParallel clean-up raster all read this function. The emitter's
+ //!   drape (`path.rs::drape_path_to_leave`) only lifts a point to
+ //!   `point_drop_cutter + stock_to_leave`, the same surface, so at a grid
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 13520d16c..a6a92a678 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -76,7 +76,7 @@ pub enum ClearingStrategy3d {
+     ContourParallel,
+     /// Geodesic Adaptive (integration step 7.4): the 2D geodesic-wavefront
+     /// plan (`adaptive::geodesic`, C35 plan A) plans each slice piece
+-    /// through the AgentSearch slice dispatch. It clears the body: a piece
++    /// through the slice dispatch (`clear_z_level_slice`). It clears the body: a piece
+     /// where the field does not apply is left to a rest pass. Its planned
+     /// turns carry a feed cap (`Move::feed_cap`).
+     GeodesicAdaptive,
+@@ -149,7 +149,7 @@ pub struct Adaptive3dGeometry {
+     /// center must stay inside. Cells outside this boundary are pre-cleared
+     /// in the internal material stock so the bool-grid polygon at every
+     /// z-level reflects the boundary, not just the stock bbox. Without this,
+-    /// AgentSearch's polygon at top z-levels covers the full stock; the
++    /// the slice polygon at top z-levels covers the full stock; the
+     /// downstream toolpath clip then converts the outside-boundary cuts to
+     /// rapids, leaving stock unstamped, and deeper z-levels then bite
+     /// through fresh stock with full-depth axial DOC. See investigation
+@@ -240,7 +240,7 @@ pub struct Adaptive3dLinking {
+     pub region_ordering: RegionOrdering,
+     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
+     /// region must produce in its 2D adaptive sub-pass before the planner
+-    /// commits an entry plunge to it. AgentSearch strategy only. Regions
++    /// commits an entry plunge to it. GeodesicAdaptive strategy only. Regions
+     /// whose forecast cut length (perimeter-sweep + 2D adaptive walk) is
+     /// below this threshold are dropped at plan time, eliminating the
+     /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
+@@ -361,16 +361,11 @@ pub struct Adaptive3dParams {
+     pub entry_style: EntryStyle3d,
+     /// Clearing strategy per Z level (default: ContourParallel).
+     pub clearing_strategy: ClearingStrategy3d,
+-    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
+-    /// fire when predicted leading-arc engagement exceeds `target x this`.
+-    /// Low (~1.0-1.2) = flattest load + more travel; high (~2.0-3.0) =
+-    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
+-    /// by the other strategies. See the cap sweep in
+-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
++    /// Load-only: no strategy reads it. The removed ContourSpiral strategy
++    /// read it as its trochoid trigger cap (removal step R4).
+     pub trochoid_cap_mult: f64,
+-    /// Engagement quantity the AgentSearch 2D sub-pass measures against
+-    /// the alpha/2pi target. See `crate::adaptive::EngagementMeasure` (F1,
+-    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
++    /// Load-only: no strategy reads it. The removed AgentSearch strategy
++    /// read it as its 2D engagement quantity (removal step R4).
+     pub engagement_measure: crate::adaptive::EngagementMeasure,
+     /// Blend Z toward terrain surface across contour offsets.
+     /// When true, outer contours stay near z_level and inner contours
+@@ -450,7 +445,7 @@ pub struct ZLevelPlanMetrics {
+     pub agent_walk_cut_length_mm: f64,
+     pub residual_cleanup_cell_count: usize,
+     /// F-038: number of regions whose forecast cut length fell below
+-    /// `min_region_cut_length_mm` and were dropped from the AgentSearch
++    /// `min_region_cut_length_mm` and were dropped from the slice
+     /// emission. Parallel to `dropped_micro_region_count` (which is the
+     /// Fusion-style area filter) but gated on length, not area.
+     pub dropped_short_region_count: usize,
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index 3a92c11e1..c9747494c 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -85,8 +85,8 @@ use tracing::{debug, info};
+ 
+ use super::centre_clip::CentreClip;
+ use super::clearing::{
+-    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_agent_2d_slice,
+-    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
++    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_contour_parallel,
++    clear_z_level_slice, detect_material_regions_labeled, waterline_cleanup,
+ };
+ use super::region_map::AreaRegionMap;
+ use super::search::{blend_corners_3d, material_remaining_at_level_diag};
+@@ -524,7 +524,7 @@ fn clear_planned_level(
+         // Geodesic Adaptive: the slice dispatch, with the geodesic plan as
+         // the per-slice generator (`clearing.rs`, `plan_one_outline`).
+         ClearingStrategy3d::GeodesicAdaptive => {
+-            clear_z_level_agent_2d_slice(
++            clear_z_level_slice(
+                 ctx,
+                 material_stock,
+                 surface_hm,
+@@ -869,7 +869,7 @@ pub(super) fn adaptive_3d_segments(
+     // provided (e.g. the model silhouette inset by tool_radius), clear
+     // cells whose center is outside the boundary. This forces the bool-grid
+     // polygon at every z-level to respect the boundary, so cuts emitted by
+-    // AgentSearch and ContourParallel/Adaptive stay inside it. Without this,
++    // GeodesicAdaptive and ContourParallel stay inside it. Without this,
+     // toolpath generation produces cuts across the full stock, the
+     // post-generation toolpath clip then converts outside-boundary cuts to
+     // rapids, and the dexel for those cells is left unstamped — deeper
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index 1db3dd4cf..10aa3f304 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -154,8 +154,8 @@ fn default_params() -> Adaptive3dParams {
+         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
+         initial_stock: None, // Matches the GUI/MCP default (ContourParallel) so the bulk of
+         // adaptive3d unit tests exercise the code path most users reach
+-        // in production. Tests that specifically validate AgentSearch
+-        // or Adaptive override this field explicitly.
++        // in production. Tests that specifically validate GeodesicAdaptive
++        // override this field explicitly.
+         clearing_strategy: ClearingStrategy3d::ContourParallel,
+         z_blend: false,
+     }
+@@ -338,10 +338,50 @@ fn test_adaptive_3d_hemisphere_multi_level() {
+     );
+ }
+ 
++/// Removal step R6: `trochoid_cap_mult` and `engagement_measure` are
++/// load-only. Two values of each give the same toolpath on both
++/// strategies. Each pair holds the other field at its default, so a
++/// difference names the field that a planner reads.
++#[test]
++fn the_load_only_fields_do_not_change_the_toolpath_r6() {
++    let (mesh, si) = make_hemisphere_mesh();
++    let cutter = flat_cutter();
++    for strategy in [
++        ClearingStrategy3d::ContourParallel,
++        ClearingStrategy3d::GeodesicAdaptive,
++    ] {
++        let base = || {
++            let mut p = default_params();
++            p.depth.depth_per_pass = 5.0;
++            p.geometry.tolerance = 0.5;
++            p.clearing_strategy = strategy;
++            p
++        };
++        let reference = format!(
++            "{:?}",
++            adaptive_3d_toolpath(&mesh, &si, &cutter, &base()).moves
++        );
++        let mut cap = base();
++        cap.trochoid_cap_mult *= 2.0;
++        let mut measure = base();
++        measure.engagement_measure = crate::adaptive::EngagementMeasure::LeadingArc;
++        for (field, params) in [("trochoid_cap_mult", cap), ("engagement_measure", measure)] {
++            let moves = format!(
++                "{:?}",
++                adaptive_3d_toolpath(&mesh, &si, &cutter, &params).moves
++            );
++            assert!(
++                moves == reference,
++                "{strategy:?}: `{field}` changed the toolpath; a planner reads it"
++            );
++        }
++    }
++}
++
+ /// DIAGNOSTIC: dump per-Cut-segment Z statistics for the slice pipeline
+ /// (Geodesic Adaptive since removal step R4; AgentSearch before) on a
+ /// hemisphere. Used to verify that the Z-drop split fix in
+-/// `clear_z_level_agent_2d_slice` is working — and to detect cases
++/// `clear_z_level_slice` is working — and to detect cases
+ /// the threshold misses (e.g., cumulative descent across many small
+ /// dz steps).
+ ///
+@@ -1286,7 +1326,7 @@ fn test_contour_parallel_complete_clearing_hemisphere() {
+ /// Small-DPP island regression: a small hemisphere cap at DPP=0.5
+ /// should clear cleanly (no unmilled core).
+ ///
+-/// Pre-fix (May 2026), three filters in `clear_z_level_agent_2d_slice`
++/// Pre-fix (May 2026), three filters in `clear_z_level_slice`
+ /// used DPP-blind area/fraction thresholds. At small DPP the per-level
+ /// slab contributes few cells, the perimeter sweep erodes islands
+ /// across many levels, and real islands fall under the threshold and
+diff --git a/crates/rs_cam_core/src/compute/execute/rough_3d.rs b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+index 32fe894b0..bcac8b7a2 100644
+--- a/crates/rs_cam_core/src/compute/execute/rough_3d.rs
++++ b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+@@ -134,7 +134,7 @@ impl Adaptive3dRough<'_> {
+                 region_ordering: cfg.region_ordering.into(),
+                 // F-038: drop marching-squares regions whose forecast cut
+                 // length (perimeter + 2D adaptive walk) is below this floor.
+-                // Only honored by the AgentSearch strategy.
++                // Only honored by the GeodesicAdaptive strategy.
+                 min_region_cut_length_mm: cfg.min_region_cut_length_mm,
+                 // F-038b: keep-tool-down link policy. None lets the planner
+                 // default to 8 × tool diameter; Some(0.0) disables the
+@@ -154,7 +154,7 @@ impl Adaptive3dRough<'_> {
+             initial_stock: inputs.seed_stock.cloned(),
+             safe_z: inputs.safe_z,
+             clearing_strategy: cfg.clearing_strategy.into(),
+-            // "Nibble" dial — forwarded to the ContourSpiral slice path.
++            // Load-only fields: no 3D Rough strategy reads them.
+             trochoid_cap_mult: cfg.trochoid_cap_mult,
+             engagement_measure: cfg.engagement_measure,
+             z_blend: cfg.z_blend,
+diff --git a/crates/rs_cam_core/src/compute/operation_configs.rs b/crates/rs_cam_core/src/compute/operation_configs.rs
+index 5636bff2c..fd4332f1d 100644
+--- a/crates/rs_cam_core/src/compute/operation_configs.rs
++++ b/crates/rs_cam_core/src/compute/operation_configs.rs
+@@ -1672,23 +1672,22 @@ pub struct Adaptive3dConfig {
+     pub region_ordering: RegionOrdering,
+     #[serde(default = "default_clearing_strategy")]
+     pub clearing_strategy: ClearingStrategy,
+-    /// Trochoid trigger cap for the ContourSpiral strategy: trochoidal
+-    /// relief loops fire when predicted leading-arc engagement exceeds
+-    /// `target × this`. Low (≈1.0–1.2) = flattest load, more loops, more
+-    /// travel; high (≈2.0–3.0) = relaxed, fewer loops, less travel.
+-    /// Surfaced in the GUI as the "Nibble" dial. Default 1.6 is the
+-    /// balanced knee (load still flat, ~25-30% less distance than 1.2 —
+-    /// see the trochoid-cap sweep in
+-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). Ignored by
+-    /// the ContourParallel/Adaptive/AgentSearch strategies.
++    /// Load-only field. It was the trochoid trigger cap of the removed
++    /// ContourSpiral strategy. No 3D Rough strategy reads it; saved
++    /// projects keep it so that they load unchanged.
+     #[serde(default = "default_trochoid_cap_mult")]
+-    #[param(gt = 0.0)]
++    #[param(
++        gt = 0.0,
++        help = "Not read by 3D Rough: the strategy that read it is removed. \
++                Kept so saved projects load unchanged."
++    )]
+     pub trochoid_cap_mult: f64,
+-    /// Engagement quantity for the AgentSearch 2D sub-pass. Defaults to
+-    /// the historical `DiskArea`; `LeadingArc` is the units-correct
+-    /// measure (algorithm review 2026-06-12, F1). Ignored by the
+-    /// ContourParallel/Adaptive strategies.
++    /// Load-only field. It was the engagement quantity of the removed
++    /// AgentSearch 2D sub-pass. No 3D Rough strategy reads it; saved
++    /// projects keep it so that they load unchanged.
+     #[serde(default)]
++    #[param(help = "Not read by 3D Rough: the strategy that read it is removed. \
++                Kept so saved projects load unchanged.")]
+     pub engagement_measure: crate::adaptive::EngagementMeasure,
+     #[serde(default)]
+     pub z_blend: bool,
+@@ -1773,11 +1772,9 @@ impl Default for Adaptive3dConfig {
+     }
+ }
+ 
+-/// Tuned trochoid trigger cap for the ContourSpiral strategy. 1.6 is the
+-/// balanced knee from the cap sweep — load stays flat (p99 well under the
+-/// spiky strategies) while cutting ~25-30% less distance than the
+-/// flattest-load 1.2. Matches `adaptive3d::clearing::TROCHOID_CAP_MULT_3D`
+-/// (the const this default replaces, kept as the in-engine fallback).
++/// The load default of the inert `trochoid_cap_mult` field. It keeps the
++/// value that the removed ContourSpiral strategy used, so that a project
++/// saved without the key reads back the same value.
+ fn default_trochoid_cap_mult() -> f64 {
+     1.6
+ }
+diff --git a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+index 358203d2e..5215e9514 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+@@ -4,7 +4,7 @@
+ //! ## Why this file exists
+ //!
+ //! CUT-04 regroups `Adaptive3dParams`'s thirty flat fields into three named
+-//! groups, and CUT-09 cuts `clear_z_level_agent_2d_slice` into its three
++//! groups, and CUT-09 cuts `clear_z_level_slice` into its three
+ //! named stages. Both are mechanical re-shapes with the same failure mode: a
+ //! field threaded into the wrong slot, or a stage that reads an accumulator
+ //! one statement too early, changes the emitted motion in silence. The
+diff --git a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+index 00cb78281..e12875aaa 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+@@ -14,7 +14,7 @@
+ //!
+ //! ## Root cause
+ //!
+-//! `clear_z_level_agent_2d_slice` calls the 2D adaptive once per
++//! `clear_z_level_slice` calls the 2D adaptive once per
+ //! marching-squares region. The 2D adaptive's output is structured as
+ //! `[Rapid(entry), Cut, Cut, ..., Rapid(entry), ...]` — each `Rapid`
+ //! becomes a downstream retract + rapid XY + peck-plunge entry. On
+diff --git a/crates/rs_cam_core/tests/agent_search_coverage.rs b/crates/rs_cam_core/tests/agent_search_coverage.rs
+index e57716bc3..90cb399b8 100644
+--- a/crates/rs_cam_core/tests/agent_search_coverage.rs
++++ b/crates/rs_cam_core/tests/agent_search_coverage.rs
+@@ -1,7 +1,7 @@
+ //! O5b regression: AgentSearch (2.5D-slice) interior coverage at every Z level.
+ //!
+ //! Repro for the "scattered passes" / interior-coverage class of bugs:
+-//! the 2D adaptive's agent-search walk inside `clear_z_level_agent_2d_slice`
++//! the 2D adaptive's agent-search walk inside `clear_z_level_slice`
+ //! can leave cells uncovered in the interior of the polygon. Deeper z-levels
+ //! then bite through full-depth uncleared stock, producing axial DOC up to
+ //! the full stock height.
+diff --git a/crates/rs_cam_mcp/src/server.rs b/crates/rs_cam_mcp/src/server.rs
+index 40fbc2bab..30f75fa5d 100644
+--- a/crates/rs_cam_mcp/src/server.rs
++++ b/crates/rs_cam_mcp/src/server.rs
+@@ -1452,8 +1452,8 @@ pub struct GenDebugTraceParam {
+     /// kind back to its structural SpanKind when one applies.
+     pub span_kind: Option<String>,
+     /// Optional filter: only include spans whose exit_reason contains this
+-    /// substring. Useful values for AgentSearch diagnosis:
+-    /// "loop closed", "idle", "no entry", "preflight skip", "no viable direction".
++    /// substring. The adaptive planner writes "idle", "over pass load",
++    /// "no direction" and "no entry".
+     pub exit_reason: Option<String>,
+     /// Optional filter: only include spans where the `yield_ratio` counter is
+     /// at most this value (e.g. 0.1 to see all low-yield passes). Spans without
+diff --git a/crates/rs_cam_viz/src/mcp_server.rs b/crates/rs_cam_viz/src/mcp_server.rs
+index 5d91338d6..ea5e5d911 100644
+--- a/crates/rs_cam_viz/src/mcp_server.rs
++++ b/crates/rs_cam_viz/src/mcp_server.rs
+@@ -534,7 +534,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "recommend_clearing_strategy",
+-        description = "Strategy advisor: for the Adaptive3d roughing toolpath at `index`, compare clearing strategies (ContourParallel vs ContourSpiral) by planning each at its load-limited (Suggest-backed-off) params and timing it through the acceleration-aware cycle-time integrator at the machine's effective kinematics. Returns the recommended strategy, the binding regime (tool-/machine-limited) as the human-readable why, every candidate ranked by wall-clock seconds, and the speed margin. KEY: it decides parallel-vs-spiral by MACHINE ACCELERATION, not the load regime — on a low-accel router a backed-off ContourParallel beats the spiral even when tool-limited. Only applies to Adaptive3d ops. HEAVY: it plans one toolpath per candidate, so expect ~30-60 s. It runs on its own compute lane and holds no session, so the GUI stays usable while it computes; this call still waits for the answer."
++        description = "Strategy advisor: for the Adaptive3d roughing toolpath at `index`, compare clearing strategies (ContourParallel vs GeodesicAdaptive) by planning each at its load-limited (Suggest-backed-off) params and timing it through the acceleration-aware cycle-time integrator at the machine's effective kinematics. Returns the recommended strategy, the binding regime (tool-/machine-limited) as the human-readable why, every candidate ranked by wall-clock seconds, and the speed margin. KEY: it ranks the candidates by wall-clock time at the MACHINE ACCELERATION, not by the load regime alone. Only applies to Adaptive3d ops. HEAVY: it plans one toolpath per candidate, so expect ~30-60 s. It runs on its own compute lane and holds no session, so the GUI stays usable while it computes; this call still waits for the answer."
+     )]
+     async fn recommend_clearing_strategy(
+         &self,
+@@ -608,7 +608,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "get_generation_debug_trace",
+-        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d AgentSearch wandering/looping. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
++        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d slice planning. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
+     )]
+     async fn get_generation_debug_trace(
+         &self,
+diff --git a/crates/rs_cam_viz/tests/mcp_authoring_surface.rs b/crates/rs_cam_viz/tests/mcp_authoring_surface.rs
+index 93ebd4612..f618b1d42 100644
+--- a/crates/rs_cam_viz/tests/mcp_authoring_surface.rs
++++ b/crates/rs_cam_viz/tests/mcp_authoring_surface.rs
+@@ -233,8 +233,8 @@ fn setup_rotation_has_a_setter() {
+ }
+ 
+ /// Gap 3 — kinematics have a typed write path, not just a GRBL `$$`
+-/// paste. Acceleration decides the parallel-vs-spiral verdict, so this
+-/// is not cosmetic.
++/// paste. The strategy advisor ranks its candidates at the machine's
++/// acceleration, so this is not cosmetic.
+ #[test]
+ fn machine_kinematics_have_a_typed_write_path() {
+     let facts = tool_facts("set_machine_kinematics");
+diff --git a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+index d2d5e091f..4929e376a 100644
+--- a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
++++ b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+@@ -3500,7 +3500,7 @@
+       "additionalProperties": false,
+       "properties": {
+         "exit_reason": {
+-          "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. Useful values for AgentSearch diagnosis:\n\"loop closed\", \"idle\", \"no entry\", \"preflight skip\", \"no viable direction\".",
++          "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. The adaptive planner writes \"idle\", \"over pass load\",\n\"no direction\" and \"no entry\".",
+           "type": [
+             "string",
+             "null"
