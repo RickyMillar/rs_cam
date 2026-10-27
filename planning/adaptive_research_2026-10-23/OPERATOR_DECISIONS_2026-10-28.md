@@ -33,6 +33,20 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 | wanaka200 | 3.5 mm | 0.34 | 0.99 / 2.62 | leaves about twice CP's area over 0.6 mm on the unfinished back face |
 | Corne | 2.1 mm | 1.15 | 1.00 / 1.03 (p99 0.49 / 1.01) | the 6 mm roughing is 1.07× CP; the rest of the gap is the 3 mm rest op (G-LEVELPHASE) |
 
+## Safety finding: read this first
+
+**G-RESTDOC (D61)** blocks machining the "body + edge op" pair. The edge op, a contour-parallel rest op on remaining stock, cuts deeper than one Depth/Pass in its first level:
+
+| Part | Edge op | Max axial cut | Depth/Pass | Volume deeper than one DPP |
+|---|---|---|---|---|
+| Corne | op 5 | 8.96 mm | 6 mm | 12.7 % |
+| wanaka 3.5 mm | op 7 | 16.2 mm | 5.46 mm | 14.7 % |
+
+- The export only warns about it ("Exceeded without refusing"), and does not refuse.
+- The earlier D54 numbers came from an even deeper cut (12 mm, 36 %), so they are void.
+- D62 checks whether shipped CP-only jobs breach one DPP in their rest ops too.
+- Until G-RESTDOC is fixed, test-cut op 1 (Geodesic Adaptive) alone, or with an edge op on a conservative setup that you check by eye.
+
 ## Decisions for the operator
 
 1. **Merge `geodesic-integration` into master?** It ships "Geodesic Adaptive" as new and not yet machine-tested. Recommendation: yes, after one test cut.
