@@ -1,0 +1,195 @@
+diff --git a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+index e7d3f2655..f3760bcdf 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+@@ -48,7 +48,7 @@
+ //! | P1 | pre-clear zone > 0 **and** `effective_boundary` returned exactly 1 polygon | 4005 cells, 1 poly | asserted |
+ //! | P2 | F-027 border-clear zone == 0 | 0 | `assert_eq!` |
+ //! | B1 | in-scope over-claim, as a fraction of the in-containment population | 27.7% / 27.1% | ≤ 30.0% growth pin |
+-//! | B2 | emitted cutting-move endpoints fully outside the containment | 138 / 138 (135 / 135 since G-FLUTETOP) | exact `assert_eq!` |
++//! | B2 | cutting-move endpoints fully outside the containment, planned with `centre_boundary` set as a session sets it (D67) | 0 / 0 | `assert_eq!` 0, with the pre-clip leak > 0 as non-vacuity |
+ //! | B3 | outside-containment `sim_higher` | 4005 / 4005 | **counted, deliberately NOT gated** |
+ //! | B4 | `planner_higher` inside the containment (benign direction) | 9 / 38 | ≤ 60 loose pin |
+ //!
+@@ -87,24 +87,6 @@ const SAFE_Z: f64 = 30.0;
+ /// B1 — in-scope over-claim ceiling, as a fraction of the in-containment cell
+ /// population. Measured 27.7% (ContourParallel) / 27.1% (AgentSearch).
+ const MAX_IN_SCOPE_OVER_CLAIM_FRACTION: f64 = 0.30;
+-/// B2 — emitted cutting-move endpoints fully outside the containment, for
+-/// Contour Parallel. `waterline_cleanup` traces the same mesh contours
+-/// whichever shipped strategy ran (AgentSearch read the same 135).
+-///
+-/// Re-pinned 2026-10-02, 138 -> 135, cause G-FLUTETOP (`cd7c75f4`): the push
+-/// cutter now adds one interval per triangle (the hull of its contacts), so
+-/// the hemisphere's waterline contours sit on the drop-cutter surface and
+-/// arc-fit into fewer, longer moves (the same hemisphere's waterline in
+-/// `perf_golden_sim_metrics`: 166 -> 104 moves). The leak itself is
+-/// unchanged: the contours still run outside the containment.
+-const WATERLINE_LEAK_CUT_MOVES: usize = 135;
+-/// B2 for Geodesic Adaptive. Pinned 2026-10-28 (removal step R4: the
+-/// AgentSearch arm of this file, which read 135, moved to Geodesic
+-/// Adaptive), measured on this fixture: 312. Geodesic Adaptive's level
+-/// gives the waterline cleanup other contours (it skips the pieces it
+-/// leaves, and its regions follow the outer-band clip), so its count is
+-/// its own. The same leak (D4 F-B): a drop to 0 means F-B landed.
+-const WATERLINE_LEAK_CUT_MOVES_GEODESIC: usize = 312;
+ /// B4 — `planner_higher` inside the containment. The benign direction; a loose
+ /// growth pin only (measured 9 / 38).
+ const MAX_IN_SCOPE_PLANNER_HIGHER: u64 = 60;
+@@ -236,7 +218,6 @@ impl ZoneTally {
+ 
+ struct Measured {
+     label: String,
+-    strategy: ClearingStrategy3d,
+     /// Cells inside `containment ⊖ r` — a cutter centre is allowed here.
+     inside_eff: ZoneTally,
+     /// Cells inside the containment but outside `containment ⊖ r`. Material
+@@ -257,8 +238,13 @@ struct Measured {
+     /// offset collapsed and the path ships UNCLIPPED (the `boundary_clip_dropped`
+     /// escape hatch), which would make this whole fixture measure something else.
+     effective_polys: usize,
+-    /// B2 — pre-clip emitted cutting-move endpoints fully outside the containment.
++    /// Pre-clip emitted cutting-move endpoints fully outside the containment,
++    /// planned with an empty `centre_boundary` (the `waterline_cleanup` leak;
++    /// the D4 F-B arm and B2's non-vacuity read it).
+     cut_moves_outside_containment: usize,
++    /// B2 — the same count on a plan with `centre_boundary` set to the
++    /// effective containment, as `compute/execute/rough_3d.rs` sets it.
++    cut_moves_outside_with_centre_boundary: usize,
+     /// Pre-clip emitted cutting-move endpoints in the reachable band. The clip
+     /// converts every one of these into a rapid.
+     cut_moves_in_band: usize,
+@@ -313,13 +299,15 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
+         cell_size,
+     );
+ 
+-    let params = {
++    let params_with = |centre_boundary: Vec<Polygon2>| {
+         let mut p = base_params(strategy);
+         p.initial_stock = Some(initial_stock.clone());
+         p.geometry.world_stock_xy_bbox = Some(WORLD_XY);
+         p.geometry.boundary = boundary.cloned();
++        p.geometry.centre_boundary = centre_boundary;
+         p
+     };
++    let params = params_with(Vec::new());
+ 
+     let never_cancel = || false;
+     let (tops_raw, rows, cols, pg_cell, pg_ou, pg_ov, pg_zmin, _pg_zmax) =
+@@ -369,7 +357,7 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
+         clip_toolpath_to_boundary(&toolpath, &effective[0], SAFE_Z)
+     };
+ 
+-    let mut sim_stock = initial_stock;
++    let mut sim_stock = initial_stock.clone();
+     sim_stock
+         .simulate_toolpath_with_metrics_with_cancel(
+             &sim_path,
+@@ -483,6 +471,36 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
+         );
+     }
+ 
++    // B2 (D67): plan again with the centre boundary a session passes, and
++    // count the cutting endpoints that still land outside the containment.
++    let cut_moves_outside_with_centre_boundary = match boundary {
++        Some(b) if !effective.is_empty() => {
++            let session_params = params_with(effective.clone());
++            let session_path = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
++                &mesh,
++                &si,
++                &cutter,
++                &session_params,
++                &never_cancel,
++                None,
++            )
++            .map(|out| out.toolpath)
++            .expect("toolpath with centre_boundary should succeed");
++            session_path
++                .moves
++                .iter()
++                .filter(|m| !matches!(m.move_type, MoveType::Rapid))
++                .filter(|m| !b.contains_point(&P2::new(m.target.x, m.target.y)))
++                .count()
++        }
++        _ => 0,
++    };
++    eprintln!(
++        "[{label}] B2: cutting endpoints fully OUTSIDE the containment with centre_boundary \
++         set: {cut_moves_outside_with_centre_boundary} (pre-clip, without it: \
++         {cut_moves_outside_containment})."
++    );
++
+     let sim_cut_moves = sim_path
+         .moves
+         .iter()
+@@ -491,7 +509,6 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
+ 
+     Measured {
+         label: label.to_owned(),
+-        strategy,
+         inside_eff,
+         band,
+         outside,
+@@ -501,6 +518,7 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
+         border_clear_zone,
+         effective_polys: effective.len(),
+         cut_moves_outside_containment,
++        cut_moves_outside_with_centre_boundary,
+         cut_moves_in_band,
+         cut_moves_inside_effective,
+         sim_moves: sim_path.moves.len(),
+@@ -585,21 +603,29 @@ fn assert_containment_parity_bars(m: &Measured) {
+         m.band.max_dz.max(m.inside_eff.max_dz),
+     );
+ 
+-    // --- B2: the waterline leak. Exact, because a count over ~1500 moves is
+-    // sensitive to one move where a percentage is not.
+-    let leak_pin = match m.strategy {
+-        ClearingStrategy3d::ContourParallel => WATERLINE_LEAK_CUT_MOVES,
+-        ClearingStrategy3d::GeodesicAdaptive => WATERLINE_LEAK_CUT_MOVES_GEODESIC,
+-    };
++    // --- B2: no cut outside the containment on the plan a session makes.
++    // D67 (P15, closed G-GEOWATERLEAK): the old bar counted PRE-CLIP
++    // endpoints of the boundary-unaware `waterline_cleanup`, with an empty
++    // `centre_boundary`. That count is not strategy-neutral: Geodesic
++    // Adaptive's finer `emission_chord_tolerance` cuts the same contour arcs
++    // into more, shorter moves (CP 135, Geodesic 312; same leak radii). With
++    // `centre_boundary` set as a session sets it, the planner's centre clip
++    // trims every segment, and both strategies read 0. The pre-clip leak
++    // stays > 0 (D4 F-B is open), so the bar proves that the clip removes a
++    // leak that exists, not that no leak was planned.
++    assert!(
++        m.cut_moves_outside_containment > 0,
++        "[{label}] B2 non-vacuity: the plan without `centre_boundary` puts no cutting endpoint \
++         outside the containment, so the centre clip has nothing to remove. If D4 F-B \
++         (a boundary-aware `waterline_cleanup`) landed, see the D4 arm below."
++    );
+     assert_eq!(
+-        m.cut_moves_outside_containment, leak_pin,
+-        "[{label}] B2: {} emitted cutting-move endpoints land fully OUTSIDE the containment; the \
+-         pin is {leak_pin}. These are `waterline_cleanup` contours \
+-         (`adaptive3d/clearing.rs`), which take no `boundary` parameter at all. This is an EXACT bar: \
+-         change it only with a measurement, and a DROP to 0 means the D4 fix (F-B: pass \
+-         `params.geometry.boundary` into `waterline_cleanup`) landed — un-ignore the arm below rather \
+-         than re-baselining here.",
+-        m.cut_moves_outside_containment,
++        m.cut_moves_outside_with_centre_boundary, 0,
++        "[{label}] B2: {} cutting-move endpoints land fully OUTSIDE the containment on a plan \
++         with `centre_boundary` set as a session sets it (`compute/execute/rough_3d.rs`). The \
++         planner's centre clip (`adaptive3d/centre_clip.rs`, G-BOUNDARYPHANTOM) must trim every \
++         segment, the `waterline_cleanup` contours included (D67).",
++        m.cut_moves_outside_with_centre_boundary,
+     );
+ 
+     // --- B3: deliberately NOT gated. Assert only that the population is
+@@ -757,7 +783,9 @@ fn boundary_clear_preclear_engages_precondition() {
+ /// keeping the material grid at the containment.
+ ///
+ /// **F-B — pass `params.geometry.boundary` into `waterline_cleanup`** and drop contour
+-/// points outside it. Small and self-contained; takes bar B2 from 138 to 0.
++/// points outside it. Small and self-contained; takes the pre-clip leak
++/// (CP 135, Geodesic 312 on this fixture; D67) to 0. Bar B2 already reads 0:
++/// it measures the plan with the session's centre clip.
+ ///
+ /// F-A is what takes B1 from 27.7% to 0; F-B alone does not (the leak is
+ /// outside the containment, where B1 does not look). Both are generated-geometry
