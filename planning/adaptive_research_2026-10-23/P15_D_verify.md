@@ -5968,3 +5968,56 @@ same path (equal lines; on wanaka s2.0 by the nearest dense point):
 export" (depth of cut against the rigidity rule; Corne copy op 14.5 against 4.5 mm).
 
 Not committed.
+
+## D59: are the F4000 lines above `feed_max_rate` 3000 a shipped defect? (read only; fix40, tree 26d901943)
+
+**Verdict: yes by the lead's rule. Cutting moves run above `feed_max_rate`: 5066 stock-removing moves of the Corne op 1 at
+F4000, 90.6 % of its volume. The writer is the feed modulator, and its cap is the machine cutting ceiling (4000 on Corne).
+`feed_max_rate` is documented and read as a feedopt-only dial, and feedopt does not run on these ops. Filed as G-FEEDMAX;
+whether to change the code or the doc is for the lead.**
+
+**1. Which stage writes F4000, and which limit it obeys.**
+- Not feedopt. Both Corne ops log "Skipping feed optimization: Phase 1 feed optimization only supports operations that
+  start from flat stock, not mesh-derived surfaces" (op 1) and "… only supports fresh stock …" (copy op)
+  (`session/compute.rs:904`).
+- Not the post. The post writes the F of each move; its rapid is G0 (`gcode/mod.rs:1426-1434`: the G0 rate is
+  `max_feed_mm_min`).
+- The feed modulator. The program header says "(feeds: modulated from simulation run 1)"
+  (`session/result_provenance.rs:82`). stderr says "Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)" and,
+  for op 1, "21% machine-bound". The ConstrainedMax solver takes the smallest of its caps; the last one is "4. Machine-feed
+  hard cap", `ctx.cutting_ceiling` (`dressup/feed_modulation.rs:618-621`).
+- The limit it obeys: the machine cutting ceiling, `MachineProfile::cutting_ceiling` = min(`max_cutting_feed_mm_min`, else
+  `DEFAULT_CUTTING_FEED_CAP_MM_MIN` 6000, `max_feed_mm_min`) (`machine/mod.rs:615`, :652-657). Corne's job has
+  `max_feed_mm_min = 4000` and no cutting cap, so the ceiling is 4000, which equals the travel rate. `feed_max_rate` is not
+  an input of the modulator.
+- `feed_max_rate` goes only to feedopt (`compute/execute/dressup_apply.rs:1124-1127`, else the machine max feed).
+
+**2. CP also emits F above `feed_max_rate`.** fix26 k_cp_fix6job_corne program.nc: 1522 explicit F words over 3000, max
+F4000 (490 of them F4000). That program's simulation is deleted, so its engagement is not read. Also wanaka200 (machine
+cutting ceiling 6000, `feed_max_rate = 3000`): R s2.0 (fix36) 3436 F words over 3000, max 5245; product s2.0 3216, max
+4149; s3.5 1624, max 4175.
+
+**3. Do those moves cut stock?** One re-run of the Corne B s2.1 product job (fix39's job file, `fix40/run_prod.sh`;
+program.nc byte-identical to fix39; no override, 0 refusals). `fix40/feedmax.py` maps program line k of op 1 to move k
+(offset 1, checked by the move count 6947) and reads that move's trace samples (`feedmax_corne_B_s2p1.json`):
+
+| op | fed moves with F > 3000 (modal) | remove stock (> cell² × step) | air (is_cutting, no removal) | removed by them | max F |
+|---|---|---|---|---|---|
+| 3D Rough 1 (op 1) | 5110 (687 explicit F words) | 5066 | 44 | 197664 of 218084 mm³ | 4000 |
+| 3D Rough 1 (copy) | 0 | — | — | — | — |
+
+- They are full cuts: axial engagement 6.0 mm (the whole Depth/Pass), radial up to 0.50 (e.g. move 20, (52.04, 59.96,
+  −6.0) → (52.03, 59.08, −6.0), 15.3 mm³, radial 0.503; moves 21–24 radial 0.40–0.44, 11.9–19.9 mm³). The trace feed of
+  all 5110 is 4000, as in the G-code.
+- 4000 mm/min at 20000 rpm × 2 flutes is 0.100 mm/tooth.
+
+**4. Doc and filing.**
+- The doc covers the optimiser only: `DressupConfig::feed_max_rate`, "The upper feed (mm/min) the optimiser may command.
+  `None` = the machine maximum feed" (`compute/config.rs:1176`); the field table, "upper feed the optimiser may command
+  (mm/min)" (:1470); `FeedOptParams::max_feed_rate`, "the hard ceiling: no cutting move leaves this pass above it"
+  (`dressup/feedopt.rs:35`).
+- So the code follows its doc. But an operator who sets `feed_max_rate = 3000` gets cutting moves at 4000 on Corne and up to
+  5245 on wanaka. The lead's rule (a cutting move above `feed_max_rate`) is met, so G-FEEDMAX is filed in DEFECTS.md with
+  this evidence. It is a shipped behaviour of every 3D Rough with modulation, CP included, not of the geodesic port.
+
+Sim deleted. Worktree unchanged (clean, detached 26d901943). Not committed.

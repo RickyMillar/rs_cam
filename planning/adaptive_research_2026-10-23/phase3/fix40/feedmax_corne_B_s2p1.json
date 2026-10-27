@@ -1,0 +1,120 @@
+{
+ "3D Rough 1": {
+  "moves": 6947,
+  "map_offset": 1,
+  "lines_over": 5110,
+  "max_F": 4000.0,
+  "classes": {
+   "removes stock": 5066,
+   "is_cutting, removes <= quantum (air)": 44
+  },
+  "removed_mm3": 197664.0,
+  "axial_max_mm": 8.4375,
+  "trace_feed_of_those_moves (top)": {
+   "4000": 5110
+  },
+  "examples": [
+   {
+    "move": 20,
+    "F": 4000.0,
+    "from": [
+     52.036,
+     59.961,
+     -6.0
+    ],
+    "to": [
+     52.029,
+     59.081,
+     -6.0
+    ],
+    "removed_mm3": 15.295,
+    "radial_max": 0.503,
+    "axial_max": 6.0,
+    "trace_feed": 4000.0
+   },
+   {
+    "move": 21,
+    "F": 4000.0,
+    "from": [
+     52.029,
+     59.081,
+     -6.0
+    ],
+    "to": [
+     52.416,
+     57.976,
+     -6.0
+    ],
+    "removed_mm3": 19.141,
+    "radial_max": 0.437,
+    "axial_max": 6.0,
+    "trace_feed": 4000.0
+   },
+   {
+    "move": 22,
+    "F": 4000.0,
+    "from": [
+     52.416,
+     57.976,
+     -6.0
+    ],
+    "to": [
+     53.196,
+     57.103,
+     -6.0
+    ],
+    "removed_mm3": 18.259,
+    "radial_max": 0.418,
+    "axial_max": 6.0,
+    "trace_feed": 4000.0
+   },
+   {
+    "move": 23,
+    "F": 4000.0,
+    "from": [
+     53.196,
+     57.103,
+     -6.0
+    ],
+    "to": [
+     54.539,
+     56.536,
+     -6.0
+    ],
+    "removed_mm3": 19.866,
+    "radial_max": 0.418,
+    "axial_max": 6.0,
+    "trace_feed": 4000.0
+   },
+   {
+    "move": 24,
+    "F": 4000.0,
+    "from": [
+     54.539,
+     56.536,
+     -6.0
+    ],
+    "to": [
+     55.419,
+     56.529,
+     -6.0
+    ],
+    "removed_mm3": 11.93,
+    "radial_max": 0.403,
+    "axial_max": 6.0,
+    "trace_feed": 4000.0
+   }
+  ]
+ },
+ "3D Rough 1 [copy]": {
+  "moves": 7955,
+  "map_offset": 1,
+  "lines_over": 0,
+  "max_F": 0,
+  "classes": {},
+  "removed_mm3": 0.0,
+  "axial_max_mm": 0,
+  "trace_feed_of_those_moves (top)": {},
+  "examples": []
+ }
+}
