@@ -1,0 +1,4 @@
+fix41/corne_B_s2p1/simulation.json res 0.3 ids [1, 5, 3] total 3266.9
+   tp 1 total 1080.2 cut 986.9 rapid 93.3 air 431.5 vol 218084
+   tp 3 total 1732.8 cut 1289.9 rapid 442.9 air 1016.2 vol 5020
+   tp 5 total 453.9 cut 254.3 rapid 199.6 air 173.5 vol 53577

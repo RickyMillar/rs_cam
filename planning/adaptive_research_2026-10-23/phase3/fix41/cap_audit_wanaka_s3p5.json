@@ -1,0 +1,29 @@
+{
+ "run": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix41/wanaka_s3p5",
+ "capped_moves": 153,
+ "per_toolpath": {
+  "2 Back Rough": {
+   "capped": 153,
+   "moves": 7621,
+   "map_offset": 1,
+   "joined_samples": 659,
+   "capped moves with no sample": 0,
+   "capped moves that remove stock": 147,
+   "cap min/median/max": [
+    715.0,
+    879.7,
+    998.4
+   ],
+   "trace samples over cap (moves)": 0,
+   "trace over examples": [],
+   "G-code fed lines joined by position": 153,
+   "z offset sample - G-code": 20.289,
+   "joins off the line-k map": 112,
+   "G-code F over cap (moves)": 0,
+   "G-code over examples": []
+  },
+  "2 Back Rough (edges, CP rest)": {
+   "capped": 0
+  }
+ }
+}

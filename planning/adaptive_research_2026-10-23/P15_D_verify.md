@@ -6021,3 +6021,80 @@ program.nc byte-identical to fix39; no override, 0 refusals). `fix40/feedmax.py`
   this evidence. It is a shipped behaviour of every 3D Rough with modulation, CP included, not of the geodesic port.
 
 Sim deleted. Worktree unchanged (clean, detached 26d901943). Not committed.
+
+## D60: the whole job on the product (geodesic-integration 5a72cc07d), edge op on DerivedRestRegions (fix41)
+
+**Verdict: op 1 equals D58. Each edge op is byte-identical to one R run: wanaka s2.0 to D54, Corne B s2.1 and wanaka
+s3.5 to D49 (pre-D50 levels). Nothing is cut outside op 1's reach. All exports pass with no override. Feed caps: 787
+capped moves, and none is fed over its cap, in the trace or in the G-code.**
+
+**Setup.** Fixture worktree detached at clean 5a72cc07d (clean at the end); release build without the research feature;
+no env, no override. Job files `fix41/jobs/*_product_edges.toml` (`fix41/make_jobs.py`): fix39's files with the edge op
+enabled again. Against R's files, only op 1's `clearing_strategy` moves (agent_search → geodesic_adaptive). The edge op's
+boundary is R's d44 one (derived_rest_regions from toolpath 1, containment center, offset 0).
+- Run note: the first wanaka s2.0 run waited about 8 min in the cargo lane behind another agent's test build. It started
+  at the end of the 500 s timeout and was killed (rc 124, no output). Since then `fix41/run_prod.sh` runs the release
+  binary built from 5a72cc07d directly (built 04:08, after the checkout), not through `cargo run`. Corne ran through the
+  lane before that change; its program.nc is byte-identical on a direct rerun.
+- Sims deleted.
+
+**1. Op 1 = D58.** The op-1 sections of program.nc equal D58 for Corne (md5 c584ccd20e). For wanaka s2.0 and s3.5, every
+motion line and every F is equal; the only text difference is that D58's op-1 section ends with the program's
+`M5`/`M30` (op 1 was the last op there). Clocks: 1080.2 / 2271.9 / 1324.1 s; volumes 218084 / 591516 / 577240 mm³ (= D58).
+
+**2. Edge op** (summary clock, s; G-code: descents = vertical G1, sites = distinct XY)
+
+| run | byte-identical to | levels ("Z levels computed", index=1) | edge op | entry | rapid (G0) | descents (sites), per site median | feed descent | removed mm³ | outside op 1's reach |
+|---|---|---|---|---|---|---|---|---|---|
+| Corne B s2.1 | D49 (fix34) | count=4 z_top=14.04 | 453.9 | 13.3 | 199.6 (413) | 167 (129), 1 | 538 mm | 53577 | 17 mm³ > 9.5 mm (= D49, mask error) |
+| wanaka s2.0 | D54 (fix37) | count=1 z_top=4.0 | 1036.4 | 536.9 | 396.2 (1461) | 916 (339), 3 | 4625 mm | 1805 | 0 |
+| wanaka s3.5 | D49 (fix34) | count=4 z_top=19.54 | 620.7 | 256.3 | 261.7 (902) | 534 (242), 3 | 2231 mm | 10440 | 0 |
+
+R for comparison:
+- D54 (607e52730, R with D50): Corne 345.7 (count=3, z_top 11.0); wanaka s2.0 1036.4; s3.5 530.6 (count=1, z_top 4.0).
+- D57 run A (f2724a5bd, R with D50 + addendum + D55): wanaka s2.0 940.4 (entry 488.2; 386 descents, 1 per site).
+
+- As expected, the product has no D55: wanaka s2.0 shows D54's peck ladder (3 per site), not D57's single descent.
+- Corne and wanaka s3.5 keep op 1's full level grid, as D49 did, not D54's capped top. The product carries the D50
+  addendum (5a72cc07d: "floor and DPP guard"; R dabf258d3, `rest_ceiling_keeps_doc`): it keeps the anchor when the skin
+  above the first level's floor would exceed one depth per pass inside the consumer's centre containment. On wanaka s2.0
+  the guard lets the top fall to 4.0, as in D57 A (R with the addendum, also count=1 z_top=4.0).
+- No R run with the addendum exists for Corne or wanaka s3.5 (D57 ran only wanaka s2.0), so parity there is a reading of
+  the guard's rule, not a measurement. One R run on dabf258d3 (Corne, s3.5) would close it.
+- Wanaka edge-op tool centres stay ≤ 0.24 mm past op 1's centre region; the volume outside the outline is 0 on both.
+
+**3. Band left** (= the byte-identical R run):
+- wanaka s2.0 3652 mm² (stock above the target inside 21196 mm³); s3.5 3856 mm² (25505 mm³); CP 3589 mm².
+- Corne after op 5, outside 0–3 / 3–6.2 / 6.2–9 mm: 193 / 0 / 18 mm² (after the copy op 190 / 0 / 18).
+
+**4. Job against CP** (summary clock):
+
+| run | op 1 | edge op | copy | job | CP | job / CP |
+|---|---|---|---|---|---|---|
+| Corne B s2.1 | 1080.2 | 453.9 | 1732.8 | 3266.9 | 2841 | 1.15 |
+| wanaka s2.0 | 2271.9 | 1036.4 | — | 3308.3 | 5776.8 | 0.57 |
+| wanaka s3.5 | 1324.1 | 620.7 | — | 1944.8 | 5776.8 | 0.34 |
+
+On Corne, op 1 + op 5 = 1534.1 s against CP op 1 1427.2 s (×1.07; D54 had ×1.00 with D50's level cap).
+
+**5. Feed caps** (`fix41/cap_audit.py` on `trace.capped_moves`, integration step 7.4c; closes D58 item 3):
+
+| run | capped moves (op 1; edge and copy ops 0) | remove stock | cap min / median / max (mm/min) | trace samples over cap | G-code F over cap |
+|---|---|---|---|---|---|
+| Corne B s2.1 | 276 (2015 samples) | 275 | 575.1 / 671.1 / 1430.9 | 0 | 0 of 275 (line-k map; 1 capped move has no sample) |
+| wanaka s2.0 | 358 (1416) | 356 | 377.4 / 543.0 / 997.9 | 0 | 0 of 358 (line-k map); 0 of 355 joined by position |
+| wanaka s3.5 | 153 (659) | 147 | 715.0 / 879.7 / 998.4 | 0 | 0 of 153 (joined by position) |
+
+- The trace check joins each sample to its cap by (toolpath_id, move_index). Op 1 is not the last op, so its trace carries
+  the modulated feeds (G-SIMFEED does not apply).
+- The G-code check needs the program line of each move:
+  - The line-k map (D35: line k + 1 = move k) holds on Corne and wanaka s2.0. On Corne the capped lines often carry
+    F = the cap exactly (e.g. move 1206: cap 1325, `G1 X15.871 Y101.500 Z-5.314 F1325`).
+  - On wanaka s3.5 the program has 3 more motion lines than moves, so the line-k map drifts. A first pass read 12 moves
+    "over cap" that way; all were map errors. The positional join (the G1 line whose segment lies within 0.05 mm of every
+    sample of the move) joins all 153, with 0 over cap. 112 of them sit off the line-k map.
+  - On Corne the trace samples sit up to the 0.3 mm segment-merge tolerance off the emitted lines (model frame: y_G-code =
+    y + 109.3155). A positional join at 0.35 mm makes 8 wrong joins to neighbour lines at F1519/F4000;
+    `cap_check_offmap.py` shows the line-k line of each of those 8 moves carries F = the cap.
+
+Not committed.

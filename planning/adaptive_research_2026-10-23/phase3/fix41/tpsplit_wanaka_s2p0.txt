@@ -1,0 +1,3 @@
+fix41/wanaka_s2p0/simulation.json res 0.6 ids [1, 7] total 3308.3
+   tp 1 total 2271.9 cut 2191.2 rapid 80.6 air 878.4 vol 591516
+   tp 7 total 1036.4 cut 640.2 rapid 396.2 air 405.8 vol 1805
