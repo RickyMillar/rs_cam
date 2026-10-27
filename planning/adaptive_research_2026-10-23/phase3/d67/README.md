@@ -62,3 +62,39 @@ So a feed move outside the containment does not reach the program, on either str
   - (b) The planner did NOT clear them, and both stand near the stock top. Geodesic's planner keeps the stock within its reach beyond the raw boundary (the outer-band clip, G-CLIPAIR), where CP's plain boundary clear empties every cell outside.
   Reading (b) needs no cut outside. The probe decides it: for the 69 cells, print the planner top, the sim top and `STOCK_TOP_Z`.
 - The probe (items 1, 2, 4 and the exact item 3) needs a test edit. D10 waits for the lead.
+
+## 7. D10's probe (P15 "## D67"; `d67_waterleak_probe.rs`, `probe_output.txt` in this folder): the answer
+
+At a clean `7503fa3f1`, release, test-support (the probe is removed and the tree is clean):
+
+| | CP | Geodesic |
+|---|---|---|
+| B2 by section / intent / kind | 135: waterline cleanup, `ClearingCut`, `Linear` (133 sloped, 2 flat) | 312: waterline cleanup, `ClearingCut`, `Linear` (305 sloped, 7 flat) |
+| B2 after `clip_toolpath_to_boundary` | 0 | 0 |
+| B2 with `centre_boundary = effective` (as a session sets it) | 0 | 0 |
+| clipped sim: cells outside the rectangle cut below the stock top | 42 (deepest 14.455) | 78 (deepest 14.399) |
+| ... of which more than one cell (0.529 mm) outside | 0 | 0 (farthest cell centre 0.108 mm out) |
+| unclipped path, for contrast | 3097 cells, up to 23.4 mm out | 3078 cells, up to 23.4 mm out |
+| with `centre_boundary` set: edge-row cells | 43 | 20 (deepest 14.388, 0.108 mm out) |
+
+### Correction of §2
+
+My reading in §2 was WRONG: the extra endpoints are not Geodesic's feed-rate transits or plunges. All of B2 is waterline `ClearingCut` on both strategies. No `EntryPlunge`, `Linking` or `Retract` move is in it.
+
+### Why Geodesic has more waterline endpoints (reading; the mechanism in code)
+
+The waterline contours are the same mesh contours (the Geodesic branch only drops some). They go out through the emitter, which simplifies each cut with `Adaptive3dParams::emission_chord_tolerance` (`adaptive3d/mod.rs:402`). For Geodesic Adaptive that tolerance is capped at `slice_load_margin` (c·D − min(s, D); C26). On this fixture (stepover 1, tolerance 0.5) the cap is under the 0.5 mm that CP uses, so the same contour arc goes out as more, shorter `Linear` moves. B2 counts endpoints, not length, so it reads about 2.3 times as many. The same leak radius and max x on both strategies (§6) fit this. To confirm: the summed XY length of the B2 moves should be about equal on both strategies (not measured).
+
+### Verdict
+
+- **Not a safety issue, and not a cut outside the boundary.** B2 is a pre-clip count of the boundary-unaware waterline on a fixture whose planner has no centre clip. Both shipped clips bring it to 0.
+- The clipped path cuts only the grid row that straddles the boundary (cell centres at most 0.108 mm out, from a cutter on the ⊖r ring): quantisation, on both strategies.
+- The 2.3× is an artefact of counting endpoints under Geodesic's finer chord tolerance.
+
+### Fix
+
+- **No product fix is needed for G-GEOWATERLEAK.** The DEFECTS row can close as "counting artefact; no cut outside".
+- **Test (smallest):** make B2 strategy-neutral. Either count the summed XY length of the waterline moves outside (equal on both strategies by the reading above), or measure with `centre_boundary` set as a session sets it (0 on both; then B2 pins the shipped behaviour, and the D4 F-B arm stays the ignored contract). Either removes the per-strategy pin.
+- **Still open, both strategies, unchanged by this finding:**
+  - D4 F-B: the waterline is boundary-unaware, so the planner traces contours across the boundary and the centre clip then cuts them up (time, not safety);
+  - the collapsed-boundary pass-through (§3), the one case where a cut outside a declared boundary can ship. That is an operator decision.
