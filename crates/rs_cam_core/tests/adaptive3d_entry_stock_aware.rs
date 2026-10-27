@@ -156,6 +156,8 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: stay_down,
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,

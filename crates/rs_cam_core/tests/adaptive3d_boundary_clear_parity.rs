@@ -146,6 +146,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,

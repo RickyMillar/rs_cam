@@ -408,6 +408,16 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The boundary clip's containment (G-BOUNDARYPHANTOM); see
     /// [`StampDrape::centre_clip`].
     pub(super) centre_clip: Option<&'a CentreClip>,
+    /// The stay-down clearance (`params.linking.stay_down_clearance_mm`,
+    /// at least 0): the dexel allowance of the step split and the routed
+    /// keep-down travel.
+    pub(super) stay_down_clearance_mm: f64,
+    /// The step split in force ([`super::StepSplit`];
+    /// `super::effective_step_split`).
+    pub(super) step_split: super::StepSplit,
+    /// The routed keep-down travel in force ([`super::KeepDownRoute`];
+    /// `super::effective_keep_down_route`).
+    pub(super) keep_down_route: super::KeepDownRoute,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -540,6 +550,10 @@ pub(super) struct StampDrape<'a> {
     /// `None` with no boundary. Every pushed segment passes it first, so the
     /// planner stamps only what the clip keeps (G-BOUNDARYPHANTOM).
     pub(super) centre_clip: Option<&'a CentreClip>,
+    /// The routed keep-down travel at an entry ([`routed_entry`]), and the
+    /// stay-down clearance it reads. `Off` for the waterline.
+    pub(super) keep_down_route: super::KeepDownRoute,
+    pub(super) stay_down_clearance_mm: f64,
 }
 
 impl<'a> ClearZLevelContext<'a> {
@@ -552,6 +566,8 @@ impl<'a> ClearZLevelContext<'a> {
             entry_floor_radius: self.entry_floor_radius,
             stay_down_mm: self.stay_down_mm,
             centre_clip: self.centre_clip,
+            keep_down_route: self.keep_down_route,
+            stay_down_clearance_mm: self.stay_down_clearance_mm,
         }
     }
 }
@@ -783,7 +799,12 @@ fn plan_entry(
         }
         Some(StayDownProof {
             from,
-            ceiling_z: corridor_ceiling_z(material_stock, from, entry, tool_radius),
+            ceiling_z: super::keep_down::corridor_ceiling_z(
+                material_stock,
+                from,
+                entry,
+                tool_radius,
+            ),
         })
     });
     // The helix or ramp starts above the cell-centre read; the rapid floor
@@ -865,26 +886,122 @@ fn link_footprint_ok(stock: &TriDexelStock, from: P3, to: P3, radius: f64, max_b
 /// `search.rs::is_clear_path_3d` uses).
 const LINK_DESCENT_NOISE_MM: f64 = 0.5;
 
-/// The highest conservative stock top on the swept disc of `radius` from
-/// `from` to `to` (XY), both ends included. Samples every half cell, so no
-/// column the disc sweeps is skipped. `NEG_INFINITY` when the whole corridor
-/// is off the grid.
-fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f64 {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
+/// [`super::StepSplit::StockDepth`]: the deepest axial engagement (mm) of a
+/// feed move from `p` to `q` with a tool of `radius`: at each sample along
+/// the move (every half cell, as `keep_down::corridor_ceiling_z`), the
+/// conservative stock top over the disc less the tool's Z there.
+/// `NEG_INFINITY` when the move is off the grid.
+pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64) -> f64 {
+    let dx = q.x - p.x;
+    let dy = q.y - p.y;
     let len = (dx * dx + dy * dy).sqrt();
     let step = (stock.z_grid.cell_size * 0.5).max(1e-3);
     let n = (len / step).ceil().max(1.0) as usize;
-    let mut ceiling = f64::NEG_INFINITY;
+    (0..=n)
+        .filter_map(|k| {
+            let t = k as f64 / n as f64;
+            let z = p.z + t * (q.z - p.z);
+            stock
+                .max_conservative_top_z_in_disc(p.x + dx * t, p.y + dy * t, radius)
+                .map(|top| top - z)
+        })
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// The cutter and the pass a step's load is read against: the cutter's
+/// radial profile, its chip cross-section contract, its diameter, and the
+/// op's Depth/Pass.
+pub(super) struct StepLoadCutter<'a> {
+    pub(super) lut: &'a RadialProfileLUT,
+    pub(super) chip: crate::feeds::ToolGeometryHint,
+    pub(super) diameter: f64,
+    pub(super) depth_per_pass: f64,
+}
+
+/// [`super::StepSplit::StockDepth`]: the highest chip-area load of a feed
+/// move from `p` to `q` with a tool of `radius`, read on the 3D planner stock
+/// by the one load ([`crate::tool_load::load_fraction::chip_load_fraction`]).
+/// At each sample along the move (every half cell, as [`step_axial_depth`]),
+/// each grid cell inside the disc whose stock stands above the cutter there
+/// (its tip plus the profile height at the cell, plus `clearance`, the
+/// dexel allowance) engages its depth above the cutter; the cells are binned
+/// in lateral strips one cell apart across the move's XY heading, the
+/// deepest per strip. A cell an earlier sample of this move passed within R
+/// counts at most at that sample's Z (an earlier sample cut it down to its
+/// own Z, and no lower): a descent sweeps nothing below its own path, so the
+/// stock it descends into still counts. 0 for a move with no XY length (its
+/// depth is [`step_axial_depth`]'s).
+pub(super) fn step_load(
+    stock: &TriDexelStock,
+    p: P3,
+    q: P3,
+    radius: f64,
+    clearance: f64,
+    cutter: &StepLoadCutter<'_>,
+) -> f64 {
+    let grid = &stock.z_grid;
+    let cs = grid.cell_size;
+    let (dx, dy) = (q.x - p.x, q.y - p.y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 || cs <= 0.0 {
+        return 0.0;
+    }
+    let (ux, uy) = (dx / len, dy / len);
+    let (nx, ny) = (-uy, ux);
+    let n = (len / (cs * 0.5).max(1e-3)).ceil().max(1.0) as usize;
+    let r_sq = radius * radius;
+    let r_cells = (radius / cs).ceil() as isize;
+    let mut highest = 0.0_f64;
     for k in 0..=n {
         let t = k as f64 / n as f64;
-        if let Some(top) =
-            stock.max_conservative_top_z_in_disc(from.x + dx * t, from.y + dy * t, radius)
-        {
-            ceiling = ceiling.max(top);
+        let (x, y, z) = (p.x + dx * t, p.y + dy * t, p.z + t * (q.z - p.z));
+        let col0 = ((x - grid.origin_u) / cs).round() as isize;
+        let row0 = ((y - grid.origin_v) / cs).round() as isize;
+        let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+        for row in (row0 - r_cells)..=(row0 + r_cells) {
+            for col in (col0 - r_cells)..=(col0 + r_cells) {
+                if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+                    continue;
+                }
+                let (cx, cy) = (
+                    grid.origin_u + col as f64 * cs,
+                    grid.origin_v + row as f64 * cs,
+                );
+                let (ex, ey) = (cx - x, cy - y);
+                let d_sq = ex * ex + ey * ey;
+                let Some(h) = cutter.lut.height_at_dist_sq(d_sq) else {
+                    continue;
+                };
+                if d_sq > r_sq {
+                    continue;
+                }
+                let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
+                for j in 0..k {
+                    let tj = j as f64 / n as f64;
+                    let (jx, jy) = (p.x + dx * tj, p.y + dy * tj);
+                    if (cx - jx).powi(2) + (cy - jy).powi(2) <= r_sq {
+                        top = top.min(p.z + tj * (q.z - p.z));
+                    }
+                }
+                let floor = z + h;
+                if top <= floor + clearance {
+                    continue;
+                }
+                let strip = ((ex * nx + ey * ny) / cs).round() as i64;
+                let deepest = strips.entry(strip).or_insert(0.0);
+                *deepest = deepest.max(top - floor);
+            }
         }
+        let load = crate::tool_load::load_fraction::chip_load_fraction(
+            cutter.chip,
+            cutter.depth_per_pass,
+            cutter.diameter,
+            strips,
+            cs,
+        );
+        highest = highest.max(load);
     }
-    ceiling
+    highest
 }
 
 /// Helper to push a segment and stamp its simulator-equivalent swept
@@ -957,6 +1074,28 @@ fn push_segment_with_stamp_unclipped(
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
 ) {
+    // An entry the routed keep-down travel can replace goes out as the
+    // route (`KeepDownRoute::Off`, every shipped strategy: never).
+    if let Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } =
+        &segment
+        && let Some(route) = routed_entry(material_stock, tool_radius, cursor, *entry, drape)
+    {
+        for piece in route {
+            let piece = stamp_and_advance(
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                piece,
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                drape,
+            );
+            segments.push(piece);
+        }
+        return;
+    }
     let segment = stamp_and_advance(
         material_stock,
         lut,
@@ -969,6 +1108,88 @@ fn push_segment_with_stamp_unclipped(
         drape,
     );
     segments.push(segment);
+}
+
+/// The segments of a routed keep-down travel that replaces the entry
+/// `entry` (`keep_down::keep_down_route`), or `None`: the travel is off,
+/// the tool has no position, or no route holds.
+///
+/// - The travel runs at the entry's Z as `Link`s (cut feed), over cells
+///   whose whole tool disc stands at most the stay-down clearance above it:
+///   the full-disc proof.
+/// - §16.7: only an entry whose own disc is free (it cuts nothing) is
+///   replaced: a keep-down travel replaces the travel, never the entry's
+///   cut. The route ends on the entry, with no side leg.
+/// - The route's length is held to the stay-down distance (`stay_down_mm`),
+///   the one keep-down dial (CUT-05).
+/// - A tool standing above the travel's Z drops to it only when its disc
+///   there is free (through air); a tool below it rises at its own XY
+///   first.
+fn routed_entry(
+    stock: &TriDexelStock,
+    tool_radius: f64,
+    cursor: &PlannerCursor,
+    entry: P3,
+    drape: &StampDrape<'_>,
+) -> Option<Vec<Adaptive3dSegment>> {
+    let clearance = match drape.keep_down_route {
+        super::KeepDownRoute::Off => return None,
+        super::KeepDownRoute::CutFeed => drape.stay_down_clearance_mm,
+    };
+    let from = cursor.tool_pos?;
+    if drape.stay_down_mm <= 0.0 {
+        return None;
+    }
+    let travel_z = entry.z;
+    let ceiling_z = entry.z + clearance;
+    let free_at = |p: P2| {
+        stock
+            .max_conservative_top_z_in_disc(p.x, p.y, tool_radius)
+            .is_none_or(|top| top <= ceiling_z)
+    };
+    // A tool above the travel drops to it only through air; a tool below
+    // it rises at its own XY first (a rise cuts nothing).
+    if from.z > travel_z + clearance && !free_at(P2::new(from.x, from.y)) {
+        return None;
+    }
+    // §16.7: a keep-down travel replaces the travel, never the entry's cut.
+    // An entry whose own footprint (the entry floor disc, `plan_entry`'s
+    // read: the tool, or the helix's sweep) is not free cuts its column;
+    // it stays.
+    let entry_free = stock
+        .max_conservative_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+        .is_none_or(|top| top <= ceiling_z);
+    if !entry_free {
+        return None;
+    }
+    let allowed = |p: P2| drape.centre_clip.is_none_or(|c| c.contains(p.x, p.y));
+    // The route ends on the free cell of the entry (within one cell of its
+    // point); the last move to the entry point runs between two free discs.
+    let side_ok = |_: P2| true;
+    let req = super::keep_down::RouteRequest {
+        from: P2::new(from.x, from.y),
+        to: P2::new(entry.x, entry.y),
+        radius: tool_radius,
+        ceiling_z,
+        max_len: drape.stay_down_mm,
+        side_max: stock.z_grid.cell_size,
+        side_ok: &side_ok,
+        allowed: &allowed,
+    };
+    let path = super::keep_down::straight_runs(&super::keep_down::keep_down_route(stock, &req)?);
+    let last = *path.last()?;
+    let mut out: Vec<Adaptive3dSegment> = Vec::with_capacity(path.len() + 2);
+    if from.z < travel_z - 1e-9 {
+        out.push(Adaptive3dSegment::Link(P3::new(from.x, from.y, travel_z)));
+    }
+    for p in &path {
+        out.push(Adaptive3dSegment::Link(P3::new(p.x, p.y, travel_z)));
+    }
+    // The last move: to the entry point at the travel's Z (both discs free).
+    if (entry.x - last.x).hypot(entry.y - last.y) > 1e-9 {
+        out.push(Adaptive3dSegment::Link(entry));
+    }
+    Some(out)
 }
 
 /// Plan an entry (its floor and keep-down proof), stamp the segment into the
@@ -1647,6 +1868,8 @@ pub(super) fn waterline_cleanup(
         entry_floor_radius,
         stay_down_mm: 0.0,
         centre_clip,
+        keep_down_route: super::KeepDownRoute::Off,
+        stay_down_clearance_mm: 0.0,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -2169,6 +2392,34 @@ impl LevelSink<'_> {
             }
             _ => return,
         };
+        // An entry the routed keep-down travel can replace goes out as the
+        // route, in the entry's place (only markers stand after a pending
+        // entry, so the order holds). `KeepDownRoute::Off`: never.
+        let drape = ctx.stamp_drape();
+        if let Some(route) = routed_entry(
+            self.material_stock,
+            ctx.tool_radius,
+            self.cursor,
+            entry,
+            &drape,
+        ) {
+            let mut stamped = Vec::with_capacity(route.len());
+            for piece in route {
+                stamped.push(stamp_and_advance(
+                    self.material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    self.cursor,
+                    piece,
+                    ctx.safe_z,
+                    ctx.cut_tolerance,
+                    ctx.min_cutting_radius,
+                    &drape,
+                ));
+            }
+            self.segments.splice(i..=i, stamped);
+            return;
+        }
         *slot = stamp_and_advance(
             self.material_stock,
             ctx.lut,
@@ -2788,7 +3039,43 @@ fn clear_one_region(
                     } else {
                         0.0
                     };
-                    let large_z = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                    let shape_split = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                    // StepSplit::StockDepth (D43): a step the path rule flags
+                    // is cut at feed unless the tool's swept disc meets stock
+                    // deeper than one pass (`step_axial_depth`), or its
+                    // chip-area load (`step_load`, the one load) passes the
+                    // pass ceiling c (the radial fraction of
+                    // `PassLoad::swept_width`). A thin layer reads light; a
+                    // full-depth drop into fresh stock reads near a slot.
+                    let large_z = match ctx.step_split {
+                        super::StepSplit::PathShape => shape_split,
+                        super::StepSplit::StockDepth if shape_split => {
+                            let ap =
+                                step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
+                            let deep = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
+                            let ceiling =
+                                crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+                                    crate::adaptive::pass_engagement_limit(
+                                        ctx.stepover,
+                                        ctx.tool_radius,
+                                    ),
+                                );
+                            deep || step_load(
+                                sink.material_stock,
+                                prev,
+                                curr,
+                                ctx.tool_radius,
+                                ctx.stay_down_clearance_mm,
+                                &StepLoadCutter {
+                                    lut: ctx.lut,
+                                    chip: ctx.cutter.geometry_hint(),
+                                    diameter: 2.0 * ctx.tool_radius,
+                                    depth_per_pass: ctx.depth_per_pass,
+                                },
+                            ) > ceiling
+                        }
+                        super::StepSplit::StockDepth => false,
+                    };
                     let engagement_change = engaged[i] != sub_engaged;
                     if large_z || engagement_change {
                         // Flush the current run.

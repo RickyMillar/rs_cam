@@ -140,6 +140,8 @@ impl Adaptive3dRough<'_> {
                 // feature; Some(x) caps stay-down at x mm.
                 max_stay_down_distance_mm: cfg.max_stay_down_distance_mm,
                 stay_down_clearance_mm: cfg.stay_down_clearance_mm,
+                step_split: None,
+                keep_down_route: None,
             },
             feed_rate: self.feed_rate,
             plunge_rate: self.plunge_rate,

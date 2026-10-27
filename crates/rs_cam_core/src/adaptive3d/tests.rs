@@ -142,6 +142,8 @@ fn default_params() -> Adaptive3dParams {
             // unless they specifically target the keep-tool-down logic).
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,
@@ -2543,4 +2545,50 @@ fn by_area_exports_two_pocket_region_map() {
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
     assert!(global.produced.area_regions.is_none());
+}
+
+/// Integration step 7.2 (`StepSplit::StockDepth`): the step reads on a
+/// planted stock. A move one Depth/Pass deep through fresh stock reads one
+/// full pass (load 1, its first sample a full slot of the one load
+/// `chip_load_fraction`) and its depth; the same move over a layer `t`
+/// thinner than a pass reads `t / DPP` and `t`, under the pass ceiling, so
+/// the stock-read rule cuts it at feed. The move has an XY length; a move
+/// with none reads load 0.
+#[test]
+fn the_step_reads_tell_a_full_pass_from_a_thin_layer() {
+    use super::clearing::{StepLoadCutter, step_axial_depth, step_load};
+    const CELL: f64 = 0.5;
+    const DPP: f64 = 6.0;
+    const TOP: f64 = 10.0;
+    const LAYER: f64 = 0.5;
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    let load_cutter = StepLoadCutter {
+        lut: &lut,
+        chip: crate::tool::MillingCutter::geometry_hint(&cutter),
+        diameter: 6.0,
+        depth_per_pass: DPP,
+    };
+    let z = TOP - DPP;
+    let (p, q) = (P3::new(20.0, 30.0, z), P3::new(40.0, 30.0, z));
+
+    let fresh = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, TOP, CELL);
+    let full = step_load(&fresh, p, q, 3.0, 0.0, &load_cutter);
+    assert!((full - 1.0).abs() < 1e-9, "full pass load {full}");
+    assert!((step_axial_depth(&fresh, p, q, 3.0) - DPP).abs() < 1e-6);
+
+    let thin = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, z + LAYER, CELL);
+    let light = step_load(&thin, p, q, 3.0, 0.0, &load_cutter);
+    assert!(
+        (light - LAYER / DPP).abs() < 1e-9,
+        "thin layer load {light}, expected {}",
+        LAYER / DPP
+    );
+    assert!((step_axial_depth(&thin, p, q, 3.0) - LAYER).abs() < 1e-6);
+    let ceiling = crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+        crate::adaptive::pass_engagement_limit(2.0, 3.0),
+    );
+    assert!(light < ceiling && full > ceiling, "ceiling {ceiling}");
+
+    assert_eq!(step_load(&fresh, p, p, 3.0, 0.0, &load_cutter), 0.0);
 }

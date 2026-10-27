@@ -7,7 +7,8 @@
   `LevelSink` (new per-region work here), `coalesce_level_entries` (check).
 - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
-  facade, `ClearingStrategy3d`; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
+  facade, `ClearingStrategy3d`; `keep_down.rs` the ONE 3D keep-down read
+  (`corridor_ceiling_z`, `keep_down_excess`) and the router; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
 
 ## Invariants
 
@@ -16,7 +17,7 @@
 - `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D).
   Entries read floor and proof from the planner stock (`plan_entry`); no
   link feeds down into stock.
-- `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group.
+- `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group. `linking.step_split` / `keep_down_route` `None` keep today's rule (`PathShape`, `Off`); a route replaces the travel, never the entry's cut (§16.7); `StockDepth` reads `chip_load_fraction`.
 - The planner stamps the path that ships: it applies the segment merge
   before the stamp and the dressups do not merge again (G-PLANSIMGAP). It
   stamps an entry only when a cut commits it; a replaced entry is never
@@ -34,7 +35,6 @@
 `adaptive3d_entry_stock_aware`, `adaptive3d_entry_coalescing_f038`,
 `agent_search_coverage`, `adaptive3d_subtool_channel_gouge`,
 `adaptive3d_global_gate_drapes_below_floor`, `adaptive3d_plan_matches_merged_path_g_plansimgap`,
-`adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`,
-`adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
+`adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`, `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
 `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`; By Area:
-`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`.
+`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.

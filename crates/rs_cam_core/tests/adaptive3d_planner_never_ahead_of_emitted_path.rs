@@ -114,6 +114,8 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
             min_region_cut_length_mm: MIN_REGION_CUT_MM,
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,

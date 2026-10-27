@@ -79,6 +79,8 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,

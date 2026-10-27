@@ -951,6 +951,9 @@ pub(super) fn adaptive_3d_segments(
         entry_floor_radius: entry_floor_radius(params, cutter.radius()),
         stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
         centre_clip: centre_clip.as_ref(),
+        stay_down_clearance_mm: params.linking.stay_down_clearance_mm.max(0.0),
+        step_split: super::effective_step_split(params),
+        keep_down_route: super::effective_keep_down_route(params),
     };
 
     let mut segments = Vec::new();
@@ -1840,6 +1843,8 @@ mod tests {
                 // tests keep their existing structural assertions.
                 max_stay_down_distance_mm: Some(0.0),
                 stay_down_clearance_mm: 0.5,
+                step_split: None,
+                keep_down_route: None,
             },
             trochoid_cap_mult: 1.6,
             feed_rate: 1500.0,

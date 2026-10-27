@@ -25,6 +25,7 @@ use tracing::info;
 mod centre_clip;
 mod clearing;
 mod intended_floor;
+mod keep_down;
 mod path;
 mod region_map;
 mod search;
@@ -263,6 +264,62 @@ pub struct Adaptive3dLinking {
     /// hair of safety margin so the rapid step over a low peak does not
     /// scrape the surface. Default 0.5 mm.
     pub stay_down_clearance_mm: f64,
+    /// Integration step 7.2 (research §16 Part A, D43): how a draped cut is
+    /// split at a large Z step ([`StepSplit`]). `None` is the strategy's
+    /// default: [`StepSplit::PathShape`], today's rule, for every shipped
+    /// strategy. No config sets it yet; the geodesic arm (step 7.4) is its
+    /// first user.
+    pub step_split: Option<StepSplit>,
+    /// Integration step 7.2 (research §16 Part B): the routed keep-down
+    /// travel at an entry ([`KeepDownRoute`]). `None` is the strategy's
+    /// default: [`KeepDownRoute::Off`] for every shipped strategy.
+    pub keep_down_route: Option<KeepDownRoute>,
+}
+
+/// Where a draped cut is split at a step between two lifted points
+/// (research §16 Part A, D43; INTEGRATION_PLAN §8: kept, Q6 reversed).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StepSplit {
+    /// Today's rule: a step of `|dz| > max(1.1·DPP, 1 mm)` or a slope over
+    /// 0.3 (`clearing.rs`, `PLUNGE_SLOPE_LIMIT`).
+    #[default]
+    PathShape,
+    /// Of the steps the path rule flags, split only where the tool's swept
+    /// disc along the step meets stock deeper than one Depth/Pass below its
+    /// top (plus the stay-down clearance), or where the step's chip-area
+    /// load ([`crate::tool_load::load_fraction::chip_load_fraction`], the
+    /// one load) passes the pass ceiling. A step through air, or onto a
+    /// face or down a slope that holds a light layer, is cut at feed.
+    StockDepth,
+}
+
+/// The routed keep-down travel at an entry (research §16 Part B,
+/// `keep_down.rs`).
+///
+/// The research's third value, a route at the rapid rate (`LowRapid`), is
+/// not ported: a rapid at depth over cut ground is not allowed yet
+/// (INTEGRATION_PLAN Q7, lead default 2026-10-27).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum KeepDownRoute {
+    /// No routed travel: the entry is a straight stay-down link or a
+    /// retract (today's rule).
+    #[default]
+    Off,
+    /// A route over cut ground at the level, at the cut feed, held by the
+    /// full-disc proof at the stay-down clearance.
+    CutFeed,
+}
+
+/// The step split a run uses: the parameter, else the strategy's default
+/// ([`StepSplit::PathShape`] for every shipped strategy).
+fn effective_step_split(params: &Adaptive3dParams) -> StepSplit {
+    params.linking.step_split.unwrap_or_default()
+}
+
+/// The routed keep-down travel a run uses: the parameter, else the
+/// strategy's default ([`KeepDownRoute::Off`] for every shipped strategy).
+fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
+    params.linking.keep_down_route.unwrap_or_default()
 }
 
 /// Parameters for 3D adaptive clearing.

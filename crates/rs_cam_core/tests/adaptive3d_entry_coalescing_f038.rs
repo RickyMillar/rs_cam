@@ -169,6 +169,8 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             // regression net stays comparable across F-038 and F-038b.
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
