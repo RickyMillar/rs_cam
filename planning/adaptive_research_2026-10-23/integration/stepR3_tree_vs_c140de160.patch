@@ -1,0 +1,2410 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index ce274bddc..560f20755 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -5,7 +5,6 @@
+ use crate::dexel_stock::{StockCutDirection, TriDexelStock};
+ use crate::geo::{P2, P3};
+ use crate::geometry::contour_extract::marching_squares_bool_grid;
+-use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
+ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+ use crate::mesh::{SpatialIndex, TriangleMesh};
+ use crate::ops::waterline::waterline_contours_with_cancel;
+@@ -373,7 +372,6 @@ pub(super) struct ClearZLevelContext<'a> {
+     pub(super) feed_rate: f64,
+     /// Op plunge feed (mm/min) — same crossover use.
+     pub(super) plunge_rate: f64,
+-    pub(super) target_frac: f64,
+     pub(super) step_len: f64,
+     pub(super) max_link_dist: f64,
+     /// Safe-Z used by `segments_to_toolpath` for retracts and the start
+@@ -1701,181 +1699,6 @@ pub(super) fn clear_z_level_contour_parallel(
+     Ok(())
+ }
+ 
+-/// Adaptive clearing: variable-offset EDT for constant tool engagement.
+-///
+-/// Same structure as `clear_z_level_contour_parallel` but uses a spatially-
+-/// varying threshold based on EDT level-set curvature.  At convex boundary
+-/// sections the stepover shrinks (preventing engagement spikes); at concave
+-/// sections it grows (avoiding wasted light passes).
+-#[expect(
+-    clippy::too_many_arguments,
+-    reason = "each parameter is a separate input that the callers supply"
+-)]
+-pub(super) fn clear_z_level_adaptive(
+-    ctx: &ClearZLevelContext<'_>,
+-    material_stock: &mut TriDexelStock,
+-    surface_hm: &SurfaceHeightmap,
+-    z_level: f64,
+-    segments: &mut Vec<Adaptive3dSegment>,
+-    cursor: &mut PlannerCursor,
+-    area_mask: Option<&AreaMask>,
+-    cancel: &dyn CancelCheck,
+-) -> Result<(), Cancelled> {
+-    // ── Material check ─────────────────────────────────────────────────
+-    // Absolute cell-count gate (not fraction) — see clear_z_level_concentric.
+-    let (remaining_cells, _) = level_gate(
+-        material_stock,
+-        surface_hm,
+-        z_level,
+-        ctx.stock_to_leave,
+-        area_mask,
+-    );
+-    if remaining_cells < MIN_CELLS_TO_CLEAR {
+-        return Ok(());
+-    }
+-
+-    // ── 1. Build boolean material grid ─────────────────────────────────
+-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+-        material_stock,
+-        surface_hm,
+-        z_level,
+-        ctx.stock_to_leave,
+-        area_mask,
+-    );
+-
+-    if !material_grid.iter().any(|&b| b) {
+-        return Ok(());
+-    }
+-
+-    // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
+-    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
+-    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
+-    let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
+-
+-    // ── 3. Curvature field from EDT level sets ─────────────────────────
+-    let mut curvature = edt_curvature_field(&edt, rows, cols);
+-    // Smooth to suppress finite-difference noise near the medial axis.
+-    // Scale with tool radius so the kernel covers ~1 tool diameter.
+-    let tool_radius_cells = ctx.tool_radius / cell_size;
+-    let smooth_r = (tool_radius_cells as usize).max(3);
+-    smooth_grid(&mut curvature, rows, cols, smooth_r);
+-
+-    // ── 4. Precompute per-cell curvature offset ────────────────────────
+-    // The offset is a CONSTANT shift per cell (does not scale with level N).
+-    // This keeps contour topology stable across levels while adjusting
+-    // local spacing based on curvature.
+-    //   offset = base_step * (−κR / (1 + κR))  clamped for stability
+-    //   Concave κ < 0: offset > 0 → contour recedes → wider pass
+-    //   Convex  κ > 0: offset < 0 → contour advances → tighter pass
+-    let total = rows * cols;
+-    let alpha = ctx.target_frac * std::f64::consts::TAU;
+-    let base_step = ctx.tool_radius * (1.0 - alpha.cos());
+-    let base_step_cells = base_step / cell_size;
+-
+-    let mut curvature_offset = vec![0.0f64; total];
+-    for (off, &kappa) in curvature_offset.iter_mut().zip(curvature.iter()) {
+-        let kr = kappa * tool_radius_cells;
+-        let denom = (1.0 + kr).clamp(0.5, 2.0);
+-        // offset = base_step * (1/denom - 1), clamped to ±0.5 * base_step
+-        *off = (base_step_cells * (1.0 / denom - 1.0))
+-            .clamp(-0.5 * base_step_cells, 0.5 * base_step_cells);
+-    }
+-
+-    // Z-blend setup (identical to contour-parallel)
+-    let offset_range = max_dist - tool_radius_cells;
+-    let z_blend_enabled = ctx.z_blend;
+-
+-    debug!(
+-        z = z_level,
+-        max_dist_cells = max_dist,
+-        tool_radius_cells = tool_radius_cells,
+-        base_step_cells = base_step_cells,
+-        "Adaptive EDT: generating curvature-adjusted contours"
+-    );
+-
+-    // ── 5. Offset loop: fixed base progression + constant curvature shift
+-    let mut threshold = tool_radius_cells;
+-
+-    while threshold < max_dist {
+-        check_cancel(cancel)?;
+-
+-        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
+-        let blend = if z_blend_enabled && offset_range > 1e-6 {
+-            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
+-        } else {
+-            0.0
+-        };
+-
+-        // Variable mask: base threshold + per-cell curvature offset
+-        let mask: Vec<bool> = edt
+-            .iter()
+-            .zip(curvature_offset.iter())
+-            .map(|(&d, &off)| d > threshold + off)
+-            .collect();
+-        let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
+-
+-        for loop_pts in &loops {
+-            if loop_pts.len() < 3 {
+-                continue;
+-            }
+-
+-            // Z-blended surface drape (identical to contour-parallel)
+-            let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
+-            for p in loop_pts {
+-                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
+-                let target_z = if surf_z == f64::NEG_INFINITY {
+-                    z_level
+-                } else {
+-                    surf_z + ctx.stock_to_leave
+-                };
+-                let z = (z_level + blend * (target_z - z_level)).max(target_z);
+-                path_3d.push(P3::new(p.x, p.y, z));
+-            }
+-
+-            // Entry (link or rapid) + cut segment. Matches the gate in
+-            // clear_z_level_contour_parallel — see F-5 rationale there.
+-            if let Some(first) = path_3d.first() {
+-                let should_link = cursor
+-                    .last_pos
+-                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
+-                let entry_seg = if should_link {
+-                    Adaptive3dSegment::Link(*first)
+-                } else {
+-                    Adaptive3dSegment::Rapid(*first)
+-                };
+-                push_segment_with_stamp(
+-                    segments,
+-                    material_stock,
+-                    ctx.lut,
+-                    ctx.tool_radius,
+-                    cursor,
+-                    entry_seg,
+-                    ctx.safe_z,
+-                    ctx.cut_tolerance,
+-                    ctx.min_cutting_radius,
+-                    &ctx.stamp_drape(),
+-                );
+-                push_segment_with_stamp(
+-                    segments,
+-                    material_stock,
+-                    ctx.lut,
+-                    ctx.tool_radius,
+-                    cursor,
+-                    Adaptive3dSegment::Cut(path_3d),
+-                    ctx.safe_z,
+-                    ctx.cut_tolerance,
+-                    ctx.min_cutting_radius,
+-                    &ctx.stamp_drape(),
+-                );
+-            }
+-        }
+-
+-        threshold += base_step_cells;
+-    }
+-
+-    Ok(())
+-}
+-
+ #[expect(
+     clippy::indexing_slicing,
+     reason = "bounded indexing in algorithmic code"
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index bb1c1ebe9..99be9bd03 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -62,26 +62,21 @@ pub enum RegionOrdering {
+ ///   bulk roughing where speed matters more than constant engagement.
+ ///   The default.
+ ///
+-/// `Adaptive` — curvature-adjusted EDT clearing with variable stepover.
+-///   Produces shorter cutting distance than ContourParallel on curved
+-///   terrain by adapting the offset spacing to local curvature, without
+-///   paying the per-step direction-search cost of AgentSearch.
+-///
+ /// `AgentSearch` — per-step direction search with preflight skip and
+-///   widen-band recovery. Slower to generate than ContourParallel or
+-///   Adaptive but offers finer per-step control; retained for advanced
+-///   cases where the geometry defeats the EDT-based strategies.
++///   widen-band recovery. Slower to generate than ContourParallel but
++///   offers finer per-step control. No config value selects it since
++///   removal step R2; R4 removes it.
++///
++/// Removal step R3 (operator ruling 2026-10-28) removed `Adaptive`, the
++/// curvature-adjusted variable-offset EDT planner.
+ #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+ pub enum ClearingStrategy3d {
+     /// Per-step direction search with preflight skip and widen-band
+-    /// recovery. Slow to generate; reach for it when ContourParallel or
+-    /// Adaptive produce uncut bands on difficult geometry.
++    /// recovery. Slow to generate.
+     AgentSearch,
+     /// Fast contour-parallel offset clearing via EDT (default).
+     #[default]
+     ContourParallel,
+-    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
+-    Adaptive,
+     /// Constructive inside-out contour spiral per slice (Stage 1 of the
+     /// adaptive algorithm review): one continuous stay-down pass per
+     /// region with engagement bounded by wrap spacing. Routes through
+@@ -334,7 +329,6 @@ fn effective_step_split(params: &Adaptive3dParams) -> StepSplit {
+         }
+         ClearingStrategy3d::AgentSearch
+         | ClearingStrategy3d::ContourParallel
+-        | ClearingStrategy3d::Adaptive
+         | ClearingStrategy3d::ContourSpiral => params.linking.step_split.unwrap_or_default(),
+     }
+ }
+@@ -350,7 +344,6 @@ fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
+             .unwrap_or(KeepDownRoute::CutFeed),
+         ClearingStrategy3d::AgentSearch
+         | ClearingStrategy3d::ContourParallel
+-        | ClearingStrategy3d::Adaptive
+         | ClearingStrategy3d::ContourSpiral => params.linking.keep_down_route.unwrap_or_default(),
+     }
+ }
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index f74f41b01..47b3b796e 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -5,7 +5,6 @@ use crate::dexel_stock::TriDexelStock;
+ use crate::geo::P3;
+ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
+ use crate::mesh::{SpatialIndex, TriangleMesh};
+-use crate::ops::adaptive_shared::target_engagement_fraction;
+ use crate::stock::dexel::ray_subtract_above;
+ use crate::stock::radial_profile::RadialProfileLUT;
+ use crate::surface::slope::SurfaceHeightmap;
+@@ -86,9 +85,8 @@ use tracing::{debug, info};
+ 
+ use super::centre_clip::CentreClip;
+ use super::clearing::{
+-    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_adaptive,
+-    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
+-    waterline_cleanup,
++    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_agent_2d_slice,
++    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
+ };
+ use super::region_map::AreaRegionMap;
+ use super::search::{blend_corners_3d, material_remaining_at_level_diag};
+@@ -524,19 +522,6 @@ fn clear_planned_level(
+                 cancel,
+             )?;
+         }
+-        ClearingStrategy3d::Adaptive => {
+-            segments.push(Adaptive3dSegment::Marker(level_event));
+-            clear_z_level_adaptive(
+-                ctx,
+-                material_stock,
+-                surface_hm,
+-                z_level,
+-                segments,
+-                cursor,
+-                region,
+-                cancel,
+-            )?;
+-        }
+         // Geodesic Adaptive: the same slice dispatch, with the geodesic plan
+         // as the per-slice generator (`clearing.rs`, `plan_one_outline`).
+         ClearingStrategy3d::AgentSearch
+@@ -1042,7 +1027,6 @@ pub(super) fn adaptive_3d_segments(
+         scope.set_counter("z_bottom", z_levels.last().copied().unwrap_or(0.0));
+     }
+ 
+-    let target_frac = target_engagement_fraction(params.geometry.stepover, tool_radius);
+     let step_len = cell_size * 1.5;
+     let max_link_dist = default_max_link_dist(tool_radius, params.geometry.stepover);
+ 
+@@ -1072,7 +1056,6 @@ pub(super) fn adaptive_3d_segments(
+         cut_tolerance: params.emission_chord_tolerance(),
+         feed_rate: params.feed_rate,
+         plunge_rate: params.plunge_rate,
+-        target_frac,
+         step_len,
+         max_link_dist,
+         clearing_strategy: params.clearing_strategy,
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index 5992b4178..ce2412a92 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -1010,7 +1010,7 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
+     // This test validates AgentSearch's observability — z_level /
+     // adaptive_pass spans and adaptive3d_pass hotspots are only
+     // emitted by clear_z_level() (the AgentSearch path), not by
+-    // clear_z_level_contour_parallel or clear_z_level_adaptive.
++    // clear_z_level_contour_parallel.
+     let params = {
+         let mut p = default_params();
+         p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+@@ -2738,7 +2738,6 @@ fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
+     for other in [
+         ClearingStrategy3d::AgentSearch,
+         ClearingStrategy3d::ContourParallel,
+-        ClearingStrategy3d::Adaptive,
+         ClearingStrategy3d::ContourSpiral,
+     ] {
+         assert!(
+diff --git a/crates/rs_cam_core/src/finish/scallop_isofield.rs b/crates/rs_cam_core/src/finish/scallop_isofield.rs
+index e64a02390..4c3fe463d 100644
+--- a/crates/rs_cam_core/src/finish/scallop_isofield.rs
++++ b/crates/rs_cam_core/src/finish/scallop_isofield.rs
+@@ -28,9 +28,9 @@
+ //! approximates with a per-ring constant.
+ //!
+ //! This is the standard geodesic-distance / fast-marching formulation of
+-//! iso-scallop machining, and it is the same architecture `adaptive3d`'s
+-//! `clear_z_level_adaptive` already uses in this repo (EDT → curvature field
+-//! → per-cell threshold), so it is not a foreign idea to the codebase.
++//! iso-scallop machining, and it is the same architecture the 3D Adaptive
++//! planner `clear_z_level_adaptive` used (EDT → curvature field → per-cell
++//! threshold; removed in removal step R3, 2026-10-28).
+ //!
+ //! # What it buys, structurally
+ //!
+diff --git a/crates/rs_cam_core/src/geometry/grid_field.rs b/crates/rs_cam_core/src/geometry/grid_field.rs
+index e8316dadd..5ecaf2d9a 100644
+--- a/crates/rs_cam_core/src/geometry/grid_field.rs
++++ b/crates/rs_cam_core/src/geometry/grid_field.rs
+@@ -1,7 +1,8 @@
+ //! Scalar grid-field math shared by the adaptive clearing engines.
+ //!
+-//! This is pure numerical work on flat `rows * cols` grids — Euclidean
+-//! distance transform, level-set curvature, and box blur. None of it is
++//! This is pure numerical work on flat `rows * cols` grids: the Euclidean
++//! distance transform. The level-set curvature and the box blur left with
++//! their one caller, the 3D Adaptive planner (removal step R3). None of it is
+ //! contour extraction; it moved out of `contour_extract` (which is about
+ //! turning boolean grids into polygons) so that module could stay scoped
+ //! to marching squares. See `planning/finishing_stack_review_2026-07.md`
+@@ -118,108 +119,6 @@ pub fn distance_transform_2d(grid: &[bool], rows: usize, cols: usize) -> Vec<f64
+     dist
+ }
+ 
+-/// Compute the curvature of EDT level-set curves at each grid cell.
+-///
+-/// Uses the standard level-set curvature formula:
+-///   κ = (d_xx·d_y² − 2·d_xy·d_x·d_y + d_yy·d_x²) / (d_x² + d_y²)^(3/2)
+-///
+-/// where d_x, d_y are first partial derivatives and d_xx, d_yy, d_xy are
+-/// second partial derivatives of the distance field, computed via finite
+-/// differences.
+-///
+-/// Returns curvature in cell⁻¹ units (positive = convex, negative = concave).
+-/// Cells where the gradient magnitude is near zero (flat regions, medial axis)
+-/// are set to κ = 0.
+-#[expect(
+-    clippy::indexing_slicing,
+-    reason = "all indices bounded by row/col loop ranges"
+-)]
+-pub fn edt_curvature_field(edt: &[f64], rows: usize, cols: usize) -> Vec<f64> {
+-    let total = rows * cols;
+-    let mut curvature = vec![0.0f64; total];
+-
+-    if rows < 3 || cols < 3 {
+-        return curvature;
+-    }
+-
+-    // Interior cells: central differences (rows 1..rows-1, cols 1..cols-1)
+-    for r in 1..rows - 1 {
+-        for c in 1..cols - 1 {
+-            let idx = r * cols + c;
+-            let zc = edt[idx];
+-            let zl = edt[idx - 1];
+-            let zr = edt[idx + 1];
+-            let zu = edt[(r - 1) * cols + c];
+-            let zd = edt[(r + 1) * cols + c];
+-            let zul = edt[(r - 1) * cols + c - 1];
+-            let zur = edt[(r - 1) * cols + c + 1];
+-            let zdl = edt[(r + 1) * cols + c - 1];
+-            let zdr = edt[(r + 1) * cols + c + 1];
+-
+-            // First derivatives (central differences, cell_size = 1)
+-            let dx = (zr - zl) * 0.5;
+-            let dy = (zd - zu) * 0.5;
+-
+-            // Second derivatives
+-            let dxx = zr - 2.0 * zc + zl;
+-            let dyy = zd - 2.0 * zc + zu;
+-            let dxy = (zdr - zdl - zur + zul) * 0.25;
+-
+-            // Gradient magnitude squared
+-            let grad_sq = dx * dx + dy * dy;
+-            if grad_sq < 1e-12 {
+-                // Near medial axis or flat region — curvature undefined
+-                continue;
+-            }
+-
+-            // Level-set curvature
+-            let numer = dxx * dy * dy - 2.0 * dxy * dx * dy + dyy * dx * dx;
+-            let denom = grad_sq * grad_sq.sqrt(); // (grad_sq)^(3/2)
+-            curvature[idx] = numer / denom;
+-        }
+-    }
+-
+-    curvature
+-}
+-
+-/// Box-blur smooth a 2D grid in place.
+-///
+-/// `radius` is the half-width of the kernel (e.g. radius=2 → 5×5 kernel).
+-/// Boundary cells within `radius` of the edge are left unchanged.
+-#[expect(
+-    clippy::indexing_slicing,
+-    reason = "all indices bounded by row/col loop ranges"
+-)]
+-pub fn smooth_grid(grid: &mut [f64], rows: usize, cols: usize, radius: usize) {
+-    if radius == 0 || rows <= 2 * radius || cols <= 2 * radius {
+-        return;
+-    }
+-    let total = rows * cols;
+-    let mut tmp = vec![0.0f64; total];
+-    let side = 2 * radius + 1;
+-    let inv_area = 1.0 / (side * side) as f64;
+-
+-    for r in radius..rows - radius {
+-        for c in radius..cols - radius {
+-            let mut sum = 0.0;
+-            for dr in 0..side {
+-                let row_off = (r + dr - radius) * cols;
+-                for dc in 0..side {
+-                    sum += grid[row_off + c + dc - radius];
+-                }
+-            }
+-            tmp[r * cols + c] = sum * inv_area;
+-        }
+-    }
+-
+-    // Copy smoothed interior back; boundary retains original values
+-    for r in radius..rows - radius {
+-        let start = r * cols + radius;
+-        let end = r * cols + cols - radius;
+-        grid[start..end].copy_from_slice(&tmp[start..end]);
+-    }
+-}
+-
+ #[cfg(test)]
+ #[expect(
+     clippy::indexing_slicing,
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+index c97370b9b..835f5b83b 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+@@ -117,7 +117,6 @@ fn by_area_jobs_cut_only_their_own_cells() {
+ 
+     for strategy in [
+         ClearingStrategy3d::ContourParallel,
+-        ClearingStrategy3d::Adaptive,
+         ClearingStrategy3d::ContourSpiral,
+     ] {
+         let out = adaptive_3d_toolpath_output_with_cancel(
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+index 65161f3cc..9f9ca11e5 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+@@ -123,7 +123,6 @@ fn by_area_final_stock_equals_global() {
+ 
+     for strategy in [
+         ClearingStrategy3d::ContourParallel,
+-        ClearingStrategy3d::Adaptive,
+         ClearingStrategy3d::ContourSpiral,
+         ClearingStrategy3d::AgentSearch,
+     ] {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+index bcce48f07..f47713ca7 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+@@ -20,7 +20,8 @@
+ //!
+ //! ## The five cases
+ //!
+-//! One per `ClearingStrategy3d` variant, so the AgentSearch arm CUT-09 cuts
++//! One per `ClearingStrategy3d` variant (Contour Parallel twice: plain and
++//! with the flat-area and Z-blend dials), so the AgentSearch arm CUT-09 cuts
+ //! is measured, and so are the `ContourSpiral` and `GeodesicAdaptive` arms
+ //! that dispatch through it.
+ //! The cases deliberately turn the optional dials ON, because a rig that
+@@ -29,7 +30,7 @@
+ //! | case | strategy | dials exercised |
+ //! |---|---|---|
+ //! | `contour_parallel` | `ContourParallel` | the plain baseline |
+-//! | `adaptive` | `Adaptive` | `detect_flat_areas`, `z_blend` |
++//! | `contour_parallel_flat_blend` | `ContourParallel` | `detect_flat_areas`, `z_blend` |
+ //! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
+ //! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
+ //! | `geodesic_adaptive` | `GeodesicAdaptive` | its own step split and route (`None` = `StockDepth`, `CutFeed`), stay-down, the feed caps |
+@@ -59,6 +60,10 @@
+ //!   A toggle proof (the chord flatten restored) gives the old dumps.
+ //! - Integration step 7.4b: the new case `geodesic_adaptive` only. The four
+ //!   older fixtures are unchanged.
++//! - Removal step R3 (2026-10-28): the case `adaptive` left with the 3D
++//!   Adaptive planner. Its dials (`detect_flat_areas`, `z_blend`) moved to
++//!   the new case `contour_parallel_flat_blend`, blessed alone; every other
++//!   fixture is unchanged.
+ 
+ #![expect(
+     clippy::unwrap_used,
+@@ -137,8 +142,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+ fn case_params(case: &str) -> Adaptive3dParams {
+     match case {
+         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
+-        "adaptive" => {
+-            let mut p = base_params(ClearingStrategy3d::Adaptive);
++        "contour_parallel_flat_blend" => {
++            let mut p = base_params(ClearingStrategy3d::ContourParallel);
+             p.depth.detect_flat_areas = true;
+             p.z_blend = true;
+             p
+@@ -167,7 +172,7 @@ fn case_params(case: &str) -> Adaptive3dParams {
+ 
+ const CASES: [&str; 5] = [
+     "contour_parallel",
+-    "adaptive",
++    "contour_parallel_flat_blend",
+     "agent_search",
+     "contour_spiral",
+     "geodesic_adaptive",
+@@ -276,8 +281,8 @@ fn contour_parallel_emission_is_byte_identical() {
+ }
+ 
+ #[test]
+-fn adaptive_emission_is_byte_identical() {
+-    check("adaptive");
++fn contour_parallel_flat_blend_emission_is_byte_identical() {
++    check("contour_parallel_flat_blend");
+ }
+ 
+ #[test]
+diff --git a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+index cb284d55a..0ca56ba4f 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+@@ -105,7 +105,6 @@ fn global_levels_drape_to_a_floor_between_two_levels() {
+ 
+     for strategy in [
+         ClearingStrategy3d::ContourParallel,
+-        ClearingStrategy3d::Adaptive,
+         ClearingStrategy3d::ContourSpiral,
+         ClearingStrategy3d::AgentSearch,
+     ] {
+diff --git a/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/adaptive.txt b/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/adaptive.txt
+deleted file mode 100644
+index b0547256d..000000000
+--- a/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/adaptive.txt
++++ /dev/null
+@@ -1,593 +0,0 @@
+-# case adaptive
+-# moves 591
+-0 c01f000000000000 c026000000000000 4030000000000000 rapid Linking
+-1 c01f000000000000 c026000000000000 4029000000000000 rapid Linking
+-2 c01f000000000000 c026000000000000 4024800000000000 linear f=407f400000000000 EntryPlunge
+-3 401e000000000000 c026800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-4 4025800000000000 c025000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-5 4025800000000000 4025000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-6 401e000000000000 4026800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-7 c01e000000000000 4026800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-8 c025800000000000 4025000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-9 c026800000000000 c01e000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-10 c025800000000000 c025000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-11 c020000000000000 c025800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
+-12 c020000000000000 c025800000000000 4030000000000000 rapid Retract
+-13 c019000000000000 c023000000000000 4030000000000000 rapid Linking
+-14 c019000000000000 c023000000000000 4029000000000000 rapid Linking
+-15 c019000000000000 c023000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-16 c019000000000000 c023000000000000 4024000000000000 rapid Retract
+-17 c019000000000000 c023000000000000 4022eb0d4ddbb623 linear f=407f400000000000 EntryPlunge
+-18 400c000000000000 c023800000000000 402377d4b675cdb0 linear f=408f400000000000 ClearingCut
+-19 4022800000000000 c022000000000000 4021f4de9bd37a6f linear f=408f400000000000 ClearingCut
+-20 4023800000000000 3fe0000000000000 402381dd7918e2f0 linear f=408f400000000000 ClearingCut
+-21 4022000000000000 4022800000000000 4021f4de9bd37a6f linear f=408f400000000000 ClearingCut
+-22 bfe0000000000000 4023800000000000 402381dd7918e2f0 linear f=408f400000000000 ClearingCut
+-23 c022800000000000 4022000000000000 4021f4de9bd37a6f linear f=408f400000000000 ClearingCut
+-24 c023800000000000 0000000000000000 4023ab8e000357bd linear f=408f400000000000 ClearingCut
+-25 c022800000000000 c022000000000000 4021f4de9bd37a6f linear f=408f400000000000 ClearingCut
+-26 c01a000000000000 c022800000000000 4023051c42161b05 linear f=408f400000000000 ClearingCut
+-27 c016800000000000 c021400000000000 402305fe88b800ae linear f=408f400000000000 Linking
+-28 c013000000000000 c020000000000000 402306e0cf59e657 linear f=408f400000000000 Linking
+-29 4010000000000000 c020800000000000 4023288ccea4971a linear f=408f400000000000 ClearingCut
+-30 401f000000000000 c01e000000000000 4021b0fb8bb301a8 linear f=408f400000000000 ClearingCut
+-31 4020800000000000 0000000000000000 40235b5529e22588 linear f=408f400000000000 ClearingCut
+-32 401e000000000000 401f000000000000 4021b0fb8bb301a8 linear f=408f400000000000 ClearingCut
+-33 0000000000000000 4020800000000000 40235b5529e22588 linear f=408f400000000000 ClearingCut
+-34 c01f000000000000 401e000000000000 40220a41490cb425 linear f=408f400000000000 ClearingCut
+-35 c020800000000000 0000000000000000 4023945ed2f6b92d linear f=408f400000000000 ClearingCut
+-36 c01f000000000000 c01e000000000000 40220a41490cb425 linear f=408f400000000000 ClearingCut
+-37 c014000000000000 c01f000000000000 40231efdb76fa5b0 linear f=408f400000000000 ClearingCut
+-38 c010800000000000 c01c800000000000 402354b9bd0a90c4 linear f=408f400000000000 Linking
+-39 c00a000000000000 c01a000000000000 40238a75c2a57bd8 linear f=408f400000000000 Linking
+-40 4008000000000000 c01b000000000000 40238a75c2a57bd8 linear f=408f400000000000 ClearingCut
+-41 4019000000000000 c018000000000000 40228b511e107ab5 linear f=408f400000000000 ClearingCut
+-42 401b000000000000 3ff0000000000000 402396411d4b83c6 linear f=408f400000000000 ClearingCut
+-43 4018000000000000 4019000000000000 40228b511e107ab5 linear f=408f400000000000 ClearingCut
+-44 bfe0000000000000 401b000000000000 40239b295bd0b853 linear f=408f400000000000 ClearingCut
+-45 c019000000000000 4018000000000000 4022cb847e9a1062 linear f=408f400000000000 ClearingCut
+-46 c01b000000000000 0000000000000000 4023db0850ea41c5 linear f=408f400000000000 ClearingCut
+-47 c019000000000000 c018000000000000 4022cb847e9a1062 linear f=408f400000000000 ClearingCut
+-48 c00c000000000000 c019000000000000 4023a428e33ee6ee linear f=408f400000000000 ClearingCut
+-49 c005000000000000 c016800000000000 4023eac9d85de4a4 linear f=408f400000000000 Linking
+-50 bffc000000000000 c014000000000000 4024316acd7ce25b linear f=408f400000000000 Linking
+-51 3ff8000000000000 c015000000000000 4024316acd7ce25b linear f=408f400000000000 ClearingCut
+-52 4013000000000000 c012000000000000 40237f02d3a281d9 linear f=408f400000000000 ClearingCut
+-53 4015000000000000 3ff8000000000000 4023fb7f00284585 linear f=408f400000000000 ClearingCut
+-54 4012000000000000 4013000000000000 40237f02d3a281da linear f=408f400000000000 ClearingCut
+-55 bff8000000000000 4015000000000000 4023fb7f00284585 linear f=408f400000000000 ClearingCut
+-56 c013000000000000 4012000000000000 4023b3188c9b0a03 linear f=408f400000000000 ClearingCut
+-57 c015000000000000 0000000000000000 402445d28de56f16 linear f=408f400000000000 ClearingCut
+-58 c013000000000000 c012000000000000 4023b3188c9b0a03 linear f=408f400000000000 ClearingCut
+-59 c000000000000000 c013000000000000 40244a31395a8685 linear f=408f400000000000 ClearingCut
+-60 c005000000000000 c00f000000000000 40245f179ad69ec0 linear f=408f400000000000 Linking
+-61 c00a000000000000 c008000000000000 402473fdfc52b6fc linear f=408f400000000000 Linking
+-62 4008000000000000 c00a000000000000 402473fdfc52b6fc linear f=408f400000000000 ClearingCut
+-63 400a000000000000 4008000000000000 402456e8956212c4 linear f=408f400000000000 ClearingCut
+-64 c008000000000000 400a000000000000 402456e8956212c4 linear f=408f400000000000 ClearingCut
+-65 c00a000000000000 c004000000000000 4024966300cdf8ca linear f=408f400000000000 ClearingCut
+-66 bffc000000000000 bff8000000000000 4024fb1c8251f3d4 linear f=408f400000000000 Linking
+-67 3ff8000000000000 bffc000000000000 4024fb1c8251f3d4 linear f=408f400000000000 ClearingCut
+-68 3ffc000000000000 3ff8000000000000 4024f3ad3b5bf79a linear f=408f400000000000 ClearingCut
+-69 bff8000000000000 3ffc000000000000 4024f3ad3b5bf79a linear f=408f400000000000 ClearingCut
+-70 bffc000000000000 bff0000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
+-71 bfd0000000000000 0000000000000000 4025000000000000 linear f=408f400000000000 Linking
+-72 0000000000000000 3fd0000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
+-73 0000000000000000 3fd0000000000000 4030000000000000 rapid Retract
+-74 bffc000000000000 c026000000000000 4030000000000000 rapid Linking
+-75 bffc000000000000 c026000000000000 4029000000000000 rapid Linking
+-76 bffc000000000000 c026000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-77 bffc000000000000 c026000000000000 4024000000000000 rapid Retract
+-78 bffc000000000000 c026000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
+-79 4011000000000000 c025000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-80 4008000000000000 c01f000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-81 3ff0000000000000 c020800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-82 bfe0000000000000 c01d000000000000 40223730ce31d70d linear f=408f400000000000 ClearingCut
+-83 c00c000000000000 c01f000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-84 c01d000000000000 c012000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-85 c01b000000000000 bff0000000000000 4022c66f02f056c0 linear f=408f400000000000 ClearingCut
+-86 c01d000000000000 4008000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-87 c019000000000000 4014000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-88 c01b000000000000 4016000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-89 c008000000000000 4020800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-90 bff0000000000000 401d000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-91 3fe0000000000000 4020800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-92 4008000000000000 4020800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-93 400e000000000000 4025000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-94 0000000000000000 4026800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-95 c012000000000000 4025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-96 c013000000000000 4020000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-97 c020000000000000 4013000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-98 c021000000000000 4015000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-99 c025800000000000 4012000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-100 c025800000000000 c012000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-101 c020000000000000 c017000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-102 c01e000000000000 c015000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-103 c013000000000000 c020000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-104 c014000000000000 c025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-105 c000000000000000 c025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-106 c000000000000000 c025800000000000 4030000000000000 rapid Retract
+-107 4024800000000000 c00c000000000000 4030000000000000 rapid Linking
+-108 4024800000000000 c00c000000000000 4025800000000000 rapid Linking
+-109 4024800000000000 c00c000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
+-110 4025800000000000 4010000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-111 4020800000000000 4008000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-112 4020800000000000 c008000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-113 4024000000000000 c00a000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
+-114 4024000000000000 c00a000000000000 4030000000000000 rapid Retract
+-115 bff4000000000000 c024000000000000 4030000000000000 rapid Linking
+-116 bff4000000000000 c024000000000000 40233730c0000000 rapid Linking
+-117 bff4000000000000 c024000000000000 401c50af32a3dbcc linear f=407f400000000000 EntryPlunge
+-118 bfd0000000000000 c024000000000000 401c90e4b99c325f linear f=408f400000000000 ClearingCut
+-119 0000000000000000 c022800000000000 401ff54ce63e4930 linear f=408f400000000000 ClearingCut
+-120 bff0000000000000 c021800000000000 402084b3a3274db2 linear f=408f400000000000 ClearingCut
+-121 bff8000000000000 c023800000000000 401de365acf15d02 linear f=408f400000000000 ClearingCut
+-122 bff8000000000000 c023800000000000 4030000000000000 rapid Retract
+-123 c023800000000000 bff8000000000000 4030000000000000 rapid Linking
+-124 c023800000000000 bff8000000000000 4023c66f00000000 rapid Linking
+-125 c023800000000000 bff8000000000000 401de365acf15d03 linear f=407f400000000000 EntryPlunge
+-126 c020800000000000 bff0000000000000 4021262c088f23c9 linear f=408f400000000000 ClearingCut
+-127 c021800000000000 3ff8000000000000 40207045f8283006 linear f=408f400000000000 ClearingCut
+-128 c023000000000000 3ffc000000000000 401d818745fde649 linear f=408f400000000000 ClearingCut
+-129 c024800000000000 3ff0000000000000 401c50af32a3dbcc linear f=408f400000000000 ClearingCut
+-130 c023800000000000 3fe0000000000000 401e2e3e1187c31f linear f=408f400000000000 ClearingCut
+-131 c024000000000000 bff4000000000000 401c50af32a3dbcc linear f=408f400000000000 ClearingCut
+-132 c024000000000000 bff4000000000000 4030000000000000 rapid Retract
+-133 bff4000000000000 4022000000000000 4030000000000000 rapid Linking
+-134 bff4000000000000 4022000000000000 4023000000000000 rapid Linking
+-135 bff4000000000000 4022000000000000 401fc61d979b82bc linear f=407f400000000000 EntryPlunge
+-136 bfe0000000000000 4021800000000000 401fdfe0f8e62c96 linear f=408f400000000000 ClearingCut
+-137 3fd0000000000000 4023000000000000 401e2e3e1187c31f linear f=408f400000000000 ClearingCut
+-138 bff0000000000000 4024800000000000 4019edcfa5e6b5b8 linear f=408f400000000000 ClearingCut
+-139 bff8000000000000 4022800000000000 401de365acf15d03 linear f=408f400000000000 ClearingCut
+-140 bff8000000000000 4022800000000000 4030000000000000 rapid Retract
+-141 c025800000000000 c025000000000000 4030000000000000 rapid Linking
+-142 c025800000000000 c025000000000000 4029000000000000 rapid Linking
+-143 c025800000000000 c025000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-144 c025800000000000 c025000000000000 4024000000000000 rapid Retract
+-145 c025800000000000 c025000000000000 4020800000000000 linear f=407f400000000000 EntryPlunge
+-146 c01a000000000000 c025800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-147 c017000000000000 c020000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-148 c020000000000000 c017000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-149 c025000000000000 c019000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-150 c025800000000000 c024000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-151 c025800000000000 c024000000000000 4030000000000000 rapid Retract
+-152 4013000000000000 c025000000000000 4030000000000000 rapid Linking
+-153 4013000000000000 c025000000000000 4025800000000000 rapid Linking
+-154 4013000000000000 c025000000000000 4020800000000000 linear f=407f400000000000 EntryPlunge
+-155 4025800000000000 c025000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-156 4025800000000000 bff8000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-157 4027800000000000 bfe0000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-158 4025800000000000 3ff8000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-159 4025800000000000 4025000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-160 4013000000000000 4025000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-161 4013000000000000 4021000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-162 4017000000000000 401e000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-163 4017000000000000 4014000000000000 402179c02e678d92 linear f=408f400000000000 ClearingCut
+-164 401c000000000000 4013000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-165 401e000000000000 4017000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-166 4023800000000000 4004000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-167 4021800000000000 3fe0000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-168 4023800000000000 bff8000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-169 4022800000000000 c010000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-170 401a000000000000 c019000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-171 4015000000000000 c018000000000000 4020fce7c75d439d linear f=408f400000000000 ClearingCut
+-172 4019000000000000 c01c000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-173 4013000000000000 c021000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-174 4013000000000000 c024000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-175 4013000000000000 c024000000000000 4030000000000000 rapid Retract
+-176 c025800000000000 401a000000000000 4030000000000000 rapid Linking
+-177 c025800000000000 401a000000000000 4029000000000000 rapid Linking
+-178 c025800000000000 401a000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-179 c025800000000000 401a000000000000 4024000000000000 rapid Retract
+-180 c025800000000000 401a000000000000 4020800000000000 linear f=407f400000000000 EntryPlunge
+-181 c01e000000000000 4019000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-182 c019000000000000 401e000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-183 c01a000000000000 4025800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-184 c025000000000000 4025800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-185 c025800000000000 401c000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
+-186 c025800000000000 401c000000000000 4030000000000000 rapid Retract
+-187 c022800000000000 c022000000000000 4030000000000000 rapid Linking
+-188 c022800000000000 c022000000000000 4024051c40000000 rapid Linking
+-189 c022800000000000 c022000000000000 401c0a3880000000 linear f=407f400000000000 EntryPlunge
+-190 c022800000000000 c022000000000000 401e0a3880000000 rapid Retract
+-191 c022800000000000 c022000000000000 4011800000000000 linear f=407f400000000000 EntryPlunge
+-192 c020000000000000 c022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-193 c01f000000000000 c021000000000000 4018645a66ce49fd linear f=408f400000000000 ClearingCut
+-194 c021000000000000 c01f000000000000 4018645a66ce4a00 linear f=408f400000000000 ClearingCut
+-195 c022800000000000 c021000000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-196 c022800000000000 c021000000000000 4030000000000000 rapid Retract
+-197 401b000000000000 c022000000000000 4030000000000000 rapid Linking
+-198 401b000000000000 c022000000000000 4024288cc0000000 rapid Linking
+-199 401b000000000000 c022000000000000 401c511980000000 linear f=407f400000000000 EntryPlunge
+-200 401b000000000000 c022000000000000 401e511980000000 rapid Retract
+-201 401b000000000000 c022000000000000 40181f9096766fa7 linear f=407f400000000000 EntryPlunge
+-202 4020000000000000 c022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-203 4022000000000000 c022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-204 4022800000000000 c01e000000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-205 4022000000000000 c019000000000000 401ad2521cc2d9ce linear f=408f400000000000 ClearingCut
+-206 4020800000000000 c01c000000000000 4019f6fa71d656b0 linear f=408f400000000000 ClearingCut
+-207 401e000000000000 c01d000000000000 401ca74b0daae188 linear f=408f400000000000 ClearingCut
+-208 401b000000000000 c021000000000000 4019f6fa71d656ae linear f=408f400000000000 ClearingCut
+-209 401b000000000000 c021000000000000 4030000000000000 rapid Retract
+-210 4021800000000000 401a000000000000 4030000000000000 rapid Linking
+-211 4021800000000000 401a000000000000 40245b5520000000 rapid Linking
+-212 4021800000000000 401a000000000000 401cb6aa40000000 linear f=407f400000000000 EntryPlunge
+-213 4021800000000000 401a000000000000 401eb6aa40000000 rapid Retract
+-214 4021800000000000 401a000000000000 4019a72dfaa979d4 linear f=407f400000000000 EntryPlunge
+-215 4022800000000000 401e000000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-216 4022000000000000 4022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-217 401e000000000000 4022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-218 4019000000000000 4022000000000000 4019a72dfaa979d4 linear f=408f400000000000 ClearingCut
+-219 401f000000000000 401c000000000000 401b68a5f345cdda linear f=408f400000000000 ClearingCut
+-220 4021000000000000 401b000000000000 4019f6fa71d656b0 linear f=408f400000000000 ClearingCut
+-221 4021000000000000 401b000000000000 4030000000000000 rapid Retract
+-222 c022800000000000 4020000000000000 4030000000000000 rapid Linking
+-223 c022800000000000 4020000000000000 40245b5520000000 rapid Linking
+-224 c022800000000000 4020000000000000 401cb6aa40000000 linear f=407f400000000000 EntryPlunge
+-225 c022800000000000 4020000000000000 401eb6aa40000000 rapid Retract
+-226 c022800000000000 4020000000000000 4011800000000000 linear f=407f400000000000 EntryPlunge
+-227 c020800000000000 4020000000000000 4018a17f40360254 linear f=408f400000000000 ClearingCut
+-228 c020000000000000 4020800000000000 401631d69b3f26a8 linear f=408f400000000000 ClearingCut
+-229 c01f000000000000 4021000000000000 4018645a66ce4a00 linear f=408f400000000000 ClearingCut
+-230 c020000000000000 4022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-231 c022000000000000 4022800000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-232 c022800000000000 4021000000000000 4011800000000000 linear f=408f400000000000 ClearingCut
+-233 c022800000000000 4021000000000000 4030000000000000 rapid Retract
+-234 c010000000000000 c019d91288b02f70 4030000000000000 rapid Linking
+-235 c010000000000000 c019d91288b02f70 4024eac9e0000000 rapid Linking
+-236 c010000000000000 c019d91288b02f70 40217ffe1395011b linear f=407f400000000000 EntryPlunge
+-237 c018000000000000 c012b4fbada39422 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
+-238 c01d5796c5320721 c000000000000000 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
+-239 c01d5796c5320720 4000000000000000 40217ffdce6f803b linear f=408f400000000000 ClearingCut
+-240 c019d91288b02f6b 4010000000000000 40217ffe1395011c linear f=408f400000000000 ClearingCut
+-241 c012b4fbada39422 4018000000000000 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
+-242 c000000000000000 401d5796c5320724 40217ffdce6f8038 linear f=408f400000000000 ClearingCut
+-243 4000000000000000 401d5796c5320720 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
+-244 4010000000000000 4019d91288b02f70 40217ffe1395011b linear f=408f400000000000 ClearingCut
+-245 4018000000000000 4012b4fbada39424 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
+-246 401d5796c5320720 4000000000000000 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
+-247 401d5796c5320720 c000000000000000 40217ffdce6f803a linear f=408f400000000000 ClearingCut
+-248 4019d91288b02f7c c010000000000000 40217ffe13950118 linear f=408f400000000000 ClearingCut
+-249 4012b4fbada39428 c018000000000000 40217ffe88ee0a61 linear f=408f400000000000 ClearingCut
+-250 4000000000000000 c01d5796c5320722 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
+-251 c000000000000000 c01d5796c5320720 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
+-252 c010000000000000 c019d91288b02f70 40217ffe1395011b linear f=408f400000000000 ClearingCut
+-253 c010000000000000 c019d91288b02f70 4030000000000000 rapid Retract
+-254 4024800000000000 bfe0000000000000 4030000000000000 rapid Linking
+-255 4024800000000000 bfe0000000000000 4021800000000000 rapid Linking
+-256 4024800000000000 bfe0000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
+-257 4026800000000000 0000000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
+-258 4025000000000000 3fe8000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
+-259 4024000000000000 bfd0000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
+-260 4024000000000000 bfd0000000000000 4030000000000000 rapid Retract
+-261 c000000000000000 c02005c6bfec4216 4030000000000000 rapid Linking
+-262 c000000000000000 c02005c6bfec4216 4023000000000000 rapid Linking
+-263 c000000000000000 c02005c6bfec4216 40207ffcf1543f48 linear f=407f400000000000 EntryPlunge
+-264 c016c102380b7780 c018000000000000 40207ffdf54099c1 linear f=408f400000000000 ClearingCut
+-265 c01cee3410cb0ad9 c010000000000000 40207ffd51b36ab6 linear f=408f400000000000 ClearingCut
+-266 c0208d6244bb4d75 0000000000000000 40207fffffff920c linear f=408f400000000000 ClearingCut
+-267 c020000000000000 4000600f46bcc550 40207fff4418eb3b linear f=408f400000000000 ClearingCut
+-268 c018000000000000 4016c102380b7784 40207ffdf54099c0 linear f=408f400000000000 ClearingCut
+-269 c010000000000000 401cee3410cb0ae0 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
+-270 0000000000000000 40208d6244bb4d74 40207fffffff920d linear f=408f400000000000 ClearingCut
+-271 4000600f46bcc550 4020000000000000 40207fff4418eb3a linear f=408f400000000000 ClearingCut
+-272 4016c102380b7780 4018000000000000 40207ffdf54099c1 linear f=408f400000000000 ClearingCut
+-273 401cee3410cb0ae0 4010000000000000 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
+-274 40208d6244bb4d74 0000000000000000 40207fffffff920d linear f=408f400000000000 ClearingCut
+-275 4020000000000000 c000600f46bcc550 40207fff4418eb3c linear f=408f400000000000 ClearingCut
+-276 4018000000000000 c016c102380b777e 40207ffdf54099c2 linear f=408f400000000000 ClearingCut
+-277 4010000000000000 c01cee3410cb0add 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
+-278 0000000000000000 c0208d6244bb4d75 40207fffffff920c linear f=408f400000000000 ClearingCut
+-279 c000000000000000 c02005c6bfec4216 40207ffcf1543f48 linear f=408f400000000000 ClearingCut
+-280 c000000000000000 c02005c6bfec4216 4030000000000000 rapid Retract
+-281 4025800000000000 0000000000000000 4030000000000000 rapid Linking
+-282 4025800000000000 0000000000000000 4021800000000000 rapid Linking
+-283 4025800000000000 0000000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
+-284 4025800000000000 3fe0000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
+-285 4025800000000000 3fe0000000000000 4030000000000000 rapid Retract
+-286 c000000000000000 c0213914a942bba6 4030000000000000 rapid Linking
+-287 c000000000000000 c0213914a942bba6 4023000000000000 rapid Linking
+-288 c000000000000000 c0213914a942bba6 401efff9e2a87e90 linear f=407f400000000000 EntryPlunge
+-289 c018000000000000 c01a017dc896a436 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
+-290 c01fa10d998b1f52 c010000000000000 401effffffff241b linear f=408f400000000000 ClearingCut
+-291 c0213914a942bba6 4000000000000000 401efff9e2a87e90 linear f=408f400000000000 ClearingCut
+-292 c01a017dc896a436 4018000000000000 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
+-293 c010000000000000 401fa10d998b1f58 401effffffff2416 linear f=408f400000000000 ClearingCut
+-294 4000000000000000 40213914a942bba4 401efff9e2a87e94 linear f=408f400000000000 ClearingCut
+-295 4018000000000000 401a017dc896a438 401efffb37e1dc9c linear f=408f400000000000 ClearingCut
+-296 401fa10d998b1f58 4010000000000000 401effffffff2416 linear f=408f400000000000 ClearingCut
+-297 40213914a942bba4 c000000000000000 401efff9e2a87e94 linear f=408f400000000000 ClearingCut
+-298 401a017dc896a438 c018000000000000 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
+-299 4010000000000000 c01fa10d998b1f54 401effffffff2419 linear f=408f400000000000 ClearingCut
+-300 c000000000000000 c0213914a942bba6 401efff9e2a87e90 linear f=408f400000000000 ClearingCut
+-301 c000000000000000 c0213914a942bba6 4030000000000000 rapid Retract
+-302 bffc000000000000 c027000000000000 4030000000000000 rapid Linking
+-303 bffc000000000000 c027000000000000 4029000000000000 rapid Linking
+-304 bffc000000000000 c027000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-305 bffc000000000000 c027000000000000 4024000000000000 rapid Retract
+-306 bffc000000000000 c027000000000000 401b000000000000 linear f=407f400000000000 EntryPlunge
+-307 3fe8000000000000 c027000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-308 bffc000000000000 c026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-309 bffc000000000000 c026000000000000 4030000000000000 rapid Retract
+-310 c027800000000000 bff8000000000000 4030000000000000 rapid Linking
+-311 c027800000000000 bff8000000000000 4029000000000000 rapid Linking
+-312 c027800000000000 bff8000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-313 c027800000000000 bff8000000000000 4024000000000000 rapid Retract
+-314 c027800000000000 bff8000000000000 401b000000000000 linear f=407f400000000000 EntryPlunge
+-315 c025800000000000 bff8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-316 c026000000000000 3ffc000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-317 c027800000000000 3ff8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-318 c027800000000000 bff0000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-319 c027800000000000 bff0000000000000 4030000000000000 rapid Retract
+-320 4025800000000000 0000000000000000 4030000000000000 rapid Linking
+-321 4025800000000000 0000000000000000 4021800000000000 rapid Linking
+-322 4025800000000000 0000000000000000 401b000000000000 linear f=407f400000000000 EntryPlunge
+-323 4027800000000000 0000000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-324 4027000000000000 3fe8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-325 4025800000000000 3fe0000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
+-326 4025800000000000 3fe0000000000000 4030000000000000 rapid Retract
+-327 c010000000000000 c020de2bfcd063ff 4030000000000000 rapid Linking
+-328 c010000000000000 c020de2bfcd063ff 4023000000000000 rapid Linking
+-329 c010000000000000 c020de2bfcd063ff 401cfff8091a73d4 linear f=407f400000000000 EntryPlunge
+-330 c020de2bfcd063ff c010000000000000 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
+-331 c022b0c947267d72 0000000000000000 401cffffffff241a linear f=408f400000000000 ClearingCut
+-332 c020de2bfcd063ff 4010000000000000 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
+-333 c010000000000000 4020de2bfcd06400 401cfff8091a73d3 linear f=408f400000000000 ClearingCut
+-334 0000000000000000 4022b0c947267d72 401cffffffff241a linear f=408f400000000000 ClearingCut
+-335 4010000000000000 4020de2bfcd06400 401cfff8091a73d1 linear f=408f400000000000 ClearingCut
+-336 4020de2bfcd06400 4010000000000000 401cfff8091a73d3 linear f=408f400000000000 ClearingCut
+-337 4022b0c947267d72 0000000000000000 401cffffffff241a linear f=408f400000000000 ClearingCut
+-338 4020de2bfcd06400 c010000000000000 401cfff8091a73d1 linear f=408f400000000000 ClearingCut
+-339 4010000000000000 c020de2bfcd063ff 401cfff8091a73d6 linear f=408f400000000000 ClearingCut
+-340 0000000000000000 c022b0c947267d72 401cffffffff241a linear f=408f400000000000 ClearingCut
+-341 c010000000000000 c020de2bfcd063ff 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
+-342 c010000000000000 c020de2bfcd063ff 4030000000000000 rapid Retract
+-343 bffc000000000000 c027000000000000 4030000000000000 rapid Linking
+-344 bffc000000000000 c027000000000000 4029000000000000 rapid Linking
+-345 bffc000000000000 c027000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-346 bffc000000000000 c027000000000000 4024000000000000 rapid Retract
+-347 bffc000000000000 c027000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-348 bffc000000000000 c027000000000000 401c000000000000 rapid Retract
+-349 bffc000000000000 c027000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
+-350 3fe0000000000000 c027800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
+-351 bff8000000000000 c026800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
+-352 bff8000000000000 c026800000000000 4030000000000000 rapid Retract
+-353 c027800000000000 bff8000000000000 4030000000000000 rapid Linking
+-354 c027800000000000 bff8000000000000 4029000000000000 rapid Linking
+-355 c027800000000000 bff8000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-356 c027800000000000 bff8000000000000 4024000000000000 rapid Retract
+-357 c027800000000000 bff8000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-358 c027800000000000 bff8000000000000 401c000000000000 rapid Retract
+-359 c027800000000000 bff8000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
+-360 c027800000000000 bff0000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
+-361 c027800000000000 bff0000000000000 4030000000000000 rapid Retract
+-362 4026800000000000 bff0000000000000 4030000000000000 rapid Linking
+-363 4026800000000000 bff0000000000000 4029000000000000 rapid Linking
+-364 4026800000000000 bff0000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-365 4026800000000000 bff0000000000000 4024000000000000 rapid Retract
+-366 4026800000000000 bff0000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-367 4026800000000000 bff0000000000000 401c000000000000 rapid Retract
+-368 4026800000000000 bff0000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
+-369 4026800000000000 bfe0000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
+-370 4026800000000000 bfe0000000000000 4030000000000000 rapid Retract
+-371 c010000000000000 c022401100d0172d 4030000000000000 rapid Linking
+-372 c010000000000000 c022401100d0172d 4023000000000000 rapid Linking
+-373 c010000000000000 c022401100d0172d 401a000000000000 linear f=407f400000000000 EntryPlunge
+-374 c010000000000000 c022401100d0172d 401c000000000000 rapid Retract
+-375 c010000000000000 c022401100d0172d 4019fff8091a73d3 linear f=407f400000000000 EntryPlunge
+-376 c01bf36b069c6f2a c01bf36b069c6f2a 401a7c5d44b14404 linear f=408f400000000000 ClearingCut
+-377 c022401100d0172d c010000000000000 4019fff8091a73d5 linear f=408f400000000000 ClearingCut
+-378 c023f8c0d35cce6a 0000000000000000 4019ffffffff241a linear f=408f400000000000 ClearingCut
+-379 c022401100d0172d 4010000000000000 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
+-380 c01bf36b069c6f2b 401bf36b069c6f2a 401a7c5d44b14402 linear f=408f400000000000 ClearingCut
+-381 c010000000000000 4022401100d0172e 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
+-382 0000000000000000 4023f8c0d35cce6a 4019ffffffff241a linear f=408f400000000000 ClearingCut
+-383 4010000000000000 4022401100d0172e 4019fff8091a73d1 linear f=408f400000000000 ClearingCut
+-384 401bf36b069c6f2c 401bf36b069c6f2c 401a7c5d44b143ff linear f=408f400000000000 ClearingCut
+-385 4022401100d01730 4010000000000000 4019fff8091a73ce linear f=408f400000000000 ClearingCut
+-386 4023f8c0d35cce6a 0000000000000000 4019ffffffff241a linear f=408f400000000000 ClearingCut
+-387 4022401100d0172e c010000000000000 4019fff8091a73d1 linear f=408f400000000000 ClearingCut
+-388 401bf36b069c6f2c c01bf36b069c6f2a 401a7c5d44b14401 linear f=408f400000000000 ClearingCut
+-389 4010000000000000 c022401100d0172d 4019fff8091a73d5 linear f=408f400000000000 ClearingCut
+-390 0000000000000000 c023f8c0d35cce6a 4019ffffffff241a linear f=408f400000000000 ClearingCut
+-391 c010000000000000 c022401100d0172d 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
+-392 c010000000000000 c022401100d0172d 4030000000000000 rapid Retract
+-393 c000000000000000 c02528cee6c4aa73 4030000000000000 rapid Linking
+-394 c000000000000000 c02528cee6c4aa73 4023000000000000 rapid Linking
+-395 c000000000000000 c02528cee6c4aa73 401a000000000000 linear f=407f400000000000 EntryPlunge
+-396 c000000000000000 c02528cee6c4aa73 401c000000000000 rapid Retract
+-397 c000000000000000 c02528cee6c4aa73 4014fff4512cda7d linear f=407f400000000000 EntryPlunge
+-398 c018000000000000 c021df49114138b9 4014fff5c170ef1f linear f=408f400000000000 ClearingCut
+-399 c021df49114138b9 c018000000000000 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
+-400 c02528cee6c4aa74 c000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
+-401 c02528cee6c4aa73 4000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
+-402 c021df49114138b9 4018000000000000 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
+-403 c018000000000000 4021df49114138b8 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
+-404 c000000000000000 402528cee6c4aa72 4014fff4512cda7e linear f=408f400000000000 ClearingCut
+-405 4000000000000000 402528cee6c4aa72 4014fff4512cda7e linear f=408f400000000000 ClearingCut
+-406 4018000000000000 4021df49114138ba 4014fff5c170ef1a linear f=408f400000000000 ClearingCut
+-407 4021df49114138b8 4018000000000000 4014fff5c170ef20 linear f=408f400000000000 ClearingCut
+-408 402528cee6c4aa74 4000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
+-409 402528cee6c4aa72 c000000000000000 4014fff4512cda80 linear f=408f400000000000 ClearingCut
+-410 4021df49114138b8 c018000000000000 4014fff5c170ef20 linear f=408f400000000000 ClearingCut
+-411 4018000000000000 c021df49114138b9 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
+-412 4000000000000000 c02528cee6c4aa74 4014fff4512cda77 linear f=408f400000000000 ClearingCut
+-413 c000000000000000 c02528cee6c4aa73 4014fff4512cda7d linear f=408f400000000000 ClearingCut
+-414 c000000000000000 c02528cee6c4aa73 4030000000000000 rapid Retract
+-415 c025800000000000 c025000000000000 4030000000000000 rapid Linking
+-416 c025800000000000 c025000000000000 4029000000000000 rapid Linking
+-417 c025800000000000 c025000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-418 c025800000000000 c025000000000000 4024000000000000 rapid Retract
+-419 c025800000000000 c025000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-420 c025800000000000 c025000000000000 401c000000000000 rapid Retract
+-421 c025800000000000 c025000000000000 400c000000000000 linear f=407f400000000000 EntryPlunge
+-422 c025800000000000 c025000000000000 4010000000000000 rapid Retract
+-423 c025800000000000 c025000000000000 4008000000000000 linear f=407f400000000000 EntryPlunge
+-424 c021800000000000 c025000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-425 c025000000000000 c021800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-426 c025800000000000 c024000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-427 c025800000000000 c024000000000000 4030000000000000 rapid Retract
+-428 4021800000000000 c025000000000000 4030000000000000 rapid Linking
+-429 4021800000000000 c025000000000000 4025800000000000 rapid Linking
+-430 4021800000000000 c025000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
+-431 4021800000000000 c025000000000000 4020800000000000 rapid Retract
+-432 4021800000000000 c025000000000000 4013000000000000 linear f=407f400000000000 EntryPlunge
+-433 4021800000000000 c025000000000000 4015000000000000 rapid Retract
+-434 4021800000000000 c025000000000000 4008000000000000 linear f=407f400000000000 EntryPlunge
+-435 4025000000000000 c025800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-436 4025000000000000 c021800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-437 4022000000000000 c024800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-438 4022000000000000 c024800000000000 4030000000000000 rapid Retract
+-439 c025800000000000 4022000000000000 4030000000000000 rapid Linking
+-440 c025800000000000 4022000000000000 4029000000000000 rapid Linking
+-441 c025800000000000 4022000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-442 c025800000000000 4022000000000000 4024000000000000 rapid Retract
+-443 c025800000000000 4022000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-444 c025800000000000 4022000000000000 401c000000000000 rapid Retract
+-445 c025800000000000 4022000000000000 400c000000000000 linear f=407f400000000000 EntryPlunge
+-446 c025800000000000 4022000000000000 4010000000000000 rapid Retract
+-447 c025800000000000 4022000000000000 4008000000000000 linear f=407f400000000000 EntryPlunge
+-448 c021800000000000 4025000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-449 c025000000000000 4025800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-450 c025800000000000 4023000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-451 c025800000000000 4023000000000000 4030000000000000 rapid Retract
+-452 4024800000000000 4022000000000000 4030000000000000 rapid Linking
+-453 4024800000000000 4022000000000000 4021800000000000 rapid Linking
+-454 4024800000000000 4022000000000000 4017000000000000 linear f=407f400000000000 EntryPlunge
+-455 4024800000000000 4022000000000000 4019000000000000 rapid Retract
+-456 4024800000000000 4022000000000000 4008000000000000 linear f=407f400000000000 EntryPlunge
+-457 4025800000000000 4025000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-458 4021800000000000 4025000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-459 4024000000000000 4022800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
+-460 4024000000000000 4022800000000000 4030000000000000 rapid Retract
+-461 c010000000000000 c0259665cfd8501e 4030000000000000 rapid Linking
+-462 c010000000000000 c0259665cfd8501e 4029000000000000 rapid Linking
+-463 c010000000000000 c0259665cfd8501e 4023000000000000 linear f=407f400000000000 EntryPlunge
+-464 c010000000000000 c0259665cfd8501e 4024000000000000 rapid Retract
+-465 c010000000000000 c0259665cfd8501e 401a000000000000 linear f=407f400000000000 EntryPlunge
+-466 c010000000000000 c0259665cfd8501e 401c000000000000 rapid Retract
+-467 c010000000000000 c0259665cfd8501e 400c000000000000 linear f=407f400000000000 EntryPlunge
+-468 c010000000000000 c0259665cfd8501e 4010000000000000 rapid Retract
+-469 c010000000000000 c0259665cfd8501e 400bffc7553de003 linear f=407f400000000000 EntryPlunge
+-470 c020000000000000 c02096d62802523c 400bffd15c1a9e5b linear f=408f400000000000 ClearingCut
+-471 c0259665cfd8501e c010000000000000 400bffc7553ddfe9 linear f=408f400000000000 ClearingCut
+-472 c027107e3aa284a5 0000000000000000 400bfffffffe4830 linear f=408f400000000000 ClearingCut
+-473 c0259665cfd8501e 4010000000000000 400bffc7553de003 linear f=408f400000000000 ClearingCut
+-474 c020000000000000 402096d628025240 400bffd15c1a9e38 linear f=408f400000000000 ClearingCut
+-475 c010000000000000 40259665cfd85020 400bffc7553ddfda linear f=408f400000000000 ClearingCut
+-476 0000000000000000 4027107e3aa284a4 400bfffffffe4842 linear f=408f400000000000 ClearingCut
+-477 4010000000000000 40259665cfd85020 400bffc7553ddfe6 linear f=408f400000000000 ClearingCut
+-478 4020000000000000 402096d62802523c 400bffd15c1a9e5a linear f=408f400000000000 ClearingCut
+-479 40259665cfd85020 4010000000000000 400bffc7553ddfe5 linear f=408f400000000000 ClearingCut
+-480 4027107e3aa284a4 0000000000000000 400bfffffffe4842 linear f=408f400000000000 ClearingCut
+-481 40259665cfd85020 c010000000000000 400bffc7553ddff2 linear f=408f400000000000 ClearingCut
+-482 402096d62802523c c020000000000000 400bffd15c1a9e6a linear f=408f400000000000 ClearingCut
+-483 4010000000000000 c0259665cfd8501e 400bffc7553ddffa linear f=408f400000000000 ClearingCut
+-484 0000000000000000 c027107e3aa284a5 400bfffffffe4830 linear f=408f400000000000 ClearingCut
+-485 c010000000000000 c0259665cfd8501e 400bffc7553de003 linear f=408f400000000000 ClearingCut
+-486 c010000000000000 c0259665cfd8501e 4030000000000000 rapid Retract
+-487 c025800000000000 c025000000000000 4030000000000000 rapid Linking
+-488 c025800000000000 c025000000000000 4029000000000000 rapid Linking
+-489 c025800000000000 c025000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-490 c025800000000000 c025000000000000 4024000000000000 rapid Retract
+-491 c025800000000000 c025000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-492 c025800000000000 c025000000000000 401c000000000000 rapid Retract
+-493 c025800000000000 c025000000000000 400c000000000000 linear f=407f400000000000 EntryPlunge
+-494 c025800000000000 c025000000000000 4010000000000000 rapid Retract
+-495 c025800000000000 c025000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
+-496 c022800000000000 c025000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-497 c025000000000000 c022800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-498 c025800000000000 c024000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-499 c025800000000000 c024000000000000 4030000000000000 rapid Retract
+-500 4022800000000000 c025000000000000 4030000000000000 rapid Linking
+-501 4022800000000000 c025000000000000 4029000000000000 rapid Linking
+-502 4022800000000000 c025000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-503 4022800000000000 c025000000000000 4024000000000000 rapid Retract
+-504 4022800000000000 c025000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-505 4022800000000000 c025000000000000 401c000000000000 rapid Retract
+-506 4022800000000000 c025000000000000 400c000000000000 linear f=407f400000000000 EntryPlunge
+-507 4022800000000000 c025000000000000 4010000000000000 rapid Retract
+-508 4022800000000000 c025000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
+-509 4025000000000000 c025800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-510 4025000000000000 c022800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-511 4023000000000000 c024800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-512 4023000000000000 c024800000000000 4030000000000000 rapid Retract
+-513 c025800000000000 4023000000000000 4030000000000000 rapid Linking
+-514 c025800000000000 4023000000000000 4029000000000000 rapid Linking
+-515 c025800000000000 4023000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
+-516 c025800000000000 4023000000000000 4024000000000000 rapid Retract
+-517 c025800000000000 4023000000000000 401a000000000000 linear f=407f400000000000 EntryPlunge
+-518 c025800000000000 4023000000000000 401c000000000000 rapid Retract
+-519 c025800000000000 4023000000000000 400c000000000000 linear f=407f400000000000 EntryPlunge
+-520 c025800000000000 4023000000000000 4010000000000000 rapid Retract
+-521 c025800000000000 4023000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
+-522 c022800000000000 4025000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-523 c025000000000000 4025800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-524 c025800000000000 4024000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-525 c025800000000000 4024000000000000 4030000000000000 rapid Retract
+-526 4024800000000000 4023000000000000 4030000000000000 rapid Linking
+-527 4024800000000000 4023000000000000 4021800000000000 rapid Linking
+-528 4024800000000000 4023000000000000 4017000000000000 linear f=407f400000000000 EntryPlunge
+-529 4024800000000000 4023000000000000 4019000000000000 rapid Retract
+-530 4024800000000000 4023000000000000 4006000000000000 linear f=407f400000000000 EntryPlunge
+-531 4024800000000000 4023000000000000 400a000000000000 rapid Retract
+-532 4024800000000000 4023000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
+-533 4025800000000000 4025000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-534 4023000000000000 4025800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-535 4024000000000000 4023800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
+-536 4024000000000000 4023800000000000 4030000000000000 rapid Retract
+-537 c018000000000000 c024a14699cf3823 4030000000000000 rapid Linking
+-538 c018000000000000 c024a14699cf3823 4025800000000000 rapid Linking
+-539 c018000000000000 c024a14699cf3823 401f000000000000 linear f=407f400000000000 EntryPlunge
+-540 c018000000000000 c024a14699cf3823 4020800000000000 rapid Retract
+-541 c018000000000000 c024a14699cf3823 4013000000000000 linear f=407f400000000000 EntryPlunge
+-542 c018000000000000 c024a14699cf3823 4015000000000000 rapid Retract
+-543 c018000000000000 c024a14699cf3823 3ffc000000000000 linear f=407f400000000000 EntryPlunge
+-544 c018000000000000 c024a14699cf3823 4002000000000000 rapid Retract
+-545 c018000000000000 c024a14699cf3823 3feffd81de3e629f linear f=407f400000000000 EntryPlunge
+-546 c01c098f0dc10ae3 c0233cced4ee1682 3ffbf6cad5b7e40d linear f=408f400000000000 ClearingCut
+-547 c021b66c7eca4386 c020000000000000 3feffdc6e5df6ebc linear f=408f400000000000 ClearingCut
+-548 c0233cced4ee1682 c01c098f0dc10ae6 3ffbf6cad5b7e3e8 linear f=408f400000000000 ClearingCut
+-549 c024000000000000 c01a0e5694a19059 3feffe78f3c978fb linear f=408f400000000000 ClearingCut
+-550 c02541e224c2b692 c015555555555555 3ffdc8b45aef4d51 linear f=408f400000000000 ClearingCut
+-551 c02683193aa9b373 c010000000000000 3feffd4c8d1f8f4b linear f=408f400000000000 ClearingCut
+-552 c026ddfcefcaa57a c00aaaaaaaaaaaab 3ff6f5e9ff6e27ec linear f=408f400000000000 ClearingCut
+-553 c02793c45a0c8988 4000000000000000 3feffffffff9205a linear f=408f400000000000 ClearingCut
+-554 c02683193aa9b373 4010000000000000 3feffd4c8d1f8f8c linear f=408f400000000000 ClearingCut
+-555 c02541e224c2b692 4015555555555555 3ffdc8b45aef4d5e linear f=408f400000000000 ClearingCut
+-556 c024a14699cf3822 4018000000000000 3feffd81de3e6506 linear f=408f400000000000 ClearingCut
+-557 c0233cced4ee1681 401c098f0dc10ae3 3ffbf6cad5b7e465 linear f=408f400000000000 ClearingCut
+-558 c020000000000000 4021b66c7eca4386 3feffdc6e5df6d3a linear f=408f400000000000 ClearingCut
+-559 c01c098f0dc10ae4 40233cced4ee1682 3ffbf6cad5b7e3ce linear f=408f400000000000 ClearingCut
+-560 c01a0e5694a19056 4024000000000000 3feffe78f3c978fb linear f=408f400000000000 ClearingCut
+-561 c015555555555555 402541e224c2b691 3ffdc8b45aef4db6 linear f=408f400000000000 ClearingCut
+-562 c010000000000000 402683193aa9b372 3feffd4c8d1f9054 linear f=408f400000000000 ClearingCut
+-563 c00aaaaaaaaaaaab 4026ddfcefcaa579 3ff6f5e9ff6e288e linear f=408f400000000000 ClearingCut
+-564 4000000000000000 402793c45a0c8988 3feffffffff92122 linear f=408f400000000000 ClearingCut
+-565 4010000000000000 402683193aa9b374 3feffd4c8d1f8f8c linear f=408f400000000000 ClearingCut
+-566 4015555555555555 402541e224c2b693 3ffdc8b45aef4ced linear f=408f400000000000 ClearingCut
+-567 4018000000000000 4024a14699cf3822 3feffd81de3e6428 linear f=408f400000000000 ClearingCut
+-568 401c098f0dc10ae8 40233cced4ee1682 3ffbf6cad5b7e390 linear f=408f400000000000 ClearingCut
+-569 4021b66c7eca4384 4020000000000000 3feffdc6e5df6e08 linear f=408f400000000000 ClearingCut
+-570 40233cced4ee1681 401c098f0dc10ae5 3ffbf6cad5b7e432 linear f=408f400000000000 ClearingCut
+-571 4024000000000000 401a0e5694a19058 3feffe78f3c9781e linear f=408f400000000000 ClearingCut
+-572 402541e224c2b690 4015555555555555 3ffdc8b45aef4e26 linear f=408f400000000000 ClearingCut
+-573 402683193aa9b374 4010000000000000 3feffd4c8d1f8eba linear f=408f400000000000 ClearingCut
+-574 4026ddfcefcaa57b 400aaaaaaaaaaaab 3ff6f5e9ff6e26f4 linear f=408f400000000000 ClearingCut
+-575 402793c45a0c8988 c000000000000000 3feffffffff920a5 linear f=408f400000000000 ClearingCut
+-576 402683193aa9b374 c010000000000000 3feffd4c8d1f8eba linear f=408f400000000000 ClearingCut
+-577 402541e224c2b693 c015555555555555 3ffdc8b45aef4d1f linear f=408f400000000000 ClearingCut
+-578 4024a14699cf3822 c018000000000000 3feffd81de3e6506 linear f=408f400000000000 ClearingCut
+-579 40233cced4ee1683 c01c098f0dc10ae3 3ffbf6cad5b7e3e8 linear f=408f400000000000 ClearingCut
+-580 4020000000000000 c021b66c7eca4386 3feffdc6e5df6ebc linear f=408f400000000000 ClearingCut
+-581 401c098f0dc10ae8 c0233cced4ee1682 3ffbf6cad5b7e39c linear f=408f400000000000 ClearingCut
+-582 401a0e5694a1905c c024000000000000 3feffe78f3c9782e linear f=408f400000000000 ClearingCut
+-583 4015555555555555 c02541e224c2b693 3ffdc8b45aef4d51 linear f=408f400000000000 ClearingCut
+-584 4010000000000000 c02683193aa9b373 3feffd4c8d1f8ec1 linear f=408f400000000000 ClearingCut
+-585 400aaaaaaaaaaaab c026ddfcefcaa57a 3ff6f5e9ff6e27c4 linear f=408f400000000000 ClearingCut
+-586 c000000000000000 c02793c45a0c8988 3feffffffff920a5 linear f=408f400000000000 ClearingCut
+-587 c010000000000000 c02683193aa9b373 3feffd4c8d1f9059 linear f=408f400000000000 ClearingCut
+-588 c015555555555555 c02541e224c2b693 3ffdc8b45aef4d1f linear f=408f400000000000 ClearingCut
+-589 c018000000000000 c024a14699cf3823 3feffd81de3e629f linear f=408f400000000000 ClearingCut
+-590 c018000000000000 c024a14699cf3823 4030000000000000 rapid Retract
+diff --git a/crates/rs_cam_core/tests/param_sweep.rs b/crates/rs_cam_core/tests/param_sweep.rs
+index 7b10d885e..fa1cb29da 100644
+--- a/crates/rs_cam_core/tests/param_sweep.rs
++++ b/crates/rs_cam_core/tests/param_sweep.rs
+@@ -1637,18 +1637,11 @@ fn sweep_adaptive3d_clearing_strategy() {
+         "adaptive3d",
+         "clearing_strategy",
+         serde_json::json!("contour_parallel"),
+-        &[
+-            serde_json::json!("adaptive"),
+-            serde_json::json!("contour_spiral"),
+-        ],
++        &[serde_json::json!("contour_spiral")],
+         |ov| {
+             let mut p = default_adaptive3d_params();
+-            match ov.and_then(|v| v.as_str()) {
+-                Some("adaptive") => p.clearing_strategy = ClearingStrategy3d::Adaptive,
+-                Some("contour_spiral") => {
+-                    p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
+-                }
+-                _ => {}
++            if ov.and_then(|v| v.as_str()) == Some("contour_spiral") {
++                p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
+             }
+             rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
+                 &mesh,
+diff --git a/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/contour_parallel_flat_blend.txt b/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/contour_parallel_flat_blend.txt
+new file mode 100644
+index 000000000..43e2059b6
+--- /dev/null
++++ b/crates/rs_cam_core/tests/fixtures/adaptive3d_emission/contour_parallel_flat_blend.txt
+@@ -0,0 +1,1200 @@
++# case contour_parallel_flat_blend
++# moves 1198
++0 c029800000000000 c029000000000000 4030000000000000 rapid Linking
++1 c029800000000000 c029000000000000 4029000000000000 rapid Linking
++2 c029800000000000 c029000000000000 4024800000000000 linear f=407f400000000000 EntryPlunge
++3 4029800000000000 c029000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
++4 4029000000000000 4029800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
++5 c029000000000000 4029800000000000 4024800000000000 linear f=408f400000000000 ClearingCut
++6 c029800000000000 c028000000000000 4024800000000000 linear f=408f400000000000 ClearingCut
++7 c026800000000000 c026000000000000 4024137a6f4de9bd linear f=408f400000000000 Linking
++8 4026000000000000 c026800000000000 4024137a6f4de9bd linear f=408f400000000000 ClearingCut
++9 4026800000000000 0000000000000000 402436283760a8e0 linear f=408f400000000000 ClearingCut
++10 4026000000000000 4026800000000000 4024137a6f4de9bd linear f=408f400000000000 ClearingCut
++11 c026000000000000 4026800000000000 4024137a6f4de9bd linear f=408f400000000000 ClearingCut
++12 c026800000000000 c025000000000000 4024137a6f4de9bd linear f=408f400000000000 ClearingCut
++13 c026800000000000 c025000000000000 4030000000000000 rapid Retract
++14 c023800000000000 c023000000000000 4030000000000000 rapid Linking
++15 c023800000000000 c023000000000000 4029000000000000 rapid Linking
++16 c023800000000000 c023000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
++17 c023800000000000 c023000000000000 4024000000000000 rapid Retract
++18 c023800000000000 c023000000000000 402188590b21642c linear f=407f400000000000 EntryPlunge
++19 0000000000000000 c023800000000000 40238825aaae9107 linear f=408f400000000000 ClearingCut
++20 4023000000000000 c023800000000000 402188590b21642c linear f=408f400000000000 ClearingCut
++21 4023800000000000 0000000000000000 40235a88efcd1174 linear f=408f400000000000 ClearingCut
++22 4023000000000000 4023800000000000 402188590b21642c linear f=408f400000000000 ClearingCut
++23 0000000000000000 4023800000000000 40235a88efcd1174 linear f=408f400000000000 ClearingCut
++24 c023000000000000 4023800000000000 402188590b21642c linear f=408f400000000000 ClearingCut
++25 c023800000000000 0000000000000000 40238825aaae9107 linear f=408f400000000000 ClearingCut
++26 c023800000000000 c022000000000000 402188590b21642c linear f=408f400000000000 ClearingCut
++27 c023800000000000 c022000000000000 4030000000000000 rapid Retract
++28 4020800000000000 4020000000000000 4030000000000000 rapid Linking
++29 4020800000000000 4020000000000000 4029000000000000 rapid Linking
++30 4020800000000000 4020000000000000 4023000000000000 linear f=407f400000000000 EntryPlunge
++31 4020800000000000 4020000000000000 4024000000000000 rapid Retract
++32 4020800000000000 4020000000000000 402050de0a7b9610 linear f=407f400000000000 EntryPlunge
++33 4016000000000000 4020800000000000 40224276ecd7edfb linear f=408f400000000000 ClearingCut
++34 0000000000000000 4020800000000000 402342f1980a5353 linear f=408f400000000000 ClearingCut
++35 c014000000000000 4020800000000000 4022729af60b8de4 linear f=408f400000000000 ClearingCut
++36 c020000000000000 4020800000000000 402050de0a7b960e linear f=408f400000000000 ClearingCut
++37 c020800000000000 4018000000000000 40225e36051e4ce2 linear f=408f400000000000 ClearingCut
++38 c020800000000000 3ff0000000000000 402377c5d593da06 linear f=408f400000000000 ClearingCut
++39 c020800000000000 c020000000000000 4021011e659ff587 linear f=408f400000000000 ClearingCut
++40 0000000000000000 c020800000000000 402380bc0f35f346 linear f=408f400000000000 ClearingCut
++41 4020000000000000 c020800000000000 4021011e659ff587 linear f=408f400000000000 ClearingCut
++42 4020800000000000 0000000000000000 402342f1980a5353 linear f=408f400000000000 ClearingCut
++43 4020800000000000 401e000000000000 4020efd6c402a59b linear f=408f400000000000 ClearingCut
++44 401a000000000000 401b000000000000 4021ce85c18209d6 linear f=408f400000000000 Linking
++45 0000000000000000 401b000000000000 402392bf19af494f linear f=408f400000000000 ClearingCut
++46 c01a000000000000 401b000000000000 4021ce85c18209d6 linear f=408f400000000000 ClearingCut
++47 c01b000000000000 3fe0000000000000 4023cef65b994308 linear f=408f400000000000 ClearingCut
++48 c01b000000000000 c01a000000000000 40222b6c8e154589 linear f=408f400000000000 ClearingCut
++49 0000000000000000 c01b000000000000 4023d1de1c857e50 linear f=408f400000000000 ClearingCut
++50 401a000000000000 c01b000000000000 40222b6c8e154589 linear f=408f400000000000 ClearingCut
++51 401b000000000000 0000000000000000 402392bf19af494f linear f=408f400000000000 ClearingCut
++52 401b000000000000 401a000000000000 4021ce85c18209d5 linear f=408f400000000000 ClearingCut
++53 4018000000000000 4017000000000000 402265201ccc23e8 linear f=408f400000000000 Linking
++54 4015000000000000 4014000000000000 4022fbba78163dfb linear f=408f400000000000 Linking
++55 0000000000000000 4015000000000000 40240e234be7d11c linear f=408f400000000000 ClearingCut
++56 c014000000000000 4015000000000000 4022fbba78163dfb linear f=408f400000000000 ClearingCut
++57 c015000000000000 3fe0000000000000 4024412ec85e7baa linear f=408f400000000000 ClearingCut
++58 c015000000000000 c014000000000000 40233bb4b901b610 linear f=408f400000000000 ClearingCut
++59 0000000000000000 c015000000000000 40244365fe79a90c linear f=408f400000000000 ClearingCut
++60 4014000000000000 c015000000000000 40233bb4b901b610 linear f=408f400000000000 ClearingCut
++61 4015000000000000 4012000000000000 402333456448b6cf linear f=408f400000000000 ClearingCut
++62 400c000000000000 400e000000000000 40240bd4a1ba6b35 linear f=408f400000000000 Linking
++63 c00c000000000000 400e000000000000 40240bd4a1ba6b34 linear f=408f400000000000 ClearingCut
++64 c00e000000000000 c00c000000000000 402439044f2f846a linear f=408f400000000000 ClearingCut
++65 400c000000000000 c00e000000000000 402439044f2f846a linear f=408f400000000000 ClearingCut
++66 400e000000000000 400c000000000000 40240bd4a1ba6b34 linear f=408f400000000000 ClearingCut
++67 4008000000000000 4006000000000000 4024825e0fb16eea linear f=408f400000000000 Linking
++68 4002000000000000 4000000000000000 4024d72f0216043a linear f=408f400000000000 Linking
++69 c000000000000000 4002000000000000 4024d72f0216043a linear f=408f400000000000 ClearingCut
++70 c002000000000000 c000000000000000 4024de9e490c0076 linear f=408f400000000000 ClearingCut
++71 4000000000000000 c002000000000000 4024de9e490c0076 linear f=408f400000000000 ClearingCut
++72 4002000000000000 3ff8000000000000 4024e39825c1e312 linear f=408f400000000000 ClearingCut
++73 3fe8000000000000 3fe0000000000000 4025000000000000 linear f=408f400000000000 Linking
++74 bfe8000000000000 3fe0000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
++75 bfe0000000000000 bfe8000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
++76 3fe0000000000000 bfe8000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
++77 3fe8000000000000 0000000000000000 4025000000000000 linear f=408f400000000000 ClearingCut
++78 3fe8000000000000 0000000000000000 4030000000000000 rapid Retract
++79 c028000000000000 c029800000000000 4030000000000000 rapid Linking
++80 c028000000000000 c029800000000000 4025800000000000 rapid Linking
++81 c028000000000000 c029800000000000 4023800000000000 linear f=407f400000000000 EntryPlunge
++82 4029800000000000 c029000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++83 4029000000000000 4029800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++84 c029800000000000 4029000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++85 c029000000000000 c029800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++86 c026800000000000 c028000000000000 4023800000000000 linear f=408f400000000000 Linking
++87 4026000000000000 c028800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++88 4028800000000000 c026000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++89 4028800000000000 4026000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++90 4026000000000000 4028800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++91 c026000000000000 4028800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++92 c028800000000000 4026000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++93 c028800000000000 c026000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++94 c027000000000000 c027800000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++95 c023800000000000 c025955555555555 4023800000000000 linear f=408f400000000000 Linking
++96 c020000000000000 c023aaaaaaaaaaab 4023800000000000 linear f=408f400000000000 Linking
++97 c019000000000000 c021c00000000000 4023800000000000 linear f=408f400000000000 Linking
++98 c012000000000000 c01faaaaaaaaaaab 4023800000000000 linear f=408f400000000000 Linking
++99 c006000000000000 c01bd55555555555 4023800000000000 linear f=408f400000000000 Linking
++100 bff0000000000000 c018000000000000 4023800000000000 linear f=408f400000000000 Linking
++101 3ff0000000000000 c018000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++102 3fe0000000000000 c016000000000000 4023a775b80d1080 linear f=408f400000000000 Linking
++103 bfe0000000000000 c016000000000000 4023a775b80d107f linear f=408f400000000000 ClearingCut
++104 bffc000000000000 c010000000000000 40245d9f460f8bfe linear f=408f400000000000 Linking
++105 c008000000000000 c004000000000000 4024966300cdf8ca linear f=408f400000000000 Linking
++106 c011000000000000 bff0000000000000 40245d85ea2f0361 linear f=408f400000000000 Linking
++107 c016000000000000 3fe0000000000000 4023a775b80d107f linear f=408f400000000000 Linking
++108 c018000000000000 3fe0000000000000 4023800000000000 linear f=408f400000000000 ClearingCut
++109 c018000000000000 3ff0000000000000 4023800000000000 linear f=408f400000000000 Linking
++110 c016000000000000 3ff0000000000000 40239ad16d14c9ba linear f=408f400000000000 ClearingCut
++111 c016000000000000 3ff0000000000000 4030000000000000 rapid Retract
++112 c029800000000000 c029000000000000 4030000000000000 rapid Linking
++113 c029800000000000 c029000000000000 4024800000000000 rapid Linking
++114 c029800000000000 c029000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
++115 4029800000000000 c029000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++116 4029000000000000 4029800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++117 c029000000000000 4029800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++118 c029800000000000 c028000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++119 c029800000000000 c028000000000000 4030000000000000 rapid Retract
++120 401b000000000000 c028000000000000 4030000000000000 rapid Linking
++121 401b000000000000 c028000000000000 402480bc00000000 rapid Linking
++122 401b000000000000 c028000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
++123 4025000000000000 c028800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++124 4027800000000000 c027000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++125 4027800000000000 c01c000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++126 4025800000000000 c01a000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++127 4025800000000000 c014000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++128 4019000000000000 c00c000000000000 40220b196d375c51 linear f=408f400000000000 ClearingCut
++129 401b000000000000 0000000000000000 402290090683c20a linear f=408f400000000000 ClearingCut
++130 4019000000000000 400c000000000000 40220b196d375c50 linear f=408f400000000000 ClearingCut
++131 4025000000000000 400e000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++132 4025800000000000 401a000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++133 4027800000000000 401c000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++134 4027800000000000 4027000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++135 4025000000000000 4028800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++136 401a000000000000 4028800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++137 4015000000000000 4022000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++138 4011000000000000 4021000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++139 4010000000000000 4019000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++140 0000000000000000 4019000000000000 40230f6f8918dad6 linear f=408f400000000000 ClearingCut
++141 c010000000000000 4019000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++142 c011000000000000 4021000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++143 c01a000000000000 4028800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++144 c027000000000000 4027800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++145 c027800000000000 401c000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++146 c019000000000000 4010000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++147 c019000000000000 0000000000000000 402344747c4cd4b4 linear f=408f400000000000 ClearingCut
++148 c019000000000000 c00c000000000000 40224e2f9a12870b linear f=408f400000000000 ClearingCut
++149 c025000000000000 c00e000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++150 c025800000000000 c018000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++151 c028800000000000 c01a000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++152 c028800000000000 c025000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++153 c027000000000000 c027800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++154 c01c000000000000 c027800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++155 c01a000000000000 c025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++156 c014000000000000 c025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++157 c011000000000000 c024000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++158 c011000000000000 c018000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++159 c00c000000000000 c017000000000000 4022d3945ded48ad linear f=408f400000000000 ClearingCut
++160 0000000000000000 c019000000000000 402344747c4cd4b4 linear f=408f400000000000 ClearingCut
++161 4010000000000000 c017000000000000 4022801dc4a7672d linear f=408f400000000000 ClearingCut
++162 4011000000000000 c025000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++163 401a000000000000 c025800000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++164 401b000000000000 c027000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++165 401b000000000000 c027000000000000 4030000000000000 rapid Retract
++166 c017000000000000 c016000000000000 4030000000000000 rapid Linking
++167 c017000000000000 c016000000000000 4025390440000000 rapid Linking
++168 c017000000000000 c016000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
++169 c014000000000000 c017000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++170 c013000000000000 c014000000000000 4022937015a2238c linear f=408f400000000000 ClearingCut
++171 c017000000000000 c014000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++172 c017000000000000 c014000000000000 4030000000000000 rapid Retract
++173 4017000000000000 c014000000000000 4030000000000000 rapid Linking
++174 4017000000000000 c014000000000000 402480bc00000000 rapid Linking
++175 4017000000000000 c014000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
++176 4013000000000000 c014000000000000 40226056acf8d31a linear f=408f400000000000 ClearingCut
++177 4014000000000000 c017000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++178 4017000000000000 c016000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++179 4017000000000000 c016000000000000 4030000000000000 rapid Retract
++180 c00a000000000000 c026000000000000 4030000000000000 rapid Linking
++181 c00a000000000000 c026000000000000 40248825a0000000 rapid Linking
++182 c00a000000000000 c026000000000000 4020b2eb9aa69a65 linear f=407f400000000000 EntryPlunge
++183 4006000000000000 c026000000000000 4020b2eb9aa69a65 linear f=408f400000000000 ClearingCut
++184 4004000000000000 c01f000000000000 4021e43655922c6e linear f=408f400000000000 ClearingCut
++185 c004000000000000 c01f000000000000 4021e43655922c6e linear f=408f400000000000 ClearingCut
++186 c008000000000000 c025800000000000 4020fe45dc421654 linear f=408f400000000000 ClearingCut
++187 c008000000000000 c025800000000000 4030000000000000 rapid Retract
++188 4025800000000000 c008000000000000 4030000000000000 rapid Linking
++189 4025800000000000 c008000000000000 40245a88e0000000 rapid Linking
++190 4025800000000000 c008000000000000 4020b2eb9aa69a65 linear f=407f400000000000 EntryPlunge
++191 4026800000000000 c008000000000000 402026a07c30e99d linear f=408f400000000000 ClearingCut
++192 4026000000000000 4002000000000000 4020c502c8eed6e8 linear f=408f400000000000 ClearingCut
++193 4020800000000000 4000000000000000 4021b5f140d28b26 linear f=408f400000000000 ClearingCut
++194 401f000000000000 c000000000000000 4021d0999a1a303d linear f=408f400000000000 ClearingCut
++195 4020000000000000 c006000000000000 4021ca257e154cba linear f=408f400000000000 ClearingCut
++196 4025000000000000 c006000000000000 40210be3650cb04d linear f=408f400000000000 ClearingCut
++197 4025000000000000 c006000000000000 4030000000000000 rapid Retract
++198 c026800000000000 c000000000000000 4030000000000000 rapid Linking
++199 c026800000000000 c000000000000000 4024800000000000 rapid Linking
++200 c026800000000000 c000000000000000 4020d719f737136b linear f=407f400000000000 EntryPlunge
++201 c01f000000000000 c000000000000000 4021e9b5255d721f linear f=408f400000000000 ClearingCut
++202 c01f000000000000 4004000000000000 4021e43655922c6e linear f=408f400000000000 ClearingCut
++203 c025000000000000 4013000000000000 4020823b4b429d82 linear f=408f400000000000 ClearingCut
++204 c026800000000000 4012000000000000 402024dd67140aff linear f=408f400000000000 ClearingCut
++205 c026800000000000 bff8000000000000 4020e35f9849372b linear f=408f400000000000 ClearingCut
++206 c026800000000000 bff8000000000000 4030000000000000 rapid Retract
++207 c006000000000000 4020000000000000 4030000000000000 rapid Linking
++208 c006000000000000 4020000000000000 402442f1a0000000 rapid Linking
++209 c006000000000000 4020000000000000 4021ca257e154cba linear f=407f400000000000 EntryPlunge
++210 4004000000000000 401f000000000000 4021ca257e154cba linear f=408f400000000000 ClearingCut
++211 4011000000000000 4026000000000000 402024dd67140afc linear f=408f400000000000 ClearingCut
++212 c00c000000000000 4026800000000000 401fc00000000000 linear f=408f400000000000 ClearingCut
++213 c00e000000000000 4024000000000000 40212271c9069cd2 linear f=408f400000000000 ClearingCut
++214 c006000000000000 4021000000000000 4021af8adf3d93ad linear f=408f400000000000 ClearingCut
++215 c006000000000000 4021000000000000 4030000000000000 rapid Retract
++216 bff4000000000000 c023000000000000 4030000000000000 rapid Linking
++217 bff4000000000000 c023000000000000 4022e43660000000 rapid Linking
++218 bff4000000000000 c023000000000000 401cf19d923d8ede linear f=407f400000000000 EntryPlunge
++219 3ff4000000000000 c023000000000000 401cc2381be846d6 linear f=408f400000000000 ClearingCut
++220 3ff0000000000000 c022800000000000 401efe27f75eca00 linear f=408f400000000000 ClearingCut
++221 bff0000000000000 c022800000000000 401efe27f75eca00 linear f=408f400000000000 ClearingCut
++222 bff0000000000000 c022800000000000 4030000000000000 rapid Retract
++223 c023000000000000 4002000000000000 4030000000000000 rapid Linking
++224 c023000000000000 4002000000000000 4022e9b520000000 rapid Linking
++225 c023000000000000 4002000000000000 401bd36e7caabb80 linear f=407f400000000000 EntryPlunge
++226 c023000000000000 bfe8000000000000 401d1ae5d32f1fe8 linear f=408f400000000000 ClearingCut
++227 c022800000000000 bfe0000000000000 401f1cae56af9e21 linear f=408f400000000000 ClearingCut
++228 c022800000000000 4000000000000000 401e4de2f07ac2e7 linear f=408f400000000000 ClearingCut
++229 c022800000000000 4000000000000000 4030000000000000 rapid Retract
++230 bff8000000000000 4023800000000000 4030000000000000 rapid Linking
++231 bff8000000000000 4023800000000000 4022ca2580000000 rapid Linking
++232 bff8000000000000 4023800000000000 401ab0cf258b1671 linear f=407f400000000000 EntryPlunge
++233 bffc000000000000 4023000000000000 401cc2381be846d6 linear f=408f400000000000 ClearingCut
++234 bff0000000000000 4022800000000000 401d1b4c4ea27bec linear f=408f400000000000 ClearingCut
++235 3ffc000000000000 4023000000000000 401c4e4305c663c1 linear f=408f400000000000 ClearingCut
++236 bff0000000000000 4023800000000000 401ae5132d1c53bc linear f=408f400000000000 ClearingCut
++237 bff0000000000000 4023800000000000 4030000000000000 rapid Retract
++238 4018000000000000 4010000000000000 4030000000000000 rapid Linking
++239 4018000000000000 4010000000000000 40243bb4c0000000 rapid Linking
++240 4018000000000000 4010000000000000 4022000000000000 linear f=407f400000000000 EntryPlunge
++241 401c000000000000 4010000000000000 4022000000000000 linear f=408f400000000000 ClearingCut
++242 401c000000000000 4010000000000000 4030000000000000 rapid Retract
++243 c029000000000000 3fe8000000000000 4030000000000000 rapid Linking
++244 c029000000000000 3fe8000000000000 4021e35fa0000000 rapid Linking
++245 c029000000000000 3fe8000000000000 4020800000000000 linear f=407f400000000000 EntryPlunge
++246 c029000000000000 c029800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++247 4029000000000000 c029800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++248 4029800000000000 c016000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++249 4025000000000000 c017000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++250 4021800000000000 c012000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++251 4021800000000000 3fe0000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++252 4029800000000000 3ff0000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++253 4029800000000000 4029000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++254 4019000000000000 4029000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++255 401c000000000000 4024800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++256 4024000000000000 4024800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++257 4025800000000000 4022000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++258 4025800000000000 401c000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++259 4023000000000000 4017000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++260 401c000000000000 4017000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++261 4016000000000000 4021800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++262 400e000000000000 401e000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++263 401f000000000000 4008000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++264 401f000000000000 c004000000000000 4020ba166af205c4 linear f=408f400000000000 ClearingCut
++265 401d000000000000 c010000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++266 400a000000000000 c01e000000000000 4020a4d5ca7bace4 linear f=408f400000000000 ClearingCut
++267 400e000000000000 c026000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++268 4004000000000000 c028800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++269 c004000000000000 c028800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++270 c00e000000000000 c026000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++271 c00a000000000000 c01e000000000000 4020cecce26092f6 linear f=408f400000000000 ClearingCut
++272 c01b000000000000 c012000000000000 40211f65b3ca4089 linear f=408f400000000000 ClearingCut
++273 c01e000000000000 c006000000000000 402121b2ac91636c linear f=408f400000000000 ClearingCut
++274 c026000000000000 c00a000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++275 c028800000000000 c000000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++276 c028800000000000 3fe0000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++277 c027b33333333333 4000cccccccccccd 4020800000000000 linear f=408f400000000000 Linking
++278 c026e66666666666 400d99999999999a 4020800000000000 linear f=408f400000000000 Linking
++279 c02619999999999a 4015333333333333 4020800000000000 linear f=408f400000000000 Linking
++280 c0254ccccccccccd 401b99999999999a 4020800000000000 linear f=408f400000000000 Linking
++281 c024800000000000 4021000000000000 4020800000000000 linear f=408f400000000000 Linking
++282 c024800000000000 4024000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++283 c022000000000000 4025800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++284 c01c000000000000 4025800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++285 c017000000000000 4023000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++286 c017000000000000 401e000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++287 c01c000000000000 401d000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++288 c01d000000000000 4018000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++289 c020800000000000 4016000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++290 c01c000000000000 400e000000000000 40211049aaa4b1c4 linear f=408f400000000000 ClearingCut
++291 c00e000000000000 401e000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++292 c019000000000000 4026000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++293 c018000000000000 4029800000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++294 c029800000000000 4029000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++295 c029800000000000 401c000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++296 c025000000000000 401d000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++297 c024800000000000 4020000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++298 c024800000000000 4020000000000000 4030000000000000 rapid Retract
++299 c026800000000000 c026000000000000 4030000000000000 rapid Linking
++300 c026800000000000 c026000000000000 4022885900000000 rapid Linking
++301 c026800000000000 c026000000000000 401e5f6669ab86dc linear f=407f400000000000 EntryPlunge
++302 c016000000000000 c026800000000000 401e5f6669ab86dc linear f=408f400000000000 ClearingCut
++303 c015000000000000 c020000000000000 40204ef36b194e30 linear f=408f400000000000 ClearingCut
++304 c021000000000000 c013000000000000 40204689a081e2c3 linear f=408f400000000000 ClearingCut
++305 c026000000000000 c013000000000000 401ebcc8bbe94ab9 linear f=408f400000000000 ClearingCut
++306 c026800000000000 c025000000000000 401e5f6669ab86dc linear f=408f400000000000 ClearingCut
++307 c026800000000000 c025000000000000 4030000000000000 rapid Retract
++308 4015000000000000 c026000000000000 4030000000000000 rapid Linking
++309 4015000000000000 c026000000000000 4023000000000000 rapid Linking
++310 4015000000000000 c026000000000000 401e5f6669ab86dc linear f=407f400000000000 EntryPlunge
++311 4026000000000000 c026800000000000 401e5f6669ab86dc linear f=408f400000000000 ClearingCut
++312 4026800000000000 c01e000000000000 401e5f6669ab86dc linear f=408f400000000000 ClearingCut
++313 401e000000000000 c017000000000000 402056dcf0ec8cc2 linear f=408f400000000000 ClearingCut
++314 4015000000000000 c020000000000000 402041a2ed64d23d linear f=408f400000000000 ClearingCut
++315 4015000000000000 c025000000000000 401eee5b99d464c2 linear f=408f400000000000 ClearingCut
++316 4015000000000000 c025000000000000 4030000000000000 rapid Retract
++317 4025000000000000 4002000000000000 4030000000000000 rapid Linking
++318 4025000000000000 4002000000000000 4023000000000000 rapid Linking
++319 4025000000000000 4002000000000000 401ff610218bfd1b linear f=407f400000000000 EntryPlunge
++320 4026800000000000 4004000000000000 401f0461537f99f5 linear f=408f400000000000 ClearingCut
++321 4026000000000000 4015000000000000 401e5f6669ab86dc linear f=408f400000000000 ClearingCut
++322 4021800000000000 4010000000000000 402039f3a32df449 linear f=408f400000000000 ClearingCut
++323 4024000000000000 4002000000000000 40201d90cbcd1064 linear f=408f400000000000 ClearingCut
++324 4024000000000000 4002000000000000 4030000000000000 rapid Retract
++325 c023800000000000 c023000000000000 4030000000000000 rapid Linking
++326 c023800000000000 c023000000000000 402477c5e0000000 rapid Linking
++327 c023800000000000 c023000000000000 401cef8bc0000000 linear f=407f400000000000 EntryPlunge
++328 c023800000000000 c023000000000000 401eef8bc0000000 rapid Retract
++329 c023800000000000 c023000000000000 4010ef8bc0000000 linear f=407f400000000000 EntryPlunge
++330 c023800000000000 c023000000000000 4012ef8bc0000000 rapid Retract
++331 c023800000000000 c023000000000000 400d3799c7616008 linear f=407f400000000000 EntryPlunge
++332 c01e000000000000 c023800000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++333 c01b000000000000 c023000000000000 4015cad80352ab7f linear f=408f400000000000 ClearingCut
++334 c01b000000000000 c021000000000000 401a26787d51e30e linear f=408f400000000000 ClearingCut
++335 c021800000000000 c01a000000000000 401a26787d51e30c linear f=408f400000000000 ClearingCut
++336 c023000000000000 c019000000000000 40175b4740be1b30 linear f=408f400000000000 ClearingCut
++337 c023800000000000 c01e000000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++338 c023800000000000 c022000000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++339 c023800000000000 c022000000000000 4030000000000000 rapid Retract
++340 401b000000000000 c023000000000000 4030000000000000 rapid Linking
++341 401b000000000000 c023000000000000 402442f1a0000000 rapid Linking
++342 401b000000000000 c023000000000000 401c85e340000000 linear f=407f400000000000 EntryPlunge
++343 401b000000000000 c023000000000000 401e85e340000000 rapid Retract
++344 401b000000000000 c023000000000000 40131056d4ecb6f2 linear f=407f400000000000 EntryPlunge
++345 401e000000000000 c023800000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++346 4023000000000000 c023800000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++347 4023800000000000 c021000000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++348 4021800000000000 c020000000000000 400d3799c7616008 linear f=408f400000000000 ClearingCut
++349 4021000000000000 c01f000000000000 4016c947a683d594 linear f=408f400000000000 ClearingCut
++350 401e000000000000 c01f000000000000 401a8eadfed05c45 linear f=408f400000000000 ClearingCut
++351 401b000000000000 c022000000000000 401677a8dcbfbbcf linear f=408f400000000000 ClearingCut
++352 401b000000000000 c022000000000000 4030000000000000 rapid Retract
++353 4010000000000000 402a000000000000 4030000000000000 rapid Linking
++354 4010000000000000 402a000000000000 4023000000000000 rapid Linking
++355 4010000000000000 402a000000000000 4020800000000000 linear f=407f400000000000 EntryPlunge
++356 3ff0000000000000 402a000000000000 4020800000000000 linear f=408f400000000000 ClearingCut
++357 3ff0000000000000 402a000000000000 4030000000000000 rapid Retract
++358 c010000000000000 c019d91288b02f70 4030000000000000 rapid Linking
++359 c010000000000000 c019d91288b02f70 4023d39460000000 rapid Linking
++360 c010000000000000 c019d91288b02f70 40217ffe1395011b linear f=407f400000000000 EntryPlunge
++361 c018000000000000 c012b4fbada39422 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
++362 c01d5796c5320721 c000000000000000 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
++363 c01d5796c5320720 4000000000000000 40217ffdce6f803b linear f=408f400000000000 ClearingCut
++364 c019d91288b02f6b 4010000000000000 40217ffe1395011c linear f=408f400000000000 ClearingCut
++365 c012b4fbada39422 4018000000000000 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
++366 c000000000000000 401d5796c5320724 40217ffdce6f8038 linear f=408f400000000000 ClearingCut
++367 4000000000000000 401d5796c5320720 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
++368 4010000000000000 4019d91288b02f70 40217ffe1395011b linear f=408f400000000000 ClearingCut
++369 4018000000000000 4012b4fbada39424 40217ffe88ee0a62 linear f=408f400000000000 ClearingCut
++370 401d5796c5320720 4000000000000000 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
++371 401d5796c5320720 c000000000000000 40217ffdce6f803a linear f=408f400000000000 ClearingCut
++372 4019d91288b02f7c c010000000000000 40217ffe13950118 linear f=408f400000000000 ClearingCut
++373 4012b4fbada39428 c018000000000000 40217ffe88ee0a61 linear f=408f400000000000 ClearingCut
++374 4000000000000000 c01d5796c5320722 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
++375 c000000000000000 c01d5796c5320720 40217ffdce6f8039 linear f=408f400000000000 ClearingCut
++376 c010000000000000 c019d91288b02f70 40217ffe1395011b linear f=408f400000000000 ClearingCut
++377 c00e800000000000 c01fe2cde6842394 4020fffe8eafc0d4 linear f=408f400000000000 Linking
++378 c00d000000000000 c022f644a22c0bdc 40207fff09ca808e linear f=408f400000000000 Linking
++379 c00b800000000000 c025fb22511605ee 401fffff09ca808e linear f=408f400000000000 Linking
++380 c00a000000000000 c029000000000000 401f000000000000 linear f=408f400000000000 Linking
++381 4004000000000000 c029800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++382 4004000000000000 c027800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++383 c008000000000000 c028800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++384 c00d000000000000 c025400000000000 401f000000000000 linear f=408f400000000000 Linking
++385 c011000000000000 c022000000000000 401f000000000000 linear f=408f400000000000 Linking
++386 c011000000000000 c021000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++387 c002000000000000 c021000000000000 401f2be10080f692 linear f=408f400000000000 Linking
++388 bfd0000000000000 c021000000000000 4020183586b1fb9c linear f=408f400000000000 Linking
++389 3ffc000000000000 c021000000000000 401f924719d06e21 linear f=408f400000000000 Linking
++390 400e000000000000 c021000000000000 401f000000000000 linear f=408f400000000000 Linking
++391 4010000000000000 c020800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++392 4015000000000000 c01b555555555556 401fcde6c381dbf2 linear f=408f400000000000 Linking
++393 401a000000000000 c015aaaaaaaaaaab 402026a7479ebfaa linear f=408f400000000000 Linking
++394 401f000000000000 c010000000000000 401f7a403d847dda linear f=408f400000000000 Linking
++395 4022000000000000 c004aaaaaaaaaaac 401f000000000000 linear f=408f400000000000 Linking
++396 4024800000000000 bff2aaaaaaaaaaa8 401f000000000000 linear f=408f400000000000 Linking
++397 4027000000000000 3fd0000000000000 401f000000000000 linear f=408f400000000000 Linking
++398 4024000000000000 3fd0000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++399 4021800000000000 3ff8000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++400 4020000000000000 c015000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++401 4029800000000000 c014000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++402 4029800000000000 0000000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++403 4028000000000000 3fd0000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++404 4028000000000000 3fd0000000000000 4030000000000000 rapid Retract
++405 c021800000000000 c00c000000000000 4030000000000000 rapid Linking
++406 c021800000000000 c00c000000000000 402221b2a0000000 rapid Linking
++407 c021800000000000 c00c000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
++408 c021000000000000 c00a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++409 c021000000000000 c00a000000000000 4030000000000000 rapid Retract
++410 4021800000000000 400c000000000000 4030000000000000 rapid Linking
++411 4021800000000000 400c000000000000 4021800000000000 rapid Linking
++412 4021800000000000 400c000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
++413 4021800000000000 401c000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++414 4023000000000000 401f000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++415 4029800000000000 4020000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++416 4029000000000000 4029800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++417 c029000000000000 4029800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++418 c029000000000000 c006000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++419 c027800000000000 c000000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++420 c028800000000000 400c000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++421 c026000000000000 4013000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++422 c01d000000000000 4014000000000000 401fe1eab4e6a3bf linear f=408f400000000000 ClearingCut
++423 c011000000000000 4020000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++424 c011000000000000 4026000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++425 c008000000000000 4028800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++426 4008000000000000 4028800000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++427 4011000000000000 4026000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++428 4011000000000000 4020000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++429 401f000000000000 4014000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++430 4021000000000000 400a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++431 4021e00000000000 3ffb000000000000 401eb8e8be80d5bc linear f=408f400000000000 Linking
++432 4022c00000000000 3fc0000000000000 401e71d17d01ab77 linear f=408f400000000000 Linking
++433 4023a00000000000 bff7000000000000 401e2aba3b828132 linear f=408f400000000000 Linking
++434 4024800000000000 c008000000000000 401de3a2fa0356ee linear f=408f400000000000 Linking
++435 4026800000000000 c008000000000000 401c8a9a604e4296 linear f=408f400000000000 ClearingCut
++436 4026000000000000 bff4000000000000 401dc2535b04ecd6 linear f=408f400000000000 ClearingCut
++437 4024800000000000 bff8000000000000 401e1c50c397706a linear f=408f400000000000 ClearingCut
++438 4024800000000000 c004000000000000 401df96bd4e11a15 linear f=408f400000000000 ClearingCut
++439 4024800000000000 c004000000000000 4030000000000000 rapid Retract
++440 c026800000000000 401a000000000000 4030000000000000 rapid Linking
++441 c026800000000000 401a000000000000 4021800000000000 rapid Linking
++442 c026800000000000 401a000000000000 401c19999999999a linear f=407f400000000000 EntryPlunge
++443 c021000000000000 4019000000000000 401e0ba15f2e3576 linear f=408f400000000000 ClearingCut
++444 c017000000000000 4022000000000000 401e22a781544782 linear f=408f400000000000 ClearingCut
++445 c018000000000000 4026800000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++446 c026000000000000 4026800000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++447 c026800000000000 401c000000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++448 c026800000000000 401c000000000000 4030000000000000 rapid Retract
++449 401e000000000000 401f000000000000 4030000000000000 rapid Linking
++450 401e000000000000 401f000000000000 4021800000000000 rapid Linking
++451 401e000000000000 401f000000000000 401dd8c0da093d01 linear f=407f400000000000 EntryPlunge
++452 4022000000000000 4022800000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++453 4026000000000000 4022800000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++454 4026800000000000 4026000000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++455 4018000000000000 4026800000000000 401c19999999999a linear f=408f400000000000 ClearingCut
++456 4017000000000000 4022000000000000 401df6dd38f3c529 linear f=408f400000000000 ClearingCut
++457 401c000000000000 401f000000000000 401e14edfd745c5f linear f=408f400000000000 ClearingCut
++458 401c000000000000 401f000000000000 4030000000000000 rapid Retract
++459 c023800000000000 4020000000000000 4030000000000000 rapid Linking
++460 c023800000000000 4020000000000000 4021800000000000 rapid Linking
++461 c023800000000000 4020000000000000 4017000000000000 linear f=407f400000000000 EntryPlunge
++462 c023800000000000 4020000000000000 4019000000000000 rapid Retract
++463 c023800000000000 4020000000000000 4006000000000000 linear f=407f400000000000 EntryPlunge
++464 c023800000000000 4020000000000000 400a000000000000 rapid Retract
++465 c023800000000000 4020000000000000 4005666666666668 linear f=407f400000000000 EntryPlunge
++466 c022000000000000 401f000000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++467 c021800000000000 4020000000000000 401145c60c8b9c86 linear f=408f400000000000 ClearingCut
++468 c021000000000000 4020800000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++469 c020800000000000 4021000000000000 401145c60c8b9c86 linear f=408f400000000000 ClearingCut
++470 c020000000000000 4021800000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++471 c01f000000000000 4022000000000000 40109f9e5e86f4ce linear f=408f400000000000 ClearingCut
++472 c01e000000000000 4022800000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++473 c01d000000000000 4023000000000000 400fe9d75b5ff306 linear f=408f400000000000 ClearingCut
++474 c01e000000000000 4023800000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++475 c023000000000000 4023800000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++476 c023800000000000 4021000000000000 4005666666666668 linear f=408f400000000000 ClearingCut
++477 c023800000000000 4021000000000000 4030000000000000 rapid Retract
++478 c028000000000000 c02a000000000000 4030000000000000 rapid Linking
++479 c028000000000000 c02a000000000000 4021800000000000 rapid Linking
++480 c028000000000000 c02a000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
++481 c02a000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++482 c027800000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 Linking
++483 c025000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 Linking
++484 c024000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++485 c024000000000000 c02a000000000000 4030000000000000 rapid Retract
++486 4018000000000000 c02a000000000000 4030000000000000 rapid Linking
++487 4018000000000000 c02a000000000000 4021800000000000 rapid Linking
++488 4018000000000000 c02a000000000000 401f000000000000 linear f=407f400000000000 EntryPlunge
++489 401a000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++490 4021000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 Linking
++491 4025000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 Linking
++492 4029000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 Linking
++493 402a000000000000 c02a000000000000 401f000000000000 linear f=408f400000000000 ClearingCut
++494 402a000000000000 c02a000000000000 4030000000000000 rapid Retract
++495 c000000000000000 c02005c6bfec4216 4030000000000000 rapid Linking
++496 c000000000000000 c02005c6bfec4216 40227ffdc0000000 rapid Linking
++497 c000000000000000 c02005c6bfec4216 40207ffcf1543f48 linear f=407f400000000000 EntryPlunge
++498 c016c102380b7780 c018000000000000 40207ffdf54099c1 linear f=408f400000000000 ClearingCut
++499 c01cee3410cb0ad9 c010000000000000 40207ffd51b36ab6 linear f=408f400000000000 ClearingCut
++500 c0208d6244bb4d75 0000000000000000 40207fffffff920c linear f=408f400000000000 ClearingCut
++501 c020000000000000 4000600f46bcc550 40207fff4418eb3b linear f=408f400000000000 ClearingCut
++502 c018000000000000 4016c102380b7784 40207ffdf54099c0 linear f=408f400000000000 ClearingCut
++503 c010000000000000 401cee3410cb0ae0 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
++504 0000000000000000 40208d6244bb4d74 40207fffffff920d linear f=408f400000000000 ClearingCut
++505 4000600f46bcc550 4020000000000000 40207fff4418eb3a linear f=408f400000000000 ClearingCut
++506 4016c102380b7780 4018000000000000 40207ffdf54099c1 linear f=408f400000000000 ClearingCut
++507 401cee3410cb0ae0 4010000000000000 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
++508 40208d6244bb4d74 0000000000000000 40207fffffff920d linear f=408f400000000000 ClearingCut
++509 4020000000000000 c000600f46bcc550 40207fff4418eb3c linear f=408f400000000000 ClearingCut
++510 4018000000000000 c016c102380b777e 40207ffdf54099c2 linear f=408f400000000000 ClearingCut
++511 4010000000000000 c01cee3410cb0add 40207ffd51b36ab4 linear f=408f400000000000 ClearingCut
++512 0000000000000000 c0208d6244bb4d75 40207fffffff920c linear f=408f400000000000 ClearingCut
++513 c000000000000000 c02005c6bfec4216 40207ffcf1543f48 linear f=408f400000000000 ClearingCut
++514 c000000000000000 c02005c6bfec4216 4030000000000000 rapid Retract
++515 c027800000000000 4004000000000000 4030000000000000 rapid Linking
++516 c027800000000000 4004000000000000 4020800000000000 rapid Linking
++517 c027800000000000 4004000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++518 c027800000000000 400c000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++519 c029800000000000 4010000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++520 c029000000000000 c029800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++521 4029800000000000 c029000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++522 4029000000000000 c015000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++523 4024800000000000 c016000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++524 4028800000000000 c01c000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++525 4028800000000000 c026000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++526 4026000000000000 c028800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++527 4016000000000000 c028800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++528 4011000000000000 c026000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++529 4010000000000000 c021800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++530 400e000000000000 c025000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++531 4004000000000000 c027800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++532 c004000000000000 c027800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++533 c00e000000000000 c025000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++534 c010000000000000 c021800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++535 c011000000000000 c026000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++536 c016000000000000 c028800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++537 c026000000000000 c028800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++538 c028800000000000 c026000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++539 c028800000000000 c014000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++540 c026000000000000 c00e000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++541 c021800000000000 c00c000000000000 401d9cacf5113f74 linear f=408f400000000000 ClearingCut
++542 c024000000000000 bff4000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++543 c027800000000000 bff0000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++544 c027800000000000 4000000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++545 c027800000000000 4000000000000000 4030000000000000 rapid Retract
++546 4022000000000000 c015000000000000 4030000000000000 rapid Linking
++547 4022000000000000 c015000000000000 4020800000000000 rapid Linking
++548 4022000000000000 c015000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++549 4023800000000000 c014000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++550 4022000000000000 c011000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++551 4020800000000000 c012000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++552 4021000000000000 c015000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++553 4021000000000000 c015000000000000 4030000000000000 rapid Retract
++554 4022000000000000 401b000000000000 4030000000000000 rapid Linking
++555 4022000000000000 401b000000000000 40208230b0000000 rapid Linking
++556 4022000000000000 401b000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++557 401e000000000000 401b000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++558 4018000000000000 4021800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++559 4011000000000000 4022000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++560 4020800000000000 4014000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++561 4024000000000000 bffc000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++562 4025000000000000 bfe8000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++563 4029800000000000 bfe0000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++564 4029800000000000 401a000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++565 4023000000000000 401b000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++566 4023000000000000 401b000000000000 4030000000000000 rapid Retract
++567 c022000000000000 4015000000000000 4030000000000000 rapid Linking
++568 c022000000000000 4015000000000000 4020f0f560000000 rapid Linking
++569 c022000000000000 4015000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++570 c021000000000000 4015000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++571 c021000000000000 4015000000000000 4030000000000000 rapid Retract
++572 3ffc000000000000 4028000000000000 4030000000000000 rapid Linking
++573 3ffc000000000000 4028000000000000 4020800000000000 rapid Linking
++574 3ffc000000000000 4028000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++575 4008000000000000 4027800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++576 400c000000000000 4029800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++577 c00e000000000000 4029000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++578 3ff8000000000000 4028800000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++579 3ff8000000000000 4028800000000000 4030000000000000 rapid Retract
++580 4025800000000000 4000000000000000 4030000000000000 rapid Linking
++581 4025800000000000 4000000000000000 4020800000000000 rapid Linking
++582 4025800000000000 4000000000000000 4018d41ef22152fa linear f=407f400000000000 EntryPlunge
++583 4026800000000000 4000000000000000 4016b3ea1b8022cc linear f=408f400000000000 ClearingCut
++584 4026800000000000 400c000000000000 401340fd72ca5142 linear f=408f400000000000 ClearingCut
++585 4026000000000000 4015000000000000 401340fd72ca5142 linear f=408f400000000000 ClearingCut
++586 4023800000000000 4014000000000000 4018dc93486c7ea0 linear f=408f400000000000 ClearingCut
++587 4025800000000000 4004000000000000 40186ba3a0374854 linear f=408f400000000000 ClearingCut
++588 4025800000000000 4004000000000000 4030000000000000 rapid Retract
++589 c021000000000000 c010000000000000 4030000000000000 rapid Linking
++590 c021000000000000 c010000000000000 40217ffe00000000 rapid Linking
++591 c021000000000000 c010000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++592 c022000000000000 c010000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++593 c022000000000000 c010000000000000 4030000000000000 rapid Retract
++594 c01c000000000000 401a000000000000 4030000000000000 rapid Linking
++595 c01c000000000000 401a000000000000 4020f0f560000000 rapid Linking
++596 c01c000000000000 401a000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++597 c01a000000000000 401a000000000000 401db75100d2c9f5 linear f=408f400000000000 ClearingCut
++598 c01a000000000000 401c000000000000 401d000000000000 linear f=408f400000000000 Linking
++599 c018000000000000 401c000000000000 401d7c024f66ee4f linear f=408f400000000000 ClearingCut
++600 c018000000000000 401e000000000000 401d000000000000 linear f=408f400000000000 Linking
++601 c016000000000000 401e000000000000 401d3540491c96ef linear f=408f400000000000 ClearingCut
++602 c016000000000000 4020000000000000 401d000000000000 linear f=408f400000000000 Linking
++603 c012000000000000 4020000000000000 401db4bb8b06909d linear f=408f400000000000 ClearingCut
++604 c014000000000000 4021000000000000 401d000000000000 linear f=408f400000000000 Linking
++605 c00c000000000000 4021000000000000 401d9cacf5113f71 linear f=408f400000000000 ClearingCut
++606 c010000000000000 4022000000000000 401d000000000000 linear f=408f400000000000 Linking
++607 c014000000000000 4022000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++608 c012000000000000 4023000000000000 401d000000000000 linear f=408f400000000000 Linking
++609 c010000000000000 4023000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++610 c010000000000000 4025000000000000 401d000000000000 linear f=408f400000000000 Linking
++611 c00c000000000000 4025000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++612 c015333333333333 4026000000000000 401d000000000000 linear f=408f400000000000 Linking
++613 c01c666666666666 4027000000000000 401d000000000000 linear f=408f400000000000 Linking
++614 c021cccccccccccc 4028000000000000 401d000000000000 linear f=408f400000000000 Linking
++615 c025666666666666 4029000000000000 401d000000000000 linear f=408f400000000000 Linking
++616 c029000000000000 402a000000000000 401d000000000000 linear f=408f400000000000 Linking
++617 c02a000000000000 402a000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++618 c02a000000000000 402a000000000000 4030000000000000 rapid Retract
++619 4024000000000000 402a000000000000 4030000000000000 rapid Linking
++620 4024000000000000 402a000000000000 4020800000000000 rapid Linking
++621 4024000000000000 402a000000000000 401d000000000000 linear f=407f400000000000 EntryPlunge
++622 4025000000000000 402a000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++623 4028000000000000 402a000000000000 401d000000000000 linear f=408f400000000000 Linking
++624 402a000000000000 402a000000000000 401d000000000000 linear f=408f400000000000 ClearingCut
++625 402a000000000000 402a000000000000 4030000000000000 rapid Retract
++626 c000000000000000 c0213914a942bba6 4030000000000000 rapid Linking
++627 c000000000000000 c0213914a942bba6 40217ffd00000000 rapid Linking
++628 c000000000000000 c0213914a942bba6 401efff9e2a87e90 linear f=407f400000000000 EntryPlunge
++629 c018000000000000 c01a017dc896a436 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
++630 c01fa10d998b1f52 c010000000000000 401effffffff241b linear f=408f400000000000 ClearingCut
++631 c0213914a942bba6 4000000000000000 401efff9e2a87e90 linear f=408f400000000000 ClearingCut
++632 c01a017dc896a436 4018000000000000 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
++633 c010000000000000 401fa10d998b1f58 401effffffff2416 linear f=408f400000000000 ClearingCut
++634 4000000000000000 40213914a942bba4 401efff9e2a87e94 linear f=408f400000000000 ClearingCut
++635 4018000000000000 401a017dc896a438 401efffb37e1dc9c linear f=408f400000000000 ClearingCut
++636 401fa10d998b1f58 4010000000000000 401effffffff2416 linear f=408f400000000000 ClearingCut
++637 40213914a942bba4 c000000000000000 401efff9e2a87e94 linear f=408f400000000000 ClearingCut
++638 401a017dc896a438 c018000000000000 401efffb37e1dc9d linear f=408f400000000000 ClearingCut
++639 4010000000000000 c01fa10d998b1f54 401effffffff2419 linear f=408f400000000000 ClearingCut
++640 c000000000000000 c0213914a942bba6 401efff9e2a87e90 linear f=408f400000000000 ClearingCut
++641 c000000000000000 c0213914a942bba6 4030000000000000 rapid Retract
++642 c024800000000000 3ff0000000000000 4030000000000000 rapid Linking
++643 c024800000000000 3ff0000000000000 401f1ae5e0000000 rapid Linking
++644 c024800000000000 3ff0000000000000 401b000000000000 linear f=407f400000000000 EntryPlunge
++645 c021800000000000 4014000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++646 c026000000000000 4015000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++647 c028800000000000 401a000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++648 c028800000000000 4026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++649 c026000000000000 4028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++650 c018000000000000 4028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++651 c013000000000000 4026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++652 c012000000000000 4021800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++653 c004000000000000 4028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++654 bfe0000000000000 4028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++655 3ff0000000000000 4024800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++656 400c000000000000 4023800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++657 401e000000000000 401b000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++658 4022000000000000 401f000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++659 4029800000000000 4020000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++660 4029000000000000 4029800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++661 c029800000000000 4029000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++662 c029800000000000 c029000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++663 4029000000000000 c029800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++664 4029000000000000 bfe8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++665 4024000000000000 bfe8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++666 4021800000000000 c012000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++667 4028800000000000 c01c000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++668 4028800000000000 c026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++669 4026000000000000 c028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++670 4016000000000000 c028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++671 400c000000000000 c022800000000000 401b711ecff584d5 linear f=408f400000000000 ClearingCut
++672 0000000000000000 c023800000000000 401c4681558896a9 linear f=408f400000000000 ClearingCut
++673 c010000000000000 c022800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++674 c011000000000000 c026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++675 c018000000000000 c028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++676 c026000000000000 c028800000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++677 c028800000000000 c026000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++678 c028800000000000 c016000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++679 c026000000000000 c00e000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++680 c022800000000000 c00c000000000000 401b711ecff584d6 linear f=408f400000000000 ClearingCut
++681 c024800000000000 3fe0000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++682 c024800000000000 3fe0000000000000 4030000000000000 rapid Retract
++683 4025800000000000 c010000000000000 4030000000000000 rapid Linking
++684 4025800000000000 c010000000000000 401d000000000000 rapid Linking
++685 4025800000000000 c010000000000000 40180307b610bdf1 linear f=407f400000000000 EntryPlunge
++686 4026800000000000 c00c000000000000 40166267b38a3263 linear f=408f400000000000 ClearingCut
++687 4025800000000000 c00c000000000000 40188ff4807a0151 linear f=408f400000000000 ClearingCut
++688 4025800000000000 c00c000000000000 4030000000000000 rapid Retract
++689 4020000000000000 4021800000000000 4030000000000000 rapid Linking
++690 4020000000000000 4021800000000000 401e1999a0000000 rapid Linking
++691 4020000000000000 4021800000000000 40166267b38a3263 linear f=407f400000000000 EntryPlunge
++692 4026000000000000 4022800000000000 40166267b38a3263 linear f=408f400000000000 ClearingCut
++693 4026000000000000 4026800000000000 40166267b38a3263 linear f=408f400000000000 ClearingCut
++694 4012000000000000 4026800000000000 40166267b38a3263 linear f=408f400000000000 ClearingCut
++695 4014000000000000 4024800000000000 401841a29db01f25 linear f=408f400000000000 ClearingCut
++696 401e000000000000 4021800000000000 4017f25bd8c39c4e linear f=408f400000000000 ClearingCut
++697 401e000000000000 4021800000000000 4030000000000000 rapid Retract
++698 4012000000000000 c025000000000000 4030000000000000 rapid Linking
++699 4012000000000000 c025000000000000 401d711ec0000000 rapid Linking
++700 4012000000000000 c025000000000000 401b000000000000 linear f=407f400000000000 EntryPlunge
++701 c000000000000000 c025000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++702 c000000000000000 c024000000000000 401b000000000000 linear f=408f400000000000 Linking
++703 4012000000000000 c024000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++704 4008000000000000 c023c00000000000 401b2e592c8b81f4 linear f=408f400000000000 Linking
++705 3ff8000000000000 c023800000000000 401b5cb2591703e8 linear f=408f400000000000 Linking
++706 0000000000000000 c023400000000000 401bb0a2ef7f180d linear f=408f400000000000 Linking
++707 bff8000000000000 c023000000000000 401bb964b22e07cf linear f=408f400000000000 Linking
++708 c000000000000000 c023000000000000 401b34dee2074d71 linear f=408f400000000000 ClearingCut
++709 bfe0000000000000 c023000000000000 401c1ebd83a3922e linear f=408f400000000000 Linking
++710 3ff0000000000000 c023000000000000 401bef8f828f7eb5 linear f=408f400000000000 Linking
++711 4012000000000000 c023000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++712 4012000000000000 c022000000000000 401b000000000000 linear f=408f400000000000 Linking
++713 4010000000000000 c022000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++714 4010000000000000 c022000000000000 4030000000000000 rapid Retract
++715 c023000000000000 c000000000000000 4030000000000000 rapid Linking
++716 c023000000000000 c000000000000000 4020800000000000 rapid Linking
++717 c023000000000000 c000000000000000 401b34dee2074d6f linear f=407f400000000000 EntryPlunge
++718 c025000000000000 c000000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++719 c025000000000000 bff8000000000000 401b000000000000 linear f=408f400000000000 Linking
++720 c024000000000000 bff8000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++721 c024000000000000 bff0000000000000 401b000000000000 linear f=408f400000000000 Linking
++722 c025000000000000 bff0000000000000 401b000000000000 linear f=408f400000000000 ClearingCut
++723 c025000000000000 bff0000000000000 4030000000000000 rapid Retract
++724 c010000000000000 c020de2bfcd063ff 4030000000000000 rapid Linking
++725 c010000000000000 c020de2bfcd063ff 40207ffda0000000 rapid Linking
++726 c010000000000000 c020de2bfcd063ff 401cfff8091a73d4 linear f=407f400000000000 EntryPlunge
++727 c020de2bfcd063ff c010000000000000 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
++728 c022b0c947267d72 0000000000000000 401cffffffff241a linear f=408f400000000000 ClearingCut
++729 c020de2bfcd063ff 4010000000000000 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
++730 c010000000000000 4020de2bfcd06400 401cfff8091a73d3 linear f=408f400000000000 ClearingCut
++731 0000000000000000 4022b0c947267d72 401cffffffff241a linear f=408f400000000000 ClearingCut
++732 4010000000000000 4020de2bfcd06400 401cfff8091a73d1 linear f=408f400000000000 ClearingCut
++733 4020de2bfcd06400 4010000000000000 401cfff8091a73d3 linear f=408f400000000000 ClearingCut
++734 4022b0c947267d72 0000000000000000 401cffffffff241a linear f=408f400000000000 ClearingCut
++735 4020de2bfcd06400 c010000000000000 401cfff8091a73d1 linear f=408f400000000000 ClearingCut
++736 4010000000000000 c020de2bfcd063ff 401cfff8091a73d6 linear f=408f400000000000 ClearingCut
++737 0000000000000000 c022b0c947267d72 401cffffffff241a linear f=408f400000000000 ClearingCut
++738 c010000000000000 c020de2bfcd063ff 401cfff8091a73d4 linear f=408f400000000000 ClearingCut
++739 c010000000000000 c020de2bfcd063ff 4030000000000000 rapid Retract
++740 c00a000000000000 4024000000000000 4030000000000000 rapid Linking
++741 c00a000000000000 4024000000000000 401ec23820000000 rapid Linking
++742 c00a000000000000 4024000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
++743 3ff8000000000000 4024800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++744 4000000000000000 4029800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++745 c029800000000000 4029000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++746 c029800000000000 c029000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++747 4029000000000000 c029800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++748 4029000000000000 c017000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++749 4027800000000000 c01a000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++750 4028800000000000 c025000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++751 4026000000000000 c028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++752 4018000000000000 c028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++753 4011000000000000 c026000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++754 4010000000000000 c023800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++755 4008000000000000 c023800000000000 401a1a71c461da4d linear f=408f400000000000 ClearingCut
++756 4004000000000000 c024800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++757 c004000000000000 c024800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++758 c008000000000000 c023800000000000 401a1a71c461da4d linear f=408f400000000000 ClearingCut
++759 c010000000000000 c023800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++760 c011000000000000 c026000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++761 c018000000000000 c028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++762 c025000000000000 c028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++763 c028800000000000 c026000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++764 c028800000000000 c018000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++765 c023800000000000 c00c000000000000 40192d68430e51e7 linear f=408f400000000000 ClearingCut
++766 c024800000000000 4004000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++767 c022800000000000 4012000000000000 4019a2ed3ae3d626 linear f=408f400000000000 ClearingCut
++768 c023000000000000 4015000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++769 c026000000000000 4015000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++770 c028800000000000 401a000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++771 c028800000000000 4026000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++772 c026000000000000 4028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++773 c018000000000000 4028800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++774 c013000000000000 4026000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++775 c012000000000000 4022800000000000 40182f1b8958ee73 linear f=408f400000000000 ClearingCut
++776 c00c000000000000 4023800000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++777 c00c000000000000 4023800000000000 4030000000000000 rapid Retract
++778 4024800000000000 bff0000000000000 4030000000000000 rapid Linking
++779 4024800000000000 bff0000000000000 401f000000000000 rapid Linking
++780 4024800000000000 bff0000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
++781 4025000000000000 bfe8000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++782 4028000000000000 bfd0000000000000 4018000000000000 linear f=408f400000000000 Linking
++783 4029000000000000 bff4000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++784 4029000000000000 bfd0000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++785 4029000000000000 bfd0000000000000 4030000000000000 rapid Retract
++786 c01c000000000000 c01e000000000000 4030000000000000 rapid Linking
++787 c01c000000000000 c01e000000000000 401efff800000000 rapid Linking
++788 c01c000000000000 c01e000000000000 40184e961b55c310 linear f=407f400000000000 EntryPlunge
++789 c01e000000000000 c01e000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++790 c01e000000000000 c01e000000000000 4030000000000000 rapid Retract
++791 4021000000000000 c016000000000000 4030000000000000 rapid Linking
++792 4021000000000000 c016000000000000 401efff800000000 rapid Linking
++793 4021000000000000 c016000000000000 401925223d5a942d linear f=407f400000000000 EntryPlunge
++794 4023000000000000 c016000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++795 4022000000000000 c014000000000000 40181071e10fe28d linear f=408f400000000000 Linking
++796 4021000000000000 c014000000000000 401a79d27e79273a linear f=408f400000000000 ClearingCut
++797 4021000000000000 c014000000000000 4030000000000000 rapid Retract
++798 c023000000000000 c010000000000000 4030000000000000 rapid Linking
++799 c023000000000000 c010000000000000 401efff800000000 rapid Linking
++800 c023000000000000 c010000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
++801 c025000000000000 c010000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++802 c025000000000000 c00c000000000000 4018000000000000 linear f=408f400000000000 Linking
++803 c024000000000000 c00c000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++804 c024000000000000 c008000000000000 4018000000000000 linear f=408f400000000000 Linking
++805 c025000000000000 c008000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++806 c025000000000000 c004000000000000 4018000000000000 linear f=408f400000000000 Linking
++807 c024000000000000 c004000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++808 c024000000000000 c000000000000000 4018b0cbbd38081c linear f=408f400000000000 Linking
++809 c025000000000000 c000000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++810 c025000000000000 c000000000000000 4030000000000000 rapid Retract
++811 4021000000000000 4018000000000000 4030000000000000 rapid Linking
++812 4021000000000000 4018000000000000 401efff800000000 rapid Linking
++813 4021000000000000 4018000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
++814 4022000000000000 4018000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++815 4022000000000000 401a000000000000 4018000000000000 linear f=408f400000000000 Linking
++816 401e000000000000 401a000000000000 401a2c392f703574 linear f=408f400000000000 ClearingCut
++817 401e000000000000 401a000000000000 4030000000000000 rapid Retract
++818 4029000000000000 401c000000000000 4030000000000000 rapid Linking
++819 4029000000000000 401c000000000000 401f000000000000 rapid Linking
++820 4029000000000000 401c000000000000 4018000000000000 linear f=407f400000000000 EntryPlunge
++821 402a000000000000 401c000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++822 402a000000000000 401e000000000000 4018000000000000 linear f=408f400000000000 Linking
++823 4029000000000000 401e000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++824 4025800000000000 401f800000000000 4018000000000000 linear f=408f400000000000 Linking
++825 4022000000000000 4020800000000000 4018000000000000 linear f=408f400000000000 Linking
++826 401d000000000000 4021400000000000 4018000000000000 linear f=408f400000000000 Linking
++827 4016000000000000 4022000000000000 4018000000000000 linear f=408f400000000000 Linking
++828 4014000000000000 4022000000000000 40181071e10fe28b linear f=408f400000000000 ClearingCut
++829 401a000000000000 402399999999999a 40180d27e73fe86f linear f=408f400000000000 Linking
++830 4020000000000000 4025333333333333 401809dded6fee53 linear f=408f400000000000 Linking
++831 4023000000000000 4026cccccccccccd 40180693f39ff438 linear f=408f400000000000 Linking
++832 4026000000000000 4028666666666666 40180349f9cffa1c linear f=408f400000000000 Linking
++833 4029000000000000 402a000000000000 4018000000000000 linear f=408f400000000000 Linking
++834 402a000000000000 402a000000000000 4018000000000000 linear f=408f400000000000 ClearingCut
++835 402a000000000000 402a000000000000 4030000000000000 rapid Retract
++836 c010000000000000 c022401100d0172d 4030000000000000 rapid Linking
++837 c010000000000000 c022401100d0172d 401f000000000000 rapid Linking
++838 c010000000000000 c022401100d0172d 4019fff8091a73d3 linear f=407f400000000000 EntryPlunge
++839 c01bf36b069c6f2a c01bf36b069c6f2a 401a7c5d44b14404 linear f=408f400000000000 ClearingCut
++840 c022401100d0172d c010000000000000 4019fff8091a73d5 linear f=408f400000000000 ClearingCut
++841 c023f8c0d35cce6a 0000000000000000 4019ffffffff241a linear f=408f400000000000 ClearingCut
++842 c022401100d0172d 4010000000000000 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
++843 c01bf36b069c6f2b 401bf36b069c6f2a 401a7c5d44b14402 linear f=408f400000000000 ClearingCut
++844 c010000000000000 4022401100d0172e 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
++845 0000000000000000 4023f8c0d35cce6a 4019ffffffff241a linear f=408f400000000000 ClearingCut
++846 4010000000000000 4022401100d0172e 4019fff8091a73d1 linear f=408f400000000000 ClearingCut
++847 401bf36b069c6f2c 401bf36b069c6f2c 401a7c5d44b143ff linear f=408f400000000000 ClearingCut
++848 4022401100d01730 4010000000000000 4019fff8091a73ce linear f=408f400000000000 ClearingCut
++849 4023f8c0d35cce6a 0000000000000000 4019ffffffff241a linear f=408f400000000000 ClearingCut
++850 4022401100d0172e c010000000000000 4019fff8091a73d1 linear f=408f400000000000 ClearingCut
++851 401bf36b069c6f2c c01bf36b069c6f2a 401a7c5d44b14401 linear f=408f400000000000 ClearingCut
++852 4010000000000000 c022401100d0172d 4019fff8091a73d5 linear f=408f400000000000 ClearingCut
++853 0000000000000000 c023f8c0d35cce6a 4019ffffffff241a linear f=408f400000000000 ClearingCut
++854 c010000000000000 c022401100d0172d 4019fff8091a73d3 linear f=408f400000000000 ClearingCut
++855 c010000000000000 c022401100d0172d 4030000000000000 rapid Retract
++856 4029800000000000 400c000000000000 4030000000000000 rapid Linking
++857 4029800000000000 400c000000000000 401f000000000000 rapid Linking
++858 4029800000000000 400c000000000000 4013000000000000 linear f=407f400000000000 EntryPlunge
++859 4029000000000000 4029800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++860 c029800000000000 4029000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++861 c029000000000000 c029800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++862 4029000000000000 c029800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++863 4029800000000000 4008000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++864 4029800000000000 4008000000000000 4030000000000000 rapid Retract
++865 c025800000000000 c028000000000000 4030000000000000 rapid Linking
++866 c025800000000000 c028000000000000 4015000000000000 rapid Linking
++867 c025800000000000 c028000000000000 4013000000000000 linear f=407f400000000000 EntryPlunge
++868 c01a000000000000 c028800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++869 c015000000000000 c024000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++870 c012000000000000 c023800000000000 4016abf5b006ac0d linear f=408f400000000000 ClearingCut
++871 c010000000000000 c024800000000000 4014e66346e5fa33 linear f=408f400000000000 ClearingCut
++872 c008000000000000 c024800000000000 4017297fa77c5cfd linear f=408f400000000000 ClearingCut
++873 c004000000000000 c025800000000000 4014be3650cb04d2 linear f=408f400000000000 ClearingCut
++874 0000000000000000 c025800000000000 4016d6169e194df1 linear f=408f400000000000 ClearingCut
++875 4004000000000000 c025800000000000 4014be3650cb04d2 linear f=408f400000000000 ClearingCut
++876 4008000000000000 c024800000000000 4017297fa77c5cff linear f=408f400000000000 ClearingCut
++877 4012000000000000 c024800000000000 401366c35f54d372 linear f=408f400000000000 ClearingCut
++878 4018000000000000 c028800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++879 4026000000000000 c028800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++880 4028800000000000 c025000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++881 4028800000000000 c01c000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++882 4023800000000000 c016000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++883 4023800000000000 c012000000000000 401528cfd6b469aa linear f=408f400000000000 ClearingCut
++884 4025800000000000 c008000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++885 4025800000000000 3fe0000000000000 4014fce9a26803cd linear f=408f400000000000 ClearingCut
++886 4026800000000000 3ff0000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++887 4024800000000000 4018000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++888 4021800000000000 401a000000000000 401434efa2bc8d62 linear f=408f400000000000 ClearingCut
++889 4014000000000000 4024800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++890 4008000000000000 4024800000000000 40159207f6b4c620 linear f=408f400000000000 ClearingCut
++891 4004000000000000 4025800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++892 0000000000000000 4025800000000000 4015345595dd29f4 linear f=408f400000000000 ClearingCut
++893 c004000000000000 4025800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++894 c008000000000000 4024800000000000 40159207f6b4c621 linear f=408f400000000000 ClearingCut
++895 c010000000000000 4024800000000000 4013047e47b101fa linear f=408f400000000000 ClearingCut
++896 c012000000000000 4023800000000000 401528cfd6b469ac linear f=408f400000000000 ClearingCut
++897 c013000000000000 4026000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++898 c018000000000000 4028800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++899 c026000000000000 4028800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++900 c028800000000000 4025000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++901 c028800000000000 401a000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++902 c024000000000000 4015000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++903 c023800000000000 4012000000000000 4016abf5b006ac0e linear f=408f400000000000 ClearingCut
++904 c024000000000000 4011000000000000 40144606a22410bd linear f=408f400000000000 ClearingCut
++905 c024800000000000 4008000000000000 4017297fa77c5cfa linear f=408f400000000000 ClearingCut
++906 c025800000000000 4004000000000000 4014be3650cb04ce linear f=408f400000000000 ClearingCut
++907 c025800000000000 0000000000000000 4016d6169e194df1 linear f=408f400000000000 ClearingCut
++908 c025800000000000 c004000000000000 4014be3650cb04d1 linear f=408f400000000000 ClearingCut
++909 c024800000000000 c008000000000000 4017297fa77c5d00 linear f=408f400000000000 ClearingCut
++910 c024800000000000 c010000000000000 4014e66346e5fa33 linear f=408f400000000000 ClearingCut
++911 c023800000000000 c012000000000000 4016abf5b006ac0d linear f=408f400000000000 ClearingCut
++912 c024000000000000 c013000000000000 401366c35f54d373 linear f=408f400000000000 ClearingCut
++913 c028800000000000 c018000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++914 c028800000000000 c026000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++915 c026000000000000 c027800000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++916 c026000000000000 c027800000000000 4030000000000000 rapid Retract
++917 4025800000000000 401e000000000000 4030000000000000 rapid Linking
++918 4025800000000000 401e000000000000 40186267c0000000 rapid Linking
++919 4025800000000000 401e000000000000 40102aaaaaaaaaab linear f=407f400000000000 EntryPlunge
++920 4026800000000000 4026000000000000 40102aaaaaaaaaab linear f=408f400000000000 ClearingCut
++921 4019000000000000 4026000000000000 40102aaaaaaaaaab linear f=408f400000000000 ClearingCut
++922 4025000000000000 401f000000000000 40102aaaaaaaaaab linear f=408f400000000000 ClearingCut
++923 4025000000000000 401f000000000000 4030000000000000 rapid Retract
++924 c008000000000000 c025000000000000 4030000000000000 rapid Linking
++925 c008000000000000 c025000000000000 401a000000000000 rapid Linking
++926 c008000000000000 c025000000000000 4013e45dc4216547 linear f=407f400000000000 EntryPlunge
++927 c00c000000000000 c025000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++928 c00c000000000000 c025000000000000 4030000000000000 rapid Retract
++929 400c000000000000 c025000000000000 4030000000000000 rapid Linking
++930 400c000000000000 c025000000000000 401a000000000000 rapid Linking
++931 400c000000000000 c025000000000000 4013000000000000 linear f=407f400000000000 EntryPlunge
++932 4014000000000000 c025000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++933 4014000000000000 c025000000000000 4030000000000000 rapid Retract
++934 c024000000000000 c014000000000000 4030000000000000 rapid Linking
++935 c024000000000000 c014000000000000 401c000000000000 rapid Linking
++936 c024000000000000 c014000000000000 4013000000000000 linear f=407f400000000000 EntryPlunge
++937 c025000000000000 c014000000000000 4013000000000000 linear f=408f400000000000 ClearingCut
++938 c025000000000000 c014000000000000 4030000000000000 rapid Retract
++939 c000000000000000 c02528cee6c4aa73 4030000000000000 rapid Linking
++940 c000000000000000 c02528cee6c4aa73 401a000000000000 rapid Linking
++941 c000000000000000 c02528cee6c4aa73 4014fff4512cda7d linear f=407f400000000000 EntryPlunge
++942 c018000000000000 c021df49114138b9 4014fff5c170ef1f linear f=408f400000000000 ClearingCut
++943 c021df49114138b9 c018000000000000 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
++944 c02528cee6c4aa74 c000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
++945 c02528cee6c4aa73 4000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
++946 c021df49114138b9 4018000000000000 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
++947 c018000000000000 4021df49114138b8 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
++948 c000000000000000 402528cee6c4aa72 4014fff4512cda7e linear f=408f400000000000 ClearingCut
++949 4000000000000000 402528cee6c4aa72 4014fff4512cda7e linear f=408f400000000000 ClearingCut
++950 4018000000000000 4021df49114138ba 4014fff5c170ef1a linear f=408f400000000000 ClearingCut
++951 4021df49114138b8 4018000000000000 4014fff5c170ef20 linear f=408f400000000000 ClearingCut
++952 402528cee6c4aa74 4000000000000000 4014fff4512cda79 linear f=408f400000000000 ClearingCut
++953 402528cee6c4aa72 c000000000000000 4014fff4512cda80 linear f=408f400000000000 ClearingCut
++954 4021df49114138b8 c018000000000000 4014fff5c170ef20 linear f=408f400000000000 ClearingCut
++955 4018000000000000 c021df49114138b9 4014fff5c170ef1e linear f=408f400000000000 ClearingCut
++956 4000000000000000 c02528cee6c4aa74 4014fff4512cda77 linear f=408f400000000000 ClearingCut
++957 c000000000000000 c02528cee6c4aa73 4014fff4512cda7d linear f=408f400000000000 ClearingCut
++958 c000000000000000 c02528cee6c4aa73 4030000000000000 rapid Retract
++959 4029800000000000 4026000000000000 4030000000000000 rapid Linking
++960 4029800000000000 4026000000000000 4015000000000000 rapid Linking
++961 4029800000000000 4026000000000000 4008000000000000 linear f=407f400000000000 EntryPlunge
++962 4029000000000000 4029800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++963 c029800000000000 4029000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++964 c029000000000000 c029800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++965 4029000000000000 c029800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++966 4029800000000000 4025000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++967 4029800000000000 4025000000000000 4030000000000000 rapid Retract
++968 bff4000000000000 c027000000000000 4030000000000000 rapid Linking
++969 bff4000000000000 c027000000000000 4016fff460000000 rapid Linking
++970 bff4000000000000 c027000000000000 400aa82ee327df60 linear f=407f400000000000 EntryPlunge
++971 3ff4000000000000 c027000000000000 400a00575cb824ef linear f=408f400000000000 ClearingCut
++972 3ff8000000000000 c026800000000000 401235f9849372ad linear f=408f400000000000 ClearingCut
++973 400e000000000000 c026000000000000 4008d3de9032fdef linear f=408f400000000000 ClearingCut
++974 4010000000000000 c025800000000000 4010c7bc002aa266 linear f=408f400000000000 ClearingCut
++975 4014000000000000 c025800000000000 400847696853b059 linear f=408f400000000000 ClearingCut
++976 4016000000000000 c024800000000000 400e4ae8acf389f3 linear f=408f400000000000 ClearingCut
++977 401a000000000000 c024800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++978 4023800000000000 c01e000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++979 4025800000000000 c012000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++980 4025800000000000 c010000000000000 400d15f3714885c9 linear f=408f400000000000 ClearingCut
++981 4026800000000000 c00c000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++982 4026800000000000 bff8000000000000 400f97df3c56fdd9 linear f=408f400000000000 ClearingCut
++983 4027800000000000 bff0000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++984 4027800000000000 3ff0000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++985 4026800000000000 3ff8000000000000 400f97df3c56fde2 linear f=408f400000000000 ClearingCut
++986 4026800000000000 4008000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++987 4025800000000000 4010000000000000 400d15f3714885b6 linear f=408f400000000000 ClearingCut
++988 4025800000000000 4012000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++989 4024800000000000 401a000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++990 4021000000000000 4021800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++991 4016000000000000 4025800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++992 4010000000000000 4025800000000000 400d15f3714885b7 linear f=408f400000000000 ClearingCut
++993 4008000000000000 4026800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++994 3ff8000000000000 4026800000000000 400f97df3c56fde1 linear f=408f400000000000 ClearingCut
++995 3ff0000000000000 4027800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++996 bff0000000000000 4027800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++997 bff8000000000000 4026800000000000 400f97df3c56fdd7 linear f=408f400000000000 ClearingCut
++998 c008000000000000 4026800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++999 c010000000000000 4025800000000000 400d15f3714885ba linear f=408f400000000000 ClearingCut
++1000 c014000000000000 4025800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1001 c01a000000000000 4028800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1002 c025000000000000 4028800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1003 c027800000000000 4026000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1004 c028800000000000 401c000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1005 c025000000000000 4017000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1006 c024800000000000 4016000000000000 400e4ae8acf389ed linear f=408f400000000000 ClearingCut
++1007 c025800000000000 4014000000000000 400847696853b04f linear f=408f400000000000 ClearingCut
++1008 c025800000000000 400c000000000000 40129eeab5361943 linear f=408f400000000000 ClearingCut
++1009 c026000000000000 400a000000000000 400d3c00704f847f linear f=408f400000000000 ClearingCut
++1010 c026800000000000 3ff8000000000000 401235f9849372a7 linear f=408f400000000000 ClearingCut
++1011 c027000000000000 3ff4000000000000 400a00575cb824dd linear f=408f400000000000 ClearingCut
++1012 c027800000000000 bff0000000000000 400aa82ee327df62 linear f=408f400000000000 ClearingCut
++1013 c026800000000000 bff8000000000000 401235f9849372ae linear f=408f400000000000 ClearingCut
++1014 c026800000000000 c00c000000000000 400b97d62076d640 linear f=408f400000000000 ClearingCut
++1015 c025800000000000 c010000000000000 4010c7bc002aa26c linear f=408f400000000000 ClearingCut
++1016 c025800000000000 c014000000000000 400847696853b059 linear f=408f400000000000 ClearingCut
++1017 c024800000000000 c016000000000000 400e4ae8acf389e0 linear f=408f400000000000 ClearingCut
++1018 c024800000000000 c01a000000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1019 c01a000000000000 c024800000000000 4008000000000000 linear f=408f400000000000 ClearingCut
++1020 c016000000000000 c024800000000000 400e4ae8acf389f4 linear f=408f400000000000 ClearingCut
++1021 c014000000000000 c025800000000000 400847696853b04f linear f=408f400000000000 ClearingCut
++1022 c010000000000000 c025800000000000 4010c7bc002aa26c linear f=408f400000000000 ClearingCut
++1023 c00c000000000000 c026800000000000 400b97d62076d63c linear f=408f400000000000 ClearingCut
++1024 bff8000000000000 c026800000000000 401235f9849372a7 linear f=408f400000000000 ClearingCut
++1025 bff8000000000000 c026800000000000 4030000000000000 rapid Retract
++1026 c026800000000000 c026000000000000 4030000000000000 rapid Linking
++1027 c026800000000000 c026000000000000 40109bcce0000000 rapid Linking
++1028 c026800000000000 c026000000000000 4003000000000000 linear f=407f400000000000 EntryPlunge
++1029 c020800000000000 c026000000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1030 c026000000000000 c020800000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1031 c026800000000000 c025000000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1032 c026800000000000 c025000000000000 4030000000000000 rapid Retract
++1033 4020800000000000 c026000000000000 4030000000000000 rapid Linking
++1034 4020800000000000 c026000000000000 40109bcce0000000 rapid Linking
++1035 4020800000000000 c026000000000000 4003000000000000 linear f=407f400000000000 EntryPlunge
++1036 4026000000000000 c026800000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1037 4026000000000000 c020800000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1038 4021000000000000 c025800000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1039 4021000000000000 c025800000000000 4030000000000000 rapid Retract
++1040 4025800000000000 4020000000000000 4030000000000000 rapid Linking
++1041 4025800000000000 4020000000000000 40122aaaa0000000 rapid Linking
++1042 4025800000000000 4020000000000000 4003000000000000 linear f=407f400000000000 EntryPlunge
++1043 4026800000000000 4026000000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1044 401f000000000000 4026000000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1045 4025000000000000 4020800000000000 4003000000000000 linear f=408f400000000000 ClearingCut
++1046 4025000000000000 4020800000000000 4030000000000000 rapid Retract
++1047 c010000000000000 c0259665cfd8501e 4030000000000000 rapid Linking
++1048 c010000000000000 c0259665cfd8501e 4015e45dc0000000 rapid Linking
++1049 c010000000000000 c0259665cfd8501e 400bffc7553de003 linear f=407f400000000000 EntryPlunge
++1050 c020000000000000 c02096d62802523c 400bffd15c1a9e5b linear f=408f400000000000 ClearingCut
++1051 c0259665cfd8501e c010000000000000 400bffc7553ddfe9 linear f=408f400000000000 ClearingCut
++1052 c027107e3aa284a5 0000000000000000 400bfffffffe4830 linear f=408f400000000000 ClearingCut
++1053 c0259665cfd8501e 4010000000000000 400bffc7553de003 linear f=408f400000000000 ClearingCut
++1054 c020000000000000 402096d628025240 400bffd15c1a9e38 linear f=408f400000000000 ClearingCut
++1055 c010000000000000 40259665cfd85020 400bffc7553ddfda linear f=408f400000000000 ClearingCut
++1056 0000000000000000 4027107e3aa284a4 400bfffffffe4842 linear f=408f400000000000 ClearingCut
++1057 4010000000000000 40259665cfd85020 400bffc7553ddfe6 linear f=408f400000000000 ClearingCut
++1058 4020000000000000 402096d62802523c 400bffd15c1a9e5a linear f=408f400000000000 ClearingCut
++1059 40259665cfd85020 4010000000000000 400bffc7553ddfe5 linear f=408f400000000000 ClearingCut
++1060 4027107e3aa284a4 0000000000000000 400bfffffffe4842 linear f=408f400000000000 ClearingCut
++1061 40259665cfd85020 c010000000000000 400bffc7553ddff2 linear f=408f400000000000 ClearingCut
++1062 402096d62802523c c020000000000000 400bffd15c1a9e6a linear f=408f400000000000 ClearingCut
++1063 4010000000000000 c0259665cfd8501e 400bffc7553ddffa linear f=408f400000000000 ClearingCut
++1064 0000000000000000 c027107e3aa284a5 400bfffffffe4830 linear f=408f400000000000 ClearingCut
++1065 c010000000000000 c0259665cfd8501e 400bffc7553de003 linear f=408f400000000000 ClearingCut
++1066 c010000000000000 c0259665cfd8501e 4030000000000000 rapid Retract
++1067 c028000000000000 c029800000000000 4030000000000000 rapid Linking
++1068 c028000000000000 c029800000000000 400c000000000000 rapid Linking
++1069 c028000000000000 c029800000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
++1070 4029800000000000 c029000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1071 4029000000000000 4029800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1072 c029800000000000 4029000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1073 c029000000000000 c029800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1074 c025955555555555 c029400000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1075 c0222aaaaaaaaaab c029000000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1076 c01d800000000000 c028c00000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1077 c016aaaaaaaaaaab c028800000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1078 c00faaaaaaaaaaa8 c028400000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1079 c002000000000000 c028000000000000 3fe0000000000000 linear f=408f400000000000 Linking
++1080 4002000000000000 c028000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1081 4004000000000000 c027800000000000 40033532a17da269 linear f=408f400000000000 ClearingCut
++1082 400c000000000000 c027800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1083 4011000000000000 c027000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1084 4012000000000000 c026800000000000 3ff93759c502bfca linear f=408f400000000000 ClearingCut
++1085 4014000000000000 c026800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1086 401a000000000000 c024800000000000 3ff17d2d714561e4 linear f=408f400000000000 ClearingCut
++1087 4020000000000000 c023800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1088 4026800000000000 c016000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1089 4028800000000000 c000000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1090 4028800000000000 4000000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1091 4024800000000000 401e000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1092 401e000000000000 4024800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1093 4000000000000000 4028800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1094 c000000000000000 4028800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1095 c01a000000000000 4025800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1096 c022800000000000 4021000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1097 c024800000000000 401c000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1098 c024800000000000 401a000000000000 3ff17d2d714561ea linear f=408f400000000000 ClearingCut
++1099 c026800000000000 4016000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1100 c026800000000000 4012000000000000 3ff93759c502bfdd linear f=408f400000000000 ClearingCut
++1101 c027800000000000 4010000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1102 c027800000000000 4004000000000000 40033532a17da27d linear f=408f400000000000 ClearingCut
++1103 c028800000000000 4000000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1104 c028000000000000 c002000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1105 c027800000000000 c004000000000000 40033532a17da29f linear f=408f400000000000 ClearingCut
++1106 c027800000000000 c00c000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1107 c027000000000000 c011000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1108 c026800000000000 c012000000000000 3ff93759c502bfe9 linear f=408f400000000000 ClearingCut
++1109 c026800000000000 c014000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1110 c024800000000000 c01a000000000000 3ff17d2d7145624a linear f=408f400000000000 ClearingCut
++1111 c023800000000000 c020000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1112 c01c000000000000 c024800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1113 c01a000000000000 c024800000000000 3ff17d2d71456183 linear f=408f400000000000 ClearingCut
++1114 c016000000000000 c026800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1115 c012000000000000 c026800000000000 3ff93759c502bfde linear f=408f400000000000 ClearingCut
++1116 c011000000000000 c027000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1117 c00c000000000000 c027800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1118 c004000000000000 c027800000000000 40033532a17da27d linear f=408f400000000000 ClearingCut
++1119 c004000000000000 c027800000000000 4030000000000000 rapid Retract
++1120 c026800000000000 c026000000000000 4030000000000000 rapid Linking
++1121 c026800000000000 c026000000000000 4007000000000000 rapid Linking
++1122 c026800000000000 c026000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
++1123 c021800000000000 c026000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1124 c026000000000000 c021800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1125 c026800000000000 c025000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1126 c026800000000000 c025000000000000 4030000000000000 rapid Retract
++1127 4021800000000000 c026000000000000 4030000000000000 rapid Linking
++1128 4021800000000000 c026000000000000 4007000000000000 rapid Linking
++1129 4021800000000000 c026000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
++1130 4026000000000000 c026800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1131 4026000000000000 c021800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1132 4022000000000000 c025800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1133 4022000000000000 c025800000000000 4030000000000000 rapid Retract
++1134 c026800000000000 4021000000000000 4030000000000000 rapid Linking
++1135 c026800000000000 4021000000000000 4009666660000000 rapid Linking
++1136 c026800000000000 4021000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
++1137 c020800000000000 4026000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1138 c026000000000000 4026800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1139 c026800000000000 4022000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1140 c026800000000000 4022000000000000 4030000000000000 rapid Retract
++1141 4025800000000000 4022000000000000 4030000000000000 rapid Linking
++1142 4025800000000000 4022000000000000 4007000000000000 rapid Linking
++1143 4025800000000000 4022000000000000 3fe0000000000000 linear f=407f400000000000 EntryPlunge
++1144 4026800000000000 4026000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1145 4021800000000000 4026000000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1146 4025000000000000 4022800000000000 3fe0000000000000 linear f=408f400000000000 ClearingCut
++1147 4025000000000000 4022800000000000 4030000000000000 rapid Retract
++1148 c018000000000000 c024a14699cf3823 4030000000000000 rapid Linking
++1149 c018000000000000 c024a14699cf3823 400fffd160000000 rapid Linking
++1150 c018000000000000 c024a14699cf3823 3fefff4580000000 linear f=407f400000000000 EntryPlunge
++1151 c018000000000000 c024a14699cf3823 3ff7ffa2c0000000 rapid Retract
++1152 c018000000000000 c024a14699cf3823 3feffd81de3e629f linear f=407f400000000000 EntryPlunge
++1153 c01c098f0dc10ae3 c0233cced4ee1682 3ffbf6cad5b7e40d linear f=408f400000000000 ClearingCut
++1154 c021b66c7eca4386 c020000000000000 3feffdc6e5df6ebc linear f=408f400000000000 ClearingCut
++1155 c0233cced4ee1682 c01c098f0dc10ae6 3ffbf6cad5b7e3e8 linear f=408f400000000000 ClearingCut
++1156 c024000000000000 c01a0e5694a19059 3feffe78f3c978fb linear f=408f400000000000 ClearingCut
++1157 c02541e224c2b692 c015555555555555 3ffdc8b45aef4d51 linear f=408f400000000000 ClearingCut
++1158 c02683193aa9b373 c010000000000000 3feffd4c8d1f8f4b linear f=408f400000000000 ClearingCut
++1159 c026ddfcefcaa57a c00aaaaaaaaaaaab 3ff6f5e9ff6e27ec linear f=408f400000000000 ClearingCut
++1160 c02793c45a0c8988 4000000000000000 3feffffffff9205a linear f=408f400000000000 ClearingCut
++1161 c02683193aa9b373 4010000000000000 3feffd4c8d1f8f8c linear f=408f400000000000 ClearingCut
++1162 c02541e224c2b692 4015555555555555 3ffdc8b45aef4d5e linear f=408f400000000000 ClearingCut
++1163 c024a14699cf3822 4018000000000000 3feffd81de3e6506 linear f=408f400000000000 ClearingCut
++1164 c0233cced4ee1681 401c098f0dc10ae3 3ffbf6cad5b7e465 linear f=408f400000000000 ClearingCut
++1165 c020000000000000 4021b66c7eca4386 3feffdc6e5df6d3a linear f=408f400000000000 ClearingCut
++1166 c01c098f0dc10ae4 40233cced4ee1682 3ffbf6cad5b7e3ce linear f=408f400000000000 ClearingCut
++1167 c01a0e5694a19056 4024000000000000 3feffe78f3c978fb linear f=408f400000000000 ClearingCut
++1168 c015555555555555 402541e224c2b691 3ffdc8b45aef4db6 linear f=408f400000000000 ClearingCut
++1169 c010000000000000 402683193aa9b372 3feffd4c8d1f9054 linear f=408f400000000000 ClearingCut
++1170 c00aaaaaaaaaaaab 4026ddfcefcaa579 3ff6f5e9ff6e288e linear f=408f400000000000 ClearingCut
++1171 4000000000000000 402793c45a0c8988 3feffffffff92122 linear f=408f400000000000 ClearingCut
++1172 4010000000000000 402683193aa9b374 3feffd4c8d1f8f8c linear f=408f400000000000 ClearingCut
++1173 4015555555555555 402541e224c2b693 3ffdc8b45aef4ced linear f=408f400000000000 ClearingCut
++1174 4018000000000000 4024a14699cf3822 3feffd81de3e6428 linear f=408f400000000000 ClearingCut
++1175 401c098f0dc10ae8 40233cced4ee1682 3ffbf6cad5b7e390 linear f=408f400000000000 ClearingCut
++1176 4021b66c7eca4384 4020000000000000 3feffdc6e5df6e08 linear f=408f400000000000 ClearingCut
++1177 40233cced4ee1681 401c098f0dc10ae5 3ffbf6cad5b7e432 linear f=408f400000000000 ClearingCut
++1178 4024000000000000 401a0e5694a19058 3feffe78f3c9781e linear f=408f400000000000 ClearingCut
++1179 402541e224c2b690 4015555555555555 3ffdc8b45aef4e26 linear f=408f400000000000 ClearingCut
++1180 402683193aa9b374 4010000000000000 3feffd4c8d1f8eba linear f=408f400000000000 ClearingCut
++1181 4026ddfcefcaa57b 400aaaaaaaaaaaab 3ff6f5e9ff6e26f4 linear f=408f400000000000 ClearingCut
++1182 402793c45a0c8988 c000000000000000 3feffffffff920a5 linear f=408f400000000000 ClearingCut
++1183 402683193aa9b374 c010000000000000 3feffd4c8d1f8eba linear f=408f400000000000 ClearingCut
++1184 402541e224c2b693 c015555555555555 3ffdc8b45aef4d1f linear f=408f400000000000 ClearingCut
++1185 4024a14699cf3822 c018000000000000 3feffd81de3e6506 linear f=408f400000000000 ClearingCut
++1186 40233cced4ee1683 c01c098f0dc10ae3 3ffbf6cad5b7e3e8 linear f=408f400000000000 ClearingCut
++1187 4020000000000000 c021b66c7eca4386 3feffdc6e5df6ebc linear f=408f400000000000 ClearingCut
++1188 401c098f0dc10ae8 c0233cced4ee1682 3ffbf6cad5b7e39c linear f=408f400000000000 ClearingCut
++1189 401a0e5694a1905c c024000000000000 3feffe78f3c9782e linear f=408f400000000000 ClearingCut
++1190 4015555555555555 c02541e224c2b693 3ffdc8b45aef4d51 linear f=408f400000000000 ClearingCut
++1191 4010000000000000 c02683193aa9b373 3feffd4c8d1f8ec1 linear f=408f400000000000 ClearingCut
++1192 400aaaaaaaaaaaab c026ddfcefcaa57a 3ff6f5e9ff6e27c4 linear f=408f400000000000 ClearingCut
++1193 c000000000000000 c02793c45a0c8988 3feffffffff920a5 linear f=408f400000000000 ClearingCut
++1194 c010000000000000 c02683193aa9b373 3feffd4c8d1f9059 linear f=408f400000000000 ClearingCut
++1195 c015555555555555 c02541e224c2b693 3ffdc8b45aef4d1f linear f=408f400000000000 ClearingCut
++1196 c018000000000000 c024a14699cf3823 3feffd81de3e629f linear f=408f400000000000 ClearingCut
++1197 c018000000000000 c024a14699cf3823 4030000000000000 rapid Retract

@@ -281,3 +281,11 @@ R1 goes first: after R2 the four fixtures do not load.
 12. An older build reads a new project file without change (the values
     are a subset). A new build refuses an old file that names a removed
     value (§3.2).
+13. The D2 split (G-ADAPT3DPIECES: a region whose inset splits is
+    planned piece by piece) has no live strategy test after R2. On the
+    dumbbell fixture of `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`
+    the Geodesic Adaptive outline does not split, so cutting the split to
+    one piece leaves the run green; only the planted region check proves
+    the check can fail (`stepR2_report.md` §4.1). Later sentry: a fixture
+    whose grown inset splits, so the split is on the product path. Not
+    built in this programme.
