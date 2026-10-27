@@ -6,7 +6,8 @@
   frontier hop, mop, links, emission; `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
   `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points.
 - Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs` (candidate (a),
-  geodesic wavefront, 2026-10-23); its render harness is `tests/adaptive_geodesic_2d_renders_g1.rs`.
+  geodesic wavefront; the research branch's file at 607e52730, less SlabField and the 3D slice layer);
+  its render harness is `tests/adaptive_geodesic_2d_renders_g1.rs`; C35 plan A pins: `the_geodesic_preset_keeps_its_plan_s7_3`.
 
 ## Invariants
 

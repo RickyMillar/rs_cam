@@ -50,6 +50,17 @@ pub(super) fn pass_step_len(cell_size: f64) -> f64 {
     cell_size * PASS_STEP_CELLS
 }
 
+/// Research (C14, operator ruling 2026-10-24): the longest clearing turn
+/// the replay admits over the ceiling ([`LinkLoad::admits_turn`]). A turn
+/// joins the end of one level-set arc to the end of the next arc at the
+/// same wall; the arcs are `Δ ≤ s` apart, and each arc end carries the
+/// field error (at most one cell) and the contour's end placement (at most
+/// one cell diagonal): `s + (1 + √2) · cell`. This is the reach of the
+/// research producer (`research_geodesic`, "Derived constants").
+pub(crate) fn turn_bound(stepover: f64, cell_size: f64) -> f64 {
+    stepover + (1.0 + std::f64::consts::SQRT_2) * cell_size
+}
+
 // ── Link vs retract ────────────────────────────────────────────────────
 
 /// Check if the straight line from `from` to `to` is safe to traverse at
@@ -120,6 +131,12 @@ pub(crate) struct LinkLoad {
     /// lattice. Its pieces are also where a helix circle must stay (the
     /// region the entry dressup's containment reads).
     region: Option<ToolCentreRegion>,
+    /// Research (C14): the planned clearing turns, each a straight step
+    /// from one arc's end onto the next arc, that the replay of the
+    /// producer's cuts admits over the ceiling, and the longest such turn
+    /// ([`turn_bound`]). Empty on every shipped path.
+    turns: Vec<(P2, P2)>,
+    turn_bound: f64,
 }
 
 impl LinkLoad {
@@ -177,7 +194,45 @@ impl LinkLoad {
             entry_mask,
             rewalk_replayed_cuts: holds,
             region,
+            turns: Vec::new(),
+            turn_bound: 0.0,
         }
+    }
+
+    /// A copy of `self` that admits the planned clearing turns `turns`
+    /// (research, C14), each no longer than [`turn_bound`] of `stepover` on
+    /// this lattice.
+    fn with_turns(&self, turns: &[(P2, P2)], stepover: f64, cell_size: f64) -> Self {
+        let mut load = self.clone();
+        load.turns = turns.to_vec();
+        load.turn_bound = turn_bound(stepover, cell_size);
+        load
+    }
+
+    /// True when the step from `a` to `b` lies on a planned clearing turn
+    /// (research, C14) no longer than the bound: both ends on the turn's
+    /// segment within the walker's same-point tolerance (1e-6 mm). The
+    /// replay walk splits a turn by linear interpolation, so its steps lie
+    /// on it. No other step is admitted over the ceiling.
+    pub(super) fn admits_turn(&self, a: P2, b: P2) -> bool {
+        self.turns.iter().any(|&(p, q)| {
+            (q.x - p.x).hypot(q.y - p.y) <= self.turn_bound
+                && crate::geo::point_to_segment_distance(&a, &p, &q) < 1e-6
+                && crate::geo::point_to_segment_distance(&b, &p, &q) < 1e-6
+        })
+    }
+
+    /// Research (§19.3 Part 4 probe): the length of a planned clearing turn
+    /// the step from `a` to `b` lies on (both ends on its segment, as
+    /// [`Self::admits_turn`] reads it), whatever its length; `None` off
+    /// every turn.
+    #[cfg(feature = "research")]
+    fn turn_under(&self, a: P2, b: P2) -> Option<f64> {
+        self.turns.iter().find_map(|&(p, q)| {
+            (crate::geo::point_to_segment_distance(&a, &p, &q) < 1e-6
+                && crate::geo::point_to_segment_distance(&b, &p, &q) < 1e-6)
+                .then(|| (q.x - p.x).hypot(q.y - p.y))
+        })
     }
 
     /// True when the cutter centre may stand at `p`: exactly inside the
@@ -404,11 +459,19 @@ fn feed_link_checked(
 /// consecutive pair is at most one pass step apart.
 pub(super) fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
     let mut out = Vec::with_capacity(path.len());
+    subdivide_each(path, max_step, |p, _| out.push(p));
+    out
+}
+
+/// The points of [`subdivide`], in order, each with the index of the
+/// window of `path` it ends a step of (the first point: window 0). The one
+/// walk both call, so their points are the same (C38 §15.6).
+pub(super) fn subdivide_each(path: &[P2], max_step: f64, mut each: impl FnMut(P2, usize)) {
     let Some(&first) = path.first() else {
-        return out;
+        return;
     };
-    out.push(first);
-    for w in path.windows(2) {
+    each(first, 0);
+    for (index, w) in path.windows(2).enumerate() {
         let &[a, b] = w else {
             continue;
         };
@@ -416,10 +479,9 @@ pub(super) fn subdivide(path: &[P2], max_step: f64) -> Vec<P2> {
         let n = ((len / max_step).ceil() as usize).max(1);
         for k in 1..=n {
             let t = k as f64 / n as f64;
-            out.push(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)));
+            each(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)), index);
         }
     }
-    out
 }
 
 /// G-ADAPTPASSLOAD: emit the cutter-centre polyline `path` as cutting spans
@@ -479,6 +541,10 @@ fn emit_capped_walk_with(
     let mut kept_len = 0usize;
     let mut air_run = 0usize;
     let mut was_departing = false;
+    // §19.3 Part 4 probe: the last step this walk refused (its end, its
+    // reading, and the planned turn it lay on), for the re-entry it causes.
+    #[cfg(feature = "research")]
+    let mut last_refusal: Option<(P2, f64, Option<f64>)> = None;
     let flush = |span: &mut Vec<P2>, out: &mut Vec<AdaptiveSegment>, spans: &mut usize| {
         if span.len() >= 2 {
             out.push(AdaptiveSegment::Cut(std::mem::take(span)));
@@ -515,7 +581,9 @@ fn emit_capped_walk_with(
             kept_len = span.len();
         }
         was_departing = departing;
-        let holds = reading <= step_pass.ceiling;
+        // Research (C14): a planned clearing turn is the one step admitted
+        // over the ceiling; the list is empty on every shipped path.
+        let holds = reading <= step_pass.ceiling || load.admits_turn(a, b);
         let cuts = reading >= load.pass.presence;
         if !span.is_empty() {
             if holds {
@@ -535,6 +603,10 @@ fn emit_capped_walk_with(
                     air_run = 0;
                 }
             } else {
+                #[cfg(feature = "research")]
+                if !load.turns.is_empty() {
+                    last_refusal = Some((b, reading, load.turn_under(a, b)));
+                }
                 if cut_only {
                     span.truncate(kept_len);
                 }
@@ -560,6 +632,27 @@ fn emit_capped_walk_with(
             continue;
         }
         if reenters {
+            // §19.3 Part 4 probe (research arm only: the turn list is empty
+            // on every shipped path): why this walk re-enters here.
+            #[cfg(feature = "research")]
+            if !load.turns.is_empty() {
+                let (refused_at, reading, turn) = last_refusal
+                    .take()
+                    .map_or((None, None, None), |(at, reading, turn)| {
+                        (Some(at), Some(reading), turn)
+                    });
+                tracing::info!(
+                    x = %format!("{:.3}", a.x),
+                    y = %format!("{:.3}", a.y),
+                    cause = if refused_at.is_some() { "step refused" } else { "no link holds" },
+                    refused_at = ?refused_at.map(|p| (p.x, p.y)),
+                    reading = ?reading,
+                    ceiling = load.pass.ceiling,
+                    on_turn_mm = ?turn,
+                    turn_bound_mm = load.turn_bound,
+                    "C22 2D re-entry cause"
+                );
+            }
             out.push(AdaptiveSegment::Rapid(a));
             load.stamp_entry(grid, a);
         } else if here.is_some_and(|h| (a.x - h.x).hypot(a.y - h.y) >= 1e-6) {
@@ -630,6 +723,18 @@ fn replay_kept_segments(
                     out.push(AdaptiveSegment::Link(p));
                     plunged_at = None;
                 } else {
+                    // §19.3 Part 4 probe (research arm only): a refused
+                    // keep-down link, as the one-way return of a turn join.
+                    #[cfg(feature = "research")]
+                    if !load.turns.is_empty() {
+                        tracing::info!(
+                            x = %format!("{:.3}", p.x),
+                            y = %format!("{:.3}", p.y),
+                            cause = "link refused",
+                            from = ?here.map(|h| (h.x, h.y)),
+                            "C22 2D re-entry cause"
+                        );
+                    }
                     // The refused link becomes a re-entry: its hole is cut.
                     out.push(AdaptiveSegment::Rapid(p));
                     load.stamp_entry(grid, p);
@@ -1680,15 +1785,29 @@ pub(crate) fn apply_residue_mop_cleanup(
 
 /// [`apply_residue_mop_cleanup`] with the replay, the wall pass and the mop
 /// held to the pass load in `measure` (research, C7).
-#[expect(
-    clippy::indexing_slicing,
-    reason = "bounded indexing in algorithmic code"
-)]
 pub(crate) fn apply_residue_mop_cleanup_with(
     polygon: &Polygon2,
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
+) -> Vec<AdaptiveSegment> {
+    apply_residue_mop_cleanup_turns(polygon, params, segments, measure, &[])
+}
+
+/// [`apply_residue_mop_cleanup_with`] whose replay of the kept segments
+/// also admits the planned clearing turns `turns` over the ceiling
+/// (research, C14, [`LinkLoad::admits_turn`]); the wall pass and the mop
+/// hold the ceiling with no exemption.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "bounded indexing in algorithmic code"
+)]
+pub(crate) fn apply_residue_mop_cleanup_turns(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    measure: PassLoadMeasure,
+    turns: &[(P2, P2)],
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -1755,7 +1874,14 @@ pub(crate) fn apply_residue_mop_cleanup_with(
         grid.cell_size,
     );
     let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
-    let (mut out, last_pos) = replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
+    let turn_load;
+    let replay_load = if turns.is_empty() {
+        &link_load
+    } else {
+        turn_load = link_load.with_turns(turns, params.stepover, cell_size);
+        &turn_load
+    };
+    let (mut out, last_pos) = replay_kept_segments(out, &mut grid, &machinable_mask, replay_load);
 
     // Step 4 — mop remaining residue.
     if link_load.holds_pass_load() {
@@ -1816,6 +1942,20 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_with(
     params: &AdaptiveParams,
     segments: &[AdaptiveSegment],
     measure: PassLoadMeasure,
+) -> Vec<AdaptiveSegment> {
+    apply_contour_parallel_residue_cleanup_turns(polygon, params, segments, measure, &[])
+}
+
+/// [`apply_contour_parallel_residue_cleanup_with`] whose replay of the
+/// kept segments also admits the planned clearing turns `turns` over the
+/// ceiling (research, C14, [`LinkLoad::admits_turn`]); the residue
+/// contours, the wall pass and the mop hold the ceiling with no exemption.
+pub(crate) fn apply_contour_parallel_residue_cleanup_turns(
+    polygon: &Polygon2,
+    params: &AdaptiveParams,
+    segments: &[AdaptiveSegment],
+    measure: PassLoadMeasure,
+    turns: &[(P2, P2)],
 ) -> Vec<AdaptiveSegment> {
     let tool_radius = params.tool_radius;
     let cell_size = planner_cell_size(tool_radius, params.tolerance);
@@ -1888,8 +2028,15 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_with(
         grid.cell_size,
     );
     let link_load = LinkLoad::new_with(params, &grid, polygon, measure);
+    let turn_load;
+    let replay_load = if turns.is_empty() {
+        &link_load
+    } else {
+        turn_load = link_load.with_turns(turns, stepover, cell_size);
+        &turn_load
+    };
     let (mut out, mut last_pos) =
-        replay_kept_segments(out, &mut grid, &machinable_mask, &link_load);
+        replay_kept_segments(out, &mut grid, &machinable_mask, replay_load);
 
     // Step 4 — contour-parallel sweep of residue (filtered by material
     // presence; sweeps only the offsets that actually cross residue).
@@ -3271,7 +3418,10 @@ impl crate::compute::spans::RuntimeLabel for AdaptiveRuntimeAnnotation {
 )]
 mod link_load_tests {
     //! G-ADAPTLINKLOAD: a keep-down link is a pass-load cut or nothing.
-    use super::{AdaptiveSegment, LinkLoad, feed_link_within_pass_load, mop_residue_into_segments};
+    use super::{
+        AdaptiveSegment, LinkLoad, emit_capped_walk_with, feed_link_within_pass_load,
+        mop_residue_into_segments, turn_bound,
+    };
     use crate::adaptive::search::compute_engagement;
     use crate::adaptive::{KeepDownLinks, MaterialGrid};
     use crate::geo::P2;
@@ -3300,6 +3450,8 @@ mod link_load_tests {
             entry_mask: None,
             rewalk_replayed_cuts: true,
             region: None,
+            turns: Vec::new(),
+            turn_bound: 0.0,
         };
         (grid, mask, load)
     }
@@ -3358,6 +3510,73 @@ mod link_load_tests {
             !grid.is_material(0.0, 4.0),
             "the admitted link must be stamped on the grid"
         );
+    }
+
+    /// Research (C14): the replay walk of a corridor pass that ends with a
+    /// head-on step of 2 mm up the wall of the corridor (the turn onto the
+    /// next pass; its two 1 mm steps meet the chords of caps 1 mm and 2 mm
+    /// high, 4.47 mm and 5.66 mm, over the 2.18 mm ceiling), under
+    /// the load `load`. Returns the emitted segments.
+    fn walk_with_wall_step(load: &LinkLoad) -> Vec<AdaptiveSegment> {
+        let (mut grid, mask, _) = scene();
+        for i in -40..=40 {
+            grid.clear_circle(f64::from(i) * 0.5, 0.0, R);
+        }
+        let path = [P2::new(-15.0, 0.0), P2::new(15.0, 0.0), P2::new(15.0, 2.0)];
+        let mut here = Some(P2::new(-15.0, 0.0));
+        let mut out = Vec::new();
+        emit_capped_walk_with(
+            &path, &mut grid, &mask, load, &mut here, &mut out, false, None,
+        );
+        out
+    }
+
+    /// True when an emitted `Cut` reaches `p`.
+    fn cuts_to(segments: &[AdaptiveSegment], p: P2) -> bool {
+        segments.iter().any(|s| match s {
+            AdaptiveSegment::Cut(path) => path.iter().any(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6),
+            _ => false,
+        })
+    }
+
+    /// C14: a step over the ceiling that lies on no planned turn is refused
+    /// as before, also when a turn elsewhere is listed; a listed turn longer
+    /// than the bound admits nothing.
+    #[test]
+    fn a_step_over_the_ceiling_off_every_turn_is_refused() {
+        let (grid, _, load) = scene();
+        let end = P2::new(15.0, 2.0);
+        assert!(!cuts_to(&walk_with_wall_step(&load), end));
+        let elsewhere = load.with_turns(
+            &[(P2::new(-15.0, 0.0), P2::new(-15.0, -2.0))],
+            2.0,
+            grid.cell_size,
+        );
+        assert!(!cuts_to(&walk_with_wall_step(&elsewhere), end));
+        // The step lies on this turn, but the turn is 4 mm long, over the
+        // bound s + (1 + √2) · cell = 3.21 mm.
+        assert!(turn_bound(2.0, grid.cell_size) < 4.0);
+        let too_long = load.with_turns(
+            &[(P2::new(15.0, 0.0), P2::new(15.0, 4.0))],
+            2.0,
+            grid.cell_size,
+        );
+        assert!(!cuts_to(&walk_with_wall_step(&too_long), end));
+    }
+
+    /// C14: the same step on a planned turn within the bound is admitted:
+    /// the cut reaches the next pass with no re-entry.
+    #[test]
+    fn a_planned_turn_within_the_bound_is_admitted() {
+        let (grid, _, load) = scene();
+        let turn = load.with_turns(
+            &[(P2::new(15.0, 0.0), P2::new(15.0, 2.0))],
+            2.0,
+            grid.cell_size,
+        );
+        let out = walk_with_wall_step(&turn);
+        assert!(cuts_to(&out, P2::new(15.0, 2.0)));
+        assert!(!out.iter().any(|s| matches!(s, AdaptiveSegment::Rapid(_))));
     }
 
     /// A mop chain hop is a `Link`, never part of a `Cut` (G-ADAPTLINKLOAD,

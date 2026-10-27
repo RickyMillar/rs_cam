@@ -220,6 +220,12 @@ required-features = ["research", "test-support"]
 name = "adaptive_geodesic_2d_renders_g1"
 required-features = ["research", "test-support"]
 
+# Integration step 7.3: the product preset (C35 plan A) keeps the research
+# reference plan on the 2D harness shapes.
+[[test]]
+name = "the_geodesic_preset_keeps_its_plan_s7_3"
+required-features = ["research", "test-support"]
+
 # The test-door harnesses. Each one binds a `maps/` or `surface/` item behind
 # the `test-support` feature, so each one needs that feature to compile. The
 # audit row FLD-04 + FLD-05 listed seven of them; `rg` found eight

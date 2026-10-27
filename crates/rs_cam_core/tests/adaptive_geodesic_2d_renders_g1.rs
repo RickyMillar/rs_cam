@@ -32,6 +32,47 @@
 //!     law, the core spiral, and lobes entered by tangential lead-ins with
 //!     keep-down links through the cut band; the summary's `lead-ins` line
 //!     and the L entry kind);
+//!   - `geodesic_curv_reseed` (`GeodesicOptions::C9_RESEED`: the
+//!     `geodesic_curv` plan, walked through the replay model as it is
+//!     planned, with the field grown again from the cleared area where a
+//!     wrap step is refused; the summary's `re-seed` lines);
+//!   - `geodesic_curv_split` (`GeodesicOptions::C11_SPLIT`: the
+//!     `geodesic_curv` plan split at the meeting line; the first field's
+//!     wraps stop at the far-side zone, then one field grown from the cut
+//!     clears the zone; the summary's `split` line);
+//!   - `geodesic_curv_oneway` and `geodesic_curv_zigzag`
+//!     (`GeodesicOptions::C14_ONEWAY`, `C14_ZIGZAG`: the `geodesic_curv`
+//!     plan with the traditional arc links of the operator's ruling of
+//!     2026-10-24; one-way climb arcs with a keep-down return through the
+//!     band just cut, or arcs in alternate directions; the step onto the
+//!     next arc is a clearing turn that the replay admits over the ceiling
+//!     as a counted exemption, with a feed reduced by its measured
+//!     engagement; the summary's `arcs` and `clearing turns` lines);
+//!   - `geodesic_local` and `geodesic_local_oneway`
+//!     (`GeodesicOptions::C16_LOCAL`, `C16_LOCAL_ONEWAY`: one field from
+//!     the seed, each level one value of `T` spaced by the law at the
+//!     level's own three-point radius, `Spacing::LocalLevel`, C15 §5; every
+//!     contour segment chained, `Chaining::Whole`; the G1 seam, or the C14
+//!     one-way arcs) and `geodesic_curv_oneway_whole` (`C16_ONEWAY_WHOLE`:
+//!     `geodesic_curv_oneway` with the whole chaining only, to tell the
+//!     chaining's effect from the spacing's);
+//!   - `geodesic_local_zigzag` (`GeodesicOptions::C20_LOCAL_ZIGZAG`:
+//!     `geodesic_local` with the C14 zigzag arcs; the whole chaining leaves
+//!     no gap in an arc for a zigzag turn to bridge);
+//!   - C23: `geodesic_local_oneway_headon` and `geodesic_local_zigzag_headon`
+//!     (`GeodesicOptions::C23_ONEWAY_HEADON`, `C23_ZIGZAG_HEADON`: the two
+//!     KEEP columns with each open arc started at the end that reads the
+//!     larger arc-end lens, `ArcEnds::HeadOn`; a zigzag join that does not
+//!     fit from the cutter takes the one-way return) and
+//!     `geodesic_local_oneway_v2`, `geodesic_local_zigzag_v2`
+//!     (`C23_ONEWAY_V2`, `C23_ZIGZAG_V2`: the same with the two branches of
+//!     a level merged at the meeting line, `MeetingRule::Through`); the
+//!     `.c16.txt` line `head-on rule`;
+//!   - C28: `geodesic_local_zigzag_pick` (`GeodesicOptions::C28_ZIGZAG_PICK`:
+//!     per piece, the plan of `geodesic_local_zigzag` or of
+//!     `geodesic_local_zigzag_v2`, whichever the cleanup replay re-enters
+//!     less, then the one with less keep-down length); the `.c16.txt` line
+//!     `pick piece`;
 //!   - C7 (in the record set since D7: the per-mm reading is not evidence
 //!     on short steps), the same plans judged by area per mm (FreeCAD's quantity, R1
 //!     §3) instead of swept width, against the same `c·D`
@@ -89,6 +130,12 @@
 //!     --test adaptive_geodesic_2d_renders_g1 -- --ignored --nocapture
 //! ```
 //!
+//! Each candidate (a) column also writes `<shape>_<column>.c16.txt` (C16):
+//! the level values of each piece, the arc joins over the C14 bound with
+//! the angle at which the arcs meet the wall and the slanted bound, and the
+//! turns no emitted move carries the feed on. It is a separate file so the
+//! `.txt` of every earlier column stays byte-identical.
+//!
 //! Output: `$ADAPTIVE_GEODESIC_SVG_DIR`, else
 //! `<CARGO_TARGET_TMPDIR>/adaptive_geodesic_2d_g1/` (under `target/`).
 
@@ -105,8 +152,8 @@ use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
     Candidate2d, CascadeReadout, GeodesicOptions, JoinRule, LobeMorph, MeetingRule,
-    PassLoadReadout, Producer, ReadResolution, Refusal, ReplayMeasure, Run2d, Span2d, SpanKind,
-    run_2d_with,
+    PassLoadReadout, PickKept, Producer, ReadResolution, Refusal, ReplayMeasure, Run2d, Span2d,
+    SpanKind, TurnRecord, run_2d_with,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -548,6 +595,76 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
                 r.applied
             );
         }
+        let rs = &f.reseed;
+        if rs.enabled {
+            let _ = writeln!(
+                t,
+                "re-seed piece {i}: {} re-seeds, {} fields in use, stop {:?}",
+                rs.reseeds(),
+                rs.fields.len(),
+                rs.stop
+            );
+            for (k, fr) in rs.fields.iter().enumerate() {
+                let _ = writeln!(
+                    t,
+                    "  field {k}: levels {}, wraps placed {}, uncleared at the solve {:.1} mm², stock cut (model) {:.1} mm², converged {}, trigger {}",
+                    fr.levels,
+                    fr.wraps,
+                    fr.uncleared_mm2,
+                    fr.cut_mm2,
+                    fr.converged,
+                    match (fr.trigger, fr.trigger_level) {
+                        (Some(p), Some(level)) =>
+                            format!("level {level} at ({:.2}, {:.2})", p.x, p.y),
+                        (Some(p), None) => format!("at ({:.2}, {:.2})", p.x, p.y),
+                        _ => "none".to_owned(),
+                    }
+                );
+            }
+        }
+        let sp = &f.split;
+        if sp.enabled {
+            let _ = writeln!(
+                t,
+                "split piece {i}: {} fields in use; zone {} nodes ({:.1} mm²), found as the nodes whose source-tracked path to the seed bends round an island, {} front branches, {} meeting-line cells; first region {} levels, {} wraps",
+                sp.fields,
+                sp.zone_nodes,
+                sp.zone_mm2,
+                sp.zone_branches,
+                sp.meeting_cells,
+                sp.first_levels,
+                sp.first_wraps
+            );
+            let _ = writeln!(
+                t,
+                "  zone field: seed T = 0 on {} cleared nodes ({:.1} mm²) after the replay model's cut of the first region; {} levels, {} wraps, {} front branches, {} meeting-line cells, {} zone nodes not reached, converged {}",
+                sp.seed_nodes,
+                sp.seed_mm2,
+                sp.zone_levels,
+                sp.zone_wraps,
+                sp.zone_field_branches,
+                sp.zone_meeting_cells,
+                sp.zone_unreached,
+                sp.zone_converged
+            );
+        }
+        let a = &f.arcs;
+        if a.enabled {
+            let _ = writeln!(
+                t,
+                "arcs piece {i}: style {:?}; arc-to-arc joins {}: clearing turns {}, over the bound {:.3} mm {}, straight step outside the region {}; turn length {:.3} to {:.3} mm; return links {} ({:.1} mm)",
+                a.style,
+                a.arc_joins,
+                a.turns,
+                a.bound_mm,
+                a.over_bound,
+                a.outside,
+                a.turn_min_mm,
+                a.turn_max_mm,
+                a.return_links,
+                a.return_mm
+            );
+        }
         let b = &f.lobes;
         if b.lobes + b.plain_wraps > 0 {
             let _ = writeln!(
@@ -581,7 +698,205 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
             }
         }
     }
+    if run.fields.iter().any(|f| f.arcs.enabled) {
+        turn_lines(&mut t, run);
+    }
     t
+}
+
+/// C14: the clearing turns of the emitted plan: the non-turn rule, the
+/// counts, the distribution of the measured engagement, the feeds, and one
+/// line per turn.
+fn turn_lines(t: &mut String, run: &Run2d) {
+    let l = &run.summary.pass_load;
+    let ts = &run.summary.turns;
+    let _ = writeln!(
+        t,
+        "steps on no turn (emitted): max {:.4} vs ceiling {:.4}, {} over",
+        l.non_turn_max, l.ceiling, l.non_turn_over
+    );
+    let _ = writeln!(
+        t,
+        "clearing turns (emitted): {} of {} planned; {} turn steps, {} over the ceiling (the counted exemption); turns with the reduced feed {}, without {}",
+        ts.turns.len(),
+        ts.planned,
+        l.turn_steps.len(),
+        l.turn_over,
+        ts.fed,
+        ts.unfed
+    );
+    let sorted = |f: &dyn Fn(&TurnRecord) -> f64| {
+        let mut v: Vec<f64> = ts.turns.iter().map(f).collect();
+        v.sort_by(f64::total_cmp);
+        v
+    };
+    for (name, v) in [
+        ("swept width / D", sorted(&|r| r.max_swept)),
+        ("area per mm / D", sorted(&|r| r.max_area)),
+        ("feed factor", sorted(&|r| r.feed_factor)),
+        ("length (mm)", sorted(&|r| r.length_mm)),
+    ] {
+        if let (Some(lo), Some(hi)) = (v.first(), v.last()) {
+            let q = |k: usize| v.get(k * (v.len() - 1) / 4).copied().unwrap_or(0.0);
+            let _ = writeln!(
+                t,
+                "  turn {name}: min {lo:.4}, quartiles {:.4} / {:.4} / {:.4}, max {hi:.4}",
+                q(1),
+                q(2),
+                q(3)
+            );
+        }
+    }
+    for r in &ts.turns {
+        let _ = writeln!(
+            t,
+            "  turn: ({:.2}, {:.2}) to ({:.2}, {:.2}), {:.3} mm, {} steps ({} over), swept {:.4}, area {:.4}, feed factor {:.4}, feed {:.1} mm/min",
+            r.from.x,
+            r.from.y,
+            r.to.x,
+            r.to.y,
+            r.length_mm,
+            r.steps,
+            r.steps_over,
+            r.max_swept,
+            r.max_area,
+            r.feed_factor,
+            r.feed_mm_min
+        );
+    }
+}
+
+/// C16: the level values of each piece, the arc joins over the C14 bound
+/// (measure only: the angle `θ` at which the arcs meet the wall, and
+/// whether the join fits `s / cos θ + (1 + √2)·cell`), and the turns with
+/// no emitted move carrying the reduced feed.
+fn c16_text(shape: &str, label: &str, run: &Run2d) -> String {
+    let mut t = String::new();
+    let _ = writeln!(t, "{shape} / {label} (C16 readout)");
+    for (i, f) in run.fields.iter().enumerate() {
+        let values: Vec<String> = f
+            .level_values_mm
+            .iter()
+            .map(|v| format!("{v:.3}"))
+            .collect();
+        let steps: Vec<String> = f
+            .level_values_mm
+            .windows(2)
+            .filter_map(|w| match w {
+                &[a, b] => Some(format!("{:.3}", b - a)),
+                _ => None,
+            })
+            .collect();
+        let _ = writeln!(
+            t,
+            "levels piece {i}: {} values (mm from the rim): {}",
+            values.len(),
+            values.join(" ")
+        );
+        let _ = writeln!(t, "  steps (mm): {}", steps.join(" "));
+        let a = &f.arcs;
+        if a.enabled {
+            let fits = a
+                .over_bound_turns
+                .iter()
+                .filter(|o| o.fits_slanted())
+                .count();
+            let _ = writeln!(
+                t,
+                "joins over the bound {:.3} mm, piece {i}: {} ({} measured), {fits} within the slanted bound",
+                a.bound_mm,
+                a.over_bound,
+                a.over_bound_turns.len()
+            );
+            for o in &a.over_bound_turns {
+                let _ = writeln!(
+                    t,
+                    "  over: ({:.2}, {:.2}) to ({:.2}, {:.2}), {:.3} mm, theta {:.1} deg, slanted bound {:.3} mm, fits {}",
+                    o.from.x,
+                    o.from.y,
+                    o.to.x,
+                    o.to.y,
+                    o.length_mm,
+                    o.theta.to_degrees(),
+                    o.slanted_bound_mm,
+                    o.fits_slanted()
+                );
+            }
+            // C23: only for a column with the head-on rule, so every earlier
+            // column's readout is unchanged.
+            if a.head_on_set > 0 || a.zigzag_returns > 0 {
+                let _ = writeln!(
+                    t,
+                    "head-on rule piece {i}: arcs started by the lens rule {}, of them against the default start {}; zigzag joins by the one-way return {}",
+                    a.head_on_set, a.head_on_reversed, a.zigzag_returns
+                );
+            }
+            // C28: only for a column with the pick.
+            if let Some(p) = &a.pick {
+                let _ = writeln!(
+                    t,
+                    "pick piece {i}: zigzag re-entries {} (keep-down {:.1} mm), zigzag_v2 re-entries {} (keep-down {:.1} mm); kept {}",
+                    p.entries_a,
+                    p.keep_down_a_mm,
+                    p.entries_b,
+                    p.keep_down_b_mm,
+                    match p.kept {
+                        PickKept::A => "zigzag",
+                        PickKept::B => "zigzag_v2",
+                    }
+                );
+            }
+        }
+    }
+    let ts = &run.summary.turns;
+    if ts.planned > 0 {
+        let _ = writeln!(t, "turns without the reduced feed: {}", ts.unfed);
+        // C20: a turn at the full feed (factor 1) with no move on it is not
+        // unfed; the line prints only when there is one.
+        if ts.full_feed_unmatched > 0 {
+            let _ = writeln!(
+                t,
+                "turns at the full feed (factor 1) with no move on them, not unfed: {}",
+                ts.full_feed_unmatched
+            );
+        }
+        for r in ts.turns.iter().filter(|r| !r.fed) {
+            let kind = if r.feed_factor < 1.0 {
+                "unfed turn"
+            } else {
+                "full-feed turn, no move on it"
+            };
+            let _ = writeln!(
+                t,
+                "  {kind}: ({:.4}, {:.4}) to ({:.4}, {:.4}), {:.3} mm, {} steps, swept {:.4}, area {:.4}{}",
+                r.from.x,
+                r.from.y,
+                r.to.x,
+                r.to.y,
+                r.length_mm,
+                r.steps,
+                r.max_swept,
+                r.max_area,
+                holding_text(r)
+            );
+        }
+    }
+    t
+}
+
+/// C20: the emitted move that holds a turn with no move on it, and how far
+/// the turn's two ends lie off that move (under 1 µm: the emitter dropped
+/// a turn vertex as collinear).
+fn holding_text(r: &TurnRecord) -> String {
+    r.holding.map_or_else(
+        || "; no emitted move holds it".to_owned(),
+        |h| {
+            format!(
+                "; held by the emitted move ({:.4}, {:.4}) to ({:.4}, {:.4}), turn ends {:.3e} and {:.3e} mm off it",
+                h.from.x, h.from.y, h.to.x, h.to.y, h.off_from, h.off_to
+            )
+        },
+    )
 }
 
 /// One refusal of the cascade diagnostic as a line.
@@ -738,6 +1053,84 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 ReadResolution::Planner,
                 ReplayMeasure::SweptWidth,
             ),
+            (
+                "geodesic_curv_reseed",
+                Candidate2d::Geodesic(GeodesicOptions::C9_RESEED),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_curv_split",
+                Candidate2d::Geodesic(GeodesicOptions::C11_SPLIT),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_curv_oneway",
+                Candidate2d::Geodesic(GeodesicOptions::C14_ONEWAY),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_curv_zigzag",
+                Candidate2d::Geodesic(GeodesicOptions::C14_ZIGZAG),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local",
+                Candidate2d::Geodesic(GeodesicOptions::C16_LOCAL),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_oneway",
+                Candidate2d::Geodesic(GeodesicOptions::C16_LOCAL_ONEWAY),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_curv_oneway_whole",
+                Candidate2d::Geodesic(GeodesicOptions::C16_ONEWAY_WHOLE),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_zigzag",
+                Candidate2d::Geodesic(GeodesicOptions::C20_LOCAL_ZIGZAG),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_oneway_headon",
+                Candidate2d::Geodesic(GeodesicOptions::C23_ONEWAY_HEADON),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_zigzag_headon",
+                Candidate2d::Geodesic(GeodesicOptions::C23_ZIGZAG_HEADON),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_oneway_v2",
+                Candidate2d::Geodesic(GeodesicOptions::C23_ONEWAY_V2),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_zigzag_v2",
+                Candidate2d::Geodesic(GeodesicOptions::C23_ZIGZAG_V2),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
+            (
+                "geodesic_local_zigzag_pick",
+                Candidate2d::Geodesic(GeodesicOptions::C28_ZIGZAG_PICK),
+                ReadResolution::Planner,
+                ReplayMeasure::SweptWidth,
+            ),
         ];
         if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
             let extra = [
@@ -828,6 +1221,10 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 .save(stem.with_extension("png"))
                 .expect("write the PNG");
             std::fs::write(stem.with_extension("txt"), &text).expect("write the summary");
+            if matches!(candidate, Candidate2d::Geodesic(_)) {
+                std::fs::write(stem.with_extension("c16.txt"), c16_text(shape, label, &run))
+                    .expect("write the C16 readout");
+            }
             all.push_str(&text);
             all.push('\n');
         }

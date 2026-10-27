@@ -453,15 +453,29 @@ fn iso_contour(field: &IsoScallopField, level: f64) -> Vec<Vec<P2>> {
 /// adaptive research candidate (`adaptive::research_geodesic`) drops each
 /// cell with an unreachable corner, so a level set ends at a wall and does
 /// not run along it.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "row/col bounded by the loop ranges"
-)]
 pub(crate) fn iso_contour_where(
     field: &IsoScallopField,
     level: f64,
     cell_kept: &dyn Fn(usize, usize) -> bool,
 ) -> Vec<Vec<P2>> {
+    chain_segments(&iso_segments_where(field, level, cell_kept))
+}
+
+/// The unchained segments of [`iso_contour_where`], one or two per kept
+/// cell that the level crosses, in row-major cell order. The research
+/// candidate (C16) chains them itself: `chain_segments` grows a chain at its
+/// tail only and drops a chain of one segment, so on an open arc that the
+/// cell order meets against its direction a lone segment between two
+/// chains is lost.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "row/col bounded by the loop ranges"
+)]
+pub(crate) fn iso_segments_where(
+    field: &IsoScallopField,
+    level: f64,
+    cell_kept: &dyn Fn(usize, usize) -> bool,
+) -> Vec<(P2, P2)> {
     if field.rows < 2 || field.cols < 2 {
         return Vec::new();
     }
@@ -523,7 +537,7 @@ pub(crate) fn iso_contour_where(
             }
         }
     }
-    chain_segments(&segments)
+    segments
 }
 
 #[cfg(test)]
