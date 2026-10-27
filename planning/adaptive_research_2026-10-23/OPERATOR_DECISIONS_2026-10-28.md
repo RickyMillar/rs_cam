@@ -76,3 +76,13 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 - **Op 1 re-entry rows** (the turn row at the Corne ledge, and the LargeZ rows at the walls): the operator asks whether these can be tidied. C24 designs a capped-turn admission in place of retract and re-entry (`phase3/d65/README.md`).
 - **Removal load rule, decided:** option B, refuse at load. A project or job file that names a removed strategy refuses as a whole, with a message that names the fix (RETIRED_VALUES precedent, rulings 2026-09-16 and 2026-10-15).
 - **Advisor, decided:** it compares Contour Parallel and Geodesic Adaptive; suggest heuristic B points at geodesic_adaptive. The wording follows D64.
+
+## Operator rulings, 2026-10-28 midday
+
+- **G-BOUNDCOLLAPSE:** refuse generation when a boundary's inset collapses (all strategies).
+- **G-FEEDMAX:** the feed modulator obeys feed_max_rate (shipped output changes where modulation boosted above it).
+- **D55:** port to the integration branch, with the fixture re-bless listed move by move.
+- **Template (7.8):** one GUI action, "Geodesic body + edges", with the edge op optional; the edge tool is no larger than op 1's, with Inside-safe containment.
+- **Advisor:** about 38 s is acceptable for now.
+- **Merge:** merge now, test-cut later. Done: master cc00aa0c3 merges geodesic-integration.
+- **G-RESTDOC:** the operator likes the edge contour pass. They asked what the region-side fix would do to the numbers, and how either option behaves when there are many boundaries or regions. Study first (C24), then decide.
