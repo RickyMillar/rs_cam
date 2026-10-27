@@ -1,0 +1,2 @@
+fix45/corne_B_s2p1_adaptive/simulation.json res 0.3 ids [1] total 971.9
+   tp 1 total 971.9 cut 879.8 rapid 92.1 air 434.0 vol 213243

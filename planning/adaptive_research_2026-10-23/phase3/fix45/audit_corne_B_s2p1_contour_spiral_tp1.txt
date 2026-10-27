@@ -1,0 +1,9 @@
+== ../fix45/corne_B_s2p1_contour_spiral '3D Rough 1': 8901 moves; sim cell 0.3 mm, sample step 0.3 mm, volume quantum 0.027 mm3
+1. descent events into stock (a vertical fed descent at one XY, pecks included, that removes > quantum): 272 (drop median 5.0 mm, max 15.0 mm, 89.0 s); labels {'entry_plunge / plunge entry': 27, 'entry_plunge / keep-down link': 241, 'linking / keep-down link': 4}
+   moves: descents into stock (fed, Z down, removes > quantum) 511; vertical 308 (removed 9970.5 mm3, drop median 4.0 mm, max 6.5 mm)
+   labels of the vertical descents (intent / span style): {'entry_plunge / plunge entry': 36, 'entry_plunge / keep-down link': 272}
+   planar junctions (both moves travel in XY) 7296; planar reversals 352; planar histogram [0, 8, 430, 935, 3349, 1488, 734, 221, 131]
+2. junctions at feed 8581; reversals (turn > 90 deg) 367; turns of exactly 90 deg 1224; Z reversals 183
+   turn histogram (deg, bins (lo, hi]): (0,1] 9, (1,5] 8, (5,15] 459, (15,30] 945, (30,45] 3349, (45,60] 1488, (60,90] 1956, (90,135] 224, (135,180] 143
+3. MRR time histogram (mm3/s): [0,1e-09) 266.4 s, [1e-09,25) 150.1 s, [25,50) 40.0 s, [50,100) 35.7 s, [100,200) 52.8 s, [200,400) 51.3 s, [400,800) 48.5 s, [800,1600) 54.5 s, [1600,inf) 24.7 s; p50 7.4, p95 990.0, p99 4328.8, max 35648.6; nominal 182.25: 184.4 s over, 154.2 s over 2x
+4. time split (s): {'cut': 429.7, 'fed in air': 103.1, 'lift feed': 16.8, 'plunge feed': 97.7, 'rapid': 76.6}; sum 723.9 of sim runtime 1222.9

@@ -1,0 +1,2 @@
+fix45/wanaka_s2p0_agent_search/simulation.json res 0.6 ids [1] total 1336.7
+   tp 1 total 1336.7 cut 1270.2 rapid 66.5 air 474.7 vol 585921

@@ -1,0 +1,23 @@
+{
+ "run": "corne_B_s2p1_adaptive",
+ "inside the part": {
+  "left_mm2": 2770,
+  "vol_over_target_mm3": 13280,
+  "max_mm": 16.5
+ },
+ "outside 0-3": {
+  "left_mm2": 730,
+  "vol_over_target_mm3": 11626,
+  "max_mm": 17.22
+ },
+ "outside 3-6.2": {
+  "left_mm2": 604,
+  "vol_over_target_mm3": 9687,
+  "max_mm": 22.5
+ },
+ "outside 6.2-9": {
+  "left_mm2": 424,
+  "vol_over_target_mm3": 9163,
+  "max_mm": 22.5
+ }
+}

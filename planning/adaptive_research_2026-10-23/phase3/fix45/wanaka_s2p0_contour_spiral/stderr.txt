@@ -1,0 +1,27 @@
+Act on (1):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  1140.1s wasted around (85.5, 67.9, 12.9) — engagement 0.21
+  4.1s wasted around (89.4, 221.4, 16.1) — engagement 0.05
+  2.0s wasted around (148.0, 221.7, 16.1) — engagement 0.04
+  1.9s wasted around (216.8, 124.4, 16.1) — engagement 0.02
+  1.7s wasted around (170.4, 221.4, 16.1) — engagement 0.12
+  1.7s wasted around (149.0, 221.5, 16.1) — engagement 0.15
+  1.7s wasted around (115.6, 221.4, 12.4) — engagement 0.10
+  1.4s wasted around (216.8, 124.4, 16.1) — engagement 0.00
+  1.3s wasted around (23.0, 28.0, 16.1) — engagement 0.27
+  1.0s wasted around (96.9, 99.9, 9.8) — engagement 0.01
+  ... 1919 more not shown
+
+Counts: 156914 samples | 52722 flagged-air + 3051 flagged-low (per SAMPLE) | 9657 issue runs (COALESCED, the legacy "issue_count") | 1929 hotspots
+
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 82986mm  |  Rapid: 5186mm  |  Time: 3039s
+Air cutting: 35.4% of total runtime  |  Avg engagement: 0.30  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 16931 moves, 0 collisions
+      kinematics: 100% of commanded (99% feed-bound → +13% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/wanaka_s2p0_contour_spiral

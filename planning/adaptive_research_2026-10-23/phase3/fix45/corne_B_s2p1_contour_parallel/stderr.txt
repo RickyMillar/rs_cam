@@ -1,0 +1,27 @@
+Safety (1):
+  "3D Rough 1": the rough leaves 703 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 674 of them against a wall: 1935.4 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 17.29 mm high, 0.90 mm wide, 46.3 mm2 at (110.7, -9.4); 1.06 mm high, 0.30 mm wide, 0.3 mm2 at (63.6, -5.8); 1.06 mm high, 0.30 mm wide, 0.3 mm2 at (64.8, -5.5); 1.06 mm high, 0.30 mm wide, 0.2 mm2 at (65.4, -5.2); 1.01 mm high, 0.30 mm wide, 0.2 mm2 at (27.3, -10.0); 0.93 mm high, 0.30 mm wide, 0.1 mm2 at (66.0, -4.9); 0.92 mm high, 0.30 mm wide, 0.2 mm2 at (40.8, -95.2); 0.92 mm high, 0.30 mm wide, 0.3 mm2 at (42.0, -94.9); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (88.8, -4.6); 0.87 mm high, 0.30 mm wide, 0.2 mm2 at (42.9, -94.6); and 693 more. 20 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Advisories:
+  274.6s wasted around (89.5, -64.5, 1.5) — engagement 0.21
+  2.8s wasted around (151.3, -35.8, 8.2) — engagement 0.23
+  2.8s wasted around (151.3, -35.3, 8.2) — engagement 0.23
+  2.8s wasted around (151.3, -34.8, 8.2) — engagement 0.23
+  2.8s wasted around (151.3, -34.3, 8.2) — engagement 0.23
+  2.5s wasted around (25.1, -95.8, 5.2) — engagement 0.03
+  2.1s wasted around (151.3, -65.8, 8.2) — engagement 0.28
+  2.1s wasted around (151.3, -64.3, 8.2) — engagement 0.28
+  2.1s wasted around (151.3, -64.8, 8.2) — engagement 0.28
+  2.1s wasted around (151.3, -65.3, 8.2) — engagement 0.28
+  ... 132 more not shown
+
+Counts: 140019 samples | 38728 flagged-air + 7488 flagged-low (per SAMPLE) | 7538 issue runs (COALESCED, the legacy "issue_count") | 142 hotspots
+
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 1  |  Cutting: 30291mm  |  Rapid: 10966mm  |  Time: 1217s
+Air cutting: 36.3% of total runtime  |  Avg engagement: 0.24  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [ ] #1 3D Rough 1 (3D Adaptive) — 6067 moves, 0 collisions
+      kinematics: 83% of commanded (69% feed-bound → +9% at ×1.30, 31% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/corne_B_s2p1_contour_parallel

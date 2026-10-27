@@ -1,0 +1,23 @@
+{
+ "run": "corne_B_s2p1_contour_parallel",
+ "inside the part": {
+  "left_mm2": 1285,
+  "vol_over_target_mm3": 6175,
+  "max_mm": 14.5
+ },
+ "outside 0-3": {
+  "left_mm2": 299,
+  "vol_over_target_mm3": 4752,
+  "max_mm": 17.71
+ },
+ "outside 3-6.2": {
+  "left_mm2": 0,
+  "vol_over_target_mm3": 0,
+  "max_mm": 0.0
+ },
+ "outside 6.2-9": {
+  "left_mm2": 60,
+  "vol_over_target_mm3": 1339,
+  "max_mm": 22.5
+ }
+}

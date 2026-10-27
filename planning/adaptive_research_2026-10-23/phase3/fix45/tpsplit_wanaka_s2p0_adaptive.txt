@@ -1,0 +1,2 @@
+fix45/wanaka_s2p0_adaptive/simulation.json res 0.6 ids [1] total 1144.7
+   tp 1 total 1144.7 cut 1097.6 rapid 47.1 air 205.2 vol 568487

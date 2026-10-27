@@ -1,0 +1,52 @@
+Safety (20):
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 315 (run move 315): (215.2, 30.0, 30.000) -> (215.2, 30.0, 20.040)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12119 (run move 12119): (23.5, 217.5, 30.000) -> (23.5, 217.5, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12133 (run move 12133): (23.5, 218.0, 30.000) -> (23.5, 218.0, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12147 (run move 12147): (23.5, 218.5, 30.000) -> (23.5, 218.5, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12188 (run move 12188): (37.5, 219.5, 30.000) -> (37.5, 219.5, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12193 (run move 12193): (90.0, 219.5, 30.000) -> (90.0, 219.5, 10.271)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 12202 (run move 12202): (192.5, 219.5, 30.000) -> (192.5, 219.5, 11.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13233 (run move 13233): (23.0, 50.5, 30.000) -> (23.0, 50.5, 12.415)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13238 (run move 13238): (217.0, 54.0, 30.000) -> (217.0, 54.0, 9.155)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13243 (run move 13243): (23.0, 55.0, 30.000) -> (23.0, 55.0, 12.411)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13257 (run move 13257): (23.0, 58.5, 30.000) -> (23.0, 58.5, 12.398)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13362 (run move 13362): (217.0, 83.5, 30.000) -> (217.0, 83.5, 9.817)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13406 (run move 13406): (23.0, 94.5, 30.000) -> (23.0, 94.5, 12.417)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13422 (run move 13422): (23.0, 95.0, 30.000) -> (23.0, 95.0, 12.417)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13433 (run move 13433): (23.0, 95.5, 30.000) -> (23.0, 95.5, 12.405)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13444 (run move 13444): (23.0, 96.0, 30.000) -> (23.0, 96.0, 12.405)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13454 (run move 13454): (23.0, 96.5, 30.000) -> (23.0, 96.5, 12.413)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13526 (run move 13526): (217.0, 107.0, 30.000) -> (217.0, 107.0, 9.500)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13743 (run move 13743): (23.0, 130.5, 30.000) -> (23.0, 130.5, 12.418)
+  Rapid passes through uncut stock on TP1 '2 Back Rough' at local move 13984 (run move 13984): (23.0, 189.0, 30.000) -> (23.0, 189.0, 10.418)
+
+Act on (2):
+  "2 Back Rough": a fed link cuts stock it was planned to cross in air or on cut ground: link move 12565 removes 11.98 mm at (71.7, 221.5, 9.06). 17 of 37669 link samples on 11 link moves remove more than 6.06 mm (this pass's commanded depth per pass plus one cell, 6.06 mm).
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  551.3s wasted around (85.5, 67.8, 12.9) — engagement 0.26
+  5.5s wasted around (216.5, 39.0, 16.1) — engagement 0.00
+  5.5s wasted around (216.0, 40.5, 16.1) — engagement 0.00
+  5.4s wasted around (216.0, 180.5, 16.1) — engagement 0.00
+  5.1s wasted around (187.0, 221.5, 10.6) — engagement 0.03
+  4.9s wasted around (170.2, 220.5, 16.1) — engagement 0.01
+  4.7s wasted around (69.0, 206.0, 9.2) — engagement 0.02
+  4.6s wasted around (69.5, 180.5, 9.3) — engagement 0.01
+  4.6s wasted around (68.0, 185.0, 9.8) — engagement 0.02
+  4.6s wasted around (68.5, 180.0, 9.3) — engagement 0.03
+  ... 1600 more not shown
+
+Counts: 416863 samples | 53707 flagged-air + 1460 flagged-low (per SAMPLE) | 7167 issue runs (COALESCED, the legacy "issue_count") | 1610 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 17.1251 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 88747mm  |  Rapid: 158535mm  |  Time: 5777s
+Air cutting: 32.2% of total runtime  |  Avg engagement: 0.25  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [!] #1 2 Back Rough (3D Adaptive) — 14180 moves, 20 collisions
+      kinematics: 100% of commanded (99% feed-bound → +22% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 20 rapid-through-stock collisions
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/wanaka_s2p0_contour_parallel

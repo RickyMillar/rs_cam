@@ -1,0 +1,2 @@
+fix45/wanaka_s2p0_contour_parallel/simulation.json res 0.6 ids [1] total 5776.8
+   tp 1 total 5776.8 cut 3683.6 rapid 2093.1 air 1858.8 vol 594137

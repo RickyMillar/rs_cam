@@ -1,0 +1,2 @@
+fix45/corne_B_s2p1_geodesic_adaptive/simulation.json res 0.3 ids [1] total 1080.2
+   tp 1 total 1080.2 cut 986.9 rapid 93.3 air 431.5 vol 218084

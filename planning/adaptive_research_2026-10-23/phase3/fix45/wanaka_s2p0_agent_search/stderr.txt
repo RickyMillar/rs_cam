@@ -1,0 +1,29 @@
+Act on (1):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  517.7s wasted around (204.5, 156.8, 10.0) — engagement 0.41
+  4.7s wasted around (23.0, 28.0, 16.1) — engagement 0.10
+  4.7s wasted around (26.6, 179.1, 16.1) — engagement 0.09
+  4.0s wasted around (213.6, 31.1, 16.1) — engagement 0.14
+  3.9s wasted around (89.0, 221.5, 10.0) — engagement 0.10
+  3.9s wasted around (26.6, 179.1, 16.1) — engagement 0.14
+  3.7s wasted around (199.1, 42.1, 12.2) — engagement 0.09
+  3.7s wasted around (23.0, 28.0, 16.1) — engagement 0.15
+  3.7s wasted around (108.5, 218.1, 16.1) — engagement 0.09
+  3.6s wasted around (171.0, 214.6, 11.9) — engagement 0.13
+  ... 533 more not shown
+
+Counts: 71539 samples | 21268 flagged-air + 1930 flagged-low (per SAMPLE) | 7747 issue runs (COALESCED, the legacy "issue_count") | 543 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 10.9200 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 38108mm  |  Rapid: 3603mm  |  Time: 1337s
+Air cutting: 35.5% of total runtime  |  Avg engagement: 0.41  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 7652 moves, 0 collisions
+      kinematics: 100% of commanded (99% feed-bound → +16% at ×1.30, 1% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/wanaka_s2p0_agent_search

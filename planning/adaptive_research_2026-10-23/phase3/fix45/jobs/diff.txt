@@ -1,0 +1,10 @@
+corne_B_s2p1_contour_parallel: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'contour_parallel'
+corne_B_s2p1_adaptive: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'adaptive'
+corne_B_s2p1_agent_search: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'agent_search'
+corne_B_s2p1_contour_spiral: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'contour_spiral'
+corne_B_s2p1_geodesic_adaptive: = fix39's file
+wanaka_s2p0_contour_parallel: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'contour_parallel'
+wanaka_s2p0_adaptive: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'adaptive'
+wanaka_s2p0_agent_search: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'agent_search'
+wanaka_s2p0_contour_spiral: setups[0].toolpaths[0].operation.params.clearing_strategy: 'geodesic_adaptive' -> 'contour_spiral'
+wanaka_s2p0_geodesic_adaptive: = fix39's file

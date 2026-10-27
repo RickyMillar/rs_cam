@@ -6250,3 +6250,77 @@ carries index=1.
   6–9 mm, and the anchor (20.04) is below 23. So level_anchor_z does not see the band.
 
 Sim deleted. Worktree clean, detached at dabf258d3. Not committed.
+
+## D64: AgentSearch, ContourSpiral and Adaptive against CP and Geodesic Adaptive before removal (fix45, geodesic-integration 7ee3d3226)
+
+**Setup.** Fixture worktree detached at clean 7ee3d3226; release build without the research feature, run directly; no
+env, no override. Job files `fix45/jobs/<part>_<strategy>.toml` (`make_jobs.py`): D58's product files (fix39) with only
+op 1's `clearing_strategy` changed (diff in `jobs/diff.txt`).
+- Corne B s2.1: `--setup 0 --skip 3,4`, so the program holds op 1 only. A first Corne pass with the copy op enabled
+  (`--skip 4`) was REFUSED for adaptive and contour_spiral: "tool load exceeded on toolpath(s): toolpath 3:
+  deflection=stiffness" (the copy op meets more stock after those op 1s). Op 1 only matters, so all five were rerun op-1
+  only.
+- wanaka s2.0: `--setup 0 --resolution 0.6`, edge op disabled (as D58).
+- All 10 op-1 runs: rc 0, export passed, 0 refusals.
+
+Method:
+- Load: area oracle (chip_load_fraction per strip, AREA_SCREEN=0, fix27 percentiles). Bound: the same rule for every
+  strategy, ceiling(stepover) + 0.65/6: 0.489 (Corne 2.1), 0.471 (wanaka 2.0).
+- Plunges: vertical G1 descents in program.nc. Descents: audit_d34 descent events into stock.
+- Axial: `depth_by_level.py`, the max axial engagement and the volume over one DPP.
+- Left: > 0.8 mm over the target inside the part (Corne `corne_left.py`: the filled silhouette; wanaka `op7_wanaka.py` with
+  no edge op: inside the outline) and in the 0–9 mm band (Corne outside the wall; wanaka inside the outline).
+- Table: `fix45/table.json` (`table.py`). Renders: `fix45/index.html` (`render_d64.py`, one top view of op 1 per run).
+- Sims deleted.
+
+**Corne B s2.1, op 1**
+
+| strategy | clock s | L max | p99 | p95 | mm > 0.489 | plunges | descents | removed mm³ | max axial | vol > DPP | left inside mm² (mm³) | left band 0–9 mm² |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| geodesic_adaptive | 1080.2 | 0.999 | 0.493 | 0.392 | 171.6 | 612 | 382 | 218084 | 8.44 | 683 (0.3 %) | 1588 (6691) | 1981 |
+| contour_parallel | 1217.1 | 1.052 | 1.008 | 0.992 | 2672.1 | 229 | 123 | 268747 | 12.0 | 7018 (2.6 %) | 1285 (6175) | 359 |
+| adaptive | 971.9 | 2.016 | 1.008 | 0.992 | 1915.9 | 113 | 49 | 213243 | 12.38 | 1566 (0.7 %) | 2770 (13280) | 1758 |
+| agent_search | 714.3 | 2.016 | 1.008 | 1.000 | 5000.4 | 238 | 133 | 208495 | 16.5 | 2866 (1.4 %) | 3927 (17938) | 1759 |
+| contour_spiral | 1222.9 | 2.016 | 1.008 | 0.992 | 2058.5 | 414 | 272 | 213881 | 16.5 | 1826 (0.9 %) | 2501 (12831) | 1759 |
+
+**wanaka s2.0, op 1**
+
+| strategy | clock s | L max | p99 | p95 | mm > 0.471 | plunges | descents | removed mm³ | max axial | vol > DPP | left inside mm² (mm³) | left band 0–9 mm² |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| geodesic_adaptive | 2271.9 | 0.720 | 0.375 | 0.358 | 107.4 | 1262 | 581 | 591516 | 12.42 | 639 (0.1 %) | 5045 (22084) | 3708 |
+| contour_parallel | 5776.8 | 2.620 | 1.000 | 0.400 | 2258.3 | 2809 | 1223 | 594137 | 17.13 | 13778 (2.3 %) | 4395 (21378) | 3589 |
+| adaptive | 1144.7 | 1.803 | 0.992 | 0.483 | 2523.8 | 64 | 30 | 568487 | 17.13 | 352 (0.1 %) | 5633 (45942) | 4352 |
+| agent_search | 1336.7 | 1.025 | 1.000 | 0.992 | 18627.0 | 720 | 532 | 585921 | 10.92 | 32 (0.0 %) | 8408 (27498) | 4276 |
+| contour_spiral | 3038.9 | 1.025 | 0.992 | 0.678 | 3360.5 | 2265 | 1701 | 591442 | 5.46 | 0 | 5797 (23073) | 4106 |
+
+The geodesic and CP rows equal D58 / fix25 for wanaka (clocks 2271.9 / 5776.8, the same loads). Corne CP is at s2.1
+here, not k_cp_fix6job's s1.2.
+
+**Renders** (`fix45/index.html`):
+- geodesic: the D58 wraps.
+- adaptive: staircase offsets (jagged, cell-stepped contours) on both parts. On Corne a tangle of crossing moves near
+  (45–60, 50–60) and small teardrop loops along columns. On wanaka square stepped rings with a long diagonal link.
+- agent_search: a spiral on open ground, then jagged staircase paths in the corners and on Corne's right half. Many small
+  triangle marks and plunges on Corne. On wanaka, high-Z (yellow) moves at the corners.
+- contour_spiral: rings plus chains of small circles along the medial axis (an X on both parts). On wanaka a dense cloud
+  of plunges (2265) over a square raster.
+- Nothing crosses the part outline in any render.
+
+**Verdict per strategy: is it better than Geodesic Adaptive on any measure?**
+- adaptive: YES on time (Corne −10 %, wanaka −50 %), plunges and descents (wanaka 64 / 30 against 1262 / 581). But it has
+  the overloads (L max 2.0 / 1.8, p99 about 1.0, 1916 / 2524 mm over the bound), leaves 2× geodesic's volume inside on
+  both parts (13280 against 6691; 45942 against 22084 mm³), and a jagged staircase path.
+- agent_search: YES on time (Corne 714 s, the fastest) and on wanaka axial depth (max 10.9 mm, 32 mm³ over DPP against
+  12.4 / 639). But it has the worst load (p95 1.0; 5000 / 18627 mm over the bound) and the most stock left (Corne 3927
+  mm², wanaka 8408 mm² inside, G-SPUR / G-HOLECORE class).
+- contour_spiral: YES on axial depth on wanaka (max 5.46 = DPP, 0 over DPP), and fewer plunges and descents on Corne
+  (414 / 272 against 612 / 382). But it is slower (Corne +13 %, wanaka +34 %), has p99 about 1.0, more stock left, and
+  2265 plunges on wanaka.
+- contour_parallel (not up for removal; for reference): YES on stock left inside (both parts) and on the 0–9 mm band (op 1
+  clears the edge itself), and on Corne plunges and descents. But it has p99 1.0, 13778 mm³ over DPP on wanaka, and 2.5×
+  the time on wanaka.
+- So each strategy beats Geodesic Adaptive on at least one measure. None does it inside the load bound: every one runs at
+  p99 ≥ 0.99, against the geodesic's 0.49 / 0.38. Before removal, the operator should weigh adaptive's speed and
+  contour_spiral's axial depth. Both are wins that come with full-width cuts.
+
+Not committed.

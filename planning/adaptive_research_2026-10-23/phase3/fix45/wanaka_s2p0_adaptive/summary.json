@@ -1,0 +1,47 @@
+{
+  "project": "wanaka200",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 56060.585359457014,
+  "total_rapid_distance_mm": 3629.093680909118,
+  "total_runtime_s": 1144.6651637384189,
+  "air_cut_pct_of_total_runtime": 17.929711868741425,
+  "air_cut_pct_of_cutting_time": 18.698852387344665,
+  "average_engagement": 0.268673308595704,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.6,
+    "mode": "fixed",
+    "source": "override",
+    "project_mm": 0.5
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "2 Back Rough",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 5909,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "ok",
+    "headline": "OK"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

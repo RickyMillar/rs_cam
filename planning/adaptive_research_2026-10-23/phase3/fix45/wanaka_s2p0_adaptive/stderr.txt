@@ -1,0 +1,28 @@
+Act on (2):
+  "2 Back Rough": a fed link cuts stock it was planned to cross in air or on cut ground: link move 5851 removes 16.69 mm at (147.2, 220.4, 8.32). 2 of 779 link samples on 1 link moves remove more than 6.06 mm (this pass's commanded depth per pass plus one cell, 6.06 mm).
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  443.5s wasted around (156.7, 181.8, 9.1) — engagement 0.27
+  1.5s wasted around (30.2, 30.0, 16.1) — engagement 0.30
+  1.3s wasted around (28.2, 28.0, 11.2) — engagement 0.24
+  1.3s wasted around (22.8, 33.5, 16.1) — engagement 0.25
+  1.3s wasted around (211.5, 27.8, 16.1) — engagement 0.29
+  1.3s wasted around (28.5, 221.7, 16.1) — engagement 0.22
+  1.3s wasted around (217.2, 216.0, 16.1) — engagement 0.25
+  0.7s wasted around (28.2, 28.0, 16.1) — engagement 0.48
+  0.7s wasted around (211.5, 27.8, 16.1) — engagement 0.48
+  0.7s wasted around (217.2, 216.0, 16.1) — engagement 0.47
+  ... 21 more not shown
+
+Counts: 100916 samples | 11963 flagged-air + 1636 flagged-low (per SAMPLE) | 5546 issue runs (COALESCED, the legacy "issue_count") | 31 hotspots
+
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 1  |  Cutting: 56061mm  |  Rapid: 3629mm  |  Time: 1145s
+Air cutting: 17.9% of total runtime  |  Avg engagement: 0.27  |  Peak commanded advance/tooth: 0.025 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 5909 moves, 0 collisions
+      kinematics: 100% of commanded (97% feed-bound → +10% at ×1.30, 3% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/wanaka_s2p0_adaptive

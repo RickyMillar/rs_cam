@@ -1,0 +1,50 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 16868.846668911727,
+  "total_rapid_distance_mm": 3673.773981472006,
+  "total_runtime_s": 714.3276976767158,
+  "air_cut_pct_of_total_runtime": 45.30071031052788,
+  "air_cut_pct_of_cutting_time": 51.807118322177324,
+  "average_engagement": 0.3160033906754092,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 3790,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 45.30071031052788,
+    "headline": "WARNING: 45.3% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [
+      "  toolpath 1: depth of cut, peak 12.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source"
+    ],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

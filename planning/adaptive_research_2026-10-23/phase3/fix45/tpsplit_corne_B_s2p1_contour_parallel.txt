@@ -1,0 +1,2 @@
+fix45/corne_B_s2p1_contour_parallel/simulation.json res 0.3 ids [1] total 1217.1
+   tp 1 total 1217.1 cut 987.5 rapid 229.6 air 442.1 vol 268747

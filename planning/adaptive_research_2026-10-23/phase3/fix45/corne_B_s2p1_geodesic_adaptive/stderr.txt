@@ -1,0 +1,27 @@
+Safety (1):
+  "3D Rough 1": the rough leaves 617 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 597 of them against a wall: 5052.1 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 1.01 mm high, 0.30 mm wide, 0.3 mm2 at (24.6, -10.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (63.6, -5.8); 1.00 mm high, 0.30 mm wide, 0.3 mm2 at (64.8, -5.5); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (87.9, -77.5); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -4.9); 0.91 mm high, 0.30 mm wide, 0.2 mm2 at (89.7, -5.2); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (65.7, -5.2); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (87.3, -78.1); and 607 more. 2 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Advisories:
+  260.3s wasted around (121.7, -66.4, 4.0) — engagement 0.17
+  3.3s wasted around (140.7, -67.5, 5.2) — engagement 0.03
+  2.9s wasted around (50.3, -14.4, 9.8) — engagement 0.03
+  2.8s wasted around (102.8, -12.8, 5.2) — engagement 0.04
+  2.8s wasted around (140.7, -67.5, 8.2) — engagement 0.16
+  2.4s wasted around (50.3, -14.4, 6.8) — engagement 0.18
+  2.3s wasted around (102.8, -12.8, 8.2) — engagement 0.19
+  2.2s wasted around (84.2, -70.8, 9.8) — engagement 0.04
+  2.2s wasted around (12.9, -17.3, 5.2) — engagement 0.04
+  2.0s wasted around (140.7, -67.5, 13.1) — engagement 0.23
+  ... 389 more not shown
+
+Counts: 115998 samples | 41694 flagged-air + 11136 flagged-low (per SAMPLE) | 9943 issue runs (COALESCED, the legacy "issue_count") | 399 hotspots
+
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 1  |  Cutting: 30416mm  |  Rapid: 3476mm  |  Time: 1080s
+Air cutting: 39.9% of total runtime  |  Avg engagement: 0.28  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [ ] #1 3D Rough 1 (3D Adaptive) — 6947 moves, 0 collisions
+      kinematics: 90% of commanded (79% feed-bound → +11% at ×1.30, 21% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix45/corne_B_s2p1_geodesic_adaptive

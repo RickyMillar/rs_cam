@@ -1,0 +1,47 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 30291.10403471709,
+  "total_rapid_distance_mm": 10965.901466905905,
+  "total_runtime_s": 1217.1189843787897,
+  "air_cut_pct_of_total_runtime": 36.32008967071328,
+  "air_cut_pct_of_cutting_time": 44.76378637042046,
+  "average_engagement": 0.24330094882985626,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6067,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "ok",
+    "headline": "OK"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

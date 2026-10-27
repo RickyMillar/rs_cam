@@ -1,0 +1,2 @@
+fix45/wanaka_s2p0_contour_spiral/simulation.json res 0.6 ids [1] total 3038.9
+   tp 1 total 3038.9 cut 2953.9 rapid 85.0 air 1074.6 vol 591442
