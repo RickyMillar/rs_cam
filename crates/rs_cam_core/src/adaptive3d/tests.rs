@@ -2704,47 +2704,33 @@ fn the_step_reads_tell_a_full_pass_from_a_thin_layer() {
     assert_eq!(step_load(&fresh, p, p, 3.0, 0.0, &load_cutter), 0.0);
 }
 
-/// D65: the stock-read split admits a draped step as a capped cut only for
-/// Geodesic Adaptive, only when it is not deep, only when its load is over
-/// the ceiling and at most the full slot, and only inside one engaged run.
-/// A deep step and a step over the slot still split.
+/// D65: the stock-read split of the slice admits a draped step as a capped
+/// cut only when it is not deep, only when its load is over the ceiling and
+/// at most the full slot, and only inside one engaged run. A deep step and
+/// a step over the slot still split. Removal step R5: the slice runs only
+/// Geodesic Adaptive, so the rule takes no strategy (Contour Parallel has
+/// no slice and never reaches it).
 #[test]
 fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
     use super::clearing::admits_capped_split;
     use crate::adaptive::path::FULL_SLOT_LOAD;
     let ceiling = 0.38;
     let over = (ceiling + FULL_SLOT_LOAD) / 2.0;
-    let geo = ClearingStrategy3d::GeodesicAdaptive;
-    assert!(admits_capped_split(false, over, ceiling, true, geo));
-    assert!(admits_capped_split(
-        false,
-        FULL_SLOT_LOAD,
-        ceiling,
-        true,
-        geo
-    ));
+    assert!(admits_capped_split(false, over, ceiling, true));
+    assert!(admits_capped_split(false, FULL_SLOT_LOAD, ceiling, true));
     // A deep step splits, whatever its load.
-    assert!(!admits_capped_split(true, over, ceiling, true, geo));
+    assert!(!admits_capped_split(true, over, ceiling, true));
     // A step over the slot splits.
     assert!(!admits_capped_split(
         false,
         2.0 * FULL_SLOT_LOAD,
         ceiling,
-        true,
-        geo
+        true
     ));
     // A step at or under the ceiling is not split at all: no admission.
-    assert!(!admits_capped_split(false, ceiling, ceiling, true, geo));
+    assert!(!admits_capped_split(false, ceiling, ceiling, true));
     // An engagement change keeps the split.
-    assert!(!admits_capped_split(false, over, ceiling, false, geo));
-    // The other strategy keeps the split.
-    assert!(!admits_capped_split(
-        false,
-        over,
-        ceiling,
-        true,
-        ClearingStrategy3d::ContourParallel
-    ));
+    assert!(!admits_capped_split(false, over, ceiling, false));
 }
 
 /// D65: the factor of a capped draped step is `c / L`, at most the factor

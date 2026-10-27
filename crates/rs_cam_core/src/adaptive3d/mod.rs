@@ -639,9 +639,9 @@ pub struct Adaptive3dOutput {
     pub toolpath: Toolpath,
     pub annotations: Vec<Adaptive3dRuntimeAnnotation>,
     /// W6.2: what the planner produced beside the path. It fills
-    /// `planner_engagement` (Stage 4, `(cut_point, α/2π)`; empty for
-    /// non-ContourSpiral strategies) and `area_regions` (the regions that
-    /// By Area detected; `None` for Global).
+    /// `area_regions` (the regions that By Area detected; `None` for
+    /// Global) and the rest regions (D44, D50). `planner_engagement` stays
+    /// empty: ContourSpiral, its one 3D writer, left in removal step R4.
     pub produced: crate::trace::produced::Produced,
 }
 
@@ -657,7 +657,6 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
 ) -> Result<Adaptive3dOutput, Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
-    let planner_engagement = result.planner_engagement;
     // D44, D48: the regions the run left to a rest pass, one XY union over
     // the levels grown by one planner cell, in tool-centre space inside
     // this run's own containment polygons. The runner keeps them only on
@@ -685,7 +684,6 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
         annotations = annotations.len(),
         cutting_mm = tp.total_cutting_distance(),
         rapid_mm = tp.total_rapid_distance(),
-        planner_eng_samples = planner_engagement.len(),
         "3D adaptive toolpath complete"
     );
 
@@ -693,7 +691,6 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
         toolpath: tp,
         annotations,
         produced: crate::trace::produced::Produced {
-            planner_engagement,
             area_regions: result.area_regions.map(std::sync::Arc::new),
             rest_regions,
             rest_regions_top_z,

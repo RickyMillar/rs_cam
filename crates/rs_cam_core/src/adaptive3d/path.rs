@@ -459,7 +459,6 @@ fn clear_planned_level(
     slot: LevelSlot<'_>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
-    planner_eng: &mut Vec<(P3, f64)>,
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let level_event = match slot.region {
@@ -532,7 +531,6 @@ fn clear_planned_level(
                 z_level,
                 segments,
                 cursor,
-                planner_eng,
                 region,
                 Some(level_event),
                 cancel,
@@ -614,10 +612,6 @@ fn region_masks(regions: &[MaterialRegion], bfs_labels: &[usize], cols: usize) -
 /// `tests/adaptive3d_planner_sim_dexel_parity.rs`.
 pub(super) struct Adaptive3dSegmentsResult {
     pub segments: Vec<Adaptive3dSegment>,
-    /// Stage 4 — planner-predicted leading-arc engagement `(cut_point,
-    /// α/2π)` collected across all ContourSpiral slices. Empty for other
-    /// strategies. Consumed by the feed modulator via positional lookup.
-    pub planner_engagement: Vec<(P3, f64)>,
     /// The regions that By Area detected, for the overlay and MCP. `None`
     /// for Global. Evidence only: no planner stage reads it.
     pub area_regions: Option<AreaRegionMap>,
@@ -1074,10 +1068,6 @@ pub(super) fn adaptive_3d_segments(
     };
 
     let mut segments = Vec::new();
-    // Stage 4 — planner-predicted leading-arc engagement samples
-    // `(cut_point, α/2π)`, accumulated across all spiral slices and
-    // returned for the feed modulator's positional lookup.
-    let mut planner_eng: Vec<(P3, f64)> = Vec::new();
     let mut cursor = PlannerCursor::default();
     let mut area_regions: Option<AreaRegionMap> = None;
 
@@ -1163,7 +1153,6 @@ pub(super) fn adaptive_3d_segments(
                         },
                         &mut segments,
                         &mut cursor,
-                        &mut planner_eng,
                         cancel,
                     )?;
                 }
@@ -1219,7 +1208,6 @@ pub(super) fn adaptive_3d_segments(
                     },
                     &mut segments,
                     &mut cursor,
-                    &mut planner_eng,
                     cancel,
                 )?;
 
@@ -1258,7 +1246,6 @@ pub(super) fn adaptive_3d_segments(
 
     Ok(Adaptive3dSegmentsResult {
         segments,
-        planner_engagement: planner_eng,
         area_regions,
         // D50: a piece left at a level leaves the slab from that level up to
         // the level above it, so the result carries the slab top.
