@@ -1,0 +1,1312 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index 587e0a279..92bb9c1da 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -30,7 +30,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ | 2.5D | Bore (`bore`) | `ops/bore.rs` | Yes | No | Shipped (2026-10-22, geometry selection P6.6). A helix mills each picked circle to its drawn size: the tool centre runs on `r = (d - D) / 2`, so the wall stands at `d / 2`. The op cuts a circle larger than the tool and at most two tool diameters (one helix then reaches the centre, so no core is left). Under the default rule it leaves out a circle of the tool size, a smaller circle and a circle of more than two tool diameters, with one note each that names the fix ("drill it with a Drill op", "use a smaller tool, or a Drill with a tool of the circle size", "use a Pocket on the circle or a larger tool"); a picked misfit circle refuses by item. A point states no size, so a Bore does not cut it. The helix descends in whole turns of at most `pitch` (default 1 mm, the dressup helix pitch), counter-clockwise for `climb`, then cuts one turn on the floor. A `finish_allowance` above zero cuts the helix at `r - a`, then one floor turn and a helix up the wall at `r`. The floor is the op floor (`floor`, as Pocket); `Floor::StockBottom` gives a through hole. A flat or bull-nose end mill only. The helix runs at the ramp feed, else the plunge rate; the feeds rows are those of the 2.5D clearing family (Pocket, Roughing); the feeds matrix gains 40 Bore cells (16 ship: end mill and bull nose; 24 refuse), 1000 in all. The dressups that add an entry, a lead or a link are stripped. With stock source "remaining stock" each hole starts at the highest remaining stock within the hole radius of its centre, and a hole with no stock above its floor is dropped. The simulation sweeps the moves and the export writes them as moves (not a drill cycle). Sentry: `a_bore_cuts_the_stated_size_p6_6` |
+ | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped. Runs on the Layered runner (W3.5, 2026-10-15): one level, `top_z - (w + t) / tan(a)`, from the tool angle. With stock source "remaining stock" the chamfer is skipped when no material stands within `w + t` of its tip path above that level (an edge a prior op removed); it is never clipped, because a clipped ring would start its bevel in the middle of an edge (G-RESTLEVELS claim 11). R-C and F21 (operator ruling 2026-10-23, SAFETY): each outline cuts one level below ITS OWN top: a drawing area below the op Top Z (as before), a mesh face below its plane under an auto top, a STEP edge below its Z. On a STEP model the Chamfer bevels the convex top edges only (`ItemUse::Edges`): the STEP door states the form of each ring, chain, circle and up face from the two faces at each segment (`selection::EdgeForm`); the default takes the convex top edge chains and rims (not the face rings, a departure from ruling Q3 for Chamfer only); a pick of a concave edge, of a bottom edge, or of any model edge in a Bottom or side setup refuses `NotAConvexEdge` by name. A model edge takes its material side from the model, so the Side dial applies to drawing areas only; an open edge is cut in its point order with no chord. Each item refuses `BuriedFace` against its own Z (fresh stock: the lowest item; remaining stock: each area and a band of `w + 2 t` round each edge). The model gouge guard reads a Chamfer (`Bevel`): a cut deeper than the bevel depth `w / tan(a)` below the V-bit CL Z gouges (an edge that runs into a wall); it does not see a cut into another face that is shallower than the bevel depth. Break: a STEP Chamfer default changes from the face rings to the convex chains. Sentry: `a_step_chamfer_cuts_convex_edges_only_rc` (`--features step`). |
+ | 3D | Parallel finish | `dropcutter.rs` | Yes | Yes | Shipped |
+-| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
++| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only). Sentry: `a_retired_clearing_strategy_is_named_r2`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
+ | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
+ | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
+ | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped. `iso_field` dial (2026-09-03, default off): rings from the iso-scallop field — per-point spacing, spec-correct cosine slope law, completion by construction; measured 0.875× the unified op's time at 2.5 pp better envelope coverage on terrain (`planning/metrology_2026-09-02/FINDINGS.md` §M7–M8) |
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index f2fdd0f7c..bb1c1ebe9 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -114,9 +114,6 @@ impl From<crate::compute::operation_configs::ClearingStrategy> for ClearingStrat
+         use crate::compute::operation_configs::ClearingStrategy as Config;
+         match s {
+             Config::ContourParallel => Self::ContourParallel,
+-            Config::Adaptive => Self::Adaptive,
+-            Config::AgentSearch => Self::AgentSearch,
+-            Config::ContourSpiral => Self::ContourSpiral,
+             Config::GeodesicAdaptive => Self::GeodesicAdaptive,
+         }
+     }
+diff --git a/crates/rs_cam_core/src/compute/catalog.rs b/crates/rs_cam_core/src/compute/catalog.rs
+index 1d9b2f2b1..9aeca35b2 100644
+--- a/crates/rs_cam_core/src/compute/catalog.rs
++++ b/crates/rs_cam_core/src/compute/catalog.rs
+@@ -1023,15 +1023,6 @@ impl OperationConfig {
+                 },
+                 ..row
+             },
+-            // C2: a contour-spiral planner holds the engagement of its
+-            // stepover; the other strategies have real engagement spikes.
+-            OperationConfig::Adaptive3d(c) => Capabilities {
+-                planner_uniform_engagement: matches!(
+-                    c.clearing_strategy,
+-                    super::operation_configs::ClearingStrategy::ContourSpiral
+-                ),
+-                ..row
+-            },
+             // P6.3: side On cuts on the line, so it reads the lines of the
+             // selection (closed rings and open paths). Outside and Inside
+             // keep the row's closed areas.
+@@ -1076,7 +1067,10 @@ impl OperationConfig {
+             | OperationConfig::Bore(_)
+             | OperationConfig::Chamfer(_)
+             | OperationConfig::ProjectCurve(_)
+-            | OperationConfig::AlignmentPinDrill(_) => row,
++            | OperationConfig::AlignmentPinDrill(_)
++            // Removal step R2: no 3D Rough strategy left holds a uniform
++            // planner engagement (ContourSpiral did), so the row stands.
++            | OperationConfig::Adaptive3d(_) => row,
+         }
+     }
+ 
+diff --git a/crates/rs_cam_core/src/compute/operation_configs.rs b/crates/rs_cam_core/src/compute/operation_configs.rs
+index 207bdc2d4..5636bff2c 100644
+--- a/crates/rs_cam_core/src/compute/operation_configs.rs
++++ b/crates/rs_cam_core/src/compute/operation_configs.rs
+@@ -135,17 +135,12 @@ pub(crate) fn default_layered_region_ordering() -> RegionOrdering {
+ #[serde(rename_all = "snake_case")]
+ pub enum ClearingStrategy {
+     /// Fast contour-parallel offset clearing via EDT. Default.
++    ///
++    /// Removal step R2 (operator ruling 2026-10-28): the values `adaptive`,
++    /// `agent_search` and `contour_spiral` left this enum. A project file
++    /// that names one refuses at load and names the fix
++    /// (`session/project_file.rs`, `RETIRED_VALUES`).
+     ContourParallel,
+-    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
+-    Adaptive,
+-    /// Per-step direction search with preflight skip and widen-band
+-    /// recovery. Slow to generate — reach for it when ContourParallel
+-    /// and Adaptive leave uncut bands on difficult geometry.
+-    AgentSearch,
+-    /// Constructive inside-out contour spiral per slice: one continuous
+-    /// stay-down pass per region, engagement bounded by wrap spacing
+-    /// (Stage 1, algorithm review 2026-06-12).
+-    ContourSpiral,
+     /// Geodesic Adaptive (integration step 7.4): the geodesic-wavefront
+     /// plan per slice piece (`adaptive::geodesic`). It clears the body
+     /// under the pass load, with the stock-depth step split and the routed
+@@ -3805,29 +3800,29 @@ impl_operation_params!(ProjectCurveConfig {
+ mod tests {
+     use super::*;
+ 
+-    /// ClearingStrategy must serialize and deserialize every variant.
+-    /// Regression guard for the GUI/MCP exposure of AgentSearch —
+-    /// adding a variant to the core ClearingStrategy3d enum is not
+-    /// enough; this config-layer enum is the one serde sees from TOML
+-    /// and the one the MCP's set_toolpath_param dispatches through.
++    /// ClearingStrategy must serialize and deserialize every variant. This
++    /// config-layer enum is the one serde sees from TOML and the one the
++    /// MCP's set_toolpath_param dispatches through.
+     #[test]
+     fn clearing_strategy_serde_round_trip() {
+         for variant in [
+             ClearingStrategy::ContourParallel,
+-            ClearingStrategy::Adaptive,
+-            ClearingStrategy::AgentSearch,
+-            ClearingStrategy::ContourSpiral,
+             ClearingStrategy::GeodesicAdaptive,
+         ] {
+             let json = serde_json::to_string(&variant).unwrap();
+             let round_trip: ClearingStrategy = serde_json::from_str(&json).unwrap();
+             assert_eq!(round_trip, variant);
+         }
+-        // Also verify the snake_case wire format — agent_search, not AgentSearch.
+-        let json = serde_json::to_string(&ClearingStrategy::AgentSearch).unwrap();
+-        assert_eq!(json, "\"agent_search\"");
+-        let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
+-        assert_eq!(from_wire, ClearingStrategy::AgentSearch);
++        // The snake_case wire format.
++        let json = serde_json::to_string(&ClearingStrategy::ContourParallel).unwrap();
++        assert_eq!(json, "\"contour_parallel\"");
++        // Removal step R2: a removed value is not a variant any more.
++        for removed in ["adaptive", "agent_search", "contour_spiral"] {
++            assert!(
++                serde_json::from_str::<ClearingStrategy>(&format!("\"{removed}\"")).is_err(),
++                "{removed} still deserialises"
++            );
++        }
+         // Integration step 7.4b: the project file and the job file spell
+         // Geodesic Adaptive `geodesic_adaptive`.
+         let json = serde_json::to_string(&ClearingStrategy::GeodesicAdaptive).unwrap();
+diff --git a/crates/rs_cam_core/src/feeds/rationale.rs b/crates/rs_cam_core/src/feeds/rationale.rs
+index e08994489..87fe6728a 100644
+--- a/crates/rs_cam_core/src/feeds/rationale.rs
++++ b/crates/rs_cam_core/src/feeds/rationale.rs
+@@ -1108,7 +1108,7 @@ mod tests {
+         let e = rt(SuggestWarning::StrategyRecommendedNotApplied {
+             param: "clearing_strategy",
+             current: "contour_parallel".to_owned(),
+-            recommended: "adaptive".to_owned(),
++            recommended: "geodesic_adaptive".to_owned(),
+             reason: "mixed_terrain_classifier",
+         });
+         assert_eq!(e.param, RationaleParam::ClearingStrategy);
+@@ -1116,7 +1116,7 @@ mod tests {
+         // Warn-only entries carry no numeric from/to.
+         assert_eq!(e.from_value, None);
+         assert_eq!(e.to_value, None);
+-        assert!(e.headline.contains("adaptive"));
++        assert!(e.headline.contains("geodesic_adaptive"));
+         assert!(
+             e.headline.contains("not auto-applied"),
+             "headline must say the recommendation was not applied, got {:?}",
+diff --git a/crates/rs_cam_core/src/feeds/suggest/adaptive_entry.rs b/crates/rs_cam_core/src/feeds/suggest/adaptive_entry.rs
+index 7990bc485..412a6962f 100644
+--- a/crates/rs_cam_core/src/feeds/suggest/adaptive_entry.rs
++++ b/crates/rs_cam_core/src/feeds/suggest/adaptive_entry.rs
+@@ -32,12 +32,12 @@ const PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D: f64 = 0.5;
+ /// Pass 7b: v3.3c strategy-aware clearing-strategy recommendation —
+ /// **warn-only**, never rewrites.
+ ///
+-/// The v3 design table maps `MixedTerrain` → `ClearingStrategy::Adaptive`
+-/// (curvature-adjusted clearing handles the flat/steep mix better than
+-/// plain contour-parallel offsets), but auto-rewriting across clearing
+-/// strategies is deferred to v4: today's classifier is bbox-only and
+-/// the `Adaptive` / `AgentSearch` promotions need calibration against
+-/// real uncut-band evidence before Suggest writes them. Until then this
++/// The v3 design table mapped `MixedTerrain` → the 3D `Adaptive`
++/// strategy. Removal step R2 (operator ruling 2026-10-28, after D64)
++/// removed it; the recommendation is `GeodesicAdaptive`, the one
++/// constant-load strategy left. Auto-rewriting across clearing strategies
++/// stays deferred: today's classifier is bbox-only and a promotion needs
++/// calibration against real uncut-band evidence before Suggest writes it. Until then this
+ /// pass surfaces a [`SuggestWarning::StrategyRecommendedNotApplied`]
+ /// so the operator (or an MCP agent reading the rationale) can opt in
+ /// manually.
+@@ -81,13 +81,13 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
+     tracing::debug!(
+         ?class,
+         current = "contour_parallel",
+-        recommended = "adaptive",
+-        "Suggest recommends (warn-only) adaptive clearing on mixed terrain"
++        recommended = "geodesic_adaptive",
++        "Suggest recommends (warn-only) Geodesic Adaptive on mixed terrain"
+     );
+     warnings.push(SuggestWarning::StrategyRecommendedNotApplied {
+         param: "clearing_strategy",
+         current: "contour_parallel".to_owned(),
+-        recommended: "adaptive".to_owned(),
++        recommended: "geodesic_adaptive".to_owned(),
+         reason: "mixed_terrain_classifier",
+     });
+     warnings
+diff --git a/crates/rs_cam_core/src/feeds/suggest/tests.rs b/crates/rs_cam_core/src/feeds/suggest/tests.rs
+index 0ff0a94fd..d8b85b34e 100644
+--- a/crates/rs_cam_core/src/feeds/suggest/tests.rs
++++ b/crates/rs_cam_core/src/feeds/suggest/tests.rs
+@@ -2429,7 +2429,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
+     let (current, recommended, reason) = recommended
+         .expect("clearing-strategy recommendation must fire on unpinned MixedTerrain op");
+     assert_eq!(current, "contour_parallel");
+-    assert_eq!(recommended, "adaptive");
++    assert_eq!(recommended, "geodesic_adaptive");
+     assert_eq!(reason, "mixed_terrain_classifier");
+     // Warn-only: the field must be untouched.
+     let OperationConfig::Adaptive3d(cfg) = &op else {
+@@ -2497,12 +2497,15 @@ fn clearing_strategy_recommendation_skips() {
+     };
+ 
+     // Pinned non-default values (heuristic B).
+-    for pinned in [ClearingStrategy::Adaptive, ClearingStrategy::AgentSearch] {
+-        no_recommendation(
+-            &run(pinned, SuggestScope::StrategyAndFeeds, Some(&bbox)),
+-            &format!("pinned {pinned:?}"),
+-        );
+-    }
++    // Removal step R2: Geodesic Adaptive is the one non-default value.
++    no_recommendation(
++        &run(
++            ClearingStrategy::GeodesicAdaptive,
++            SuggestScope::StrategyAndFeeds,
++            Some(&bbox),
++        ),
++        "pinned GeodesicAdaptive",
++    );
+     // Strategy passes off.
+     no_recommendation(
+         &run(
+diff --git a/crates/rs_cam_core/src/machine/strategy_advisor.rs b/crates/rs_cam_core/src/machine/strategy_advisor.rs
+index a98090e7c..83ff77ff6 100644
+--- a/crates/rs_cam_core/src/machine/strategy_advisor.rs
++++ b/crates/rs_cam_core/src/machine/strategy_advisor.rs
+@@ -16,7 +16,8 @@
+ //!
+ //! A backed-off [`ContourParallel`](ClearingStrategy::ContourParallel)
+ //! lays down more path but holds commanded feed along its long straights;
+-//! a [`ContourSpiral`](ClearingStrategy::ContourSpiral) lays down less
++//! a constant-engagement [`GeodesicAdaptive`](ClearingStrategy::GeodesicAdaptive)
++//! (ContourSpiral before the removal step R2) lays down less
+ //! path but the machine decelerates into every loop. Which wins is set by
+ //! **acceleration**, so the decision is *measured*, not looked up: run the
+ //! real accel-aware integrator
+@@ -105,21 +106,13 @@ pub struct StrategyRecommendation {
+ /// motion for more path. This drives only the recommendation's *why*
+ /// string — the *choice* is always the measured wall-clock minimum.
+ fn is_constant_engagement(strategy: ClearingStrategy) -> bool {
+-    matches!(
+-        strategy,
+-        ClearingStrategy::ContourSpiral
+-            | ClearingStrategy::AgentSearch
+-            | ClearingStrategy::GeodesicAdaptive
+-    )
++    matches!(strategy, ClearingStrategy::GeodesicAdaptive)
+ }
+ 
+ /// Stable display label for the recommendation text.
+ fn strategy_label(strategy: ClearingStrategy) -> &'static str {
+     match strategy {
+-        ClearingStrategy::AgentSearch => "Agent Search",
+         ClearingStrategy::ContourParallel => "Contour Parallel",
+-        ClearingStrategy::Adaptive => "Adaptive",
+-        ClearingStrategy::ContourSpiral => "Contour Spiral",
+         ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
+     }
+ }
+@@ -321,7 +314,7 @@ mod tests {
+                 geometry_forced: false,
+             },
+             StrategyCandidate {
+-                strategy: ClearingStrategy::ContourSpiral,
++                strategy: ClearingStrategy::GeodesicAdaptive,
+                 toolpath: &spiral,
+                 regime: LoadRegime::ToolLimited,
+                 geometry_forced: false,
+@@ -344,7 +337,7 @@ mod tests {
+         let rec_high = recommend_strategy(&candidates, &high).unwrap();
+         assert_eq!(
+             rec_high.chosen,
+-            ClearingStrategy::ContourSpiral,
++            ClearingStrategy::GeodesicAdaptive,
+             "high accel: shorter-path spiral should win; reason: {}",
+             rec_high.reason
+         );
+@@ -368,7 +361,7 @@ mod tests {
+                 geometry_forced: true,
+             },
+             StrategyCandidate {
+-                strategy: ClearingStrategy::ContourSpiral,
++                strategy: ClearingStrategy::GeodesicAdaptive,
+                 toolpath: &spiral,
+                 regime: LoadRegime::ToolLimited,
+                 geometry_forced: false,
+@@ -397,7 +390,7 @@ mod tests {
+         let machine = machine_with_accel(250.0);
+         let candidates = [
+             StrategyCandidate {
+-                strategy: ClearingStrategy::ContourSpiral,
++                strategy: ClearingStrategy::GeodesicAdaptive,
+                 toolpath: &empty,
+                 regime: LoadRegime::ToolLimited,
+                 geometry_forced: false,
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index e3b37d694..0c0ec873d 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -1416,12 +1416,13 @@ pub fn execute_generation(
+ /// Clearing strategies the advisor compares for a 3D roughing op — the two
+ /// endpoints of the speed/load trade-off: conventional offset clearing
+ /// ([`ContourParallel`](ClearingStrategy::ContourParallel)) vs
+-/// constant-engagement trochoidal ([`ContourSpiral`](ClearingStrategy::ContourSpiral)).
++/// constant-engagement ([`GeodesicAdaptive`](ClearingStrategy::GeodesicAdaptive);
++/// ContourSpiral until the removal step R2, operator ruling 2026-10-28).
+ /// `recommend_clearing_strategy` times both at their load-limited params and
+ /// lets machine acceleration decide. Extend by adding variants here.
+ const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
+     ClearingStrategy::ContourParallel,
+-    ClearingStrategy::ContourSpiral,
++    ClearingStrategy::GeodesicAdaptive,
+ ];
+ 
+ /// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the
+diff --git a/crates/rs_cam_core/src/session/compute/params.rs b/crates/rs_cam_core/src/session/compute/params.rs
+index 49b35b36f..1a74fbeb2 100644
+--- a/crates/rs_cam_core/src/session/compute/params.rs
++++ b/crates/rs_cam_core/src/session/compute/params.rs
+@@ -174,6 +174,13 @@ impl ProjectSession {
+             .toolpath_configs
+             .get_mut(index)
+             .ok_or(SessionError::ToolpathNotFound(index))?;
++        // Removal step R2: a retired value refuses with the loader's text,
++        // not with serde's "unknown variant".
++        if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {
++            return Err(SessionError::InvalidParam(format!(
++                "{param} = {value} is retired. {replacement}."
++            )));
++        }
+ 
+         // Numeric fields accept either JSON numbers or numeric strings —
+         // some MCP / JSON-RPC clients stringify scalar values when the
+diff --git a/crates/rs_cam_core/src/session/compute/tests.rs b/crates/rs_cam_core/src/session/compute/tests.rs
+index 27d61b937..252768bd1 100644
+--- a/crates/rs_cam_core/src/session/compute/tests.rs
++++ b/crates/rs_cam_core/src/session/compute/tests.rs
+@@ -2145,9 +2145,17 @@ fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
+ /// cut-move feed (so the wall-clock the advisor compares reflects F-039
+ /// optimization) and returns a modelled binding regime. If step 5 were
+ /// reverted to timing raw paths this test fails: feeds would be untouched.
++///
++/// The subject is the modulation step, not the strategy: since removal
++/// step R2 the candidate is Contour Parallel (was ContourSpiral).
+ #[test]
+ fn advisor_modulates_candidate_feeds_before_timing() {
+-    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
++    // Removal step R2: ContourSpiral left the config. The subject of this
++    // test is the modulation step the advisor runs on a candidate, not the
++    // strategy, so the candidate is Contour Parallel, the other advisor
++    // candidate, which plans this terrain in seconds (Geodesic Adaptive
++    // takes minutes here in a debug build).
++    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourParallel);
+     let cancel = AtomicBool::new(false);
+     let resolved = session
+         .resolve_generation_inputs(0, &cancel)
+diff --git a/crates/rs_cam_core/src/session/project_file.rs b/crates/rs_cam_core/src/session/project_file.rs
+index bcb6068f3..177f36e37 100644
+--- a/crates/rs_cam_core/src/session/project_file.rs
++++ b/crates/rs_cam_core/src/session/project_file.rs
+@@ -214,13 +214,55 @@ struct RetiredValue {
+ /// Every retired string value. The loader refuses a file that holds one,
+ /// with the same refusal as a retired key ([`check_retired_keys`]). Add a
+ /// row when a unit variant leaves the file format.
+-const RETIRED_VALUES: &[RetiredValue] = &[RetiredValue {
+-    table: &["setups", "[]", "toolpaths", "[]", "boundary"],
+-    key: "source",
+-    value: "face_selection",
+-    replacement: "Removed (geometry selection P2.5): a face boundary is a \
+-                  [boundary.source.selection] with the face picks. Pick the faces again",
+-}];
++const RETIRED_VALUES: &[RetiredValue] = &[
++    RetiredValue {
++        table: &["setups", "[]", "toolpaths", "[]", "boundary"],
++        key: "source",
++        value: "face_selection",
++        replacement: "Removed (geometry selection P2.5): a face boundary is a \
++                      [boundary.source.selection] with the face picks. Pick the faces again",
++    },
++    // Removal step R2 (operator ruling 2026-10-28): three 3D clearing
++    // strategies left the format. Nothing converts: another strategy cuts
++    // another toolpath, so the operator chooses.
++    RetiredValue {
++        table: TOOLPATH_PARAMS,
++        key: "clearing_strategy",
++        value: "adaptive",
++        replacement: CLEARING_STRATEGY_REPLACEMENT,
++    },
++    RetiredValue {
++        table: TOOLPATH_PARAMS,
++        key: "clearing_strategy",
++        value: "agent_search",
++        replacement: CLEARING_STRATEGY_REPLACEMENT,
++    },
++    RetiredValue {
++        table: TOOLPATH_PARAMS,
++        key: "clearing_strategy",
++        value: "contour_spiral",
++        replacement: CLEARING_STRATEGY_REPLACEMENT,
++    },
++];
++
++/// The parameter table of every toolpath of a project file.
++const TOOLPATH_PARAMS: &[&str] = &["setups", "[]", "toolpaths", "[]", "operation", "params"];
++
++const CLEARING_STRATEGY_REPLACEMENT: &str = "Removed (removal step R2, operator ruling \
++     2026-10-28): the 3D Adaptive clearing strategies are \"geodesic_adaptive\" and \
++     \"contour_parallel\". Set clearing_strategy to one of them";
++
++/// The replacement text of a retired value of a toolpath parameter
++/// (`operation.params.<param> = "<value>"`), or `None`. The parameter
++/// setter reads it (`set_toolpath_param`), so MCP and a job file refuse a
++/// retired value with the same text as the project loader.
++pub(crate) fn retired_param_value(param: &str, value: &serde_json::Value) -> Option<&'static str> {
++    let value = value.as_str()?;
++    RETIRED_VALUES
++        .iter()
++        .find(|r| r.table == TOOLPATH_PARAMS && r.key == param && r.value == value)
++        .map(|r| r.replacement)
++}
+ 
+ /// One retired key of a toolpath table that left the format for some op
+ /// kinds only (geometry selection P3.2). A [`RetiredKey`] matches a path
+diff --git a/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+index bf6a662c7..05814e1f8 100644
+--- a/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
++++ b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+@@ -91,7 +91,7 @@ fn session(consumer_diameter: f64, containment: BoundaryContainment) -> ProjectS
+     let model_id = builder.add_model(mesh_model(mesh, "channel"));
+     let mut op0 = toolpath_config(
+         "rough",
+-        rough(ClearingStrategy::AgentSearch),
++        rough(ClearingStrategy::GeodesicAdaptive),
+         source_tool,
+         model_id,
+     );
+diff --git a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+index 0a3625dfb..cc0f42a01 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+@@ -282,7 +282,9 @@ fn the_rough_rapids_into_no_stock() {
+         stock_to_leave_axial: LEAVE,
+         entry_style: Adaptive3dEntryStyle::Plunge,
+         region_ordering: CfgOrdering::Global,
+-        clearing_strategy: ClearingStrategy::AgentSearch,
++        // Removal step R2: AgentSearch left the config; the session arm
++        // runs the slice pipeline through Geodesic Adaptive.
++        clearing_strategy: ClearingStrategy::GeodesicAdaptive,
+         min_region_cut_length_mm: MIN_REGION_CUT_MM,
+         ..Adaptive3dConfig::default()
+     };
+diff --git a/crates/rs_cam_core/tests/adaptive3d_plans_every_slice_piece_g_adapt3dpieces.rs b/crates/rs_cam_core/tests/adaptive3d_plans_every_slice_piece_g_adapt3dpieces.rs
+index 9614ac045..7a98cfde3 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_plans_every_slice_piece_g_adapt3dpieces.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_plans_every_slice_piece_g_adapt3dpieces.rs
+@@ -39,12 +39,19 @@
+ //!
+ //! 1. The fixture is what it says: the cavity insets by R to one piece
+ //!    (one region) and by 2R to two pieces (the planner's split).
+-//! 2. AgentSearch and ContourSpiral each clear both lobes: no judged cell
+-//!    keeps material above the floor plus the leave plus
+-//!    `FRESH_MATERIAL_THRESHOLD_MM`. A judged cell is in a lobe and at
+-//!    least `R + CELL_MM` from the lobe walls. The band nearer the walls
+-//!    is not judged: it stands in both lobes, also with the fix, because
+-//!    of the double inset above (a separate finding).
++//! 2. Geodesic Adaptive (AgentSearch and ContourSpiral until removal step
++//!    R2) plans every piece of both lobes. An unplanned piece leaves a
++//!    connected region of stock over the target at least the size of the
++//!    area the tool would clear there, so the claim is: no 4-connected
++//!    region of over-target judged cells (more than one sim cell over the
++//!    floor plus the leave) is larger than one tool disc, `π R²`. Both
++//!    values derive from the tool and the simulation grid. A judged cell is
++//!    in a lobe and at least `R + CELL_MM` from the lobe walls. The band
++//!    nearer the walls is not judged: it stands in both lobes, also with
++//!    the fix, because of the double inset above (a separate finding).
++//!    Removal step R2 (lead ruling 2026-10-28) re-scoped the claim from "no
++//!    cell over `FRESH_MATERIAL_THRESHOLD_MM`": Geodesic Adaptive leaves
++//!    one cell at 0.374 mm in lobe x −1, a sliver and not a piece.
+ //! 3. Each arm has no rapid collision: the move from one lobe to the
+ //!    other does not rapid through stock.
+ //!
+@@ -58,6 +65,7 @@
+ 
+ #![expect(
+     clippy::expect_used,
++    clippy::indexing_slicing,
+     reason = "test code: a panic is how a test reports a failure"
+ )]
+ #![expect(clippy::print_stderr, reason = "The measured numbers ARE the record.")]
+@@ -215,16 +223,13 @@ fn the_cavity_is_one_region_whose_planner_inset_splits() {
+     );
+ }
+ 
+-/// 2. AgentSearch clears both lobes.
++/// Claim 2 on Geodesic Adaptive. Removal step R2 (2026-10-28): AgentSearch
++/// and ContourSpiral, the two strategies the defect was found on, left the
++/// config; Geodesic Adaptive plans each piece through the same slice
++/// pipeline (`planner_outlines`, `clear_one_region`).
+ #[test]
+-fn agent_search_clears_both_lobes() {
+-    assert_lobes_cleared(ClearingStrategy::AgentSearch);
+-}
+-
+-/// 2. ContourSpiral clears both lobes.
+-#[test]
+-fn contour_spiral_clears_both_lobes() {
+-    assert_lobes_cleared(ClearingStrategy::ContourSpiral);
++fn geodesic_adaptive_clears_both_lobes() {
++    assert_lobes_cleared(ClearingStrategy::GeodesicAdaptive);
+ }
+ 
+ fn assert_lobes_cleared(strategy: ClearingStrategy) {
+@@ -248,10 +253,12 @@ fn assert_lobes_cleared(strategy: ClearingStrategy) {
+     );
+     let grid = &stock.z_grid;
+     let target = TOP - DEPTH + LEAVE;
++    let piece_mm2 = std::f64::consts::PI * TOOL_R * TOOL_R;
+     let mut tally = Vec::new();
+     for side in [-1.0, 1.0] {
+         let (mut judged, mut standing) = (0_usize, 0_usize);
+         let mut worst = f64::NEG_INFINITY;
++        let mut over = vec![false; grid.rows * grid.cols];
+         for r in 0..grid.rows {
+             for c in 0..grid.cols {
+                 let (x, y) = grid.cell_to_world(r, c);
+@@ -269,20 +276,94 @@ fn assert_lobes_cleared(strategy: ClearingStrategy) {
+                 if above > FRESH_MATERIAL_THRESHOLD_MM {
+                     standing += 1;
+                 }
++                over[r * grid.cols + c] = above > CELL_MM;
+             }
+         }
++        let largest_mm2 =
++            largest_component_cells(&over, grid.rows, grid.cols) as f64 * CELL_MM * CELL_MM;
+         eprintln!(
+             "{strategy:?} lobe x {side:+}: {standing} of {judged} judged cells stand above \
+-             the target; worst {worst:.3} mm"
++             the target; worst {worst:.3} mm; largest over-target region {largest_mm2:.2} mm2 \
++             (one tool disc {piece_mm2:.2} mm2)"
+         );
+-        tally.push((side, judged, standing, worst));
++        tally.push((side, judged, largest_mm2, worst));
+     }
+-    for (side, judged, standing, worst) in tally {
++    for (side, judged, largest_mm2, worst) in tally {
+         assert!(judged > 0, "{strategy:?} lobe x {side:+}: no judged cell");
+-        assert_eq!(
+-            standing, 0,
+-            "{strategy:?} lobe x {side:+}: material stands above the floor plus the leave in \
+-             {standing} of {judged} judged cells (worst {worst:.3} mm) — G-ADAPT3DPIECES"
++        assert!(
++            largest_mm2 <= piece_mm2,
++            "{strategy:?} lobe x {side:+}: a connected region of {largest_mm2:.2} mm2 stands \
++             more than one sim cell over the floor plus the leave (worst {worst:.3} mm), larger \
++             than one tool disc {piece_mm2:.2} mm2: an unplanned piece — G-ADAPT3DPIECES"
+         );
+     }
+ }
++
++/// The red of the re-scoped check, on the old numbers: before the D2 fix
++/// the +X lobe kept 555 of its 2209 judged cells (a 47 × 47 block) at
++/// 5.5 mm over the target, the core of the unplanned piece. Planted as one
++/// connected block of 555 cells (15 × 37) on the judged grid, it is
++/// 138.75 mm2, larger than one tool disc: the check fails it. The one cell
++/// Geodesic Adaptive leaves passes.
++#[test]
++fn the_region_check_fails_the_old_unplanned_piece() {
++    const JUDGED_SIDE: usize = 47;
++    let piece_mm2 = std::f64::consts::PI * TOOL_R * TOOL_R;
++    let area = |mask: &[bool]| {
++        largest_component_cells(mask, JUDGED_SIDE, JUDGED_SIDE) as f64 * CELL_MM * CELL_MM
++    };
++    let mut old = vec![false; JUDGED_SIDE * JUDGED_SIDE];
++    for r in 0..15 {
++        for c in 0..37 {
++            old[r * JUDGED_SIDE + c] = true;
++        }
++    }
++    assert_eq!(old.iter().filter(|&&b| b).count(), 555);
++    assert!(
++        area(&old) > piece_mm2,
++        "the old unplanned piece ({:.2} mm2) must fail the check (one tool disc {piece_mm2:.2} mm2)",
++        area(&old)
++    );
++    let mut sliver = vec![false; JUDGED_SIDE * JUDGED_SIDE];
++    sliver[JUDGED_SIDE * 20 + 20] = true;
++    assert!(area(&sliver) <= piece_mm2, "one cell must pass the check");
++}
++
++/// The cell count of the largest 4-connected region of `true` cells of a
++/// `rows × cols` row-major mask.
++fn largest_component_cells(mask: &[bool], rows: usize, cols: usize) -> usize {
++    let mut seen = vec![false; mask.len()];
++    let mut largest = 0;
++    for start in 0..mask.len() {
++        if !mask[start] || seen[start] {
++            continue;
++        }
++        seen[start] = true;
++        let mut stack = vec![start];
++        let mut size = 0;
++        while let Some(i) = stack.pop() {
++            size += 1;
++            let (r, c) = (i / cols, i % cols);
++            let mut push = |j: usize| {
++                if mask[j] && !seen[j] {
++                    seen[j] = true;
++                    stack.push(j);
++                }
++            };
++            if r > 0 {
++                push(i - cols);
++            }
++            if r + 1 < rows {
++                push(i + cols);
++            }
++            if c > 0 {
++                push(i - 1);
++            }
++            if c + 1 < cols {
++                push(i + 1);
++            }
++        }
++        largest = largest.max(size);
++    }
++    largest
++}
+diff --git a/crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs b/crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs
+index a674d084f..c864a4a63 100644
+--- a/crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs
++++ b/crates/rs_cam_core/tests/every_op_keeps_its_toolpath_g_opgolden.rs
+@@ -271,31 +271,9 @@ fn ramp_bottom_up(op: &mut OperationConfig) {
+     cfg.order_bottom_up = true;
+ }
+ 
+-/// W6.5.0: By Area order, a helix entry and the ContourSpiral strategy.
+-/// It covers the three config-to-planner enum maps of 3D Rough, the By
+-/// Area detection and the planner engagement samples.
+-fn adaptive3d_by_area_helix_spiral(op: &mut OperationConfig) {
+-    let OperationConfig::Adaptive3d(cfg) = op else {
+-        unreachable!("adaptive3d arm on another op")
+-    };
+-    cfg.region_ordering = RegionOrdering::ByArea;
+-    cfg.entry_style = Adaptive3dEntryStyle::Helix;
+-    cfg.clearing_strategy = ClearingStrategy::ContourSpiral;
+-}
+-
+-/// W6.5.0: a ramp entry and the AgentSearch strategy (the other arms of
+-/// the two enum maps).
+-fn adaptive3d_ramp_agent(op: &mut OperationConfig) {
+-    let OperationConfig::Adaptive3d(cfg) = op else {
+-        unreachable!("adaptive3d arm on another op")
+-    };
+-    cfg.entry_style = Adaptive3dEntryStyle::Ramp;
+-    cfg.clearing_strategy = ClearingStrategy::AgentSearch;
+-}
+-
+ /// Removal step R1 (`integration/removal_design.md` §1.5): By Area order
+ /// and a helix entry on Contour Parallel. The By Area and helix coverage of
+-/// `by_area_helix_spiral` stays when ContourSpiral leaves (R4).
++/// `by_area_helix_spiral` stayed when ContourSpiral left (R2).
+ fn adaptive3d_by_area_helix_cp(op: &mut OperationConfig) {
+     let OperationConfig::Adaptive3d(cfg) = op else {
+         unreachable!("adaptive3d arm on another op")
+@@ -306,7 +284,7 @@ fn adaptive3d_by_area_helix_cp(op: &mut OperationConfig) {
+ }
+ 
+ /// Removal step R1: a ramp entry on Geodesic Adaptive. The ramp coverage of
+-/// `ramp_agent` stays when AgentSearch leaves (R4).
++/// `ramp_agent` stayed when AgentSearch left (R2).
+ fn adaptive3d_ramp_geodesic(op: &mut OperationConfig) {
+     let OperationConfig::Adaptive3d(cfg) = op else {
+         unreachable!("adaptive3d arm on another op")
+@@ -315,14 +293,6 @@ fn adaptive3d_ramp_geodesic(op: &mut OperationConfig) {
+     cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
+ }
+ 
+-/// W6.5.0: the Adaptive strategy (the last arm of the strategy map).
+-fn adaptive3d_adaptive(op: &mut OperationConfig) {
+-    let OperationConfig::Adaptive3d(cfg) = op else {
+-        unreachable!("adaptive3d arm on another op")
+-    };
+-    cfg.clearing_strategy = ClearingStrategy::Adaptive;
+-}
+-
+ /// W6.5.0: radius compensation inside the closed fixture curve.
+ fn project_curve_side_inside(op: &mut OperationConfig) {
+     let OperationConfig::ProjectCurve(cfg) = op else {
+@@ -426,27 +396,6 @@ fn use_faces(session: &mut ProjectSession, index: usize, frame: Frame) {
+ 
+ /// The W6.5.0 arms: op, arm, tweak, frame, curve. All on fresh stock.
+ const W650_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
+-    (
+-        OperationType::Adaptive3d,
+-        "by_area_helix_spiral",
+-        adaptive3d_by_area_helix_spiral,
+-        Frame::TopUp,
+-        CurveModel::Fixture,
+-    ),
+-    (
+-        OperationType::Adaptive3d,
+-        "ramp_agent",
+-        adaptive3d_ramp_agent,
+-        Frame::TopUp,
+-        CurveModel::Fixture,
+-    ),
+-    (
+-        OperationType::Adaptive3d,
+-        "adaptive",
+-        adaptive3d_adaptive,
+-        Frame::TopUp,
+-        CurveModel::Fixture,
+-    ),
+     (
+         OperationType::Adaptive3d,
+         "by_area_helix_cp",
+diff --git a/crates/rs_cam_core/tests/every_op_states_its_capabilities_w2_4.rs b/crates/rs_cam_core/tests/every_op_states_its_capabilities_w2_4.rs
+index a47c25d6f..5a5403cac 100644
+--- a/crates/rs_cam_core/tests/every_op_states_its_capabilities_w2_4.rs
++++ b/crates/rs_cam_core/tests/every_op_states_its_capabilities_w2_4.rs
+@@ -564,17 +564,9 @@ fn only_a_contour_spiral_holds_a_uniform_engagement() {
+         let cfg: OperationConfig = serde_json::from_value(value).unwrap();
+         cfg.capabilities().planner_uniform_engagement
+     };
+-    assert!(with(
+-        OperationType::Adaptive3d,
+-        "clearing_strategy",
+-        "contour_spiral"
+-    ));
+-    for token in [
+-        "contour_parallel",
+-        "adaptive",
+-        "agent_search",
+-        "geodesic_adaptive",
+-    ] {
++    // Removal step R2: ContourSpiral left 3D Rough; no strategy left
++    // there holds a uniform planner engagement.
++    for token in ["contour_parallel", "geodesic_adaptive"] {
+         assert!(
+             !with(OperationType::Adaptive3d, "clearing_strategy", token),
+             "{token}"
+diff --git a/crates/rs_cam_core/tests/fixtures/op_golden_g_opgolden.toml b/crates/rs_cam_core/tests/fixtures/op_golden_g_opgolden.toml
+index 9aa95265c..efdf43a72 100644
+--- a/crates/rs_cam_core/tests/fixtures/op_golden_g_opgolden.toml
++++ b/crates/rs_cam_core/tests/fixtures/op_golden_g_opgolden.toml
+@@ -45,20 +45,6 @@ moves_hash = "9a2a08d6bee39639"
+ span_count = 391
+ spans_hash = "627676455ea84a2f"
+ 
+-["adaptive3d/adaptive"]
+-outcome = "ok"
+-move_count = 297
+-rapid_count = 17
+-linear_count = 280
+-arc_count = 0
+-cutting_length_mm = 1040.712
+-rapid_length_mm = 113.999
+-bbox_min = [-13.6771, -13.6771, 0.5]
+-bbox_max = [13.8396, 13.8396, 13.0]
+-moves_hash = "1cfe6f4283e7e27e"
+-span_count = 61
+-spans_hash = "0ccd97c613bcc2b8"
+-
+ ["adaptive3d/by_area_helix_cp"]
+ outcome = "ok"
+ move_count = 651
+@@ -73,20 +59,6 @@ moves_hash = "53ac4fc26e5fc900"
+ span_count = 331
+ spans_hash = "7cf02096aabac105"
+ 
+-["adaptive3d/by_area_helix_spiral"]
+-outcome = "ok"
+-move_count = 830
+-rapid_count = 6
+-linear_count = 527
+-arc_count = 297
+-cutting_length_mm = 2249.412
+-rapid_length_mm = 44.068
+-bbox_min = [-14.8029, -14.8029, 0.5]
+-bbox_max = [14.9365, 14.5197, 13.0]
+-moves_hash = "1ddb1bb85b700873"
+-span_count = 496
+-spans_hash = "8812195bee4db6ab"
+-
+ ["adaptive3d/fresh"]
+ outcome = "ok"
+ move_count = 379
+@@ -101,20 +73,6 @@ moves_hash = "fc7bd966aaee3c06"
+ span_count = 86
+ spans_hash = "afdac8b3c21199c4"
+ 
+-["adaptive3d/ramp_agent"]
+-outcome = "ok"
+-move_count = 240
+-rapid_count = 9
+-linear_count = 231
+-arc_count = 0
+-cutting_length_mm = 1095.993
+-rapid_length_mm = 70.655
+-bbox_min = [-12.8979, -12.8979, 0.5]
+-bbox_max = [17.0776, 13.0604, 13.0]
+-moves_hash = "c2503ce2fdf71ce9"
+-span_count = 54
+-spans_hash = "2f4bb09426fcd16f"
+-
+ ["adaptive3d/ramp_geodesic"]
+ outcome = "ok"
+ move_count = 1122
+diff --git a/crates/rs_cam_core/tests/fixtures/volumetric_produced_w6_5.toml b/crates/rs_cam_core/tests/fixtures/volumetric_produced_w6_5.toml
+index 926bbb8b5..a87d4ddd2 100644
+--- a/crates/rs_cam_core/tests/fixtures/volumetric_produced_w6_5.toml
++++ b/crates/rs_cam_core/tests/fixtures/volumetric_produced_w6_5.toml
+@@ -2,10 +2,10 @@
+ # Written by tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs with
+ # RS_CAM_BLESS_PRODUCED_W6_5=1. Do not edit by hand.
+ 
+-["adaptive3d/by_area_helix_spiral"]
++["adaptive3d/by_area_helix_cp"]
+ outcome = "ok"
+-engagement_samples = 1067
+-engagement_hash = "440fbe3b4d49a3e6"
++engagement_samples = 0
++engagement_hash = "09612b07b5ecb5a5"
+ area_region_count = 1
+ area_regions_hash = "696d58d12090296c"
+ 
+@@ -16,7 +16,7 @@ engagement_hash = "09612b07b5ecb5a5"
+ area_region_count = 0
+ area_regions_hash = ""
+ 
+-["adaptive3d/ramp_agent"]
++["adaptive3d/ramp_geodesic"]
+ outcome = "ok"
+ engagement_samples = 0
+ engagement_hash = "09612b07b5ecb5a5"
+diff --git a/crates/rs_cam_core/tests/strategy_advisor_smoke.rs b/crates/rs_cam_core/tests/strategy_advisor_smoke.rs
+index 881f5d955..812d60577 100644
+--- a/crates/rs_cam_core/tests/strategy_advisor_smoke.rs
++++ b/crates/rs_cam_core/tests/strategy_advisor_smoke.rs
+@@ -127,7 +127,7 @@ fn recommend_clearing_strategy_ranks_candidates_on_terrain() {
+     assert!(
+         matches!(
+             rec.chosen,
+-            ClearingStrategy::ContourParallel | ClearingStrategy::ContourSpiral
++            ClearingStrategy::ContourParallel | ClearingStrategy::GeodesicAdaptive
+         ),
+         "chosen must be in the candidate set, got {:?}",
+         rec.chosen
+diff --git a/crates/rs_cam_core/tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs b/crates/rs_cam_core/tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs
+index 14d75a75a..b846c31cc 100644
+--- a/crates/rs_cam_core/tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs
++++ b/crates/rs_cam_core/tests/the_volumetric_wrapper_keeps_its_produced_w6_5.rs
+@@ -20,7 +20,10 @@
+ //!
+ //! The G-OPGOLDEN 3D Rough arms, through the same session door and the
+ //! same fixtures (`common::op_fixtures`): `fresh`, `rest`,
+-//! `by_area_helix_spiral` and `ramp_agent`.
++//! `by_area_helix_cp` and `ramp_geodesic`. Removal step R2 (2026-10-28):
++//! `by_area_helix_spiral` and `ramp_agent` left with their strategies. No
++//! 3D Rough strategy writes `planner_engagement` now (ContourSpiral did), so
++//! every arm reads 0 samples; the 2D Adaptive op still writes them.
+ //!
+ //! # Blessing
+ //!
+@@ -144,30 +147,30 @@ type Tweak = fn(&mut OperationConfig);
+ fn no_tweak(_: &mut OperationConfig) {}
+ 
+ /// The same switches as the G-OPGOLDEN arm of the same name.
+-fn by_area_helix_spiral(op: &mut OperationConfig) {
++fn by_area_helix_cp(op: &mut OperationConfig) {
+     let OperationConfig::Adaptive3d(cfg) = op else {
+         unreachable!("adaptive3d arm on another op")
+     };
+     cfg.region_ordering = RegionOrdering::ByArea;
+     cfg.entry_style = Adaptive3dEntryStyle::Helix;
+-    cfg.clearing_strategy = ClearingStrategy::ContourSpiral;
++    cfg.clearing_strategy = ClearingStrategy::ContourParallel;
+ }
+ 
+ /// The same switches as the G-OPGOLDEN arm of the same name.
+-fn ramp_agent(op: &mut OperationConfig) {
++fn ramp_geodesic(op: &mut OperationConfig) {
+     let OperationConfig::Adaptive3d(cfg) = op else {
+         unreachable!("adaptive3d arm on another op")
+     };
+     cfg.entry_style = Adaptive3dEntryStyle::Ramp;
+-    cfg.clearing_strategy = ClearingStrategy::AgentSearch;
++    cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
+ }
+ 
+ /// The arms: name, tweak, rest source.
+ const ARMS: &[(&str, Tweak, bool)] = &[
+     ("fresh", no_tweak, false),
+     ("rest", no_tweak, true),
+-    ("by_area_helix_spiral", by_area_helix_spiral, false),
+-    ("ramp_agent", ramp_agent, false),
++    ("by_area_helix_cp", by_area_helix_cp, false),
++    ("ramp_geodesic", ramp_geodesic, false),
+ ];
+ 
+ fn run(tweak: Tweak, rest: bool) -> VolumetricProduced {
+@@ -214,12 +217,17 @@ fn the_volumetric_wrapper_keeps_its_produced() {
+         .map(|&(arm, tweak, rest)| (format!("adaptive3d/{arm}"), run(tweak, rest)))
+         .collect();
+ 
+-    // Non-vacuity: the By Area ContourSpiral arm carries both items, and
+-    // the Global ContourParallel arm carries neither.
+-    let spiral = &actual["adaptive3d/by_area_helix_spiral"];
++    // Non-vacuity: the By Area arm carries its areas, and the Global
++    // ContourParallel arm carries neither item. No 3D Rough strategy
++    // writes planner engagement since removal step R2.
++    let by_area = &actual["adaptive3d/by_area_helix_cp"];
+     assert!(
+-        spiral.engagement_samples > 0 && spiral.area_region_count > 0,
+-        "the By Area ContourSpiral arm must carry engagement samples and areas: {spiral:?}"
++        by_area.area_region_count > 0,
++        "the By Area arm must carry its areas: {by_area:?}"
++    );
++    assert!(
++        actual.values().all(|p| p.engagement_samples == 0),
++        "a 3D Rough arm carries planner engagement: {actual:?}"
+     );
+     let fresh = &actual["adaptive3d/fresh"];
+     assert!(
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+index fbf1f2959..215b5cd18 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+@@ -65,9 +65,6 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
+     pub pills: Option<&'a PillSuggestions<'a>>,
+     pub depth_caution: Option<&'a DepthBeyondStock>,
+     pub through_cut: Option<&'a ThroughCut>,
+-    /// The active tool's radius. Adaptive3d maps engagement to stepover
+-    /// with it.
+-    pub tool_radius: f64,
+     /// What the LAST generation resolved `claims_reference` to.
+     pub resolved_claims_reference: Option<ClaimsReferenceFinding>,
+     /// READ ONLY. The Geometry tab's one "Start from" row writes this
+@@ -306,7 +303,7 @@ editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
+     draw_dropcutter_params(ui, cfg, cx.pills);
+ });
+ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
+-    draw_adaptive3d_params(ui, cfg, cx.tool_radius, cx.pills);
++    draw_adaptive3d_params(ui, cfg, cx.pills);
+ });
+ editor!(
+     ed_waterline,
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index 74ec0fd79..b0678233d 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -1,8 +1,5 @@
+ use super::super::pills::PillSuggestions;
+ use rs_cam_core::finish::pencil::PencilDetector;
+-use rs_cam_core::ops::adaptive_shared::{
+-    radial_woc_fraction_from_leading_arc, target_engagement_fraction,
+-};
+ 
+ use crate::state::toolpath::{
+     Adaptive3dConfig, Adaptive3dEntryStyle, ClaimsReference, ClearingStrategy, DropCutterConfig,
+@@ -14,10 +11,6 @@ use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
+ use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
+ use rs_cam_core::compute::catalog::OperationType;
+ 
+-/// Fallback tool radius (1/8" endmill) when the active tool's radius is
+-/// unavailable or non-physical — keeps the load↔stepover bridge finite.
+-const FALLBACK_TOOL_RADIUS: f64 = 3.175;
+-
+ pub(in crate::ui::properties) fn draw_dropcutter_params(
+     ui: &mut egui::Ui,
+     cfg: &mut DropCutterConfig,
+@@ -62,30 +55,21 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
+ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+     ui: &mut egui::Ui,
+     cfg: &mut Adaptive3dConfig,
+-    tool_radius: f64,
+     pills: Option<&PillSuggestions>,
+ ) {
+-    // Spec: pill stepover + depth_per_pass.
++    // Spec: pill stepover + depth_per_pass. Removal step R2: the
++    // ContourSpiral "Optimal load" slider left with its strategy.
+     let stepover_sugg = pills.map(PillSuggestions::stepover);
+     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
+-    // The ContourSpiral strategy holds engagement flat by construction, so
+-    // its primary knob is the friendly "Optimal load" slider (it derives
+-    // the stepover). The raw stepover pill is retired for that strategy and
+-    // shown derived instead.
+-    let spiral = matches!(cfg.clearing_strategy, ClearingStrategy::ContourSpiral);
+     ui.param_grid("a3d_p", |ui| {
+-        if spiral {
+-            draw_spiral_load_control(ui, cfg, tool_radius);
+-        } else {
+-            dv_pill(
+-                ui,
+-                p(OperationType::Adaptive3d, "stepover", "Stepover:"),
+-                &mut cfg.stepover,
+-                " mm",
+-                0.1,
+-                stepover_sugg,
+-            );
+-        }
++        dv_pill(
++            ui,
++            p(OperationType::Adaptive3d, "stepover", "Stepover:"),
++            &mut cfg.stepover,
++            " mm",
++            0.1,
++            stepover_sugg,
++        );
+         dv_pill(
+             ui,
+             p(OperationType::Adaptive3d, "depth_per_pass", "Depth/Pass:"),
+@@ -179,9 +163,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+             .truncate()
+             .selected_text(match cfg.clearing_strategy {
+                 ClearingStrategy::ContourParallel => "Contour Parallel",
+-                ClearingStrategy::Adaptive => "Adaptive",
+-                ClearingStrategy::AgentSearch => "Agent Search",
+-                ClearingStrategy::ContourSpiral => "Contour Spiral",
+                 ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
+             })
+             .show_ui(ui, |ui| {
+@@ -190,31 +171,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+                     ClearingStrategy::ContourParallel,
+                     "Contour Parallel",
+                 );
+-                ui.selectable_value(
+-                    &mut cfg.clearing_strategy,
+-                    ClearingStrategy::Adaptive,
+-                    "Adaptive",
+-                );
+-                ui.selectable_value(
+-                    &mut cfg.clearing_strategy,
+-                    ClearingStrategy::AgentSearch,
+-                    "Agent Search",
+-                )
+-                .on_hover_text(
+-                    "Per-step direction search with preflight skip and widen-band \
+-                         recovery. Slow to generate — use when Contour Parallel or \
+-                         Adaptive leave uncut bands on difficult geometry.",
+-                );
+-                ui.selectable_value(
+-                    &mut cfg.clearing_strategy,
+-                    ClearingStrategy::ContourSpiral,
+-                    "Contour Spiral",
+-                )
+-                .on_hover_text(
+-                    "Constructive inside-out spiral per slice: one continuous \
+-                         stay-down pass per region with engagement bounded by the \
+-                         stepover. Experimental (Stage 1, algorithm review 2026-06-12).",
+-                );
+                 ui.selectable_value(
+                     &mut cfg.clearing_strategy,
+                     ClearingStrategy::GeodesicAdaptive,
+@@ -269,49 +225,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+     });
+ }
+ 
+-/// Clamp the active tool's radius to a finite, positive value for the
+-/// load↔stepover bridge.
+-fn sane_tool_radius(tool_radius: f64) -> f64 {
+-    if tool_radius.is_finite() && tool_radius > 0.0 {
+-        tool_radius
+-    } else {
+-        FALLBACK_TOOL_RADIUS
+-    }
+-}
+-
+-/// "Optimal load" row for the ContourSpiral strategy: the slider derives
+-/// `cfg.stepover` from a leading-arc engagement fraction via the
+-/// [`target_engagement_fraction`] bridge, so the operator dials the load
+-/// the spiral holds rather than a raw stepover. (The trochoidal relief cap
+-/// `trochoid_cap_mult` stays at its tuned engine default — it's a
+-/// corner-relief mechanism that rarely fires on open roughing, so it's not
+-/// surfaced as a knob.)
+-fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_radius: f64) {
+-    let r = sane_tool_radius(tool_radius);
+-
+-    // Derived live from the raw stepover so existing projects (and the
+-    // feeds suggestion that wrote `stepover`) round-trip through the knob.
+-    let mut load_pct = (target_engagement_fraction(cfg.stepover, r) * 100.0).clamp(5.0, 45.0);
+-    ui.label("Optimal load:").on_hover_text(
+-        "Cutter engagement the spiral holds on every steady wrap \
+-         (leading-arc fraction of the tool). Sets the stepover for you — \
+-         more load = wider step = fewer passes but a heavier cut.",
+-    );
+-    // IC1: the derived stepover is the slider's own text, not a line below.
+-    let stepover = cfg.stepover;
+-    if ui
+-        .add(
+-            egui::Slider::new(&mut load_pct, 5.0..=45.0)
+-                .suffix(format!("% \u{2192} {stepover:.2} mm")),
+-        )
+-        .on_hover_text("The stepover this load sets, in mm, follows the arrow.")
+-        .changed()
+-    {
+-        cfg.stepover = 2.0 * r * radial_woc_fraction_from_leading_arc(load_pct / 100.0);
+-    }
+-    ui.end_row();
+-}
+-
+ pub(in crate::ui::properties) fn draw_waterline_params(
+     ui: &mut egui::Ui,
+     cfg: &mut WaterlineConfig,
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 8d701ca17..294771ecb 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -531,13 +531,6 @@ pub(super) fn draw_cut_tab(
+     // nothing and nothing said so. `operations::registry::OP_UI_ROWS` is the
+     // table, and `operations_registry` holds it against
+     // `OperationType::ALL`.
+-    //
+-    // The Adaptive3d "Optimal load" knob needs the active tool's radius to
+-    // map engagement to stepover.
+-    let tool_radius = tool_configs
+-        .iter()
+-        .find(|(id, _)| Some(*id) == entry.tool_id)
+-        .map_or(0.0, |(_, t)| t.diameter / 2.0);
+     let mut draw_ctx = operations::registry::OpDrawCtx {
+         tools,
+         models,
+@@ -545,7 +538,6 @@ pub(super) fn draw_cut_tab(
+         pills: feeds_for_pills,
+         depth_caution,
+         through_cut,
+-        tool_radius,
+         resolved_claims_reference,
+         stock_source: entry.stock_source,
+         toolpath_id: entry.id,
+diff --git a/crates/rs_cam_core/tests/a_retired_clearing_strategy_is_named_r2.rs b/crates/rs_cam_core/tests/a_retired_clearing_strategy_is_named_r2.rs
+new file mode 100644
+index 000000000..18400631d
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_retired_clearing_strategy_is_named_r2.rs
+@@ -0,0 +1,172 @@
++//! Removal step R2 (`planning/adaptive_research_2026-10-23/integration/
++//! removal_design.md` §3.2; operator ruling 2026-10-28, option B): the 3D
++//! clearing strategies `adaptive`, `agent_search` and `contour_spiral` left
++//! the format. A file that names one refuses as a whole at load, names
++//! every hit and the fix, and converts nothing: another strategy cuts
++//! another toolpath, so the operator chooses.
++//!
++//! A unit variant saves as a VALUE (`clearing_strategy = "agent_search"`),
++//! so serde alone would refuse it with "unknown variant" and name no fix.
++//! The `RETIRED_VALUES` rows of `session/project_file.rs` find it first.
++//!
++//! 1. Control: a saved project with two 3D Rough ops (Contour Parallel and
++//!    Geodesic Adaptive) loads.
++//! 2. The same text with three ops on the three removed values refuses
++//!    with `SessionError::RetiredKeys`, which names all three and the fix.
++//! 3. The parameter door (`set_toolpath_param`: MCP and the job file) refuses
++//!    a removed value with the same fix text, not serde's "unknown variant".
++//!
++//! ```text
++//! cargo test -p rs_cam_core -q --test a_retired_clearing_strategy_is_named_r2
++//! ```
++
++#![expect(
++    clippy::unwrap_used,
++    clippy::expect_used,
++    clippy::panic,
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++use common::make_endmill_6mm;
++use common::session::{polygon_model, square_polygon, toolpath_config};
++
++use std::path::PathBuf;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
++use rs_cam_core::session::{ProjectFile, ProjectSession, ProjectSessionBuilder, SessionError};
++
++const REMOVED: [&str; 3] = ["adaptive", "agent_search", "contour_spiral"];
++
++fn temp_path() -> PathBuf {
++    let mut dir = std::env::temp_dir();
++    dir.push(format!(
++        "rs_cam_retired_clearing_strategy_{}",
++        std::process::id()
++    ));
++    std::fs::create_dir_all(&dir).unwrap();
++    dir.push("project.toml");
++    dir
++}
++
++/// A session with three 3D Rough ops: Contour Parallel, Geodesic Adaptive,
++/// Contour Parallel.
++fn session() -> ProjectSession {
++    let mut builder = ProjectSessionBuilder::new();
++    let tool_idx = builder.add_tool(make_endmill_6mm());
++    let tool_id = builder.tools()[tool_idx].id.raw();
++    let model_id = builder.add_model(polygon_model(vec![square_polygon(10.0)], "square"));
++    for (name, strategy) in [
++        ("CP", ClearingStrategy::ContourParallel),
++        ("Geodesic", ClearingStrategy::GeodesicAdaptive),
++        ("CP 2", ClearingStrategy::ContourParallel),
++    ] {
++        let tc = toolpath_config(
++            name,
++            OperationConfig::Adaptive3d(Adaptive3dConfig {
++                clearing_strategy: strategy,
++                ..Adaptive3dConfig::default()
++            }),
++            rs_cam_core::ids::ToolId::from_raw(tool_id),
++            model_id,
++        );
++        let _ = builder.add_toolpath(0, tc).expect("add toolpath");
++    }
++    builder.build()
++}
++
++fn saved_text(session: &ProjectSession) -> String {
++    let path = temp_path();
++    session.save(&path).unwrap();
++    let text = std::fs::read_to_string(&path).unwrap();
++    let _ = std::fs::remove_file(&path);
++    if let Some(dir) = path.parent() {
++        let _ = std::fs::remove_dir(dir);
++    }
++    text
++}
++
++#[test]
++fn a_retired_clearing_strategy_is_named_r2() {
++    let text = saved_text(&session());
++
++    // 1. Control: the two kept values save as string values and load.
++    let raw: toml::Value = toml::from_str(&text).unwrap();
++    let key = |i: usize| {
++        raw["setups"][0]["toolpaths"][i]["operation"]["params"]["clearing_strategy"]
++            .as_str()
++            .map(str::to_owned)
++    };
++    assert_eq!(key(0).as_deref(), Some("contour_parallel"), "{text}");
++    assert_eq!(key(1).as_deref(), Some("geodesic_adaptive"), "{text}");
++    let _ = ProjectFile::from_toml_str(&text).expect("control: the saved project loads");
++
++    // 2. The three removed values, one per op.
++    let mut old = raw.clone();
++    let toolpaths = old["setups"][0]["toolpaths"].as_array_mut().unwrap();
++    for (i, value) in REMOVED.iter().enumerate() {
++        toolpaths[i]["operation"]["params"]
++            .as_table_mut()
++            .unwrap()
++            .insert(
++                "clearing_strategy".to_owned(),
++                toml::Value::String((*value).to_owned()),
++            );
++    }
++    let old = toml::to_string(&old).unwrap();
++    let Err(err) = ProjectFile::from_toml_str(&old) else {
++        panic!("a project with a removed clearing strategy must refuse, not load");
++    };
++    let SessionError::RetiredKeys(found) = &err else {
++        panic!("expected SessionError::RetiredKeys, got {err}");
++    };
++    let mut paths: Vec<&str> = found.iter().map(|k| k.path.as_str()).collect();
++    paths.sort_unstable();
++    assert_eq!(
++        paths,
++        vec![
++            "setups[0].toolpaths[0].operation.params.clearing_strategy = \"adaptive\"",
++            "setups[0].toolpaths[1].operation.params.clearing_strategy = \"agent_search\"",
++            "setups[0].toolpaths[2].operation.params.clearing_strategy = \"contour_spiral\"",
++        ],
++        "one refusal must name every removed value"
++    );
++    let message = err.to_string();
++    assert!(
++        message.contains("geodesic_adaptive") && message.contains("contour_parallel"),
++        "the refusal must name the fix: {message}"
++    );
++
++    // 3. The parameter door refuses with the same fix, for each value.
++    let mut live = session();
++    for value in REMOVED {
++        let Err(err) = live.apply(rs_cam_core::session::Command::SetToolpathParam(
++            rs_cam_core::session::SetToolpathParamArgs {
++                index: 0,
++                param: "clearing_strategy".to_owned(),
++                value: serde_json::json!(value),
++            },
++        )) else {
++            panic!("setting clearing_strategy = {value} must refuse");
++        };
++        let message = err.to_string();
++        assert!(
++            message.contains("geodesic_adaptive")
++                && message.contains("contour_parallel")
++                && !message.contains("unknown variant"),
++            "{value}: the setter must name the fix, not serde's error: {message}"
++        );
++    }
++    // A kept value still sets.
++    let _ = live
++        .apply(rs_cam_core::session::Command::SetToolpathParam(
++            rs_cam_core::session::SetToolpathParamArgs {
++                index: 0,
++                param: "clearing_strategy".to_owned(),
++                value: serde_json::json!("geodesic_adaptive"),
++            },
++        ))
++        .expect("a kept value sets");
++}
