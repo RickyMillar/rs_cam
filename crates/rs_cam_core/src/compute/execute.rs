@@ -715,9 +715,15 @@ pub(crate) fn execute_operation_annotated(
     // extraction, a richer job than the generic pass below needs to redo.
     // Only runs when a mesh (+ its spatial index) is present — 2D ops have
     // no terrain to rest-analyze.
+    //
+    // D44: the precedence is per field. An op that stated only its rest
+    // REGIONS (a 3D Rough's leftovers, on demand) keeps them, and the
+    // generic pass attaches only its heatmap grid
+    // (`attach_generic_rest_analysis`). Pencil sets both fields and is
+    // left alone as before; an op that sets neither gets both as before.
     if let Some(ra) = ctx.rest_analysis
         && ra.enabled
-        && generated.produced.has_no_rest_output()
+        && generated.produced.rest_grid.is_none()
         && let (Some(m), Some(idx)) = (ctx.mesh, ctx.index)
     {
         let reference_tool = ctx

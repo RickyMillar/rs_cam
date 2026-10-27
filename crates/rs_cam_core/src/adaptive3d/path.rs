@@ -568,6 +568,10 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// The regions that By Area detected, for the overlay and MCP. `None`
     /// for Global. Evidence only: no planner stage reads it.
     pub area_regions: Option<AreaRegionMap>,
+    /// D44: the pieces the run left to a rest pass, each with its Z level
+    /// (`ClearZLevelContext::left_pieces`; only Geodesic Adaptive leaves
+    /// one).
+    pub left_pieces: Vec<(f64, crate::polygon::Polygon2)>,
     /// Test-only: planner's internal dexel state at the end of the run.
     /// The F-029 probe and the `#[cfg(test)]` module read it.
     #[cfg_attr(
@@ -1179,6 +1183,7 @@ pub(super) fn adaptive_3d_segments(
         segments,
         planner_engagement: planner_eng,
         area_regions,
+        left_pieces: ctx.left_pieces.take(),
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })

@@ -29,6 +29,7 @@ mod keep_down;
 mod outer_band;
 mod path;
 mod region_map;
+mod rest_regions;
 mod search;
 pub use intended_floor::{FloorGrid, intended_floor_grid};
 use path::{adaptive_3d_segments, segments_to_toolpath};
@@ -672,6 +673,16 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
     let planner_engagement = result.planner_engagement;
+    // D44, D48: the regions the run left to a rest pass, one XY union over
+    // the levels grown by one planner cell, in tool-centre space inside
+    // this run's own containment polygons. The runner keeps them only on
+    // demand (`run_volumetric`).
+    let rest_regions = rest_regions::left_regions(
+        &result.left_pieces,
+        crate::adaptive::planner_cell_size(params.geometry.tool_radius, params.geometry.tolerance),
+        &params.geometry.centre_boundary,
+    )
+    .map(std::sync::Arc::new);
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
     let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
@@ -696,6 +707,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
         produced: crate::trace::produced::Produced {
             planner_engagement,
             area_regions: result.area_regions.map(std::sync::Arc::new),
+            rest_regions,
             ..crate::trace::produced::Produced::default()
         },
     })

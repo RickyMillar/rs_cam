@@ -40,7 +40,7 @@ pub(super) const PLANNER_CELLS_PER_TOOL_RADIUS: f64 = 6.0;
 pub(super) const PASS_STEP_CELLS: f64 = 3.0;
 
 /// The planner cell (mm): `max(R / PLANNER_CELLS_PER_TOOL_RADIUS, tolerance)`.
-pub(super) fn planner_cell_size(tool_radius: f64, tolerance: f64) -> f64 {
+pub(crate) fn planner_cell_size(tool_radius: f64, tolerance: f64) -> f64 {
     (tool_radius / PLANNER_CELLS_PER_TOOL_RADIUS).max(tolerance)
 }
 

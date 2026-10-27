@@ -30,7 +30,7 @@ pub(crate) use search::tool_centre_pieces;
 mod spiral;
 
 pub(crate) use material_grid::MaterialGrid;
-pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug};
+pub(crate) use path::{AdaptiveSegment, adaptive_segments_with_debug, planner_cell_size};
 use path::{apply_residue_mop_cleanup, segments_to_toolpath};
 
 use crate::interrupt::{CancelCheck, Cancelled};

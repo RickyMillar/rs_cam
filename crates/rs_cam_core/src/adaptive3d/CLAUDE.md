@@ -8,7 +8,7 @@
 - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
   facade, `ClearingStrategy3d`; `outer_band.rs` the arm's boundary reach and
-  region clip (G-CLIPAIR); `keep_down.rs` the ONE 3D keep-down read
+  region clip (G-CLIPAIR); `rest_regions.rs` the regions left to a rest op (D44, D48); `keep_down.rs` the ONE 3D keep-down read
   (`corridor_ceiling_z`, `keep_down_excess`) and the router; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
 
 ## Invariants
@@ -25,9 +25,8 @@
   stamped, and cuts and links stamp from `PlannerCursor::tool_pos`
   (G-PHANTOMSTAMP). Never delete a segment after it is stamped. Every
   segment passes `centre_clip` before its push (G-BOUNDARYPHANTOM). The RDP rule is ONE function, `Adaptive3dGeometry::chord_tolerance`; the model gouge guard reads it (G-ROUGHGOUGE).
-- A region is in tool-centre space; `planner_outlines` splits it into 2D pieces (D2, G-ADAPT3DPIECES).
-- ONE Depth/Pass Z plan (`path.rs::step_levels`, plus Detect Flat shelves);
-  every level drapes; no step ladder (operator, 2026-09-24).
+- A region is in tool-centre space; `planner_outlines` splits it into 2D pieces (D2, G-ADAPT3DPIECES). `Produced::rest_regions` are tool-centre too, inside `centre_boundary` (D48); published only on demand.
+- ONE Depth/Pass Z plan (`path.rs::step_levels`, plus Detect Flat shelves); every level drapes; no step ladder (operator, 2026-09-24).
 
 ## Sentries: `cargo test -p rs_cam_core -q --features test-support --test <name>`
 
@@ -36,5 +35,6 @@
 `agent_search_coverage`, `adaptive3d_subtool_channel_gouge`,
 `adaptive3d_global_gate_drapes_below_floor`, `adaptive3d_plan_matches_merged_path_g_plansimgap`,
 `adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`, `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
-`adaptive3d_plans_every_slice_piece_g_adapt3dpieces`, `geodesic_adaptive_keeps_the_research_geometry_s7_4`; By Area:
+`adaptive3d_plans_every_slice_piece_g_adapt3dpieces`, `geodesic_adaptive_keeps_the_research_geometry_s7_4`; rest regions: `a_rough_publishes_the_regions_it_leaves_d44`,
+`a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`; By Area:
 `adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.

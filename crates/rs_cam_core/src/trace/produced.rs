@@ -44,6 +44,21 @@ pub struct Produced {
     /// producers as [`Self::rest_grid`]; `None` otherwise. XY polygons.
     /// This is the derived-boundary source for selective finishing (P2.2
     /// `BoundarySource::DerivedRestRegions`).
+    ///
+    /// D44: a 3D Rough may state its own: the regions it left to a rest
+    /// pass (Geodesic Adaptive's left pieces, `adaptive3d/rest_regions.rs`),
+    /// only when a `DerivedRestRegions` boundary names it (`run_volumetric`). The
+    /// generic analysis then keeps them and attaches only its grid
+    /// (precedence per field, `compute/execute.rs`).
+    ///
+    /// D48 (G-RESTFRAME): every producer publishes TOOL-CENTRE positions,
+    /// for a consumer with `Center` containment. The rest field grows its
+    /// mask of drop-cutter cells by the tip radius, so the consumer reaches
+    /// the region edge (`machining_region_polygons`). A 3D Rough clips its
+    /// left pieces to its own containment polygons
+    /// (`Adaptive3dGeometry::centre_boundary`), so a consumer tool no
+    /// larger than the rough's stays inside the rough's boundary. XY only:
+    /// a region carries no Z range.
     pub rest_regions: Option<Arc<Vec<Polygon2>>>,
     /// The regions that a 3D Rough with By Area ordering detected (label
     /// grid + region list), for the viewport overlay and MCP
@@ -60,12 +75,6 @@ pub struct Produced {
 }
 
 impl Produced {
-    /// True when no rest detector attached its output. The dispatch runs
-    /// the generic rest analysis only then (P2.5: one source per toolpath).
-    pub fn has_no_rest_output(&self) -> bool {
-        self.rest_grid.is_none() && self.rest_regions.is_none()
-    }
-
     /// Re-frame every coordinate-bearing field by `shift`.
     ///
     /// Destructures `self` field by field on purpose: a new field does not

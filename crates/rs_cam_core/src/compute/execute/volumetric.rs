@@ -169,8 +169,16 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
     let VolumetricOutput {
         toolpath,
         annotations,
-        produced,
+        mut produced,
     } = op.plan(&inputs, &cancel, ctx.debug_ctx)?;
+    // D44: a planner may state the regions it left to a rest pass
+    // (`Produced::rest_regions`). They are published only on demand: when
+    // an enabled `DerivedRestRegions` boundary names this op, which turns
+    // its rest analysis on (`normalise_rest_analysis_demand`). With no
+    // demand the side channel is as before.
+    if !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+        produced.rest_regions = None;
+    }
     if let Some(sem) = ctx.semantic_ctx {
         op.annotate(&annotations, &toolpath, sem);
     }
