@@ -59,6 +59,20 @@ moves_hash = "1cfe6f4283e7e27e"
 span_count = 61
 spans_hash = "0ccd97c613bcc2b8"
 
+["adaptive3d/by_area_helix_cp"]
+outcome = "ok"
+move_count = 651
+rapid_count = 6
+linear_count = 386
+arc_count = 259
+cutting_length_mm = 2397.741
+rapid_length_mm = 61.074
+bbox_min = [-17.6988, -17.4342, 0.5]
+bbox_max = [15.9563, 15.9563, 13.0]
+moves_hash = "53ac4fc26e5fc900"
+span_count = 331
+spans_hash = "7cf02096aabac105"
+
 ["adaptive3d/by_area_helix_spiral"]
 outcome = "ok"
 move_count = 830
@@ -100,6 +114,20 @@ bbox_max = [17.0776, 13.0604, 13.0]
 moves_hash = "c2503ce2fdf71ce9"
 span_count = 54
 spans_hash = "2f4bb09426fcd16f"
+
+["adaptive3d/ramp_geodesic"]
+outcome = "ok"
+move_count = 1122
+rapid_count = 9
+linear_count = 1100
+arc_count = 13
+cutting_length_mm = 2428.636
+rapid_length_mm = 114.908
+bbox_min = [-15.0, -15.0, 0.5]
+bbox_max = [20.3046, 15.0, 13.0]
+moves_hash = "4ff4b73d11cca590"
+span_count = 95
+spans_hash = "e39798b0dd140947"
 
 ["adaptive3d/rest"]
 outcome = "ok"

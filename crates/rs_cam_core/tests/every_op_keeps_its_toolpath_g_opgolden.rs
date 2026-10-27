@@ -293,6 +293,28 @@ fn adaptive3d_ramp_agent(op: &mut OperationConfig) {
     cfg.clearing_strategy = ClearingStrategy::AgentSearch;
 }
 
+/// Removal step R1 (`integration/removal_design.md` §1.5): By Area order
+/// and a helix entry on Contour Parallel. The By Area and helix coverage of
+/// `by_area_helix_spiral` stays when ContourSpiral leaves (R4).
+fn adaptive3d_by_area_helix_cp(op: &mut OperationConfig) {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        unreachable!("adaptive3d arm on another op")
+    };
+    cfg.region_ordering = RegionOrdering::ByArea;
+    cfg.entry_style = Adaptive3dEntryStyle::Helix;
+    cfg.clearing_strategy = ClearingStrategy::ContourParallel;
+}
+
+/// Removal step R1: a ramp entry on Geodesic Adaptive. The ramp coverage of
+/// `ramp_agent` stays when AgentSearch leaves (R4).
+fn adaptive3d_ramp_geodesic(op: &mut OperationConfig) {
+    let OperationConfig::Adaptive3d(cfg) = op else {
+        unreachable!("adaptive3d arm on another op")
+    };
+    cfg.entry_style = Adaptive3dEntryStyle::Ramp;
+    cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
+}
+
 /// W6.5.0: the Adaptive strategy (the last arm of the strategy map).
 fn adaptive3d_adaptive(op: &mut OperationConfig) {
     let OperationConfig::Adaptive3d(cfg) = op else {
@@ -422,6 +444,20 @@ const W650_CASES: &[(OperationType, &str, Tweak, Frame, CurveModel)] = &[
         OperationType::Adaptive3d,
         "adaptive",
         adaptive3d_adaptive,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::Adaptive3d,
+        "by_area_helix_cp",
+        adaptive3d_by_area_helix_cp,
+        Frame::TopUp,
+        CurveModel::Fixture,
+    ),
+    (
+        OperationType::Adaptive3d,
+        "ramp_geodesic",
+        adaptive3d_ramp_geodesic,
         Frame::TopUp,
         CurveModel::Fixture,
     ),

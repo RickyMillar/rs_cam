@@ -37,7 +37,7 @@ fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_2026-08-16_f530995a.toml")
+        .join("wanaka_2026-08-16_afc6ecd4.toml")
 }
 
 /// Diagnostic (no assertions beyond sanity): compare the TRUE surface slope

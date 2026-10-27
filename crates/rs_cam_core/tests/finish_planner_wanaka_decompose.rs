@@ -51,7 +51,7 @@ fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_2026-08-16_f530995a.toml")
+        .join("wanaka_2026-08-16_afc6ecd4.toml")
 }
 
 /// M1 gate at the crime scene (plan §M1 acceptance 1; `MEASUREMENT_DOMAINS.md`
@@ -117,9 +117,9 @@ fn the_pinned_fixtures_live_under_tests_fixtures() {
         .join("fixtures");
     for name in [
         // This gate and the wanaka diagnostics.
-        "wanaka_2026-08-16_f530995a.toml",
+        "wanaka_2026-08-16_afc6ecd4.toml",
         // `p1_headless_ab_wanaka.rs`.
-        "wanaka_airrun_2026-06-01_2c908dca.toml",
+        "wanaka_airrun_2026-06-01_bb713634.toml",
         // `tier_band_overlap_g_overlapfill.rs`.
         "t3b_r10_scallop_islands_2026-09-08_e4d817e9.toml",
         // `smoke_baseline_regression_f037.rs`.

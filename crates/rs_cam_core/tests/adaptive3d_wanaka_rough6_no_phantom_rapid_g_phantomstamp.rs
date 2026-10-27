@@ -2,7 +2,7 @@
 //!
 //! ## The strike
 //!
-//! Wanaka airrun (`wanaka_airrun_2026-06-01_2c908dca.toml`), "3D Rough 6"
+//! Wanaka airrun (then `wanaka_airrun_2026-06-01_2c908dca.toml`), "3D Rough 6"
 //! (id 10, Ø6 flat, AgentSearch, Global, plunge entry,
 //! `min_region_cut_length_mm` 15): a rapid from Z 30 to 21.07 at
 //! (89.640, 78.874), then a plunge feed, over a column that stood at the
@@ -10,6 +10,12 @@
 //! 0.25 and 0.125 mm cells. The planner had stamped an entry that the F-038
 //! coalescing pass then deleted, so its rapid floor read the phantom column
 //! (`planning/entry_stock_awareness_2026-09-24/PHANTOMSTAMP_PLAN.md`).
+//!
+//! The fixture is now `wanaka_airrun_2026-06-01_bb713634.toml`, derived
+//! from `2c908dca`: removal step R1 (2026-10-28) changed only
+//! `clearing_strategy` `agent_search` → `geodesic_adaptive`, because the
+//! strategy was removed. "3D Rough 6" is Geodesic Adaptive now, on the
+//! same slice pipeline; the numbers below are of the AgentSearch chain.
 //!
 //! ## What this asserts
 //!
@@ -59,7 +65,7 @@ fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_airrun_2026-06-01_2c908dca.toml")
+        .join("wanaka_airrun_2026-06-01_bb713634.toml")
 }
 
 /// Load, generate and run the F.4 ladder exactly as `p1_headless_ab_wanaka`.

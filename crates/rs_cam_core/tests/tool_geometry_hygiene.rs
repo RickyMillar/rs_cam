@@ -253,7 +253,7 @@ fn project_diagnostics_carry_the_name_size_mismatch() {
             .join(name)
     };
 
-    let wanaka = ProjectSession::load(&fixture("wanaka_2026-08-16_f530995a.toml"))
+    let wanaka = ProjectSession::load(&fixture("wanaka_2026-08-16_afc6ecd4.toml"))
         .expect("load the wanaka fixture");
     let tip_tool = wanaka
         .tools()

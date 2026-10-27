@@ -58,8 +58,10 @@
 //! private copies — a second implementation of the chip-thinning diameter is
 //! precisely what C3 retired in 2026-08.
 //!
-//! Fixture: `tests/fixtures/wanaka_2026-08-16_f530995a.toml`, the same dated
-//! snapshot `wanaka_suggest_integration.rs` pins, for the same reason (a
+//! Fixture: `tests/fixtures/wanaka_2026-08-16_afc6ecd4.toml` (derived from
+//! `f530995a`; removal step R1 changed only `clearing_strategy`
+//! `agent_search` → `geodesic_adaptive`, because the strategy was removed),
+//! the same dated snapshot `wanaka_suggest_integration.rs` pins, for the same reason (a
 //! play-file a human edits cannot distinguish "Suggest regressed" from "the
 //! operator tried something").
 
@@ -84,7 +86,7 @@ fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_2026-08-16_f530995a.toml")
+        .join("wanaka_2026-08-16_afc6ecd4.toml")
 }
 
 /// The geometry-dependent term `feeds::calculate` folds into its feed: the

@@ -37,18 +37,23 @@ const BASELINE_RAPID_COLLISIONS: usize = 0;
 ///
 /// FIN-06: the harness read `planning/airrun_2026-06-01/wanaka.toml`, a
 /// document the operator edits between machining sessions. `planning/` is
-/// evidence, not a fixture store. The fixture here is a BYTE-IDENTICAL copy
-/// of that file (sha256 prefix `2c908dca`), so the baseline below still
-/// measures what it was measured on.
+/// evidence, not a fixture store. The fixture here is derived from
+/// `2c908dca` (the sha256 prefix of the planning file). Its model paths
+/// point at `wanaka100/` (`fixtures/wanaka100/README.md`). Removal step R1
+/// (2026-10-28) changed only `clearing_strategy` `agent_search` →
+/// `geodesic_adaptive` on Back Rough and 3D Rough 6, because the strategy
+/// was removed; the file name carries the new sha256 prefix, `bb713634`.
+/// The baseline below was measured on the AgentSearch chain: re-measure it
+/// on this file.
 ///
-/// It is NOT `wanaka_2026-08-16_f530995a.toml`, the other wanaka fixture:
+/// It is NOT `wanaka_2026-08-16_afc6ecd4.toml`, the other wanaka fixture:
 /// that snapshot disables two toolpaths, and this test counts collisions
 /// over the whole enabled chain.
 fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_airrun_2026-06-01_2c908dca.toml")
+        .join("wanaka_airrun_2026-06-01_bb713634.toml")
 }
 
 #[test]

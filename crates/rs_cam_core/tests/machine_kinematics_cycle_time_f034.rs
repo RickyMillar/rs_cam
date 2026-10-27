@@ -397,7 +397,14 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
     // P1 sentry (e) proper: pin the recorded post-change prediction, so a
     // regression in the per-axis rate cap shows up as a moved number
     // rather than hiding inside the wide [0.30, 1.6] anchor band.
-    const P1_RECORDED_PREDICTION_S: f64 = 1053.0;
+    //
+    // Re-recorded 2026-10-28 (removal step R1): Back Rough changed from
+    // contour_spiral (removed) to geodesic_adaptive; the old pin 1053.0 s
+    // was the ContourSpiral path. The generator moved, so the pin moved:
+    // 1053.0 -> 1272.6 s (+21 %). The 827 s bench still describes the
+    // ContourSpiral path that was machined; the new prediction (ratio
+    // 1.539) stays inside the unchanged anchor band.
+    const P1_RECORDED_PREDICTION_S: f64 = 1272.6;
     const P1_TOLERANCE_S: f64 = 25.0;
     let delta_s = model_predicted_s - P1_RECORDED_PREDICTION_S;
     assert!(
