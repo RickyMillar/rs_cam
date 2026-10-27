@@ -1,0 +1,56 @@
+Measurability:
+  NOT MEASURED  radial engagement on toolpath 3 — 79% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 11.812 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  air-cut % on toolpath 3 — 79% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 11.812 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+  NOT MEASURED  chip engagement on toolpath 3 — 79% of material-removing samples read zero engagement at 0.300 mm cell, while removing up to 11.812 mm: the contact patch is narrower than the grid can resolve. Re-simulate below the tool's TIP radius.
+
+Safety (2):
+  "3D Rough 1 (copy)": the rough leaves 1394 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 1369 of them against a wall: 711.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 0.97 mm high, 0.30 mm wide, 0.2 mm2 at (87.9, -77.5); 0.95 mm high, 0.30 mm wide, 0.1 mm2 at (65.4, -5.5); 0.93 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -5.5); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (112.2, -10.6); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (39.9, -95.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -76.3); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (13.8, -89.8); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (40.5, -95.2); 0.82 mm high, 0.30 mm wide, 0.1 mm2 at (12.6, -87.7); and 1384 more. 418 island(s) stand taller than one depth per pass plus one cell (3.30 mm): a later pass meets more than one commanded step there.
+  "3D Rough 1": the rough leaves 880 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 857 of them against a wall: 1300.5 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 0.99 mm high, 0.30 mm wide, 0.2 mm2 at (110.4, -10.0); 0.97 mm high, 0.30 mm wide, 0.2 mm2 at (87.9, -77.5); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (89.7, -75.7); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (112.2, -10.6); 0.89 mm high, 0.30 mm wide, 0.2 mm2 at (110.7, -10.3); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (109.8, -9.7); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (109.5, -9.4); 0.88 mm high, 0.30 mm wide, 0.1 mm2 at (90.3, -75.4); 0.86 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.83 mm high, 0.30 mm wide, 0.1 mm2 at (39.9, -95.5); and 870 more. 129 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Act on (3):
+  "3D Rough 1 (copy)": a fed link cuts stock it was planned to cross in air or on cut ground: link move 3153 removes 3.38 mm at (115.7, -42.4, 0.50). 3 of 317 link samples on 3 link moves remove more than 3.30 mm (this pass's commanded depth per pass plus one cell, 3.30 mm).
+  "3D Rough 1": a fed link cuts stock it was planned to cross in air or on cut ground: link move 4257 removes 6.50 mm at (21.4, -107.4, 11.00). 1 of 4635 link samples on 1 link moves remove more than 6.30 mm (this pass's commanded depth per pass plus one cell, 6.30 mm).
+  WARNING: high air cutting on '3D Rough 1' is 42% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  725.8s wasted around (69.9, -43.0, 1.4) — engagement 0.03
+  674.8s wasted around (89.5, -64.5, 1.5) — engagement 0.13
+  3.3s wasted around (92.1, -0.8, 1.5) — engagement 0.00
+  2.9s wasted around (92.1, -0.8, 10.5) — engagement 0.00
+  2.8s wasted around (92.1, -0.8, 6.3) — engagement 0.00
+  2.2s wasted around (19.1, -107.8, 3.5) — engagement 0.00
+  2.0s wasted around (92.1, -0.8, 16.8) — engagement 0.00
+  2.0s wasted around (24.6, -96.3, 5.2) — engagement 0.01
+  2.0s wasted around (18.6, -108.8, 4.8) — engagement 0.13
+  1.9s wasted around (19.1, -107.8, 4.8) — engagement 0.00
+  1.9s wasted around (18.6, -108.8, 9.8) — engagement 0.04
+  1.7s wasted around (24.8, -99.2, 8.2) — engagement 0.25
+  1.1s wasted around (24.8, -99.2, 10.4) — engagement 0.32
+  0.8s wasted around (36.3, -67.3, 2.3) — engagement 0.40
+  0.7s wasted around (107.7, -22.6, 2.3) — engagement 0.44
+  0.7s wasted around (62.3, -62.5, 2.3) — engagement 0.01
+  0.6s wasted around (24.8, -99.2, 13.3) — engagement 0.47
+  0.5s wasted around (122.1, -22.6, 2.3) — engagement 0.51
+  0.5s wasted around (113.7, -42.4, 2.3) — engagement 0.53
+  0.2s wasted around (60.8, -71.4, 2.3) — engagement 0.72
+  ... 279 more not shown
+
+Counts: 352049 samples | 128666 flagged-air + 27564 flagged-low (per SAMPLE) | 17374 issue runs (COALESCED, the legacy "issue_count") | 299 hotspots
+
+OVERRIDE USED — without it this export is refused:
+G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+  toolpath 4: chipload: simulation trace is stale — re-run simulation
+  toolpath 4: power: simulation trace is stale — re-run simulation
+  toolpath 4: deflection: simulation trace is stale — re-run simulation
+  toolpath 4: depth of cut: simulation trace is stale — re-run simulation
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 2  |  Cutting: 80462mm  |  Rapid: 22915mm  |  Time: 3467s
+Air cutting: 50.1% of total runtime  |  Avg engagement: 0.10  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [ ] #1 3D Rough 1 (3D Adaptive) — 11680 moves, 0 collisions
+      kinematics: 86% of commanded (67% feed-bound → +6% at ×1.30, 33% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #3 3D Rough 1 (copy) (3D Adaptive) — 5347 moves, 0 collisions
+      kinematics: 79% of commanded (79% feed-bound → +17% at ×1.30, 21% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 50.1% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix30/cp

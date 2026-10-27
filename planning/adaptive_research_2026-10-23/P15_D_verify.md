@@ -5306,3 +5306,73 @@ inner case wall and loops in the holes where op 1 left nothing (102–118 s),
 and hops between them (205–309 s of rapids with acceleration).
 
 Simulation files deleted. Not committed.
+
+## D42: Detect Flat on op 1 (C22 §19.2: LargeZ entries are laps across flat faces between two levels) (fix30, tree 7b7a8df6c)
+
+Job files (`fix30/jobs/`): `detect_flat_areas = true` in op 1 only (tomldiff:
+that one key), from `fix26/jobs/k_body_cp_edges.toml` (geodesic, s 1.2),
+`fix27/jobs/k_body_cp_edges_s2p1.toml` (s 2.1) and
+`fix26/jobs/k_contour_parallel.toml` (CP, its own s 1.2); the wanaka
+kinematics block in all. `fix30/run_fix30.sh`, clean 7b7a8df6c. geo_s2p1 was
+refused at export (copy op `deflection=stiffness`) and was rerun with
+`--accept-exceeded-tool-load` for the measurement only (never machined).
+
+**Z levels** ("Z levels computed" / C31 lines): op 1 in all three runs: 6
+levels 18.55 / 17 / 11 / 5 / 4.05 / 0.5 (flat levels 18.55 and 4.05 added to
+17 / 11 / 5 / 0.5). Op 5 (detect off): s1.2 z_top 17.0 (4 levels), s2.1 z_top
+12.93 (4). Copy op: z_top 15.51 / 15.54 (geodesic), 15.5 (CP), 7 / 7 / 6 levels.
+
+**LargeZ landings** (`fix30/largez_landings.py`, a copy of C22's
+`fix28/c22/largez_landings.py` with the run as an argument):
+
+| landing | D38 (detect off, s1.2) | flat s1.2 | flat s2.1 |
+|---|---|---|---|
+| Z 18.5 | 160 | 7 | 7 |
+| Z 4.0 | 185 | 12 | 8 |
+| draped rim 17.0–18.5 | 289 | 211 | 124 |
+| Z 0.5 | 118 | 118 | 64 |
+| Z 17.0 | 108 | 108 | 55 |
+| total LargeZ | 860 | 456 | 258 |
+
+C22's prediction holds for Z 18.5 (160 → 7) and Z 4.0 (185 → 12); the rim
+landings fall 289 → 211 rather than stay.
+
+**Descents by cause** (`fix28/descent_causes.py`, outputs in fix30), op 1:
+
+| cause | D38 s1.2: entries / s / air | flat s1.2 | flat s2.1 |
+|---|---|---|---|
+| LargeZ | 860 / 371.4 / 18 % | 456 / 101.3 / 29 % | 258 / 56.1 / 26 % |
+| Reentry2d/Turn | 90 / 81.4 / 56 % | 123 / 107.0 / 66 % | 67 / 61.2 / 70 % |
+| Reentry2d/OverBound + Mixed | 59 / 36.0 | 87 / 48.8 | 93 / 52.9 |
+| link plunges (no C40) | 28.3 s | 23.3 s | 18.0 s |
+| other | 25 s | 37 s | 23 s |
+| **plunge/ramp total** | 542.6 s, air 29 % | 317.2 s, air 53 % | 211.5 s, air 52 % |
+| descents (audit) | 1050 | 732 | 468 |
+
+Plots: `fix30/img/descents_geo_s1p2.png`, `descents_geo_s2p1.png`.
+
+**Area load of op 1** (fix30/area_oracle.py, AREA_SCREEN=0):
+
+| | L max | p99 | p95 | mm > own bound | mm > 0.471 |
+|---|---|---|---|---|---|
+| geo flat s1.2 (bound 0.327) | 0.925 | 0.242 | 0.217 | 128.6 | 68.1 |
+| geo flat s2.1 (bound 0.489) | 0.975 | 0.417 | 0.383 | 114.8 | 118.8 |
+| CP flat s1.2 (bound 0.327) | 1.031 | 1.008 | 0.538 | 3029.2 | 2193.3 |
+
+**Acceleration clock** (s; detect off from D37 / D35 in brackets):
+
+| | op 1 | op 5 | copy op | op 1 + op 5 | job | descents |
+|---|---|---|---|---|---|---|
+| geo s1.2 | 2099.2 (1872.8) | 956.1 (608.1) | 2112.0 (1862.8) | 3055.3 (2480.9) | 5167 (4344) | 732 (1050) |
+| geo s2.1 | 1421.2 (1248.2) | 1026.8 (762.7) | 2096.1 (≈1532) | 2448.0 (2010.9) | 4544 (3543) | 468 (634) |
+| CP s1.2 | 2050.5 (1427.2) | — | 1416.6 (1413.6) | 2050.5 (1427.2) | 3467 (2841) | 44 (41) |
+
+- Detect Flat removes the predicted LargeZ landings and cuts op 1's
+  plunge/ramp time by 225 s (s1.2), but the two extra levels cost more than
+  that: op 1 +226 s, op 5 +348 s, copy op +249 s on the geodesic job (s1.2).
+- CP's op 1 pays more for the extra levels (+623 s) than the geodesic does.
+  The loss op 1 + op 5 against CP op 1 is +1004.8 s at s1.2 and **+397.5 s
+  (×1.19) at s2.1**, against +1053.7 / +583.7 s with Detect Flat off. Both
+  jobs are slower with it on.
+
+Simulation files deleted. Not committed.

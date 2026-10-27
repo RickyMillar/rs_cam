@@ -1,0 +1,119 @@
+{
+ "run": "fix30/geo_s2p1",
+ "c40_records": 480,
+ "descent_moves": 1203,
+ "z_offset_move_end_minus_record": 0.129,
+ "air_quantum_mm3": 0.027,
+ "causes": {
+  "Reentry2d/Turn": {
+   "c40_records": 67,
+   "records_matched": 53,
+   "descent_moves": 198,
+   "time_s": 61.2,
+   "air_share": 0.698,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 12.5
+  },
+  "LargeZ": {
+   "c40_records": 258,
+   "records_matched": 252,
+   "descent_moves": 430,
+   "time_s": 56.1,
+   "air_share": 0.258,
+   "median_move_len_mm": 1.6,
+   "median_drop_mm": 2.05
+  },
+  "Reentry2d/OverBound": {
+   "c40_records": 61,
+   "records_matched": 59,
+   "descent_moves": 109,
+   "time_s": 32.0,
+   "air_share": 0.418,
+   "median_move_len_mm": 4.72,
+   "median_drop_mm": 5.5
+  },
+  "Reentry2d/Mixed": {
+   "c40_records": 32,
+   "records_matched": 29,
+   "descent_moves": 66,
+   "time_s": 20.9,
+   "air_share": 0.546,
+   "median_move_len_mm": 4.72,
+   "median_drop_mm": 6.5
+  },
+  "unmatched": {
+   "c40_records": 0,
+   "records_matched": 0,
+   "descent_moves": 304,
+   "time_s": 18.0,
+   "air_share": 0.902,
+   "median_move_len_mm": 1.77,
+   "median_drop_mm": null
+  },
+  "Waterline": {
+   "c40_records": 35,
+   "records_matched": 30,
+   "descent_moves": 44,
+   "time_s": 7.5,
+   "air_share": 0.439,
+   "median_move_len_mm": 1.99,
+   "median_drop_mm": 2.0
+  },
+  "HeldLinkRefused": {
+   "c40_records": 5,
+   "records_matched": 5,
+   "descent_moves": 12,
+   "time_s": 4.1,
+   "air_share": 0.558,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 8.0
+  },
+  "Reentry2d/ClosedSeam": {
+   "c40_records": 5,
+   "records_matched": 5,
+   "descent_moves": 10,
+   "time_s": 4.0,
+   "air_share": 0.593,
+   "median_move_len_mm": 5.21,
+   "median_drop_mm": 6.5
+  },
+  "AirRun": {
+   "c40_records": 2,
+   "records_matched": 2,
+   "descent_moves": 10,
+   "time_s": 3.2,
+   "air_share": 0.934,
+   "median_move_len_mm": 6.25,
+   "median_drop_mm": 14.25
+  },
+  "Reentry2d/CoreHandOff": {
+   "c40_records": 6,
+   "records_matched": 5,
+   "descent_moves": 8,
+   "time_s": 2.0,
+   "air_share": 0.156,
+   "median_move_len_mm": 2.0,
+   "median_drop_mm": 3.5
+  },
+  "Start": {
+   "c40_records": 6,
+   "records_matched": 5,
+   "descent_moves": 8,
+   "time_s": 1.8,
+   "air_share": 0.1,
+   "median_move_len_mm": 1.47,
+   "median_drop_mm": 3.5
+  },
+  "LargeZHeld": {
+   "c40_records": 3,
+   "records_matched": 2,
+   "descent_moves": 4,
+   "time_s": 0.7,
+   "air_share": 0.507,
+   "median_move_len_mm": 3.27,
+   "median_drop_mm": 6.38
+  }
+ },
+ "total_time_s": 211.5,
+ "total_air_share": 0.52
+}

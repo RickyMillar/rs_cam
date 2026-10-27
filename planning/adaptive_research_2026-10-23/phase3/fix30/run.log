@@ -1,0 +1,8 @@
+tree = clean 7b7a8df6c
+geo_s1p2 rc=0 38s; Toolpaths: 3  |  Cutting: 99148mm  |  Rapid: 45417mm  |  Time: 5167s
+geo_s2p1 rc=1 82s; 
+cp rc=0 6s; Toolpaths: 2  |  Cutting: 80462mm  |  Rapid: 22915mm  |  Time: 3467s
+D42RUNSDONE
+tree = clean 7b7a8df6c
+geo_s2p1 rc=0 82s; Toolpaths: 3  |  Cutting: 76195mm  |  Rapid: 44590mm  |  Time: 4544s
+D42RUNSDONE
