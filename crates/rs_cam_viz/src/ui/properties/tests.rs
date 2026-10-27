@@ -1255,7 +1255,7 @@ fn the_blocked_state_word_fits_its_slot_f22() {
 /// stored result: the count and the lowest cap, as planned moves.
 #[test]
 fn the_figures_hover_names_the_feed_caps_g_b() {
-    use super::toolpath_panel::CapFigures;
+    use crate::state::runtime::CapFigures;
     use rs_cam_core::geo::P3;
     use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
     let mut tp = Toolpath::new();
@@ -1273,6 +1273,27 @@ fn the_figures_hover_names_the_feed_caps_g_b() {
         caps.line(),
         "2 moves at a load cap (planned), lowest 1200 mm/min"
     );
+
+    // G-B2: the runtime memo counts once per result and follows a new one.
+    let result = |tp: Toolpath| {
+        crate::state::runtime::ToolpathRun::Done(crate::state::toolpath::ToolpathResult {
+            annotated: std::sync::Arc::new(
+                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+            ),
+            stats: Default::default(),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+            drill_op: None,
+        })
+    };
+    let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
+    assert_eq!(rt.caps(), None, "no result, no caps");
+    rt.run = result(tp.clone());
+    assert_eq!(rt.caps(), Some(caps));
+    assert_eq!(rt.caps(), Some(caps), "the memo answers the second read");
+    rt.run = result(Toolpath::new());
+    assert_eq!(rt.caps(), None, "a new result with no cap clears the memo");
 }
 
 /// R-E (operator ruling 2026-10-23): one hole is ONE row, with one text,

@@ -108,9 +108,20 @@ pub struct ToolpathRuntime {
     pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
+    /// G-B2: the feed caps of the stored result, counted once per result.
+    /// Read it through [`Self::caps`].
+    pub cap_memo: CapMemo,
 }
 
 impl ToolpathRuntime {
+    /// G-B2: the feed caps of the stored result, or `None` when no result
+    /// or no capped move. The moves are counted once per result: the
+    /// memo keys on the result's toolpath allocation.
+    #[must_use]
+    pub fn caps(&self) -> Option<CapFigures> {
+        self.cap_memo.caps(self.run.result())
+    }
+
     /// Create runtime state for a new toolpath with sensible defaults.
     pub fn new(auto_regen: bool) -> Self {
         Self {
@@ -124,7 +135,76 @@ impl ToolpathRuntime {
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
+            cap_memo: CapMemo::default(),
         }
+    }
+}
+
+// ── The feed caps of a stored result (G-B, G-B2) ──────────────────────
+
+/// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
+/// moves, not the emitted ones, so a surface that prints them says
+/// "planned".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapFigures {
+    pub count: usize,
+    pub min_feed_mm_min: f64,
+}
+
+impl CapFigures {
+    /// `None` when no move of `tp` carries a cap.
+    #[must_use]
+    pub fn of(tp: &rs_cam_core::toolpath::Toolpath) -> Option<Self> {
+        let mut caps = tp.moves.iter().filter_map(|m| m.feed_cap);
+        let first = caps.next()?;
+        let (count, min_feed_mm_min) = caps.fold((1, first), |(n, low), cap| (n + 1, low.min(cap)));
+        Some(Self {
+            count,
+            min_feed_mm_min,
+        })
+    }
+
+    /// The one hover line of the Generate row's figures.
+    #[must_use]
+    pub fn line(self) -> String {
+        format!(
+            "{} moves at a load cap (planned), lowest {:.0} mm/min",
+            self.count, self.min_feed_mm_min
+        )
+    }
+}
+
+/// The [`CapFigures`] of the last result that [`ToolpathRuntime::caps`]
+/// read. A frame reads the caps from `&AppState` (the legend, the panel
+/// inputs), so the memo writes through a lock. The key is a `Weak` of the
+/// result's toolpath: a new result has a new allocation, and a `Weak`
+/// keeps the old allocation alive, so its address is not reused.
+#[derive(Debug, Default)]
+pub struct CapMemo(std::sync::Mutex<Option<CapMemoEntry>>);
+
+#[derive(Debug)]
+struct CapMemoEntry {
+    key: std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>,
+    caps: Option<CapFigures>,
+}
+
+impl CapMemo {
+    fn caps(&self, result: Option<&super::toolpath::ToolpathResult>) -> Option<CapFigures> {
+        let result = result?;
+        let Ok(mut slot) = self.0.lock() else {
+            return CapFigures::of(result.toolpath());
+        };
+        if let Some(entry) = slot.as_ref()
+            && std::sync::Weak::ptr_eq(&entry.key, &Arc::downgrade(&result.annotated))
+        {
+            return entry.caps;
+        }
+        let caps = CapFigures::of(result.toolpath());
+        *slot = Some(CapMemoEntry {
+            key: Arc::downgrade(&result.annotated),
+            caps,
+        });
+        caps
     }
 }
 

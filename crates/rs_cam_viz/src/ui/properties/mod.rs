@@ -425,6 +425,9 @@ pub(crate) struct ToolpathPanelInputs {
     /// W2.5 (D10): the feed stage of the stored result, the one export
     /// emits. `None` when the toolpath has no stored result.
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+    /// G-B: the feed caps of the stored result, counted once per result
+    /// (`ToolpathRuntime::caps`). `None` when no move has a cap.
+    pub caps: Option<crate::state::runtime::CapFigures>,
     /// Operator ruling 2026-10-15: this rest toolpath's current comparison
     /// with fresh stock, when one was asked for
     /// (`ProjectSession::current_rest_fresh_comparisons`).
@@ -801,6 +804,10 @@ pub(crate) fn toolpath_panel_inputs(
         reach: reach_summary,
         freshness: freshness_for_tp,
         feed_stage,
+        caps: gui
+            .toolpath_rt
+            .get(&id)
+            .and_then(crate::state::runtime::ToolpathRuntime::caps),
         rest_fresh,
         shoe: shoe_row_inputs(id, session, gui),
     }

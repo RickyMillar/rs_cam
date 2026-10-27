@@ -670,6 +670,57 @@ fn every_active_encoding_has_a_real_legend_g_vpstate() {
     );
 }
 
+/// G-B2: the legend names the capped-move dash only when a drawn toolpath
+/// holds a capped move. With no cap, no line of the rail carries it.
+#[test]
+fn the_capped_move_entry_shows_only_with_a_cap_g_b2() {
+    let has_entry = |state: &AppState| {
+        legend_rail::active_lines(state).iter().any(|line| {
+            legend_rail::key_labels(state, line)
+                .iter()
+                .any(|label| label == legend_rail::CAPPED_MOVE_LABEL)
+        })
+    };
+    let mut palette = legend_fixture();
+    let mut engagement = legend_fixture();
+    registry::set_overlay(&mut engagement, row("move_colour_engagement"), true);
+    for (mode, state) in [("palette", &mut palette), ("engagement", &mut engagement)] {
+        assert!(!has_entry(state), "{mode}: no capped move, no entry");
+        // Non-vacuity: the fixture draws a move legend to hold the entry.
+        let lines = legend_rail::active_lines(state);
+        assert!(
+            lines.iter().any(|line| matches!(
+                line,
+                RailLine::Categories(legend_rail::Categories::Moves)
+            ) || line.key() == "move_colour_engagement"),
+            "{mode}: no move legend: {lines:?}"
+        );
+        let mut capped = annotated(true);
+        let cut = capped
+            .toolpath
+            .moves
+            .iter_mut()
+            .rev()
+            .find(|m| m.move_type.is_cutting())
+            .expect("the sample path cuts");
+        cut.feed_cap = Some(600.0);
+        for rt in state.gui.toolpath_rt.values_mut() {
+            rt.run = ToolpathRun::Done(ToolpathResult {
+                annotated: Arc::new(capped.clone()),
+                stats: Default::default(),
+                debug_trace: None,
+                semantic_trace: None,
+                debug_trace_path: None,
+                drill_op: None,
+            });
+        }
+        assert!(
+            has_entry(state),
+            "{mode}: a capped move draws, so the entry shows"
+        );
+    }
+}
+
 /// A data-less mode that paints a substitute colour gets a status line,
 /// never a scale legend (inventory §2.3, items 3 and 4).
 #[test]
