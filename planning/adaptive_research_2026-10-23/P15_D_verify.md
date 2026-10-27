@@ -6098,3 +6098,55 @@ On Corne, op 1 + op 5 = 1534.1 s against CP op 1 1427.2 s (×1.07; D54 had ×1.0
     `cap_check_offmap.py` shows the line-k line of each of those 8 moves carries F = the cap.
 
 Not committed.
+
+## D61: did D54's edge op cut more than one DPP in one pass? (fix42; R 607e52730 and dabf258d3)
+
+**Verdict: the lead's reading holds for D54, and it is only part of the story. On Corne, D54's op 5 takes the edge band
+from the stock top to its first level at Z 11.0 in one pass: axial engagement up to 12.0 mm against a Depth/Pass of 6.0,
+with 36 % of the op's removed volume above one DPP. With the addendum (dabf258d3, = the product's D60 op 5, md5 82b43dcb4d)
+the first level is 14.04: max 8.96 mm, 12.7 % above one DPP. So the guard cuts the breach, but it does not hold one DPP.
+The product's ×1.07 is not fully inside the DPP either.**
+
+**Runs** (`fix42/run_r.sh`; the release binary of each tree with the research feature, run directly; arm
+geodesic_local_spiral_pick, StockDepth split, no override, 0 refusals; job files as D54). Each run reproduces its
+reference: 607e52730 Corne 3154 s, wanaka s3.5 1854 s (= D54); dabf258d3 Corne 3262 s, op 5 453.9 s, wanaka s3.5 1944 s,
+op 7 620.7 s (= D49 / D60).
+
+**Method** (`fix42/depth_by_level.py`): the edge op's trace samples that remove stock (> cell² × step), binned by tip Z
+(1 mm bins) and intent. Per bin: the max `axial_engagement_mm`, the removed volume, and the volume of the samples with
+axial engagement > DPP + 0.05.
+
+**Corne B s2.1, op 5 (DPP 6.0)**
+
+| tree | op 5 levels | max axial | removed | removed at axial > DPP | per level |
+|---|---|---|---|---|---|
+| 607e52730 (D54) | count=3, z_top 11.0 | 12.0 | 53440 mm³ | 19294 mm³ (36.1 %), 2597 samples | Z 11: max 12.0, 16043 of 19015 mm³ over (84 %); Z 5: max 12.0, 3186 of 19522; Z 0.5: max 5.62, 0 |
+| dabf258d3 (addendum = D60 product) | count=4, z_top 14.04 | 8.96 | 53545 mm³ | 6806 mm³ (12.7 %), 1285 samples | Z 14.04: max 8.96, 4393 of 9788 over; Z 8.04: max 8.96, 2277 of 19172; Z 2.04: max 6.18, 136 |
+
+- Z 11 against the stock top 23 is the 12 mm pass the lead named. Z 14.04 against 23 is 8.96 mm, still 1.5 × DPP. The
+  guard keeps the anchor (the remaining stock's top, "z_top=14.04"), but op 1 (body only) leaves the edge band at 23.
+- Op 1 for scale: 683 mm³ of 218027 (0.3 %) above DPP, max 8.44 (both trees, the same op 1).
+
+**wanaka s3.5, op 7 (DPP 5.46)**
+
+| tree | op 7 | levels | max axial | removed | removed at axial > DPP |
+|---|---|---|---|---|---|
+| 607e52730 (D54) | 530.6 s | count=1, z_top 4.0 | 16.67 | 10132 mm³ | 4436 mm³ (43.8 %); Z ~9–13 bins 72–96 % over |
+| dabf258d3 (= D60 product) | 620.7 s | count=4, z_top 19.54 | 16.23 | 10198 mm³ | 1502 mm³ (14.7 %); Z 14: max 7.51; Z ~9–11: max 14.6–16.2 |
+
+- Both trees take up to about 16 mm at once on wanaka. The edge op's floor drapes onto the terrain (surface + 4), and
+  near the outline the stock there stands 14–16 mm above it.
+- The addendum's full level grid takes the upper part first, so the volume above one DPP falls from 43.8 % to 14.7 %. It
+  does not remove the deep pass where the draped floor meets the band.
+- Op 1 (dabf258d3) for scale: 963 of 576938 mm³ above DPP, max 17.1 (the G-AXIALDOC class).
+
+**Reading.**
+- D54's Corne gain (op 1 + op 5 = 1.00 × CP's op 1) came with a 12 mm first pass on 84 % of that level. It is not a fair
+  number.
+- The product (D60, ×1.07) still cuts up to 8.96 mm (1.5 DPP) on 12.7 % of op 5's volume on Corne, and up to 16 mm on
+  wanaka. A rest op on the body-only op 1 needs its first level at most one DPP below the stock it meets: the source's
+  left-stock top (here the stock top 23), not the remaining stock's z_top. Proposed as a tag for the lead: G-RESTDOC.
+- The cap on axial depth is not a load gate today. The export does not refuse (D49: "Exceeded without refusing the
+  export"; the rigidity rule of thumb).
+
+Sims deleted. Worktree clean, detached at 607e52730. Not committed.

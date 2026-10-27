@@ -1,0 +1,458 @@
+{
+ "run": "607e52730_wanaka_s3p5",
+ "dpp": 5.46,
+ "tp1": {
+  "samples_removing": 64208,
+  "removed_mm3": 576938,
+  "max_axial_mm": 17.125,
+  "removed_at_axial_over_dpp_mm3": 963,
+  "share_over_dpp": 0.002,
+  "samples_over_dpp": 67,
+  "by_intent_and_z_1mm": {
+   "clearing_cut z~20": {
+    "samples": 20668,
+    "max_axial": 5.46,
+    "vol": 209356.75,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "clearing_cut z~14": {
+    "samples": 20775,
+    "max_axial": 5.46,
+    "vol": 209804.69,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "clearing_cut z~13": {
+    "samples": 2538,
+    "max_axial": 2.46,
+    "vol": 6166.86,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "clearing_cut z~12": {
+    "samples": 408,
+    "max_axial": 4.55,
+    "vol": 1614.85,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "clearing_cut z~11": {
+    "samples": 6056,
+    "max_axial": 7.2,
+    "vol": 37624.36,
+    "vol_over": 62.3,
+    "n_over": 3
+   },
+   "clearing_cut z~10": {
+    "samples": 7032,
+    "max_axial": 9.63,
+    "vol": 57780.93,
+    "vol_over": 482.36,
+    "n_over": 33
+   },
+   "clearing_cut z~9": {
+    "samples": 3477,
+    "max_axial": 10.9,
+    "vol": 36211.7,
+    "vol_over": 395.47,
+    "n_over": 29
+   },
+   "clearing_cut z~8": {
+    "samples": 71,
+    "max_axial": 17.13,
+    "vol": 147.23,
+    "vol_over": 22.55,
+    "n_over": 2
+   },
+   "entry_plunge z~25": {
+    "samples": 73,
+    "max_axial": 0.0,
+    "vol": 414.82,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~24": {
+    "samples": 77,
+    "max_axial": 0.0,
+    "vol": 805.06,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~23": {
+    "samples": 41,
+    "max_axial": 0.0,
+    "vol": 412.55,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~22": {
+    "samples": 82,
+    "max_axial": 0.0,
+    "vol": 841.27,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~21": {
+    "samples": 86,
+    "max_axial": 0.0,
+    "vol": 869.49,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~20": {
+    "samples": 137,
+    "max_axial": 0.0,
+    "vol": 856.17,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~19": {
+    "samples": 63,
+    "max_axial": 0.0,
+    "vol": 612.78,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~18": {
+    "samples": 104,
+    "max_axial": 0.0,
+    "vol": 926.64,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~17": {
+    "samples": 90,
+    "max_axial": 0.0,
+    "vol": 770.93,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~16": {
+    "samples": 71,
+    "max_axial": 0.0,
+    "vol": 674.3,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~15": {
+    "samples": 142,
+    "max_axial": 0.0,
+    "vol": 966.08,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~14": {
+    "samples": 401,
+    "max_axial": 0.0,
+    "vol": 1190.94,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~13": {
+    "samples": 345,
+    "max_axial": 0.0,
+    "vol": 1089.31,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~12": {
+    "samples": 384,
+    "max_axial": 0.0,
+    "vol": 1510.23,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~11": {
+    "samples": 316,
+    "max_axial": 0.0,
+    "vol": 1534.13,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~10": {
+    "samples": 185,
+    "max_axial": 0.0,
+    "vol": 840.3,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~9": {
+    "samples": 79,
+    "max_axial": 0.0,
+    "vol": 350.12,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~8": {
+    "samples": 5,
+    "max_axial": 0.0,
+    "vol": 78.39,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~20": {
+    "samples": 166,
+    "max_axial": 5.46,
+    "vol": 1046.75,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~15": {
+    "samples": 6,
+    "max_axial": 0.0,
+    "vol": 1.39,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~14": {
+    "samples": 80,
+    "max_axial": 5.46,
+    "vol": 588.62,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~13": {
+    "samples": 15,
+    "max_axial": 0.0,
+    "vol": 66.24,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~12": {
+    "samples": 32,
+    "max_axial": 0.0,
+    "vol": 136.87,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~11": {
+    "samples": 70,
+    "max_axial": 0.0,
+    "vol": 488.16,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~10": {
+    "samples": 69,
+    "max_axial": 0.0,
+    "vol": 473.84,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~9": {
+    "samples": 64,
+    "max_axial": 0.0,
+    "vol": 685.37,
+    "vol_over": 0.0,
+    "n_over": 0
+   }
+  }
+ },
+ "tp7": {
+  "samples_removing": 2114,
+  "removed_mm3": 10132,
+  "max_axial_mm": 16.669,
+  "removed_at_axial_over_dpp_mm3": 4436,
+  "share_over_dpp": 0.438,
+  "samples_over_dpp": 201,
+  "by_intent_and_z_1mm": {
+   "clearing_cut z~13": {
+    "samples": 5,
+    "max_axial": 12.23,
+    "vol": 62.21,
+    "vol_over": 59.22,
+    "n_over": 2
+   },
+   "clearing_cut z~12": {
+    "samples": 16,
+    "max_axial": 12.94,
+    "vol": 188.0,
+    "vol_over": 167.71,
+    "n_over": 5
+   },
+   "clearing_cut z~11": {
+    "samples": 161,
+    "max_axial": 14.62,
+    "vol": 2414.5,
+    "vol_over": 2311.01,
+    "n_over": 112
+   },
+   "clearing_cut z~10": {
+    "samples": 113,
+    "max_axial": 15.35,
+    "vol": 1543.86,
+    "vol_over": 1458.9,
+    "n_over": 65
+   },
+   "clearing_cut z~9": {
+    "samples": 80,
+    "max_axial": 16.23,
+    "vol": 496.62,
+    "vol_over": 418.55,
+    "n_over": 14
+   },
+   "clearing_cut z~8": {
+    "samples": 185,
+    "max_axial": 16.67,
+    "vol": 272.89,
+    "vol_over": 20.76,
+    "n_over": 3
+   },
+   "entry_plunge z~25": {
+    "samples": 59,
+    "max_axial": 0.0,
+    "vol": 141.88,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~24": {
+    "samples": 80,
+    "max_axial": 0.0,
+    "vol": 272.46,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~23": {
+    "samples": 42,
+    "max_axial": 0.0,
+    "vol": 139.96,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~22": {
+    "samples": 84,
+    "max_axial": 0.0,
+    "vol": 285.29,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~21": {
+    "samples": 84,
+    "max_axial": 0.0,
+    "vol": 289.14,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~20": {
+    "samples": 116,
+    "max_axial": 0.0,
+    "vol": 295.34,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~19": {
+    "samples": 43,
+    "max_axial": 0.0,
+    "vol": 157.26,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~18": {
+    "samples": 97,
+    "max_axial": 0.0,
+    "vol": 324.04,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~17": {
+    "samples": 104,
+    "max_axial": 0.0,
+    "vol": 332.27,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~16": {
+    "samples": 52,
+    "max_axial": 0.0,
+    "vol": 167.45,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~15": {
+    "samples": 134,
+    "max_axial": 0.0,
+    "vol": 351.29,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~14": {
+    "samples": 104,
+    "max_axial": 0.0,
+    "vol": 326.36,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~13": {
+    "samples": 74,
+    "max_axial": 0.0,
+    "vol": 243.25,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~12": {
+    "samples": 84,
+    "max_axial": 0.0,
+    "vol": 271.18,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~11": {
+    "samples": 124,
+    "max_axial": 0.0,
+    "vol": 454.23,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~10": {
+    "samples": 106,
+    "max_axial": 0.0,
+    "vol": 440.36,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~9": {
+    "samples": 55,
+    "max_axial": 0.0,
+    "vol": 152.6,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "entry_plunge z~8": {
+    "samples": 34,
+    "max_axial": 0.0,
+    "vol": 103.67,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~11": {
+    "samples": 12,
+    "max_axial": 0.0,
+    "vol": 54.37,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~10": {
+    "samples": 37,
+    "max_axial": 4.82,
+    "vol": 287.68,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~9": {
+    "samples": 15,
+    "max_axial": 0.64,
+    "vol": 48.59,
+    "vol_over": 0.0,
+    "n_over": 0
+   },
+   "linking z~8": {
+    "samples": 12,
+    "max_axial": 0.82,
+    "vol": 14.75,
+    "vol_over": 0.0,
+    "n_over": 0
+   }
+  }
+ }
+}
