@@ -501,3 +501,20 @@ The operator delegated these questions to the lead ("I think you know better"). 
 - **Q9.** Name: **Geodesic Adaptive**. "Geodesic" alone could be read as a finishing strategy, which some other CAM packages use the word for. "Adaptive" says it is a constant-engagement roughing strategy. Visible parameters are the usual roughing ones: tool, stepover, Depth/Pass, feeds and boundary. The research options stay hidden.
 - **Q10.** The GUI shows a short summary per op: the length over the load bound, the plunge count, and a smoothness reading. The full tables stay in the CLI and MCP.
 - **Q11.** Yes. The coverage bar (leave + one cell) replaces the 0.8 mm band threshold, because it is derived.
+
+## 8. Lead update after D43–D47 (2026-10-27, night)
+
+Evidence: P15 "## D45" (Corne) and "## D47" (wanaka200). Both use the acceleration clock against contour_parallel (CP).
+
+- Corne, geodesic s2.1 + the load split (D43) + the edge op on rest regions (D44): the 6 mm roughing is 1505 s against CP's 1427 s (×1.05), and the job is ×1.14 because of the 3 mm rest op (G-LEVELPHASE).
+- wanaka200, geodesic s3.5: the job is 3062 s against CP's 5777 s (×0.53). Op 1 load: max 0.99 against 2.62, p99 0.64 against 1.00. Op 1 + the edge op remove CP's volume within 0.2 %.
+- The lead's recommendation for G2 is PROMOTE, with three conditions before any machining:
+  1. G-RESTSTALE fixed;
+  2. G-RESTFRAME fixed (the edge op must not leave op 1's boundary);
+  3. one operator test cut.
+
+Changes to the plan above:
+- **Q6 reversed.** Do not delete `StepSplit`. The load split (D43, `StockDepth` on `strips_chip_load`) is the geodesic arm's rule and a candidate for AgentSearch and ContourSpiral (step 5). `PathShape` stays the default for the shipped arms until a step measures them.
+- **New step 1b: rest regions as a product feature.** D44 (`Produced::rest_regions` from a 3D rough, consumed by `BoundarySource::DerivedRestRegions`) ships as the "edges" half of the Q5 template, after G-RESTSTALE and G-RESTFRAME. It is strategy-neutral: any 3D rough can publish.
+- **The stepover default.** The geodesic op holds its own bound at every stepover measured (D37, D47). Its time advantage appears at larger stepovers. The preset's default stepover needs a derived rule, not a typed number. One candidate: the stepover whose p99 load equals a stated fraction of the tool's bound. Record it as Q12 for the operator.
+- **Order of work:** step 1 (feed cap) and step 1b go first, because both are shipped-neutral without a consumer. Then step 7 (promote), then steps 0, 2–6 for CP and the slice arms.
