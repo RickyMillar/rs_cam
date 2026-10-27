@@ -6439,3 +6439,18 @@ against CP's 135 is more waterline contours, not a different move class.**
   lie in this same edge row (not checked cell by cell); the probe shows no cut beyond it.
 
 Not committed.
+
+**D67b: the outside "agree" cells (C24's follow-up).** The same kind of temporary probe (`phase3/d67/d67b_agree_probe.rs`,
+output `probe_b_output.txt`; removed afterwards, tree clean at 7503fa3f1). Fixture case (`centre_boundary` empty),
+clipped sim. Every outside cell with |planner top − sim top| ≤ one cell (0.529 mm), with planner top, sim top and its
+distance outside the rectangle. Stock top 25.0, planner floor 0.0.
+
+| strategy | cells | distance outside | planner top | sim top | reading |
+|---|---|---|---|---|---|
+| CP | 2 | 0.108 mm (the edge row) | 17.98 / 18.37 | 18.40 / 18.77 | the legal edge cut, seen by both |
+| Geodesic | 26 | 0.108 mm (the edge row) | 18.35 – 20.50 | 18.81 – 20.54 | the same edge row |
+| Geodesic | 43 | 2.754 mm (one column, x 2.754, y −11.0 … 11.2) | 25.0 | 25.0 | not pre-cleared, not cut |
+
+So C24's reading (b) holds for 43 of the 69: inside about R (3.175) of the edge, the planner keeps the stock at the top,
+and the sim leaves it there. The other 26 are the edge row of item 3 (a legal cut, 0.108 mm out). No agree cell is a cut
+beyond the edge row.

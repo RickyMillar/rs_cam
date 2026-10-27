@@ -92,3 +92,15 @@ The waterline contours are the same mesh contours (the Geodesic branch only drop
 - **Still open, both strategies, unchanged by this finding:**
   - D4 F-B: the waterline is boundary-unaware, so the planner traces contours across the boundary and the centre clip then cuts them up (time, not safety);
   - the collapsed-boundary pass-through (§3), the one case where a cut outside a declared boundary can ship. That is an operator decision.
+
+## 8. D67b: the 69 Geodesic "agree" cells (D10; `d67b_agree_probe.rs`, `probe_b_output.txt`)
+
+Fixture case (`centre_boundary` empty), clipped sim. Every outside cell with |planner − sim| ≤ one cell (0.529 mm). Stock top 25.0, planner floor 0.0.
+
+| cells | where | planner top | sim top | reading |
+|---|---|---|---|---|
+| Geodesic 43 | one column at x = 2.754 (2.754 mm out, within R), y −11.0…11.2 | 25.0 | 25.0 | (b): not pre-cleared (the outer-band clip keeps the reach), not cut |
+| Geodesic 26 | the edge row, 0.108 mm out | 18.35–20.50 | 18.81–20.54 | the legal edge cut from a cutter on the ⊖r ring |
+| CP 2 | the edge row, 0.108 mm out | 17.98 / 18.37 | 18.40 / 18.77 | the same |
+
+No cell beyond the edge row is cut, on either strategy. Reading (b) of §6 holds for 43 cells, and the other 26 are the quantised edge row.
