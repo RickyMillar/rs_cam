@@ -73,6 +73,12 @@ pub enum BindingConstraint {
     /// sits at or below the plunge rate keeps the strategy's own binding, so
     /// this variant always means "the plunge rate LOWERED this feed".
     PlungeRate,
+    /// C38 §15 (2026-10-26). The move's own `Move::feed_cap` lowered the
+    /// feed: a planner set it where a load rule (a pass-load ceiling on a
+    /// turn or a slot) reduced the feed. It binds after every other bound,
+    /// so the modulator cannot lift such a move back to the chipload band.
+    /// No shipped planner writes a cap, so a shipped run never reports it.
+    FeedCap,
 }
 
 impl BindingConstraint {
@@ -85,6 +91,7 @@ impl BindingConstraint {
             BindingConstraint::KinematicReach => "kinematic-reach",
             BindingConstraint::ChiploadMin => "chipload-min",
             BindingConstraint::PlungeRate => "plunge-rate",
+            BindingConstraint::FeedCap => "feed-cap",
         }
     }
 }

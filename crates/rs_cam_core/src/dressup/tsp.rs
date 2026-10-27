@@ -828,18 +828,21 @@ mod tests {
             target: P3::new(first.x, first.y, safe_z),
             move_type: MoveType::Rapid,
             intent: crate::toolpath::MoveIntent::Unknown,
+            feed_cap: None,
         });
         for p in points {
             moves.push(Move {
                 target: *p,
                 move_type: MoveType::Linear { feed_rate },
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             });
         }
         moves.push(Move {
             target: P3::new(last.x, last.y, safe_z),
             move_type: MoveType::Rapid,
             intent: crate::toolpath::MoveIntent::Unknown,
+            feed_cap: None,
         });
         moves
     }
@@ -1549,6 +1552,7 @@ mod tests {
                 target: P3::new(i as f64, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             })
             .collect()
     }

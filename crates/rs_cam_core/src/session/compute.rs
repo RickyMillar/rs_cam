@@ -1474,9 +1474,12 @@ fn regime_from_binding(
         // mostly capped descents as a light cut. On a real path this
         // binding is never dominant (plunges are a small minority of moves),
         // so the arm is close to unreachable.
-        Some(BindingConstraint::DeflectionMax | BindingConstraint::PlungeRate) => {
-            LoadRegime::ToolLimited
-        }
+        // C38 §15: a dominant `FeedCap` is a load rule on the tool.
+        Some(
+            BindingConstraint::DeflectionMax
+            | BindingConstraint::PlungeRate
+            | BindingConstraint::FeedCap,
+        ) => LoadRegime::ToolLimited,
         Some(
             BindingConstraint::PowerMax
             | BindingConstraint::MachineMaxFeed

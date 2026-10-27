@@ -131,16 +131,19 @@ fn worker_result_with_findings() -> ToolpathResult {
         target: rs_cam_core::geo::P3::new(0.0, 0.0, 5.0),
         move_type: MoveType::Rapid,
         intent: rs_cam_core::toolpath::MoveIntent::Unknown,
+        feed_cap: None,
     });
     toolpath.moves.push(Move {
         target: rs_cam_core::geo::P3::new(10.0, 0.0, -1.0),
         move_type: MoveType::Linear { feed_rate: 1000.0 },
         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
+        feed_cap: None,
     });
     toolpath.moves.push(Move {
         target: rs_cam_core::geo::P3::new(10.0, 10.0, -1.0),
         move_type: MoveType::Linear { feed_rate: 1000.0 },
         intent: rs_cam_core::toolpath::MoveIntent::ClearingCut,
+        feed_cap: None,
     });
     let mut annotated = AnnotatedToolpath::new(toolpath);
     annotated.spans = vec![

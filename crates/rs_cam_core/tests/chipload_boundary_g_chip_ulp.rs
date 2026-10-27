@@ -687,6 +687,9 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
         // vertical-motion bound, not a chip-formation floor, so it does
         // not answer rider 3 — the rubbing-floor clamp is still unnamed.
         BindingConstraint::PlungeRate,
+        // C38 §15 (2026-10-26). A planner's per-move feed cap. It is a
+        // load-rule bound, not a chip-formation floor.
+        BindingConstraint::FeedCap,
     ];
     for v in all {
         // Exhaustiveness guard: a new variant fails to compile here.
@@ -697,7 +700,8 @@ fn rider3_no_binding_constraint_variant_denotes_the_rubbing_floor_clamp() {
             | BindingConstraint::PowerMax
             | BindingConstraint::MachineMaxFeed
             | BindingConstraint::KinematicReach
-            | BindingConstraint::PlungeRate => {}
+            | BindingConstraint::PlungeRate
+            | BindingConstraint::FeedCap => {}
         }
         assert!(
             !v.label().contains("rubbing"),

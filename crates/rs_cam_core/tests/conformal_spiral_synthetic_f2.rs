@@ -11792,6 +11792,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
             target: P3::new(0.0, 0.0, 0.0),
             move_type: MoveType::Rapid,
             intent,
+            feed_cap: None,
         };
         assert_eq!(
             classify_move(&rapid),
@@ -11804,6 +11805,7 @@ fn classify_move_maps_every_intent_in_both_kinematic_classes() {
         target: P3::new(0.0, 0.0, 0.0),
         move_type: MoveType::Linear { feed_rate: 500.0 },
         intent,
+        feed_cap: None,
     };
     for (intent, expected) in [
         (MoveIntent::FinishingCut, MoveClass::Cut),

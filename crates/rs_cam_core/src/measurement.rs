@@ -936,11 +936,13 @@ mod tests {
                 target: P3::new(0.0, 0.0, 0.0),
                 move_type: MoveType::Rapid,
                 intent: MoveIntent::Linking,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(length, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
                 intent: MoveIntent::FinishingCut,
+                feed_cap: None,
             },
         ]
     }
@@ -1033,16 +1035,19 @@ mod tests {
                 target: P3::new(0.0, 0.0, 5.0),
                 move_type: MoveType::Rapid,
                 intent: MoveIntent::Linking,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(50.0, 0.0, 5.0),
                 move_type: MoveType::Rapid,
                 intent: MoveIntent::Linking,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(50.0, 50.0, 5.0),
                 move_type: MoveType::Rapid,
                 intent: MoveIntent::Retract,
+                feed_cap: None,
             },
         ];
         let (area, provenance) = swept_footprint_area(&moves, 3.0, 0.5);
@@ -1064,11 +1069,13 @@ mod tests {
                 target: P3::new(0.0, 0.0, 0.0),
                 move_type: MoveType::Rapid,
                 intent: MoveIntent::Linking,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(20.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 800.0 },
                 intent: MoveIntent::Linking,
+                feed_cap: None,
             },
         ];
         let (area, _) = swept_footprint_area(&moves, 1.5, 0.25);

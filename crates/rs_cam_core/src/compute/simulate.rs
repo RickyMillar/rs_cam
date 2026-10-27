@@ -963,11 +963,13 @@ pub(crate) fn hash_toolpath(toolpath: &Toolpath) -> u64 {
             // F101: destructured, `..`-free, so a new `Move` field is a
             // compile error here until someone decides. The intent is not
             // hashed: it moves no material, and a saved trace whose hash
-            // took it would read as stale.
+            // took it would read as stale. The feed cap is not hashed for
+            // the same reason: the feed the move carries is hashed.
             let crate::toolpath::Move {
                 target,
                 move_type,
                 intent: _,
+                feed_cap: _,
             } = motion;
             hash_f64_bits(hasher, target.x);
             hash_f64_bits(hasher, target.y);
@@ -1199,6 +1201,7 @@ pub fn group_toolpath_to_global(
                     ),
                     move_type: m.move_type,
                     intent: m.intent,
+                    feed_cap: m.feed_cap,
                 })
                 .collect(),
         },

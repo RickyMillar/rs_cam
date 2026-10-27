@@ -1013,6 +1013,17 @@ pub fn adaptive_feed_modulate_with_materials(
             }
         }
 
+        // C38 §15: the move's own feed cap (`Move::feed_cap`), which a
+        // planner sets where a load rule lowers the feed. It binds after
+        // every arm, the floor and the plunge guard, and it only lowers.
+        // With no cap (every shipped planner) nothing changes.
+        if let Some(cap) = toolpath.moves[i].feed_cap
+            && new_feed > cap
+        {
+            new_feed = cap;
+            binding = BindingConstraint::FeedCap;
+        }
+
         outcome.per_move.insert(i, (new_feed, binding));
         if (new_feed - commanded).abs() > 1e-6 {
             toolpath.moves[i].move_type = move_type.with_feed_rate(new_feed);

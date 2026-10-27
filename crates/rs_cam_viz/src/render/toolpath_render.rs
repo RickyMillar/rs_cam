@@ -1040,16 +1040,19 @@ mod tests {
             target: P3::new(0.0, 0.0, 0.0),
             move_type: MoveType::Rapid,
             intent: MoveIntent::Unknown,
+            feed_cap: None,
         });
         tp.moves.push(Move {
             target: P3::new(1.0, 0.0, 0.0),
             move_type: MoveType::Linear { feed_rate: 100.0 },
             intent: MoveIntent::Unknown,
+            feed_cap: None,
         });
         tp.moves.push(Move {
             target: P3::new(2.0, 0.0, 0.0),
             move_type: MoveType::Linear { feed_rate: 100.0 },
             intent: MoveIntent::Unknown,
+            feed_cap: None,
         });
         // Entry span covers move 1 only; default cut for move 2.
         let spans = vec![Span::new(1, 2, SpanKind::Entry)];

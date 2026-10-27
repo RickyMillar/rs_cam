@@ -624,12 +624,13 @@ fn rotate_closed_loop(
                 target: mv.target,
                 move_type: body_type,
                 intent: body_intent,
+                feed_cap: mv.feed_cap,
             },
         ));
     }
     // Close onto the new start, carrying the input's own closing index so the
     // provenance stays a bijection over this fragment's moves.
-    let (close_old, _) = moves.last()?;
+    let (close_old, close_move) = moves.last()?;
     let new_start = cycle.get(best)?.1.target;
     out.push((
         *close_old,
@@ -637,6 +638,7 @@ fn rotate_closed_loop(
             target: new_start,
             move_type: body_type,
             intent: body_intent,
+            feed_cap: close_move.feed_cap,
         },
     ));
     Some(out)

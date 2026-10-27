@@ -185,6 +185,9 @@ pub(crate) fn fit_arcs_within(
         // finishing pass never cut. Equality is strict: `Unknown` breaks
         // against every tagged intent (Checkpoint F1 Q3).
         let run_intent = m.intent;
+        // C38 §15: the feed cap is an equality term too, so the arc keeps
+        // the cap of every move it replaces.
+        let run_cap = m.feed_cap;
         // G-ARCFITSCAN (2026-10-02): the run end is found LAZILY, one move
         // past what the greedy loop below has already accepted. The old
         // code scanned the whole same-feed run up front for every `i`; a
@@ -207,9 +210,12 @@ pub(crate) fn fit_arcs_within(
         let eligible = |k: usize| -> bool {
             #[cfg(test)]
             RUN_SCAN_READS.with(|c| c.set(c.get() + 1));
-            match moves.get(k).map(|mv| (mv.move_type, mv.intent)) {
-                Some((MoveType::Linear { feed_rate: f }, intent)) => {
-                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent
+            match moves
+                .get(k)
+                .map(|mv| (mv.move_type, mv.intent, mv.feed_cap))
+            {
+                Some((MoveType::Linear { feed_rate: f }, intent, cap)) => {
+                    (f - feed_rate).abs() < FEED_EPS && intent == run_intent && cap == run_cap
                 }
                 _ => false,
             }
@@ -286,6 +292,7 @@ pub(crate) fn fit_arcs_within(
                         feed_rate,
                     },
                     intent: arc_intent,
+                    feed_cap: moves[i].feed_cap,
                 });
             } else {
                 result.moves.push(Move {
@@ -296,6 +303,7 @@ pub(crate) fn fit_arcs_within(
                         feed_rate,
                     },
                     intent: arc_intent,
+                    feed_cap: moves[i].feed_cap,
                 });
             }
             arc_positions.push(arc_idx);

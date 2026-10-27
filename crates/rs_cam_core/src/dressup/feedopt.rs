@@ -254,8 +254,12 @@ fn optimize_feed_rates_inner(
     // changes. Rebuilding via the intent-less `rapid_to`/`feed_to`/
     // `arc_*_to` builders (the old approach) silently reset every move's
     // intent to `MoveIntent::Unknown`, which is the S.1 bug this fixes.
+    //
+    // C38 §15: a move's own feed cap (`Move::feed_cap`) binds last, after
+    // the smoothing, and only lowers. With no cap nothing changes.
     let mut output = toolpath.clone();
     for (mv, &feed) in output.moves.iter_mut().zip(feed_rates.iter()) {
+        let feed = mv.feed_cap.map_or(feed, |cap| feed.min(cap));
         mv.move_type = mv.move_type.with_feed_rate(feed);
     }
 
@@ -562,21 +566,25 @@ mod tests {
                 target: P3::new(0.0, 0.0, 0.0),
                 move_type: MoveType::Rapid,
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(1.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(2.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 3000.0 },
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             },
             Move {
                 target: P3::new(3.0, 0.0, 0.0),
                 move_type: MoveType::Linear { feed_rate: 1000.0 },
                 intent: crate::toolpath::MoveIntent::Unknown,
+                feed_cap: None,
             },
         ];
 
