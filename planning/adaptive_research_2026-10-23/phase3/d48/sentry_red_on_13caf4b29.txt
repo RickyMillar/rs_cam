@@ -1,0 +1,5 @@
+rough: 1 regions, farthest region point 40.75 mm from the centre (silhouette 40)
+consumer: 93 moves, 66 cutting, 78 ends with the disc past the boundary (silhouette half-width 40.25), worst 3.447 mm
+thread 'a_rest_consumer_stays_inside_the_source_boundary' (1508854) panicked at crates/rs_cam_core/tests/a_rest_consumer_stays_inside_the_source_boundary_d48.rs:227:5:
+the consumer's tool crosses the rough's boundary by up to 3.447 mm at 78 move ends, first Some((39.5, -0.75))
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.14s
