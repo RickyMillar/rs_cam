@@ -4,7 +4,7 @@ Date: 2026-10-28. Branch `geodesic-integration`, base `21f3b3f37` (R5).
 The implementer did not commit. Design: `removal_design.md` §5.
 
 Patch: `stepR6_tree_vs_21f3b3f37.patch`, md5
-`edf9ba9b7639a9225139b9028c3e12f4`. 16 files (+116/-94). No planning file.
+`b7905a6e5a8962aa55297bd73bc8ab0c`. 17 files (+183/-133). No planning file.
 `git apply --check -R` passes.
 
 ## 1. The rename
@@ -65,7 +65,37 @@ restored (cmp-checked).
   in the snapshot.
 - `FEATURE_CATALOG.md`: one sentence on the load-only fields and the sentry.
 
-## 4. Gates
+## 4. Boundary parity B2 is strategy-neutral (D67)
+
+Lead's item, added to R6. D67 (P15) closed G-GEOWATERLEAK: the old B2
+counted the PRE-CLIP endpoints of the boundary-unaware `waterline_cleanup`,
+with an empty `centre_boundary`. Geodesic Adaptive's finer chord tolerance
+cuts the same contour arcs into more moves, so the count was per strategy
+(CP 135, Geodesic 312).
+
+Change (`tests/adaptive3d_boundary_clear_parity.rs`):
+
+- `measure` plans the fixture a second time with `centre_boundary` set to
+  the effective containment, as `compute/execute/rough_3d.rs` sets it. B2
+  counts the cutting endpoints of that plan fully outside the containment.
+- B2 asserts 0 on both strategies, and as non-vacuity it asserts that the
+  pre-clip leak (the plan without `centre_boundary`) is greater than 0. So
+  the bar proves that the centre clip removes a leak that exists.
+- The two pins `WATERLINE_LEAK_CUT_MOVES` (135) and `_GEODESIC` (312) are
+  deleted. The B2 comment and the bar table cite D67. The D4 arm keeps its
+  inverted pre-clip pin, and its F-B doc now names the pre-clip leak.
+- The main plan, and with it B1, B3, B4, P1 and P2, is unchanged: the
+  second plan feeds B2 only. The unused `Measured::strategy` field is
+  removed.
+
+Measured: B2 = 0 on both; pre-clip 135 (CP) and 312 (Geodesic), as D67.
+Test time 12 s to 13 s for the binary.
+
+Planted red: `path.rs` with the centre clip turned off
+(`centre_clip.filter(|_| false)`). Both arms fail: "B2: 135 …" (CP) and
+"B2: 312 …" (Geodesic). The file was restored (cmp-checked).
+
+## 5. Gates
 
 | Gate | Result |
 |---|---|
@@ -77,6 +107,7 @@ restored (cmp-checked).
 | core `--lib operation_configs` | 4 ok |
 | viz `mcp_authoring_surface`, `command_surface_completeness`, `mcp_wire_surface_pin` | 16, 7, 2 ok |
 | `rs_cam_mcp` | 36 ok |
+| `adaptive3d_boundary_clear_parity` (after §4) | 4 ok; fmt and full clippy run again, ok |
 
 The slow geodesic binaries (F-038 coalescing, keep-down, never-ahead) did
 not run again: R6 changes only comments, docs and one test in the code
