@@ -1,0 +1,80 @@
+
+running 1 test
+
+=== D67b ContourParallel, centre_boundary EMPTY, clipped sim: outside cells where |planner - sim| <= one cell ===
+AGREE   1 x    0.108 y  -11.004 dist_outside  0.108 planner   17.981 sim   18.400 stock_top 25 planner_floor 0.000
+AGREE   2 x    0.108 y  -10.475 dist_outside  0.108 planner   18.374 sim   18.769 stock_top 25 planner_floor 0.000
+
+=== D67b GeodesicAdaptive, centre_boundary EMPTY, clipped sim: outside cells where |planner - sim| <= one cell ===
+AGREE   1 x    2.754 y  -11.004 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   2 x    0.108 y  -10.475 dist_outside  0.108 planner   18.348 sim   18.806 stock_top 25 planner_floor 0.000
+AGREE   3 x    2.754 y  -10.475 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   4 x    2.754 y   -9.946 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   5 x    2.754 y   -9.417 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   6 x    2.754 y   -8.888 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   7 x    2.754 y   -8.358 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   8 x    2.754 y   -7.829 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE   9 x    2.754 y   -7.300 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  10 x    0.108 y   -6.771 dist_outside  0.108 planner   19.629 sim   20.089 stock_top 25 planner_floor 0.000
+AGREE  11 x    2.754 y   -6.771 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  12 x    0.108 y   -6.242 dist_outside  0.108 planner   19.687 sim   20.115 stock_top 25 planner_floor 0.000
+AGREE  13 x    2.754 y   -6.242 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  14 x    0.108 y   -5.713 dist_outside  0.108 planner   20.043 sim   20.254 stock_top 25 planner_floor 0.000
+AGREE  15 x    2.754 y   -5.713 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  16 x    0.108 y   -5.183 dist_outside  0.108 planner   20.043 sim   20.279 stock_top 25 planner_floor 0.000
+AGREE  17 x    2.754 y   -5.183 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  18 x    0.108 y   -4.654 dist_outside  0.108 planner   20.043 sim   20.330 stock_top 25 planner_floor 0.000
+AGREE  19 x    2.754 y   -4.654 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  20 x    0.108 y   -4.125 dist_outside  0.108 planner   20.159 sim   20.482 stock_top 25 planner_floor 0.000
+AGREE  21 x    2.754 y   -4.125 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  22 x    0.108 y   -3.596 dist_outside  0.108 planner   20.288 sim   20.467 stock_top 25 planner_floor 0.000
+AGREE  23 x    2.754 y   -3.596 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  24 x    0.108 y   -3.067 dist_outside  0.108 planner   20.352 sim   20.464 stock_top 25 planner_floor 0.000
+AGREE  25 x    2.754 y   -3.067 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  26 x    0.108 y   -2.538 dist_outside  0.108 planner   20.424 sim   20.514 stock_top 25 planner_floor 0.000
+AGREE  27 x    2.754 y   -2.538 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  28 x    0.108 y   -2.008 dist_outside  0.108 planner   20.424 sim   20.512 stock_top 25 planner_floor 0.000
+AGREE  29 x    2.754 y   -2.008 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  30 x    0.108 y   -1.479 dist_outside  0.108 planner   20.449 sim   20.517 stock_top 25 planner_floor 0.000
+AGREE  31 x    2.754 y   -1.479 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  32 x    0.108 y   -0.950 dist_outside  0.108 planner   20.499 sim   20.529 stock_top 25 planner_floor 0.000
+AGREE  33 x    2.754 y   -0.950 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  34 x    0.108 y   -0.421 dist_outside  0.108 planner   20.500 sim   20.518 stock_top 25 planner_floor 0.000
+AGREE  35 x    2.754 y   -0.421 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  36 x    0.108 y    0.108 dist_outside  0.108 planner   20.495 sim   20.536 stock_top 25 planner_floor 0.000
+AGREE  37 x    2.754 y    0.108 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  38 x    0.108 y    0.637 dist_outside  0.108 planner   20.488 sim   20.526 stock_top 25 planner_floor 0.000
+AGREE  39 x    2.754 y    0.637 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  40 x    0.108 y    1.167 dist_outside  0.108 planner   20.460 sim   20.512 stock_top 25 planner_floor 0.000
+AGREE  41 x    2.754 y    1.167 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  42 x    0.108 y    1.696 dist_outside  0.108 planner   20.438 sim   20.511 stock_top 25 planner_floor 0.000
+AGREE  43 x    2.754 y    1.696 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  44 x    0.108 y    2.225 dist_outside  0.108 planner   20.415 sim   20.483 stock_top 25 planner_floor 0.000
+AGREE  45 x    2.754 y    2.225 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  46 x    0.108 y    2.754 dist_outside  0.108 planner   20.354 sim   20.475 stock_top 25 planner_floor 0.000
+AGREE  47 x    2.754 y    2.754 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  48 x    0.108 y    3.283 dist_outside  0.108 planner   20.299 sim   20.437 stock_top 25 planner_floor 0.000
+AGREE  49 x    2.754 y    3.283 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  50 x    0.108 y    3.812 dist_outside  0.108 planner   20.172 sim   20.435 stock_top 25 planner_floor 0.000
+AGREE  51 x    2.754 y    3.812 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  52 x    0.108 y    4.342 dist_outside  0.108 planner   20.091 sim   20.364 stock_top 25 planner_floor 0.000
+AGREE  53 x    2.754 y    4.342 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  54 x    0.108 y    4.871 dist_outside  0.108 planner   19.945 sim   20.323 stock_top 25 planner_floor 0.000
+AGREE  55 x    2.754 y    4.871 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  56 x    0.108 y    5.400 dist_outside  0.108 planner   19.849 sim   20.232 stock_top 25 planner_floor 0.000
+AGREE  57 x    2.754 y    5.400 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  58 x    2.754 y    5.929 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  59 x    0.108 y    6.458 dist_outside  0.108 planner   19.512 sim   20.008 stock_top 25 planner_floor 0.000
+AGREE  60 x    2.754 y    6.458 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  61 x    2.754 y    6.988 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  62 x    2.754 y    7.517 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  63 x    2.754 y    8.046 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  64 x    2.754 y    8.575 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  65 x    2.754 y    9.104 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  66 x    2.754 y    9.633 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  67 x    2.754 y   10.162 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  68 x    2.754 y   10.692 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+AGREE  69 x    2.754 y   11.221 dist_outside  2.754 planner   25.000 sim   25.000 stock_top 25 planner_floor 0.000
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.73s
+
