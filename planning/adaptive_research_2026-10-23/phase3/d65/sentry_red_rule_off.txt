@@ -1,0 +1,6 @@
+adaptive::path::link_load_tests::the_walker_cuts_a_capped_run_in_one_span_d65 --- FAILED
+adaptive::path::link_load_tests::a_step_over_the_ceiling_is_admitted_only_capped_and_up_to_a_slot_d65 --- FAILED
+adaptive::geodesic::tests::feed_caps_caps_a_step_over_the_ceiling_d65 --- FAILED
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 2727 filtered out; finished in 0.05s
+shelf: 1031 moves, 34 entries (base 46), 139 cutting moves fed below the op feed
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.66s
