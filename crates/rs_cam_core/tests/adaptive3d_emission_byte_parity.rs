@@ -20,7 +20,8 @@
 //!
 //! ## The five cases
 //!
-//! One per `ClearingStrategy3d` variant, so the AgentSearch arm CUT-09 cuts
+//! One per `ClearingStrategy3d` variant (Contour Parallel twice: plain and
+//! with the flat-area and Z-blend dials), so the AgentSearch arm CUT-09 cuts
 //! is measured, and so are the `ContourSpiral` and `GeodesicAdaptive` arms
 //! that dispatch through it.
 //! The cases deliberately turn the optional dials ON, because a rig that
@@ -29,7 +30,7 @@
 //! | case | strategy | dials exercised |
 //! |---|---|---|
 //! | `contour_parallel` | `ContourParallel` | the plain baseline |
-//! | `adaptive` | `Adaptive` | `detect_flat_areas`, `z_blend` |
+//! | `contour_parallel_flat_blend` | `ContourParallel` | `detect_flat_areas`, `z_blend` |
 //! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
 //! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
 //! | `geodesic_adaptive` | `GeodesicAdaptive` | its own step split and route (`None` = `StockDepth`, `CutFeed`), stay-down, the feed caps |
@@ -59,6 +60,10 @@
 //!   A toggle proof (the chord flatten restored) gives the old dumps.
 //! - Integration step 7.4b: the new case `geodesic_adaptive` only. The four
 //!   older fixtures are unchanged.
+//! - Removal step R3 (2026-10-28): the case `adaptive` left with the 3D
+//!   Adaptive planner. Its dials (`detect_flat_areas`, `z_blend`) moved to
+//!   the new case `contour_parallel_flat_blend`, blessed alone; every other
+//!   fixture is unchanged.
 
 #![expect(
     clippy::unwrap_used,
@@ -137,8 +142,8 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
 fn case_params(case: &str) -> Adaptive3dParams {
     match case {
         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
-        "adaptive" => {
-            let mut p = base_params(ClearingStrategy3d::Adaptive);
+        "contour_parallel_flat_blend" => {
+            let mut p = base_params(ClearingStrategy3d::ContourParallel);
             p.depth.detect_flat_areas = true;
             p.z_blend = true;
             p
@@ -167,7 +172,7 @@ fn case_params(case: &str) -> Adaptive3dParams {
 
 const CASES: [&str; 5] = [
     "contour_parallel",
-    "adaptive",
+    "contour_parallel_flat_blend",
     "agent_search",
     "contour_spiral",
     "geodesic_adaptive",
@@ -276,8 +281,8 @@ fn contour_parallel_emission_is_byte_identical() {
 }
 
 #[test]
-fn adaptive_emission_is_byte_identical() {
-    check("adaptive");
+fn contour_parallel_flat_blend_emission_is_byte_identical() {
+    check("contour_parallel_flat_blend");
 }
 
 #[test]

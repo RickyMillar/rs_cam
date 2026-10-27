@@ -1010,7 +1010,7 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
     // This test validates AgentSearch's observability — z_level /
     // adaptive_pass spans and adaptive3d_pass hotspots are only
     // emitted by clear_z_level() (the AgentSearch path), not by
-    // clear_z_level_contour_parallel or clear_z_level_adaptive.
+    // clear_z_level_contour_parallel.
     let params = {
         let mut p = default_params();
         p.clearing_strategy = ClearingStrategy3d::AgentSearch;
@@ -2738,7 +2738,6 @@ fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
     for other in [
         ClearingStrategy3d::AgentSearch,
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
         ClearingStrategy3d::ContourSpiral,
     ] {
         assert!(

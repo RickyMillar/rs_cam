@@ -105,7 +105,6 @@ fn global_levels_drape_to_a_floor_between_two_levels() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
         ClearingStrategy3d::ContourSpiral,
         ClearingStrategy3d::AgentSearch,
     ] {

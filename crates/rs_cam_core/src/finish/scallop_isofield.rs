@@ -28,9 +28,9 @@
 //! approximates with a per-ring constant.
 //!
 //! This is the standard geodesic-distance / fast-marching formulation of
-//! iso-scallop machining, and it is the same architecture `adaptive3d`'s
-//! `clear_z_level_adaptive` already uses in this repo (EDT → curvature field
-//! → per-cell threshold), so it is not a foreign idea to the codebase.
+//! iso-scallop machining, and it is the same architecture the 3D Adaptive
+//! planner `clear_z_level_adaptive` used (EDT → curvature field → per-cell
+//! threshold; removed in removal step R3, 2026-10-28).
 //!
 //! # What it buys, structurally
 //!

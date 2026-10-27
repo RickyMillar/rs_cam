@@ -117,7 +117,6 @@ fn by_area_jobs_cut_only_their_own_cells() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
         ClearingStrategy3d::ContourSpiral,
     ] {
         let out = adaptive_3d_toolpath_output_with_cancel(

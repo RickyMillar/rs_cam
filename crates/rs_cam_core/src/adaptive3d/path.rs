@@ -5,7 +5,6 @@ use crate::dexel_stock::TriDexelStock;
 use crate::geo::P3;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
-use crate::ops::adaptive_shared::target_engagement_fraction;
 use crate::stock::dexel::ray_subtract_above;
 use crate::stock::radial_profile::RadialProfileLUT;
 use crate::surface::slope::SurfaceHeightmap;
@@ -86,9 +85,8 @@ use tracing::{debug, info};
 
 use super::centre_clip::CentreClip;
 use super::clearing::{
-    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_adaptive,
-    clear_z_level_agent_2d_slice, clear_z_level_contour_parallel, detect_material_regions_labeled,
-    waterline_cleanup,
+    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_agent_2d_slice,
+    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
 };
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -514,19 +512,6 @@ fn clear_planned_level(
         ClearingStrategy3d::ContourParallel => {
             segments.push(Adaptive3dSegment::Marker(level_event));
             clear_z_level_contour_parallel(
-                ctx,
-                material_stock,
-                surface_hm,
-                z_level,
-                segments,
-                cursor,
-                region,
-                cancel,
-            )?;
-        }
-        ClearingStrategy3d::Adaptive => {
-            segments.push(Adaptive3dSegment::Marker(level_event));
-            clear_z_level_adaptive(
                 ctx,
                 material_stock,
                 surface_hm,
@@ -1042,7 +1027,6 @@ pub(super) fn adaptive_3d_segments(
         scope.set_counter("z_bottom", z_levels.last().copied().unwrap_or(0.0));
     }
 
-    let target_frac = target_engagement_fraction(params.geometry.stepover, tool_radius);
     let step_len = cell_size * 1.5;
     let max_link_dist = default_max_link_dist(tool_radius, params.geometry.stepover);
 
@@ -1072,7 +1056,6 @@ pub(super) fn adaptive_3d_segments(
         cut_tolerance: params.emission_chord_tolerance(),
         feed_rate: params.feed_rate,
         plunge_rate: params.plunge_rate,
-        target_frac,
         step_len,
         max_link_dist,
         clearing_strategy: params.clearing_strategy,

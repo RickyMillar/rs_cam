@@ -5,7 +5,6 @@
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
 use crate::geometry::contour_extract::marching_squares_bool_grid;
-use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::ops::waterline::waterline_contours_with_cancel;
@@ -373,7 +372,6 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) feed_rate: f64,
     /// Op plunge feed (mm/min) — same crossover use.
     pub(super) plunge_rate: f64,
-    pub(super) target_frac: f64,
     pub(super) step_len: f64,
     pub(super) max_link_dist: f64,
     /// Safe-Z used by `segments_to_toolpath` for retracts and the start
@@ -1696,181 +1694,6 @@ pub(super) fn clear_z_level_contour_parallel(
                 }
             }
         }
-    }
-
-    Ok(())
-}
-
-/// Adaptive clearing: variable-offset EDT for constant tool engagement.
-///
-/// Same structure as `clear_z_level_contour_parallel` but uses a spatially-
-/// varying threshold based on EDT level-set curvature.  At convex boundary
-/// sections the stepover shrinks (preventing engagement spikes); at concave
-/// sections it grows (avoiding wasted light passes).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is a separate input that the callers supply"
-)]
-pub(super) fn clear_z_level_adaptive(
-    ctx: &ClearZLevelContext<'_>,
-    material_stock: &mut TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    segments: &mut Vec<Adaptive3dSegment>,
-    cursor: &mut PlannerCursor,
-    area_mask: Option<&AreaMask>,
-    cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
-    // ── Material check ─────────────────────────────────────────────────
-    // Absolute cell-count gate (not fraction) — see clear_z_level_concentric.
-    let (remaining_cells, _) = level_gate(
-        material_stock,
-        surface_hm,
-        z_level,
-        ctx.stock_to_leave,
-        area_mask,
-    );
-    if remaining_cells < MIN_CELLS_TO_CLEAR {
-        return Ok(());
-    }
-
-    // ── 1. Build boolean material grid ─────────────────────────────────
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
-        material_stock,
-        surface_hm,
-        z_level,
-        ctx.stock_to_leave,
-        area_mask,
-    );
-
-    if !material_grid.iter().any(|&b| b) {
-        return Ok(());
-    }
-
-    // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
-    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
-    let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
-
-    // ── 3. Curvature field from EDT level sets ─────────────────────────
-    let mut curvature = edt_curvature_field(&edt, rows, cols);
-    // Smooth to suppress finite-difference noise near the medial axis.
-    // Scale with tool radius so the kernel covers ~1 tool diameter.
-    let tool_radius_cells = ctx.tool_radius / cell_size;
-    let smooth_r = (tool_radius_cells as usize).max(3);
-    smooth_grid(&mut curvature, rows, cols, smooth_r);
-
-    // ── 4. Precompute per-cell curvature offset ────────────────────────
-    // The offset is a CONSTANT shift per cell (does not scale with level N).
-    // This keeps contour topology stable across levels while adjusting
-    // local spacing based on curvature.
-    //   offset = base_step * (−κR / (1 + κR))  clamped for stability
-    //   Concave κ < 0: offset > 0 → contour recedes → wider pass
-    //   Convex  κ > 0: offset < 0 → contour advances → tighter pass
-    let total = rows * cols;
-    let alpha = ctx.target_frac * std::f64::consts::TAU;
-    let base_step = ctx.tool_radius * (1.0 - alpha.cos());
-    let base_step_cells = base_step / cell_size;
-
-    let mut curvature_offset = vec![0.0f64; total];
-    for (off, &kappa) in curvature_offset.iter_mut().zip(curvature.iter()) {
-        let kr = kappa * tool_radius_cells;
-        let denom = (1.0 + kr).clamp(0.5, 2.0);
-        // offset = base_step * (1/denom - 1), clamped to ±0.5 * base_step
-        *off = (base_step_cells * (1.0 / denom - 1.0))
-            .clamp(-0.5 * base_step_cells, 0.5 * base_step_cells);
-    }
-
-    // Z-blend setup (identical to contour-parallel)
-    let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
-
-    debug!(
-        z = z_level,
-        max_dist_cells = max_dist,
-        tool_radius_cells = tool_radius_cells,
-        base_step_cells = base_step_cells,
-        "Adaptive EDT: generating curvature-adjusted contours"
-    );
-
-    // ── 5. Offset loop: fixed base progression + constant curvature shift
-    let mut threshold = tool_radius_cells;
-
-    while threshold < max_dist {
-        check_cancel(cancel)?;
-
-        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
-        let blend = if z_blend_enabled && offset_range > 1e-6 {
-            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-        // Variable mask: base threshold + per-cell curvature offset
-        let mask: Vec<bool> = edt
-            .iter()
-            .zip(curvature_offset.iter())
-            .map(|(&d, &off)| d > threshold + off)
-            .collect();
-        let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
-
-        for loop_pts in &loops {
-            if loop_pts.len() < 3 {
-                continue;
-            }
-
-            // Z-blended surface drape (identical to contour-parallel)
-            let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
-            for p in loop_pts {
-                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
-                let target_z = if surf_z == f64::NEG_INFINITY {
-                    z_level
-                } else {
-                    surf_z + ctx.stock_to_leave
-                };
-                let z = (z_level + blend * (target_z - z_level)).max(target_z);
-                path_3d.push(P3::new(p.x, p.y, z));
-            }
-
-            // Entry (link or rapid) + cut segment. Matches the gate in
-            // clear_z_level_contour_parallel — see F-5 rationale there.
-            if let Some(first) = path_3d.first() {
-                let should_link = cursor
-                    .last_pos
-                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
-                let entry_seg = if should_link {
-                    Adaptive3dSegment::Link(*first)
-                } else {
-                    Adaptive3dSegment::Rapid(*first)
-                };
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    cursor,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    cursor,
-                    Adaptive3dSegment::Cut(path_3d),
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
-            }
-        }
-
-        threshold += base_step_cells;
     }
 
     Ok(())

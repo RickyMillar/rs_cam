@@ -1637,18 +1637,11 @@ fn sweep_adaptive3d_clearing_strategy() {
         "adaptive3d",
         "clearing_strategy",
         serde_json::json!("contour_parallel"),
-        &[
-            serde_json::json!("adaptive"),
-            serde_json::json!("contour_spiral"),
-        ],
+        &[serde_json::json!("contour_spiral")],
         |ov| {
             let mut p = default_adaptive3d_params();
-            match ov.and_then(|v| v.as_str()) {
-                Some("adaptive") => p.clearing_strategy = ClearingStrategy3d::Adaptive,
-                Some("contour_spiral") => {
-                    p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
-                }
-                _ => {}
+            if ov.and_then(|v| v.as_str()) == Some("contour_spiral") {
+                p.clearing_strategy = ClearingStrategy3d::ContourSpiral;
             }
             rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
                 &mesh,

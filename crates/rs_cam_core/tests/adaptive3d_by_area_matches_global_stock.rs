@@ -123,7 +123,6 @@ fn by_area_final_stock_equals_global() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
         ClearingStrategy3d::ContourSpiral,
         ClearingStrategy3d::AgentSearch,
     ] {
