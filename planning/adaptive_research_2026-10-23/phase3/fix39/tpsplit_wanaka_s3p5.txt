@@ -1,0 +1,2 @@
+fix39/wanaka_s3p5/simulation.json res 0.6 ids [1] total 1324.1
+   tp 1 total 1324.1 cut 1243.2 rapid 80.9 air 500.4 vol 577240

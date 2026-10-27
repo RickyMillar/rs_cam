@@ -1,0 +1,18 @@
+op 1 motion lines: R 7624, product 7624
+geometry: IDENTICAL (every motion line equal without F)
+fed lines: equal 7066, product slower 46 (ratio min 0.552), product faster 14 (ratio max 1.399)
+G-code plunges (vertical G1 descents): R 760, product 760
+  faster line 3548: G1 X119.967 Y122.211 Z-10.420  R F862.0 -> product F1000.0; previous: G1 X119.735 Y122.224 Z-10.420 (R F2376.0, product F2376.0)
+  faster line 6132: G1 X174.010 Y220.590 Z0.500  R F978.0 -> product F1000.0; previous: G1 X173.510 Y220.872 Z0.500 (R F4042.0, product F4042.0)
+  faster line 6388: G1 X24.004 Y180.010 Z0.500  R F919.0 -> product F1000.0; previous: G1 X23.715 Y179.510 Z0.500 (R F3937.0, product F3937.0)
+  faster line 6604: G1 X23.429 Y77.510 Z0.500  R F954.0 -> product F1000.0; previous: G1 X23.186 Y78.010 Z0.500 (R F3827.0, product F3827.0)
+  faster line 6667: G1 X64.010 Y29.004 Z0.500  R F919.0 -> product F1000.0; previous: G1 X64.510 Y28.715 Z0.500 (R F3768.0, product F3768.0)
+  faster line 6720: G1 X23.510 Y63.101 Z0.500  R F715.0 -> product F1000.0; previous: G1 X23.250 Y63.510 Z0.500 (R F3820.0, product F3820.0)
+  faster line 6788: G1 X51.123 Y29.010 Z0.500  R F903.0 -> product F1000.0; previous: G1 X51.510 Y28.734 Z0.500 (R F3767.0, product F3767.0)
+  faster line 6796: G1 X50.510 Y29.452 Z0.500  R F950.0 -> product F1000.0; previous: G1 X51.010 Y29.091 Z0.500 (R F3732.0, product F3732.0)
+  faster line 6829: G1 X23.441 Y51.010 Z0.500  R F974.0 -> product F1000.0; previous: G1 X23.060 Y51.510 Z0.500 (R F3842.0, product F3842.0)
+  faster line 6886: G1 X39.696 Y29.010 Z0.500  R F823.0 -> product F1000.0; previous: G1 X40.010 Y28.749 Z0.500 (R F3767.0, product F3767.0)
+  faster line 6894: G1 X39.102 Y29.510 Z0.500  R F759.0 -> product F1000.0; previous: G1 X39.510 Y29.166 Z0.500 (R F3724.0, product F3724.0)
+  faster line 6902: G1 X38.514 Y30.010 Z0.500  R F990.0 -> product F1000.0; previous: G1 X39.010 Y29.588 Z0.500 (R F3683.0, product F3683.0)
+  faster line 7065: G1 X166.510 Y28.429 Z0.500  R F954.0 -> product F1000.0; previous: G1 X166.010 Y28.186 Z0.500 (R F3829.0, product F3829.0)
+  faster line 7161: G1 X193.010 Y28.441 Z0.500  R F974.0 -> product F1000.0; previous: G1 X192.510 Y28.060 Z0.500 (R F3946.0, product F3946.0)

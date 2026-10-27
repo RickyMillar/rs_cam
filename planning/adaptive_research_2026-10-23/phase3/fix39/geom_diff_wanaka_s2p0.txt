@@ -1,0 +1,6 @@
+op 1 motion lines: R 15108, product 15105
+geometry: FIRST DIFFERENCE at op-1 motion line 23:
+  R:       ('G1 X118.013 Y126.334 Z-5.460', 1810.0)
+  product: ('G3 X117.374 Y125.652 Z-5.460 I0.534 J-2.293', 404.0)
+fed lines: equal 3, product slower 16 (ratio min 0.193), product faster 0 (ratio max 0.000)
+G-code plunges (vertical G1 descents): R 1262, product 1262

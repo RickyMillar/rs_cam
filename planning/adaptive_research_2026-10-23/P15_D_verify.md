@@ -5894,3 +5894,77 @@ are not logged. The 0.5 mm stock map cannot resolve a 0.01 mm sliver, so this la
 - the sliver-safe read could ignore a sliver narrower than a set width.
 
 Not committed.
+
+## D58: the product strategy `geodesic_adaptive` (geodesic-integration 26d901943) against R, op 1 (fix39)
+
+**Verdict: the port holds. Every geometry-only reading of op 1 equals R. The op-1 clock is +0.04 to +0.44 % over R, below
+the expected +3.5 %. All three exports pass with no override. The per-move cap census cannot be done from the CLI output
+(item 3).**
+
+**Setup.** Fixture worktree detached at clean 26d901943; release build without the research feature; no env variables
+(`fix39/run_prod.sh` unsets all four research variables; RUST_LOG=info); no export override. Job files
+`fix39/jobs/*_geodesic_adaptive.toml` (`fix39/make_jobs.py`; tomllib diff in `jobs/diff.txt`). Against R's files
+(Corne `d44/k_body_cp_edges_s2p1_d44_rest_regions.toml`, wanaka `fix33/jobs/wanaka200_body_cp_edges_d44_s{2p0,3p5}.toml`),
+exactly two fields move:
+- op 1 `clearing_strategy`: agent_search → geodesic_adaptive;
+- the edge op (Corne toolpath 5, wanaka toolpath 7) `enabled`: true → false. It is SKIPPED, not put back on the
+  silhouette: its DerivedRestRegions boundary waits for step 7.5.
+
+Flags as R: Corne `--setup 0 --skip 4`, wanaka `--setup 0 --resolution 0.6`. The product applies StockDepth and CutFeed by
+itself (`adaptive3d/mod.rs:322-327`). R references: Corne fix36/corne_pick_1 (D52, = D45/D49 op 1), wanaka s2.0
+fix36/wanaka_pick_1 (D52), wanaka s3.5 fix34/wanaka_s3p5 (D49 = D47 op 1). Sims deleted; worktree clean at the end.
+
+**1. Geometry-only readings** (`load_table.json`, `geom_diff_*.txt`, `path_dev.py`, `audit_*_tp1.txt`, `tpsplit_*.txt`)
+
+| op 1 | L max | L p99 | L p95 | mm > own bound | G-code plunges | descent events | removed mm³ | program.nc op 1 |
+|---|---|---|---|---|---|---|---|---|
+| Corne B s2.1, R | 0.999 | 0.493 | 0.392 | 171.6 | 612 | 382 | 218084 | |
+| Corne B s2.1, product | 0.999 | 0.493 | 0.392 | 171.6 | 612 | 382 | 218084 | every motion line equal without F (6948) |
+| wanaka s2.0, R | 0.720 | 0.375 | 0.358 | 107.4 | 1262 | 581 | 591516 | |
+| wanaka s2.0, product | 0.720 | 0.375 | 0.358 | 107.4 | 1262 | 581 | 591516 | text differs from line 23 (arc fit); path within 0.055 mm |
+| wanaka s3.5, R | 0.992 | 0.642 | 0.625 | 16.2 | 760 | (audit stopped, D47) | 577240 | |
+| wanaka s3.5, product | 0.992 | 0.642 | 0.625 | 16.2 | 760 | (audit runs) | 577240 | every motion line equal without F (7624) |
+
+- Wanaka s2.0: the first differing line is op-1 motion line 23: R `G1 X118.013 Y126.334 Z-5.460` (F1810), product
+  `G3 X117.374 Y125.652 Z-5.460 I0.534 J-2.293` (F404). The arc fitter groups moves by feed, so a changed feed changes the
+  arcs. The path does not move: dense points every 0.05 mm, the deviation each way is max 0.0548 mm, with 0 points over
+  0.06 mm (arc_tolerance 0.05). The area oracle reads 86833 against 86831 samples (the arc sampling), and every load
+  number is equal. Line count 15105 against 15108. Not a port defect.
+- The s3.5 descent count: R's audit stopped on its move map (D47); the product's audit runs. The G-code plunges are equal
+  (760).
+
+**2. Op-1 acceleration clock** (summary, s; cutting / entry / linking / rapid)
+
+| op 1 | R | product | product / R |
+|---|---|---|---|
+| Corne B s2.1 | 1075.5 (618.8 / 189.1 / 174.3 / 93.3) | 1080.2 (623.5 / 189.1 / 174.3 / 93.3) | +0.44 % |
+| wanaka s2.0 | 2261.9 | 2271.9 (1209.8 / 636.8 / 344.6 / 80.6) | +0.44 % |
+| wanaka s3.5 | 1323.6 | 1324.1 (659.5 / 397.3 / 186.5 / 80.9) | +0.04 % |
+
+All of the difference is in cutting (+4.7 s on Corne). Below the pre-registered +3.5 %, far below the 6 % line. The
+fixture ratio of §6 does not carry over: on these parts, few fed moves change (item 3).
+
+**3. The capped moves.** The cap (`Move::feed_cap`) is not in any CLI output. The toolpath JSON (`debug_trace`: summary,
+spans, hotspots, annotations), the sim trace samples and the info log have no feed-cap field or line. So I cannot count
+the capped moves or check F ≤ cap × commanded move by move from the G-code. That check needs the cap in an output (or the
+census sentry `a_geodesic_cap_survives_every_dressup_s7_4`). What the output gives, the emitted F against R's along the
+same path (equal lines; on wanaka s2.0 by the nearest dense point):
+- Corne: 6509 fed lines equal, 107 slower (F ratio down to 0.272), 3 faster. By length: equal 30.1 m, slower 137 mm,
+  faster 4 mm.
+- wanaka s2.0: equal 77.9 m, slower 152 mm, faster 25 mm.
+- wanaka s3.5: 7066 equal, 46 slower (down to 0.552), 14 faster (up to 1.399). By length: equal 44.0 m, slower 53 mm,
+  faster 9 mm.
+- The faster lines (`geom_diff_*.txt`): 15 of 17 are at G-code Z 0.5 (0.5 mm over the stock top, in air), where R's
+  chain took a short step after a fast move and fed it at 715–1233. The product feeds it at the commanded 1000 / 1519,
+  as in §6.2.
+- Two are at a cut level:
+  - wanaka s3.5 line 3548 (Z −10.42, 0.23 mm): R F862, product F1000 = commanded, so no cap below 1 there.
+  - Corne line 3838 (Z −18.0): R F1021, product F4000 (modal). The lines around it are F4000 in both R and the product
+    (687 lines of the Corne program have F4000, above `feed_max_rate = 3000`). The F4000 feed is R's behaviour too, not
+    the port's. Whether that run cuts stock is not measured (the sims are deleted).
+- No product feed exceeds R's except on these 17 lines.
+
+**4. Export.** All three: rc 0, 0 refusals, with no override. The only stderr note is "Exceeded without refusing the
+export" (depth of cut against the rigidity rule; Corne copy op 14.5 against 4.5 mm).
+
+Not committed.

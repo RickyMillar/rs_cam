@@ -1,0 +1,50 @@
+{
+ "corne_B_s2p1 R": {
+  "read": 59255,
+  "L_max": 0.999,
+  "L_p99": 0.493,
+  "L_p95": 0.392,
+  "mm_over_own": 171.6,
+  "xy_mm": 16669.3
+ },
+ "corne_B_s2p1 product": {
+  "read": 59255,
+  "L_max": 0.999,
+  "L_p99": 0.493,
+  "L_p95": 0.392,
+  "mm_over_own": 171.6,
+  "xy_mm": 16669.3
+ },
+ "wanaka_s2p0 R": {
+  "read": 86831,
+  "L_max": 0.72,
+  "L_p99": 0.375,
+  "L_p95": 0.358,
+  "mm_over_own": 107.4,
+  "xy_mm": 50030.2
+ },
+ "wanaka_s2p0 product": {
+  "read": 86833,
+  "L_max": 0.72,
+  "L_p99": 0.375,
+  "L_p95": 0.358,
+  "mm_over_own": 107.4,
+  "xy_mm": 50031.2
+ },
+ "wanaka_s3p5 R": {
+  "read": 48212,
+  "L_max": 0.992,
+  "L_p99": 0.642,
+  "L_p95": 0.625,
+  "mm_over_own": 16.2,
+  "xy_mm": 27981.6
+ },
+ "wanaka_s3p5 product": {
+  "read": 48212,
+  "L_max": 0.992,
+  "L_p99": 0.642,
+  "L_p95": 0.625,
+  "mm_over_own": 16.2,
+  "xy_mm": 27981.6
+ }
+}

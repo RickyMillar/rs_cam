@@ -1,0 +1,7 @@
+op 1 motion lines: R 6948, product 6948
+geometry: IDENTICAL (every motion line equal without F)
+fed lines: equal 6509, product slower 107 (ratio min 0.272), product faster 3 (ratio max 3.918)
+G-code plunges (vertical G1 descents): R 612, product 612
+  faster line 1460: G1 X94.824 Y106.500 Z0.500  R F1144.0 -> product F1519.0; previous: G1 X94.500 Y106.772 Z0.500 (R F4000.0, product F4000.0)
+  faster line 1643: G1 X115.826 Y102.000 Z0.500  R F1233.0 -> product F1519.0; previous: G1 X115.500 Y102.463 Z0.500 (R F4000.0, product F4000.0)
+  faster line 3838: G1 X48.331 Y59.853 Z-18.000  R F1021.0 -> product F4000.0; previous: G1 X48.637 Y60.356 Z-18.000 (R F4000.0, product F4000.0)

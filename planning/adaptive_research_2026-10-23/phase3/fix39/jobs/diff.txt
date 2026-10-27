@@ -1,0 +1,9 @@
+== corne_B_s2p1: d44/k_body_cp_edges_s2p1_d44_rest_regions.toml -> corne_B_s2p1_geodesic_adaptive.toml
+  setups[0].toolpaths[0].operation.params.clearing_strategy: 'agent_search' -> 'geodesic_adaptive'
+  setups[0].toolpaths[1].enabled: True -> False
+== wanaka_s2p0: fix33/jobs/wanaka200_body_cp_edges_d44_s2p0.toml -> wanaka_s2p0_geodesic_adaptive.toml
+  setups[0].toolpaths[0].operation.params.clearing_strategy: 'agent_search' -> 'geodesic_adaptive'
+  setups[0].toolpaths[1].enabled: True -> False
+== wanaka_s3p5: fix33/jobs/wanaka200_body_cp_edges_d44_s3p5.toml -> wanaka_s3p5_geodesic_adaptive.toml
+  setups[0].toolpaths[0].operation.params.clearing_strategy: 'agent_search' -> 'geodesic_adaptive'
+  setups[0].toolpaths[1].enabled: True -> False
