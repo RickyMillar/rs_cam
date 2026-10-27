@@ -1,0 +1,110 @@
+{
+ "run": "fix37/corne_B_s2p1",
+ "c40_records": 398,
+ "descent_moves": 969,
+ "z_offset_move_end_minus_record": 0.15,
+ "air_quantum_mm3": 0.027,
+ "causes": {
+  "LargeZ": {
+   "c40_records": 231,
+   "records_matched": 231,
+   "descent_moves": 449,
+   "time_s": 91.2,
+   "air_share": 0.198,
+   "median_move_len_mm": 4.75,
+   "median_drop_mm": 5.0
+  },
+  "Reentry2d/Turn": {
+   "c40_records": 49,
+   "records_matched": 49,
+   "descent_moves": 151,
+   "time_s": 45.6,
+   "air_share": 0.598,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 8.0
+  },
+  "Reentry2d/OverBound": {
+   "c40_records": 46,
+   "records_matched": 46,
+   "descent_moves": 85,
+   "time_s": 25.9,
+   "air_share": 0.279,
+   "median_move_len_mm": 5.05,
+   "median_drop_mm": 6.5
+  },
+  "unmatched": {
+   "c40_records": 0,
+   "records_matched": 0,
+   "descent_moves": 164,
+   "time_s": 15.4,
+   "air_share": 0.904,
+   "median_move_len_mm": 5.92,
+   "median_drop_mm": null
+  },
+  "Reentry2d/Mixed": {
+   "c40_records": 22,
+   "records_matched": 22,
+   "descent_moves": 49,
+   "time_s": 14.8,
+   "air_share": 0.37,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 6.5
+  },
+  "Waterline": {
+   "c40_records": 34,
+   "records_matched": 30,
+   "descent_moves": 38,
+   "time_s": 6.9,
+   "air_share": 0.303,
+   "median_move_len_mm": 3.02,
+   "median_drop_mm": 1.75
+  },
+  "Reentry2d/ClosedSeam": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 9,
+   "time_s": 3.6,
+   "air_share": 0.551,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 6.5
+  },
+  "HeldLinkRefused": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 7,
+   "time_s": 2.3,
+   "air_share": 0.428,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 8.0
+  },
+  "Reentry2d/CoreHandOff": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 7,
+   "time_s": 1.9,
+   "air_share": 0.146,
+   "median_move_len_mm": 2.23,
+   "median_drop_mm": 6.5
+  },
+  "Start": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 7,
+   "time_s": 1.8,
+   "air_share": 0.088,
+   "median_move_len_mm": 1.2,
+   "median_drop_mm": 6.5
+  },
+  "LargeZHeld": {
+   "c40_records": 1,
+   "records_matched": 1,
+   "descent_moves": 3,
+   "time_s": 0.6,
+   "air_share": 0.209,
+   "median_move_len_mm": 5.7,
+   "median_drop_mm": 6.26
+  }
+ },
+ "total_time_s": 210.1,
+ "total_air_share": 0.369
+}

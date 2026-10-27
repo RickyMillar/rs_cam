@@ -1,0 +1,10 @@
+fix37/wanaka_s2p0/program.nc G0 1461, XY 21845 mm, median 0.0 mm, crossing the part 63 (12299 mm)
+   z     0.5: G1   158 cut       99 mm  plunges    5  G0   15 (     16 mm)
+   z   -14.9: G1   196 cut        8 mm  plunges   72  G0  777 (  11088 mm)
+   z   -16.5: G1    20 cut       25 mm  plunges    6  G0   19 (    324 mm)
+   z   -16.6: G1    33 cut       42 mm  plunges    6  G0   23 (    556 mm)
+   z   -16.7: G1    20 cut       29 mm  plunges   10  G0   48 (    664 mm)
+   z   -16.8: G1    16 cut       26 mm  plunges    8  G0   10 (    160 mm)
+   z   -16.9: G1    19 cut       32 mm  plunges   15  G0   63 (    970 mm)
+   z   -17.3: G1    17 cut       19 mm  plunges    6  G0   40 (    769 mm)
+   levels with a cut: 33; z of cut moves, rounded 0.1: min -17.4 max 0.5

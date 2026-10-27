@@ -5779,3 +5779,59 @@ doubles the plan work. Plan B on every region is worse on cycle on Corne (+6.7 %
 a plan-A-only run (no env path); parts other than Corne and wanaka200, where B can win.
 
 Simulation files: all 7 deleted. Not committed.
+
+## D54: D50 (the edge op starts at op 1's left-stock top), wanaka s3.5 / s2.0 and Corne B s2.1, no override (fix37, tree 607e52730)
+
+**Setup.** Fixture worktree detached at clean 607e52730; release build with `rs_cam_core/research`. `fix37/run_one.sh` and
+`analyse.sh` are copies of fix35/fix34's, with the same job files, flags and StockDepth split. Exports: all three pass
+with no override (0 refusals). Op 1 and the Corne copy op are unchanged (same op-1 clocks and load reads as D49/D51).
+Simulation files deleted. Reference for wanaka s2.0: the D51 run on 453d52571 (fix35), the D49 tree.
+
+**1. Edge op against D49** (summary clock, s; G-code pecks = vertical G1 descents; air = air cut over cut time, trace)
+
+| run | edge op levels | edge op s | cutting / entry / linking / rapid | G0 (XY mm) | pecks (sites) | air | removed mm³ |
+|---|---|---|---|---|---|---|---|
+| wanaka s3.5, D49 | 4 (19.54 → 4.0) | 620.7 | 35.1 / 256.3 / 67.6 / 261.7 | 902 (15435) | 534 | 48 % | 10440 |
+| wanaka s3.5, D54 | 1 (4.0) | 530.6 | 26.5 / 215.4 / 50.0 / 238.7 | 828 (12297) | 415 (185) | 48 % | 10348 |
+| wanaka s2.0, D51 tree | 4 | 922.3 | — / — / — / 247.9 | 1051 (15040) | 938 (345) | 60 % | 1820 |
+| wanaka s2.0, D54 | 1 (4.0) | 1036.4 | 15.9 / 536.9 / 87.4 / 396.2 | 1461 (21845) | 916 (339) | 60 % | 1805 |
+| Corne s2.1 B, D49 | 4 (14.04 → 0.5) | 453.9 | 169.8 / 13.3 / 71.2 / 199.6 | 413 (6272) | 167 | 47 % | 53577 |
+| Corne s2.1 B, D54 | 3 (11.0 → 0.5) | 345.7 | 130.6 / 10.4 / 55.0 / 149.6 | 309 (4668) | 125 (96) | 46 % | 53472 |
+
+- D50 works as stated: the level list starts at the left-stock top ("Z levels computed count=1 z_top=4.0" on wanaka;
+  "count=3 z_top=11.0" on Corne, against count=4 before). The removed volume is the same within 0.2 %.
+- Corne: op 5 −108.2 s (−24 %). Rapids −50 s, cutting −39 s.
+- wanaka s3.5: op 7 −90.1 s (−15 %).
+- **wanaka s2.0: op 7 is slower, +114.1 s (+12 %).** The rapids rise from 1051 to 1461 G0 (+6.8 m of XY; 247.9 → 396.2 s).
+  This op removes 1805 mm³ in 1036 s: 5.8 s of cut that removes stock, 536.9 s of entry, 396.2 s of rapid.
+- **The pecks did not fall on wanaka.** With one level, each site still descends in a ladder of 5.46 mm steps: median 3
+  descents per site, max 5 (s2.0: 916 descents at 339 sites, 4625 mm of feed descent; s3.5: 415 at 185, 1878 mm). The ladder
+  starts above the old top level, through ground op 1 has already cleared. So the entry time stays: 536.9 s (s2.0),
+  215.4 s (s3.5). On Corne the ladder is gone: median 1 descent per site, median drop 0.50 mm.
+- Outside op 1's reach: wanaka 0 mm³ (both runs). Corne (`fix37/corne_reach.txt`): 17 mm³ beyond 9.5 mm, as D49.
+
+**2. Job clocks against CP** (summary, s)
+
+| run | op 1 | edge op | copy | job | CP | job / CP | op 1 + edge op / CP op 1 |
+|---|---|---|---|---|---|---|---|
+| wanaka s3.5 | 1323.6 | 530.6 | — | 1854.2 | 5776.8 | 0.32 (D49 0.34) | — |
+| wanaka s2.0 | 2261.9 | 1036.4 | — | 3298.3 | 5776.8 | 0.57 (D51 0.55) | — |
+| Corne B s2.1 | 1075.5 | 345.7 | 1732.6 | 3153.7 | 2841 | 1.11 (D49 1.15) | 1421.2 / 1427.2 = 1.00 (D49 1.07) |
+
+On Corne, op 1 + op 5 now equals CP's op 1 (−6.0 s). All of the Corne job gap is the copy op (1732.6 against
+1413.6 s, G-LEVELPHASE).
+
+**3. Band left** (the same methods as D49)
+- wanaka (inside 0–9 mm of the outline, > 0.8 mm over the target): s3.5 3856 mm² (D49 3856), s2.0 3652 mm² (D51 tree 3651);
+  CP 3589. Stock above the target inside the part: s3.5 25530 mm³ (D49 25505), s2.0 21196 (21194).
+- Corne (D41 method): after op 5, outside 0–3 / 3–6.2 / 6.2–9 mm: 193 / 0 / 18 mm²; after the copy op 190 / 0 / 18. Same
+  as D49.
+
+**Findings.**
+- D50 cuts the edge op's time on Corne (−24 %) and on wanaka s3.5 (−15 %) with the same band and volume.
+- On wanaka the entry is still a peck ladder of about 3 × 5.46 mm per site from above the old top level, through air. This
+  is the largest part of op 7 (s2.0: 537 of 1036 s). A candidate defect for the lead to file: the entry ladder does not
+  start at the D50 top.
+- wanaka s2.0's op 7 is a poor trade: 1036 s for 1805 mm³. Its rapids rose with D50 (+410 G0). The cause is not measured.
+
+Not committed.
