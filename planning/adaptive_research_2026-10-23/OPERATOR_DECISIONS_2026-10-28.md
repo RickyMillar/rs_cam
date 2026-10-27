@@ -45,6 +45,11 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 - The export only warns about it ("Exceeded without refusing"), and does not refuse.
 - The earlier D54 numbers came from an even deeper cut (12 mm, 36 %), so they are void.
 - D62 checks whether shipped CP-only jobs breach one DPP in their rest ops too.
+- **D62:** shipped CP-only jobs anchor correctly. But **D63** shows that a CP + CP pair with mismatched boundaries can breach it too. The rest op's boundary clear removes a band its tool still reaches.
+- **D63 (research 805368f98):** the start-level part is fixed. The cut part needs your choice, set out in `phase3/d63/README.md` §6:
+  1. keep the band in the rest op's planner stock (G-CLIPAIR for every strategy): holds the rule, moves shipped output;
+  2. an edge pass per level where the band stands: smaller; C24's recommended next step;
+  3. refuse rest ops whose simulated cut exceeds one DPP, and warn for other ops (shipped CP has local over-DPP spots, G-AXIALDOC). C24 recommends this as a guard beside 1 or 2.
 - Until G-RESTDOC is fixed, test-cut op 1 (Geodesic Adaptive) alone, or with an edge op on a conservative setup that you check by eye.
 
 ## Decisions for the operator
