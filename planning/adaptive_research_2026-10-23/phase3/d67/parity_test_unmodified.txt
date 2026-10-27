@@ -1,0 +1,52 @@
+
+running 4 tests
+[ContourParallel / boundary=left-half / clipped] effective_boundary: 1 polygon(s), offset_failure None (empty => COLLAPSE escape hatch: the path ships UNCLIPPED with only the report-only boundary_clip_dropped finding, and this fixture would be measuring the wrong thing — bar P1 refuses that)
+[ContourParallel / boundary=left-half / clipped] effective_boundary: 1 polygon(s), offset_failure None (empty => COLLAPSE escape hatch: the path ships UNCLIPPED with only the report-only boundary_clip_dropped finding, and this fixture would be measuring the wrong thing — bar P1 refuses that)
+PRECLEAR ENGAGEMENT: 4005 cells outside the containment; the planner reads fully-cleared on 1745 with the boundary set vs 0 without it.
+.[ContourParallel / boundary=left-half / clipped] EMITTED (pre-clip) cutting endpoints: 607 inside containment⊖r, 428 in the reachable band (the clip rapids every one of these), 135 fully OUTSIDE the containment (waterline_cleanup leak, radius 15.053..23.150 mm vs mesh radius 20.0 + tool radius 3.175). max cut-endpoint x = 23.108, containment edge x = 0.0.
+
+=== ContourParallel / boundary=left-half / clipped ===
+grid 7921 cells; boundary pre-clear zone 4005 cells (50.6%); F-027 border-clear zone 0 cells; simulated moves 1605 (718 cutting)
+| zone                         |  cells |  agree |  plan> |   sim> |  max dz |   sim>% |
+| inside effective boundary    |   2464 |   2215 |     11 |    238 |   9.376 |    9.7% |
+| reachable band (b\eff)       |   1452 |    919 |      2 |    531 |  24.500 |   36.6% |
+| OUTSIDE boundary (precleared) |   4005 |      2 |      0 |   4003 |  25.000 |  100.0% |
+| whole grid                   |   7921 |   3136 |     13 |   4772 |  25.000 |   60.2% |
+B1 in-scope over-claim: 769 of 3916 in-containment cells = 19.64%
+[ContourParallel / boundary=left-half / clipped] EMITTED (pre-clip) cutting endpoints: 607 inside containment⊖r, 428 in the reachable band (the clip rapids every one of these), 135 fully OUTSIDE the containment (waterline_cleanup leak, radius 15.053..23.150 mm vs mesh radius 20.0 + tool radius 3.175). max cut-endpoint x = 23.108, containment edge x = 0.0.
+
+=== ContourParallel / boundary=left-half / clipped ===
+grid 7921 cells; boundary pre-clear zone 4005 cells (50.6%); F-027 border-clear zone 0 cells; simulated moves 1605 (718 cutting)
+| zone                         |  cells |  agree |  plan> |   sim> |  max dz |   sim>% |
+| inside effective boundary    |   2464 |   2215 |     11 |    238 |   9.376 |    9.7% |
+| reachable band (b\eff)       |   1452 |    919 |      2 |    531 |  24.500 |   36.6% |
+| OUTSIDE boundary (precleared) |   4005 |      2 |      0 |   4003 |  25.000 |  100.0% |
+| whole grid                   |   7921 |   3136 |     13 |   4772 |  25.000 |   60.2% |
+B1 in-scope over-claim: 769 of 3916 in-containment cells = 19.64%
+[ContourParallel / boundary=left-half / clipped] clip cost (reported, not gated): 428 of 1170 emitted cutting moves (36.6%) sit in the reachable band and become rapids.
+.[GeodesicAdaptive / boundary=left-half / clipped] effective_boundary: 1 polygon(s), offset_failure None (empty => COLLAPSE escape hatch: the path ships UNCLIPPED with only the report-only boundary_clip_dropped finding, and this fixture would be measuring the wrong thing — bar P1 refuses that)
+[GeodesicAdaptive / boundary=left-half / clipped] EMITTED (pre-clip) cutting endpoints: 3578 inside containment⊖r, 654 in the reachable band (the clip rapids every one of these), 312 fully OUTSIDE the containment (waterline_cleanup leak, radius 15.053..23.150 mm vs mesh radius 20.0 + tool radius 3.175). max cut-endpoint x = 23.108, containment edge x = 0.0.
+
+=== GeodesicAdaptive / boundary=left-half / clipped ===
+grid 7921 cells; boundary pre-clear zone 4005 cells (50.6%); F-027 border-clear zone 0 cells; simulated moves 5456 (3745 cutting)
+| zone                         |  cells |  agree |  plan> |   sim> |  max dz |   sim>% |
+| inside effective boundary    |   2464 |   2207 |     18 |    239 |   9.313 |    9.7% |
+| reachable band (b\eff)       |   1452 |    896 |     17 |    539 |  24.001 |   37.1% |
+| OUTSIDE boundary (precleared) |   4005 |     69 |      0 |   3936 |  25.000 |   98.3% |
+| whole grid                   |   7921 |   3172 |     35 |   4714 |  25.000 |   59.5% |
+B1 in-scope over-claim: 778 of 3916 in-containment cells = 19.87%
+[GeodesicAdaptive / boundary=left-half / clipped] clip cost (reported, not gated): 654 of 4544 emitted cutting moves (14.4%) sit in the reachable band and become rapids.
+.[GeodesicAdaptive / boundary=left-half / clipped] effective_boundary: 1 polygon(s), offset_failure None (empty => COLLAPSE escape hatch: the path ships UNCLIPPED with only the report-only boundary_clip_dropped finding, and this fixture would be measuring the wrong thing — bar P1 refuses that)
+[GeodesicAdaptive / boundary=left-half / clipped] EMITTED (pre-clip) cutting endpoints: 3578 inside containment⊖r, 654 in the reachable band (the clip rapids every one of these), 312 fully OUTSIDE the containment (waterline_cleanup leak, radius 15.053..23.150 mm vs mesh radius 20.0 + tool radius 3.175). max cut-endpoint x = 23.108, containment edge x = 0.0.
+
+=== GeodesicAdaptive / boundary=left-half / clipped ===
+grid 7921 cells; boundary pre-clear zone 4005 cells (50.6%); F-027 border-clear zone 0 cells; simulated moves 5456 (3745 cutting)
+| zone                         |  cells |  agree |  plan> |   sim> |  max dz |   sim>% |
+| inside effective boundary    |   2464 |   2207 |     18 |    239 |   9.313 |    9.7% |
+| reachable band (b\eff)       |   1452 |    896 |     17 |    539 |  24.001 |   37.1% |
+| OUTSIDE boundary (precleared) |   4005 |     69 |      0 |   3936 |  25.000 |   98.3% |
+| whole grid                   |   7921 |   3172 |     35 |   4714 |  25.000 |   59.5% |
+B1 in-scope over-claim: 778 of 3916 in-containment cells = 19.87%
+.
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+

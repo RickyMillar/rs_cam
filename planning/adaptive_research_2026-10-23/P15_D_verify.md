@@ -6403,3 +6403,39 @@ entry 267, vertical 213, departing 191, waterline 1301 (12 over the screen, exac
 763 (89 over the screen, sim peak 0.898, exact load x cap / feed peak 0.374)".
 
 Not committed. Worktree clean, detached at 7ee3d3226.
+
+## D67: G-GEOWATERLEAK: is B2 a cut outside the boundary? (for C24; probe in phase3/d67, clean 7503fa3f1)
+
+**Verdict: no cut outside the boundary. Every B2 endpoint is a waterline-cleanup cutting move: ClearingCut, Linear;
+none is a link, a plunge or a routed travel. The clip removes all of them (B2 after the clip = 0). With
+`centre_boundary` set as a session sets it, none is emitted (B2 = 0). The sim cells "outside" that are cut lie in one row
+of cells straddling the edge: cell centres 0.108 mm beyond x = 0, none more than one cell (0.529 mm) out. CP has the same
+row. So B2 counts pre-clip waterline contours of the fixture, which runs with `centre_boundary` empty. Geodesic's 312
+against CP's 135 is more waterline contours, not a different move class.**
+
+**Setup.** Fixture worktree detached at clean 7503fa3f1; release, `--features test-support`.
+- The existing test `adaptive3d_boundary_clear_parity` (unmodified): 4 passed. Its output is in
+  `phase3/d67/parity_test_unmodified.txt`. B2 CP 135, Geodesic 312.
+- A temporary probe test `tests/d67_waterleak_probe.rs` (the lead allowed it as an instrument; no product source
+  changed). It uses the fixture of the parity test (hemisphere R 20, containment rectangle (−23.5..0, ±23.5), the same
+  params). Section by the runtime annotations (clearing level / waterline cleanup), intent and move kind.
+- Copy and output in `phase3/d67/` (`d67_waterleak_probe.rs`, `probe_output.txt`). The probe was removed afterwards;
+  `git status` shows a clean tree at 7503fa3f1.
+
+| strategy | centre_boundary | B2 pre-clip (by section / intent / kind) | B2 after clip | sim cells outside cut below STOCK_TOP_Z: clipped path | the same, unclipped path |
+|---|---|---|---|---|---|
+| ContourParallel | empty (fixture) | 135: waterline cleanup, ClearingCut, Linear (133 sloped, 2 flat) | 0 | 42, deepest 14.455 mm, farthest cell centre 0.108 mm outside, 0 beyond one cell | 3097, deepest 24.5 mm, up to 23.4 mm outside |
+| ContourParallel | = effective | 0 | 0 | 43, deepest 14.388, 0.108 mm, 0 beyond one cell | = clipped (43) |
+| GeodesicAdaptive | empty (fixture) | 312: waterline cleanup, ClearingCut, Linear (305 sloped, 7 flat) | 0 | 78, deepest 14.399, 0.108 mm, 0 beyond one cell | 3078, deepest 24.0 mm, up to 23.4 mm outside |
+| GeodesicAdaptive | = effective | 0 | 0 | 20, deepest 14.388, 0.108 mm, 0 beyond one cell | = clipped (20) |
+
+- No B2 endpoint is EntryPlunge, Linking (feed-rate routed travel or held link) or Retract. The question "feed-rate
+  travels and plunges counted as cutting moves" is answered no: they are waterline contours.
+- The "outside" cut cells: the stock grid's last column straddles the edge (cell 0.529 mm, centre at x = 0.108). A
+  cutter whose centre sits on the containment ⊖ r ring reaches x = 0 and cuts that cell. This is grid quantisation of a
+  legal cut at the boundary, the same for both strategies. With `centre_boundary` set, Geodesic has fewer such cells
+  than CP (20 against 43).
+- The unmodified test's OUTSIDE-zone "agree" counts (CP 2, Geodesic 69; my D67 partial note to C24) most likely
+  lie in this same edge row (not checked cell by cell); the probe shows no cut beyond it.
+
+Not committed.

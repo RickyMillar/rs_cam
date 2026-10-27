@@ -1,0 +1,29 @@
+
+running 1 test
+
+=== D67 ContourParallel, centre_boundary EMPTY (the fixture) ===
+B2 pre-clip: 135
+      2  waterline cleanup | ClearingCut | Linear | flat
+    133  waterline cleanup | ClearingCut | Linear | sloped
+B2 after clip_toolpath_to_boundary: 0
+sim cells OUTSIDE the containment cut below STOCK_TOP_Z: clipped path 42 (deepest 14.455 mm; farthest cell centre 0.108 mm outside; 0 cells more than one cell (0.529 mm) outside); unclipped path 3097 (deepest 24.500 mm; farthest 23.392 mm; 3008 beyond one cell)
+
+=== D67 ContourParallel, centre_boundary = effective (as a session sets it) ===
+B2 pre-clip: 0
+B2 after clip_toolpath_to_boundary: 0
+sim cells OUTSIDE the containment cut below STOCK_TOP_Z: clipped path 43 (deepest 14.388 mm; farthest cell centre 0.108 mm outside; 0 cells more than one cell (0.529 mm) outside); unclipped path 43 (deepest 14.388 mm; farthest 0.108 mm; 0 beyond one cell)
+
+=== D67 GeodesicAdaptive, centre_boundary EMPTY (the fixture) ===
+B2 pre-clip: 312
+      7  waterline cleanup | ClearingCut | Linear | flat
+    305  waterline cleanup | ClearingCut | Linear | sloped
+B2 after clip_toolpath_to_boundary: 0
+sim cells OUTSIDE the containment cut below STOCK_TOP_Z: clipped path 78 (deepest 14.399 mm; farthest cell centre 0.108 mm outside; 0 cells more than one cell (0.529 mm) outside); unclipped path 3078 (deepest 24.001 mm; farthest 23.392 mm; 2989 beyond one cell)
+
+=== D67 GeodesicAdaptive, centre_boundary = effective (as a session sets it) ===
+B2 pre-clip: 0
+B2 after clip_toolpath_to_boundary: 0
+sim cells OUTSIDE the containment cut below STOCK_TOP_Z: clipped path 20 (deepest 14.388 mm; farthest cell centre 0.108 mm outside; 0 cells more than one cell (0.529 mm) outside); unclipped path 20 (deepest 14.388 mm; farthest 0.108 mm; 0 beyond one cell)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+

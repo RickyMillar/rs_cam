@@ -45,3 +45,20 @@ So a feed move outside the containment does not reach the program, on either str
 1. **Make the bar measure what it names.** Count the B2 endpoints of the `ClearingCut` intent only (the waterline), or count after the shipped clips. Then CP and Geodesic read the same leak, and the per-strategy pin goes. Test-only.
 2. **The real defect (D4 F-B, both strategies):** give `waterline_cleanup` the boundary. Drop a contour, or trim it, outside the centre containment before it is pushed. The centre clip already does this when `centre_boundary` is set, so the change is to pass the containment into the cut it makes, so that a waterline contour is not traced and re-entered across the boundary. Scope: `clearing.rs:1763-1850`, behind the existing `ctx.centre_clip`.
 3. **The exposure (both strategies):** a collapsed boundary should refuse generation (as a missing boundary source does), not ship unclipped with a report-only finding. That is a product decision for the operator, and the only case where a cut outside a declared boundary can reach the machine.
+
+## 6. D10's partial data (fix47, the unmodified test at a clean `7503fa3f1`)
+
+| | CP | Geodesic |
+|---|---|---|
+| B2, pre-clip endpoints outside the containment | 135 | 312 |
+| leak radius | 15.053–23.150 | 15.053–23.150 |
+| max cut-endpoint x | 23.108 | 23.108 |
+| inside containment⊖r / in the band | 607 / 428 | 3578 / 654 |
+| OUTSIDE zone of the clipped sim (4005 cells): agree / planner higher / sim higher | 2 / 0 / 4003 | 69 / 0 / 3936 |
+
+- The same leak radii and max x on both strategies fit item 2: the outside endpoints lie in the same place on both. Geodesic adds more moves there, and does not reach further.
+- The 69 "agree" cells (|planner − sim| ≤ one cell) are not yet proof of a cut outside. Two readings fit:
+  - (a) The clipped sim cut those cells down to near the planner's cleared floor: a cut outside.
+  - (b) The planner did NOT clear them, and both stand near the stock top. Geodesic's planner keeps the stock within its reach beyond the raw boundary (the outer-band clip, G-CLIPAIR), where CP's plain boundary clear empties every cell outside.
+  Reading (b) needs no cut outside. The probe decides it: for the 69 cells, print the planner top, the sim top and `STOCK_TOP_Z`.
+- The probe (items 1, 2, 4 and the exact item 3) needs a test edit. D10 waits for the lead.
