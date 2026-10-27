@@ -173,6 +173,7 @@ fn make_params(
             stock_top_z: PEAK_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Keep F-038's filter disabled so the two peaks both produce

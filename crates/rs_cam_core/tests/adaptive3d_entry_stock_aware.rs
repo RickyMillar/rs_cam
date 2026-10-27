@@ -150,6 +150,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             stock_top_z: STOCK_TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::ByArea,

@@ -128,6 +128,7 @@ impl Adaptive3dRough<'_> {
                 // meaning for surface-driven roughing).
                 z_floor: inputs.z_floor,
                 detect_flat_areas: cfg.detect_flat_areas,
+                rest_top_z: inputs.rest_top_z,
             },
             linking: crate::adaptive3d::Adaptive3dLinking {
                 region_ordering: cfg.region_ordering.into(),

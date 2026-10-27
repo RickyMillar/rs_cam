@@ -452,6 +452,15 @@ impl ProjectSession {
                 .map_err(SessionError::Obstacle)?,
         );
 
+        // D50: the top of the stock the source left in its rest regions.
+        let rest_top_z =
+            match &boundary_config.source {
+                crate::compute::config::BoundarySource::DerivedRestRegions {
+                    source_toolpath_id,
+                } if boundary_config.enabled => self.derived_rest_top_z(*source_toolpath_id),
+                _ => None,
+            };
+
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
             tool,
@@ -471,7 +480,92 @@ impl ProjectSession {
             alignment_pins,
             pre_boundary,
             pre_boundary_regions,
+            rest_top_z,
         })
+    }
+
+    /// D50: the top Z of the stock that the toolpath `source_toolpath_id`
+    /// left in its rest regions (`Produced::rest_regions_top_z`), or `None`
+    /// when it has no result or stated no top. The regions themselves come
+    /// from [`Self::resolve_derived_rest_region_polys`], which refuses on a
+    /// missing source; this read only bounds the levels.
+    fn derived_rest_top_z(&self, source_toolpath_id: crate::ids::ToolpathId) -> Option<f64> {
+        let source_index = self
+            .toolpath_configs
+            .iter()
+            .position(|tc| tc.id == source_toolpath_id)?;
+        self.results
+            .get(&source_index)?
+            .annotated()
+            .produced
+            .rest_regions_top_z
+    }
+
+    /// D53: refuse a `DerivedRestRegions` consumer at `index` whose tool is
+    /// larger than the tool of `source_toolpath_id`, when its containment
+    /// keeps the tool CENTRE in the regions (`Center`) or outside them
+    /// (`Outside`).
+    ///
+    /// The source publishes tool-centre positions inside its own
+    /// containment (`Produced::rest_regions`, D48). A centre there keeps a
+    /// tool no larger than the source's inside the source's machining
+    /// boundary; a larger tool can cut past it by the difference of the
+    /// radii. `Inside` containment insets the regions by this op's own
+    /// radius, so it is safe with any tool. The radii are the radii the
+    /// containment itself uses (`ResolvedGenInputs::boundary_centre`: the
+    /// built cutter's diameter over two). A tool that does not resolve is
+    /// left to its own refusal.
+    ///
+    /// A config refusal, so it takes the generation precondition path
+    /// (`SessionError::OperationFailed`, as the `DerivedRestRegions` source
+    /// checks in [`Self::resolve_derived_rest_region_polys`]).
+    pub(crate) fn refuse_larger_rest_consumer(
+        &self,
+        index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Result<(), SessionError> {
+        use crate::compute::config::BoundaryContainment;
+        use crate::tool::MillingCutter as _;
+        let Some(tc) = self.toolpath_configs.get(index) else {
+            return Err(SessionError::ToolpathNotFound(index));
+        };
+        let containment = match tc.boundary.containment {
+            BoundaryContainment::Inside => return Ok(()),
+            BoundaryContainment::Center => "Center",
+            BoundaryContainment::Outside => "Outside",
+        };
+        let Some(source) = self
+            .toolpath_configs
+            .iter()
+            .find(|s| s.id == source_toolpath_id)
+        else {
+            return Ok(());
+        };
+        let radius = |tool_id: Option<crate::ids::ToolId>| {
+            tool_id
+                .and_then(|id| self.tool_by_id(id))
+                .and_then(|tool| crate::session::session_cutter(tool).ok())
+                .map(|def| def.diameter() / 2.0)
+        };
+        let (Some(own), Some(theirs)) = (radius(tc.tool_id), radius(source.tool_id)) else {
+            return Ok(());
+        };
+        if own <= theirs {
+            return Ok(());
+        }
+        Err(SessionError::OperationFailed(format!(
+            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
+             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
+             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
+             tool could cut up to {:.3} mm past the machining boundary of '{}'. Set the \
+             boundary containment to Inside, or use a tool no larger than the tool of '{}'.",
+            tc.name,
+            source.name,
+            source.name,
+            own - theirs,
+            source.name,
+            source.name,
+        )))
     }
 
     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,

@@ -58,8 +58,17 @@ pub struct Produced {
     /// left pieces to its own containment polygons
     /// (`Adaptive3dGeometry::centre_boundary`), so a consumer tool no
     /// larger than the rough's stays inside the rough's boundary. XY only:
-    /// a region carries no Z range.
+    /// a region carries no Z range; [`Self::rest_regions_top_z`] bounds
+    /// them all from above.
     pub rest_regions: Option<Arc<Vec<Polygon2>>>,
+    /// D50: the top Z of the stock a 3D Rough left in
+    /// [`Self::rest_regions`]: the top of the slab of its highest left
+    /// piece (the level above that piece's level, or the level anchor).
+    /// One value for the whole set, not one per region. A consumer on
+    /// remaining stock starts its levels no higher
+    /// (`Adaptive3dDepth::rest_top_z`). `None` when the regions are not a
+    /// 3D Rough's own (the rest field states no top) or there are none.
+    pub rest_regions_top_z: Option<f64>,
     /// The regions that a 3D Rough with By Area ordering detected (label
     /// grid + region list), for the viewport overlay and MCP
     /// `inspect_spans`. `None` for every other operation and for Global
@@ -87,6 +96,7 @@ impl Produced {
     ///   depth is a scalar, not a coordinate.
     /// - `rest_regions` (if present): every exterior and hole point shifts
     ///   by `shift.x`/`shift.y` (the polygons carry no Z).
+    /// - `rest_regions_top_z` (if present) shifts by `shift.z`.
     /// - `area_regions` (if present): the grid origin, the region boxes and
     ///   anchors shift in XY; the top Z and the region Z ranges shift by
     ///   `shift.z`. The labels are cell-indexed and do not change.
@@ -98,6 +108,7 @@ impl Produced {
             planner_engagement,
             rest_grid,
             rest_regions,
+            rest_regions_top_z,
             area_regions,
             closed_passes,
         } = self;
@@ -136,6 +147,8 @@ impl Produced {
             regions
         });
 
+        let rest_regions_top_z = rest_regions_top_z.map(|z| z + shift.z);
+
         let area_regions = area_regions.clone().map(|mut map| {
             Arc::make_mut(&mut map).translate(shift.x, shift.y, shift.z);
             map
@@ -157,6 +170,7 @@ impl Produced {
             planner_engagement,
             rest_grid,
             rest_regions,
+            rest_regions_top_z,
             area_regions,
             closed_passes,
         }

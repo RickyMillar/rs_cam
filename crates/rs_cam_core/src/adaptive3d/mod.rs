@@ -240,6 +240,14 @@ pub struct Adaptive3dDepth {
     pub z_floor: Option<f64>,
     /// Detect flat areas in the mesh and insert Z levels at shelf heights.
     pub detect_flat_areas: bool,
+    /// D50: the top Z of the stock the source op left in this op's
+    /// `DerivedRestRegions` boundary
+    /// ([`crate::trace::produced::Produced::rest_regions_top_z`]). On
+    /// remaining stock the level plan starts no higher than it (a ceiling
+    /// on the G-LADDERANCHOR anchor, `path.rs::rest_capped_level_top`). On
+    /// fresh stock it is not read: the planner then holds the whole stock
+    /// above it. `None`: no such boundary.
+    pub rest_top_z: Option<f64>,
 }
 
 /// What the planner does between cuts: the order it takes the regions in,
@@ -676,13 +684,16 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
     // D44, D48: the regions the run left to a rest pass, one XY union over
     // the levels grown by one planner cell, in tool-centre space inside
     // this run's own containment polygons. The runner keeps them only on
-    // demand (`run_volumetric`).
-    let rest_regions = rest_regions::left_regions(
+    // demand (`run_volumetric`). D50: with the top Z of the stock left in
+    // them.
+    let (rest_regions, rest_regions_top_z) = rest_regions::left_regions(
         &result.left_pieces,
         crate::adaptive::planner_cell_size(params.geometry.tool_radius, params.geometry.tolerance),
         &params.geometry.centre_boundary,
     )
-    .map(std::sync::Arc::new);
+    .map_or((None, None), |(regions, top)| {
+        (Some(std::sync::Arc::new(regions)), Some(top))
+    });
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
     let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
@@ -708,6 +719,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             planner_engagement,
             area_regions: result.area_regions.map(std::sync::Arc::new),
             rest_regions,
+            rest_regions_top_z,
             ..crate::trace::produced::Produced::default()
         },
     })

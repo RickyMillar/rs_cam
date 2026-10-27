@@ -236,6 +236,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
             stock_top_z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

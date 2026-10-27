@@ -108,6 +108,7 @@ fn agent_search_axial_doc_diag() {
             stock_top_z: stock_top,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

@@ -221,6 +221,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             stock_top_z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

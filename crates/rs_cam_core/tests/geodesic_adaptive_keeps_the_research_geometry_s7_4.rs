@@ -105,6 +105,7 @@ fn params(depth_per_pass: f64) -> Adaptive3dParams {
             stock_top_z: TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,

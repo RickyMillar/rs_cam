@@ -343,6 +343,76 @@ pub(super) fn level_anchor_z(
     }
 }
 
+/// D50: the level anchor of a consumer of a source's derived rest regions
+/// (`Adaptive3dDepth::rest_top_z`): the anchor rule with the source's left
+/// stock top as its ceiling, on remaining stock only. On fresh stock the
+/// planner holds the stock above that top, so the anchor stays.
+///
+/// The top lowers only the START of the plan, never its floor:
+/// [`step_levels`] always ends at `z_bottom`, and a top at or below
+/// `z_bottom` is not applied (it would leave no level, so the floor would
+/// move). Integration design §3.1.
+pub(super) fn rest_capped_level_top(
+    anchor: f64,
+    rest_top_z: Option<f64>,
+    z_bottom: f64,
+    reads_prior_stock: bool,
+) -> f64 {
+    match rest_top_z {
+        Some(rest_top) if reads_prior_stock && rest_top > z_bottom => anchor.min(rest_top),
+        _ => anchor,
+    }
+}
+
+/// D50: true when a first level at `first_level` cuts no more than one
+/// Depth/Pass of stock axially at any cell the tool can reach. The anchor
+/// rule ([`level_anchor_z`]) holds this by construction: the first level is
+/// one Depth/Pass under the highest stock. A rest top under the anchor can
+/// break it where the source left a skin thicker than one Depth/Pass of
+/// this op (a source `stock_to_leave` above this op's by more than that):
+/// the first level would take the whole skin. Then the caller keeps the
+/// anchor.
+///
+/// A cell counts when its centre is inside the centre containment
+/// (`Adaptive3dGeometry::centre_boundary`; empty: every cell): the level
+/// plan sets the cut depth where the tool centre goes. A cell only under
+/// the edge of the disc is cut at the drape of a centre beside it, with or
+/// without the rest top, so it does not count. A cell's floor is THE level
+/// floor ([`super::intended_floor::level_floor_z`]); a cell with no
+/// material above it is skipped with the margin [`level_anchor_z`] uses.
+pub(super) fn rest_ceiling_keeps_doc(
+    material_stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    params: &Adaptive3dParams,
+    first_level: f64,
+) -> bool {
+    let reach = &params.geometry.centre_boundary;
+    let limit = params.depth.depth_per_pass + params.geometry.tolerance;
+    let grid = &material_stock.z_grid;
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            if !reach.is_empty() {
+                let (x, y) = grid.cell_to_world(row, col);
+                let p = crate::geo::P2::new(x, y);
+                if !reach.iter().any(|q| q.contains_point(&p)) {
+                    continue;
+                }
+            }
+            let floor = super::intended_floor::level_floor_z(
+                surface_hm.z_or_bbox_floor_at(row, col),
+                params.depth.stock_to_leave,
+                first_level,
+            );
+            if super::stock_has_material_above(material_stock, row, col, floor + 0.01)
+                && super::stock_top_z_at(material_stock, row, col) - floor > limit
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// The levels from `z_top` down to `z_bot`: `z_top - step`,
 /// `z_top - 2 step`, … while above `z_bot`, then `z_bot` itself.
 ///
@@ -568,9 +638,10 @@ pub(super) struct Adaptive3dSegmentsResult {
     /// The regions that By Area detected, for the overlay and MCP. `None`
     /// for Global. Evidence only: no planner stage reads it.
     pub area_regions: Option<AreaRegionMap>,
-    /// D44: the pieces the run left to a rest pass, each with its Z level
+    /// D44: the pieces the run left to a rest pass
     /// (`ClearZLevelContext::left_pieces`; only Geodesic Adaptive leaves
-    /// one).
+    /// one). D50: each with the top Z of the slab it leaves
+    /// ([`super::rest_regions::slab_top_z`]), not its level Z.
     pub left_pieces: Vec<(f64, crate::polygon::Polygon2)>,
     /// Test-only: planner's internal dexel state at the end of the run.
     /// The F-029 probe and the `#[cfg(test)]` module read it.
@@ -902,13 +973,38 @@ pub(super) fn adaptive_3d_segments(
     );
     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
     // top of the material it can still cut, not at the stock box top.
-    let level_top = level_anchor_z(
+    let anchor = level_anchor_z(
         &material_stock,
         &surface_hm,
         params.depth.stock_to_leave,
         params.depth.stock_top_z,
         params.initial_stock.is_some(),
     );
+    // D50: a consumer of a source's derived rest regions starts no higher
+    // than the top of the stock the source left in them, but only while no
+    // level then cuts more than one Depth/Pass (`rest_ceiling_keeps_doc`).
+    let capped = rest_capped_level_top(
+        anchor,
+        params.depth.rest_top_z,
+        z_bottom,
+        params.initial_stock.is_some(),
+    );
+    let level_top = if capped < anchor
+        && !rest_ceiling_keeps_doc(
+            &material_stock,
+            &surface_hm,
+            params,
+            (capped - params.depth.depth_per_pass).max(z_bottom),
+        ) {
+        debug!(
+            anchor,
+            capped,
+            "D50: the rest top would put more than one Depth/Pass on the first level; kept the anchor"
+        );
+        anchor
+    } else {
+        capped
+    };
     if let Some(scope) = z_plan_scope.as_ref() {
         scope.set_counter("level_top", level_top);
     }
@@ -1183,7 +1279,19 @@ pub(super) fn adaptive_3d_segments(
         segments,
         planner_engagement: planner_eng,
         area_regions,
-        left_pieces: ctx.left_pieces.take(),
+        // D50: a piece left at a level leaves the slab from that level up to
+        // the level above it, so the result carries the slab top.
+        left_pieces: ctx
+            .left_pieces
+            .take()
+            .into_iter()
+            .map(|(z, piece)| {
+                (
+                    super::rest_regions::slab_top_z(z, level_top, &z_levels),
+                    piece,
+                )
+            })
+            .collect(),
         final_material_stock: material_stock,
         surface_heightmap: surface_hm,
     })
@@ -1931,6 +2039,7 @@ mod tests {
                 stock_top_z: 5.0,
                 z_floor: None,
                 detect_flat_areas: false,
+                rest_top_z: None,
             },
             linking: crate::adaptive3d::Adaptive3dLinking {
                 region_ordering: RegionOrdering::Global,

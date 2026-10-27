@@ -497,6 +497,11 @@ pub struct ExecutionContext<'a> {
     /// them (`shared::link_ceiling_for`); the session clips every result
     /// against them after the dressups. `None`: no obstacle.
     pub obstacles: Option<&'a crate::compute::obstacle::ObstacleToolView>,
+    /// D50: when the boundary is `DerivedRestRegions`, the source op's
+    /// [`crate::trace::produced::Produced::rest_regions_top_z`]. Only a
+    /// planner that owns its level plan reads it (the 3D Rough). `None`:
+    /// no such boundary, or the source stated no top.
+    pub rest_top_z: Option<f64>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -578,6 +583,7 @@ impl<'a> ExecutionContext<'a> {
             segment_merge_tolerance: None,
             entry_helix_radius: None,
             obstacles: None,
+            rest_top_z: None,
         }
     }
 }

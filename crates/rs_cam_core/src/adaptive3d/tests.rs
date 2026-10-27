@@ -133,6 +133,7 @@ fn default_params() -> Adaptive3dParams {
             stock_top_z: 25.0,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Disabled by default in tests — tests that need to exercise
@@ -580,6 +581,44 @@ fn step_levels_are_the_legacy_loop_bitwise() {
     for (l, z) in plan.iter().zip(&legacy) {
         assert_eq!(l.to_bits(), z.to_bits(), "level {l} vs legacy {z}");
     }
+}
+
+/// D50 (integration design §3.1): the source's left stock top lowers only
+/// the START of a rest consumer's level plan, never its floor. On
+/// remaining stock the plan starts at the top; its last level is the
+/// floor with or without the top; a top at or below the floor, and any top
+/// on fresh stock, leave the plan as it was.
+#[test]
+fn a_rest_top_lowers_the_start_and_keeps_the_floor_d50() {
+    use super::path::{rest_capped_level_top, step_levels};
+    let (anchor, top, z_bottom, dpp) = (8.0_f64, 7.0_f64, 4.0_f64, 3.0_f64);
+    let plain = step_levels(anchor, z_bottom, dpp);
+    let capped = step_levels(
+        rest_capped_level_top(anchor, Some(top), z_bottom, true),
+        z_bottom,
+        dpp,
+    );
+    assert_eq!(plain, vec![5.0, 4.0]);
+    assert_eq!(capped, vec![4.0], "the plan does not start below the top");
+    assert_eq!(plain.last(), capped.last(), "the top moved the floor");
+    // A top at or below the floor would leave no level: it is not applied.
+    for low in [z_bottom, z_bottom - dpp] {
+        assert_eq!(
+            rest_capped_level_top(anchor, Some(low), z_bottom, true),
+            anchor
+        );
+    }
+    // Fresh stock, or no top: the anchor stays.
+    assert_eq!(
+        rest_capped_level_top(anchor, Some(top), z_bottom, false),
+        anchor
+    );
+    assert_eq!(rest_capped_level_top(anchor, None, z_bottom, true), anchor);
+    // A top above the anchor does not raise the start.
+    assert_eq!(
+        rest_capped_level_top(anchor, Some(anchor + dpp), z_bottom, true),
+        anchor
+    );
 }
 
 // ── Fix 5: Flat area detection test ────────────────────────────────
@@ -2420,6 +2459,75 @@ fn level_anchor_reads_the_top_of_the_prior_stock() {
         }
     }
     assert_eq!(anchor(&stock, true), 14.0);
+}
+
+/// D50: the rest top may lower the first level only while that level cuts
+/// no more than one Depth/Pass where the tool centre goes. A skin of 1.5
+/// over the leave is too thick for a Depth/Pass of 1.0 and thin enough for
+/// 2.0. A thick skin outside the centre containment does not count.
+#[test]
+fn a_rest_ceiling_keeps_one_depth_per_pass_d50() {
+    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
+    let cutter = flat_cutter();
+    let cell_size = 0.5;
+    let mut stock = TriDexelStock::from_stock(-20.0, -20.0, 20.0, 20.0, -1.0, 14.0, cell_size);
+    let hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        stock.z_grid.origin_u,
+        stock.z_grid.origin_v,
+        stock.z_grid.rows,
+        stock.z_grid.cols,
+        cell_size,
+        -1.0,
+    );
+    let leave = 0.5_f64;
+    let skin_top = leave + 1.5;
+    // The prior stock: a skin over the leave inside x < 0, a thick block
+    // (the box top) at x >= 0.
+    for row in 0..stock.z_grid.rows {
+        for col in 0..stock.z_grid.cols {
+            let (x, _) = stock.z_grid.cell_to_world(row, col);
+            if x < 0.0 {
+                crate::stock::dexel::ray_subtract_above(
+                    stock.z_grid.ray_mut(row, col),
+                    skin_top as f32,
+                );
+            }
+        }
+    }
+    let params_with = |dpp: f64, centre: Vec<crate::polygon::Polygon2>| {
+        let mut p = default_params();
+        p.depth.stock_to_leave = leave;
+        p.depth.depth_per_pass = dpp;
+        p.geometry.centre_boundary = centre;
+        p
+    };
+    let skin_side = vec![crate::polygon::Polygon2::rectangle(
+        -15.0, -15.0, -5.0, 15.0,
+    )];
+    // The first level under the skin: the cell floor is the leave.
+    let first = 0.0;
+    assert!(!super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(1.0, skin_side.clone()),
+        first
+    ));
+    assert!(super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(2.0, skin_side),
+        first
+    ));
+    // No containment: every cell counts, the block too.
+    assert!(!super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(2.0, Vec::new()),
+        first
+    ));
 }
 
 // ── By Area region map ───────────────────────────────────────────

@@ -73,6 +73,7 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_top_z: PITTED_BASIN_TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
