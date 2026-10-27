@@ -844,6 +844,43 @@ pub struct SimulationCutTrace {
     /// through [`Self::effective_material_for_sample`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub added_material_slots: Vec<crate::stock::cut_as::AddedMaterialSlot>,
+    /// Integration step 7.4c: every simulated move that carries a feed cap
+    /// (`Move::feed_cap`), once per move, in toolpath and move order. Join a
+    /// sample to its cap by the key `(toolpath_id, move_index)`: a sample
+    /// whose key is not here comes from a move with no cap. Empty when no
+    /// move has a cap, and the wire then omits the key, so the trace is the
+    /// same as before the field. The cap belongs to the move, so a sample
+    /// does not carry it (its size is pinned, G-SIMMEM).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capped_moves: Vec<CappedMove>,
+}
+
+/// One move with a feed cap ([`SimulationCutTrace::capped_moves`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CappedMove {
+    pub toolpath_id: ToolpathId,
+    pub move_index: usize,
+    /// The highest feed (mm/min) the move may carry (`Move::feed_cap`).
+    pub feed_cap_mm_min: f64,
+}
+
+impl CappedMove {
+    /// The moves of `toolpath` that carry a feed cap, in move order.
+    #[must_use]
+    pub fn of_toolpath(toolpath_id: ToolpathId, toolpath: &crate::toolpath::Toolpath) -> Vec<Self> {
+        toolpath
+            .moves
+            .iter()
+            .enumerate()
+            .filter_map(|(move_index, m)| {
+                m.feed_cap.map(|feed_cap_mm_min| Self {
+                    toolpath_id,
+                    move_index,
+                    feed_cap_mm_min,
+                })
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

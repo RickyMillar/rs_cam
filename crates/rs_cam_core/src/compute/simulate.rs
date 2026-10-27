@@ -1419,6 +1419,18 @@ fn assemble_cut_trace(
     trace.drill_samples = drill_samples;
     trace.drill_summaries = drill_summaries;
     trace.added_material_slots = added_material_slots(request, stock_change_volumes);
+    // 7.4c: the feed cap of every capped move, once per move.
+    trace.capped_moves = request
+        .groups
+        .iter()
+        .flat_map(|g| g.toolpaths.iter())
+        .flat_map(|entry| {
+            crate::stock::simulation_cut::CappedMove::of_toolpath(
+                entry.id,
+                &entry.annotated.toolpath,
+            )
+        })
+        .collect();
     // F-034: kinematics-aware cycle time override. When the
     // caller supplied a `KinematicsContext`, recompute each
     // toolpath's `total_runtime_s` from its IR using the
