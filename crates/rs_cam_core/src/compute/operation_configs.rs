@@ -135,17 +135,12 @@ pub(crate) fn default_layered_region_ordering() -> RegionOrdering {
 #[serde(rename_all = "snake_case")]
 pub enum ClearingStrategy {
     /// Fast contour-parallel offset clearing via EDT. Default.
+    ///
+    /// Removal step R2 (operator ruling 2026-10-28): the values `adaptive`,
+    /// `agent_search` and `contour_spiral` left this enum. A project file
+    /// that names one refuses at load and names the fix
+    /// (`session/project_file.rs`, `RETIRED_VALUES`).
     ContourParallel,
-    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
-    Adaptive,
-    /// Per-step direction search with preflight skip and widen-band
-    /// recovery. Slow to generate — reach for it when ContourParallel
-    /// and Adaptive leave uncut bands on difficult geometry.
-    AgentSearch,
-    /// Constructive inside-out contour spiral per slice: one continuous
-    /// stay-down pass per region, engagement bounded by wrap spacing
-    /// (Stage 1, algorithm review 2026-06-12).
-    ContourSpiral,
     /// Geodesic Adaptive (integration step 7.4): the geodesic-wavefront
     /// plan per slice piece (`adaptive::geodesic`). It clears the body
     /// under the pass load, with the stock-depth step split and the routed
@@ -3805,29 +3800,29 @@ impl_operation_params!(ProjectCurveConfig {
 mod tests {
     use super::*;
 
-    /// ClearingStrategy must serialize and deserialize every variant.
-    /// Regression guard for the GUI/MCP exposure of AgentSearch —
-    /// adding a variant to the core ClearingStrategy3d enum is not
-    /// enough; this config-layer enum is the one serde sees from TOML
-    /// and the one the MCP's set_toolpath_param dispatches through.
+    /// ClearingStrategy must serialize and deserialize every variant. This
+    /// config-layer enum is the one serde sees from TOML and the one the
+    /// MCP's set_toolpath_param dispatches through.
     #[test]
     fn clearing_strategy_serde_round_trip() {
         for variant in [
             ClearingStrategy::ContourParallel,
-            ClearingStrategy::Adaptive,
-            ClearingStrategy::AgentSearch,
-            ClearingStrategy::ContourSpiral,
             ClearingStrategy::GeodesicAdaptive,
         ] {
             let json = serde_json::to_string(&variant).unwrap();
             let round_trip: ClearingStrategy = serde_json::from_str(&json).unwrap();
             assert_eq!(round_trip, variant);
         }
-        // Also verify the snake_case wire format — agent_search, not AgentSearch.
-        let json = serde_json::to_string(&ClearingStrategy::AgentSearch).unwrap();
-        assert_eq!(json, "\"agent_search\"");
-        let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
-        assert_eq!(from_wire, ClearingStrategy::AgentSearch);
+        // The snake_case wire format.
+        let json = serde_json::to_string(&ClearingStrategy::ContourParallel).unwrap();
+        assert_eq!(json, "\"contour_parallel\"");
+        // Removal step R2: a removed value is not a variant any more.
+        for removed in ["adaptive", "agent_search", "contour_spiral"] {
+            assert!(
+                serde_json::from_str::<ClearingStrategy>(&format!("\"{removed}\"")).is_err(),
+                "{removed} still deserialises"
+            );
+        }
         // Integration step 7.4b: the project file and the job file spell
         // Geodesic Adaptive `geodesic_adaptive`.
         let json = serde_json::to_string(&ClearingStrategy::GeodesicAdaptive).unwrap();

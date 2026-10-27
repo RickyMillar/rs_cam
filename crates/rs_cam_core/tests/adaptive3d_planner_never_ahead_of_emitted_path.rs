@@ -282,7 +282,9 @@ fn the_rough_rapids_into_no_stock() {
         stock_to_leave_axial: LEAVE,
         entry_style: Adaptive3dEntryStyle::Plunge,
         region_ordering: CfgOrdering::Global,
-        clearing_strategy: ClearingStrategy::AgentSearch,
+        // Removal step R2: AgentSearch left the config; the session arm
+        // runs the slice pipeline through Geodesic Adaptive.
+        clearing_strategy: ClearingStrategy::GeodesicAdaptive,
         min_region_cut_length_mm: MIN_REGION_CUT_MM,
         ..Adaptive3dConfig::default()
     };

@@ -65,9 +65,6 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     pub pills: Option<&'a PillSuggestions<'a>>,
     pub depth_caution: Option<&'a DepthBeyondStock>,
     pub through_cut: Option<&'a ThroughCut>,
-    /// The active tool's radius. Adaptive3d maps engagement to stepover
-    /// with it.
-    pub tool_radius: f64,
     /// What the LAST generation resolved `claims_reference` to.
     pub resolved_claims_reference: Option<ClaimsReferenceFinding>,
     /// READ ONLY. The Geometry tab's one "Start from" row writes this
@@ -306,7 +303,7 @@ editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
     draw_dropcutter_params(ui, cfg, cx.pills);
 });
 editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
-    draw_adaptive3d_params(ui, cfg, cx.tool_radius, cx.pills);
+    draw_adaptive3d_params(ui, cfg, cx.pills);
 });
 editor!(
     ed_waterline,

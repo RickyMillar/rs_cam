@@ -2145,9 +2145,17 @@ fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
 /// cut-move feed (so the wall-clock the advisor compares reflects F-039
 /// optimization) and returns a modelled binding regime. If step 5 were
 /// reverted to timing raw paths this test fails: feeds would be untouched.
+///
+/// The subject is the modulation step, not the strategy: since removal
+/// step R2 the candidate is Contour Parallel (was ContourSpiral).
 #[test]
 fn advisor_modulates_candidate_feeds_before_timing() {
-    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
+    // Removal step R2: ContourSpiral left the config. The subject of this
+    // test is the modulation step the advisor runs on a candidate, not the
+    // strategy, so the candidate is Contour Parallel, the other advisor
+    // candidate, which plans this terrain in seconds (Geodesic Adaptive
+    // takes minutes here in a debug build).
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourParallel);
     let cancel = AtomicBool::new(false);
     let resolved = session
         .resolve_generation_inputs(0, &cancel)

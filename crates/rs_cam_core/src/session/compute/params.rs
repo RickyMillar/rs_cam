@@ -174,6 +174,13 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        // Removal step R2: a retired value refuses with the loader's text,
+        // not with serde's "unknown variant".
+        if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {
+            return Err(SessionError::InvalidParam(format!(
+                "{param} = {value} is retired. {replacement}."
+            )));
+        }
 
         // Numeric fields accept either JSON numbers or numeric strings —
         // some MCP / JSON-RPC clients stringify scalar values when the

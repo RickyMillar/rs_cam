@@ -20,7 +20,10 @@
 //!
 //! The G-OPGOLDEN 3D Rough arms, through the same session door and the
 //! same fixtures (`common::op_fixtures`): `fresh`, `rest`,
-//! `by_area_helix_spiral` and `ramp_agent`.
+//! `by_area_helix_cp` and `ramp_geodesic`. Removal step R2 (2026-10-28):
+//! `by_area_helix_spiral` and `ramp_agent` left with their strategies. No
+//! 3D Rough strategy writes `planner_engagement` now (ContourSpiral did), so
+//! every arm reads 0 samples; the 2D Adaptive op still writes them.
 //!
 //! # Blessing
 //!
@@ -144,30 +147,30 @@ type Tweak = fn(&mut OperationConfig);
 fn no_tweak(_: &mut OperationConfig) {}
 
 /// The same switches as the G-OPGOLDEN arm of the same name.
-fn by_area_helix_spiral(op: &mut OperationConfig) {
+fn by_area_helix_cp(op: &mut OperationConfig) {
     let OperationConfig::Adaptive3d(cfg) = op else {
         unreachable!("adaptive3d arm on another op")
     };
     cfg.region_ordering = RegionOrdering::ByArea;
     cfg.entry_style = Adaptive3dEntryStyle::Helix;
-    cfg.clearing_strategy = ClearingStrategy::ContourSpiral;
+    cfg.clearing_strategy = ClearingStrategy::ContourParallel;
 }
 
 /// The same switches as the G-OPGOLDEN arm of the same name.
-fn ramp_agent(op: &mut OperationConfig) {
+fn ramp_geodesic(op: &mut OperationConfig) {
     let OperationConfig::Adaptive3d(cfg) = op else {
         unreachable!("adaptive3d arm on another op")
     };
     cfg.entry_style = Adaptive3dEntryStyle::Ramp;
-    cfg.clearing_strategy = ClearingStrategy::AgentSearch;
+    cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
 }
 
 /// The arms: name, tweak, rest source.
 const ARMS: &[(&str, Tweak, bool)] = &[
     ("fresh", no_tweak, false),
     ("rest", no_tweak, true),
-    ("by_area_helix_spiral", by_area_helix_spiral, false),
-    ("ramp_agent", ramp_agent, false),
+    ("by_area_helix_cp", by_area_helix_cp, false),
+    ("ramp_geodesic", ramp_geodesic, false),
 ];
 
 fn run(tweak: Tweak, rest: bool) -> VolumetricProduced {
@@ -214,12 +217,17 @@ fn the_volumetric_wrapper_keeps_its_produced() {
         .map(|&(arm, tweak, rest)| (format!("adaptive3d/{arm}"), run(tweak, rest)))
         .collect();
 
-    // Non-vacuity: the By Area ContourSpiral arm carries both items, and
-    // the Global ContourParallel arm carries neither.
-    let spiral = &actual["adaptive3d/by_area_helix_spiral"];
+    // Non-vacuity: the By Area arm carries its areas, and the Global
+    // ContourParallel arm carries neither item. No 3D Rough strategy
+    // writes planner engagement since removal step R2.
+    let by_area = &actual["adaptive3d/by_area_helix_cp"];
     assert!(
-        spiral.engagement_samples > 0 && spiral.area_region_count > 0,
-        "the By Area ContourSpiral arm must carry engagement samples and areas: {spiral:?}"
+        by_area.area_region_count > 0,
+        "the By Area arm must carry its areas: {by_area:?}"
+    );
+    assert!(
+        actual.values().all(|p| p.engagement_samples == 0),
+        "a 3D Rough arm carries planner engagement: {actual:?}"
     );
     let fresh = &actual["adaptive3d/fresh"];
     assert!(

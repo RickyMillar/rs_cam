@@ -1108,7 +1108,7 @@ mod tests {
         let e = rt(SuggestWarning::StrategyRecommendedNotApplied {
             param: "clearing_strategy",
             current: "contour_parallel".to_owned(),
-            recommended: "adaptive".to_owned(),
+            recommended: "geodesic_adaptive".to_owned(),
             reason: "mixed_terrain_classifier",
         });
         assert_eq!(e.param, RationaleParam::ClearingStrategy);
@@ -1116,7 +1116,7 @@ mod tests {
         // Warn-only entries carry no numeric from/to.
         assert_eq!(e.from_value, None);
         assert_eq!(e.to_value, None);
-        assert!(e.headline.contains("adaptive"));
+        assert!(e.headline.contains("geodesic_adaptive"));
         assert!(
             e.headline.contains("not auto-applied"),
             "headline must say the recommendation was not applied, got {:?}",

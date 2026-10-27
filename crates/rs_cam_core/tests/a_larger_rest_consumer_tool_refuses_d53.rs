@@ -91,7 +91,7 @@ fn session(consumer_diameter: f64, containment: BoundaryContainment) -> ProjectS
     let model_id = builder.add_model(mesh_model(mesh, "channel"));
     let mut op0 = toolpath_config(
         "rough",
-        rough(ClearingStrategy::AgentSearch),
+        rough(ClearingStrategy::GeodesicAdaptive),
         source_tool,
         model_id,
     );

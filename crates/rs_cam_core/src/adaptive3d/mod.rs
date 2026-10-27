@@ -114,9 +114,6 @@ impl From<crate::compute::operation_configs::ClearingStrategy> for ClearingStrat
         use crate::compute::operation_configs::ClearingStrategy as Config;
         match s {
             Config::ContourParallel => Self::ContourParallel,
-            Config::Adaptive => Self::Adaptive,
-            Config::AgentSearch => Self::AgentSearch,
-            Config::ContourSpiral => Self::ContourSpiral,
             Config::GeodesicAdaptive => Self::GeodesicAdaptive,
         }
     }

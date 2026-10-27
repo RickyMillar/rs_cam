@@ -1023,15 +1023,6 @@ impl OperationConfig {
                 },
                 ..row
             },
-            // C2: a contour-spiral planner holds the engagement of its
-            // stepover; the other strategies have real engagement spikes.
-            OperationConfig::Adaptive3d(c) => Capabilities {
-                planner_uniform_engagement: matches!(
-                    c.clearing_strategy,
-                    super::operation_configs::ClearingStrategy::ContourSpiral
-                ),
-                ..row
-            },
             // P6.3: side On cuts on the line, so it reads the lines of the
             // selection (closed rings and open paths). Outside and Inside
             // keep the row's closed areas.
@@ -1076,7 +1067,10 @@ impl OperationConfig {
             | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
             | OperationConfig::ProjectCurve(_)
-            | OperationConfig::AlignmentPinDrill(_) => row,
+            | OperationConfig::AlignmentPinDrill(_)
+            // Removal step R2: no 3D Rough strategy left holds a uniform
+            // planner engagement (ContourSpiral did), so the row stands.
+            | OperationConfig::Adaptive3d(_) => row,
         }
     }
 

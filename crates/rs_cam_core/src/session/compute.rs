@@ -1416,12 +1416,13 @@ pub fn execute_generation(
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
 /// endpoints of the speed/load trade-off: conventional offset clearing
 /// ([`ContourParallel`](ClearingStrategy::ContourParallel)) vs
-/// constant-engagement trochoidal ([`ContourSpiral`](ClearingStrategy::ContourSpiral)).
+/// constant-engagement ([`GeodesicAdaptive`](ClearingStrategy::GeodesicAdaptive);
+/// ContourSpiral until the removal step R2, operator ruling 2026-10-28).
 /// `recommend_clearing_strategy` times both at their load-limited params and
 /// lets machine acceleration decide. Extend by adding variants here.
 const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
     ClearingStrategy::ContourParallel,
-    ClearingStrategy::ContourSpiral,
+    ClearingStrategy::GeodesicAdaptive,
 ];
 
 /// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the

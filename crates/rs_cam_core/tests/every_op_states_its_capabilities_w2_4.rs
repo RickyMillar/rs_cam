@@ -564,17 +564,9 @@ fn only_a_contour_spiral_holds_a_uniform_engagement() {
         let cfg: OperationConfig = serde_json::from_value(value).unwrap();
         cfg.capabilities().planner_uniform_engagement
     };
-    assert!(with(
-        OperationType::Adaptive3d,
-        "clearing_strategy",
-        "contour_spiral"
-    ));
-    for token in [
-        "contour_parallel",
-        "adaptive",
-        "agent_search",
-        "geodesic_adaptive",
-    ] {
+    // Removal step R2: ContourSpiral left 3D Rough; no strategy left
+    // there holds a uniform planner engagement.
+    for token in ["contour_parallel", "geodesic_adaptive"] {
         assert!(
             !with(OperationType::Adaptive3d, "clearing_strategy", token),
             "{token}"
