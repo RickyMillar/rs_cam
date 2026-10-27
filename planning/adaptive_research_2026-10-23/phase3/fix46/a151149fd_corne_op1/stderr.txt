@@ -1,0 +1,30 @@
+Safety (1):
+  "3D Rough 1": the rough leaves 566 island(s) standing more than 0.80 mm above its target (the floor its plan can reach with its tool, 0.50 mm stock to leave in it), 544 of them against a wall: 5057.7 mm2 in all at cell 0.300 mm. Free islands first, then the ones at a wall, tallest first in each group: 1.01 mm high, 0.30 mm wide, 0.3 mm2 at (24.6, -10.6); 1.00 mm high, 0.30 mm wide, 0.2 mm2 at (63.6, -5.8); 1.00 mm high, 0.30 mm wide, 0.3 mm2 at (64.8, -5.5); 0.97 mm high, 0.30 mm wide, 0.1 mm2 at (87.9, -77.5); 0.91 mm high, 0.30 mm wide, 0.1 mm2 at (89.1, -4.9); 0.91 mm high, 0.30 mm wide, 0.2 mm2 at (89.7, -5.2); 0.90 mm high, 0.30 mm wide, 0.1 mm2 at (87.6, -77.8); 0.89 mm high, 0.30 mm wide, 0.1 mm2 at (90.0, -5.5); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (65.7, -5.2); 0.84 mm high, 0.30 mm wide, 0.1 mm2 at (87.3, -78.1); and 556 more. 2 island(s) stand taller than one depth per pass plus one cell (6.30 mm): a later pass meets more than one commanded step there.
+
+Act on (1):
+  WARNING: high air cutting on '3D Rough 1' is 41% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  273.0s wasted around (49.1, -14.3, 17.3) — engagement 0.18
+  3.3s wasted around (140.7, -67.5, 5.2) — engagement 0.03
+  2.9s wasted around (50.3, -14.4, 9.8) — engagement 0.03
+  2.8s wasted around (102.8, -12.8, 5.2) — engagement 0.04
+  2.8s wasted around (140.7, -67.5, 8.2) — engagement 0.16
+  2.4s wasted around (50.3, -14.4, 6.8) — engagement 0.18
+  2.3s wasted around (102.8, -12.8, 8.2) — engagement 0.19
+  2.2s wasted around (84.2, -70.8, 9.8) — engagement 0.04
+  2.0s wasted around (140.7, -67.5, 13.1) — engagement 0.23
+  1.8s wasted around (50.3, -14.4, 11.6) — engagement 0.22
+  ... 122 more not shown
+
+Counts: 106655 samples | 35908 flagged-air + 11546 flagged-low (per SAMPLE) | 9917 issue runs (COALESCED, the legacy "issue_count") | 132 hotspots
+
+
+=== Project Diagnostics: corne_job ===
+Toolpaths: 1  |  Cutting: 27896mm  |  Rapid: 3258mm  |  Time: 890s
+Air cutting: 40.9% of total runtime  |  Avg engagement: 0.21  |  Peak commanded advance/tooth: 0.100 mm/tooth
+  [ ] #1 3D Rough 1 (3D Adaptive) — 6201 moves, 0 collisions
+      kinematics: 92% of commanded (81% feed-bound → +10% at ×1.30, 19% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 40.9% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix46/a151149fd_corne_op1

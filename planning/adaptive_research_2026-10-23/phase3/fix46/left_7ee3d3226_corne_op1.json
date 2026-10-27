@@ -1,0 +1,23 @@
+{
+ "run": "7ee3d3226_corne_op1",
+ "inside the part": {
+  "left_mm2": 1588,
+  "vol_over_target_mm3": 6691,
+  "max_mm": 14.5
+ },
+ "outside 0-3": {
+  "left_mm2": 861,
+  "vol_over_target_mm3": 14261,
+  "max_mm": 17.7
+ },
+ "outside 3-6.2": {
+  "left_mm2": 696,
+  "vol_over_target_mm3": 11488,
+  "max_mm": 16.5
+ },
+ "outside 6.2-9": {
+  "left_mm2": 424,
+  "vol_over_target_mm3": 7252,
+  "max_mm": 22.5
+ }
+}

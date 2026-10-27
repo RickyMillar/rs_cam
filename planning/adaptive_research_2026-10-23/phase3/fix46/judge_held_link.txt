@@ -1,0 +1,7 @@
+
+running 1 test
+test no_held_link_cuts_standing_stock_with_the_group_filter_on has been running for over 60 seconds
+geodesic_adaptive with the group filter at 15 mm: geodesic_adaptive: 1892 moves, 7417 judged at levels {45, 70, 75, 80, 89, 105} (Z x 10), 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000); entry 267, vertical 213, departing 191, waterline 1301 (12 over the screen, exact peak 0.632), perimeter band 0 (0 over the screen), capped 763 (89 over the screen, sim peak 0.898, exact load x cap / feed peak 0.374)
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 164.94s
+

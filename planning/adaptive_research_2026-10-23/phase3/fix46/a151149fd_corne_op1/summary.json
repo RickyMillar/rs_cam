@@ -1,0 +1,48 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 1,
+  "total_cutting_distance_mm": 27895.895137439522,
+  "total_rapid_distance_mm": 3258.280857781664,
+  "total_runtime_s": 890.2793791334203,
+  "air_cut_pct_of_total_runtime": 40.934346132974945,
+  "air_cut_pct_of_cutting_time": 44.94853540690614,
+  "average_engagement": 0.208665951866431,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6201,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 40.934346132974945,
+    "headline": "WARNING: 40.9% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

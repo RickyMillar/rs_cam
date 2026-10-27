@@ -6324,3 +6324,82 @@ here, not k_cp_fix6job's s1.2.
   contour_spiral's axial depth. Both are wins that come with full-width cuts.
 
 Not committed.
+
+## D66: D65 (cut a step slightly over the ceiling at F·c/L), geodesic-integration a151149fd against 7ee3d3226 (fix46)
+
+**Verdict: D65 cuts Corne op 1 by 17.6 % (1080.2 → 890.3 s) and wanaka op 1 by 8.5 % (2271.9 → 2079.6 s). Corne plunges
+fall 612 → 233 and descents 382 → 115. The load stays at about the bound: Corne p99 0.493 → 0.509, mm over the bound
+171.6 → 189.0; wanaka the same p99, 107.4 → 110.0 mm. All 1105 capped moves hold feed ≤ cap. The held-link judge PASSES.**
+
+**Setup.** Fixture worktree detached, clean; release builds of a151149fd (D65) and of 7ee3d3226 (before D65; its op 1
+equals D58 and D60), run directly; no env, no override; all 6 exports passed, 0 refusals.
+- op1 runs: fix45's geodesic job files (Corne `--setup 0 --skip 3,4`; wanaka edge op disabled).
+- job runs: fix41's job files with the rest-region edge op (as D60).
+- `fix46/run_one.sh`, `table.py` → `table.json`. Sims deleted.
+
+**Entries by cause: the product has no cause records.** The C40 entry instruments were research-only and went at
+integration step 7.7 (no "C40 entry" line in a product stdout). So `fix46/entries.py` classes each op-1 feed descent (a
+trace move in the plunge/ramp class) by its own drop:
+- ≤ 1 mm: a ledge or turn re-entry onto the same level;
+- 1 mm to one DPP: a re-entry from a held link or a short lift;
+- > one DPP: a level or wall drop, the LargeZ class.
+The plots `fix46/img/entries_<tree>_<part>_op1.png` have the layout of fix34/img/descents_corne_B_s2p1.png.
+
+**1. Op 1** (summary clock; load = area oracle, own bound 0.489 Corne s2.1 / 0.471 wanaka s2.0)
+
+| part, tree | op 1 s | cutting / entry / linking / rapid | L max / p99 / p95 | mm > bound | plunges | descents | removed mm³ | max axial, vol > DPP |
+|---|---|---|---|---|---|---|---|---|---|
+| Corne, 7ee3d3226 | 1080.2 | 623.5 / 189.1 / 174.3 / 93.3 | 0.999 / 0.493 / 0.392 | 171.6 | 612 | 382 | 218084 | 8.44, 683 mm³ (0.3 %) |
+| Corne, a151149fd | 890.3 | 652.1 / 68.4 / 90.3 / 79.5 | 0.999 / 0.509 / 0.400 | 189.0 | 233 | 115 | 218067 | 8.44, 757 mm³ (0.3 %) |
+| wanaka, 7ee3d3226 | 2271.9 | 1209.8 / 636.8 / 344.6 / 80.6 | 0.720 / 0.375 / 0.358 | 107.4 | 1262 | 581 | 591516 | 12.42, 639 mm³ (0.1 %) |
+| wanaka, a151149fd | 2079.6 | 1226.4 / 509.5 / 267.0 / 76.8 | 0.720 / 0.375 / 0.358 | 110.0 | 988 | 352 | 591311 | 12.42, 639 mm³ (0.1 %) |
+
+Entries by drop (moves, time s, air share):
+
+| part, tree | ≤ 1 mm | 1 mm – 1 DPP | > 1 DPP (LargeZ class) |
+|---|---|---|---|
+| Corne, 7ee3d3226 | 157, 10.7, 36 % | 603, 156.9, 25 % | 209, 42.5, 82 % |
+| Corne, a151149fd | 69, 4.9, 37 % | 164, 53.3, 26 % | 92, 24.1, 91 % |
+| wanaka, 7ee3d3226 | 190, 19.9, 45 % | 1386, 708.0, 63 % | 282, 230.0, 96 % |
+| wanaka, a151149fd | 141, 15.3, 47 % | 933, 518.4, 70 % | 281, 229.3, 96 % |
+
+What the Corne plots show (against fix34's C40 plot of the same op):
+- The ledge row at y ≈ −68 (C40 "Reentry2d/Turn", 49 in R) falls from about 12 large descents to 3 (x 84–93).
+- The wall rows outside the case (y ≈ −8 and y ≈ −78, C40 "LargeZ") fall from about 30 and 25 descents to about 12 and 3.
+- The descents in the switch holes (mostly 1 mm – 1 DPP) are nearly all gone.
+- The remaining > 1 DPP descents sit on the left wall (x ≈ 13) and the lower-left wall.
+- On wanaka the > 1 DPP class does not change (282 → 281). The 1 mm – 1 DPP class falls by 453.
+
+**Capped moves** (`cap_audit.py` on `trace.capped_moves`; trace join by (toolpath_id, move_index); G-code by line k or by
+position, as D60):
+- Corne: 276 → 535 (534 remove stock; cap 575–1511, median 671 → 924). Trace samples over cap: 0. G-code (line-k map):
+  534 / 534 F ≤ cap.
+- wanaka: 358 → 570 (568 remove stock; cap 363–999, median 543 → 761). Trace: 0 over. G-code by position: 566 joined,
+  0 over.
+- The edge ops have no capped moves.
+
+**Stock left** (> 0.8 mm over the target):
+- Corne inside the part: 1588 → 1400 mm² (6691 → 5996 mm³); the 0–9 mm band unchanged (861 / 696 / 424).
+- wanaka inside: 5045 → 4938 mm² (22084 → 21868 mm³); band 3708 → 3706.
+
+**2. Whole job with the edge op** (a151149fd; against D60):
+
+| part | op 1 | edge op | copy | job | D60 job | CP | job / CP |
+|---|---|---|---|---|---|---|---|
+| Corne B s2.1 | 890.3 | 453.7 | 1689.9 | 3033.9 | 3266.9 | 2841 | 1.07 (D60 1.15) |
+| wanaka s2.0 | 2079.6 | 1041.1 | — | 3120.7 | 3308.3 | 5776.8 | 0.54 (D60 0.57) |
+
+- Edge ops as in D60: Corne op 5 453.7 s (D60 453.9), max axial 8.96, 6750 mm³ (12.6 %) over DPP (G-RESTDOC unchanged).
+  Wanaka op 7 1041.1 s (D60 1036.4; entry 538.8), max axial 1.91, 0 over DPP.
+- Outside op 1's reach: wanaka 0 mm³; Corne 17 mm³ beyond 9.5 mm (= D49/D60, the mask error).
+- Band left: wanaka 3650 mm² (D60 3652); Corne after op 5 193 / 0 / 18 mm² (= D60).
+- Corne op 1 + op 5 = 1344.0 s against CP op 1 1427.2 s (k_cp_fix6job, s1.2): ×0.94 (D60 ×1.07).
+
+**3. The held-link judge** (`geodesic_adaptive_holds_the_pass_load_c12.rs`, test
+`no_held_link_cuts_standing_stock_with_the_group_filter_on`, release, run by name with `--ignored --exact` on a151149fd):
+**PASS** (1 passed, 164.9 s; `fix46/judge_held_link.txt`). Its line: "geodesic_adaptive with the group filter at 15 mm:
+1892 moves, 7417 judged …, 0 over the screen 0.546 (sim peak 0.449), 0 over the exact bound 0.471 (exact peak 0.000);
+entry 267, vertical 213, departing 191, waterline 1301 (12 over the screen, exact peak 0.632), perimeter band 0, capped
+763 (89 over the screen, sim peak 0.898, exact load x cap / feed peak 0.374)".
+
+Not committed. Worktree clean, detached at 7ee3d3226.

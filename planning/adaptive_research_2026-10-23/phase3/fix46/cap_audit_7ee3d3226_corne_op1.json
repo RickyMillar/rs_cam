@@ -1,0 +1,25 @@
+{
+ "run": "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix46/7ee3d3226_corne_op1",
+ "capped_moves": 276,
+ "per_toolpath": {
+  "3D Rough 1": {
+   "capped": 276,
+   "moves": 6947,
+   "map_offset": 1,
+   "joined_samples": 2015,
+   "capped moves with no sample": 1,
+   "capped moves that remove stock": 275,
+   "cap min/median/max": [
+    575.1,
+    671.1,
+    1430.9
+   ],
+   "trace samples over cap (moves)": 0,
+   "trace over examples": [],
+   "G-code fed lines joined by position": 0,
+   "joins off the line-k map": 0,
+   "G-code F over cap (moves)": 0,
+   "G-code over examples": []
+  }
+ }
+}

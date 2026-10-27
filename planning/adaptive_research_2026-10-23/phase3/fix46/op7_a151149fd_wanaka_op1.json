@@ -1,0 +1,65 @@
+{
+ "run": "fix46/a151149fd_wanaka_op1",
+ "tp": 0,
+ "grid_mm": 0.5,
+ "inside_mm2": 40000,
+ "places_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "lowered_by_op1_mm2": {
+  "inside 0-3": 2245,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "cleared_by_edge_op_mm2": {
+  "inside 0-3": 0,
+  "inside 3-6.2": 0,
+  "inside 6.2-9": 0,
+  "inside > 9": 0,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "left_before_edge_op_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 1266,
+  "inside 6.2-9": 76,
+  "inside > 9": 1232,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "left_after_edge_op_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 1266,
+  "inside 6.2-9": 76,
+  "inside > 9": 1232,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "band_inside_0_9_left_before_mm2": 3706,
+ "band_inside_0_9_left_after_mm2": 3706,
+ "left_after_max_mm": 20.44,
+ "left_after_vol_above_target_inside_mm3": 21868,
+ "edge_op_removed_mm3_by_place": {
+  "inside 0-3": 0,
+  "inside 3-6.2": 0,
+  "inside 6.2-9": 0,
+  "inside > 9": 0,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "edge_op_removed_outside_outline_mm3": 0,
+ "samples_total_s": 0,
+ "time_by_class_s": {},
+ "xy_mm_by_class": {},
+ "air_share_of_cut_time": null,
+ "rapid_runs_in_trace": 0,
+ "cut_time_by_place_s": {}
+}

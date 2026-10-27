@@ -1,0 +1,9 @@
+move 1206 cap 1325: line k F1325.0 G1 dist 0.256 | nearest line 1204 F1519.0 dist 0.213 | G1 X15.871 Y101.500 Z-5.314 F1325
+move 1243 cap 1290: line k F1290.0 G1 dist 0.262 | nearest line 1245 F1519.0 dist 0.255 | G1 X3.144 Y96.500 Z-5.243 F1290
+move 1646 cap 1132: line k F1132.0 G1 dist 0.279 | nearest line 1647 F1132.0 dist 0.262 | G1 X116.000 Y101.750 Z-5.306 F1132
+move 1647 cap 1132: line k F1132.0 G1 dist 0.277 | nearest line 1648 F4000.0 dist 0.263 | G1 X116.173 Y101.500 Z-5.306
+move 2114 cap 1238: line k F1238.0 G1 dist 0.295 | nearest line 2116 F1519.0 dist 0.274 | G1 X3.042 Y30.500 Z-5.998 F1238
+move 3579 cap 641: line k F641.0 G1 dist 0.173 | nearest line 3590 F1519.0 dist 0.156 | G1 X135.843 Y91.552 Z-12.000 F641
+move 4873 cap 641: line k F641.0 G1 dist 0.173 | nearest line 4882 F1519.0 dist 0.156 | G1 X135.843 Y91.552 Z-18.000 F641
+move 6554 cap 641: line k F641.0 G1 dist 0.173 | nearest line 6561 F1519.0 dist 0.156 | G1 X135.843 Y91.552 Z-19.000 F641
+line-k map (D35): 275 capped moves with F <= cap, 0 with F > cap

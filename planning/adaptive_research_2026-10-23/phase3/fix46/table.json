@@ -1,0 +1,294 @@
+{
+ "7ee3d3226_corne_op1": {
+  "L_max": 0.999,
+  "L_p99": 0.493,
+  "L_p95": 0.392,
+  "mm_over_bound": 171.6,
+  "op1_clock_s": 1080.2,
+  "plunges_op1": 612,
+  "descents_op1": 382,
+  "op1_removed_mm3": 218084,
+  "job_s": 1080.2,
+  "entries": {
+   "drop <= 1 mm": [
+    157,
+    10.7,
+    0.364
+   ],
+   "drop 1 mm - 1 DPP": [
+    603,
+    156.9,
+    0.248
+   ],
+   "drop > 1 DPP": [
+    209,
+    42.5,
+    0.82
+   ]
+  },
+  "capped": {
+   "3D Rough 1": {
+    "capped": 276,
+    "capped moves that remove stock": 275,
+    "cap min/median/max": [
+     575.1,
+     671.1,
+     1430.9
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 0,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   8.438,
+   683,
+   0.003
+  ]
+ },
+ "a151149fd_corne_op1": {
+  "L_max": 0.999,
+  "L_p99": 0.509,
+  "L_p95": 0.4,
+  "mm_over_bound": 189.0,
+  "op1_clock_s": 890.3,
+  "plunges_op1": 233,
+  "descents_op1": 115,
+  "op1_removed_mm3": 218067,
+  "job_s": 890.3,
+  "entries": {
+   "drop <= 1 mm": [
+    69,
+    4.9,
+    0.366
+   ],
+   "drop 1 mm - 1 DPP": [
+    164,
+    53.3,
+    0.258
+   ],
+   "drop > 1 DPP": [
+    92,
+    24.1,
+    0.906
+   ]
+  },
+  "capped": {
+   "3D Rough 1": {
+    "capped": 535,
+    "capped moves that remove stock": 534,
+    "cap min/median/max": [
+     575.1,
+     923.6,
+     1511.4
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 0,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   8.438,
+   757,
+   0.003
+  ]
+ },
+ "a151149fd_corne_job": {
+  "L_max": 0.999,
+  "L_p99": 0.509,
+  "L_p95": 0.4,
+  "mm_over_bound": 189.0,
+  "op1_clock_s": 890.3,
+  "plunges_op1": 233,
+  "descents_op1": 115,
+  "op1_removed_mm3": 218067,
+  "job_s": 3033.9,
+  "entries": {
+   "drop <= 1 mm": [
+    69,
+    4.9,
+    0.366
+   ],
+   "drop 1 mm - 1 DPP": [
+    164,
+    53.3,
+    0.258
+   ],
+   "drop > 1 DPP": [
+    92,
+    24.1,
+    0.906
+   ]
+  },
+  "capped": {
+   "3D Rough 1": {
+    "capped": 535,
+    "capped moves that remove stock": 534,
+    "cap min/median/max": [
+     575.1,
+     923.6,
+     1511.4
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 0,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   8.438,
+   757,
+   0.003
+  ],
+  "edge_axial": [
+   8.958,
+   6750,
+   0.126
+  ]
+ },
+ "7ee3d3226_wanaka_op1": {
+  "L_max": 0.72,
+  "L_p99": 0.375,
+  "L_p95": 0.358,
+  "mm_over_bound": 107.4,
+  "op1_clock_s": 2271.9,
+  "plunges_op1": 1262,
+  "descents_op1": 581,
+  "op1_removed_mm3": 591516,
+  "job_s": 2271.9,
+  "entries": {
+   "drop <= 1 mm": [
+    190,
+    19.9,
+    0.453
+   ],
+   "drop 1 mm - 1 DPP": [
+    1386,
+    708.0,
+    0.628
+   ],
+   "drop > 1 DPP": [
+    282,
+    230.0,
+    0.958
+   ]
+  },
+  "capped": {
+   "2 Back Rough": {
+    "capped": 358,
+    "capped moves that remove stock": 356,
+    "cap min/median/max": [
+     377.4,
+     543.0,
+     997.9
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 355,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   12.419,
+   639,
+   0.001
+  ]
+ },
+ "a151149fd_wanaka_op1": {
+  "L_max": 0.72,
+  "L_p99": 0.375,
+  "L_p95": 0.358,
+  "mm_over_bound": 110.0,
+  "op1_clock_s": 2079.6,
+  "plunges_op1": 988,
+  "descents_op1": 352,
+  "op1_removed_mm3": 591311,
+  "job_s": 2079.6,
+  "entries": {
+   "drop <= 1 mm": [
+    141,
+    15.3,
+    0.468
+   ],
+   "drop 1 mm - 1 DPP": [
+    933,
+    518.4,
+    0.7
+   ],
+   "drop > 1 DPP": [
+    281,
+    229.3,
+    0.958
+   ]
+  },
+  "capped": {
+   "2 Back Rough": {
+    "capped": 570,
+    "capped moves that remove stock": 568,
+    "cap min/median/max": [
+     362.6,
+     761.4,
+     999.1
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 566,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   12.419,
+   639,
+   0.001
+  ]
+ },
+ "a151149fd_wanaka_job": {
+  "L_max": 0.72,
+  "L_p99": 0.375,
+  "L_p95": 0.358,
+  "mm_over_bound": 110.0,
+  "op1_clock_s": 2079.6,
+  "plunges_op1": 988,
+  "descents_op1": 352,
+  "op1_removed_mm3": 591311,
+  "job_s": 3120.7,
+  "entries": {
+   "drop <= 1 mm": [
+    141,
+    15.3,
+    0.468
+   ],
+   "drop 1 mm - 1 DPP": [
+    933,
+    514.6,
+    0.702
+   ],
+   "drop > 1 DPP": [
+    281,
+    67.7,
+    0.961
+   ]
+  },
+  "capped": {
+   "2 Back Rough": {
+    "capped": 570,
+    "capped moves that remove stock": 568,
+    "cap min/median/max": [
+     362.6,
+     761.4,
+     999.1
+    ],
+    "trace samples over cap (moves)": 0,
+    "G-code fed lines joined by position": 566,
+    "G-code F over cap (moves)": 0
+   }
+  },
+  "op1_axial": [
+   12.419,
+   639,
+   0.001
+  ],
+  "edge_axial": [
+   1.907,
+   0,
+   0.0
+  ]
+ }
+}

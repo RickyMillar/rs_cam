@@ -1,0 +1,46 @@
+move 1010 cap 1096: line k F1096.0 G1 dist 0.230 | nearest line 1009 F4000.0 dist 0.217 | G1 X35.000 Y104.236 Z-5.556 F1096
+move 1041 cap 1011: line k F1011.0 G1 dist 0.241 | nearest line 1042 F4000.0 dist 0.138 | G1 X44.000 Y11.747 Z-5.533 F1011
+move 1052 cap 1176: line k F1176.0 G1 dist 0.183 | nearest line 1051 F4000.0 dist 0.132 | G1 X40.500 Y10.497 Z-5.661 F1176
+move 1081 cap 1461: line k F1461.0 G1 dist 0.239 | nearest line 1082 F4000.0 dist 0.164 | G1 X28.500 Y103.195 Z-4.940 F1461
+move 1083 cap 1320: line k F1320.0 G1 dist 0.254 | nearest line 1084 F4000.0 dist 0.243 | G1 X30.500 Y104.347 Z-5.912 F1320
+move 1125 cap 1325: line k F1325.0 G1 dist 0.256 | nearest line 1124 F1237.0 dist 0.213 | G1 X15.871 Y101.500 Z-5.314 F1325
+move 1150 cap 1290: line k F1290.0 G1 dist 0.262 | nearest line 1151 F1270.0 dist 0.255 | G1 X3.144 Y96.500 Z-5.243 F1290
+move 1172 cap 1125: line k F1125.0 G1 dist 0.190 | nearest line 1173 F4000.0 dist 0.095 | G1 X64.500 Y107.573 Z-5.609 F1125
+move 1311 cap 1203: line k F1203.0 G1 dist 0.238 | nearest line 1310 F4000.0 dist 0.196 | G1 X90.165 Y107.500 Z-5.603 F1203
+move 1319 cap 1086: line k F1086.0 G1 dist 0.242 | nearest line 1320 F1144.0 dist 0.216 | G1 X94.824 Y106.500 Z-5.555 F1086
+move 1443 cap 1132: line k F1132.0 G1 dist 0.279 | nearest line 1444 F1132.0 dist 0.262 | G1 X116.000 Y101.750 Z-5.306
+move 1444 cap 1132: line k F1132.0 G1 dist 0.277 | nearest line 1445 F4000.0 dist 0.263 | G1 X116.173 Y101.500 Z-5.306
+move 1657 cap 1096: line k F1096.0 G1 dist 0.314 | nearest line 1651 F1519.0 dist 0.310 | G1 X149.486 Y98.033 Z-5.758 F1096
+move 1667 cap 1170: line k F1170.0 G1 dist 0.298 | nearest line 1668 F809.0 dist 0.188 | G1 X145.185 Y29.000 Z-6.000 F1170
+move 1685 cap 1071: line k F1071.0 G1 dist 0.236 | nearest line 1684 F4000.0 dist 0.179 | G1 X81.500 Y18.281 Z-5.587 F1071
+move 1687 cap 1138: line k F1138.0 G1 dist 0.253 | nearest line 1686 F4000.0 dist 0.166 | G1 X80.244 Y17.500 Z-5.566 F1138
+move 1689 cap 1332: line k F1332.0 G1 dist 0.223 | nearest line 1688 F4000.0 dist 0.169 | G1 X79.000 Y16.777 Z-5.622 F1332
+move 1743 cap 1469: line k F1469.0 G1 dist 0.290 | nearest line 1744 F4000.0 dist 0.203 | G1 X25.856 Y12.500 Z-4.500 F1469
+move 1747 cap 953: line k F953.0 G1 dist 0.233 | nearest line 1748 F4000.0 dist 0.190 | G1 X35.500 Y7.749 Z-5.551 F953
+move 1752 cap 1257: line k F1257.0 G1 dist 0.225 | nearest line 1751 F4000.0 dist 0.211 | G1 X33.500 Y6.275 Z-5.636 F1257
+move 1754 cap 1480: line k F1480.0 G1 dist 0.233 | nearest line 1753 F4000.0 dist 0.208 | G1 X32.000 Y6.906 Z-4.500 F1480
+move 1769 cap 1238: line k F1238.0 G1 dist 0.295 | nearest line 1770 F1042.0 dist 0.274 | G1 X3.042 Y30.500 Z-5.998 F1238
+move 1787 cap 1290: line k F1290.0 G1 dist 0.229 | nearest line 1788 F4000.0 dist 0.126 | G1 X31.500 Y4.834 Z-5.938 F1290
+move 1815 cap 1398: line k F1398.0 G1 dist 0.247 | nearest line 1816 F4000.0 dist 0.197 | G1 X16.500 Y8.748 Z-5.096 F1398
+move 1825 cap 1156: line k F1156.0 G1 dist 0.237 | nearest line 1836 F4000.0 dist 0.169 | G1 X17.336 Y3.000 Z-6.000 F1156
+move 1889 cap 1154: line k F1154.0 G1 dist 0.249 | nearest line 1888 F4000.0 dist 0.249 | G1 X149.448 Y102.168 Z-6.000 F1154
+move 1890 cap 1226: line k F1226.0 G1 dist 0.248 | nearest line 1889 F1154.0 dist 0.247 | G1 X149.135 Y102.480 Z-6.000 F1226
+move 3020 cap 1162: line k F1162.0 G1 dist 0.303 | nearest line 3021 F607.0 dist 0.122 | G1 X114.467 Y41.052 Z-12.000 F1162
+move 3077 cap 1134: line k F1134.0 G1 dist 0.306 | nearest line 3078 F578.0 dist 0.249 | G1 X127.459 Y41.052 Z-12.000 F1134
+move 4259 cap 1162: line k F1162.0 G1 dist 0.303 | nearest line 4260 F607.0 dist 0.122 | G1 X114.467 Y41.052 Z-18.000 F1162
+move 4316 cap 1134: line k F1134.0 G1 dist 0.306 | nearest line 4317 F578.0 dist 0.249 | G1 X127.459 Y41.052 Z-18.000 F1134
+move 4648 cap 753: line k F753.0 G1 dist 0.236 | nearest line 4649 F750.0 dist 0.104 | G1 X52.793 Y54.026 Z-19.000 F753
+move 4651 cap 917: line k F917.0 G1 dist 0.307 | nearest line 4652 F4000.0 dist 0.263 | G1 X54.761 Y55.270 Z-19.000 F917
+move 4656 cap 754: line k F750.0 G1 dist 0.300 | nearest line 4655 F4000.0 dist 0.220 | G1 X53.373 Y63.408 Z-22.500 F750
+move 4657 cap 990: line k F990.0 G1 dist 0.299 | nearest line 4656 F750.0 dist 0.163 | G1 X53.043 Y63.575 Z-19.000 F990
+move 4681 cap 1362: line k F1362.0 G1 dist 0.295 | nearest line 4680 F4000.0 dist 0.203 | G1 X53.159 Y65.135 Z-19.000 F1362
+move 5307 cap 888: line k F888.0 G1 dist 0.196 | nearest line 5308 F4000.0 dist 0.155 | G1 X38.027 Y24.552 Z-19.000 F888
+move 5381 cap 922: line k F922.0 G1 dist 0.304 | nearest line 5382 F4000.0 dist 0.247 | G1 X28.893 Y90.052 Z-19.000 F922
+move 5410 cap 900: line k F900.0 G1 dist 0.299 | nearest line 5411 F4000.0 dist 0.172 | G1 X55.034 Y94.734 Z-19.000 F900
+move 5466 cap 885: line k F885.0 G1 dist 0.302 | nearest line 5467 F4000.0 dist 0.254 | G1 X72.034 Y93.302 Z-19.000 F885
+move 5471 cap 752: line k F750.0 G1 dist 0.311 | nearest line 5472 F4000.0 dist 0.304 | G1 X88.133 Y75.052 Z-22.500 F750
+move 5495 cap 888: line k F888.0 G1 dist 0.300 | nearest line 5494 F4000.0 dist 0.292 | G1 X79.534 Y90.352 Z-19.000 F888
+move 5566 cap 968: line k F968.0 G1 dist 0.303 | nearest line 5565 F4000.0 dist 0.266 | G1 X87.534 Y94.318 Z-19.000 F968
+move 5670 cap 1162: line k F1162.0 G1 dist 0.303 | nearest line 5671 F607.0 dist 0.122 | G1 X114.467 Y41.052 Z-19.000 F1162
+move 5739 cap 1134: line k F1134.0 G1 dist 0.306 | nearest line 5740 F578.0 dist 0.249 | G1 X127.459 Y41.052 Z-19.000 F1134
+line-k map (D35): 534 capped moves with F <= cap, 0 with F > cap
