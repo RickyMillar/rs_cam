@@ -107,7 +107,9 @@ pub struct StrategyRecommendation {
 fn is_constant_engagement(strategy: ClearingStrategy) -> bool {
     matches!(
         strategy,
-        ClearingStrategy::ContourSpiral | ClearingStrategy::AgentSearch
+        ClearingStrategy::ContourSpiral
+            | ClearingStrategy::AgentSearch
+            | ClearingStrategy::GeodesicAdaptive
     )
 }
 
@@ -118,6 +120,7 @@ fn strategy_label(strategy: ClearingStrategy) -> &'static str {
         ClearingStrategy::ContourParallel => "Contour Parallel",
         ClearingStrategy::Adaptive => "Adaptive",
         ClearingStrategy::ContourSpiral => "Contour Spiral",
+        ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
     }
 }
 

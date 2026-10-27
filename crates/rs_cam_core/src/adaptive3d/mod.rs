@@ -116,6 +116,7 @@ impl From<crate::compute::operation_configs::ClearingStrategy> for ClearingStrat
             Config::Adaptive => Self::Adaptive,
             Config::AgentSearch => Self::AgentSearch,
             Config::ContourSpiral => Self::ContourSpiral,
+            Config::GeodesicAdaptive => Self::GeodesicAdaptive,
         }
     }
 }

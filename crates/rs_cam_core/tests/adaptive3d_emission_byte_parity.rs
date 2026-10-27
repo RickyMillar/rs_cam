@@ -18,10 +18,11 @@
 //! committed fixture. Nothing about the toolpath can move without a line of
 //! the dump moving with it.
 //!
-//! ## The four cases
+//! ## The five cases
 //!
 //! One per `ClearingStrategy3d` variant, so the AgentSearch arm CUT-09 cuts
-//! is measured, and so is the `ContourSpiral` arm that dispatches through it.
+//! is measured, and so are the `ContourSpiral` and `GeodesicAdaptive` arms
+//! that dispatch through it.
 //! The cases deliberately turn the optional dials ON, because a rig that
 //! runs only the all-`None` parameter set cannot see a mis-threaded dial:
 //!
@@ -31,6 +32,10 @@
 //! | `adaptive` | `Adaptive` | `detect_flat_areas`, `z_blend` |
 //! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
 //! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
+//! | `geodesic_adaptive` | `GeodesicAdaptive` | its own step split and route (`None` = `StockDepth`, `CutFeed`), stay-down, the feed caps |
+//!
+//! A move with a feed cap (`Move::feed_cap`) adds ` cap=<bits>` to its
+//! line; a move with none adds nothing, so the four older dumps do not move.
 //!
 //! ## Determinism
 //!
@@ -52,6 +57,8 @@
 //!   `contour_spiral` rings gain points on their arc joins: moves 370 to
 //!   378 and 944 to 995. `contour_parallel` and `adaptive` do not move.
 //!   A toggle proof (the chord flatten restored) gives the old dumps.
+//! - Integration step 7.4b: the new case `geodesic_adaptive` only. The four
+//!   older fixtures are unchanged.
 
 #![expect(
     clippy::unwrap_used,
@@ -148,15 +155,21 @@ fn case_params(case: &str) -> Adaptive3dParams {
             p.trochoid_cap_mult = 2.0;
             p
         }
+        "geodesic_adaptive" => {
+            let mut p = base_params(ClearingStrategy3d::GeodesicAdaptive);
+            p.linking.max_stay_down_distance_mm = Some(8.0);
+            p
+        }
         other => panic!("unknown case {other}"),
     }
 }
 
-const CASES: [&str; 4] = [
+const CASES: [&str; 5] = [
     "contour_parallel",
     "adaptive",
     "agent_search",
     "contour_spiral",
+    "geodesic_adaptive",
 ];
 
 fn generate(case: &str) -> Toolpath {
@@ -196,8 +209,11 @@ fn dump(case: &str, tp: &Toolpath) -> String {
                 feed_rate.to_bits()
             ),
         };
+        let cap = m
+            .feed_cap
+            .map_or(String::new(), |c| format!(" cap={:016x}", c.to_bits()));
         out.push_str(&format!(
-            "{i} {:016x} {:016x} {:016x} {kind} {:?}\n",
+            "{i} {:016x} {:016x} {:016x} {kind} {:?}{cap}\n",
             m.target.x.to_bits(),
             m.target.y.to_bits(),
             m.target.z.to_bits(),
@@ -271,6 +287,11 @@ fn agent_search_emission_is_byte_identical() {
 #[test]
 fn contour_spiral_emission_is_byte_identical() {
     check("contour_spiral");
+}
+
+#[test]
+fn geodesic_adaptive_emission_is_byte_identical() {
+    check("geodesic_adaptive");
 }
 
 /// The fixture is only worth something if the generator is deterministic.

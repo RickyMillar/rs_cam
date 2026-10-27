@@ -2094,6 +2094,43 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
     session
 }
 
+/// Integration step 7.4b: the project value `geodesic_adaptive` reaches
+/// the arm through the session door (config → `ClearingStrategy3d` →
+/// dispatch → dressups). The arm writes feed caps, and no cut leaves the
+/// session over its cap.
+#[test]
+fn geodesic_adaptive_generates_through_the_session() {
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::GeodesicAdaptive);
+    // A wide stepover and one deep level keep the debug build short; the
+    // test proves the wiring, not the plan.
+    let _ = session
+        .set_toolpath_param(0, "stepover", serde_json::json!(3.0))
+        .expect("set the stepover");
+    let _ = session
+        .set_toolpath_param(0, "depth_per_pass", serde_json::json!(30.0))
+        .expect("set Depth/Pass");
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("generate the Geodesic Adaptive op");
+    let tp = session
+        .result_at(0)
+        .expect("the op has a result")
+        .toolpath();
+    let capped: Vec<_> = tp.moves.iter().filter(|m| m.feed_cap.is_some()).collect();
+    assert!(
+        !capped.is_empty(),
+        "the arm wrote no feed cap ({} moves); the value did not reach the arm",
+        tp.moves.len()
+    );
+    for m in capped {
+        let (Some(feed), Some(cap)) = (cut_move_feed(m), m.feed_cap) else {
+            continue;
+        };
+        assert!(feed <= cap, "a cut leaves at {feed}, over its cap {cap}");
+    }
+}
+
 fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
     match m.move_type {
         crate::toolpath::MoveType::Linear { feed_rate }

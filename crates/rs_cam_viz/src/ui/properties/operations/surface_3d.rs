@@ -182,6 +182,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 ClearingStrategy::Adaptive => "Adaptive",
                 ClearingStrategy::AgentSearch => "Agent Search",
                 ClearingStrategy::ContourSpiral => "Contour Spiral",
+                ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(
@@ -213,6 +214,17 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                     "Constructive inside-out spiral per slice: one continuous \
                          stay-down pass per region with engagement bounded by the \
                          stepover. Experimental (Stage 1, algorithm review 2026-06-12).",
+                );
+                ui.selectable_value(
+                    &mut cfg.clearing_strategy,
+                    ClearingStrategy::GeodesicAdaptive,
+                    "Geodesic Adaptive",
+                )
+                .on_hover_text(
+                    "Geodesic-wavefront roughing per slice: spiral wraps that hold \
+                         the pass load, with each tight turn fed down to that load. It \
+                         clears the body only; follow it with a Contour Parallel rest \
+                         op for the edges. New, not yet machine-tested.",
                 );
             });
         ui.end_row();

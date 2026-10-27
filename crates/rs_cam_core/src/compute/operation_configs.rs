@@ -146,6 +146,12 @@ pub enum ClearingStrategy {
     /// stay-down pass per region, engagement bounded by wrap spacing
     /// (Stage 1, algorithm review 2026-06-12).
     ContourSpiral,
+    /// Geodesic Adaptive (integration step 7.4): the geodesic-wavefront
+    /// plan per slice piece (`adaptive::geodesic`). It clears the body
+    /// under the pass load, with the stock-depth step split and the routed
+    /// keep-down travel; a piece it cannot plan is left to a rest op. New,
+    /// not yet machine-tested.
+    GeodesicAdaptive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
@@ -3799,7 +3805,7 @@ impl_operation_params!(ProjectCurveConfig {
 mod tests {
     use super::*;
 
-    /// ClearingStrategy must serialize and deserialize all three variants.
+    /// ClearingStrategy must serialize and deserialize every variant.
     /// Regression guard for the GUI/MCP exposure of AgentSearch —
     /// adding a variant to the core ClearingStrategy3d enum is not
     /// enough; this config-layer enum is the one serde sees from TOML
@@ -3810,6 +3816,8 @@ mod tests {
             ClearingStrategy::ContourParallel,
             ClearingStrategy::Adaptive,
             ClearingStrategy::AgentSearch,
+            ClearingStrategy::ContourSpiral,
+            ClearingStrategy::GeodesicAdaptive,
         ] {
             let json = serde_json::to_string(&variant).unwrap();
             let round_trip: ClearingStrategy = serde_json::from_str(&json).unwrap();
@@ -3820,6 +3828,12 @@ mod tests {
         assert_eq!(json, "\"agent_search\"");
         let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
         assert_eq!(from_wire, ClearingStrategy::AgentSearch);
+        // Integration step 7.4b: the project file and the job file spell
+        // Geodesic Adaptive `geodesic_adaptive`.
+        let json = serde_json::to_string(&ClearingStrategy::GeodesicAdaptive).unwrap();
+        assert_eq!(json, "\"geodesic_adaptive\"");
+        let from_wire: ClearingStrategy = serde_json::from_str("\"geodesic_adaptive\"").unwrap();
+        assert_eq!(from_wire, ClearingStrategy::GeodesicAdaptive);
     }
 
     /// The A/M6 deserialization-compatibility matrix, all three cells

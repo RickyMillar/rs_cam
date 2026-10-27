@@ -569,7 +569,12 @@ fn only_a_contour_spiral_holds_a_uniform_engagement() {
         "clearing_strategy",
         "contour_spiral"
     ));
-    for token in ["contour_parallel", "adaptive", "agent_search"] {
+    for token in [
+        "contour_parallel",
+        "adaptive",
+        "agent_search",
+        "geodesic_adaptive",
+    ] {
         assert!(
             !with(OperationType::Adaptive3d, "clearing_strategy", token),
             "{token}"
