@@ -130,7 +130,46 @@ every 3D rough may call it; its strategy test sits at the call site
 | E. Outer band and clip (C38 §16, C31) | `clip_to_stock_box` R `research_outer_band.rs:42`, `clip_to_centre_reach` :182, `boundary_reach` :120, `ResearchClip` :131, `research_grown_outlines` R `clearing.rs:3867` | box clip → `geometry/`; reach → `adaptive3d/centre_clip.rs`; `boundary_reach` → `adaptive3d/path.rs` boundary clear (M :811) | geometry shared; the call is arm-only now. G-CLIPAIR for CP is step 3, not here | not called | 5 |
 | F. Feed factor on the cut (D6) | today: `apply_slice_turn_feeds`, `apply_chain_feeds` (match by XY) | `Adaptive3dSegment::Cut` carries a factor; the RDP joins equal factors; `segments_to_toolpath` (M `adaptive3d/path.rs:1429`) writes `Move::feed_cap` | shared IR; only the arm writes a factor | factor 1 → `feed_cap: None` → byte parity | 6 (may follow 7.4; see §5) |
 | G. C22a replay after the short-group filter | `filter_short_groups` R `clearing.rs:3655`, replay loop R :3446–3520 calling `slice_replay` | `adaptive3d/clearing.rs`, one filter for every slice arm (INTEGRATION_PLAN §1 item 12) | shared filter; the replay is arm-only until a measure shows it for AgentSearch/ContourSpiral | AgentSearch/ContourSpiral keep today's filter output | 7 |
-| H. Rest-region publication (D44 + D48) | `left_regions` R `research_outer_band.rs:84`; collect R `clearing.rs:470`, :2429, :3276; publish R `adaptive3d/mod.rs:1406–1418`; precedence R `compute/execute.rs` and `run_volumetric` R `compute/execute/volumetric.rs:142`; doc R `trace/produced.rs:46–62` | `adaptive3d/` + `compute/execute/` | the channel is strategy-neutral (§8 step 1b); the producer (left pieces) is arm-only, because only the arm records left pieces | none publish | step 1b, before 7.5 |
+| H. Rest-region publication (D44 + D48 + D50) | see §3.1 | `trace/produced.rs`, `adaptive3d/`, `compute/execute/`, `session/compute/generation.rs` | the channel is strategy-neutral (§8 step 1b); the producer (left pieces) is arm-only, because only the arm records left pieces | none publish | step 1b, before 7.5 |
+
+### 3.1 Part H in detail: the rest-region channel (D44, D48, D50)
+
+M already has the channel's consumer side: `Produced::rest_regions`
+(M `trace/produced.rs:47`) and `BoundarySource::DerivedRestRegions`, fed
+today by the finishing rest detector (M `finish/rest_detector.rs:138`).
+Part H adds a 3D Rough as a producer and bounds what it publishes in XY
+(D48) and in Z (D50).
+
+| Piece | What it does | R location | M home |
+|---|---|---|---|
+| D44 collect | each level records the pieces the arm left to a rest pass, with the level Z | `ClearZLevelContext::research_left_pieces` R `adaptive3d/clearing.rs:470`, push :3276, read :2429; carried out R `adaptive3d/path.rs:612`, :1290 | `adaptive3d/clearing.rs` context; renamed `left_pieces` (no `research_`) |
+| D44 publish | the union over the levels, grown by one planner cell, becomes `Produced::rest_regions` | `left_regions` R `adaptive3d/research_outer_band.rs:84`; call R `adaptive3d/mod.rs:1406–1418` | a new `adaptive3d/rest_regions.rs` (geometry only, C38 §13.8), called from `adaptive3d/mod.rs` |
+| D44 precedence | the 3D Rough's own regions win over the generic rest analysis; the analysis then attaches only its grid. The rough publishes only when a `DerivedRestRegions` boundary names it | R `compute/execute.rs`, `run_volumetric` R `compute/execute/volumetric.rs:142` | the same two places on M (M `volumetric.rs:142`) |
+| D48 XY frame (G-RESTFRAME) | every producer publishes TOOL-CENTRE positions. The rough clips its union to its own containment polygons (`Adaptive3dGeometry::centre_boundary`, already on M), so a consumer with `Center` containment and a tool no larger than the rough's stays inside the rough's boundary | R `research_outer_band.rs:84–118`; doc R `trace/produced.rs:52–61` | `rest_regions.rs`; the doc on `Produced::rest_regions` |
+| D50 Z span (in progress on R, uncommitted at 453d52571) | each left piece carries the top Z of the slab it leaves (`slab_top_z`: the next level above, or the level anchor). `left_regions` also returns the highest top of a piece that meets the clipped regions. `Produced` gains `rest_regions_top_z: Option<f64>` (one value for the set, shifted by `shift.z` in the datum move). The consumer reads it through `ProjectSession::derived_rest_top_z` (`session/compute/generation.rs`) into `Adaptive3dDepth::rest_top_z`; on remaining stock the level plan starts no higher (a ceiling on the G-LADDERANCHOR anchor, `adaptive3d/path.rs`). On fresh stock it is not read | R working tree: `research_outer_band.rs` (`slab_top_z`), `trace/produced.rs`, `adaptive3d/mod.rs`, `path.rs`, `compute/execute.rs`, `rough_3d.rs`, `volumetric.rs`, `session/compute.rs`, `generation.rs`; sentry `a_rest_consumer_starts_at_the_left_stock_top_d50` | port only after R commits D50; reread then. `slab_top_z` → `rest_regions.rs` |
+
+Order inside part H (step 1b, then 7.5):
+1. Step 1b (strategy-neutral): the `Produced` field `rest_regions_top_z`,
+   its datum shift, the precedence in `compute/execute.rs` and
+   `run_volumetric`, the consumer read (`rest_top_z` into the 3D Rough's
+   depth), and the D48 frame rule in the `Produced` doc. No producer yet,
+   so every op's output is unchanged: byte parity. Sentries: the D48 and
+   D50 tests run with a hand-set `Produced` (a planted source), since no
+   rough publishes yet.
+2. Step 7.5: the arm's producer (collect, `left_regions`, `slab_top_z`).
+   Sentries: R's D44, D48 and D50 tests ported.
+
+Open points for part H:
+- D50 keeps ONE top for the whole set. A region far below the highest
+  piece then starts its levels too high and cuts air down to its own
+  slab. A per-region top is the exact form. Record as a later item unless
+  D50's measurement shows the air time matters.
+- The consumer must not cut below its own floor because of `rest_top_z`:
+  it is a ceiling on the start, never a floor. D50's sentry must state
+  that.
+- 7.5 test: a consumer with a LARGER tool than the rough's can still leave
+  the rough's boundary (D48 holds for "no larger" only). The GUI template
+  (Q-T) must pick the edge tool with that rule, or the consumer refuses.
 
 Notes:
 - Part H has one typed number: the grow `tool_radius / 6.0` (R
@@ -190,7 +229,7 @@ parity" means `adaptive3d_emission_byte_parity` and
 | 7.2 | Parts B + C + D, shared, default off: `StepSplit`, `adaptive3d/keep_down.rs` (`keep_down_excess`, `corridor_ceiling_z` wrapper, `keep_down_route`), `KeepDownRoute` | `adaptive3d/` sentries; planted cases for `keep_down_excess` (one link through stock, one over cut ground) and the router (R `keep_down_route.rs` tests) | every new switch defaults to today's rule; byte parity |
 | 7.3 | The 2D module `adaptive/geodesic/` (§2), copied from R and cut to C35; `research_geodesic.rs` on M replaced by R's test-support part, which calls the new module | `--lib adaptive::geodesic`; the 2D harness controls (R `tests/adaptive_geodesic_2d_renders_g1.rs`) on C35, with C35's R numbers as the pin | no product caller yet; byte parity |
 | 7.4 | The variant: parts E and G, the `ClearingStrategy` value, the planner enum, the dispatch, the GUI row, the catalog line. Feeds by the match functions (part F not yet) | new golden `tests/fixtures/adaptive3d_emission/geodesic_adaptive.txt`; the C12 judge without `research`; `schema_enum_values_g_schemaenum`; `every_op_states_its_capabilities_w2_4`; `mcp_wire_surface_pin`; the serde round trip; viz `-j 2` filtered to `surface_3d` | byte parity on the four existing strategies: the variant adds output only |
-| 7.5 | Part H producer for the variant (after step 1b lands the channel) | R `tests/a_rough_publishes_the_regions_it_leaves_d44.rs`, `a_derived_rest_rough_cuts_only_the_leftovers_d44.rs`, `a_rest_consumer_stays_inside_the_source_boundary_d48.rs`, ported | byte parity on all strategies; a CP op without a `DerivedRestRegions` consumer publishes nothing |
+| 7.5 | Part H producer for the variant (after step 1b lands the channel, §3.1): left pieces with their slab tops, D48 clip, D50 top | R `tests/a_rough_publishes_the_regions_it_leaves_d44.rs`, `a_derived_rest_rough_cuts_only_the_leftovers_d44.rs`, `a_rest_consumer_stays_inside_the_source_boundary_d48.rs`, `a_rest_consumer_starts_at_the_left_stock_top_d50.rs` (when R commits it), ported | byte parity on all strategies; a CP op without a `DerivedRestRegions` consumer publishes nothing |
 | 7.6 | Part F: the factor on `Adaptive3dSegment::Cut`; the emitter writes `feed_cap`; delete `apply_slice_turn_feeds`, `apply_chain_feeds`, `TurnRecord` matching | the step-1 sentry; a new census: every capped cut keeps its cap through every dressup; the arm's golden re-bless (only this op) | byte parity on the four existing strategies (factor 1 → `None`, proved by step 1's `Debug` test) |
 | 7.7 | Delete `GeodesicOptions`, the presets and the losing values (§1.2); move the C12 judge to the product arm | `research` clippy; the C12 judge | byte parity on all five strategies |
 | 7.8 | Template "geodesic body + CP edges", if Q-T says yes | its sentry: the pair cuts the R D47 volume within the sim cell | byte parity |
