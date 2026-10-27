@@ -5226,3 +5226,83 @@ three to five entries in every switch hole, and a line along the inner wall.
   lead's assignment).
 
 Simulation files deleted. Not committed.
+
+## D41: why op 5 (the CP rest, "3D Rough 1 (edges, CP rest)") costs 608–763 s (fix29, tree 7b7a8df6c)
+
+Runs: `fix27/jobs/k_body_cp_edges_s1p2.toml` and `_s2p1.toml` again
+(`fix29/run_fix29.sh`, clean 7b7a8df6c; the s1.2 program equals fix26
+k_body_cp's cycle 4344 s, s2.1 3543 s). Analysis `fix29/op5_analysis.py`
+(stock before and after op 5, stockmap_d35's method on a 0.25 mm grid;
+places as in D38; air = sample removes ≤ 0.027 mm³; "stock > 0.8 before" =
+the stock before op 5 stands > 0.8 mm above the 6 mm target at the sample
+XY, copy_ramps.py's G-AIRRAMP rule), `fix25/audit_d34.py`, `fix26/three_clocks.py`.
+
+**What op 5 is.** The job's op 5 is contour_parallel on `from_remaining_stock`
+with op 1's boundary (silhouette + 6 mm, centre containment), stepover 1.2,
+Depth/Pass 6.0. Nothing limits it to the edges: it plans every cell where
+op 1 left material above surface + leave. The name is the only "edges".
+
+**1. Time split** (s; acceleration clock by integrator class, sample clock by label):
+
+| | op 5 accel total | cutting | rapid | linking | entry | descents | plunge share (accel) |
+|---|---|---|---|---|---|---|---|
+| s1.2 | 608.1 | 310.7 | 204.8 | 73.6 | 18.9 | 19 | 7.1 % |
+| s2.1 | 762.7 | 322.2 | 309.1 | 105.1 | 26.2 | 37 | 7.3 % |
+
+Sample clock (fix26/time_split.py): s1.2 cut 248.6 (helix 136.9, of it 90.1
+at F750), plunge/ramp 56.5, link at feed 27.6, rapid 148.4; s2.1 cut 251.1,
+plunge/ramp 73.5, link 44.4, rapid 222.8.
+- The rapids are the second cost: 287 / 426 G0 moves, 6013 / 8644 mm of XY
+  travel, all of it in moves over 10 mm (89 / 138 moves). The plot shows them:
+  hops between some 30 switch holes, and a raster of rapids across the
+  lower-left corner.
+
+**2. Cut length and area cleared** (fed length of the op section: 10243 /
+11264 mm):
+
+| place | left before op 5 (mm² > 0.8) | cleared by op 5 (> 0.8 lowered) | left after |
+|---|---|---|---|
+| outside 0–3 mm | 860 / 861 | 680 / 682 | 192 / 193 |
+| outside 3–6.2 mm | 696 / 696 | 696 / 696 | 0 / 0 |
+| outside 6.2–9 mm | 424 / 424 | 405 / 405 | 18 / 18 |
+| switch holes | 809 / 1356 | 111 / 375 | 698 / 983 |
+| inside the case | 513 / 412 | 47 / 61 | 467 / 360 |
+| outside > 9 mm (and off the part grid) | 3853 / 3853 | 1344 / 1354 | 2510 / 2510 |
+
+(s1.2 / s2.1.) The edge band 0–9 mm is 1986 mm²; op 5 clears 1781 of the
+1980 mm² left there, as CP does. It clears little in the holes and the case.
+
+**3. Air cutting** (op 5's clearing_cut samples, sample clock, s1.2 / s2.1):
+- removes stock: 65.1 / 77.6 s (3424 / 4155 mm XY);
+- air, but stock > 0.8 mm stands at the XY before op 5: 65.4 / 71.7 s (beside
+  the stock it then cuts);
+- **air over ≤ 0.8 mm before op 5: 118.1 / 101.8 s**: inside the case 69.6 /
+  52.3 s (one full contour lap along the inner wall at each level) and the
+  switch holes 48.5 / 49.6 s (small loops in about 30 holes).
+- So 74 % / 69 % of op 5's cut time removes nothing, and 48 % / 41 % runs
+  where op 1 left ≤ 0.8 mm. Same class as G-AIRRAMP (feed spent in near-air);
+  here it is cut feed along whole contours, not ramps.
+
+Plots: `phase3/fix29/img/op5_s1p2.png`, `op5_s2p1.png` (samples coloured by
+class).
+
+**4. Region and Z levels.** Op 5's levels come from
+`level_anchor_z` (`adaptive3d/path.rs:323`, G-LADDERANCHOR, called at
+`path.rs:949`): on prior stock the plan starts at the highest stock top over
+the planner cells that still hold material above surface + leave, then
+`step_levels` (`path.rs:959`) steps Depth/Pass down. The region is the same
+material test (the cells with material left, after the border and boundary
+clears). Logged first level ("Z levels computed", `index=1`): s1.2 z_top 17.0
+(levels 17 / 11 / 5 / 0.5, the same as op 1, because the edge band still
+stands at the stock top 23); **s2.1 z_top 14.04** (levels 14.04 / 8.04 /
+2.04 / 0.5: op 1 at s 2.1 leaves no cell at 23 inside the boundary). So
+G-LEVELPHASE acts on op 5 at s 2.1: the level grid moves 3 mm, and op 5's
+descents rise 19 → 37, its switch-hole clearing 111 → 375 mm², and its rapids
+6013 → 8644 mm.
+
+Why op 5 costs about what CP's op 1 spends on the band: it clears the band
+with a full contour lap per level (65–78 s removing), but also laps the
+inner case wall and loops in the holes where op 1 left nothing (102–118 s),
+and hops between them (205–309 s of rapids with acceleration).
+
+Simulation files deleted. Not committed.

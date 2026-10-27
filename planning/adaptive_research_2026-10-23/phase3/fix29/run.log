@@ -1,0 +1,4 @@
+tree = clean 7b7a8df6c
+s1p2 rc=0 334s; Toolpaths: 3  |  Cutting: 79560mm  |  Rapid: 32148mm  |  Time: 4344s
+s2p1 rc=0 20s; Toolpaths: 3  |  Cutting: 59111mm  |  Rapid: 33501mm  |  Time: 3543s
+D41RUNSDONE

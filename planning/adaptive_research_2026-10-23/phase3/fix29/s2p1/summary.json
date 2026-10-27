@@ -1,0 +1,69 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 3,
+  "total_cutting_distance_mm": 59111.05301064948,
+  "total_rapid_distance_mm": 33501.44663295672,
+  "total_runtime_s": 3543.19218326188,
+  "air_cut_pct_of_total_runtime": 50.480338768852306,
+  "air_cut_pct_of_cutting_time": 64.26629761037638,
+  "average_engagement": 0.17549407705853248,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 7675,
+      "collision_count": 0
+    },
+    {
+      "id": 5,
+      "name": "3D Rough 1 (edges, CP rest)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 2334,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 5703,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 50.480338768852306,
+    "headline": "WARNING: 50.5% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [
+      "  toolpath 5: depth of cut, peak 11.3400 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source",
+      "  toolpath 3: depth of cut, peak 14.4733 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source"
+    ],
+    "overrides_used": [
+      "G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.\n  toolpath 4: chipload: simulation trace is stale — re-run simulation\n  toolpath 4: power: simulation trace is stale — re-run simulation\n  toolpath 4: deflection: simulation trace is stale — re-run simulation\n  toolpath 4: depth of cut: simulation trace is stale — re-run simulation"
+    ],
+    "feeds_cautions": []
+  }
+}

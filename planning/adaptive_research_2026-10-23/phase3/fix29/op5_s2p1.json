@@ -1,0 +1,59 @@
+{
+ "run": "fix29/s2p1",
+ "edge_band_0_9_mm2": 1986,
+ "cleared_by_op5_mm2": {
+  "outside 0-3": 682,
+  "outside 3-6.2": 696,
+  "outside 6.2-9": 405,
+  "outside > 9": 1354,
+  "switch hole": 375,
+  "inside case": 61
+ },
+ "left_before_op5_mm2": {
+  "outside 0-3": 861,
+  "outside 3-6.2": 696,
+  "outside 6.2-9": 424,
+  "outside > 9": 3853,
+  "switch hole": 1356,
+  "inside case": 412
+ },
+ "left_after_op5_mm2": {
+  "outside 0-3": 193,
+  "outside 3-6.2": 0,
+  "outside 6.2-9": 18,
+  "outside > 9": 2510,
+  "switch hole": 983,
+  "inside case": 360
+ },
+ "time_by_class_s": {
+  "rapid": 222.8,
+  "cut, air, stock <= 0.8 before": 101.8,
+  "cut, removes": 77.6,
+  "plunge/ramp": 73.5,
+  "cut, air, stock > 0.8 before": 71.7,
+  "link at feed": 44.4
+ },
+ "xy_mm_by_class": {
+  "rapid": 8628.9,
+  "cut, removes": 4155.2,
+  "cut, air, stock > 0.8 before": 1812.6,
+  "link at feed": 1128.0,
+  "cut, air, stock <= 0.8 before": 895.6,
+  "plunge/ramp": 12.9
+ },
+ "cut_time_by_place_s": {
+  "cut, air, stock <= 0.8 before | inside case": 52.3,
+  "cut, air, stock <= 0.8 before | switch hole": 49.6,
+  "cut, removes | outside > 9": 35.1,
+  "cut, removes | outside 3-6.2": 28.5,
+  "cut, air, stock > 0.8 before | outside > 9": 28.4,
+  "cut, air, stock > 0.8 before | outside 3-6.2": 23.0,
+  "cut, air, stock > 0.8 before | outside 0-3": 13.3,
+  "cut, removes | outside 0-3": 5.8,
+  "cut, removes | switch hole": 4.3,
+  "cut, air, stock > 0.8 before | inside case": 4.0,
+  "cut, air, stock > 0.8 before | switch hole": 2.9,
+  "cut, removes | inside case": 2.5,
+  "cut, removes | outside 6.2-9": 1.4
+ }
+}
