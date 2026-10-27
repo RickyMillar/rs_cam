@@ -6208,3 +6208,45 @@ The CP rest op reads the band: its first level is 17.0 = 23 − 6, and the 23 �
   at Z ~6, 100 mm³), in the G-AXIALDOC class.
 
 Not committed. Worktree clean, detached at 67257dc20.
+
+## D63: Corne op 5 boundary clear and pre-boundary, debug log (for C24; fix44, R dabf258d3)
+
+**Run.** `fix44/run_r.sh dabf258d3 corne_B_s2p1`: fix42's job, flags and arm (geodesic_local_spiral_pick, StockDepth
+split, no override), with `RUST_LOG=info,rs_cam_core::adaptive3d::clearing=debug,rs_cam_core::adaptive3d::path=debug,
+rs_cam_core::session::compute::generation=debug`. rc 0, 0 refusals, 3262 s (= fix42). Op 5 ("3D Rough 1 (edges, CP
+rest)") is `generate_toolpath{index=1}`: its "Skipping feed optimization … toolpath=3D Rough 1 (edges, CP rest)" line
+carries index=1.
+
+**Op 5 log lines (index=1):**
+1. Boundary clear: YES. "Cleared cells outside boundary polygon cells=171914" (path.rs). For comparison, op 1 (index=0):
+   cells=9824.
+2. "DerivedRestRegions pre-boundary union did not collapse to a single polygon": ABSENT. Neither is "DerivedRestRegions
+   source unavailable while resolving pre-boundary". Both are `tracing::debug!` in `session/compute/generation.rs:404`,
+   :415 (module `rs_cam_core::session::compute::generation`, at debug in this run). So op 5 had a single pre-boundary
+   polygon (`single.is_some()`).
+3. "Cleared border cells outside mesh footprint cells=882" (the border clear; op 1: 530). "Z levels computed count=4
+   z_top=14.041515350341797 z_bottom=0.5 depth_per_pass=6.0".
+   - The addendum's line: "D50: the rest top would put more than one Depth/Pass on the first level; kept the anchor
+     anchor=20.041515350341797 capped=17.0".
+   - So the level anchor is 20.04 (C24's expected level_top), and the first level 14.04 = anchor − one DPP.
+   - The band at 23 (D61: axial 8.96 at Z 14.04) is not seen by the anchor.
+
+**Op 1's stock outside the silhouette** (`fix44/band_tops.py`: op 1's trace samples, a flat 6 mm disc lowered to each tip,
+0.25 mm grid; padded silhouette; cells inside the stock box only):
+
+| outside the silhouette | max | p95 | p50 | area at the stock top 23 |
+|---|---|---|---|---|
+| 0–3 mm | 18.5 | 17.5 | 17.03 | 0 |
+| 3–6 mm | 17.53 | 17.5 | 17.0 | 0 |
+| 6–9 mm | 23.0 | 23.0 | 17.0 | 146.8 mm² |
+| 9–12 mm | 23.0 | 23.0 | 23.0 | 655.6 mm² |
+
+- The 6–9 mm band stands at 23 over 146.8 mm² (the stock box cuts most of that band off the part's sides). That is the
+  §16 band op 1 does not cut, the stock that holds D61's 8.96 mm pass.
+- In the 0–6 mm band the highest rebuilt top is 18.5, not 20.04. The rebuild lowers a disc at sample tips on 0.25 mm
+  cells, so it cannot show a planner cell (0.5 mm) that straddles the 6 mm line and keeps a higher sliver. Where 20.04
+  comes from in level_anchor_z is not resolved by this map.
+- Reading for C24's hypothesis: consistent. Op 5 runs its plain boundary clear (171914 cells), the band at 23 lies in
+  6–9 mm, and the anchor (20.04) is below 23. So level_anchor_z does not see the band.
+
+Sim deleted. Worktree clean, detached at dabf258d3. Not committed.

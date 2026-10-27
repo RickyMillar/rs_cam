@@ -1,0 +1,43 @@
+{
+ "stock_top": 23.0,
+ "outside 0-3 mm": {
+  "cells": 21523,
+  "max": 18.5,
+  "p95": 17.5,
+  "p50": 17.03,
+  "area_at_top_mm2 (>= top-0.01)": 0.0,
+  "area_over_20_mm2": 0.0
+ },
+ "outside 3-6 mm": {
+  "cells": 20032,
+  "max": 17.528,
+  "p95": 17.5,
+  "p50": 17.0,
+  "area_at_top_mm2 (>= top-0.01)": 0.0,
+  "area_over_20_mm2": 0.0
+ },
+ "outside 0-6 mm": {
+  "cells": 41555,
+  "max": 18.5,
+  "p95": 17.5,
+  "p50": 17.0,
+  "area_at_top_mm2 (>= top-0.01)": 0.0,
+  "area_over_20_mm2": 0.0
+ },
+ "outside 6-9 mm": {
+  "cells": 13203,
+  "max": 23.0,
+  "p95": 23.0,
+  "p50": 17.0,
+  "area_at_top_mm2 (>= top-0.01)": 146.8,
+  "area_over_20_mm2": 146.8
+ },
+ "outside 9-12 mm": {
+  "cells": 10495,
+  "max": 23.0,
+  "p95": 23.0,
+  "p50": 23.0,
+  "area_at_top_mm2 (>= top-0.01)": 655.6,
+  "area_over_20_mm2": 655.6
+ }
+}
