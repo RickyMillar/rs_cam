@@ -1,0 +1,701 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index 3c387298b..92bc1c689 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -347,6 +347,76 @@ pub(super) fn level_anchor_z(
+     }
+ }
+ 
++/// D50: the level anchor of a consumer of a source's derived rest regions
++/// (`Adaptive3dDepth::rest_top_z`): the anchor rule with the source's left
++/// stock top as its ceiling, on remaining stock only. On fresh stock the
++/// planner holds the stock above that top, so the anchor stays.
++///
++/// The top lowers only the START of the plan, never its floor:
++/// [`step_levels`] always ends at `z_bottom`, and a top at or below
++/// `z_bottom` is not applied (it would leave no level, so the floor would
++/// move). Integration design §3.1.
++pub(super) fn rest_capped_level_top(
++    anchor: f64,
++    rest_top_z: Option<f64>,
++    z_bottom: f64,
++    reads_prior_stock: bool,
++) -> f64 {
++    match rest_top_z {
++        Some(rest_top) if reads_prior_stock && rest_top > z_bottom => anchor.min(rest_top),
++        _ => anchor,
++    }
++}
++
++/// D50: true when a first level at `first_level` cuts no more than one
++/// Depth/Pass of stock axially at any cell the tool can reach. The anchor
++/// rule (`level_anchor_z`) holds this by construction: the first level is
++/// one Depth/Pass under the highest stock. A rest top under the anchor can
++/// break it where the source left a skin thicker than one Depth/Pass of
++/// this op (a source `stock_to_leave` above this op's by more than that):
++/// the first level would take the whole skin. Then the caller keeps the
++/// anchor.
++///
++/// A cell counts when its centre is inside the centre containment
++/// (`Adaptive3dGeometry::centre_boundary`; empty: every cell): the level
++/// plan sets the cut depth where the tool centre goes. A cell only under
++/// the edge of the disc is cut at the drape of a centre beside it, with or
++/// without the rest top, so it does not count. A cell's floor is THE level
++/// floor ([`super::intended_floor::level_floor_z`]); a cell with no
++/// material above it is skipped with the margin `level_anchor_z` uses.
++pub(super) fn rest_ceiling_keeps_doc(
++    material_stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    params: &Adaptive3dParams,
++    first_level: f64,
++) -> bool {
++    let reach = &params.geometry.centre_boundary;
++    let limit = params.depth.depth_per_pass + params.geometry.tolerance;
++    let grid = &material_stock.z_grid;
++    for row in 0..grid.rows {
++        for col in 0..grid.cols {
++            if !reach.is_empty() {
++                let (x, y) = grid.cell_to_world(row, col);
++                let p = crate::geo::P2::new(x, y);
++                if !reach.iter().any(|q| q.contains_point(&p)) {
++                    continue;
++                }
++            }
++            let floor = super::intended_floor::level_floor_z(
++                surface_hm.z_or_bbox_floor_at(row, col),
++                params.depth.stock_to_leave,
++                first_level,
++            );
++            if super::stock_has_material_above(material_stock, row, col, floor + 0.01)
++                && super::stock_top_z_at(material_stock, row, col) - floor > limit
++            {
++                return false;
++            }
++        }
++    }
++    true
++}
++
+ /// The levels from `z_top` down to `z_bot`: `z_top - step`,
+ /// `z_top - 2 step`, … while above `z_bot`, then `z_bot` itself.
+ ///
+@@ -958,14 +1028,31 @@ pub(super) fn adaptive_3d_segments(
+         params.depth.stock_top_z,
+         params.initial_stock.is_some(),
+     );
+-    // D50: a consumer of a source's derived rest regions, on remaining
+-    // stock, cuts no higher than the top of the stock the source left in
+-    // them: the anchor rule with that top as its ceiling. On fresh stock
+-    // the planner holds the stock above that top, so it starts at the
+-    // anchor as before.
+-    let level_top = match params.depth.rest_top_z {
+-        Some(rest_top) if params.initial_stock.is_some() => level_top.min(rest_top),
+-        _ => level_top,
++    // D50: a consumer of a source's derived rest regions starts no higher
++    // than the top of the stock the source left in them, but only while no
++    // level then cuts more than one Depth/Pass (`rest_ceiling_keeps_doc`).
++    let anchor = level_top;
++    let capped = rest_capped_level_top(
++        anchor,
++        params.depth.rest_top_z,
++        z_bottom,
++        params.initial_stock.is_some(),
++    );
++    let level_top = if capped < anchor
++        && !rest_ceiling_keeps_doc(
++            &material_stock,
++            &surface_hm,
++            params,
++            (capped - params.depth.depth_per_pass).max(z_bottom),
++        ) {
++        debug!(
++            anchor,
++            capped,
++            "D50: the rest top would put more than one Depth/Pass on the first level; kept the anchor"
++        );
++        anchor
++    } else {
++        capped
+     };
+     if let Some(scope) = z_plan_scope.as_ref() {
+         scope.set_counter("level_top", level_top);
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index a223bd773..2a19833ce 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -584,6 +584,44 @@ fn step_levels_are_the_legacy_loop_bitwise() {
+     }
+ }
+ 
++/// D50 (integration design §3.1): the source's left stock top lowers only
++/// the START of a rest consumer's level plan, never its floor. On
++/// remaining stock the plan starts at the top; its last level is the
++/// floor with or without the top; a top at or below the floor, and any top
++/// on fresh stock, leave the plan as it was.
++#[test]
++fn a_rest_top_lowers_the_start_and_keeps_the_floor_d50() {
++    use super::path::{rest_capped_level_top, step_levels};
++    let (anchor, top, z_bottom, dpp) = (8.0_f64, 7.0_f64, 4.0_f64, 3.0_f64);
++    let plain = step_levels(anchor, z_bottom, dpp);
++    let capped = step_levels(
++        rest_capped_level_top(anchor, Some(top), z_bottom, true),
++        z_bottom,
++        dpp,
++    );
++    assert_eq!(plain, vec![5.0, 4.0]);
++    assert_eq!(capped, vec![4.0], "the plan does not start below the top");
++    assert_eq!(plain.last(), capped.last(), "the top moved the floor");
++    // A top at or below the floor would leave no level: it is not applied.
++    for low in [z_bottom, z_bottom - dpp] {
++        assert_eq!(
++            rest_capped_level_top(anchor, Some(low), z_bottom, true),
++            anchor
++        );
++    }
++    // Fresh stock, or no top: the anchor stays.
++    assert_eq!(
++        rest_capped_level_top(anchor, Some(top), z_bottom, false),
++        anchor
++    );
++    assert_eq!(rest_capped_level_top(anchor, None, z_bottom, true), anchor);
++    // A top above the anchor does not raise the start.
++    assert_eq!(
++        rest_capped_level_top(anchor, Some(anchor + dpp), z_bottom, true),
++        anchor
++    );
++}
++
+ // ── Fix 5: Flat area detection test ────────────────────────────────
+ 
+ #[test]
+@@ -2424,6 +2462,75 @@ fn level_anchor_reads_the_top_of_the_prior_stock() {
+     assert_eq!(anchor(&stock, true), 14.0);
+ }
+ 
++/// D50: the rest top may lower the first level only while that level cuts
++/// no more than one Depth/Pass where the tool centre goes. A skin of 1.5
++/// over the leave is too thick for a Depth/Pass of 1.0 and thin enough for
++/// 2.0. A thick skin outside the centre containment does not count.
++#[test]
++fn a_rest_ceiling_keeps_one_depth_per_pass_d50() {
++    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
++    let cutter = flat_cutter();
++    let cell_size = 0.5;
++    let mut stock = TriDexelStock::from_stock(-20.0, -20.0, 20.0, 20.0, -1.0, 14.0, cell_size);
++    let hm = SurfaceHeightmap::from_mesh(
++        &mesh,
++        &si,
++        &cutter,
++        stock.z_grid.origin_u,
++        stock.z_grid.origin_v,
++        stock.z_grid.rows,
++        stock.z_grid.cols,
++        cell_size,
++        -1.0,
++    );
++    let leave = 0.5_f64;
++    let skin_top = leave + 1.5;
++    // The prior stock: a skin over the leave inside x < 0, a thick block
++    // (the box top) at x >= 0.
++    for row in 0..stock.z_grid.rows {
++        for col in 0..stock.z_grid.cols {
++            let (x, _) = stock.z_grid.cell_to_world(row, col);
++            if x < 0.0 {
++                crate::stock::dexel::ray_subtract_above(
++                    stock.z_grid.ray_mut(row, col),
++                    skin_top as f32,
++                );
++            }
++        }
++    }
++    let params_with = |dpp: f64, centre: Vec<crate::polygon::Polygon2>| {
++        let mut p = default_params();
++        p.depth.stock_to_leave = leave;
++        p.depth.depth_per_pass = dpp;
++        p.geometry.centre_boundary = centre;
++        p
++    };
++    let skin_side = vec![crate::polygon::Polygon2::rectangle(
++        -15.0, -15.0, -5.0, 15.0,
++    )];
++    // The first level under the skin: the cell floor is the leave.
++    let first = 0.0;
++    assert!(!super::path::rest_ceiling_keeps_doc(
++        &stock,
++        &hm,
++        &params_with(1.0, skin_side.clone()),
++        first
++    ));
++    assert!(super::path::rest_ceiling_keeps_doc(
++        &stock,
++        &hm,
++        &params_with(2.0, skin_side),
++        first
++    ));
++    // No containment: every cell counts, the block too.
++    assert!(!super::path::rest_ceiling_keeps_doc(
++        &stock,
++        &hm,
++        &params_with(2.0, Vec::new()),
++        first
++    ));
++}
++
+ // ── By Area region map ───────────────────────────────────────────
+ 
+ /// A heightfield mesh on a 1 mm grid over `[0, w] x [0, h]`: Z = 10 on the
+diff --git a/crates/rs_cam_core/src/session/CLAUDE.md b/crates/rs_cam_core/src/session/CLAUDE.md
+index 9f50a32a5..e5a96554d 100644
+--- a/crates/rs_cam_core/src/session/CLAUDE.md
++++ b/crates/rs_cam_core/src/session/CLAUDE.md
+@@ -37,4 +37,4 @@ The one door for project state and compute is `ProjectSession::apply(Command)`.
+ 
+ `cargo test -p rs_cam_core -q --test <name>`, one per name (W2.5: viz `export_states_the_feed_stage_w2_5`): `command_registry_completeness`, `mutation_paths_invalidate_alike_p0`,
+ `adopt_result_rejects_stale_completion`, `the_planner_is_one_command_f040`, `the_adopt_modulates_as_run_simulation_does_f115`, `stale_set_has_one_answer_wp28`, `dependency_edges_are_the_walker_dep1`, `generation_plan_is_the_edge_walk_w0b`, `a_late_simulation_does_not_refill_the_core_d7`, `rest_stock_identity_g_restres`,
+-`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, O-PICK/GT-Q8 `a_pick_replaces_the_default_rule_o_pick`, Q2 `the_first_face_pick_sets_each_face_floor_q2`, UX-8 `a_picked_face_sets_the_floor_ux8`, GT-3 `rule_offers_read_one_picked_item_gt3`, UX-7b `a_default_step_pocket_never_cuts_below_a_ring_ux7b` (`--features step`), S11 `unset_values_refuse_s11`, Chamfer Clearance `a_step_chamfer_stops_short_of_a_wall_chamferclear` (`--features step`), open sides `a_pocket_cuts_past_open_sides_opensides` (`--features step`), P6.7 `--lib add_bore_from_drill_copies_the_drill_p6_7`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`, P4.7 `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), P4.8 `import_reports_joins_and_open_shapes_p4_8`, P4.9 `drawing_edits_replay_on_reimport_p4_9`, Heights and floor: `one_heights_resolver_for_every_surface_p3_1`, UX-1/UX-1b `a_face_top_never_starts_below_the_stock_top_ux1`, UX-1c `a_buried_face_refuses_a_one_depth_op_ux1c`, `a_retired_floor_key_is_named_p3_2`, `the_floor_reaches_the_motion_g_bottompin`, F015 `an_unknown_z_datum_is_refused_at_load_f015`, F034/F053 `every_project_table_refuses_an_unknown_key_f034`, W6b `a_value_outside_its_domain_is_refused_at_every_door_w6b`, F033 viz `one_height_order_rule_for_every_surface_f033`, F31 `the_auto_stock_fits_every_model_f31`, F19 `the_drill_cuts_from_the_top_the_heights_show_f19` (`--features step`), D47 `a_skipped_op_does_not_stale_the_export_d47` (the export gate judges the emitted toolpaths only).
++`stock_changes_stale_from_their_setup_on_s2`, `a_plan_resimulates_after_an_upstream_change_w1_5b`, `fresh_generation_ignores_simulation_b19` (B19: `Fresh` reads no prior stock), `selection_status_is_memoised_p2_4`, P2.5 `a_reimport_stales_every_reader_of_the_model_p2_5`, `a_missing_tool_id_refuses_p2_5`, `a_retired_boundary_source_is_named_p2_5`, P2.6 `selection_round_trips_p2_6`, P2.7 `one_item_is_one_pick_p2_7`, P4.1 `a_3d_op_face_pick_sets_its_top_p4_1`, P4.2 `a_face_op_reads_its_selection_p4_2`, P4.4 `item_states_match_the_cut_p4_4`, O-PICK/GT-Q8 `a_pick_replaces_the_default_rule_o_pick`, Q2 `the_first_face_pick_sets_each_face_floor_q2`, UX-8 `a_picked_face_sets_the_floor_ux8`, GT-3 `rule_offers_read_one_picked_item_gt3`, UX-7b `a_default_step_pocket_never_cuts_below_a_ring_ux7b` (`--features step`), S11 `unset_values_refuse_s11`, Chamfer Clearance `a_step_chamfer_stops_short_of_a_wall_chamferclear` (`--features step`), open sides `a_pocket_cuts_past_open_sides_opensides` (`--features step`), P6.7 `--lib add_bore_from_drill_copies_the_drill_p6_7`, P4.6 `the_tab_layout_is_the_cut_layout_p4_6`, P4.7 `stl_flat_regions_are_face_items_p4_7` (`--features test-support`), P4.8 `import_reports_joins_and_open_shapes_p4_8`, P4.9 `drawing_edits_replay_on_reimport_p4_9`, Heights and floor: `one_heights_resolver_for_every_surface_p3_1`, UX-1/UX-1b `a_face_top_never_starts_below_the_stock_top_ux1`, UX-1c `a_buried_face_refuses_a_one_depth_op_ux1c`, `a_retired_floor_key_is_named_p3_2`, `the_floor_reaches_the_motion_g_bottompin`, F015 `an_unknown_z_datum_is_refused_at_load_f015`, F034/F053 `every_project_table_refuses_an_unknown_key_f034`, W6b `a_value_outside_its_domain_is_refused_at_every_door_w6b`, F033 viz `one_height_order_rule_for_every_surface_f033`, F31 `the_auto_stock_fits_every_model_f31`, F19 `the_drill_cuts_from_the_top_the_heights_show_f19` (`--features step`), D47 `a_skipped_op_does_not_stale_the_export_d47` (the export gate judges the emitted toolpaths only), D53 `a_larger_rest_consumer_tool_refuses_d53` (`refuse_larger_rest_consumer`: a `Center`/`Outside` rest consumer with a tool larger than its source's refuses).
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index f96afc89d..e3b37d694 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -2506,6 +2506,10 @@ impl ProjectSession {
+                 } = &tc.boundary.source
+             {
+                 self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
++                // D53: the regions are tool-centre positions of the source's
++                // tool (D48); a larger tool on them must not cross the
++                // source's boundary.
++                self.refuse_larger_rest_consumer(index, *source_toolpath_id)?;
+             }
+             // Selection: the same fail-fast rule. A selection that names
+             // a missing model or resolves to no closed region refuses
+diff --git a/crates/rs_cam_core/src/session/compute/generation.rs b/crates/rs_cam_core/src/session/compute/generation.rs
+index b9ea790a2..18d19c33b 100644
+--- a/crates/rs_cam_core/src/session/compute/generation.rs
++++ b/crates/rs_cam_core/src/session/compute/generation.rs
+@@ -503,6 +503,72 @@ impl ProjectSession {
+             .rest_regions_top_z
+     }
+ 
++    /// D53: refuse a `DerivedRestRegions` consumer at `index` whose tool is
++    /// larger than the tool of `source_toolpath_id`, when its containment
++    /// keeps the tool CENTRE in the regions (`Center`) or outside them
++    /// (`Outside`).
++    ///
++    /// The source publishes tool-centre positions inside its own
++    /// containment (`Produced::rest_regions`, D48). A centre there keeps a
++    /// tool no larger than the source's inside the source's machining
++    /// boundary; a larger tool can cut past it by the difference of the
++    /// radii. `Inside` containment insets the regions by this op's own
++    /// radius, so it is safe with any tool. The radii are the radii the
++    /// containment itself uses (`ResolvedGenInputs::boundary_centre`: the
++    /// built cutter's diameter over two). A tool that does not resolve is
++    /// left to its own refusal.
++    ///
++    /// A config refusal, so it takes the generation precondition path
++    /// (`SessionError::OperationFailed`, as the `DerivedRestRegions` source
++    /// checks in [`Self::resolve_derived_rest_region_polys`]).
++    pub(crate) fn refuse_larger_rest_consumer(
++        &self,
++        index: usize,
++        source_toolpath_id: crate::ids::ToolpathId,
++    ) -> Result<(), SessionError> {
++        use crate::compute::config::BoundaryContainment;
++        use crate::tool::MillingCutter as _;
++        let Some(tc) = self.toolpath_configs.get(index) else {
++            return Err(SessionError::ToolpathNotFound(index));
++        };
++        let containment = match tc.boundary.containment {
++            BoundaryContainment::Inside => return Ok(()),
++            BoundaryContainment::Center => "Center",
++            BoundaryContainment::Outside => "Outside",
++        };
++        let Some(source) = self
++            .toolpath_configs
++            .iter()
++            .find(|s| s.id == source_toolpath_id)
++        else {
++            return Ok(());
++        };
++        let radius = |tool_id| {
++            self.tool_by_id(tool_id)
++                .and_then(|tool| crate::session::session_cutter(tool).ok())
++                .map(|def| def.diameter() / 2.0)
++        };
++        let (Some(own), Some(theirs)) = (radius(tc.tool_id), radius(source.tool_id)) else {
++            return Ok(());
++        };
++        if own <= theirs {
++            return Ok(());
++        }
++        Err(SessionError::OperationFailed(format!(
++            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
++             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
++             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
++             tool could cut up to {:.3} mm past the machining boundary of '{}'. Set the \
++             boundary containment to Inside, or use a tool no larger than the tool of '{}'.",
++            tc.name,
++            source.name,
++            source.name,
++            own - theirs,
++            source.name,
++            source.name,
++        )))
++    }
++
+     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
+     /// or a `SessionError::OperationFailed` naming exactly what's missing.
+     ///
+diff --git a/crates/rs_cam_core/src/toolpath.rs b/crates/rs_cam_core/src/toolpath.rs
+index 7ba603a3c..4a8f23b05 100644
+--- a/crates/rs_cam_core/src/toolpath.rs
++++ b/crates/rs_cam_core/src/toolpath.rs
+@@ -122,7 +122,7 @@ impl MoveType {
+ }
+ 
+ /// A single toolpath move to a target position.
+-#[derive(Debug, Clone)]
++#[derive(Clone)]
+ pub struct Move {
+     pub target: P3,
+     pub move_type: MoveType,
+@@ -137,6 +137,23 @@ pub struct Move {
+     pub feed_cap: Option<f64>,
+ }
+ 
++/// The derived form, except that `feed_cap` prints only when it is set. The
++/// test fingerprints (`tests/common/fingerprint.rs` and three local copies)
++/// hash this text, so a move with no cap prints exactly what it printed
++/// before the field existed, and every pinned hash stays valid.
++impl std::fmt::Debug for Move {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        let mut out = f.debug_struct("Move");
++        out.field("target", &self.target)
++            .field("move_type", &self.move_type)
++            .field("intent", &self.intent);
++        if let Some(cap) = self.feed_cap {
++            out.field("feed_cap", &cap);
++        }
++        out.finish()
++    }
++}
++
+ /// Where the material is beside one closed pass, relative to the ring the
+ /// pass cuts (P6.0c, SAFETY). The op that emits the ring states it, because
+ /// only the op knows it: Profile Outside cuts round a part (the material is
+@@ -1068,6 +1085,61 @@ fn merge_segments_skip_clamped(
+ mod tests {
+     use super::*;
+ 
++    /// C38 §15: a move with no feed cap prints the text the derived `Debug`
++    /// printed before the field existed, in the plain and the `#` forms, so
++    /// every pinned `Debug` fingerprint stays valid. A set cap prints.
++    #[test]
++    fn a_move_with_no_cap_prints_as_before_the_field() {
++        mod before {
++            /// The struct as it was before `feed_cap`, with the derive.
++            #[derive(Debug)]
++            pub struct Move {
++                pub target: crate::geo::P3,
++                pub move_type: crate::toolpath::MoveType,
++                pub intent: crate::toolpath::MoveIntent,
++            }
++        }
++        let move_types = [
++            MoveType::Rapid,
++            MoveType::Linear { feed_rate: 1234.5 },
++            MoveType::ArcCW {
++                i: 0.1,
++                j: -2.0,
++                feed_rate: 800.0,
++            },
++            MoveType::ArcCCW {
++                i: -0.3,
++                j: 1.0 / 3.0,
++                feed_rate: 600.0,
++            },
++        ];
++        for move_type in move_types {
++            let target = P3::new(1.0 / 7.0, -2.5, 1e-17);
++            let intent = MoveIntent::ClearingCut;
++            let now = Move {
++                target,
++                move_type,
++                intent,
++                feed_cap: None,
++            };
++            let old = before::Move {
++                target,
++                move_type,
++                intent,
++            };
++            assert_eq!(format!("{now:?}"), format!("{old:?}"));
++            assert_eq!(format!("{now:#?}"), format!("{old:#?}"));
++            // The two structs hold the same values (and the old fields are read).
++            assert!(old.target == now.target && old.move_type == now.move_type);
++            assert_eq!(old.intent, now.intent);
++            let capped = Move {
++                feed_cap: Some(600.0),
++                ..now
++            };
++            assert!(format!("{capped:?}").ends_with(", feed_cap: 600.0 }"));
++        }
++    }
++
+     #[test]
+     fn test_emit_path_segment_basic() {
+         let path = vec![
+diff --git a/crates/rs_cam_core/tests/a_rest_consumer_starts_at_the_left_stock_top_d50.rs b/crates/rs_cam_core/tests/a_rest_consumer_starts_at_the_left_stock_top_d50.rs
+index 9f5c5db42..2bbca283d 100644
+--- a/crates/rs_cam_core/tests/a_rest_consumer_starts_at_the_left_stock_top_d50.rs
++++ b/crates/rs_cam_core/tests/a_rest_consumer_starts_at_the_left_stock_top_d50.rs
+@@ -60,10 +60,10 @@ const SIM_CELL: f64 = 0.5;
+ /// The research arm the run must select.
+ const ARM: &str = "geodesic_local_spiral_pick";
+ 
+-fn rough(strategy: ClearingStrategy, leave: f64) -> OperationConfig {
++fn rough(strategy: ClearingStrategy, leave: f64, depth_per_pass: f64) -> OperationConfig {
+     OperationConfig::Adaptive3d(Adaptive3dConfig {
+         stepover: 2.0,
+-        depth_per_pass: DEPTH_PER_PASS,
++        depth_per_pass,
+         stock_to_leave_axial: leave,
+         clearing_strategy: strategy,
+         ..Adaptive3dConfig::default()
+@@ -76,8 +76,9 @@ fn in_channel(x: f64, y: f64, inset: f64) -> bool {
+             || (y + CHANNEL_Y).abs() <= CHANNEL_HALF_WIDTH - inset)
+ }
+ 
+-/// Op 0 the source rough, op 1 its consumer on remaining stock.
+-fn session() -> ProjectSession {
++/// Op 0 the source rough, op 1 its consumer on remaining stock with
++/// `consumer_dpp`.
++fn session(consumer_dpp: f64) -> ProjectSession {
+     let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
+         if in_channel(x, y, 0.0) {
+             FLOOR_Z
+@@ -95,7 +96,7 @@ fn session() -> ProjectSession {
+     let model_id = builder.add_model(mesh_model(mesh, "channels"));
+     let mut op0 = toolpath_config(
+         "rough",
+-        rough(ClearingStrategy::AgentSearch, SOURCE_LEAVE),
++        rough(ClearingStrategy::AgentSearch, SOURCE_LEAVE, DEPTH_PER_PASS),
+         tool_id,
+         model_id,
+     );
+@@ -105,7 +106,7 @@ fn session() -> ProjectSession {
+     let source_toolpath_id = session.toolpath_configs()[index0].id;
+     let mut op1 = toolpath_config(
+         "edges, CP rest",
+-        rough(ClearingStrategy::ContourParallel, 0.0),
++        rough(ClearingStrategy::ContourParallel, 0.0, consumer_dpp),
+         tool_id,
+         model_id,
+     );
+@@ -139,7 +140,7 @@ fn a_rest_consumer_starts_at_the_left_stock_top() {
+         Ok(ARM),
+         "run this test with RS_CAM_RESEARCH_ADAPTIVE3D_ARM={ARM}"
+     );
+-    let mut session = session();
++    let mut session = session(DEPTH_PER_PASS);
+     generate(&mut session, 0);
+     let produced = &session
+         .result_at(0)
+@@ -257,4 +258,15 @@ fn a_rest_consumer_starts_at_the_left_stock_top() {
+         early_cuts.is_empty(),
+         "the consumer cuts before its floor pass, at Z {early_cuts:?}"
+     );
++    // Integration design §3.1: the top lowers only the start, never the
++    // floor. The consumer leaves no stock, so its floor is the surface
++    // bottom, the channel floor: its lowest pass is there.
++    let lowest = passes
++        .iter()
++        .map(|(_, z, _)| *z)
++        .fold(f64::INFINITY, f64::min);
++    assert!(
++        (lowest - FLOOR_Z).abs() <= tol,
++        "the consumer's lowest level is {lowest}, not its floor {FLOOR_Z}: the top moved the floor"
++    );
+ }
+diff --git a/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+new file mode 100644
+index 000000000..84b87a8c8
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+@@ -0,0 +1,176 @@
++//! D53 (`planning/adaptive_research_2026-10-23/phase3/d50/README.md` §2):
++//! a `DerivedRestRegions` consumer whose tool is larger than the source's
++//! refuses to generate when its containment keeps the tool centre on the
++//! regions (`Center`, `Outside`).
++//!
++//! The regions are tool-centre positions of the source's tool (D48). A
++//! centre there keeps a tool no larger than the source's inside the
++//! source's boundary; a larger tool can cut past it by the difference of
++//! the radii. `Inside` containment insets the regions by the consumer's own
++//! radius, so it is safe with any tool.
++//!
++//! The session is the D47 channel pair: a 3D Rough with its rest analysis
++//! on (Ø6), and a contour-parallel rough on its derived rest regions. The
++//! consumer's tool and containment vary:
++//! 1. Ø8 with `Center` or `Outside`: refused, and the refusal names both
++//!    radii and both fixes;
++//! 2. Ø8 with `Inside`, Ø6 with `Center`, Ø4 with `Center`: not refused by
++//!    this rule, and the consumer generates.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{
++    BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
++};
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy};
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::session::{
++    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SessionError,
++};
++use std::sync::atomic::AtomicBool;
++
++// The stepped pocket of the D44 and D47 sentries.
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++const WIDE_HALF_X: f64 = 34.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++const SOURCE_DIAMETER: f64 = 6.0;
++const LARGER_DIAMETER: f64 = 8.0;
++const SMALLER_DIAMETER: f64 = 4.0;
++
++fn rough(strategy: ClearingStrategy) -> OperationConfig {
++    OperationConfig::Adaptive3d(Adaptive3dConfig {
++        stepover: 2.0,
++        depth_per_pass: 3.0,
++        clearing_strategy: strategy,
++        ..Adaptive3dConfig::default()
++    })
++}
++
++/// Op 0 the Ø6 rough (rest analysis on), op 1 its consumer with a tool of
++/// `consumer_diameter` and `containment`. Op 0 is generated.
++fn session(consumer_diameter: f64, containment: BoundaryContainment) -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH {
++            FLOOR_Z
++        } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let source_idx = builder.add_tool(endmill_tool_config(SOURCE_DIAMETER));
++    let source_tool = ToolId::from_raw(builder.tools()[source_idx].id.raw());
++    let consumer_tool = if (consumer_diameter - SOURCE_DIAMETER).abs() < f64::EPSILON {
++        source_tool
++    } else {
++        let idx = builder.add_tool(endmill_tool_config(consumer_diameter));
++        ToolId::from_raw(builder.tools()[idx].id.raw())
++    };
++    let model_id = builder.add_model(mesh_model(mesh, "channel"));
++    let mut op0 = toolpath_config(
++        "rough",
++        rough(ClearingStrategy::AgentSearch),
++        source_tool,
++        model_id,
++    );
++    op0.rest_analysis.enabled = true;
++    let index0 = builder.add_toolpath(0, op0).expect("add the rough");
++    let mut session = builder.build();
++    let source_toolpath_id = session.toolpath_configs()[index0].id;
++    let mut op1 = toolpath_config(
++        "edges, CP rest",
++        rough(ClearingStrategy::ContourParallel),
++        consumer_tool,
++        model_id,
++    );
++    op1.stock_source = StockSource::default();
++    op1.boundary = BoundaryConfig {
++        enabled: true,
++        source: BoundarySource::DerivedRestRegions { source_toolpath_id },
++        containment,
++        offset: 0.0,
++    };
++    let _ = session
++        .apply(Command::AddToolpath(AddToolpathArgs {
++            setup_index: 0,
++            config: Box::new(op1),
++        }))
++        .expect("add the consumer");
++    let cancel = AtomicBool::new(false);
++    session
++        .generate_toolpath(0, &cancel)
++        .expect("generate the rough");
++    session
++}
++
++fn generate_consumer(session: &mut ProjectSession) -> Result<(), SessionError> {
++    let cancel = AtomicBool::new(false);
++    session.generate_toolpath(1, &cancel).map(|_| ())
++}
++
++#[test]
++fn a_larger_rest_consumer_tool_refuses() {
++    let (own, theirs) = (LARGER_DIAMETER / 2.0, SOURCE_DIAMETER / 2.0);
++    // 1. A larger tool with its centre on the regions refuses.
++    for containment in [BoundaryContainment::Center, BoundaryContainment::Outside] {
++        let mut s = session(LARGER_DIAMETER, containment);
++        match generate_consumer(&mut s) {
++            Err(SessionError::OperationFailed(text)) => {
++                for needle in [
++                    format!("{own:.3} mm"),
++                    format!("{theirs:.3} mm"),
++                    "Inside".to_owned(),
++                    "no larger than".to_owned(),
++                ] {
++                    assert!(
++                        text.contains(&needle),
++                        "{containment:?}: the refusal does not name `{needle}`: {text}"
++                    );
++                }
++                assert!(
++                    s.result_at(1).is_none(),
++                    "{containment:?}: a refused consumer holds a result"
++                );
++            }
++            other => panic!("{containment:?}: a larger tool was not refused: {other:?}"),
++        }
++    }
++
++    // 2. Inside with the larger tool, or a tool no larger than the
++    // source's: the consumer generates.
++    for (diameter, containment) in [
++        (LARGER_DIAMETER, BoundaryContainment::Inside),
++        (SOURCE_DIAMETER, BoundaryContainment::Center),
++        (SMALLER_DIAMETER, BoundaryContainment::Center),
++    ] {
++        let mut s = session(diameter, containment);
++        if let Err(e) = generate_consumer(&mut s) {
++            panic!("Ø{diameter} with {containment:?} did not generate: {e}");
++        }
++        assert!(
++            s.result_at(1).is_some(),
++            "Ø{diameter} with {containment:?}: no result"
++        );
++    }
++}
