@@ -1,0 +1,9 @@
+== s2p0: fields changed against the original
+  setups[0].toolpaths[1].boundary.containment: 'inside' -> 'center'
+  setups[0].toolpaths[1].boundary.source: 'model_silhouette' -> '<absent>'
+  setups[0].toolpaths[1].boundary.source.derived_rest_regions.source_toolpath_id: '<absent>' -> 1
+== s3p5: fields changed against the original
+  setups[0].toolpaths[0].operation.params.stepover: 2.0 -> 3.5
+  setups[0].toolpaths[1].boundary.containment: 'inside' -> 'center'
+  setups[0].toolpaths[1].boundary.source: 'model_silhouette' -> '<absent>'
+  setups[0].toolpaths[1].boundary.source.derived_rest_regions.source_toolpath_id: '<absent>' -> 1

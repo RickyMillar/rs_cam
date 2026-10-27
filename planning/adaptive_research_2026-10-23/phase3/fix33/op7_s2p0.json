@@ -1,0 +1,82 @@
+{
+ "run": "fix33/s2p0",
+ "tp": 7,
+ "grid_mm": 0.5,
+ "inside_mm2": 40000,
+ "places_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "lowered_by_op1_mm2": {
+  "inside 0-3": 2245,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "cleared_by_edge_op_mm2": {
+  "inside 0-3": 2348,
+  "inside 3-6.2": 794,
+  "inside 6.2-9": 0,
+  "inside > 9": 126,
+  "outside 0-3": 2357,
+  "outside > 3": 292
+ },
+ "left_before_edge_op_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 1266,
+  "inside 6.2-9": 78,
+  "inside > 9": 1337,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "left_after_edge_op_mm2": {
+  "inside 0-3": 1495,
+  "inside 3-6.2": 270,
+  "inside 6.2-9": 78,
+  "inside > 9": 1030,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "band_inside_0_9_left_before_mm2": 3708,
+ "band_inside_0_9_left_after_mm2": 1843,
+ "left_after_max_mm": 3.31,
+ "left_after_vol_above_target_inside_mm3": 11551,
+ "samples_total_s": 3375.7,
+ "time_by_class_s": {
+  "plunge/ramp": 1628.1,
+  "rapid": 1397.7,
+  "cut, removes": 164.4,
+  "cut, air, stock > 0.8 before": 138.6,
+  "link at feed": 44.3,
+  "cut, air, stock <= 0.8 before": 2.5
+ },
+ "xy_mm_by_class": {
+  "rapid": 197289.4,
+  "cut, removes": 2489.4,
+  "cut, air, stock > 0.8 before": 1314.6,
+  "link at feed": 667.2,
+  "plunge/ramp": 117.9,
+  "cut, air, stock <= 0.8 before": 36.3
+ },
+ "air_share_of_cut_time": 0.462,
+ "rapid_runs_in_trace": 2662,
+ "cut_time_by_place_s": {
+  "cut, removes | inside 0-3": 121.0,
+  "cut, air, stock > 0.8 before | inside 0-3": 86.4,
+  "cut, air, stock > 0.8 before | outside 0-3": 46.6,
+  "cut, removes | outside 0-3": 37.8,
+  "cut, air, stock > 0.8 before | inside > 9": 5.3,
+  "cut, removes | inside > 9": 5.2,
+  "cut, air, stock <= 0.8 before | inside > 9": 2.1,
+  "cut, removes | inside 3-6.2": 0.4,
+  "cut, air, stock <= 0.8 before | inside 3-6.2": 0.4,
+  "cut, air, stock > 0.8 before | inside 3-6.2": 0.3,
+  "cut, air, stock <= 0.8 before | inside 6.2-9": 0.1
+ }
+}

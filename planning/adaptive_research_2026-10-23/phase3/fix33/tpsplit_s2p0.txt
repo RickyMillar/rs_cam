@@ -1,0 +1,3 @@
+fix33/s2p0/simulation.json res 0.6 ids [1, 7] total 6951.4
+   tp 1 total 2261.9 cut 2181.3 rapid 80.6 air 873.6 vol 591516
+   tp 7 total 4689.5 cut 1998.1 rapid 2691.4 air 941.2 vol 56506

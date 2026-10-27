@@ -1,0 +1,14 @@
+tree = clean 7bf7738a1
+s2p0 rc=0 118s; Toolpaths: 2  |  Cutting: 101774mm  |  Rapid: 235473mm  |  Time: 6951s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix33/s2p0 tp 1: 140645 samples, 86831 read, 24 s
+  disk free 66G
+s3p5 rc=0 90s; Toolpaths: 2  |  Cutting: 57161mm  |  Rapid: 52640mm  |  Time: 3062s
+  OVERRIDE USED — without it this export is refused:
+  G-code export refused: cached simulation is stale — re-run simulation to verify load gates against current toolpath state.
+fix33/s3p5 tp 1: 82493 samples, 48212 read, 12 s
+  disk free 66G
+CP control: full area read
+fix25/cp_alone_0.6/wanaka200 tp 1: 416863 samples, 88091 read, 28 s
+D47RUNSDONE

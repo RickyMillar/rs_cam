@@ -5413,3 +5413,124 @@ Tree 7bf7738a1. Detect Flat off. Acceleration clock (summary), seconds. CP refer
 - B s2.1 against CP: op 1 + op 5 is +78 s (×1.05). The job is +397 s (×1.14). All of the job gap is now the copy op: 1733 against 1414 s (G-LEVELPHASE).
 - 2D re-entries: the y = −80.3 row is "step refused" at readings 0.22–0.32 against a ceiling of 0.219 (load, not turn length). The rest are "link refused".
 - EXPORT GATE: all four runs were refused with "cached simulation is stale — re-run simulation to verify load gates against current toolpath state". The runs used the override, so this G-code must not be machined. A DerivedRestRegions consumer probably regenerates after the simulation. This is not yet proven; filed as G-RESTSTALE.
+
+## D47: D43 (StockDepth split) + D44 (edge op on DerivedRestRegions), wanaka200, fixtures fix33 (tree 7bf7738a1)
+
+**NOT FOR MACHINING.** Both runs were refused with "cached simulation is stale" (G-RESTSTALE). The runs used the override
+(`--accept-unmodeled-tool-load`) to measure only. Also, the s2.0 and s3.5 edge ops cut into the holding frame (item 4).
+
+**Setup.** Fixture worktree at clean 7bf7738a1 (detached; clean at the end). `fix33/run_fix33.sh`: the fix31 runner with
+arm geodesic_local_spiral_pick, `RS_CAM_RESEARCH_STEP_SPLIT=stock_depth`, `--setup 0 --resolution 0.6`. Job files
+`fix33/jobs/wanaka200_body_cp_edges_d44_s{2p0,3p5}.toml`, made by `fix33/make_jobs.py` from
+`multitool_2026-08-23/wanaka200_mt1_c12_rough_only_body_cp_edges.toml`. The tomllib diff (`fix33/jobs/diff.txt`):
+- toolpath 7 boundary: containment inside → center; source model_silhouette → derived_rest_regions, source_toolpath_id 1;
+  offset 0 (as d44's Corne file);
+- s3p5 only: toolpath 1 stepover 2.0 → 3.5 (1.75×). Nothing else moved.
+
+The wanaka edge op is toolpath 7 (Corne's op 5). CP reference: fix25 cp_alone_0.6 (op 1 only, 5776.8 s), not rerun.
+
+**1. Acceleration clock (summary, s)** (`fix33/tpsplit_*.txt`, `clocks_*.json`):
+
+| run | op 1 | op 7 | job | job / CP |
+|---|---|---|---|---|
+| CP alone 0.6 (fix25) | 5776.8 | — | 5776.8 | 1.00 |
+| D34 body_cp, silhouette op 7 (fix25, older tree) | 3438.1 | 2161.2 | 5599.3 | 0.97 |
+| geo s2.0, stock_depth + D44 | 2261.9 | 4689.5 | 6951.4 | 1.20 |
+| geo s3.5, stock_depth + D44 | 1323.6 | 1738.2 | 3061.8 | 0.53 |
+
+By class (summary, s): cutting / entry / linking / rapid.
+- op 1: CP 1524.2 / 856.0 / 1303.4 / 2093.1; s2.0 1199.1 / 636.8 / 345.3 / 80.6; s3.5 658.9 / 397.3 / 186.5 / 80.9.
+- op 7: D34 73.0 / 613.3 / 195.9 / 1279.0; s2.0 268.8 / 1312.1 / 417.2 / 2691.4; s3.5 125.6 / 649.5 / 236.3 / 726.8.
+
+**2. Op 1 descents** (`descent_causes_*.json`: trace moves in the plunge/ramp class, matched to C40 records; sample clock):
+- s2.0: 1858 descent moves, 752.0 s, air 64 %. C40 records 612: LargeZ 373, Reentry2d/OverBound 135, LargeZHeld 60,
+  HeldLinkRefused 20, other 24. Entry share of the summary clock 28.2 %.
+- s3.5: 1059 descent moves, 455.3 s, air 62.5 %. C40 records 324: LargeZ 197, Reentry2d/OverBound 103, LargeZHeld 7,
+  HeldLinkRefused 6, other 11. Entry share 30.0 %.
+- CP op 1: 1223 descent events (D34 audit); entry share 14.8 %.
+- LargeZ landings (`largez_landings_fix33_*.json`): 373 (s2.0) and 197 (s3.5). Corne's landing bands do not apply.
+  The landings spread over z 8.6–11.9 (the draped floor); the most common is z 11.00, drop 3.6 (37 and 9).
+- `audit_d34.py` gives 581 descent events into stock for s2.0. For s3.5 it stopped at its move-map assertion (G-code 7624
+  moves against 7621 trace moves). The sim was already deleted, so that row is open. The s3.5 op-1 program clock can carry
+  the same 3-move shift; the summary clock comes from the sim and does not.
+
+**3. Op 1 area load** (`fix33/load_table.json`; fix27's rule: `area_oracle.py` with AREA_SCREEN=0, every clearing cut
+sample, percentiles weighted by XY step; own bound = ceiling(s) + 0.65/6; CP read again in full from the kept fix25 sim):
+
+| op 1 | s | L max | L p99 | L p95 | own bound | mm > own bound | mm > 0.471 | XY mm read |
+|---|---|---|---|---|---|---|---|---|
+| CP alone 0.6 | 2.0 | 2.620 | 1.000 | 0.400 | 0.471 | 2258.3 | 2258.3 | 52457 |
+| geo s2.0 | 2.0 | 0.720 | 0.375 | 0.358 | 0.471 | 107.4 | 107.4 | 50030 |
+| geo s3.5 | 3.5 | 0.992 | 0.642 | 0.625 | 0.734 | 16.2 | 19456.6 | 27982 |
+
+- s3.5 holds its own bound (16.2 mm over it). Its max (0.99) is below CP's (2.62), and its p99 (0.64) is below CP's (1.00).
+  Its p95 (0.625) is above CP's (0.40): s3.5 runs a constant, higher load where CP runs light.
+- 2D re-entries at s3.5: some are "step refused" at readings 0.67–0.81 against the ceiling 0.626 (`c22_lines_s3p5.txt`).
+
+**Volume.** Op 1 removes (sim, mm³): CP 594137; s2.0 591516; s3.5 577240 (−16897, −2.8 %). By the grid model of item 4,
+inside the part outline: CP op 1 592526, s3.5 op 1 578458, s3.5 op 7 14934. So s3.5 op 1 + op 7 removes 593392 inside the
+part, CP's volume within 0.2 %. Op 7 must remove about 14100 mm³ inside the part after s3.5 op 1 (CP − s3.5 op 1). It
+removes 14934 there. Stock above the target inside the part after the job: s3.5 20264, CP 21378 mm³.
+
+**4. Op 7 (the edge op) and the wanaka band** (`fix33/op7_wanaka.py`, `op7_*.json`, `img/op7_*.png`).
+
+The band method (new; D41's was Corne-only):
+- Frame: fix9/stockmap.py. The samples are in the setup-0 frame (x 0–240, y 0–250, z from the stock bottom). The part maps by
+  X = x − 20, Y = 225 − y; its surface from below is 7 − top. The outline is the edge of the finite cells of
+  fix9/wanaka_part.npz: the square x 20–220, y 25–225.
+- Stock: a 6 mm flat disc lowered to each sample tip on a 0.5 mm grid. Target: the closing of the part surface by the 3 mm
+  disc + 4.0 (op 1's axial leave). Left: > 0.8 mm above the target.
+- Places by distance to the outline: inside 0–3 / 3–6.2 / 6.2–9 / > 9 mm; outside 0–3 / > 3 mm. The band is inside 0–9 mm.
+- Check: on CP the stock follows the target within 0.1 mm away from the edge (profile at x 120). CP itself leaves the whole
+  inside 0–3 mm row (2364 mm²): its "inside" boundary keeps the tool there. So read the band against CP, not against 0.
+
+| run | band before op 7 | band after op 7 | inside 0–3 / 3–6.2 / 6.2–9 after | frame lowered (outside 0–3 / > 3) |
+|---|---|---|---|---|
+| CP alone (op 1) | — | 3589 | 2364 / 1202 / 23 | 0 / 0 |
+| D34 body_cp | 3725 | 3664 | 2364 / 1210 / 90 | 0 / 0 |
+| geo s2.0 | 3708 | 1843 | 1495 / 270 / 78 | 2357 / 292 |
+| geo s3.5 | 4109 | 3153 | 2012 / 922 / 219 | 1075 / 84 |
+
+Op 7 time by class (sample clock, s): s2.0 plunge/ramp 1628.1, rapid 1397.7, cut removes 164.4, cut air 141.1
+(air 46 % of cut time), link 44.3. s3.5: 883.9, 294.1, 91.6, 64.2 (41 %), 17.3. Rapids (G-code G0): s2.0 6845,
+s3.5 2578, D34 2616.
+
+**Why op 7 at s2.0 takes 4690 s** (`fix33/op7_gcode.py` on program.nc; rapids 2691 s, 6845 G0, 3120 plunges, 56506 mm³):
+- **The region is a thin ring on the outline.** Op 1 leaves pieces only at z 4.0: 3 pieces, 2083.4 mm²
+  ("C38 piece left to the rest pass z=4.0 region=1 area_mm2=1865.9 why=\"no field\"", region=2 190.9 F-038 forecast,
+  region=3 26.6). The 1865.9 mm² piece is a ring about 2.4 mm wide (1865.9 / (4 × 194)). D44 grows the union by 0.5 mm.
+  The log does not print the published union. The line "generic rest analysis attached region set regions=1
+  total_area_mm2=40987.1" is the generic analysis; it is logged in all cases and does not replace a producer's regions
+  (`compute/execute/dressup_apply.rs:173-189`). At s3.5 op 1 leaves 28 pieces, 2134.9 mm², most of them short pieces.
+- **The tool centre goes onto the outline.** Op 7 G1 ends span x 19.56–220.44, y 24.63–224.94; op 1's span x 23.01–216.99
+  (centres ≥ 3 mm inside). 50 % of op 7's G1 ends (s2.0; 26 % at s3.5) lie outside the outline. With containment "center"
+  the tool cuts up to 3.5 mm into the frame: 2357 mm² of the frame lowered > 0.8 mm, about 47800 of op 7's 58600 mm³
+  (grid). The ring looks like material at the outline, not tool-centre space. CP and the D34 op 7 never cut outside.
+- **Every level.** Op 7 has op 1's 4 levels ("Z levels computed count=4 z_top=19.54 z_bottom=4.0"). The derived boundary is
+  one XY union for all levels, so op 7 cuts the ring at 19.54 and 14.08 too. Plunges end at G-code Z −4.96 (681),
+  −10.42 (654) and −10.92 (461): a peck ladder per site per level. At −10.92 the 461 plunges feed 44 cut moves (110 mm).
+- **The rest order (G-CPRAPID).** 1396 plunge sites in program order, 1295 of them on the left and right strips. 907
+  consecutive sites jump between the left and the right strip (about 200 mm each). 923 G0 cross the part: 184657 of
+  197391 mm of G0 XY. That is the raster in `img/s2p0_op1.png`. s3.5: 554 sites, 105 left–right jumps, 135 crossings
+  (26487 of 38707 mm). D34's silhouette op 7: 862 sites (450 in the middle), 76 jumps, 144 crossings (25692 of 62954 mm).
+
+**5. CP alone's "levels" at Z −10.89, −10.92, −10.95: a render artefact, not three passes.** `render_d45.py` (and the
+fix33 copy) draws one panel per Z (rounded 0.01) that has > 200 moves within ±0.05 mm. Planar moves exactly at −10.89: 0;
+at −10.95: 0. A few draped moves round to those values, and each ±0.05 window takes the 242 moves of the one −10.92 pass
+(243 and 246 moves). The G-code has one full pass at −10.92 (lines 294–571, 242 moves, 18525 mm) and one at −5.46
+(lines 14–285). The log has four levels only: "Z levels computed count=4 z_top=19.54 z_bottom=4.0 depth_per_pass=5.46"
+and four "Contour-parallel EDT: generating offset contours" lines (z 19.54, 14.08, 8.62, 4.0). The level panels of fix32
+and fix33 have the same artefact.
+
+**Findings.**
+- s3.5: op 1 1323.6 s, the job 3061.8 s against CP 5776.8 s (×0.53). Load max 0.99 against 2.62, p99 0.64 against 1.00,
+  inside its own bound. The job removes CP's volume inside the part (within 0.2 %) and leaves less above the target.
+- s2.0: op 1 alone is 2261.9 s (×0.39 of CP), but op 7 takes 4689.5 s, so the job is ×1.20 of CP.
+- Op 7 on derived regions has three faults on wanaka: (a) a ring piece at the outline with containment center puts the tool
+  3.5 mm into the frame; (b) one region union for all levels makes the ring a peck ladder at every level, but the pieces
+  exist only at z 4.0; (c) the CP rest order alternates the left and the right strip (G-CPRAPID).
+- Renders: the op-1 level panels show false near-duplicate levels (item 5). s3.5 op 1 (`img/s3p5_op0.png`) is one spiral;
+  its plunges lie on the outline strips.
+
+Simulation files: deleted (fix33 s2p0, s3p5; fix25 cp_alone_0.6/wanaka200 and body_cp/wanaka200 after the band control and
+the full CP area read). Not committed.

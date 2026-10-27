@@ -1,0 +1,119 @@
+{
+ "run": "fix33/s2p0",
+ "c40_records": 612,
+ "descent_moves": 1858,
+ "z_offset_move_end_minus_record": 0.719,
+ "air_quantum_mm3": 0.216,
+ "causes": {
+  "LargeZ": {
+   "c40_records": 373,
+   "records_matched": 372,
+   "descent_moves": 859,
+   "time_s": 385.4,
+   "air_share": 0.593,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 5.33
+  },
+  "Reentry2d/OverBound": {
+   "c40_records": 135,
+   "records_matched": 135,
+   "descent_moves": 351,
+   "time_s": 155.3,
+   "air_share": 0.465,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 5.96
+  },
+  "LargeZHeld": {
+   "c40_records": 60,
+   "records_matched": 47,
+   "descent_moves": 214,
+   "time_s": 110.4,
+   "air_share": 0.933,
+   "median_move_len_mm": 5.37,
+   "median_drop_mm": 15.4
+  },
+  "unmatched": {
+   "c40_records": 0,
+   "records_matched": 0,
+   "descent_moves": 306,
+   "time_s": 49.9,
+   "air_share": 0.914,
+   "median_move_len_mm": 5.34,
+   "median_drop_mm": null
+  },
+  "HeldLinkRefused": {
+   "c40_records": 20,
+   "records_matched": 16,
+   "descent_moves": 72,
+   "time_s": 28.0,
+   "air_share": 0.736,
+   "median_move_len_mm": 5.17,
+   "median_drop_mm": 11.42
+  },
+  "Reentry2d/Mixed": {
+   "c40_records": 10,
+   "records_matched": 10,
+   "descent_moves": 25,
+   "time_s": 11.3,
+   "air_share": 0.441,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 5.96
+  },
+  "Reentry2d/Turn": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 8,
+   "time_s": 3.9,
+   "air_share": 0.554,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 11.42
+  },
+  "Sweep": {
+   "c40_records": 1,
+   "records_matched": 1,
+   "descent_moves": 7,
+   "time_s": 2.7,
+   "air_share": 0.941,
+   "median_move_len_mm": 5.37,
+   "median_drop_mm": 17.62
+  },
+  "Start": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 7,
+   "time_s": 2.3,
+   "air_share": 0.024,
+   "median_move_len_mm": 0.99,
+   "median_drop_mm": 5.96
+  },
+  "Reentry2d/None": {
+   "c40_records": 2,
+   "records_matched": 2,
+   "descent_moves": 5,
+   "time_s": 2.1,
+   "air_share": 0.403,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 8.69
+  },
+  "Waterline": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 3,
+   "time_s": 0.4,
+   "air_share": 0.615,
+   "median_move_len_mm": 0.35,
+   "median_drop_mm": 0.7
+  },
+  "Reentry2d/Start": {
+   "c40_records": 1,
+   "records_matched": 1,
+   "descent_moves": 1,
+   "time_s": 0.2,
+   "air_share": 0.338,
+   "median_move_len_mm": 0.94,
+   "median_drop_mm": 1.4
+  }
+ },
+ "total_time_s": 752.0,
+ "total_air_share": 0.64
+}
