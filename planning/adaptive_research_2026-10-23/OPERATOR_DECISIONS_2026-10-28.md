@@ -69,3 +69,8 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
    - G-LEVELPHASE, G-CPRAPID, G-AIRRAMP, G-SIMFEED: shipped defects that also slow CP.
    - G-MASTERREDS-1027: two shipped adaptive sentries red on master.
    - The slab field.
+
+## Operator rulings, 2026-10-28 morning
+
+- **Q5, decided:** FULL removal of the AgentSearch, ContourSpiral and Adaptive (original 3D) clearing strategies. Geodesic Adaptive and Contour Parallel stay. D64 measures all five first ("just in case"). I1 designs the removal (`integration/removal_design.md`).
+- **Op 1 re-entry rows** (the turn row at the Corne ledge, and the LargeZ rows at the walls): the operator asks whether these can be tidied. C24 designs a capped-turn admission in place of retract and re-entry (`phase3/d65/README.md`).
