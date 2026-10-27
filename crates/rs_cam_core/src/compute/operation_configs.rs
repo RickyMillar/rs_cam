@@ -135,17 +135,18 @@ pub(crate) fn default_layered_region_ordering() -> RegionOrdering {
 #[serde(rename_all = "snake_case")]
 pub enum ClearingStrategy {
     /// Fast contour-parallel offset clearing via EDT. Default.
+    ///
+    /// Removal step R2 (operator ruling 2026-10-28): the values `adaptive`,
+    /// `agent_search` and `contour_spiral` left this enum. A project file
+    /// that names one refuses at load and names the fix
+    /// (`session/project_file.rs`, `RETIRED_VALUES`).
     ContourParallel,
-    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
-    Adaptive,
-    /// Per-step direction search with preflight skip and widen-band
-    /// recovery. Slow to generate — reach for it when ContourParallel
-    /// and Adaptive leave uncut bands on difficult geometry.
-    AgentSearch,
-    /// Constructive inside-out contour spiral per slice: one continuous
-    /// stay-down pass per region, engagement bounded by wrap spacing
-    /// (Stage 1, algorithm review 2026-06-12).
-    ContourSpiral,
+    /// Geodesic Adaptive (integration step 7.4): the geodesic-wavefront
+    /// plan per slice piece (`adaptive::geodesic`). It clears the body
+    /// under the pass load, with the stock-depth step split and the routed
+    /// keep-down travel; a piece it cannot plan is left to a rest op. New,
+    /// not yet machine-tested.
+    GeodesicAdaptive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
@@ -1671,23 +1672,22 @@ pub struct Adaptive3dConfig {
     pub region_ordering: RegionOrdering,
     #[serde(default = "default_clearing_strategy")]
     pub clearing_strategy: ClearingStrategy,
-    /// Trochoid trigger cap for the ContourSpiral strategy: trochoidal
-    /// relief loops fire when predicted leading-arc engagement exceeds
-    /// `target × this`. Low (≈1.0–1.2) = flattest load, more loops, more
-    /// travel; high (≈2.0–3.0) = relaxed, fewer loops, less travel.
-    /// Surfaced in the GUI as the "Nibble" dial. Default 1.6 is the
-    /// balanced knee (load still flat, ~25-30% less distance than 1.2 —
-    /// see the trochoid-cap sweep in
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`). Ignored by
-    /// the ContourParallel/Adaptive/AgentSearch strategies.
+    /// Load-only field. It was the trochoid trigger cap of the removed
+    /// ContourSpiral strategy. No 3D Rough strategy reads it; saved
+    /// projects keep it so that they load unchanged.
     #[serde(default = "default_trochoid_cap_mult")]
-    #[param(gt = 0.0)]
+    #[param(
+        gt = 0.0,
+        help = "Not read by 3D Rough: the strategy that read it is removed. \
+                Kept so saved projects load unchanged."
+    )]
     pub trochoid_cap_mult: f64,
-    /// Engagement quantity for the AgentSearch 2D sub-pass. Defaults to
-    /// the historical `DiskArea`; `LeadingArc` is the units-correct
-    /// measure (algorithm review 2026-06-12, F1). Ignored by the
-    /// ContourParallel/Adaptive strategies.
+    /// Load-only field. It was the engagement quantity of the removed
+    /// AgentSearch 2D sub-pass. No 3D Rough strategy reads it; saved
+    /// projects keep it so that they load unchanged.
     #[serde(default)]
+    #[param(help = "Not read by 3D Rough: the strategy that read it is removed. \
+                Kept so saved projects load unchanged.")]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
     #[serde(default)]
     pub z_blend: bool,
@@ -1772,11 +1772,9 @@ impl Default for Adaptive3dConfig {
     }
 }
 
-/// Tuned trochoid trigger cap for the ContourSpiral strategy. 1.6 is the
-/// balanced knee from the cap sweep — load stays flat (p99 well under the
-/// spiky strategies) while cutting ~25-30% less distance than the
-/// flattest-load 1.2. Matches `adaptive3d::clearing::TROCHOID_CAP_MULT_3D`
-/// (the const this default replaces, kept as the in-engine fallback).
+/// The load default of the inert `trochoid_cap_mult` field. It keeps the
+/// value that the removed ContourSpiral strategy used, so that a project
+/// saved without the key reads back the same value.
 fn default_trochoid_cap_mult() -> f64 {
     1.6
 }
@@ -3799,27 +3797,35 @@ impl_operation_params!(ProjectCurveConfig {
 mod tests {
     use super::*;
 
-    /// ClearingStrategy must serialize and deserialize all three variants.
-    /// Regression guard for the GUI/MCP exposure of AgentSearch —
-    /// adding a variant to the core ClearingStrategy3d enum is not
-    /// enough; this config-layer enum is the one serde sees from TOML
-    /// and the one the MCP's set_toolpath_param dispatches through.
+    /// ClearingStrategy must serialize and deserialize every variant. This
+    /// config-layer enum is the one serde sees from TOML and the one the
+    /// MCP's set_toolpath_param dispatches through.
     #[test]
     fn clearing_strategy_serde_round_trip() {
         for variant in [
             ClearingStrategy::ContourParallel,
-            ClearingStrategy::Adaptive,
-            ClearingStrategy::AgentSearch,
+            ClearingStrategy::GeodesicAdaptive,
         ] {
             let json = serde_json::to_string(&variant).unwrap();
             let round_trip: ClearingStrategy = serde_json::from_str(&json).unwrap();
             assert_eq!(round_trip, variant);
         }
-        // Also verify the snake_case wire format — agent_search, not AgentSearch.
-        let json = serde_json::to_string(&ClearingStrategy::AgentSearch).unwrap();
-        assert_eq!(json, "\"agent_search\"");
-        let from_wire: ClearingStrategy = serde_json::from_str("\"agent_search\"").unwrap();
-        assert_eq!(from_wire, ClearingStrategy::AgentSearch);
+        // The snake_case wire format.
+        let json = serde_json::to_string(&ClearingStrategy::ContourParallel).unwrap();
+        assert_eq!(json, "\"contour_parallel\"");
+        // Removal step R2: a removed value is not a variant any more.
+        for removed in ["adaptive", "agent_search", "contour_spiral"] {
+            assert!(
+                serde_json::from_str::<ClearingStrategy>(&format!("\"{removed}\"")).is_err(),
+                "{removed} still deserialises"
+            );
+        }
+        // Integration step 7.4b: the project file and the job file spell
+        // Geodesic Adaptive `geodesic_adaptive`.
+        let json = serde_json::to_string(&ClearingStrategy::GeodesicAdaptive).unwrap();
+        assert_eq!(json, "\"geodesic_adaptive\"");
+        let from_wire: ClearingStrategy = serde_json::from_str("\"geodesic_adaptive\"").unwrap();
+        assert_eq!(from_wire, ClearingStrategy::GeodesicAdaptive);
     }
 
     /// The A/M6 deserialization-compatibility matrix, all three cells

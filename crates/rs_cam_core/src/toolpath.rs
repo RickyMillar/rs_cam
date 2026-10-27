@@ -122,11 +122,36 @@ impl MoveType {
 }
 
 /// A single toolpath move to a target position.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Move {
     pub target: P3,
     pub move_type: MoveType,
     pub intent: MoveIntent,
+    /// The highest feed (mm/min) this move may carry, or `None` for no
+    /// limit. A planner writes it where a load rule lowers the feed of a
+    /// move (C38 §15). Every later stage that rewrites the feed
+    /// (`dressup::feed_modulation`, `dressup::feedopt`) keeps the feed at
+    /// or below it, so a stage that raises feeds cannot undo the rule. A
+    /// stage that rebuilds a move from others keeps the cap: the arc fit
+    /// and the segment merge join only moves with the same cap.
+    pub feed_cap: Option<f64>,
+}
+
+/// The derived form, except that `feed_cap` prints only when it is set. The
+/// test fingerprints (`tests/common/fingerprint.rs` and three local copies)
+/// hash this text, so a move with no cap prints exactly what it printed
+/// before the field existed, and every pinned hash stays valid.
+impl std::fmt::Debug for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("Move");
+        out.field("target", &self.target)
+            .field("move_type", &self.move_type)
+            .field("intent", &self.intent);
+        if let Some(cap) = self.feed_cap {
+            out.field("feed_cap", &cap);
+        }
+        out.finish()
+    }
 }
 
 /// Where the material is beside one closed pass, relative to the ring the
@@ -282,6 +307,7 @@ impl Toolpath {
             target,
             move_type: MoveType::Rapid,
             intent,
+            feed_cap: None,
         });
     }
 
@@ -290,6 +316,7 @@ impl Toolpath {
             target,
             move_type: MoveType::Linear { feed_rate },
             intent,
+            feed_cap: None,
         });
     }
 
@@ -305,6 +332,7 @@ impl Toolpath {
             target,
             move_type: MoveType::ArcCW { i, j, feed_rate },
             intent,
+            feed_cap: None,
         });
     }
 
@@ -320,6 +348,7 @@ impl Toolpath {
             target,
             move_type: MoveType::ArcCCW { i, j, feed_rate },
             intent,
+            feed_cap: None,
         });
     }
 
@@ -1055,6 +1084,61 @@ fn merge_segments_skip_clamped(
 )]
 mod tests {
     use super::*;
+
+    /// C38 §15: a move with no feed cap prints the text the derived `Debug`
+    /// printed before the field existed, in the plain and the `#` forms, so
+    /// every pinned `Debug` fingerprint stays valid. A set cap prints.
+    #[test]
+    fn a_move_with_no_cap_prints_as_before_the_field() {
+        mod before {
+            /// The struct as it was before `feed_cap`, with the derive.
+            #[derive(Debug)]
+            pub struct Move {
+                pub target: crate::geo::P3,
+                pub move_type: crate::toolpath::MoveType,
+                pub intent: crate::toolpath::MoveIntent,
+            }
+        }
+        let move_types = [
+            MoveType::Rapid,
+            MoveType::Linear { feed_rate: 1234.5 },
+            MoveType::ArcCW {
+                i: 0.1,
+                j: -2.0,
+                feed_rate: 800.0,
+            },
+            MoveType::ArcCCW {
+                i: -0.3,
+                j: 1.0 / 3.0,
+                feed_rate: 600.0,
+            },
+        ];
+        for move_type in move_types {
+            let target = P3::new(1.0 / 7.0, -2.5, 1e-17);
+            let intent = MoveIntent::ClearingCut;
+            let now = Move {
+                target,
+                move_type,
+                intent,
+                feed_cap: None,
+            };
+            let old = before::Move {
+                target,
+                move_type,
+                intent,
+            };
+            assert_eq!(format!("{now:?}"), format!("{old:?}"));
+            assert_eq!(format!("{now:#?}"), format!("{old:#?}"));
+            // The two structs hold the same values (and the old fields are read).
+            assert!(old.target == now.target && old.move_type == now.move_type);
+            assert_eq!(old.intent, now.intent);
+            let capped = Move {
+                feed_cap: Some(600.0),
+                ..now
+            };
+            assert!(format!("{capped:?}").ends_with(", feed_cap: 600.0 }"));
+        }
+    }
 
     #[test]
     fn test_emit_path_segment_basic() {

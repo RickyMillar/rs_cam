@@ -5,7 +5,6 @@
 use crate::dexel_stock::{StockCutDirection, TriDexelStock};
 use crate::geo::{P2, P3};
 use crate::geometry::contour_extract::marching_squares_bool_grid;
-use crate::geometry::grid_field::{edt_curvature_field, smooth_grid};
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::ops::waterline::waterline_contours_with_cancel;
@@ -42,28 +41,11 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
-/// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
-/// Loops fire when predicted leading-arc engagement exceeds
-/// `target × this`: 1.2 is flattest-possible load but high travel; 1.6 is
-/// the balanced knee — load still flat (p99 well under the spiky
-/// strategies) while cutting ~25-30% less distance. See the trochoid-cap
-/// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
-///
-/// As of the "Optimal load + Nibble" UI reframe this is operator-tunable
-/// via `Adaptive3dConfig::trochoid_cap_mult` (GUI "Nibble" dial); the
-/// const remains the default and a sanity fallback for any context built
-/// with a non-finite or non-positive cap.
+/// The fallback for a non-finite or non-positive `trochoid_cap_mult`. The
+/// slice's 2D planner (`PathStrategy2d::Agent`) does not read the cap; the
+/// removed ContourSpiral strategy read it (removal step R4). The value is
+/// the default of the load-only `Adaptive3dConfig::trochoid_cap_mult`.
 const TROCHOID_CAP_MULT_3D: f64 = 1.6;
-
-/// Stage 4 — quantise a world coordinate to a fixed-point key (0.001 mm)
-/// for the planner-engagement position lookup. Distinct spiral sample
-/// points are spaced far wider than this, so the key is collision-free
-/// while tolerating any benign float round-trip between the 2D emit and
-/// the 3D lift.
-#[inline]
-fn quantize_coord(v: f64) -> i64 {
-    (v * 1000.0).round() as i64
-}
 
 // ── Region detection ──────────────────────────────────────────────────
 
@@ -373,7 +355,6 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) feed_rate: f64,
     /// Op plunge feed (mm/min) — same crossover use.
     pub(super) plunge_rate: f64,
-    pub(super) target_frac: f64,
     pub(super) step_len: f64,
     pub(super) max_link_dist: f64,
     /// Safe-Z used by `segments_to_toolpath` for retracts and the start
@@ -382,11 +363,11 @@ pub(super) struct ClearZLevelContext<'a> {
     /// its internal dexel state (parity with the simulator replay).
     pub(super) safe_z: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
-    /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
-    /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value
-    /// is operator-tunable; the const survives as the in-engine fallback.
+    /// Load-only: passed to the slice's 2D params, which do not read it
+    /// (`PathStrategy2d::Agent`).
     pub(super) trochoid_cap_mult: f64,
-    /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
+    /// Load-only: passed to the slice's 2D params, which do not read it
+    /// (`KeepDownLinks::WithinPassLoad`, `adaptive::path::pass_load_for`).
     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
     pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
@@ -396,8 +377,8 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) min_cutting_radius: f64,
     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
     /// squares region must produce in its 2D adaptive sub-pass before the
-    /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
-    /// disable. See `clear_z_level_agent_2d_slice` for the apply site.
+    /// slice commits an entry plunge to it. Set to 0.0 to
+    /// disable. See `clear_z_level_slice` for the apply site.
     pub(super) min_region_cut_length_mm: f64,
     /// The disc radius of an entry's rapid floor read; see
     /// `path.rs::entry_floor_radius`.
@@ -408,6 +389,24 @@ pub(super) struct ClearZLevelContext<'a> {
     /// The boundary clip's containment (G-BOUNDARYPHANTOM); see
     /// [`StampDrape::centre_clip`].
     pub(super) centre_clip: Option<&'a CentreClip>,
+    /// The stay-down clearance (`params.linking.stay_down_clearance_mm`,
+    /// at least 0): the dexel allowance of the step split and the routed
+    /// keep-down travel.
+    pub(super) stay_down_clearance_mm: f64,
+    /// The step split in force ([`super::StepSplit`];
+    /// `super::effective_step_split`).
+    pub(super) step_split: super::StepSplit,
+    /// The routed keep-down travel in force ([`super::KeepDownRoute`];
+    /// `super::effective_keep_down_route`).
+    pub(super) keep_down_route: super::KeepDownRoute,
+    /// Geodesic Adaptive (research C38 §11, G-CLIPAIR): the boundary mask
+    /// of the region grid, when the boundary clear kept the reachable band.
+    pub(super) region_clip: Option<super::outer_band::RegionClip>,
+    /// Geodesic Adaptive (research C38 §16): the pieces the arm left to the
+    /// rest pass (the field does not apply, or the F-038 forecast skipped
+    /// them), each with its Z level. The waterline cleanup of that level
+    /// skips a contour inside one.
+    pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -540,10 +539,14 @@ pub(super) struct StampDrape<'a> {
     /// `None` with no boundary. Every pushed segment passes it first, so the
     /// planner stamps only what the clip keeps (G-BOUNDARYPHANTOM).
     pub(super) centre_clip: Option<&'a CentreClip>,
+    /// The routed keep-down travel at an entry ([`routed_entry`]), and the
+    /// stay-down clearance it reads. `Off` for the waterline.
+    pub(super) keep_down_route: super::KeepDownRoute,
+    pub(super) stay_down_clearance_mm: f64,
 }
 
 impl<'a> ClearZLevelContext<'a> {
-    pub(super) fn stamp_drape(&self) -> StampDrape<'a> {
+    pub(super) fn stamp_drape(&self) -> StampDrape<'_> {
         StampDrape {
             mesh: self.mesh,
             index: self.index,
@@ -552,6 +555,8 @@ impl<'a> ClearZLevelContext<'a> {
             entry_floor_radius: self.entry_floor_radius,
             stay_down_mm: self.stay_down_mm,
             centre_clip: self.centre_clip,
+            keep_down_route: self.keep_down_route,
+            stay_down_clearance_mm: self.stay_down_clearance_mm,
         }
     }
 }
@@ -783,7 +788,12 @@ fn plan_entry(
         }
         Some(StayDownProof {
             from,
-            ceiling_z: corridor_ceiling_z(material_stock, from, entry, tool_radius),
+            ceiling_z: super::keep_down::corridor_ceiling_z(
+                material_stock,
+                from,
+                entry,
+                tool_radius,
+            ),
         })
     });
     // The helix or ramp starts above the cell-centre read; the rapid floor
@@ -865,26 +875,166 @@ fn link_footprint_ok(stock: &TriDexelStock, from: P3, to: P3, radius: f64, max_b
 /// `search.rs::is_clear_path_3d` uses).
 const LINK_DESCENT_NOISE_MM: f64 = 0.5;
 
-/// The highest conservative stock top on the swept disc of `radius` from
-/// `from` to `to` (XY), both ends included. Samples every half cell, so no
-/// column the disc sweeps is skipped. `NEG_INFINITY` when the whole corridor
-/// is off the grid.
-fn corridor_ceiling_z(stock: &TriDexelStock, from: P3, to: P3, radius: f64) -> f64 {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
+/// [`super::StepSplit::StockDepth`]: the deepest axial engagement (mm) of a
+/// feed move from `p` to `q` with a tool of `radius`: at each sample along
+/// the move (every half cell, as `keep_down::corridor_ceiling_z`), the
+/// conservative stock top over the disc less the tool's Z there.
+/// `NEG_INFINITY` when the move is off the grid.
+pub(super) fn step_axial_depth(stock: &TriDexelStock, p: P3, q: P3, radius: f64) -> f64 {
+    let dx = q.x - p.x;
+    let dy = q.y - p.y;
     let len = (dx * dx + dy * dy).sqrt();
     let step = (stock.z_grid.cell_size * 0.5).max(1e-3);
     let n = (len / step).ceil().max(1.0) as usize;
-    let mut ceiling = f64::NEG_INFINITY;
+    (0..=n)
+        .filter_map(|k| {
+            let t = k as f64 / n as f64;
+            let z = p.z + t * (q.z - p.z);
+            stock
+                .max_conservative_top_z_in_disc(p.x + dx * t, p.y + dy * t, radius)
+                .map(|top| top - z)
+        })
+        .fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// D65: whether a draped step that the stock-read split would split is cut
+/// instead at a capped feed ([`capped_step_factor`]; the slice runs only
+/// Geodesic Adaptive): a step that is not `deep` (its axial engagement at most one
+/// Depth/Pass plus the clearance), whose chip-area load is over the ceiling
+/// (the split's own reason) and at most the full slot
+/// ([`crate::adaptive::path::FULL_SLOT_LOAD`]), inside one engaged run
+/// (`in_engaged_run`: no engagement change at the step). Every other split
+/// stays a split.
+pub(super) fn admits_capped_split(
+    deep: bool,
+    load: f64,
+    ceiling: f64,
+    in_engaged_run: bool,
+) -> bool {
+    !deep && load > ceiling && load <= crate::adaptive::path::FULL_SLOT_LOAD && in_engaged_run
+}
+
+/// D65: the feed factor of a draped step admitted as a capped cut (Geodesic
+/// Adaptive): the load factor `c / L` (`geodesic::feed_caps`'s law), at
+/// most the factor that holds the step's descent rate at the plunge rate
+/// (`plunge_rate · |step| / (|dz| · F)`, so a steep step goes down no
+/// faster than the plunge it replaces), and at most the 2D cap `outer` of
+/// the cut it lies on. Never above 1.
+pub(super) fn capped_step_factor(
+    ceiling: f64,
+    load: f64,
+    prev: P3,
+    curr: P3,
+    feed_rate: f64,
+    plunge_rate: f64,
+    outer: Option<f64>,
+) -> f64 {
+    let mut factor = if load > 0.0 { ceiling / load } else { 1.0 };
+    let dz = curr.z - prev.z;
+    if dz < 0.0 && feed_rate > 0.0 {
+        let len = ((curr.x - prev.x).powi(2) + (curr.y - prev.y).powi(2) + dz * dz).sqrt();
+        factor = factor.min(plunge_rate * len / (-dz * feed_rate));
+    }
+    if let Some(outer) = outer {
+        factor = factor.min(outer);
+    }
+    factor.min(1.0)
+}
+
+/// The cutter and the pass a step's load is read against: the cutter's
+/// radial profile, its chip cross-section contract, its diameter, and the
+/// op's Depth/Pass.
+pub(super) struct StepLoadCutter<'a> {
+    pub(super) lut: &'a RadialProfileLUT,
+    pub(super) chip: crate::feeds::ToolGeometryHint,
+    pub(super) diameter: f64,
+    pub(super) depth_per_pass: f64,
+}
+
+/// [`super::StepSplit::StockDepth`]: the highest chip-area load of a feed
+/// move from `p` to `q` with a tool of `radius`, read on the 3D planner stock
+/// by the one load ([`crate::tool_load::load_fraction::chip_load_fraction`]).
+/// At each sample along the move (every half cell, as [`step_axial_depth`]),
+/// each grid cell inside the disc whose stock stands above the cutter there
+/// (its tip plus the profile height at the cell, plus `clearance`, the
+/// dexel allowance) engages its depth above the cutter; the cells are binned
+/// in lateral strips one cell apart across the move's XY heading, the
+/// deepest per strip. A cell an earlier sample of this move passed within R
+/// counts at most at that sample's Z (an earlier sample cut it down to its
+/// own Z, and no lower): a descent sweeps nothing below its own path, so the
+/// stock it descends into still counts. 0 for a move with no XY length (its
+/// depth is [`step_axial_depth`]'s).
+pub(super) fn step_load(
+    stock: &TriDexelStock,
+    p: P3,
+    q: P3,
+    radius: f64,
+    clearance: f64,
+    cutter: &StepLoadCutter<'_>,
+) -> f64 {
+    let grid = &stock.z_grid;
+    let cs = grid.cell_size;
+    let (dx, dy) = (q.x - p.x, q.y - p.y);
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 || cs <= 0.0 {
+        return 0.0;
+    }
+    let (ux, uy) = (dx / len, dy / len);
+    let (nx, ny) = (-uy, ux);
+    let n = (len / (cs * 0.5).max(1e-3)).ceil().max(1.0) as usize;
+    let r_sq = radius * radius;
+    let r_cells = (radius / cs).ceil() as isize;
+    let mut highest = 0.0_f64;
     for k in 0..=n {
         let t = k as f64 / n as f64;
-        if let Some(top) =
-            stock.max_conservative_top_z_in_disc(from.x + dx * t, from.y + dy * t, radius)
-        {
-            ceiling = ceiling.max(top);
+        let (x, y, z) = (p.x + dx * t, p.y + dy * t, p.z + t * (q.z - p.z));
+        let col0 = ((x - grid.origin_u) / cs).round() as isize;
+        let row0 = ((y - grid.origin_v) / cs).round() as isize;
+        let mut strips: std::collections::BTreeMap<i64, f64> = std::collections::BTreeMap::new();
+        for row in (row0 - r_cells)..=(row0 + r_cells) {
+            for col in (col0 - r_cells)..=(col0 + r_cells) {
+                if row < 0 || col < 0 || row as usize >= grid.rows || col as usize >= grid.cols {
+                    continue;
+                }
+                let (cx, cy) = (
+                    grid.origin_u + col as f64 * cs,
+                    grid.origin_v + row as f64 * cs,
+                );
+                let (ex, ey) = (cx - x, cy - y);
+                let d_sq = ex * ex + ey * ey;
+                let Some(h) = cutter.lut.height_at_dist_sq(d_sq) else {
+                    continue;
+                };
+                if d_sq > r_sq {
+                    continue;
+                }
+                let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
+                for j in 0..k {
+                    let tj = j as f64 / n as f64;
+                    let (jx, jy) = (p.x + dx * tj, p.y + dy * tj);
+                    if (cx - jx).powi(2) + (cy - jy).powi(2) <= r_sq {
+                        top = top.min(p.z + tj * (q.z - p.z));
+                    }
+                }
+                let floor = z + h;
+                if top <= floor + clearance {
+                    continue;
+                }
+                let strip = ((ex * nx + ey * ny) / cs).round() as i64;
+                let deepest = strips.entry(strip).or_insert(0.0);
+                *deepest = deepest.max(top - floor);
+            }
         }
+        let load = crate::tool_load::load_fraction::chip_load_fraction(
+            cutter.chip,
+            cutter.depth_per_pass,
+            cutter.diameter,
+            strips,
+            cs,
+        );
+        highest = highest.max(load);
     }
-    ceiling
+    highest
 }
 
 /// Helper to push a segment and stamp its simulator-equivalent swept
@@ -957,6 +1107,28 @@ fn push_segment_with_stamp_unclipped(
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
 ) {
+    // An entry the routed keep-down travel can replace goes out as the
+    // route (`KeepDownRoute::Off`, every shipped strategy: never).
+    if let Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } =
+        &segment
+        && let Some(route) = routed_entry(material_stock, tool_radius, cursor, *entry, drape)
+    {
+        for piece in route {
+            let piece = stamp_and_advance(
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                piece,
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                drape,
+            );
+            segments.push(piece);
+        }
+        return;
+    }
     let segment = stamp_and_advance(
         material_stock,
         lut,
@@ -969,6 +1141,88 @@ fn push_segment_with_stamp_unclipped(
         drape,
     );
     segments.push(segment);
+}
+
+/// The segments of a routed keep-down travel that replaces the entry
+/// `entry` (`keep_down::keep_down_route`), or `None`: the travel is off,
+/// the tool has no position, or no route holds.
+///
+/// - The travel runs at the entry's Z as `Link`s (cut feed), over cells
+///   whose whole tool disc stands at most the stay-down clearance above it:
+///   the full-disc proof.
+/// - §16.7: only an entry whose own disc is free (it cuts nothing) is
+///   replaced: a keep-down travel replaces the travel, never the entry's
+///   cut. The route ends on the entry, with no side leg.
+/// - The route's length is held to the stay-down distance (`stay_down_mm`),
+///   the one keep-down dial (CUT-05).
+/// - A tool standing above the travel's Z drops to it only when its disc
+///   there is free (through air); a tool below it rises at its own XY
+///   first.
+fn routed_entry(
+    stock: &TriDexelStock,
+    tool_radius: f64,
+    cursor: &PlannerCursor,
+    entry: P3,
+    drape: &StampDrape<'_>,
+) -> Option<Vec<Adaptive3dSegment>> {
+    let clearance = match drape.keep_down_route {
+        super::KeepDownRoute::Off => return None,
+        super::KeepDownRoute::CutFeed => drape.stay_down_clearance_mm,
+    };
+    let from = cursor.tool_pos?;
+    if drape.stay_down_mm <= 0.0 {
+        return None;
+    }
+    let travel_z = entry.z;
+    let ceiling_z = entry.z + clearance;
+    let free_at = |p: P2| {
+        stock
+            .max_conservative_top_z_in_disc(p.x, p.y, tool_radius)
+            .is_none_or(|top| top <= ceiling_z)
+    };
+    // A tool above the travel drops to it only through air; a tool below
+    // it rises at its own XY first (a rise cuts nothing).
+    if from.z > travel_z + clearance && !free_at(P2::new(from.x, from.y)) {
+        return None;
+    }
+    // §16.7: a keep-down travel replaces the travel, never the entry's cut.
+    // An entry whose own footprint (the entry floor disc, `plan_entry`'s
+    // read: the tool, or the helix's sweep) is not free cuts its column;
+    // it stays.
+    let entry_free = stock
+        .max_conservative_top_z_in_disc(entry.x, entry.y, drape.entry_floor_radius)
+        .is_none_or(|top| top <= ceiling_z);
+    if !entry_free {
+        return None;
+    }
+    let allowed = |p: P2| drape.centre_clip.is_none_or(|c| c.contains(p.x, p.y));
+    // The route ends on the free cell of the entry (within one cell of its
+    // point); the last move to the entry point runs between two free discs.
+    let side_ok = |_: P2| true;
+    let req = super::keep_down::RouteRequest {
+        from: P2::new(from.x, from.y),
+        to: P2::new(entry.x, entry.y),
+        radius: tool_radius,
+        ceiling_z,
+        max_len: drape.stay_down_mm,
+        side_max: stock.z_grid.cell_size,
+        side_ok: &side_ok,
+        allowed: &allowed,
+    };
+    let path = super::keep_down::straight_runs(&super::keep_down::keep_down_route(stock, &req)?);
+    let last = *path.last()?;
+    let mut out: Vec<Adaptive3dSegment> = Vec::with_capacity(path.len() + 2);
+    if from.z < travel_z - 1e-9 {
+        out.push(Adaptive3dSegment::Link(P3::new(from.x, from.y, travel_z)));
+    }
+    for p in &path {
+        out.push(Adaptive3dSegment::Link(P3::new(p.x, p.y, travel_z)));
+    }
+    // The last move: to the entry point at the travel's Z (both discs free).
+    if (entry.x - last.x).hypot(entry.y - last.y) > 1e-9 {
+        out.push(Adaptive3dSegment::Link(entry));
+    }
+    Some(out)
 }
 
 /// Plan an entry (its floor and keep-down proof), stamp the segment into the
@@ -1215,7 +1469,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 // gate, z_blend=true produced Link moves that crossed
                 // uncut terrain between rings at different Z heights
                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
-                // matches the one in clear_z_level (the AgentSearch path).
+                // matches the one in clear_z_level_slice.
                 let should_link = cursor
                     .last_pos
                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
@@ -1423,181 +1677,6 @@ pub(super) fn clear_z_level_contour_parallel(
     Ok(())
 }
 
-/// Adaptive clearing: variable-offset EDT for constant tool engagement.
-///
-/// Same structure as `clear_z_level_contour_parallel` but uses a spatially-
-/// varying threshold based on EDT level-set curvature.  At convex boundary
-/// sections the stepover shrinks (preventing engagement spikes); at concave
-/// sections it grows (avoiding wasted light passes).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is a separate input that the callers supply"
-)]
-pub(super) fn clear_z_level_adaptive(
-    ctx: &ClearZLevelContext<'_>,
-    material_stock: &mut TriDexelStock,
-    surface_hm: &SurfaceHeightmap,
-    z_level: f64,
-    segments: &mut Vec<Adaptive3dSegment>,
-    cursor: &mut PlannerCursor,
-    area_mask: Option<&AreaMask>,
-    cancel: &dyn CancelCheck,
-) -> Result<(), Cancelled> {
-    // ── Material check ─────────────────────────────────────────────────
-    // Absolute cell-count gate (not fraction) — see clear_z_level_concentric.
-    let (remaining_cells, _) = level_gate(
-        material_stock,
-        surface_hm,
-        z_level,
-        ctx.stock_to_leave,
-        area_mask,
-    );
-    if remaining_cells < MIN_CELLS_TO_CLEAR {
-        return Ok(());
-    }
-
-    // ── 1. Build boolean material grid ─────────────────────────────────
-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
-        material_stock,
-        surface_hm,
-        z_level,
-        ctx.stock_to_leave,
-        area_mask,
-    );
-
-    if !material_grid.iter().any(|&b| b) {
-        return Ok(());
-    }
-
-    // ── 2. EDT on inverted grid (distance to nearest air) ──────────────
-    let air_grid: Vec<bool> = material_grid.iter().map(|&b| !b).collect();
-    let edt = crate::geometry::grid_field::distance_transform_2d(&air_grid, rows, cols);
-    let max_dist = edt.iter().copied().fold(0.0f64, f64::max);
-
-    // ── 3. Curvature field from EDT level sets ─────────────────────────
-    let mut curvature = edt_curvature_field(&edt, rows, cols);
-    // Smooth to suppress finite-difference noise near the medial axis.
-    // Scale with tool radius so the kernel covers ~1 tool diameter.
-    let tool_radius_cells = ctx.tool_radius / cell_size;
-    let smooth_r = (tool_radius_cells as usize).max(3);
-    smooth_grid(&mut curvature, rows, cols, smooth_r);
-
-    // ── 4. Precompute per-cell curvature offset ────────────────────────
-    // The offset is a CONSTANT shift per cell (does not scale with level N).
-    // This keeps contour topology stable across levels while adjusting
-    // local spacing based on curvature.
-    //   offset = base_step * (−κR / (1 + κR))  clamped for stability
-    //   Concave κ < 0: offset > 0 → contour recedes → wider pass
-    //   Convex  κ > 0: offset < 0 → contour advances → tighter pass
-    let total = rows * cols;
-    let alpha = ctx.target_frac * std::f64::consts::TAU;
-    let base_step = ctx.tool_radius * (1.0 - alpha.cos());
-    let base_step_cells = base_step / cell_size;
-
-    let mut curvature_offset = vec![0.0f64; total];
-    for (off, &kappa) in curvature_offset.iter_mut().zip(curvature.iter()) {
-        let kr = kappa * tool_radius_cells;
-        let denom = (1.0 + kr).clamp(0.5, 2.0);
-        // offset = base_step * (1/denom - 1), clamped to ±0.5 * base_step
-        *off = (base_step_cells * (1.0 / denom - 1.0))
-            .clamp(-0.5 * base_step_cells, 0.5 * base_step_cells);
-    }
-
-    // Z-blend setup (identical to contour-parallel)
-    let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
-
-    debug!(
-        z = z_level,
-        max_dist_cells = max_dist,
-        tool_radius_cells = tool_radius_cells,
-        base_step_cells = base_step_cells,
-        "Adaptive EDT: generating curvature-adjusted contours"
-    );
-
-    // ── 5. Offset loop: fixed base progression + constant curvature shift
-    let mut threshold = tool_radius_cells;
-
-    while threshold < max_dist {
-        check_cancel(cancel)?;
-
-        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
-        let blend = if z_blend_enabled && offset_range > 1e-6 {
-            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-        // Variable mask: base threshold + per-cell curvature offset
-        let mask: Vec<bool> = edt
-            .iter()
-            .zip(curvature_offset.iter())
-            .map(|(&d, &off)| d > threshold + off)
-            .collect();
-        let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
-
-        for loop_pts in &loops {
-            if loop_pts.len() < 3 {
-                continue;
-            }
-
-            // Z-blended surface drape (identical to contour-parallel)
-            let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
-            for p in loop_pts {
-                let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
-                let target_z = if surf_z == f64::NEG_INFINITY {
-                    z_level
-                } else {
-                    surf_z + ctx.stock_to_leave
-                };
-                let z = (z_level + blend * (target_z - z_level)).max(target_z);
-                path_3d.push(P3::new(p.x, p.y, z));
-            }
-
-            // Entry (link or rapid) + cut segment. Matches the gate in
-            // clear_z_level_contour_parallel — see F-5 rationale there.
-            if let Some(first) = path_3d.first() {
-                let should_link = cursor
-                    .last_pos
-                    .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
-                let entry_seg = if should_link {
-                    Adaptive3dSegment::Link(*first)
-                } else {
-                    Adaptive3dSegment::Rapid(*first)
-                };
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    cursor,
-                    entry_seg,
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
-                push_segment_with_stamp(
-                    segments,
-                    material_stock,
-                    ctx.lut,
-                    ctx.tool_radius,
-                    cursor,
-                    Adaptive3dSegment::Cut(path_3d),
-                    ctx.safe_z,
-                    ctx.cut_tolerance,
-                    ctx.min_cutting_radius,
-                    &ctx.stamp_drape(),
-                );
-            }
-        }
-
-        threshold += base_step_cells;
-    }
-
-    Ok(())
-}
-
 #[expect(
     clippy::indexing_slicing,
     reason = "bounded indexing in algorithmic code"
@@ -1626,7 +1705,7 @@ pub(super) fn waterline_cleanup(
     tolerance: f64,
     min_cutting_radius: f64,
     stock_to_leave: f64,
-    centre_clip: Option<&CentreClip>,
+    ctx: &ClearZLevelContext<'_>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -1646,7 +1725,9 @@ pub(super) fn waterline_cleanup(
         // contour gets no keep-down link.
         entry_floor_radius,
         stay_down_mm: 0.0,
-        centre_clip,
+        centre_clip: ctx.centre_clip,
+        keep_down_route: super::KeepDownRoute::Off,
+        stay_down_clearance_mm: 0.0,
     };
     #[cfg(not(target_arch = "wasm32"))]
     let t_waterline = Instant::now();
@@ -1686,6 +1767,25 @@ pub(super) fn waterline_cleanup(
         if total_samples > 0 && steep_samples * 3 < total_samples {
             // Less than 1/3 of samples are steep — skip this contour
             continue;
+        }
+        // Geodesic Adaptive (research C38 §16): a contour that lies in a piece the arm
+        // left to the rest contour pass (at least half its samples inside
+        // one at this level) is the rest pass's work too. Only the arm
+        // leaves pieces, so a Contour Parallel run reads no piece here.
+        let left = ctx.left_pieces.borrow();
+        if !left.is_empty() {
+            let inside = contour
+                .iter()
+                .step_by(sample_step)
+                .filter(|p| {
+                    left.iter().any(|(z, piece)| {
+                        (z - z_level).abs() < 1e-9 && piece.contains_point(&P2::new(p.x, p.y))
+                    })
+                })
+                .count();
+            if inside * 2 >= total_samples {
+                continue;
+            }
         }
 
         push_segment_with_stamp(
@@ -1754,18 +1854,7 @@ pub(super) fn waterline_cleanup(
     Ok(())
 }
 
-/// Sample the current dexel stock top at world XY. Returns `None`
-/// when the XY falls outside the grid (caller should fall back to
-/// the conservative full-safe_z plunge). Returns `f64::NEG_INFINITY`
-/// for the "everything cleared" case is collapsed to `None` too —
-/// the caller can't usefully rapid down to negative infinity.
-fn sample_stock_top_at(material_stock: &TriDexelStock, x: f64, y: f64) -> Option<f64> {
-    let (row, col) = material_stock.z_grid.world_to_cell(x, y)?;
-    let top_z = stock_top_z_at(material_stock, row, col);
-    top_z.is_finite().then_some(top_z)
-}
-
-// ── 2.5D slice adaptive (AgentSearch strategy) ─────────────────────────
+// ── 2.5D slice adaptive (GeodesicAdaptive strategy) ────────────────────
 
 /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
 /// anchor for region-ordering. Vertex-average, not the area-weighted
@@ -1834,15 +1923,14 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
     0.5 * acc
 }
 
-/// AgentSearch via 2.5D slices: at each Z-level, extract the 2D
-/// material polygon via marching squares, then run the proven 2D
-/// `adaptive_segments_with_debug` on it. Lift the resulting 2D path
-/// back to 3D (Z clamped to `z_level` or surface+stock_to_leave) and
-/// stamp the dexel stock along it.
+/// Geodesic Adaptive via 2.5D slices: at each Z-level, extract the 2D
+/// material polygon via marching squares, then plan each piece with the
+/// 2D geodesic plan (`plan_one_outline`). The F-038 forecast still runs
+/// the 2D agent planner (`adaptive_segments_with_debug`). Lift the
+/// resulting 2D path back to 3D (Z clamped to `z_level` or
+/// surface+stock_to_leave) and stamp the dexel stock along it.
 ///
-/// This replaces the ~700-line 3D agent-based search that struggled
-/// with surface-following, axial engagement, and boundary walking by
-/// delegating to the working 2D adaptive implementation. The trade-off
+/// The trade-off
 /// is that the tool stays at a fixed Z within each slab (no per-step
 /// terrain follow) — acceptable for roughing; finish passes handle
 /// the staircase.
@@ -1884,7 +1972,7 @@ pub(super) fn air_run_crossover_mm(
 /// The regions one Z level clears, in the order the cutter visits them, and
 /// the plan metrics the detection stage already knows.
 ///
-/// CUT-09: the product of stage 1 of `clear_z_level_agent_2d_slice`.
+/// CUT-09: the product of stage 1 of `clear_z_level_slice`.
 struct OrderedRegions {
     regions: Vec<crate::polygon::Polygon2>,
     metrics: ZLevelPlanMetrics,
@@ -1914,6 +2002,15 @@ fn detect_and_order_regions(
         ctx.stock_to_leave,
         area_mask,
     );
+    // Geodesic Adaptive (research C38 §11, G-CLIPAIR): regions stay inside the boundary,
+    // and include the centres whose disc meets the reachable band.
+    let material_grid = {
+        let mut grid = material_grid;
+        if let Some(clip) = ctx.region_clip.as_ref() {
+            clip.restrict_regions(&mut grid, rows, cols);
+        }
+        grid
+    };
     if !material_grid.iter().any(|&b| b) {
         return None;
     }
@@ -2045,21 +2142,20 @@ fn detect_and_order_regions(
     })
 }
 
-/// The four accumulators a Z level appends to, plus the two counters and
+/// The accumulators a Z level appends to, plus the two counters and
 /// the metrics record its stages share.
 ///
-/// CUT-09: `clear_z_level_agent_2d_slice` used to carry these as four
+/// CUT-09: `clear_z_level_slice` used to carry these as four
 /// separate `&mut` parameters, which is what made it need
 /// `clippy::too_many_arguments`.
 struct LevelEmission<'a> {
     sink: LevelSink<'a>,
-    planner_eng: &'a mut Vec<(P3, f64)>,
     level_metrics: &'a mut ZLevelPlanMetrics,
     cut_count: &'a mut u32,
     dropped_short_regions: &'a mut usize,
 }
 
-/// The one door every segment of an AgentSearch / ContourSpiral level goes
+/// The one door every segment of a Geodesic Adaptive level goes
 /// through into the plan and the planner stock.
 ///
 /// G-PHANTOMSTAMP: with the F-038 gate on (`min_region_cut_length_mm > 0`)
@@ -2169,6 +2265,34 @@ impl LevelSink<'_> {
             }
             _ => return,
         };
+        // An entry the routed keep-down travel can replace goes out as the
+        // route, in the entry's place (only markers stand after a pending
+        // entry, so the order holds). `KeepDownRoute::Off`: never.
+        let drape = ctx.stamp_drape();
+        if let Some(route) = routed_entry(
+            self.material_stock,
+            ctx.tool_radius,
+            self.cursor,
+            entry,
+            &drape,
+        ) {
+            let mut stamped = Vec::with_capacity(route.len());
+            for piece in route {
+                stamped.push(stamp_and_advance(
+                    self.material_stock,
+                    ctx.lut,
+                    ctx.tool_radius,
+                    self.cursor,
+                    piece,
+                    ctx.safe_z,
+                    ctx.cut_tolerance,
+                    ctx.min_cutting_radius,
+                    &drape,
+                ));
+            }
+            self.segments.splice(i..=i, stamped);
+            return;
+        }
         *slot = stamp_and_advance(
             self.material_stock,
             ctx.lut,
@@ -2178,7 +2302,7 @@ impl LevelSink<'_> {
             ctx.safe_z,
             ctx.cut_tolerance,
             ctx.min_cutting_radius,
-            &ctx.stamp_drape(),
+            &drape,
         );
     }
 }
@@ -2192,10 +2316,16 @@ struct RegionClearPlan<'a> {
     region_total: usize,
 }
 
-/// The outlines the 2D planner plans for one region: each smoothed
-/// polygon of the region, split into one outline per piece of its inset
-/// by the tool radius (G-ADAPT3DPIECES, D2).
-fn planner_outlines(
+/// The inward offset (mm) of the shipped region smoothing
+/// ([`smoothed_region`]).
+const SIMPLIFY_INSET: f64 = 0.3;
+/// The Douglas-Peucker tolerance (mm) of the shipped region smoothing
+/// ([`smoothed_region`]).
+const SIMPLIFY_TOLERANCE: f64 = 0.3;
+
+/// The region polygon smoothed for the 2D planner, or empty under the
+/// Legacy cleanup (the planner then plans the region itself).
+fn smoothed_region(
     region_polygon: &crate::polygon::Polygon2,
     params_2d: &crate::adaptive::AdaptiveParams,
 ) -> Vec<crate::polygon::Polygon2> {
@@ -2209,9 +2339,7 @@ fn planner_outlines(
     // Stock left at the boundary is bounded by SIMPLIFY_INSET +
     // SIMPLIFY_TOLERANCE ≈ 0.6 mm — well within typical 0.5–1 mm
     // radial-stock-to-leave allowances for a roughing pass.
-    const SIMPLIFY_INSET: f64 = 0.3;
-    const SIMPLIFY_TOLERANCE: f64 = 0.3;
-    let smoothed_polygons: Vec<crate::polygon::Polygon2> = if !matches!(
+    if !matches!(
         params_2d.cleanup_strategy,
         crate::adaptive::CleanupStrategy::Legacy
     ) {
@@ -2236,7 +2364,17 @@ fn planner_outlines(
             .collect::<Vec<_>>()
     } else {
         Vec::new()
-    };
+    }
+}
+
+/// The outlines the 2D planner plans for one region: each smoothed
+/// polygon of the region, split into one outline per piece of its inset
+/// by the tool radius (G-ADAPT3DPIECES, D2).
+fn planner_outlines(
+    region_polygon: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+) -> Vec<crate::polygon::Polygon2> {
+    let smoothed_polygons = smoothed_region(region_polygon, params_2d);
     // G-ADAPT3DPIECES (D2): every smoothed polygon is planned, not only
     // the first, and each one whose inset by the tool radius splits is
     // planned piece by piece (`adaptive::inset_piece_outlines`, the one
@@ -2260,125 +2398,103 @@ fn planner_outlines(
         .collect()
 }
 
-/// Plan one outline: the 2D adaptive walk, its residue cleanup and the
-/// F-038 short-group filter. It appends the spiral's predicted engagement
-/// to `slice_eng_2d`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the arguments are the per-region state of `clear_one_region`, passed through unchanged."
-)]
+/// Geodesic Adaptive (research C38 §16): record a piece the arm leaves to
+/// the job's rest contour pass (`why`: the F-038 forecast skipped it, or the field does
+/// not apply), with one `info` line (its level, region and area), so that
+/// the rest pass's coverage can be checked against it. The level's
+/// waterline cleanup skips a contour inside it (`waterline_cleanup`).
+fn leave_piece(
+    ctx: &ClearZLevelContext<'_>,
+    z_level: f64,
+    region_idx: usize,
+    piece: &crate::polygon::Polygon2,
+    why: &str,
+) {
+    tracing::info!(
+        z = z_level,
+        region = region_idx + 1,
+        area_mm2 = %format!("{:.1}", piece.area().abs()),
+        why,
+        "C38 piece left to the rest pass"
+    );
+    ctx.left_pieces.borrow_mut().push((z_level, piece.clone()));
+}
+
+/// Plan one outline: the geodesic plan (`adaptive::geodesic`), its residue
+/// cleanup and the F-038 short-group filter, then the feed caps of its
+/// turns and departures. A piece where the field does not apply is left to
+/// the rest pass (`leave_piece`).
 fn plan_one_outline(
     ctx: &ClearZLevelContext<'_>,
     params_2d: &crate::adaptive::AdaptiveParams,
     polygon_for_adaptive: &crate::polygon::Polygon2,
-    debug: Option<&ToolpathDebugContext>,
     (z_level, region_idx): (f64, usize),
     dropped_short_regions: &mut usize,
-    slice_eng_2d: &mut Vec<(P2, f64)>,
     cancel: &dyn CancelCheck,
-) -> Result<Vec<crate::adaptive::AdaptiveSegment>, Cancelled> {
-    // Stage 4 — collect the contour-spiral's per-point predicted
-    // leading-arc engagement for this slice (empty for non-spiral
-    // strategies). Keyed by 2D position below so it survives the
-    // residue-cleanup segment reshuffling, then lifted to 3D and
-    // appended to the per-toolpath planner-engagement sampler.
-    let segs_2d_raw = crate::adaptive::adaptive_segments_with_debug(
-        polygon_for_adaptive,
-        params_2d,
-        cancel,
-        debug,
-        Some(slice_eng_2d),
-    )?;
-    // For non-Legacy cleanup strategies, run the same cleanup
-    // post-process the 2D top-level entry point runs. adaptive3d
-    // calls `adaptive_segments_with_debug` directly (not the
-    // toolpath-level entry), so without this step the new
-    // strategies (helical entry + narrow-exit + cap-pass-1) exit
-    // early and leave residue uncleared — the cleanup catches it
-    // with boundary walks + contour-parallel offsets + mop
-    // patches.
-    let segs_2d_raw = match params_2d.cleanup_strategy {
-        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw,
-        crate::adaptive::CleanupStrategy::ResidueMop
-        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
-            crate::adaptive::path::apply_residue_mop_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
-        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
-            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
-                polygon_for_adaptive,
-                params_2d,
-                &segs_2d_raw,
-            )
-        }
+) -> Result<(Vec<crate::adaptive::AdaptiveSegment>, Vec<Option<f64>>), Cancelled> {
+    // The geodesic field plans the outline, with its planned clearing
+    // turns. Research C38 §16 (lead ruling 2026-10-27): a piece where the
+    // field does not apply (its seed of radius R does not fit) is edge
+    // work. The arm plans nothing there and leaves the piece to the job's
+    // rest pass; one `info` line per piece, so that the rest pass's coverage
+    // can be checked against it.
+    let Some(plan) =
+        crate::adaptive::geodesic::slice_segments(polygon_for_adaptive, params_2d, cancel)?
+    else {
+        leave_piece(ctx, z_level, region_idx, polygon_for_adaptive, "no field");
+        return Ok((Vec::new(), Vec::new()));
     };
+    let (segs_2d_raw, turns) = (plan.segments, plan.turns);
+    // The residue cleanup the 2D top-level entry point runs (boundary walks,
+    // contour-parallel offsets, mop patches). Research C22: a plan with
+    // clearing turns takes the cleanup whose replay admits them (the same
+    // turn list and bound); with no turns the shipped cleanup runs.
+    let segs_2d_raw = if turns.is_empty() {
+        slice_cleanup(polygon_for_adaptive, params_2d, &segs_2d_raw)
+    } else {
+        crate::adaptive::geodesic::slice_cleanup(
+            polygon_for_adaptive,
+            params_2d,
+            segs_2d_raw,
+            &turns,
+        )
+    };
+    // Research C12, C22: under the 2D pass load the replay admits a link
+    // only within the load and stamps it on the planner grid, as a cut at
+    // depth. The links stay `Link`s here; `clear_one_region` emits each one
+    // as a 3D keep-down link at the level (`geodesic::HeldLinks`).
 
-    // F-038: filter out tiny entry-plunge → cut groups before emission.
-    //
-    // The 2D adaptive emits its output as a sequence of segments shaped
-    // like:
-    //
-    //   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
-    //
-    // Each `Rapid` is the start of a new "pass" — downstream this becomes
-    // a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
-    // models the planner emits many of these passes, and a significant
-    // fraction cut < 5 mm of material before the next retract. On the
-    // Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
-    // of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
-    // overhead per 100 ms or less of real cutting.
-    //
-    // Group segments by Rapid boundary; if a group's total Cut XY length
-    // is below `min_region_cut_length_mm`, drop the whole group (the
-    // entry Rapid + its Cuts). The cutter never visits that micro-area;
-    // material is left for finishing passes (which is fine — these
-    // micro-bridges are below roughing resolution).
-    //
-    // Always keep the very first group (it provides the region's initial
-    // tool position). Always keep the last group's residual Marker/Link
-    // segments so the per-region debug spans stay coherent.
+    // F-038: filter out tiny entry-plunge → cut groups before emission
+    // (`filter_short_groups`).
     let segs_2d: Vec<crate::adaptive::AdaptiveSegment> = if ctx.min_region_cut_length_mm > 0.0 {
-        let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
-        let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        for s in segs_2d_raw {
-            if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
-                groups.push(std::mem::take(&mut current));
-            }
-            current.push(s);
+        let (kept_segs, dropped_first, group_total) =
+            filter_short_groups(segs_2d_raw, ctx.min_region_cut_length_mm, params_2d);
+        // Research C22a: the cleanup replayed its kept plan
+        // (`replay_kept_segments`) BEFORE this filter, so a link or a cut
+        // after a dropped group was admitted on that group's stamps. The
+        // kept plan is replayed again, as the cleanup does after its own
+        // filter, and filtered again, until no group drops: then the replay
+        // has read the plan that goes out. Each round drops at least one
+        // group, so the rounds are at most the groups there were.
+        let mut kept = kept_segs;
+        let mut dropped_round = dropped_first;
+        let mut dropped_more = 0usize;
+        let mut rounds = 0usize;
+        while dropped_round > 0 && rounds < group_total {
+            let replayed = crate::adaptive::geodesic::slice_replay(
+                polygon_for_adaptive,
+                params_2d,
+                kept,
+                &turns,
+            );
+            let (next, dropped, _) =
+                filter_short_groups(replayed, ctx.min_region_cut_length_mm, params_2d);
+            kept = next;
+            dropped_round = dropped;
+            dropped_more += dropped;
+            rounds += 1;
         }
-        if !current.is_empty() {
-            groups.push(current);
-        }
-        let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-        let mut dropped_groups: usize = 0;
-        let group_total = groups.len();
-        for (gi, group) in groups.into_iter().enumerate() {
-            let mut cut_len = 0.0_f64;
-            for seg in &group {
-                if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
-                    cut_len += crate::geo::polyline_length_2d(path_2d);
-                }
-            }
-            // Always keep the first group — it sets up the region's
-            // starting position. Drop interior + trailing groups
-            // below threshold; the trailing group on terrain runs
-            // is usually a sub-tool residual the finishing pass
-            // will cover anyway.
-            let _ = group_total;
-            let drop = gi > 0
-                && cut_len < ctx.min_region_cut_length_mm
-                && group
-                    .iter()
-                    .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
-            if drop {
-                dropped_groups += 1;
-                continue;
-            }
-            kept_segs.extend(group);
-        }
+        let dropped_groups = dropped_first + dropped_more;
         if dropped_groups > 0 {
             debug!(
                 z = z_level,
@@ -2390,11 +2506,343 @@ fn plan_one_outline(
             );
             *dropped_short_regions += dropped_groups;
         }
-        kept_segs
+        kept
     } else {
         segs_2d_raw
     };
-    Ok(segs_2d)
+    // Integration step 7.4, design part F: each planned turn and each
+    // departure window of the plan that goes out is a cut of its own, with
+    // the feed factor of its reading (`geodesic::feed_caps`).
+    Ok(crate::adaptive::geodesic::feed_caps(
+        polygon_for_adaptive,
+        params_2d,
+        segs_2d,
+        &turns,
+    ))
+}
+
+/// F-038: the groups of `segments` (a run from one `Rapid` to the next)
+/// less each one that cuts under `min_cut_mm`; returns the kept segments,
+/// the dropped groups and the groups there were.
+///
+/// The 2D adaptive emits its output as a sequence of segments shaped
+/// like:
+///
+///   [Marker?, Rapid(entry), Cut(path), Cut(path), ..., Rapid(entry), ...]
+///
+/// Each `Rapid` is the start of a new "pass" — downstream this becomes
+/// a retract + rapid-XY + peck-plunge + Cut sequence. On terrain-shaped
+/// models the planner emits many of these passes, and a significant
+/// fraction cut < 5 mm of material before the next retract. On the
+/// Wanaka Back Rough .nc this manifests as 149 F750 entry plunges, 90
+/// of which cut ≤ 10 mm. Each one spends 0.3–0.5 s on retract/plunge
+/// overhead per 100 ms or less of real cutting.
+///
+/// Group segments by Rapid boundary; if a group's total Cut XY length
+/// is below `min_region_cut_length_mm`, drop the whole group (the
+/// entry Rapid + its Cuts). The cutter never visits that micro-area;
+/// material is left for finishing passes (which is fine — these
+/// micro-bridges are below roughing resolution).
+///
+/// Always keep the very first group (it provides the region's initial
+/// tool position). Always keep the last group's residual Marker/Link
+/// segments so the per-region debug spans stay coherent.
+fn filter_short_groups(
+    segs_2d_raw: Vec<crate::adaptive::AdaptiveSegment>,
+    min_cut_mm: f64,
+    params_2d: &crate::adaptive::AdaptiveParams,
+) -> (Vec<crate::adaptive::AdaptiveSegment>, usize, usize) {
+    let mut groups: Vec<Vec<crate::adaptive::AdaptiveSegment>> = Vec::new();
+    let mut current: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+    for s in segs_2d_raw {
+        if matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)) && !current.is_empty() {
+            groups.push(std::mem::take(&mut current));
+        }
+        current.push(s);
+    }
+    if !current.is_empty() {
+        groups.push(current);
+    }
+    let mut kept_segs: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
+    let mut dropped_groups: usize = 0;
+    let group_total = groups.len();
+    for (gi, group) in groups.into_iter().enumerate() {
+        let mut cut_len = 0.0_f64;
+        for seg in &group {
+            if let crate::adaptive::AdaptiveSegment::Cut(path_2d) = seg {
+                cut_len += crate::geo::polyline_length_2d(path_2d);
+            }
+        }
+        // Geodesic Adaptive (research C12/C22): the arm cuts each link (`HeldLinks`), so
+        // a link's length counts as cut length.
+        if params_2d.keep_down_links == crate::adaptive::KeepDownLinks::WithinPassLoad {
+            cut_len += crate::adaptive::geodesic::link_length(&group);
+        }
+        // Always keep the first group — it sets up the region's
+        // starting position. Drop interior + trailing groups
+        // below threshold; the trailing group on terrain runs
+        // is usually a sub-tool residual the finishing pass
+        // will cover anyway.
+        let drop = gi > 0
+            && cut_len < min_cut_mm
+            && group
+                .iter()
+                .any(|s| matches!(s, crate::adaptive::AdaptiveSegment::Rapid(_)));
+        if drop {
+            dropped_groups += 1;
+            continue;
+        }
+        kept_segs.extend(group);
+    }
+    (kept_segs, dropped_groups, group_total)
+}
+
+/// The shipped cleanup of one outline's 2D plan: the post-process the 2D
+/// top-level entry point runs, by `cleanup_strategy`.
+fn slice_cleanup(
+    polygon_for_adaptive: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+    segs_2d_raw: &[crate::adaptive::AdaptiveSegment],
+) -> Vec<crate::adaptive::AdaptiveSegment> {
+    match params_2d.cleanup_strategy {
+        crate::adaptive::CleanupStrategy::Legacy => segs_2d_raw.to_vec(),
+        crate::adaptive::CleanupStrategy::ResidueMop
+        | crate::adaptive::CleanupStrategy::ContourParallelNarrow => {
+            crate::adaptive::path::apply_residue_mop_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                segs_2d_raw,
+            )
+        }
+        crate::adaptive::CleanupStrategy::ContourParallelHybrid => {
+            crate::adaptive::path::apply_contour_parallel_residue_cleanup(
+                polygon_for_adaptive,
+                params_2d,
+                segs_2d_raw,
+            )
+        }
+    }
+}
+
+/// The margin (mm) beyond the tool radius by which the perimeter sweep of
+/// `clear_one_region` sits inside its region, so that the boundary clip
+/// cannot flip its points to rapids (O5b/O5c; see the sweep's comment).
+/// Geodesic Adaptive's grown 2D outline keeps the same margin (C31).
+const PERIMETER_INSET_MARGIN_MM: f64 = 0.25;
+
+/// Lift a 2D point of a level's plan to 3D: the level, raised over terrain
+/// that stands above it (the ONE level floor, `intended_floor::level_floor_z`).
+fn lift_to_level(
+    ctx: &ClearZLevelContext<'_>,
+    surface_hm: &SurfaceHeightmap,
+    z_level: f64,
+    p: P2,
+) -> P3 {
+    let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
+    let z = if surf_z == f64::NEG_INFINITY {
+        z_level
+    } else {
+        super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
+    };
+    P3::new(p.x, p.y, z)
+}
+
+/// The 2D planner's outlines of a grown region (Geodesic Adaptive, research C31): each
+/// grown polygon split into the pieces of its inset by the tool radius
+/// (G-ADAPT3DPIECES, the one split `planner_outlines` uses), with no
+/// smoothing.
+fn grown_planner_outlines(
+    grown: &[crate::polygon::Polygon2],
+    tool_radius: f64,
+) -> Vec<crate::polygon::Polygon2> {
+    grown
+        .iter()
+        .flat_map(|poly| {
+            let pieces = crate::adaptive::inset_piece_outlines(poly, tool_radius);
+            if pieces.is_empty() {
+                vec![poly.clone()]
+            } else {
+                pieces
+            }
+        })
+        .collect()
+}
+
+/// Geodesic Adaptive (research C31): the region's smoothed outline grown by
+/// `R - PERIMETER_INSET_MARGIN_MM`, as the 2D planner's material outline,
+/// or `None` (the shipped path: the smoothed region and the perimeter
+/// sweep).
+///
+/// The region is in tool-centre space at a wall (`build_material_bool_grid`
+/// reads the drop-cutter floor), and the 2D planner insets its outline by
+/// R. Given the smoothed region, its centres stay R plus the smoothing from
+/// the region boundary, and the shipped slice cuts the band between with
+/// the perimeter sweep, a full slot (C30: 1026 mm over the bound on Corne).
+/// Given the smoothed region grown by `R - m`, the 2D tool-centre region is
+/// the smoothed region inset by `m`, so the field and the 2D cleanup open
+/// the band under the 2D pass load and no sweep is cut.
+///
+/// Why the smoothing comes first (D19, P3_C22 11.7): the region boundary
+/// is the tool-centre limit only to the grid. Marching squares puts it at
+/// the midpoint of an in and an out cell centre, so the true limit is
+/// within half a planner cell of it; the lift reads the nearest heightmap
+/// cell. Grown from the raw region, the closing also fills the staircase
+/// notches, and centres at the 2D boundary read the out cells (the rim).
+/// The smoothing (`SIMPLIFY_INSET`, then the RDP) moves the outline inside
+/// and removes the staircase.
+///
+/// The region keeps the shipped path, with one `info` line that says why,
+/// when:
+/// - the smoothing gives no outline, or the grow gives none;
+/// - the inside margin `SIMPLIFY_INSET + m` is under one planner cell
+///   (`cell`): the reach of an out cell's nearest read, half a cell, plus
+///   the boundary error, up to half a cell (the lead's condition);
+/// - the inset outline splits into more polygons (the shortfall inset,
+///   below, cut a neck);
+/// - the measured margin, the least distance between the smoothed and the
+///   raw boundaries plus `m`, is under one planner cell (the same reach as
+///   the nominal condition) after the shortfall inset. The RDP can move
+///   the smoothed outline back out by up to its tolerance, so the nominal
+///   inset is not a bound. Where the measured margin is short, the smoothed
+///   outline is first inset by the shortfall (`cell - measured`), once,
+///   region-wide, and measured again;
+/// - the closing guard: growing by `R - m` and insetting by R closes any
+///   gap narrower than about 2R. The 2D tool-centre region (the grown
+///   outline inset by R) may exceed the smoothed region inset by `m` by at
+///   most one planner cell times the smoothed boundary length.
+///
+/// No new constant: R, `m`, the two smoothing values and the planner cell.
+fn grown_outlines(
+    ctx: &ClearZLevelContext<'_>,
+    region_polygon: &crate::polygon::Polygon2,
+    params_2d: &crate::adaptive::AdaptiveParams,
+    cell: f64,
+    (z_level, region_idx): (f64, usize),
+) -> Option<Vec<crate::polygon::Polygon2>> {
+    let r = ctx.tool_radius;
+    let m = PERIMETER_INSET_MARGIN_MM;
+    let separation = |polys: &[crate::polygon::Polygon2]| {
+        polys
+            .iter()
+            .map(|poly| boundary_separation(poly, region_polygon))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let smoothed = smoothed_region(region_polygon, params_2d);
+    // The shortfall inset: where the RDP has brought the smoothed outline
+    // back within `cell - m` of the raw boundary, inset it by the
+    // shortfall, so that every point of it stands at least `cell - m`
+    // inside the raw region.
+    let measured_before = separation(smoothed.as_slice()) + m;
+    // The offset flattens its arc joins on the input side of the true
+    // offset, up to `FlattenPolicy::UNTOLERANCED_MM` (polygon.rs, P6.0): an
+    // inset can stand that much less inside than asked. So the inset adds
+    // that budget, else `measured_after` lands a few micrometres under the
+    // cell (D19b).
+    let shortfall_mm = if measured_before < cell {
+        cell - measured_before + crate::polygon::FlattenPolicy::UNTOLERANCED_MM
+    } else {
+        0.0
+    };
+    let pieces_before = smoothed.len();
+    let smoothed: Vec<crate::polygon::Polygon2> = if shortfall_mm > 0.0 {
+        smoothed
+            .iter()
+            .flat_map(|poly| crate::polygon::offset_polygon(poly, shortfall_mm))
+            .collect()
+    } else {
+        smoothed
+    };
+    let inset_split = smoothed.len() > pieces_before;
+    let measured_after = separation(smoothed.as_slice()) + m;
+    let grown: Vec<crate::polygon::Polygon2> = smoothed
+        .iter()
+        .flat_map(|poly| {
+            crate::polygon::OffsetRingSet::from_polygon(poly)
+                .offset(-(r - m))
+                .to_polygons(crate::polygon::FlattenPolicy::untoleranced())
+        })
+        .collect();
+    let centre_area: f64 = grown
+        .iter()
+        .flat_map(|g| crate::polygon::offset_polygon(g, r))
+        .map(|p| p.area())
+        .sum();
+    let target_area: f64 = smoothed
+        .iter()
+        .flat_map(|poly| crate::polygon::offset_polygon(poly, m))
+        .map(|p| p.area())
+        .sum();
+    let boundary_mm: f64 = smoothed
+        .iter()
+        .flat_map(polygon_rings)
+        .map(ring_length)
+        .sum();
+    let allowed_mm2 = cell * boundary_mm;
+    let excess_mm2 = centre_area - target_area;
+    let nominal_margin = SIMPLIFY_INSET + m;
+    let decision = if smoothed.is_empty() || grown.is_empty() {
+        "no smoothed or grown outline: shipped sweep"
+    } else if inset_split {
+        "the shortfall inset split the outline: shipped sweep"
+    } else if nominal_margin < cell {
+        "inside margin under one planner cell: shipped sweep"
+    } else if measured_after < cell {
+        "measured margin under one planner cell: shipped sweep"
+    } else if excess_mm2 > allowed_mm2 {
+        "closing guard: shipped sweep"
+    } else {
+        "grown, no sweep"
+    };
+    let keep_grown = decision == "grown, no sweep";
+    tracing::info!(
+        z = z_level,
+        region = region_idx + 1,
+        cell_mm = cell,
+        nominal_margin_mm = %format!("{nominal_margin:.3}"),
+        measured_before_mm = %format!("{measured_before:.3}"),
+        shortfall_inset_mm = %format!("{shortfall_mm:.3}"),
+        measured_after_mm = %format!("{measured_after:.3}"),
+        region_area_mm2 = %format!("{:.1}", region_polygon.area()),
+        centre_area_mm2 = %format!("{centre_area:.1}"),
+        target_area_mm2 = %format!("{target_area:.1}"),
+        excess_mm2 = %format!("{excess_mm2:.2}"),
+        allowed_mm2 = %format!("{allowed_mm2:.2}"),
+        decision,
+        "C31 region opening"
+    );
+    keep_grown.then_some(grown)
+}
+
+/// The rings of a polygon: its exterior, then its holes.
+fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
+    std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
+}
+
+/// The length (mm) of a closed ring.
+fn ring_length(ring: &[P2]) -> f64 {
+    ring.iter()
+        .zip(ring.iter().cycle().skip(1))
+        .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
+        .sum()
+}
+
+/// The least distance (mm) between the boundaries of `a` and `b` (every
+/// ring of each, closed). Two boundaries that do not cross come nearest at
+/// a vertex of one of them, so each vertex of each is read against every
+/// segment of the other.
+fn boundary_separation(a: &crate::polygon::Polygon2, b: &crate::polygon::Polygon2) -> f64 {
+    let one_way = |from: &crate::polygon::Polygon2, to: &crate::polygon::Polygon2| {
+        polygon_rings(from)
+            .flatten()
+            .map(|p| {
+                polygon_rings(to)
+                    .flat_map(|ring| ring.iter().zip(ring.iter().cycle().skip(1)))
+                    .map(|(s, e)| crate::geo::point_to_segment_distance(p, s, e))
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .fold(f64::INFINITY, f64::min)
+    };
+    one_way(a, b).min(one_way(b, a))
 }
 
 /// Stage 2 — clear ONE region: the cut-length forecast, the perimeter
@@ -2418,7 +2866,6 @@ fn clear_one_region(
     cancel: &dyn CancelCheck,
 ) -> Result<(), Cancelled> {
     let sink = &mut emission.sink;
-    let planner_eng = &mut *emission.planner_eng;
     let level_metrics = &mut *emission.level_metrics;
     let cut_count = &mut *emission.cut_count;
     let dropped_short_regions = &mut *emission.dropped_short_regions;
@@ -2429,15 +2876,7 @@ fn clear_one_region(
     let region_total = plan.region_total;
 
     // 5. Lift 2D points to 3D, respecting terrain peaks above z_level.
-    let lift = |p: P2| -> P3 {
-        let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
-        let z = if surf_z == f64::NEG_INFINITY {
-            z_level
-        } else {
-            super::intended_floor::level_floor_z(surf_z, ctx.stock_to_leave, z_level)
-        };
-        P3::new(p.x, p.y, z)
-    };
+    let lift = |p: P2| lift_to_level(ctx, surface_hm, z_level, p);
 
     let region_scope = level_ctx.as_ref().map(|debug_ctx| {
         debug_ctx.start_span(
@@ -2463,6 +2902,10 @@ fn clear_one_region(
     // call it twice (here, and again after the perimeter sweep is
     // emitted) at no risk of state divergence. We accept the doubled
     // 2D-adaptive cost as the price for the up-front decision.
+    //
+    // C38 §16: Geodesic Adaptive takes this forecast too. It clears the
+    // body only, and the strips the forecast reads as 0 go to the job's
+    // edge contour pass.
     if ctx.min_region_cut_length_mm > 0.0 {
         const PERIMETER_INSET_MARGIN_MM_FORECAST: f64 = 0.25;
         let inset_polygons_forecast = crate::polygon::offset_polygon(
@@ -2524,6 +2967,9 @@ fn clear_one_region(
                 area_mm2 = region_polygon.area().abs(),
                 "F-038: skipping micro-region (forecast cut length below threshold)"
             );
+            // Research C38 §16: the arm leaves this region to the rest
+            // contour pass, as a piece where the field does not apply.
+            leave_piece(ctx, z_level, region_idx, region_polygon, "F-038 forecast");
             *dropped_short_regions += 1;
             if let Some(scope) = region_scope.as_ref() {
                 scope.set_counter("skipped_f038", 1.0);
@@ -2558,9 +3004,35 @@ fn clear_one_region(
     // result on edge-case points, converting these cuts to rapids and
     // leaving the boundary band unstamped — which is exactly the
     // wanaka 18mm-DOC failure mode (O5b/O5c).
-    const PERIMETER_INSET_MARGIN_MM: f64 = 0.25;
-    let inset_polygons =
-        crate::polygon::offset_polygon(region_polygon, ctx.tool_radius + PERIMETER_INSET_MARGIN_MM);
+    //
+    // Geodesic Adaptive (research C31): when the 2D planner gets the region grown by
+    // `R - PERIMETER_INSET_MARGIN_MM` (`grown_outlines`), its own
+    // plan opens this band under the 2D pass load, and no sweep is cut.
+    let grown = grown_outlines(
+        ctx,
+        region_polygon,
+        params_2d,
+        sink.material_stock.z_grid.cell_size,
+        (z_level, region_idx),
+    )
+    // Geodesic Adaptive (research C38 item B): the grow stops at the stock box, where
+    // no material stands beyond the edge.
+    .and_then(|grown| super::outer_band::clip_to_stock_box(grown, &*sink.material_stock))
+    // C38 §13.7: and at the reach of the boundary clip, so that nothing is
+    // planned where the clip would drop it.
+    .and_then(|grown| {
+        super::outer_band::clip_to_centre_reach(
+            grown,
+            ctx.centre_clip,
+            ctx.tool_radius,
+            PERIMETER_INSET_MARGIN_MM,
+        )
+    });
+    let inset_polygons = if grown.is_some() {
+        Vec::new()
+    } else {
+        crate::polygon::offset_polygon(region_polygon, ctx.tool_radius + PERIMETER_INSET_MARGIN_MM)
+    };
     for inset in &inset_polygons {
         if inset.exterior.len() >= 3 {
             // simplify_path_3d (RDP) early-returns on zero-length
@@ -2620,51 +3092,128 @@ fn clear_one_region(
         }
     }
 
+    // G-ADAPT3DPIECES (D2): the 2D plan of the region and its emission.
+    // The outlines are the region's own (`planner_outlines`), or (research
+    // arm C31) the grown region split into its pieces.
+    let outlines = match grown {
+        Some(grown) => grown_planner_outlines(&grown, ctx.tool_radius),
+        None => planner_outlines(region_polygon, params_2d),
+    };
+    plan_and_emit_region(ctx, plan, emission, &outlines, region_idx, cancel)
+}
+
+/// The region body after the perimeter sweep: the geodesic plan of each of
+/// the region's `outlines` (`plan_one_outline`), then its lift into 3D
+/// through the level's sink, with the stamping and the held links.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every `path_2d[i]` and `pts[i]` below indexes a vector this function just built, at an index its own `len()` guard admits."
+)]
+fn plan_and_emit_region(
+    ctx: &ClearZLevelContext<'_>,
+    plan: &RegionClearPlan<'_>,
+    emission: &mut LevelEmission<'_>,
+    outlines: &[crate::polygon::Polygon2],
+    region_idx: usize,
+    cancel: &dyn CancelCheck,
+) -> Result<(), Cancelled> {
+    let sink = &mut emission.sink;
+    let level_metrics = &mut *emission.level_metrics;
+    let cut_count = &mut *emission.cut_count;
+    let dropped_short_regions = &mut *emission.dropped_short_regions;
+    let surface_hm = plan.surface_hm;
+    let z_level = plan.z_level;
+    let params_2d = plan.params_2d;
+    let lift = |p: P2| lift_to_level(ctx, surface_hm, z_level, p);
+
     // G-ADAPT3DPIECES (D2): the planner plans one piece of the inset of
     // the polygon it gets, so the region is planned outline by outline.
-    let mut slice_eng_2d: Vec<(P2, f64)> = Vec::new();
     let mut segs_2d: Vec<crate::adaptive::AdaptiveSegment> = Vec::new();
-    let piece_debug = region_scope.as_ref().map(|s| s.context());
-    for outline in planner_outlines(region_polygon, params_2d) {
-        segs_2d.extend(plan_one_outline(
+    // Geodesic Adaptive: the feed factor of each 2D segment (`None`: no cap).
+    let mut caps_2d: Vec<Option<f64>> = Vec::new();
+    for outline in outlines {
+        let (segs, caps) = plan_one_outline(
             ctx,
             params_2d,
-            &outline,
-            piece_debug.as_ref(),
+            outline,
             (z_level, region_idx),
             dropped_short_regions,
-            &mut slice_eng_2d,
             cancel,
-        )?);
+        )?;
+        segs_2d.extend(segs);
+        caps_2d.extend(caps);
     }
-    // Spatial lookup: quantised 2D position → predicted engagement.
-    // Positions are exact f64 from the spiral's own emit, so a
-    // fixed-point key reproduces them without float-equality hazard.
-    let eng_lookup: std::collections::HashMap<(i64, i64), f64> = slice_eng_2d
-        .iter()
-        .map(|(p, e)| ((quantize_coord(p.x), quantize_coord(p.y)), *e))
-        .collect();
 
-    for seg in segs_2d {
+    // Geodesic Adaptive (research C22, C26): each 2D keep-down link after a
+    // known position is held at depth, as the 2D plan has it
+    // (`geodesic::HeldLinks`).
+    // C26b: it goes out as one 3D keep-down link (a feed tagged `Linking`,
+    // stamped as every link is) only when every lifted point of it is at
+    // the level. A link that crosses terrain above the level would climb
+    // the wall in one draped move, so it is lifted as a cut held at depth
+    // (C22): the large-Z split below retracts it at the wall.
+    let mut held_links = (params_2d.keep_down_links
+        == crate::adaptive::KeepDownLinks::WithinPassLoad)
+        .then(|| crate::adaptive::geodesic::HeldLinks::new(params_2d));
+    // Geodesic Adaptive (design part F): a capped 2D cut goes out between a
+    // `FeedCapStart` and a `FeedCapEnd` marker, and the emitter writes the
+    // cap on the moves of the 3D cuts between them (`segments_to_toolpath`).
+    let mut cap_open = false;
+    for (seg, cap) in segs_2d.into_iter().zip(caps_2d) {
+        if std::mem::take(&mut cap_open) {
+            sink.emit(
+                ctx,
+                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+            );
+        }
+        if let Some(factor) = cap {
+            sink.emit(
+                ctx,
+                Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapStart { factor }),
+            );
+            cap_open = true;
+        }
+        let (seg, held) = match held_links.as_mut() {
+            Some(links) => match links.next(seg) {
+                (_, Some(path_2d)) => {
+                    let lifted: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
+                    if lifted.iter().all(|p| p.z <= z_level) {
+                        if let Some(&end) = lifted.last() {
+                            // C38 §14: the keep-down proof on the swept
+                            // disc (`keep_down_excess`). A held link whose
+                            // disc meets a column above its slab goes out
+                            // as an entry instead.
+                            let from = sink.cursor.tool_pos.or(lifted.first().copied());
+                            let refused = from.is_some_and(|from| {
+                                super::keep_down::keep_down_excess(
+                                    sink.material_stock,
+                                    from,
+                                    end,
+                                    ctx.tool_radius,
+                                    z_level + ctx.depth_per_pass + ctx.stay_down_clearance_mm,
+                                )
+                                .is_some()
+                            });
+                            if refused {
+                                sink.emit(ctx, Adaptive3dSegment::Rapid(end));
+                            } else {
+                                sink.emit(ctx, Adaptive3dSegment::Link(end));
+                            }
+                        }
+                        continue;
+                    }
+                    (crate::adaptive::AdaptiveSegment::Cut(path_2d), true)
+                }
+                (seg, None) => (seg, false),
+            },
+            None => (seg, false),
+        };
         match seg {
             crate::adaptive::AdaptiveSegment::Cut(path_2d) => {
                 if path_2d.is_empty() {
                     continue;
                 }
                 let path_3d: Vec<P3> = path_2d.iter().map(|&p| lift(p)).collect();
-                // Stage 4 — record the planner's predicted leading-arc
-                // engagement at each lifted cut point (looked up by 2D
-                // position; misses, e.g. residue-mop cleanup cuts, are
-                // simply absent and the modulator falls back there).
-                if !eng_lookup.is_empty() {
-                    for (&p2, &p3) in path_2d.iter().zip(path_3d.iter()) {
-                        if let Some(&e) =
-                            eng_lookup.get(&(quantize_coord(p2.x), quantize_coord(p2.y)))
-                        {
-                            planner_eng.push((p3, e));
-                        }
-                    }
-                }
                 level_metrics.agent_walk_cut_length_mm += crate::geo::polyline_length(&path_3d);
                 // Per-point classification (BEFORE any stamping):
                 // cutter is "engaged" if the current dexel ray top at
@@ -2677,15 +3226,26 @@ fn clear_one_region(
                 // cells the actual G-code never cuts, leaving
                 // visible streaks of uncut material in the sim.
                 const AIR_THRESHOLD_MM: f64 = 0.2;
+                // Geodesic Adaptive (research C12, C18): a point is engaged when stock
+                // stands above it anywhere under the cutter disc. The
+                // centre read calls a cut air where its centre runs over
+                // cleared stock and its disc still cuts (the starter spiral
+                // inside its plunge hole); the demoted run then leaves stock
+                // that the next cut meets at 0.75 of D.
                 let mut engaged: Vec<bool> = path_3d
                     .iter()
-                    .map(
-                        |p| match sample_stock_top_at(sink.material_stock, p.x, p.y) {
-                            Some(top) => top > p.z + AIR_THRESHOLD_MM,
-                            None => false,
-                        },
-                    )
+                    .map(|p| {
+                        sink.material_stock
+                            .max_top_z_in_disc(p.x, p.y, ctx.tool_radius)
+                            .is_some_and(|z| z > p.z + AIR_THRESHOLD_MM)
+                    })
                     .collect();
+                // Geodesic Adaptive (research C22/C26b): a held link that crosses terrain
+                // above the level is a feed through the band the 2D plan has
+                // cut; it is never "air". The large-Z split still applies.
+                if held {
+                    engaged.fill(true);
+                }
                 // Re-promote short air runs back to engaged: rapid-mode
                 // is only faster than feed-mode above a crossover
                 // length, because each demotion carries a full
@@ -2765,7 +3325,7 @@ fn clear_one_region(
                 // 1mm floor: at small depth_per_pass (e.g. 0.5mm) the
                 // 1.1× factor gives a 0.55mm threshold, and any natural
                 // terrain undulation > 0.55mm between consecutive
-                // samples chops the path. AgentSearch then plans many
+                // samples chops the path. The slice then plans many
                 // short paths instead of one long sweep, and the
                 // linker may not stitch them all up. The floor
                 // preserves the safety logic without over-splitting.
@@ -2788,8 +3348,107 @@ fn clear_one_region(
                     } else {
                         0.0
                     };
-                    let large_z = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                    let shape_split = dz.abs() > z_drop_threshold || abs_slope > PLUNGE_SLOPE_LIMIT;
+                    // StepSplit::StockDepth (D43): a step the path rule flags
+                    // is cut at feed unless the tool's swept disc meets stock
+                    // deeper than one pass (`step_axial_depth`), or its
+                    // chip-area load (`step_load`, the one load) passes the
+                    // pass ceiling c (the radial fraction of
+                    // `PassLoad::swept_width`). A thin layer reads light; a
+                    // full-depth drop into fresh stock reads near a slot.
                     let engagement_change = engaged[i] != sub_engaged;
+                    // D65: the feed factor of a load split admitted as a
+                    // capped cut (`None`: split as before, or no split).
+                    let mut capped_step: Option<f64> = None;
+                    let large_z = match ctx.step_split {
+                        super::StepSplit::PathShape => shape_split,
+                        super::StepSplit::StockDepth if shape_split => {
+                            let ap =
+                                step_axial_depth(sink.material_stock, prev, curr, ctx.tool_radius);
+                            let deep = ap > ctx.depth_per_pass + ctx.stay_down_clearance_mm;
+                            let ceiling =
+                                crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+                                    crate::adaptive::pass_engagement_limit(
+                                        ctx.stepover,
+                                        ctx.tool_radius,
+                                    ),
+                                );
+                            let load = step_load(
+                                sink.material_stock,
+                                prev,
+                                curr,
+                                ctx.tool_radius,
+                                ctx.stay_down_clearance_mm,
+                                &StepLoadCutter {
+                                    lut: ctx.lut,
+                                    chip: ctx.cutter.geometry_hint(),
+                                    diameter: 2.0 * ctx.tool_radius,
+                                    depth_per_pass: ctx.depth_per_pass,
+                                },
+                            );
+                            // D65 (Geodesic Adaptive only): a load split that
+                            // is not deep and reads at most a slot is cut at
+                            // a capped feed, not split into an entry.
+                            if admits_capped_split(
+                                deep,
+                                load,
+                                ceiling,
+                                !engagement_change && sub_engaged,
+                            ) {
+                                capped_step = Some(capped_step_factor(
+                                    ceiling,
+                                    load,
+                                    prev,
+                                    curr,
+                                    ctx.feed_rate,
+                                    ctx.plunge_rate,
+                                    cap,
+                                ));
+                                false
+                            } else {
+                                deep || load > ceiling
+                            }
+                        }
+                        super::StepSplit::StockDepth => false,
+                    };
+                    if let Some(factor) = capped_step {
+                        // The run so far, then the step on its own between
+                        // cap markers, then the open 2D cap again.
+                        if i - sub_start >= 2 {
+                            sink.emit(ctx, Adaptive3dSegment::Cut(path_3d[sub_start..i].to_vec()));
+                            *cut_count += 1;
+                        }
+                        if cap.is_some() {
+                            sink.emit(
+                                ctx,
+                                Adaptive3dSegment::Marker(
+                                    super::Adaptive3dRuntimeEvent::FeedCapEnd,
+                                ),
+                            );
+                        }
+                        sink.emit(
+                            ctx,
+                            Adaptive3dSegment::Marker(
+                                super::Adaptive3dRuntimeEvent::FeedCapStart { factor },
+                            ),
+                        );
+                        sink.emit(ctx, Adaptive3dSegment::Cut(vec![prev, curr]));
+                        *cut_count += 1;
+                        sink.emit(
+                            ctx,
+                            Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+                        );
+                        if let Some(outer) = cap {
+                            sink.emit(
+                                ctx,
+                                Adaptive3dSegment::Marker(
+                                    super::Adaptive3dRuntimeEvent::FeedCapStart { factor: outer },
+                                ),
+                            );
+                        }
+                        sub_start = i;
+                        continue;
+                    }
                     if large_z || engagement_change {
                         // Flush the current run.
                         let run_len = i - sub_start;
@@ -2872,6 +3531,12 @@ fn clear_one_region(
             }
         }
     }
+    if cap_open {
+        sink.emit(
+            ctx,
+            Adaptive3dSegment::Marker(super::Adaptive3dRuntimeEvent::FeedCapEnd),
+        );
+    }
 
     Ok(())
 }
@@ -2919,17 +3584,13 @@ fn coalesce_level_entries(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
 )]
-pub(super) fn clear_z_level_agent_2d_slice(
+pub(super) fn clear_z_level_slice(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
     surface_hm: &SurfaceHeightmap,
     z_level: f64,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
-    // Stage 4 — per-toolpath planner-engagement sampler accumulator. The
-    // ContourSpiral strategy appends `(lifted_point, leading_arc_frac)` for
-    // every emitted cut point; other strategies leave it untouched.
-    planner_eng: &mut Vec<(P3, f64)>,
     area_mask: Option<&AreaMask>,
     level_marker: Option<Adaptive3dRuntimeEvent>,
     cancel: &dyn CancelCheck,
@@ -3001,24 +3662,19 @@ pub(super) fn clear_z_level_agent_2d_slice(
         standing_material: None,
         cleanup_strategy: crate::adaptive::CleanupStrategy::ContourParallelHybrid,
         engagement_measure: ctx.engagement_measure,
-        // ContourSpiral (3D) routes through this same dispatch with the
-        // spiral as the per-slice generator; AgentSearch keeps the agent.
-        path_strategy: if matches!(ctx.clearing_strategy, ClearingStrategy3d::ContourSpiral) {
-            crate::adaptive::PathStrategy2d::ContourSpiral
-        } else {
-            crate::adaptive::PathStrategy2d::Agent
-        },
-        // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
-        // tuned const for any non-finite / non-positive value so a bad
-        // config can never disable load capping outright.
+        // The 2D agent planner: the F-038 forecast plans with it, and the
+        // geodesic door sets the same value (`adaptive/geodesic/mod.rs`).
+        // ContourSpiral (3D) used the spiral here until removal step R4.
+        path_strategy: crate::adaptive::PathStrategy2d::Agent,
+        // Not read by the agent planner; the guard keeps the value valid.
         trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
             ctx.trochoid_cap_mult
         } else {
             TROCHOID_CAP_MULT_3D
         },
-        // Every 2D Link is lifted to a 3D retract below, so a link never
-        // cuts here: keep the corridor heuristic and stamp nothing.
-        keep_down_links: crate::adaptive::KeepDownLinks::RetractedByCaller,
+        // Research C12: the arm plans under the 2D pass load and emits its
+        // links as cuts (`plan_one_outline`).
+        keep_down_links: crate::adaptive::KeepDownLinks::WithinPassLoad,
         entry_helix_radius: 0.0,
     };
 
@@ -3044,7 +3700,6 @@ pub(super) fn clear_z_level_agent_2d_slice(
             replaced_entries: 0,
             defer_entries: ctx.min_region_cut_length_mm > 0.0,
         },
-        planner_eng,
         level_metrics: &mut level_metrics,
         cut_count: &mut cut_count,
         dropped_short_regions: &mut dropped_short_regions,

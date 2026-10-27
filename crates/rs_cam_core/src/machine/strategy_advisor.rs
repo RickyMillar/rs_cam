@@ -16,7 +16,8 @@
 //!
 //! A backed-off [`ContourParallel`](ClearingStrategy::ContourParallel)
 //! lays down more path but holds commanded feed along its long straights;
-//! a [`ContourSpiral`](ClearingStrategy::ContourSpiral) lays down less
+//! a constant-engagement [`GeodesicAdaptive`](ClearingStrategy::GeodesicAdaptive)
+//! (ContourSpiral before the removal step R2) lays down less
 //! path but the machine decelerates into every loop. Which wins is set by
 //! **acceleration**, so the decision is *measured*, not looked up: run the
 //! real accel-aware integrator
@@ -105,19 +106,14 @@ pub struct StrategyRecommendation {
 /// motion for more path. This drives only the recommendation's *why*
 /// string — the *choice* is always the measured wall-clock minimum.
 fn is_constant_engagement(strategy: ClearingStrategy) -> bool {
-    matches!(
-        strategy,
-        ClearingStrategy::ContourSpiral | ClearingStrategy::AgentSearch
-    )
+    matches!(strategy, ClearingStrategy::GeodesicAdaptive)
 }
 
 /// Stable display label for the recommendation text.
 fn strategy_label(strategy: ClearingStrategy) -> &'static str {
     match strategy {
-        ClearingStrategy::AgentSearch => "Agent Search",
         ClearingStrategy::ContourParallel => "Contour Parallel",
-        ClearingStrategy::Adaptive => "Adaptive",
-        ClearingStrategy::ContourSpiral => "Contour Spiral",
+        ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
     }
 }
 
@@ -318,7 +314,7 @@ mod tests {
                 geometry_forced: false,
             },
             StrategyCandidate {
-                strategy: ClearingStrategy::ContourSpiral,
+                strategy: ClearingStrategy::GeodesicAdaptive,
                 toolpath: &spiral,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
@@ -341,7 +337,7 @@ mod tests {
         let rec_high = recommend_strategy(&candidates, &high).unwrap();
         assert_eq!(
             rec_high.chosen,
-            ClearingStrategy::ContourSpiral,
+            ClearingStrategy::GeodesicAdaptive,
             "high accel: shorter-path spiral should win; reason: {}",
             rec_high.reason
         );
@@ -365,7 +361,7 @@ mod tests {
                 geometry_forced: true,
             },
             StrategyCandidate {
-                strategy: ClearingStrategy::ContourSpiral,
+                strategy: ClearingStrategy::GeodesicAdaptive,
                 toolpath: &spiral,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,
@@ -394,7 +390,7 @@ mod tests {
         let machine = machine_with_accel(250.0);
         let candidates = [
             StrategyCandidate {
-                strategy: ClearingStrategy::ContourSpiral,
+                strategy: ClearingStrategy::GeodesicAdaptive,
                 toolpath: &empty,
                 regime: LoadRegime::ToolLimited,
                 geometry_forced: false,

@@ -965,6 +965,7 @@ pub fn optimize_entry_descents_with_provenance(
                     target: P3::new(rapid_xy.0, rapid_xy.1, z),
                     move_type: MoveType::Rapid,
                     intent: MoveIntent::Linking,
+                    feed_cap: None,
                 });
                 splits += 1;
             }
@@ -987,6 +988,7 @@ pub fn optimize_entry_descents_with_provenance(
                                     feed_rate: cfg.plunge_rate,
                                 },
                                 intent: MoveIntent::EntryPlunge,
+                                feed_cap: None,
                             });
                         }
                         for point in &plan.points {
@@ -996,6 +998,7 @@ pub fn optimize_entry_descents_with_provenance(
                                     feed_rate: cfg.feed_rate,
                                 },
                                 intent: MoveIntent::EntryRamp,
+                                feed_cap: None,
                             });
                         }
                         // `end_at_start` puts the last lap point on the run's
@@ -1709,6 +1712,10 @@ pub fn apply_dogbones(
                             );
                             result.feed_to_with_intent(b, feed_rate, intent);
                             let overcut_end = result.moves.len();
+                            // C38 §15: and the corner's feed cap.
+                            for m in result.moves.iter_mut().skip(overcut_start) {
+                                m.feed_cap = moves[i].feed_cap;
+                            }
                             dogbone_ranges.push(overcut_start..overcut_end);
                             emitted_overcut = true;
                         }

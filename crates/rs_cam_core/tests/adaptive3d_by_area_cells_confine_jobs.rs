@@ -66,12 +66,15 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_top_z: L_AND_BASIN_TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::ByArea,
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,
@@ -114,8 +117,7 @@ fn by_area_jobs_cut_only_their_own_cells() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
-        ClearingStrategy3d::ContourSpiral,
+        ClearingStrategy3d::GeodesicAdaptive,
     ] {
         let out = adaptive_3d_toolpath_output_with_cancel(
             &mesh,

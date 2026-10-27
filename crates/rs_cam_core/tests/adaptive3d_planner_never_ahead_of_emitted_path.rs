@@ -108,12 +108,15 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
             stock_top_z: STOCK_TOP_Z,
             z_floor,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
             min_region_cut_length_mm: MIN_REGION_CUT_MM,
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -122,7 +125,7 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
         safe_z: SAFE_Z,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     }
 }
@@ -279,7 +282,9 @@ fn the_rough_rapids_into_no_stock() {
         stock_to_leave_axial: LEAVE,
         entry_style: Adaptive3dEntryStyle::Plunge,
         region_ordering: CfgOrdering::Global,
-        clearing_strategy: ClearingStrategy::AgentSearch,
+        // Removal step R2: AgentSearch left the config; the session arm
+        // runs the slice pipeline through Geodesic Adaptive.
+        clearing_strategy: ClearingStrategy::GeodesicAdaptive,
         min_region_cut_length_mm: MIN_REGION_CUT_MM,
         ..Adaptive3dConfig::default()
     };

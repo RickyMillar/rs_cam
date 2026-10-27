@@ -2,7 +2,7 @@
 //!
 //! Unlike the in-crate `feeds::suggest::tests` block (24 unit tests with
 //! hand-tuned synthetic operating points), this test loads a real
-//! operator project — `tests/fixtures/wanaka_2026-08-16_f530995a.toml`, a
+//! operator project — `tests/fixtures/wanaka_2026-08-16_afc6ecd4.toml`, a
 //! dated snapshot of `planning/airrun_2026-06-01/wanaka.toml` (see
 //! `wanaka_project_path` for the 2026-08-16 fixture re-pin and why the
 //! live play-file is no longer read) — via `ProjectSession::load`
@@ -126,10 +126,13 @@ use rs_cam_core::session::ProjectSession;
 /// here was "this sentry exists precisely to fail when that project
 /// drifts".
 ///
-/// **New source:** `tests/fixtures/wanaka_2026-08-16_f530995a.toml` — a
-/// byte-identical snapshot of that play-file taken from
+/// **New source:** `tests/fixtures/wanaka_2026-08-16_afc6ecd4.toml` —
+/// derived from `f530995a`, a snapshot of that play-file taken from
 /// `git show 008ab8ce:planning/airrun_2026-06-01/wanaka.toml`
-/// (blob `fa04baaa`).
+/// (blob `fa04baaa`). Its model paths point at `wanaka100/`. Removal step
+/// R1 (2026-10-28) changed only `clearing_strategy` `agent_search` →
+/// `geodesic_adaptive` on Back Rough and 3D Rough 6, because the strategy
+/// was removed; the file name carries the new sha256 prefix.
 ///
 /// **Why:** the old rationale conflated two different failures under one
 /// red. This is a *feeds-pipeline* sentry: every assertion below is about
@@ -151,7 +154,7 @@ fn wanaka_project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
-        .join("wanaka_2026-08-16_f530995a.toml")
+        .join("wanaka_2026-08-16_afc6ecd4.toml")
 }
 
 /// Run Suggest for every enabled toolpath through the canonical

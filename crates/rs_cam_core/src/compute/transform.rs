@@ -771,6 +771,7 @@ impl SetupTransformInfo {
                     target,
                     move_type,
                     intent: m.intent,
+                    feed_cap: m.feed_cap,
                 }
             })
             .collect();

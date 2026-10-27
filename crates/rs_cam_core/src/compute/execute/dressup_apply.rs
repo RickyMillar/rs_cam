@@ -179,7 +179,11 @@ pub(super) fn attach_generic_rest_analysis(
         "generic rest analysis attached region set"
     );
     generated.produced.rest_grid = rf.produced.rest_grid;
-    generated.produced.rest_regions = rf.produced.rest_regions;
+    // D44: an op that stated its own rest regions keeps them (one source of
+    // truth per field); the generic regions fill only an empty slot.
+    if generated.produced.rest_regions.is_none() {
+        generated.produced.rest_regions = rf.produced.rest_regions;
+    }
 }
 
 /// Why [`attach_generic_rest_analysis`] sizes the reach policy at

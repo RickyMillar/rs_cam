@@ -378,6 +378,8 @@ pub(super) fn annotate_adaptive3d(
                 scope.bind_to_toolpath(toolpath, ann.move_index, end);
                 scope.finish();
             }
+            // The emitter consumes the feed-cap markers (no annotation).
+            Adaptive3dRuntimeEvent::FeedCapStart { .. } | Adaptive3dRuntimeEvent::FeedCapEnd => {}
         }
     }
 

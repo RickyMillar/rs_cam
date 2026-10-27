@@ -531,13 +531,6 @@ pub(super) fn draw_cut_tab(
     // nothing and nothing said so. `operations::registry::OP_UI_ROWS` is the
     // table, and `operations_registry` holds it against
     // `OperationType::ALL`.
-    //
-    // The Adaptive3d "Optimal load" knob needs the active tool's radius to
-    // map engagement to stepover.
-    let tool_radius = tool_configs
-        .iter()
-        .find(|(id, _)| Some(*id) == entry.tool_id)
-        .map_or(0.0, |(_, t)| t.diameter / 2.0);
     let mut draw_ctx = operations::registry::OpDrawCtx {
         tools,
         models,
@@ -545,7 +538,6 @@ pub(super) fn draw_cut_tab(
         pills: feeds_for_pills,
         depth_caution,
         through_cut,
-        tool_radius,
         resolved_claims_reference,
         stock_source: entry.stock_source,
         toolpath_id: entry.id,

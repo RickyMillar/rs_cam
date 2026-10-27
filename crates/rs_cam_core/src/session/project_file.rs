@@ -214,13 +214,55 @@ struct RetiredValue {
 /// Every retired string value. The loader refuses a file that holds one,
 /// with the same refusal as a retired key ([`check_retired_keys`]). Add a
 /// row when a unit variant leaves the file format.
-const RETIRED_VALUES: &[RetiredValue] = &[RetiredValue {
-    table: &["setups", "[]", "toolpaths", "[]", "boundary"],
-    key: "source",
-    value: "face_selection",
-    replacement: "Removed (geometry selection P2.5): a face boundary is a \
-                  [boundary.source.selection] with the face picks. Pick the faces again",
-}];
+const RETIRED_VALUES: &[RetiredValue] = &[
+    RetiredValue {
+        table: &["setups", "[]", "toolpaths", "[]", "boundary"],
+        key: "source",
+        value: "face_selection",
+        replacement: "Removed (geometry selection P2.5): a face boundary is a \
+                      [boundary.source.selection] with the face picks. Pick the faces again",
+    },
+    // Removal step R2 (operator ruling 2026-10-28): three 3D clearing
+    // strategies left the format. Nothing converts: another strategy cuts
+    // another toolpath, so the operator chooses.
+    RetiredValue {
+        table: TOOLPATH_PARAMS,
+        key: "clearing_strategy",
+        value: "adaptive",
+        replacement: CLEARING_STRATEGY_REPLACEMENT,
+    },
+    RetiredValue {
+        table: TOOLPATH_PARAMS,
+        key: "clearing_strategy",
+        value: "agent_search",
+        replacement: CLEARING_STRATEGY_REPLACEMENT,
+    },
+    RetiredValue {
+        table: TOOLPATH_PARAMS,
+        key: "clearing_strategy",
+        value: "contour_spiral",
+        replacement: CLEARING_STRATEGY_REPLACEMENT,
+    },
+];
+
+/// The parameter table of every toolpath of a project file.
+const TOOLPATH_PARAMS: &[&str] = &["setups", "[]", "toolpaths", "[]", "operation", "params"];
+
+const CLEARING_STRATEGY_REPLACEMENT: &str = "Removed (removal step R2, operator ruling \
+     2026-10-28): the 3D Adaptive clearing strategies are \"geodesic_adaptive\" and \
+     \"contour_parallel\". Set clearing_strategy to one of them";
+
+/// The replacement text of a retired value of a toolpath parameter
+/// (`operation.params.<param> = "<value>"`), or `None`. The parameter
+/// setter reads it (`set_toolpath_param`), so MCP and a job file refuse a
+/// retired value with the same text as the project loader.
+pub(crate) fn retired_param_value(param: &str, value: &serde_json::Value) -> Option<&'static str> {
+    let value = value.as_str()?;
+    RETIRED_VALUES
+        .iter()
+        .find(|r| r.table == TOOLPATH_PARAMS && r.key == param && r.value == value)
+        .map(|r| r.replacement)
+}
 
 /// One retired key of a toolpath table that left the format for some op
 /// kinds only (geometry selection P3.2). A [`RetiredKey`] matches a path

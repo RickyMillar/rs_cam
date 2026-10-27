@@ -133,6 +133,7 @@ fn default_params() -> Adaptive3dParams {
             stock_top_z: 25.0,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Disabled by default in tests — tests that need to exercise
@@ -142,6 +143,8 @@ fn default_params() -> Adaptive3dParams {
             // unless they specifically target the keep-tool-down logic).
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,
@@ -151,8 +154,8 @@ fn default_params() -> Adaptive3dParams {
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         initial_stock: None, // Matches the GUI/MCP default (ContourParallel) so the bulk of
         // adaptive3d unit tests exercise the code path most users reach
-        // in production. Tests that specifically validate AgentSearch
-        // or Adaptive override this field explicitly.
+        // in production. Tests that specifically validate GeodesicAdaptive
+        // override this field explicitly.
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: false,
     }
@@ -335,17 +338,58 @@ fn test_adaptive_3d_hemisphere_multi_level() {
     );
 }
 
-/// DIAGNOSTIC: dump per-Cut-segment Z statistics for AgentSearch on a
+/// Removal step R6: `trochoid_cap_mult` and `engagement_measure` are
+/// load-only. Two values of each give the same toolpath on both
+/// strategies. Each pair holds the other field at its default, so a
+/// difference names the field that a planner reads.
+#[test]
+fn the_load_only_fields_do_not_change_the_toolpath_r6() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    for strategy in [
+        ClearingStrategy3d::ContourParallel,
+        ClearingStrategy3d::GeodesicAdaptive,
+    ] {
+        let base = || {
+            let mut p = default_params();
+            p.depth.depth_per_pass = 5.0;
+            p.geometry.tolerance = 0.5;
+            p.clearing_strategy = strategy;
+            p
+        };
+        let reference = format!(
+            "{:?}",
+            adaptive_3d_toolpath(&mesh, &si, &cutter, &base()).moves
+        );
+        let mut cap = base();
+        cap.trochoid_cap_mult *= 2.0;
+        let mut measure = base();
+        measure.engagement_measure = crate::adaptive::EngagementMeasure::LeadingArc;
+        for (field, params) in [("trochoid_cap_mult", cap), ("engagement_measure", measure)] {
+            let moves = format!(
+                "{:?}",
+                adaptive_3d_toolpath(&mesh, &si, &cutter, &params).moves
+            );
+            assert!(
+                moves == reference,
+                "{strategy:?}: `{field}` changed the toolpath; a planner reads it"
+            );
+        }
+    }
+}
+
+/// DIAGNOSTIC: dump per-Cut-segment Z statistics for the slice pipeline
+/// (Geodesic Adaptive since removal step R4; AgentSearch before) on a
 /// hemisphere. Used to verify that the Z-drop split fix in
-/// `clear_z_level_agent_2d_slice` is working — and to detect cases
+/// `clear_z_level_slice` is working — and to detect cases
 /// the threshold misses (e.g., cumulative descent across many small
 /// dz steps).
 ///
 /// Prints to stdout via `println!` (test-mode only; not subject to
 /// the production-code `print_stdout` lint). Run with:
-///   cargo test -p rs_cam_core --lib agent_search_z_drop_diag -- --nocapture
+///   cargo test -p rs_cam_core --lib geodesic_adaptive_z_drop_diag -- --nocapture
 #[test]
-fn agent_search_z_drop_diag() {
+fn geodesic_adaptive_z_drop_diag() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
     let params = {
@@ -355,7 +399,7 @@ fn agent_search_z_drop_diag() {
         p.depth.stock_to_leave = 0.5;
         p.geometry.tolerance = 0.5;
         p.geometry.stepover = 1.0;
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p
     };
 
@@ -410,7 +454,7 @@ fn agent_search_z_drop_diag() {
         }
     }
 
-    println!("\n=== AgentSearch Z-drop diagnostics (hemisphere) ===");
+    println!("\n=== GeodesicAdaptive Z-drop diagnostics (hemisphere) ===");
     println!("total Cut paths: {}", total_cut_paths);
     println!("max per-step |dz|: {:.3} mm", max_per_step_dz);
     println!(
@@ -578,6 +622,44 @@ fn step_levels_are_the_legacy_loop_bitwise() {
     for (l, z) in plan.iter().zip(&legacy) {
         assert_eq!(l.to_bits(), z.to_bits(), "level {l} vs legacy {z}");
     }
+}
+
+/// D50 (integration design §3.1): the source's left stock top lowers only
+/// the START of a rest consumer's level plan, never its floor. On
+/// remaining stock the plan starts at the top; its last level is the
+/// floor with or without the top; a top at or below the floor, and any top
+/// on fresh stock, leave the plan as it was.
+#[test]
+fn a_rest_top_lowers_the_start_and_keeps_the_floor_d50() {
+    use super::path::{rest_capped_level_top, step_levels};
+    let (anchor, top, z_bottom, dpp) = (8.0_f64, 7.0_f64, 4.0_f64, 3.0_f64);
+    let plain = step_levels(anchor, z_bottom, dpp);
+    let capped = step_levels(
+        rest_capped_level_top(anchor, Some(top), z_bottom, true),
+        z_bottom,
+        dpp,
+    );
+    assert_eq!(plain, vec![5.0, 4.0]);
+    assert_eq!(capped, vec![4.0], "the plan does not start below the top");
+    assert_eq!(plain.last(), capped.last(), "the top moved the floor");
+    // A top at or below the floor would leave no level: it is not applied.
+    for low in [z_bottom, z_bottom - dpp] {
+        assert_eq!(
+            rest_capped_level_top(anchor, Some(low), z_bottom, true),
+            anchor
+        );
+    }
+    // Fresh stock, or no top: the anchor stays.
+    assert_eq!(
+        rest_capped_level_top(anchor, Some(top), z_bottom, false),
+        anchor
+    );
+    assert_eq!(rest_capped_level_top(anchor, None, z_bottom, true), anchor);
+    // A top above the anchor does not raise the start.
+    assert_eq!(
+        rest_capped_level_top(anchor, Some(anchor + dpp), z_bottom, true),
+        anchor
+    );
 }
 
 // ── Fix 5: Flat area detection test ────────────────────────────────
@@ -966,13 +1048,16 @@ fn test_low_yield_bail() {
 fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
     let (mesh, si) = make_hemisphere_mesh();
     let cutter = flat_cutter();
-    // This test validates AgentSearch's observability — z_level /
-    // adaptive_pass spans and adaptive3d_pass hotspots are only
-    // emitted by clear_z_level() (the AgentSearch path), not by
-    // clear_z_level_contour_parallel or clear_z_level_adaptive.
+    // This test validates the slice pipeline's observability (Geodesic
+    // Adaptive since removal step R4, AgentSearch before): z_level and
+    // agent2d_region spans are emitted by the slice dispatch, not by
+    // clear_z_level_contour_parallel. Removal step R4: the 2D agent
+    // walker's adaptive_pass spans and hotspots came from AgentSearch
+    // planning each region with it; Geodesic Adaptive plans with its own
+    // field, so no 3D strategy emits them now (the 2D Adaptive op does).
     let params = {
         let mut p = default_params();
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p
     };
     let recorder = crate::trace::debug_trace::ToolpathDebugRecorder::new("Adaptive 3D", "3D Rough");
@@ -1003,18 +1088,8 @@ fn traced_adaptive3d_emits_spans_hotspots_and_annotations() {
         "trace should include Z-level spans"
     );
     assert!(
-        trace.spans.iter().any(|span| span.kind == "adaptive_pass"),
-        "trace should include adaptive pass spans"
-    );
-    // Hotspot kind is "adaptive_pass" (emitted by the 2D adaptive
-    // which now drives AgentSearch slices) — the old 3D agent code
-    // emitted "adaptive3d_pass"; both are valid.
-    assert!(
-        trace
-            .hotspots
-            .iter()
-            .any(|hotspot| hotspot.kind == "adaptive_pass" || hotspot.kind == "adaptive3d_pass"),
-        "trace should record at least one adaptive hotspot"
+        trace.spans.iter().any(|span| span.kind == "agent2d_region"),
+        "trace should include the slice-region spans"
     );
     assert!(
         !trace.annotations.is_empty(),
@@ -1251,7 +1326,7 @@ fn test_contour_parallel_complete_clearing_hemisphere() {
 /// Small-DPP island regression: a small hemisphere cap at DPP=0.5
 /// should clear cleanly (no unmilled core).
 ///
-/// Pre-fix (May 2026), three filters in `clear_z_level_agent_2d_slice`
+/// Pre-fix (May 2026), three filters in `clear_z_level_slice`
 /// used DPP-blind area/fraction thresholds. At small DPP the per-level
 /// slab contributes few cells, the perimeter sweep erodes islands
 /// across many levels, and real islands fall under the threshold and
@@ -1581,7 +1656,8 @@ const ABSTAIN_MAX_INTERIOR_PCT: f64 = 1.0;
 /// it. Re-run with `world_stock_xy_bbox` supplied — the configuration
 /// `compute::execute` has always used — and the count is **exactly
 /// zero** on both strategies. See
-/// `planner_sim_dexel_parity_agent_search_world_stock_declared`.
+/// `planner_sim_dexel_parity_geodesic_adaptive_world_stock_declared` (the
+/// AgentSearch test until removal step R4).
 ///
 /// The cap survives as a growth pin, tightened from 55% to 51% now
 /// that the value is understood and deterministic, and it is now the
@@ -1967,9 +2043,9 @@ fn run_planner_sim_parity_with_mesh(
 }
 
 #[test]
-#[ignore = "Probe: emitted Cut path point spacing on AgentSearch flat — distinguishes \
+#[ignore = "Probe: emitted Cut path point spacing on GeodesicAdaptive flat — distinguishes \
             spacing-too-coarse vs stamp-at-wrong-location"]
-fn agent_search_cut_path_point_spacing_probe() {
+fn geodesic_adaptive_cut_path_point_spacing_probe() {
     let (mesh, si) = make_flat_mesh();
     let cutter = flat_cutter();
     let tool_radius = 3.175_f64;
@@ -1989,7 +2065,7 @@ fn agent_search_cut_path_point_spacing_probe() {
     let params = {
         let mut p = default_params();
         p.initial_stock = Some(initial_stock);
-        p.clearing_strategy = ClearingStrategy3d::AgentSearch;
+        p.clearing_strategy = ClearingStrategy3d::GeodesicAdaptive;
         p.geometry.tool_radius = tool_radius;
         p.geometry.envelope_radius = tool_radius;
         p.depth.stock_top_z = stock_top_z;
@@ -2044,7 +2120,9 @@ fn agent_search_cut_path_point_spacing_probe() {
         }
     }
 
-    eprintln!("AgentSearch flat-plane Cut-path spacing probe (tool_radius = {tool_radius:.3} mm):");
+    eprintln!(
+        "GeodesicAdaptive flat-plane Cut-path spacing probe (tool_radius = {tool_radius:.3} mm):"
+    );
     eprintln!(
         "  Cut segments: {cut_segments_seen}, total path points: {total_path_points}, total gaps: {total_gaps}"
     );
@@ -2090,10 +2168,13 @@ fn agent_search_cut_path_point_spacing_probe() {
 
 #[test]
 #[ignore = "Hypothesis 1: pure-flat mesh — should reveal whether the divergence is surface-coupled"]
-fn planner_sim_dexel_parity_flat_agent_search() {
-    let r = run_planner_sim_parity_flat(ClearingStrategy3d::AgentSearch, "AgentSearch flat");
+fn planner_sim_dexel_parity_flat_geodesic_adaptive() {
+    let r = run_planner_sim_parity_flat(
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive flat",
+    );
     eprintln!(
-        "FLAT AgentSearch: {}/{} cells diverge (max Δ {:.3}mm)",
+        "FLAT GeodesicAdaptive: {}/{} cells diverge (max Δ {:.3}mm)",
         r.divergent, r.total_cells, r.max_dz
     );
     // No assertion — diagnostic output. The hemisphere variants
@@ -2227,20 +2308,20 @@ fn run_planner_sim_parity_cut_only(
 
 #[test]
 #[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
-fn planner_sim_parity_cut_only_agent_search_flat() {
+fn planner_sim_parity_cut_only_geodesic_adaptive_flat() {
     let _ = run_planner_sim_parity_cut_only(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch flat",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive flat",
         make_flat_mesh(),
     );
 }
 
 #[test]
 #[ignore = "Probe A: Cut-only toolpath isolates Bug 2 (Rapid/Link/peck-plunge stamping)"]
-fn planner_sim_parity_cut_only_agent_search_hemisphere() {
+fn planner_sim_parity_cut_only_geodesic_adaptive_hemisphere() {
     let _ = run_planner_sim_parity_cut_only(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch hemisphere",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere",
         make_hemisphere_mesh(),
     );
 }
@@ -2293,12 +2374,15 @@ fn planner_sim_parity_cut_only_contour_parallel_hemisphere() {
 /// interior `planner_higher` cells; it has never been measured
 /// separately from (a).
 #[test]
-fn planner_sim_dexel_parity_agent_search() {
-    let r = run_planner_sim_parity(ClearingStrategy3d::AgentSearch, "AgentSearch hemisphere");
-    assert_parity_bars(&r, "AgentSearch hemisphere");
+fn planner_sim_dexel_parity_geodesic_adaptive() {
+    let r = run_planner_sim_parity(
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere",
+    );
+    assert_parity_bars(&r, "GeodesicAdaptive hemisphere");
 }
 
-/// The same two bars as `planner_sim_dexel_parity_agent_search`, and
+/// The same two bars as `planner_sim_dexel_parity_geodesic_adaptive`, and
 /// deliberately not a weaker set. This test was green throughout the
 /// seven weeks its sibling was red while carrying the identical
 /// defect at the identical 25 mm `max dz` — its old bar gated an
@@ -2362,10 +2446,10 @@ fn assert_no_over_claim_with_world_stock(strategy: ClearingStrategy3d, label: &s
 }
 
 #[test]
-fn planner_sim_dexel_parity_agent_search_world_stock_declared() {
+fn planner_sim_dexel_parity_geodesic_adaptive_world_stock_declared() {
     assert_no_over_claim_with_world_stock(
-        ClearingStrategy3d::AgentSearch,
-        "AgentSearch hemisphere / world stock declared",
+        ClearingStrategy3d::GeodesicAdaptive,
+        "GeodesicAdaptive hemisphere / world stock declared",
     );
 }
 
@@ -2418,6 +2502,75 @@ fn level_anchor_reads_the_top_of_the_prior_stock() {
         }
     }
     assert_eq!(anchor(&stock, true), 14.0);
+}
+
+/// D50: the rest top may lower the first level only while that level cuts
+/// no more than one Depth/Pass where the tool centre goes. A skin of 1.5
+/// over the leave is too thick for a Depth/Pass of 1.0 and thin enough for
+/// 2.0. A thick skin outside the centre containment does not count.
+#[test]
+fn a_rest_ceiling_keeps_one_depth_per_pass_d50() {
+    let (mesh, si) = make_flat_mesh(); // 50x50mm flat at z=0
+    let cutter = flat_cutter();
+    let cell_size = 0.5;
+    let mut stock = TriDexelStock::from_stock(-20.0, -20.0, 20.0, 20.0, -1.0, 14.0, cell_size);
+    let hm = SurfaceHeightmap::from_mesh(
+        &mesh,
+        &si,
+        &cutter,
+        stock.z_grid.origin_u,
+        stock.z_grid.origin_v,
+        stock.z_grid.rows,
+        stock.z_grid.cols,
+        cell_size,
+        -1.0,
+    );
+    let leave = 0.5_f64;
+    let skin_top = leave + 1.5;
+    // The prior stock: a skin over the leave inside x < 0, a thick block
+    // (the box top) at x >= 0.
+    for row in 0..stock.z_grid.rows {
+        for col in 0..stock.z_grid.cols {
+            let (x, _) = stock.z_grid.cell_to_world(row, col);
+            if x < 0.0 {
+                crate::stock::dexel::ray_subtract_above(
+                    stock.z_grid.ray_mut(row, col),
+                    skin_top as f32,
+                );
+            }
+        }
+    }
+    let params_with = |dpp: f64, centre: Vec<crate::polygon::Polygon2>| {
+        let mut p = default_params();
+        p.depth.stock_to_leave = leave;
+        p.depth.depth_per_pass = dpp;
+        p.geometry.centre_boundary = centre;
+        p
+    };
+    let skin_side = vec![crate::polygon::Polygon2::rectangle(
+        -15.0, -15.0, -5.0, 15.0,
+    )];
+    // The first level under the skin: the cell floor is the leave.
+    let first = 0.0;
+    assert!(!super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(1.0, skin_side.clone()),
+        first
+    ));
+    assert!(super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(2.0, skin_side),
+        first
+    ));
+    // No containment: every cell counts, the block too.
+    assert!(!super::path::rest_ceiling_keeps_doc(
+        &stock,
+        &hm,
+        &params_with(2.0, Vec::new()),
+        first
+    ));
 }
 
 // ── By Area region map ───────────────────────────────────────────
@@ -2543,4 +2696,105 @@ fn by_area_exports_two_pocket_region_map() {
         adaptive_3d_toolpath_output_with_cancel(&mesh, &si, &cutter, &params, &|| false, None)
             .unwrap();
     assert!(global.produced.area_regions.is_none());
+}
+
+/// Integration step 7.2 (`StepSplit::StockDepth`): the step reads on a
+/// planted stock. A move one Depth/Pass deep through fresh stock reads one
+/// full pass (load 1, its first sample a full slot of the one load
+/// `chip_load_fraction`) and its depth; the same move over a layer `t`
+/// thinner than a pass reads `t / DPP` and `t`, under the pass ceiling, so
+/// the stock-read rule cuts it at feed. The move has an XY length; a move
+/// with none reads load 0.
+#[test]
+fn the_step_reads_tell_a_full_pass_from_a_thin_layer() {
+    use super::clearing::{StepLoadCutter, step_axial_depth, step_load};
+    const CELL: f64 = 0.5;
+    const DPP: f64 = 6.0;
+    const TOP: f64 = 10.0;
+    const LAYER: f64 = 0.5;
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    let lut = RadialProfileLUT::from_cutter(&cutter, crate::stock::radial_profile::LUT_SAMPLES);
+    let load_cutter = StepLoadCutter {
+        lut: &lut,
+        chip: crate::tool::MillingCutter::geometry_hint(&cutter),
+        diameter: 6.0,
+        depth_per_pass: DPP,
+    };
+    let z = TOP - DPP;
+    let (p, q) = (P3::new(20.0, 30.0, z), P3::new(40.0, 30.0, z));
+
+    let fresh = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, TOP, CELL);
+    let full = step_load(&fresh, p, q, 3.0, 0.0, &load_cutter);
+    assert!((full - 1.0).abs() < 1e-9, "full pass load {full}");
+    assert!((step_axial_depth(&fresh, p, q, 3.0) - DPP).abs() < 1e-6);
+
+    let thin = TriDexelStock::from_stock(0.0, 0.0, 60.0, 60.0, 0.0, z + LAYER, CELL);
+    let light = step_load(&thin, p, q, 3.0, 0.0, &load_cutter);
+    assert!(
+        (light - LAYER / DPP).abs() < 1e-9,
+        "thin layer load {light}, expected {}",
+        LAYER / DPP
+    );
+    assert!((step_axial_depth(&thin, p, q, 3.0) - LAYER).abs() < 1e-6);
+    let ceiling = crate::ops::adaptive_shared::radial_woc_fraction_from_leading_arc(
+        crate::adaptive::pass_engagement_limit(2.0, 3.0),
+    );
+    assert!(light < ceiling && full > ceiling, "ceiling {ceiling}");
+
+    assert_eq!(step_load(&fresh, p, p, 3.0, 0.0, &load_cutter), 0.0);
+}
+
+/// D65: the stock-read split of the slice admits a draped step as a capped
+/// cut only when it is not deep, only when its load is over the ceiling and
+/// at most the full slot, and only inside one engaged run. A deep step and
+/// a step over the slot still split. Removal step R5: the slice runs only
+/// Geodesic Adaptive, so the rule takes no strategy (Contour Parallel has
+/// no slice and never reaches it).
+#[test]
+fn a_draped_step_is_capped_only_up_to_a_slot_and_never_when_deep_d65() {
+    use super::clearing::admits_capped_split;
+    use crate::adaptive::path::FULL_SLOT_LOAD;
+    let ceiling = 0.38;
+    let over = (ceiling + FULL_SLOT_LOAD) / 2.0;
+    assert!(admits_capped_split(false, over, ceiling, true));
+    assert!(admits_capped_split(false, FULL_SLOT_LOAD, ceiling, true));
+    // A deep step splits, whatever its load.
+    assert!(!admits_capped_split(true, over, ceiling, true));
+    // A step over the slot splits.
+    assert!(!admits_capped_split(
+        false,
+        2.0 * FULL_SLOT_LOAD,
+        ceiling,
+        true
+    ));
+    // A step at or under the ceiling is not split at all: no admission.
+    assert!(!admits_capped_split(false, ceiling, ceiling, true));
+    // An engagement change keeps the split.
+    assert!(!admits_capped_split(false, over, ceiling, false));
+}
+
+/// D65: the factor of a capped draped step is `c / L`, at most the factor
+/// that holds its descent at the plunge rate, at most the open 2D cap, and
+/// never above 1.
+#[test]
+fn a_capped_draped_step_descends_no_faster_than_the_plunge_d65() {
+    use super::clearing::capped_step_factor;
+    let (feed, plunge) = (1000.0, 500.0);
+    let (ceiling, load) = (0.38, 0.5);
+    // A shallow step: the load factor binds.
+    let (a, b) = (P3::new(0.0, 0.0, 5.0), P3::new(10.0, 0.0, 4.5));
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, None);
+    assert!((f - ceiling / load).abs() < 1e-12, "shallow: {f}");
+    // A steep step: its descent rate F·f·|dz|/|step| is at most the plunge.
+    let (a, b) = (P3::new(0.0, 0.0, 10.0), P3::new(1.0, 0.0, 4.0));
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, None);
+    let len = (1.0_f64 + 36.0).sqrt();
+    assert!(feed * f * 6.0 / len <= plunge + 1e-9, "steep: {f}");
+    assert!(f < ceiling / load);
+    // An open 2D cap lower than both binds.
+    let f = capped_step_factor(ceiling, load, a, b, feed, plunge, Some(0.1));
+    assert!((f - 0.1).abs() < 1e-12);
+    // A climbing step has no descent term.
+    let f = capped_step_factor(ceiling, load, b, a, feed, plunge, None);
+    assert!((f - ceiling / load).abs() < 1e-12, "climb: {f}");
 }

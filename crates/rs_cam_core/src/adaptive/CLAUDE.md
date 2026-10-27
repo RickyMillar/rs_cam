@@ -4,9 +4,10 @@
 
 - `mod.rs` entry `adaptive_toolpath`, parameters, piece split; `path.rs` orchestrator, capped walker,
   frontier hop, mop, links, emission; `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
-  `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points.
-- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs` (candidate (a),
-  geodesic wavefront, 2026-10-23); its render harness is `tests/adaptive_geodesic_2d_renders_g1.rs`.
+  `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points;
+  `geodesic/` Geodesic Adaptive, the 2D plan (its own `CLAUDE.md`).
+- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs`, test support of `geodesic/`
+  (readouts, cascade, `run_2d`; it plans nothing); render harness `tests/adaptive_geodesic_2d_renders_g1.rs`.
 
 ## Invariants
 
@@ -29,7 +30,7 @@
   `a_clearing_cut_holds_the_pass_load_g_adaptpassload`, `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`,
   `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`, `adaptive_keeps_its_planner_order_g_adaptorder`,
   `adaptive_property_harness`, `contour_spiral_gcode_validity_phase0`, `adaptive3d_emission_byte_parity`,
-  `adaptive_plans_every_inset_piece_g_adaptpieces`. Research: `--features research --lib adaptive::research_geodesic`.
+  `adaptive_plans_every_inset_piece_g_adaptpieces`. Research: `--features research --lib adaptive::research_geodesic`. Geodesic: `geodesic/CLAUDE.md`.
 
 ## Do not
 

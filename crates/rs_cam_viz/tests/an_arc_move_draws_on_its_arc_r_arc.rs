@@ -56,6 +56,7 @@ fn mv(x: f64, y: f64, z: f64, move_type: MoveType) -> Move {
         target: P3::new(x, y, z),
         move_type,
         intent: MoveIntent::Unknown,
+        feed_cap: None,
     }
 }
 

@@ -174,10 +174,13 @@ fn mesh_model(mesh: TriangleMesh) -> LoadedModel {
 }
 
 fn toolpath(tool_id: usize, model_id: usize, rest_analysis: RestAnalysisConfig) -> ToolpathConfig {
-    let op = OperationConfig::Scallop(ScallopConfig {
+    let mut op = OperationConfig::Scallop(ScallopConfig {
         scallop_height: 0.2,
         ..ScallopConfig::default()
     });
+    // G-FEEDSFIXTURE (D46): the fixture states the feeds the op leaves
+    // unset, as the shared helper does (`compute::fixture_values`, S11).
+    rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),

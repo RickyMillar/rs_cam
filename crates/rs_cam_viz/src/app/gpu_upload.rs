@@ -702,6 +702,7 @@ mod tests {
             target: P3::new(1.0, 2.0, 3.0),
             move_type: MoveType::Rapid,
             intent: MoveIntent::Unknown,
+            feed_cap: None,
         });
         tp.moves.push(Move {
             target: P3::new(4.0, 5.0, -2.0),
@@ -711,6 +712,7 @@ mod tests {
                 feed_rate: 1000.0,
             },
             intent: MoveIntent::Unknown,
+            feed_cap: None,
         });
         let annotated = AnnotatedToolpath {
             toolpath: tp,

@@ -2429,7 +2429,7 @@ fn clearing_strategy_recommendation_is_warn_only() {
     let (current, recommended, reason) = recommended
         .expect("clearing-strategy recommendation must fire on unpinned MixedTerrain op");
     assert_eq!(current, "contour_parallel");
-    assert_eq!(recommended, "adaptive");
+    assert_eq!(recommended, "geodesic_adaptive");
     assert_eq!(reason, "mixed_terrain_classifier");
     // Warn-only: the field must be untouched.
     let OperationConfig::Adaptive3d(cfg) = &op else {
@@ -2497,12 +2497,15 @@ fn clearing_strategy_recommendation_skips() {
     };
 
     // Pinned non-default values (heuristic B).
-    for pinned in [ClearingStrategy::Adaptive, ClearingStrategy::AgentSearch] {
-        no_recommendation(
-            &run(pinned, SuggestScope::StrategyAndFeeds, Some(&bbox)),
-            &format!("pinned {pinned:?}"),
-        );
-    }
+    // Removal step R2: Geodesic Adaptive is the one non-default value.
+    no_recommendation(
+        &run(
+            ClearingStrategy::GeodesicAdaptive,
+            SuggestScope::StrategyAndFeeds,
+            Some(&bbox),
+        ),
+        "pinned GeodesicAdaptive",
+    );
     // Strategy passes off.
     no_recommendation(
         &run(

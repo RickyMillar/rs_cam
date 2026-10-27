@@ -14,7 +14,7 @@
 //!
 //! ## Root cause
 //!
-//! `clear_z_level_agent_2d_slice` calls the 2D adaptive once per
+//! `clear_z_level_slice` calls the 2D adaptive once per
 //! marching-squares region. The 2D adaptive's output is structured as
 //! `[Rapid(entry), Cut, Cut, ..., Rapid(entry), ...]` — each `Rapid`
 //! becomes a downstream retract + rapid XY + peck-plunge entry. On
@@ -161,6 +161,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             stock_top_z: PEAK_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
@@ -169,6 +170,8 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             // regression net stays comparable across F-038 and F-038b.
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -177,7 +180,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
         safe_z: PEAK_Z + 5.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     }
 }

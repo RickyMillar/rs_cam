@@ -2094,6 +2094,43 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
     session
 }
 
+/// Integration step 7.4b: the project value `geodesic_adaptive` reaches
+/// the arm through the session door (config → `ClearingStrategy3d` →
+/// dispatch → dressups). The arm writes feed caps, and no cut leaves the
+/// session over its cap.
+#[test]
+fn geodesic_adaptive_generates_through_the_session() {
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::GeodesicAdaptive);
+    // A wide stepover and one deep level keep the debug build short; the
+    // test proves the wiring, not the plan.
+    let _ = session
+        .set_toolpath_param(0, "stepover", serde_json::json!(3.0))
+        .expect("set the stepover");
+    let _ = session
+        .set_toolpath_param(0, "depth_per_pass", serde_json::json!(30.0))
+        .expect("set Depth/Pass");
+    let cancel = AtomicBool::new(false);
+    session
+        .generate_toolpath(0, &cancel)
+        .expect("generate the Geodesic Adaptive op");
+    let tp = session
+        .result_at(0)
+        .expect("the op has a result")
+        .toolpath();
+    let capped: Vec<_> = tp.moves.iter().filter(|m| m.feed_cap.is_some()).collect();
+    assert!(
+        !capped.is_empty(),
+        "the arm wrote no feed cap ({} moves); the value did not reach the arm",
+        tp.moves.len()
+    );
+    for m in capped {
+        let (Some(feed), Some(cap)) = (cut_move_feed(m), m.feed_cap) else {
+            continue;
+        };
+        assert!(feed <= cap, "a cut leaves at {feed}, over its cap {cap}");
+    }
+}
+
 fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
     match m.move_type {
         crate::toolpath::MoveType::Linear { feed_rate }
@@ -2108,9 +2145,17 @@ fn cut_move_feed(m: &crate::toolpath::Move) -> Option<f64> {
 /// cut-move feed (so the wall-clock the advisor compares reflects F-039
 /// optimization) and returns a modelled binding regime. If step 5 were
 /// reverted to timing raw paths this test fails: feeds would be untouched.
+///
+/// The subject is the modulation step, not the strategy: since removal
+/// step R2 the candidate is Contour Parallel (was ContourSpiral).
 #[test]
 fn advisor_modulates_candidate_feeds_before_timing() {
-    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourSpiral);
+    // Removal step R2: ContourSpiral left the config. The subject of this
+    // test is the modulation step the advisor runs on a candidate, not the
+    // strategy, so the candidate is Contour Parallel, the other advisor
+    // candidate, which plans this terrain in seconds (Geodesic Adaptive
+    // takes minutes here in a debug build).
+    let mut session = terrain_adaptive3d_session(ClearingStrategy::ContourParallel);
     let cancel = AtomicBool::new(false);
     let resolved = session
         .resolve_generation_inputs(0, &cancel)

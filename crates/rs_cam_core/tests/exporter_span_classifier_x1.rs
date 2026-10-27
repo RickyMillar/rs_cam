@@ -82,6 +82,7 @@ fn straight_run(n: usize) -> Toolpath {
                 MoveType::Linear { feed_rate: FEED }
             },
             intent: MoveIntent::FinishingCut,
+            feed_cap: None,
         });
     }
     tp

@@ -73,12 +73,15 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_top_z: PITTED_BASIN_TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,
@@ -102,9 +105,7 @@ fn global_levels_drape_to_a_floor_between_two_levels() {
 
     for strategy in [
         ClearingStrategy3d::ContourParallel,
-        ClearingStrategy3d::Adaptive,
-        ClearingStrategy3d::ContourSpiral,
-        ClearingStrategy3d::AgentSearch,
+        ClearingStrategy3d::GeodesicAdaptive,
     ] {
         let (tops, rows, cols, cell, origin_u, origin_v, ..) =
             debug_adaptive_3d_segments_for_f029_probe(

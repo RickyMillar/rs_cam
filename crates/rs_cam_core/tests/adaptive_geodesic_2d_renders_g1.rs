@@ -4,45 +4,23 @@
 //!
 //! The harness plans the two development shapes, `test_data/ux_2d_star.toml`
 //! and `test_data/ux_2d_pocket.toml`, with each 2D strategy and with
-//! candidate (a), on the same region with the same params, and writes one
+//! Geodesic Adaptive (`adaptive::geodesic`), on the same region with the same params, and writes one
 //! SVG and one text summary per strategy per shape. It ranks nothing and
 //! scores nothing: the operator picks by look (PLAN.md, "Look-review
 //! protocol").
 //!
-//! - Strategies: `PathStrategy2d::Agent`, `PathStrategy2d::ContourSpiral`
-//!   and candidate (a):
-//!   - `geodesic_g1` (`GeodesicOptions::G1`, the form of the G1 look);
-//!   - `geodesic_a` (`GeodesicOptions::C2`, the C3 state; a control);
-//!   - `geodesic_curv` (`GeodesicOptions::C5_CURV`, the curvature spacing
-//!     law with plain wraps and the G1 join; a control, the best state at
-//!     D5);
-//!   - `geodesic_curv_join` (`GeodesicOptions::C6_JOIN`, the law and the
-//!     transition join);
-//!   - `geodesic_curv_local` (`GeodesicOptions::C6_LOCAL`, the law with the
-//!     local centre of curvature from the source tracking) and
-//!     `geodesic_curv_local_join` (the same with the transition join);
-//!   - `geodesic_curv_fine` (`geodesic_curv` with its raw-plan readouts
-//!     read at half the planner cell, `ReadResolution::HalfCell`; the
-//!     plan, the replay and the emitted readout stay at the planner cell,
-//!     so its entries must equal `geodesic_curv`'s) and
-//!     `geodesic_curv_join_fine` (the same for `geodesic_curv_join`, whose
-//!     full-turn transitions inside `ρ*` rebuild the spiral steps that read
-//!     0.36 to 0.40 at D5);
-//!   - `geodesic_curv_lead` (`GeodesicOptions::C8_LEAD`: the curvature
-//!     law, the core spiral, and lobes entered by tangential lead-ins with
-//!     keep-down links through the cut band; the summary's `lead-ins` line
-//!     and the L entry kind);
-//!   - C7 (in the record set since D7: the per-mm reading is not evidence
-//!     on short steps), the same plans judged by area per mm (FreeCAD's quantity, R1
-//!     §3) instead of swept width, against the same `c·D`
-//!     (`ReplayMeasure::AreaPerMm`: the cleanup's replay, residue passes,
-//!     wall pass and mop all hold the area measure): `geodesic_curv_area`,
-//!     and for comparison `agent_area` and `contour_spiral_area` (the
-//!     shipped plans; no product parity is asserted for them).
-//! - The record columns, only when `ADAPTIVE_GEODESIC_EXTRA` is set (any
-//!   value): `geodesic_morph_alt` and `geodesic_curv_morph` (the morph,
-//!   dropped by the C5 rule at D5), `geodesic_morph_return`,
-//!   `geodesic_a_through`, `geodesic_a_ramp` and `geodesic_morph_alt_full`.
+//! - Columns (integration step 7.3d deleted the research presets; the
+//!   geodesic columns plan the product preset, C35 plan A, through
+//!   `adaptive::geodesic`):
+//!   - `agent` and `contour_spiral`: `PathStrategy2d::Agent` and
+//!     `PathStrategy2d::ContourSpiral`, the shipped strategies;
+//!   - `geodesic`: Geodesic Adaptive;
+//!   - `geodesic_fine`: the same plan with its raw-plan readouts read at half
+//!     the planner cell (`ReadResolution::HalfCell`); the plan, the replay
+//!     and the emitted readout stay at the planner cell;
+//!   - C7: `geodesic_area`, `agent_area` and `contour_spiral_area`, the same
+//!     plans judged by area per mm (D7: the per-mm reading is not evidence
+//!     on short steps; kept for the record).
 //! - The 2D op exposes no contour-parallel strategy: its
 //!   contour-parallel path runs only behind the narrow-region gate
 //!   (`CleanupStrategy::ContourParallelNarrow` / `Hybrid`), so it is not a
@@ -61,7 +39,7 @@
 //!   purple, the wall pass green (widest), residue contours brown, the
 //!   residue mop magenta, keep-down links orange, rapids dashed grey, each
 //!   entry a red ring, each step over the pass load a black ring, the
-//!   outline black, and candidate (a)'s wraps pale grey under the moves.
+//!   outline black, and the geodesic wraps pale grey under the moves.
 //!   The legend is in the SVG caption.
 //! - The summary: cut and link length, entries, lifts (retracts), keep-down
 //!   links and the planner's pass-load readout (`research_geodesic` module
@@ -70,10 +48,10 @@
 //!   producer (`EntrySplit`: starter, clearing at a wrap end, clearing
 //!   mid-wrap, residue contour, wall pass, residue mop); the readout per
 //!   producer (max reading, steps, steps over) of the emitted plan, and per
-//!   producer and part (spiral, morph leg, return, wrap, join) of the raw
-//!   plan, where a step over is a step the replay refuses; the first ten
-//!   such refused steps; for the morph join, the lobe counts; and the
-//!   cascade diagnostic (`CascadeReadout`, C5): per class, the steps a
+//!   producer and part (spiral, wrap, turn) of the raw plan, where a step
+//!   over is a step the replay refuses; the first ten such refused steps;
+//!   the field of each piece (seed, levels, wraps, core levels, planned
+//!   turns); the planned turns and their feeds; and the cascade diagnostic (`CascadeReadout`, C5): per class, the steps a
 //!   replay model refuses, split into cascades (the step holds once every
 //!   step before it is cut) and intrinsic refusals, the first refusal of
 //!   each producer piece, and the first intrinsic refusals of each class
@@ -104,9 +82,8 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use rs_cam_core::adaptive::research_geodesic::{
-    Candidate2d, CascadeReadout, GeodesicOptions, JoinRule, LobeMorph, MeetingRule,
-    PassLoadReadout, Producer, ReadResolution, Refusal, ReplayMeasure, Run2d, Span2d, SpanKind,
-    run_2d_with,
+    Candidate2d, CascadeReadout, PassLoadReadout, Producer, ReadResolution, Refusal, ReplayMeasure,
+    Run2d, Span2d, SpanKind, TurnRecord, run_2d_with,
 };
 use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d, adaptive_toolpath};
 use rs_cam_core::compute::catalog::OperationType;
@@ -479,9 +456,8 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
     let e = &s.entry_split;
     let _ = writeln!(
         t,
-        "entries by producer: starter {}, clearing at a lead-in (L) {}, clearing at a wrap end (join) {}, clearing mid-wrap (replay split) {}, residue contour {}, wall pass {}, residue mop {}, other {}",
+        "entries by producer: starter {}, clearing at a wrap end (join) {}, clearing mid-wrap (replay split) {}, residue contour {}, wall pass {}, residue mop {}, other {}",
         e.starter,
-        e.clearing_lead,
         e.clearing_join,
         e.clearing_split,
         e.residue_contour,
@@ -513,75 +489,76 @@ fn summary_text(shape: &str, label: &str, run: &Run2d) -> String {
     for (i, f) in run.fields.iter().enumerate() {
         let _ = writeln!(
             t,
-            "field piece {i}: applied {}, seed {:?}, seed radius {:.2} mm, levels {}, wrap pieces {}, converged {}, front branches {}, spiral levels {}",
-            f.applied,
-            f.seed,
-            f.seed_radius,
-            f.levels,
-            f.chains,
-            f.converged,
-            f.branches,
-            f.spiral_levels
+            "field piece {i}: applied {}, seed {:?}, seed radius {:.2} mm, levels {}, wrap pieces {}, spiral levels {}, planned turns {}",
+            f.applied, f.seed, f.seed_radius, f.levels, f.chains, f.spiral_levels, f.turns
         );
-        let j = &f.joins;
-        let _ = writeln!(
-            t,
-            "joins piece {i}: rim transition {}, closed-to-closed transition {}, transition refused (seam) {}, closed-to-closed seam {}, closed to arc {}, from an arc {}; local-spacing sweep converged {:?}",
-            j.rim_transition,
-            j.closed_transition,
-            j.transition_fallback,
-            j.closed_seam,
-            j.closed_to_arc,
-            j.from_arc,
-            f.local_converged
-        );
-        for r in &j.transitions {
-            let _ = writeln!(
-                t,
-                "  transition: level {} -> {}, rho {:.2} mm, delta {:.3} mm, f {:.3}, sector {:.3} rad, applied {}",
-                r.level,
-                r.level + 1,
-                r.rho,
-                r.delta,
-                r.fraction,
-                r.sector,
-                r.applied
-            );
-        }
-        let b = &f.lobes;
-        if b.lobes + b.plain_wraps > 0 {
-            let _ = writeln!(
-                t,
-                "lobes piece {i}: {} lobes of {} arcs, {} plain wraps; not joined: split {} (two or more children {}, child with two or more parents {}, closed {}), branch {}, length ratio {}, gap {}; lobes that left the region (cut plain) {}; return length {:.1} mm",
-                b.lobes,
-                b.lobe_arcs,
-                b.plain_wraps,
-                b.stop_split,
-                b.split_children,
-                b.split_parents,
-                b.split_closed,
-                b.stop_branch,
-                b.stop_ratio,
-                b.stop_gap,
-                b.outside,
-                b.return_length_mm
-            );
-            if b.lead_ins + b.lead_fallback + b.closed_lead_ins + b.closed_lead_fallback > 0 {
-                let _ = writeln!(
-                    t,
-                    "lead-ins piece {i}: lobe bands {} (fell back to the seam {}), closed wraps {} (fell back {}), planned link length {:.1} mm, lead-in radius {:.1} to {:.1} mm",
-                    b.lead_ins,
-                    b.lead_fallback,
-                    b.closed_lead_ins,
-                    b.closed_lead_fallback,
-                    b.link_length_mm,
-                    b.lead_radius_min,
-                    b.lead_radius_max
-                );
-            }
-        }
+    }
+    if run.fields.iter().any(|f| f.turns > 0) {
+        turn_lines(&mut t, run);
     }
     t
+}
+
+/// C14: the clearing turns of the emitted plan: the non-turn rule, the
+/// counts, the distribution of the measured engagement, the feeds, and one
+/// line per turn.
+fn turn_lines(t: &mut String, run: &Run2d) {
+    let l = &run.summary.pass_load;
+    let ts = &run.summary.turns;
+    let _ = writeln!(
+        t,
+        "steps on no turn (emitted): max {:.4} vs ceiling {:.4}, {} over",
+        l.non_turn_max, l.ceiling, l.non_turn_over
+    );
+    let _ = writeln!(
+        t,
+        "clearing turns (emitted): {} of {} planned; {} turn steps, {} over the ceiling (the counted exemption); turns with the reduced feed {}, without {}",
+        ts.turns.len(),
+        ts.planned,
+        l.turn_steps.len(),
+        l.turn_over,
+        ts.fed,
+        ts.unfed
+    );
+    let sorted = |f: &dyn Fn(&TurnRecord) -> f64| {
+        let mut v: Vec<f64> = ts.turns.iter().map(f).collect();
+        v.sort_by(f64::total_cmp);
+        v
+    };
+    for (name, v) in [
+        ("swept width / D", sorted(&|r| r.max_swept)),
+        ("area per mm / D", sorted(&|r| r.max_area)),
+        ("feed factor", sorted(&|r| r.feed_factor)),
+        ("length (mm)", sorted(&|r| r.length_mm)),
+    ] {
+        if let (Some(lo), Some(hi)) = (v.first(), v.last()) {
+            let q = |k: usize| v.get(k * (v.len() - 1) / 4).copied().unwrap_or(0.0);
+            let _ = writeln!(
+                t,
+                "  turn {name}: min {lo:.4}, quartiles {:.4} / {:.4} / {:.4}, max {hi:.4}",
+                q(1),
+                q(2),
+                q(3)
+            );
+        }
+    }
+    for r in &ts.turns {
+        let _ = writeln!(
+            t,
+            "  turn: ({:.2}, {:.2}) to ({:.2}, {:.2}), {:.3} mm, {} steps ({} over), swept {:.4}, area {:.4}, feed factor {:.4}, feed {:.1} mm/min",
+            r.from.x,
+            r.from.y,
+            r.to.x,
+            r.to.y,
+            r.length_mm,
+            r.steps,
+            r.steps_over,
+            r.max_swept,
+            r.max_area,
+            r.feed_factor,
+            r.feed_mm_min
+        );
+    }
 }
 
 /// One refusal of the cascade diagnostic as a line.
@@ -671,7 +648,7 @@ fn render_candidate_a_beside_the_2d_strategies() {
     let mut all = String::new();
     for &(shape, project) in SHAPES {
         let (outline, tool) = fixture(project);
-        let mut columns = vec![
+        let columns = [
             (
                 "agent",
                 Candidate2d::Shipped(PathStrategy2d::Agent),
@@ -685,122 +662,44 @@ fn render_candidate_a_beside_the_2d_strategies() {
                 ReplayMeasure::SweptWidth,
             ),
             (
-                "geodesic_g1",
-                Candidate2d::Geodesic(GeodesicOptions::G1),
+                "geodesic",
+                Candidate2d::Geodesic,
                 ReadResolution::Planner,
                 ReplayMeasure::SweptWidth,
             ),
+            // The raw-plan readouts at half the planner cell; the plan, the
+            // replay and the emitted readout stay at the planner cell.
             (
-                "geodesic_a",
-                Candidate2d::Geodesic(GeodesicOptions::C2),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv",
-                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv_join",
-                Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv_local",
-                Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv_local_join",
-                Candidate2d::Geodesic(GeodesicOptions::C6_LOCAL_JOIN),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv_fine",
-                Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
+                "geodesic_fine",
+                Candidate2d::Geodesic,
                 ReadResolution::HalfCell,
                 ReplayMeasure::SweptWidth,
             ),
-            (
-                "geodesic_curv_join_fine",
-                Candidate2d::Geodesic(GeodesicOptions::C6_JOIN),
-                ReadResolution::HalfCell,
-                ReplayMeasure::SweptWidth,
-            ),
-            (
-                "geodesic_curv_lead",
-                Candidate2d::Geodesic(GeodesicOptions::C8_LEAD),
-                ReadResolution::Planner,
-                ReplayMeasure::SweptWidth,
-            ),
-        ];
-        if std::env::var_os("ADAPTIVE_GEODESIC_EXTRA").is_some() {
-            let extra = [
-                ("geodesic_morph_alt", GeodesicOptions::C4_ALT),
-                ("geodesic_curv_morph", GeodesicOptions::C5_CURV_MORPH),
-                ("geodesic_morph_return", GeodesicOptions::C4_RETURN),
-                (
-                    "geodesic_a_through",
-                    GeodesicOptions {
-                        meeting: MeetingRule::Through,
-                        ..GeodesicOptions::C2
-                    },
-                ),
-                (
-                    "geodesic_a_ramp",
-                    GeodesicOptions {
-                        join: JoinRule::Ramp,
-                        ..GeodesicOptions::C2
-                    },
-                ),
-                (
-                    "geodesic_morph_alt_full",
-                    GeodesicOptions {
-                        join: JoinRule::Morph(LobeMorph::AlternateFull),
-                        ..GeodesicOptions::C2
-                    },
-                ),
-            ];
-            columns.extend(extra.into_iter().map(|(label, options)| {
-                (
-                    label,
-                    Candidate2d::Geodesic(options),
-                    ReadResolution::Planner,
-                    ReplayMeasure::SweptWidth,
-                )
-            }));
             // C7: the same plans judged by area per mm (D7: the reading is
             // not evidence on short steps; kept for the record).
-            columns.extend([
-                (
-                    "geodesic_curv_area",
-                    Candidate2d::Geodesic(GeodesicOptions::C5_CURV),
-                    ReadResolution::Planner,
-                    ReplayMeasure::AreaPerMm,
-                ),
-                (
-                    "agent_area",
-                    Candidate2d::Shipped(PathStrategy2d::Agent),
-                    ReadResolution::Planner,
-                    ReplayMeasure::AreaPerMm,
-                ),
-                (
-                    "contour_spiral_area",
-                    Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
-                    ReadResolution::Planner,
-                    ReplayMeasure::AreaPerMm,
-                ),
-            ]);
-        }
+            (
+                "geodesic_area",
+                Candidate2d::Geodesic,
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
+            ),
+            (
+                "agent_area",
+                Candidate2d::Shipped(PathStrategy2d::Agent),
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
+            ),
+            (
+                "contour_spiral_area",
+                Candidate2d::Shipped(PathStrategy2d::ContourSpiral),
+                ReadResolution::Planner,
+                ReplayMeasure::AreaPerMm,
+            ),
+        ];
         for (label, candidate, read, measure) in columns {
             let strategy = match candidate {
                 Candidate2d::Shipped(s) => s,
-                Candidate2d::Geodesic(_) => PathStrategy2d::Agent,
+                Candidate2d::Geodesic => PathStrategy2d::Agent,
             };
             let params = params(&tool, strategy);
             let run = run_2d_with(&outline, &params, candidate, read, measure);

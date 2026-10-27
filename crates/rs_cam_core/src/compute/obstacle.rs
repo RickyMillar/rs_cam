@@ -1450,6 +1450,7 @@ fn start_at_the_plane(toolpath: &mut Toolpath, mapping: &mut [usize], plane: f64
         target: P3::new(first.target.x, first.target.y, plane),
         move_type: MoveType::Rapid,
         intent: crate::toolpath::MoveIntent::ObstacleClearance,
+        feed_cap: None,
     };
     toolpath.moves.insert(0, lift);
     for entry in mapping.iter_mut().skip(1) {
@@ -1718,6 +1719,7 @@ mod tests {
                 feed_rate: 1000.0,
             },
             intent: crate::toolpath::MoveIntent::Unknown,
+            feed_cap: None,
         };
         let permit = ObstaclePermit { view: &view };
         assert!(view.point_allowed(start) && view.point_allowed(m.target));

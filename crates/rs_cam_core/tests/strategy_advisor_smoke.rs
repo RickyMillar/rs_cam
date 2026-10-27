@@ -127,7 +127,7 @@ fn recommend_clearing_strategy_ranks_candidates_on_terrain() {
     assert!(
         matches!(
             rec.chosen,
-            ClearingStrategy::ContourParallel | ClearingStrategy::ContourSpiral
+            ClearingStrategy::ContourParallel | ClearingStrategy::GeodesicAdaptive
         ),
         "chosen must be in the candidate set, got {:?}",
         rec.chosen

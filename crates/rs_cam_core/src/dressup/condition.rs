@@ -102,15 +102,18 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
         // which without this term could carry a different intent. On a
         // collinear run the whole thing collapsed to one move wearing the
         // last block's label. Equality is strict here too: `Unknown` is not a
-        // wildcard.
+        // wildcard. C38 §15: the feed cap is an equality term for the same
+        // reason.
         let run_start = i;
         let run_intent = moves[run_start].intent;
+        let run_cap = moves[run_start].feed_cap;
         let mut end = run_start + 1;
         while end < moves.len() {
             match moves[end].move_type {
                 MoveType::Linear { feed_rate: f }
                     if (f - feed_rate).abs() < FEED_EPS
                         && moves[end].intent == run_intent
+                        && moves[end].feed_cap == run_cap
                         && !barriers.contains(&end) =>
                 {
                     end += 1;
@@ -365,6 +368,39 @@ mod tests {
         let last = out.toolpath.moves.last().unwrap();
         assert!((last.target.x - 10.0).abs() < 1e-9);
         assert_eq!(last.intent, MoveIntent::Linking);
+    }
+
+    /// C38 §15: runs with different feed caps are not merged across the
+    /// change, so a merged move keeps the cap of every move it replaces.
+    #[test]
+    fn does_not_merge_across_feed_cap_change() {
+        let mut tp = Toolpath::new();
+        tp.rapid_to(P3::new(0.0, 0.0, 0.0));
+        // Perfectly collinear, one feed, one intent. Only the cap
+        // distinguishes the halves.
+        for k in 1..=10 {
+            tp.feed_to(P3::new(k as f64, 0.0, 0.0), 1000.0);
+        }
+        for m in tp.moves.iter_mut().skip(1).take(5) {
+            m.feed_cap = Some(600.0);
+        }
+
+        let out = without_provenance(merge_linear_runs(AnnotatedToolpath::new(tp), 0.1));
+
+        assert_eq!(
+            cut_move_count(&out.toolpath),
+            2,
+            "one merged move per cap block, got {:?}",
+            out.toolpath.moves
+        );
+        let boundary = out
+            .toolpath
+            .moves
+            .iter()
+            .find(|m| (m.target.x - 5.0).abs() < 1e-9)
+            .expect("the cap boundary at x=5 must survive the merge");
+        assert_eq!(boundary.feed_cap, Some(600.0));
+        assert_eq!(out.toolpath.moves.last().unwrap().feed_cap, None);
     }
 
     /// Spans remap cleanly and invariants hold after a merge.

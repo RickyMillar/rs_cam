@@ -25,8 +25,11 @@ use tracing::info;
 mod centre_clip;
 mod clearing;
 mod intended_floor;
+mod keep_down;
+mod outer_band;
 mod path;
 mod region_map;
+mod rest_regions;
 mod search;
 pub use intended_floor::{FloorGrid, intended_floor_grid};
 use path::{adaptive_3d_segments, segments_to_toolpath};
@@ -59,32 +62,24 @@ pub enum RegionOrdering {
 ///   bulk roughing where speed matters more than constant engagement.
 ///   The default.
 ///
-/// `Adaptive` — curvature-adjusted EDT clearing with variable stepover.
-///   Produces shorter cutting distance than ContourParallel on curved
-///   terrain by adapting the offset spacing to local curvature, without
-///   paying the per-step direction-search cost of AgentSearch.
+/// `GeodesicAdaptive` — the geodesic-wavefront plan per slice piece.
 ///
-/// `AgentSearch` — per-step direction search with preflight skip and
-///   widen-band recovery. Slower to generate than ContourParallel or
-///   Adaptive but offers finer per-step control; retained for advanced
-///   cases where the geometry defeats the EDT-based strategies.
+/// The removal steps (operator ruling 2026-10-28) removed `Adaptive` (R3,
+/// the curvature-adjusted variable-offset EDT planner), `AgentSearch` and
+/// `ContourSpiral` (R4). Their slice pipeline and the 2D agent planner
+/// stay: Geodesic Adaptive plans through them (the F-038 forecast reads the
+/// 2D agent planner).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClearingStrategy3d {
-    /// Per-step direction search with preflight skip and widen-band
-    /// recovery. Slow to generate; reach for it when ContourParallel or
-    /// Adaptive produce uncut bands on difficult geometry.
-    AgentSearch,
     /// Fast contour-parallel offset clearing via EDT (default).
     #[default]
     ContourParallel,
-    /// Curvature-adjusted adaptive clearing via variable-offset EDT.
-    Adaptive,
-    /// Constructive inside-out contour spiral per slice (Stage 1 of the
-    /// adaptive algorithm review): one continuous stay-down pass per
-    /// region with engagement bounded by wrap spacing. Routes through
-    /// the AgentSearch slice dispatch with the spiral as the 2D
-    /// generator; falls back to the agent where no starter pocket fits.
-    ContourSpiral,
+    /// Geodesic Adaptive (integration step 7.4): the 2D geodesic-wavefront
+    /// plan (`adaptive::geodesic`, C35 plan A) plans each slice piece
+    /// through the slice dispatch (`clear_z_level_slice`). It clears the body: a piece
+    /// where the field does not apply is left to a rest pass. Its planned
+    /// turns carry a feed cap (`Move::feed_cap`).
+    GeodesicAdaptive,
 }
 
 impl From<crate::compute::operation_configs::RegionOrdering> for RegionOrdering {
@@ -105,9 +100,7 @@ impl From<crate::compute::operation_configs::ClearingStrategy> for ClearingStrat
         use crate::compute::operation_configs::ClearingStrategy as Config;
         match s {
             Config::ContourParallel => Self::ContourParallel,
-            Config::Adaptive => Self::Adaptive,
-            Config::AgentSearch => Self::AgentSearch,
-            Config::ContourSpiral => Self::ContourSpiral,
+            Config::GeodesicAdaptive => Self::GeodesicAdaptive,
         }
     }
 }
@@ -156,7 +149,7 @@ pub struct Adaptive3dGeometry {
     /// center must stay inside. Cells outside this boundary are pre-cleared
     /// in the internal material stock so the bool-grid polygon at every
     /// z-level reflects the boundary, not just the stock bbox. Without this,
-    /// AgentSearch's polygon at top z-levels covers the full stock; the
+    /// the slice polygon at top z-levels covers the full stock; the
     /// downstream toolpath clip then converts the outside-boundary cuts to
     /// rapids, leaving stock unstamped, and deeper z-levels then bite
     /// through fresh stock with full-depth axial DOC. See investigation
@@ -230,6 +223,14 @@ pub struct Adaptive3dDepth {
     pub z_floor: Option<f64>,
     /// Detect flat areas in the mesh and insert Z levels at shelf heights.
     pub detect_flat_areas: bool,
+    /// D50: the top Z of the stock the source op left in this op's
+    /// `DerivedRestRegions` boundary
+    /// ([`crate::trace::produced::Produced::rest_regions_top_z`]). On
+    /// remaining stock the level plan starts no higher than it (a ceiling
+    /// on the G-LADDERANCHOR anchor, `path.rs::rest_capped_level_top`). On
+    /// fresh stock it is not read: the planner then holds the whole stock
+    /// above it. `None`: no such boundary.
+    pub rest_top_z: Option<f64>,
 }
 
 /// What the planner does between cuts: the order it takes the regions in,
@@ -239,7 +240,7 @@ pub struct Adaptive3dLinking {
     pub region_ordering: RegionOrdering,
     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
     /// region must produce in its 2D adaptive sub-pass before the planner
-    /// commits an entry plunge to it. AgentSearch strategy only. Regions
+    /// commits an entry plunge to it. GeodesicAdaptive strategy only. Regions
     /// whose forecast cut length (perimeter-sweep + 2D adaptive walk) is
     /// below this threshold are dropped at plan time, eliminating the
     /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
@@ -263,6 +264,75 @@ pub struct Adaptive3dLinking {
     /// hair of safety margin so the rapid step over a low peak does not
     /// scrape the surface. Default 0.5 mm.
     pub stay_down_clearance_mm: f64,
+    /// Integration step 7.2 (research §16 Part A, D43): how a draped cut is
+    /// split at a large Z step ([`StepSplit`]). `None` is the strategy's
+    /// default: [`StepSplit::PathShape`], today's rule, for every shipped
+    /// strategy. No config sets it yet; the geodesic arm (step 7.4) is its
+    /// first user.
+    pub step_split: Option<StepSplit>,
+    /// Integration step 7.2 (research §16 Part B): the routed keep-down
+    /// travel at an entry ([`KeepDownRoute`]). `None` is the strategy's
+    /// default: [`KeepDownRoute::Off`] for every shipped strategy.
+    pub keep_down_route: Option<KeepDownRoute>,
+}
+
+/// Where a draped cut is split at a step between two lifted points
+/// (research §16 Part A, D43; INTEGRATION_PLAN §8: kept, Q6 reversed).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StepSplit {
+    /// Today's rule: a step of `|dz| > max(1.1·DPP, 1 mm)` or a slope over
+    /// 0.3 (`clearing.rs`, `PLUNGE_SLOPE_LIMIT`).
+    #[default]
+    PathShape,
+    /// Of the steps the path rule flags, split only where the tool's swept
+    /// disc along the step meets stock deeper than one Depth/Pass below its
+    /// top (plus the stay-down clearance), or where the step's chip-area
+    /// load ([`crate::tool_load::load_fraction::chip_load_fraction`], the
+    /// one load) passes the pass ceiling. A step through air, or onto a
+    /// face or down a slope that holds a light layer, is cut at feed.
+    StockDepth,
+}
+
+/// The routed keep-down travel at an entry (research §16 Part B,
+/// `keep_down.rs`).
+///
+/// The research's third value, a route at the rapid rate (`LowRapid`), is
+/// not ported: a rapid at depth over cut ground is not allowed yet
+/// (INTEGRATION_PLAN Q7, lead default 2026-10-27).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum KeepDownRoute {
+    /// No routed travel: the entry is a straight stay-down link or a
+    /// retract (today's rule).
+    #[default]
+    Off,
+    /// A route over cut ground at the level, at the cut feed, held by the
+    /// full-disc proof at the stay-down clearance.
+    CutFeed,
+}
+
+/// The step split a run uses: the parameter, else the strategy's default:
+/// [`StepSplit::StockDepth`] for Geodesic Adaptive (INTEGRATION_PLAN §8,
+/// the D43 load split), [`StepSplit::PathShape`] for every other strategy.
+fn effective_step_split(params: &Adaptive3dParams) -> StepSplit {
+    match params.clearing_strategy {
+        ClearingStrategy3d::GeodesicAdaptive => {
+            params.linking.step_split.unwrap_or(StepSplit::StockDepth)
+        }
+        ClearingStrategy3d::ContourParallel => params.linking.step_split.unwrap_or_default(),
+    }
+}
+
+/// The routed keep-down travel a run uses: the parameter, else the
+/// strategy's default: [`KeepDownRoute::CutFeed`] for Geodesic Adaptive
+/// (research §16 Part B), [`KeepDownRoute::Off`] for every other strategy.
+fn effective_keep_down_route(params: &Adaptive3dParams) -> KeepDownRoute {
+    match params.clearing_strategy {
+        ClearingStrategy3d::GeodesicAdaptive => params
+            .linking
+            .keep_down_route
+            .unwrap_or(KeepDownRoute::CutFeed),
+        ClearingStrategy3d::ContourParallel => params.linking.keep_down_route.unwrap_or_default(),
+    }
 }
 
 /// Parameters for 3D adaptive clearing.
@@ -291,16 +361,11 @@ pub struct Adaptive3dParams {
     pub entry_style: EntryStyle3d,
     /// Clearing strategy per Z level (default: ContourParallel).
     pub clearing_strategy: ClearingStrategy3d,
-    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
-    /// fire when predicted leading-arc engagement exceeds `target x this`.
-    /// Low (~1.0-1.2) = flattest load + more travel; high (~2.0-3.0) =
-    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
-    /// by the other strategies. See the cap sweep in
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+    /// Load-only: no strategy reads it. The removed ContourSpiral strategy
+    /// read it as its trochoid trigger cap (removal step R4).
     pub trochoid_cap_mult: f64,
-    /// Engagement quantity the AgentSearch 2D sub-pass measures against
-    /// the alpha/2pi target. See `crate::adaptive::EngagementMeasure` (F1,
-    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
+    /// Load-only: no strategy reads it. The removed AgentSearch strategy
+    /// read it as its 2D engagement quantity (removal step R4).
     pub engagement_measure: crate::adaptive::EngagementMeasure,
     /// Blend Z toward terrain surface across contour offsets.
     /// When true, outer contours stay near z_level and inner contours
@@ -311,6 +376,35 @@ pub struct Adaptive3dParams {
     /// When Some, used as starting material instead of a fresh block at
     /// `Adaptive3dDepth::stock_top_z`.
     pub initial_stock: Option<TriDexelStock>,
+}
+
+impl Adaptive3dParams {
+    /// The chord tolerance (mm) of the RDP that simplifies each emitted cut.
+    /// The emitter, the waterline cleanup and the planner stamp all read
+    /// this one value (G-PLANSIMGAP). The rule is ONE function,
+    /// [`Adaptive3dGeometry::chord_tolerance`], through
+    /// [`Adaptive3dGeometry::cut_simplify_tolerance`]; every shipped arm
+    /// uses it unchanged.
+    ///
+    /// Geodesic Adaptive (research C26, G-RDPLOAD): the same value, capped at the load
+    /// margin of a straight pass (`adaptive::geodesic::slice_load_margin`,
+    /// `c·D - s`). The 2D load rule judged the walked wraps; a chord whose
+    /// sagitta is over that margin makes the next pass meet more than
+    /// `c·D` at mid-chord. The cap only lowers the tolerance, so the model
+    /// gouge guard, which reads the uncapped rule (G-ROUGHGOUGE), stays on
+    /// the safe side.
+    #[must_use]
+    pub fn emission_chord_tolerance(&self) -> f64 {
+        let chord = self.geometry.cut_simplify_tolerance();
+        if self.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive {
+            return chord.min(crate::adaptive::geodesic::slice_load_margin(
+                self.geometry.stepover,
+                self.geometry.tool_radius,
+                self.geometry.tolerance,
+            ));
+        }
+        chord
+    }
 }
 
 // SurfaceHeightmap is now in crate::surface::slope (shared across finishing strategies)
@@ -351,7 +445,7 @@ pub struct ZLevelPlanMetrics {
     pub agent_walk_cut_length_mm: f64,
     pub residual_cleanup_cell_count: usize,
     /// F-038: number of regions whose forecast cut length fell below
-    /// `min_region_cut_length_mm` and were dropped from the AgentSearch
+    /// `min_region_cut_length_mm` and were dropped from the slice
     /// emission. Parallel to `dropped_micro_region_count` (which is the
     /// Fusion-style area filter) but gated on length, not area.
     pub dropped_short_region_count: usize,
@@ -407,6 +501,16 @@ pub enum Adaptive3dRuntimeEvent {
         yield_ratio: f64,
         short: bool,
     },
+    /// Geodesic Adaptive (integration step 7.4, design part F): the cuts up
+    /// to the next [`Self::FeedCapEnd`] lie on one planned turn or one run
+    /// of departure windows, and run at `factor` of the feed. The emitter
+    /// consumes the pair: it writes the lowered feed and `Move::feed_cap`
+    /// on the cut moves between them, and adds no annotation.
+    FeedCapStart {
+        factor: f64,
+    },
+    /// The end of a [`Self::FeedCapStart`] run.
+    FeedCapEnd,
 }
 
 impl Adaptive3dRuntimeEvent {
@@ -419,7 +523,9 @@ impl Adaptive3dRuntimeEvent {
             | Self::WaterlineCleanup
             | Self::PassEntry { .. }
             | Self::PassPreflightSkip { .. }
-            | Self::PassSummary { .. } => {}
+            | Self::PassSummary { .. }
+            | Self::FeedCapStart { .. }
+            | Self::FeedCapEnd => {}
         }
     }
 
@@ -479,6 +585,8 @@ impl Adaptive3dRuntimeEvent {
                     )
                 }
             }
+            Self::FeedCapStart { factor } => format!("Feed cap {factor:.3} of the feed"),
+            Self::FeedCapEnd => "Feed cap end".to_owned(),
         }
     }
 }
@@ -526,9 +634,9 @@ pub struct Adaptive3dOutput {
     pub toolpath: Toolpath,
     pub annotations: Vec<Adaptive3dRuntimeAnnotation>,
     /// W6.2: what the planner produced beside the path. It fills
-    /// `planner_engagement` (Stage 4, `(cut_point, α/2π)`; empty for
-    /// non-ContourSpiral strategies) and `area_regions` (the regions that
-    /// By Area detected; `None` for Global).
+    /// `area_regions` (the regions that By Area detected; `None` for
+    /// Global) and the rest regions (D44, D50). `planner_engagement` stays
+    /// empty: ContourSpiral, its one 3D writer, left in removal step R4.
     pub produced: crate::trace::produced::Produced,
 }
 
@@ -544,7 +652,19 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
 ) -> Result<Adaptive3dOutput, Cancelled> {
     let result = adaptive_3d_segments(mesh, index, cutter, params, debug, cancel)?;
     let segments = result.segments;
-    let planner_engagement = result.planner_engagement;
+    // D44, D48: the regions the run left to a rest pass, one XY union over
+    // the levels grown by one planner cell, in tool-centre space inside
+    // this run's own containment polygons. The runner keeps them only on
+    // demand (`run_volumetric`). D50: with the top Z of the stock left in
+    // them.
+    let (rest_regions, rest_regions_top_z) = rest_regions::left_regions(
+        &result.left_pieces,
+        crate::adaptive::planner_cell_size(params.geometry.tool_radius, params.geometry.tolerance),
+        &params.geometry.centre_boundary,
+    )
+    .map_or((None, None), |(regions, top)| {
+        (Some(std::sync::Arc::new(regions)), Some(top))
+    });
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
     let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
@@ -559,7 +679,6 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
         annotations = annotations.len(),
         cutting_mm = tp.total_cutting_distance(),
         rapid_mm = tp.total_rapid_distance(),
-        planner_eng_samples = planner_engagement.len(),
         "3D adaptive toolpath complete"
     );
 
@@ -567,8 +686,9 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
         toolpath: tp,
         annotations,
         produced: crate::trace::produced::Produced {
-            planner_engagement,
             area_regions: result.area_regions.map(std::sync::Arc::new),
+            rest_regions,
+            rest_regions_top_z,
             ..crate::trace::produced::Produced::default()
         },
     })

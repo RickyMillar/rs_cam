@@ -32,12 +32,12 @@ const PLUNGE_ENTRY_UNSTABLE_DPP_OVER_D: f64 = 0.5;
 /// Pass 7b: v3.3c strategy-aware clearing-strategy recommendation —
 /// **warn-only**, never rewrites.
 ///
-/// The v3 design table maps `MixedTerrain` → `ClearingStrategy::Adaptive`
-/// (curvature-adjusted clearing handles the flat/steep mix better than
-/// plain contour-parallel offsets), but auto-rewriting across clearing
-/// strategies is deferred to v4: today's classifier is bbox-only and
-/// the `Adaptive` / `AgentSearch` promotions need calibration against
-/// real uncut-band evidence before Suggest writes them. Until then this
+/// The v3 design table mapped `MixedTerrain` → the 3D `Adaptive`
+/// strategy. Removal step R2 (operator ruling 2026-10-28, after D64)
+/// removed it; the recommendation is `GeodesicAdaptive`, the one
+/// constant-load strategy left. Auto-rewriting across clearing strategies
+/// stays deferred: today's classifier is bbox-only and a promotion needs
+/// calibration against real uncut-band evidence before Suggest writes it. Until then this
 /// pass surfaces a [`SuggestWarning::StrategyRecommendedNotApplied`]
 /// so the operator (or an MCP agent reading the rationale) can opt in
 /// manually.
@@ -81,13 +81,13 @@ pub(super) fn pick_adaptive3d_clearing_strategy(
     tracing::debug!(
         ?class,
         current = "contour_parallel",
-        recommended = "adaptive",
-        "Suggest recommends (warn-only) adaptive clearing on mixed terrain"
+        recommended = "geodesic_adaptive",
+        "Suggest recommends (warn-only) Geodesic Adaptive on mixed terrain"
     );
     warnings.push(SuggestWarning::StrategyRecommendedNotApplied {
         param: "clearing_strategy",
         current: "contour_parallel".to_owned(),
-        recommended: "adaptive".to_owned(),
+        recommended: "geodesic_adaptive".to_owned(),
         reason: "mixed_terrain_classifier",
     });
     warnings

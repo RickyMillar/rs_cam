@@ -534,7 +534,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "recommend_clearing_strategy",
-        description = "Strategy advisor: for the Adaptive3d roughing toolpath at `index`, compare clearing strategies (ContourParallel vs ContourSpiral) by planning each at its load-limited (Suggest-backed-off) params and timing it through the acceleration-aware cycle-time integrator at the machine's effective kinematics. Returns the recommended strategy, the binding regime (tool-/machine-limited) as the human-readable why, every candidate ranked by wall-clock seconds, and the speed margin. KEY: it decides parallel-vs-spiral by MACHINE ACCELERATION, not the load regime — on a low-accel router a backed-off ContourParallel beats the spiral even when tool-limited. Only applies to Adaptive3d ops. HEAVY: it plans one toolpath per candidate, so expect ~30-60 s. It runs on its own compute lane and holds no session, so the GUI stays usable while it computes; this call still waits for the answer."
+        description = "Strategy advisor: for the Adaptive3d roughing toolpath at `index`, compare clearing strategies (ContourParallel vs GeodesicAdaptive) by planning each at its load-limited (Suggest-backed-off) params and timing it through the acceleration-aware cycle-time integrator at the machine's effective kinematics. Returns the recommended strategy, the binding regime (tool-/machine-limited) as the human-readable why, every candidate ranked by wall-clock seconds, and the speed margin. KEY: it ranks the candidates by wall-clock time at the MACHINE ACCELERATION, not by the load regime alone. Only applies to Adaptive3d ops. HEAVY: it plans one toolpath per candidate, so expect ~30-60 s. It runs on its own compute lane and holds no session, so the GUI stays usable while it computes; this call still waits for the answer."
     )]
     async fn recommend_clearing_strategy(
         &self,
@@ -608,7 +608,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_generation_debug_trace",
-        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d AgentSearch wandering/looping. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
+        description = "Get the generation-time debug trace for a toolpath: per-pass spans with exit_reason, idle_count, yield_ratio, xy_bbox, plus a diagnostic summary. Primary surface for diagnosing adaptive3d slice planning. Run generate_toolpath first. Filter by span_kind, exit_reason, or max_yield_ratio to narrow the response."
     )]
     async fn get_generation_debug_trace(
         &self,

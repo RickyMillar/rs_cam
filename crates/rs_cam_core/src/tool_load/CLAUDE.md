@@ -6,7 +6,7 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
 
 - `mod.rs` — the monitor and the report entry point. `chipload.rs`, `power.rs`,
   `deflection.rs`, `depth.rs`, `plunge_stress.rs` — the milling gates;
-  `drill_gates.rs` — chip welding, peck, plunge feed.
+  `drill_gates.rs` — chip welding, peck, plunge feed. `load_fraction.rs` — the one load `L`.
 - `locality.rs`, `boundary.rs`, `verdict.rs`, `display.rs`, `distribution.rs`,
   `metric_guide.rs` — steady-state predicate, boundary contract, verdicts,
   display, histograms (call the gate filters; never copy them), hover copy.
@@ -17,6 +17,9 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   `locality::is_steady_state_for_gate`. Never write a second copy.
 - The chipload gate quantity is advance per tooth, `effective_feed / (rpm *
   flutes)`. It is not the dexel chip thickness.
+- The cutting load `L` of a pass (chip area over a full pass, per strip) is
+  `load_fraction::chip_load_fraction` only (INTEGRATION_PLAN D5, Q1); it reads
+  `mrr_cross_section_mm2`, as power does. Never write a second form.
 - A gate with no population proved nothing; check the count. S6: a sample's
   material is `effective_material_for_sample`; split populations ONLY in `evaluate_toolpath`.
 - B6: power and deflection read `Material::force_line()`. Power is `line ×
@@ -31,4 +34,4 @@ Independent gates over a simulated cut. Entry: `tool_load::evaluate_toolpath`.
   geometry, not fed distance; a tapered drill uses the envelope diameter.
 
 ## Sentries
-Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`, `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`, `an_absent_limit_is_visibly_absent_g_gantry`, `a_criterion_carries_its_own_bound_g_s4bound`, `a_weak_bound_cannot_refuse_an_export_g_s4weak` (only a sourced bound may refuse an export), `the_depth_that_cut_is_a_measured_load_g_s3depth` (depth exceeds, never refuses), `finish_depth_is_reported_not_capped_fm6`, `histogram_population_is_the_gate_population_g_cuthist`.
+Run one with `cargo test -p rs_cam_core -q --test <name>`: `gate_population_vacuity_xvac`, `chipload_boundary_g_chip_ulp`, `predicted_feed_gates_f035`, `drill_evidence_wording_d3`, `an_absent_limit_is_visibly_absent_g_gantry`, `a_criterion_carries_its_own_bound_g_s4bound`, `a_weak_bound_cannot_refuse_an_export_g_s4weak` (only a sourced bound may refuse an export), `the_depth_that_cut_is_a_measured_load_g_s3depth` (depth exceeds, never refuses), `finish_depth_is_reported_not_capped_fm6`, `histogram_population_is_the_gate_population_g_cuthist`; `--lib tool_load::load_fraction` (the full-pass identity `w/D`).

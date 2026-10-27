@@ -4,7 +4,7 @@
 //! ## Why this file exists
 //!
 //! CUT-04 regroups `Adaptive3dParams`'s thirty flat fields into three named
-//! groups, and CUT-09 cuts `clear_z_level_agent_2d_slice` into its three
+//! groups, and CUT-09 cuts `clear_z_level_slice` into its three
 //! named stages. Both are mechanical re-shapes with the same failure mode: a
 //! field threaded into the wrong slot, or a stage that reads an accumulator
 //! one statement too early, changes the emitted motion in silence. The
@@ -18,24 +18,30 @@
 //! committed fixture. Nothing about the toolpath can move without a line of
 //! the dump moving with it.
 //!
-//! ## The four cases
+//! ## The five cases
 //!
-//! One per `ClearingStrategy3d` variant, so the AgentSearch arm CUT-09 cuts
-//! is measured, and so is the `ContourSpiral` arm that dispatches through it.
+//! Contour Parallel three times (plain, with the flat-area and Z-blend
+//! dials, and By Area) and Geodesic Adaptive twice (plain, and with a
+//! boundary and the F-038 filter). Geodesic Adaptive runs the slice
+//! pipeline that CUT-09 cut (the AgentSearch arm until removal step R4).
 //! The cases deliberately turn the optional dials ON, because a rig that
 //! runs only the all-`None` parameter set cannot see a mis-threaded dial:
 //!
 //! | case | strategy | dials exercised |
 //! |---|---|---|
 //! | `contour_parallel` | `ContourParallel` | the plain baseline |
-//! | `adaptive` | `Adaptive` | `detect_flat_areas`, `z_blend` |
-//! | `agent_search` | `AgentSearch` | `boundary`, stay-down, `min_region_cut_length_mm` |
-//! | `contour_spiral` | `ContourSpiral` | `trochoid_cap_mult`, `RegionOrdering::ByArea` |
+//! | `contour_parallel_flat_blend` | `ContourParallel` | `detect_flat_areas`, `z_blend` |
+//! | `contour_parallel_by_area` | `ContourParallel` | `RegionOrdering::ByArea` |
+//! | `geodesic_adaptive` | `GeodesicAdaptive` | its own step split and route (`None` = `StockDepth`, `CutFeed`), stay-down, the feed caps |
+//! | `geodesic_adaptive_boundary` | `GeodesicAdaptive` | `boundary`, stay-down, `min_region_cut_length_mm` |
+//!
+//! A move with a feed cap (`Move::feed_cap`) adds ` cap=<bits>` to its
+//! line; a move with none adds nothing, so the four older dumps do not move.
 //!
 //! ## Determinism
 //!
-//! `emission_is_deterministic_within_one_process` generates the AgentSearch
-//! case twice and compares the two dumps. A generator that iterated a
+//! `emission_is_deterministic_within_one_process` generates every case
+//! twice and compares the two dumps. A generator that iterated a
 //! `HashMap` into emission order would fail there, and the fixture would be
 //! worthless. Run the file twice to cover the cross-process case: the
 //! fixture comparison is itself that check.
@@ -52,6 +58,18 @@
 //!   `contour_spiral` rings gain points on their arc joins: moves 370 to
 //!   378 and 944 to 995. `contour_parallel` and `adaptive` do not move.
 //!   A toggle proof (the chord flatten restored) gives the old dumps.
+//! - Integration step 7.4b: the new case `geodesic_adaptive` only. The four
+//!   older fixtures are unchanged.
+//! - Removal step R3 (2026-10-28): the case `adaptive` left with the 3D
+//!   Adaptive planner. Its dials (`detect_flat_areas`, `z_blend`) moved to
+//!   the new case `contour_parallel_flat_blend`, blessed alone; every other
+//!   fixture is unchanged.
+//! - Removal step R4 (2026-10-28): the cases `agent_search` and
+//!   `contour_spiral` left with their strategies. Their dials moved to two
+//!   new cases, blessed alone: `boundary`, stay-down and
+//!   `min_region_cut_length_mm` to `geodesic_adaptive_boundary`, By Area to
+//!   `contour_parallel_by_area` (`trochoid_cap_mult` is read by no strategy
+//!   left). Every other fixture is unchanged.
 
 #![expect(
     clippy::unwrap_used,
@@ -105,12 +123,15 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stock_top_z: STOCK_TOP_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,
@@ -127,34 +148,39 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
 fn case_params(case: &str) -> Adaptive3dParams {
     match case {
         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
-        "adaptive" => {
-            let mut p = base_params(ClearingStrategy3d::Adaptive);
+        "contour_parallel_flat_blend" => {
+            let mut p = base_params(ClearingStrategy3d::ContourParallel);
             p.depth.detect_flat_areas = true;
             p.z_blend = true;
             p
         }
-        "agent_search" => {
-            let mut p = base_params(ClearingStrategy3d::AgentSearch);
+        "geodesic_adaptive_boundary" => {
+            let mut p = base_params(ClearingStrategy3d::GeodesicAdaptive);
             p.geometry.boundary = Some(Polygon2::rectangle(-12.0, -12.0, 6.0, 12.0));
             p.linking.max_stay_down_distance_mm = Some(8.0);
             p.linking.min_region_cut_length_mm = 3.0;
             p
         }
-        "contour_spiral" => {
-            let mut p = base_params(ClearingStrategy3d::ContourSpiral);
+        "contour_parallel_by_area" => {
+            let mut p = base_params(ClearingStrategy3d::ContourParallel);
             p.linking.region_ordering = RegionOrdering::ByArea;
-            p.trochoid_cap_mult = 2.0;
+            p
+        }
+        "geodesic_adaptive" => {
+            let mut p = base_params(ClearingStrategy3d::GeodesicAdaptive);
+            p.linking.max_stay_down_distance_mm = Some(8.0);
             p
         }
         other => panic!("unknown case {other}"),
     }
 }
 
-const CASES: [&str; 4] = [
+const CASES: [&str; 5] = [
     "contour_parallel",
-    "adaptive",
-    "agent_search",
-    "contour_spiral",
+    "contour_parallel_flat_blend",
+    "contour_parallel_by_area",
+    "geodesic_adaptive",
+    "geodesic_adaptive_boundary",
 ];
 
 fn generate(case: &str) -> Toolpath {
@@ -194,8 +220,11 @@ fn dump(case: &str, tp: &Toolpath) -> String {
                 feed_rate.to_bits()
             ),
         };
+        let cap = m
+            .feed_cap
+            .map_or(String::new(), |c| format!(" cap={:016x}", c.to_bits()));
         out.push_str(&format!(
-            "{i} {:016x} {:016x} {:016x} {kind} {:?}\n",
+            "{i} {:016x} {:016x} {:016x} {kind} {:?}{cap}\n",
             m.target.x.to_bits(),
             m.target.y.to_bits(),
             m.target.z.to_bits(),
@@ -257,18 +286,23 @@ fn contour_parallel_emission_is_byte_identical() {
 }
 
 #[test]
-fn adaptive_emission_is_byte_identical() {
-    check("adaptive");
+fn contour_parallel_flat_blend_emission_is_byte_identical() {
+    check("contour_parallel_flat_blend");
 }
 
 #[test]
-fn agent_search_emission_is_byte_identical() {
-    check("agent_search");
+fn contour_parallel_by_area_emission_is_byte_identical() {
+    check("contour_parallel_by_area");
 }
 
 #[test]
-fn contour_spiral_emission_is_byte_identical() {
-    check("contour_spiral");
+fn geodesic_adaptive_boundary_emission_is_byte_identical() {
+    check("geodesic_adaptive_boundary");
+}
+
+#[test]
+fn geodesic_adaptive_emission_is_byte_identical() {
+    check("geodesic_adaptive");
 }
 
 /// The fixture is only worth something if the generator is deterministic.

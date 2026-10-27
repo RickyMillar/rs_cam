@@ -71,6 +71,7 @@ fn ring_toolpath() -> Toolpath {
             target: P3::new(start.x, start.y, SAFE_Z),
             move_type: MoveType::Rapid,
             intent: MoveIntent::Linking,
+            feed_cap: None,
         },
         Move {
             target: start,
@@ -78,6 +79,7 @@ fn ring_toolpath() -> Toolpath {
                 feed_rate: PLUNGE_RATE,
             },
             intent: MoveIntent::EntryPlunge,
+            feed_cap: None,
         },
     ];
     for k in 1..=4 {
@@ -90,12 +92,14 @@ fn ring_toolpath() -> Toolpath {
                 feed_rate: CUT_FEED,
             },
             intent: MoveIntent::FinishingCut,
+            feed_cap: None,
         });
     }
     moves.push(Move {
         target: P3::new(start.x, start.y, SAFE_Z),
         move_type: MoveType::Rapid,
         intent: MoveIntent::Retract,
+        feed_cap: None,
     });
     Toolpath { moves }
 }

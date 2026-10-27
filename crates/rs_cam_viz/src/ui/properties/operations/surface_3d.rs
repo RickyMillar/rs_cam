@@ -1,8 +1,5 @@
 use super::super::pills::PillSuggestions;
 use rs_cam_core::finish::pencil::PencilDetector;
-use rs_cam_core::ops::adaptive_shared::{
-    radial_woc_fraction_from_leading_arc, target_engagement_fraction,
-};
 
 use crate::state::toolpath::{
     Adaptive3dConfig, Adaptive3dEntryStyle, ClaimsReference, ClearingStrategy, DropCutterConfig,
@@ -13,10 +10,6 @@ use crate::state::toolpath::{
 use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
 use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
-
-/// Fallback tool radius (1/8" endmill) when the active tool's radius is
-/// unavailable or non-physical — keeps the load↔stepover bridge finite.
-const FALLBACK_TOOL_RADIUS: f64 = 3.175;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
@@ -62,30 +55,21 @@ pub(in crate::ui::properties) fn draw_dropcutter_params(
 pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
-    tool_radius: f64,
     pills: Option<&PillSuggestions>,
 ) {
-    // Spec: pill stepover + depth_per_pass.
+    // Spec: pill stepover + depth_per_pass. Removal step R2: the
+    // ContourSpiral "Optimal load" slider left with its strategy.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    // The ContourSpiral strategy holds engagement flat by construction, so
-    // its primary knob is the friendly "Optimal load" slider (it derives
-    // the stepover). The raw stepover pill is retired for that strategy and
-    // shown derived instead.
-    let spiral = matches!(cfg.clearing_strategy, ClearingStrategy::ContourSpiral);
     ui.param_grid("a3d_p", |ui| {
-        if spiral {
-            draw_spiral_load_control(ui, cfg, tool_radius);
-        } else {
-            dv_pill(
-                ui,
-                p(OperationType::Adaptive3d, "stepover", "Stepover:"),
-                &mut cfg.stepover,
-                " mm",
-                0.1,
-                stepover_sugg,
-            );
-        }
+        dv_pill(
+            ui,
+            p(OperationType::Adaptive3d, "stepover", "Stepover:"),
+            &mut cfg.stepover,
+            " mm",
+            0.1,
+            stepover_sugg,
+        );
         dv_pill(
             ui,
             p(OperationType::Adaptive3d, "depth_per_pass", "Depth/Pass:"),
@@ -179,9 +163,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             .truncate()
             .selected_text(match cfg.clearing_strategy {
                 ClearingStrategy::ContourParallel => "Contour Parallel",
-                ClearingStrategy::Adaptive => "Adaptive",
-                ClearingStrategy::AgentSearch => "Agent Search",
-                ClearingStrategy::ContourSpiral => "Contour Spiral",
+                ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(
@@ -191,28 +173,14 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 );
                 ui.selectable_value(
                     &mut cfg.clearing_strategy,
-                    ClearingStrategy::Adaptive,
-                    "Adaptive",
-                );
-                ui.selectable_value(
-                    &mut cfg.clearing_strategy,
-                    ClearingStrategy::AgentSearch,
-                    "Agent Search",
+                    ClearingStrategy::GeodesicAdaptive,
+                    "Geodesic Adaptive",
                 )
                 .on_hover_text(
-                    "Per-step direction search with preflight skip and widen-band \
-                         recovery. Slow to generate — use when Contour Parallel or \
-                         Adaptive leave uncut bands on difficult geometry.",
-                );
-                ui.selectable_value(
-                    &mut cfg.clearing_strategy,
-                    ClearingStrategy::ContourSpiral,
-                    "Contour Spiral",
-                )
-                .on_hover_text(
-                    "Constructive inside-out spiral per slice: one continuous \
-                         stay-down pass per region with engagement bounded by the \
-                         stepover. Experimental (Stage 1, algorithm review 2026-06-12).",
+                    "Geodesic-wavefront roughing per slice: spiral wraps that hold \
+                         the pass load, with each tight turn fed down to that load. It \
+                         clears the body only; follow it with a Contour Parallel rest \
+                         op for the edges. New, not yet machine-tested.",
                 );
             });
         ui.end_row();
@@ -255,49 +223,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         ui.checkbox(&mut cfg.z_blend, "");
         ui.end_row();
     });
-}
-
-/// Clamp the active tool's radius to a finite, positive value for the
-/// load↔stepover bridge.
-fn sane_tool_radius(tool_radius: f64) -> f64 {
-    if tool_radius.is_finite() && tool_radius > 0.0 {
-        tool_radius
-    } else {
-        FALLBACK_TOOL_RADIUS
-    }
-}
-
-/// "Optimal load" row for the ContourSpiral strategy: the slider derives
-/// `cfg.stepover` from a leading-arc engagement fraction via the
-/// [`target_engagement_fraction`] bridge, so the operator dials the load
-/// the spiral holds rather than a raw stepover. (The trochoidal relief cap
-/// `trochoid_cap_mult` stays at its tuned engine default — it's a
-/// corner-relief mechanism that rarely fires on open roughing, so it's not
-/// surfaced as a knob.)
-fn draw_spiral_load_control(ui: &mut egui::Ui, cfg: &mut Adaptive3dConfig, tool_radius: f64) {
-    let r = sane_tool_radius(tool_radius);
-
-    // Derived live from the raw stepover so existing projects (and the
-    // feeds suggestion that wrote `stepover`) round-trip through the knob.
-    let mut load_pct = (target_engagement_fraction(cfg.stepover, r) * 100.0).clamp(5.0, 45.0);
-    ui.label("Optimal load:").on_hover_text(
-        "Cutter engagement the spiral holds on every steady wrap \
-         (leading-arc fraction of the tool). Sets the stepover for you — \
-         more load = wider step = fewer passes but a heavier cut.",
-    );
-    // IC1: the derived stepover is the slider's own text, not a line below.
-    let stepover = cfg.stepover;
-    if ui
-        .add(
-            egui::Slider::new(&mut load_pct, 5.0..=45.0)
-                .suffix(format!("% \u{2192} {stepover:.2} mm")),
-        )
-        .on_hover_text("The stepover this load sets, in mm, follows the arrow.")
-        .changed()
-    {
-        cfg.stepover = 2.0 * r * radial_woc_fraction_from_leading_arc(load_pct / 100.0);
-    }
-    ui.end_row();
 }
 
 pub(in crate::ui::properties) fn draw_waterline_params(

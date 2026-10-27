@@ -233,8 +233,8 @@ fn setup_rotation_has_a_setter() {
 }
 
 /// Gap 3 — kinematics have a typed write path, not just a GRBL `$$`
-/// paste. Acceleration decides the parallel-vs-spiral verdict, so this
-/// is not cosmetic.
+/// paste. The strategy advisor ranks its candidates at the machine's
+/// acceleration, so this is not cosmetic.
 #[test]
 fn machine_kinematics_have_a_typed_write_path() {
     let facts = tool_facts("set_machine_kinematics");

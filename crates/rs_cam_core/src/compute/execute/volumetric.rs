@@ -93,6 +93,9 @@ pub(crate) struct VolumetricInputs<'a> {
     /// The floor, from [`HeightsPolicy::pinned_bottom`]. `None`: the
     /// surface sets the floor.
     pub z_floor: Option<f64>,
+    /// D50: the top Z of the stock the source op left in this op's
+    /// derived rest regions ([`ExecutionContext::rest_top_z`]).
+    pub rest_top_z: Option<f64>,
     /// The retract plane.
     pub safe_z: f64,
     /// The segment merge tolerance, when the planner owns the merge and
@@ -158,6 +161,7 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
         },
         z_floor: (O::HEIGHTS.pinned_bottom && ctx.heights.bottom_pinned)
             .then_some(ctx.heights.bottom_z),
+        rest_top_z: ctx.rest_top_z,
         safe_z: ctx.heights.retract_z,
         segment_merge_tolerance: if O::OWNS.segment_merge {
             ctx.segment_merge_tolerance
@@ -169,8 +173,17 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
     let VolumetricOutput {
         toolpath,
         annotations,
-        produced,
+        mut produced,
     } = op.plan(&inputs, &cancel, ctx.debug_ctx)?;
+    // D44: a planner may state the regions it left to a rest pass
+    // (`Produced::rest_regions`). They are published only on demand: when
+    // an enabled `DerivedRestRegions` boundary names this op, which turns
+    // its rest analysis on (`normalise_rest_analysis_demand`). With no
+    // demand the side channel is as before.
+    if !ctx.rest_analysis.is_some_and(|ra| ra.enabled) {
+        produced.rest_regions = None;
+        produced.rest_regions_top_z = None;
+    }
     if let Some(sem) = ctx.semantic_ctx {
         op.annotate(&annotations, &toolpath, sem);
     }

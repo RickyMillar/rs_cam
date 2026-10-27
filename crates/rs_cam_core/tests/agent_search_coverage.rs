@@ -1,7 +1,7 @@
 //! O5b regression: AgentSearch (2.5D-slice) interior coverage at every Z level.
 //!
 //! Repro for the "scattered passes" / interior-coverage class of bugs:
-//! the 2D adaptive's agent-search walk inside `clear_z_level_agent_2d_slice`
+//! the 2D adaptive's agent-search walk inside `clear_z_level_slice`
 //! can leave cells uncovered in the interior of the polygon. Deeper z-levels
 //! then bite through full-depth uncleared stock, producing axial DOC up to
 //! the full stock height.
@@ -236,12 +236,15 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
             stock_top_z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -250,7 +253,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
         safe_z: stock_top_z + 5.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     };
 

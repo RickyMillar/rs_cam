@@ -221,12 +221,15 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             stock_top_z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global,
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm: Some(0.0),
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -235,7 +238,8 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         safe_z: stock_top_z + 16.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        // Removal step R4: Geodesic Adaptive (AgentSearch until then).
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     };
 

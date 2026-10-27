@@ -173,6 +173,7 @@ fn make_params(
             stock_top_z: PEAK_Z,
             z_floor: None,
             detect_flat_areas: false,
+            rest_top_z: None,
         },
         linking: Adaptive3dLinking {
             region_ordering: RegionOrdering::Global, // Keep F-038's filter disabled so the two peaks both produce
@@ -180,6 +181,8 @@ fn make_params(
             min_region_cut_length_mm: 0.0,
             max_stay_down_distance_mm,
             stay_down_clearance_mm: 0.5,
+            step_split: None,
+            keep_down_route: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -188,7 +191,7 @@ fn make_params(
         safe_z: PEAK_Z + 5.0,
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
-        clearing_strategy: ClearingStrategy3d::AgentSearch,
+        clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         z_blend: false,
     }
 }

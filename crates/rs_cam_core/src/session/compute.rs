@@ -101,6 +101,10 @@ pub struct ResolvedGenInputs {
     /// `Selection` fill it the same way. `None` for every other
     /// boundary source (or when the boundary is disabled).
     pre_boundary_regions: Option<Vec<crate::polygon::Polygon2>>,
+    /// D50: with an enabled `DerivedRestRegions` boundary, the source op's
+    /// `Produced::rest_regions_top_z`; it reaches the planner through
+    /// `ExecutionContext::rest_top_z`. `None` for every other boundary.
+    rest_top_z: Option<f64>,
     /// The setup's local<->global transform, hoisted off the
     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
     /// `generate_toolpath` needs it and the context is scoped to this
@@ -1382,6 +1386,7 @@ pub fn execute_generation(
             .boundary(inputs.pre_boundary.as_ref())
             .regions(regions.as_ref())
             .centre(boundary_centre.as_deref()),
+        rest_top_z: inputs.rest_top_z,
         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),
@@ -1411,12 +1416,13 @@ pub fn execute_generation(
 /// Clearing strategies the advisor compares for a 3D roughing op — the two
 /// endpoints of the speed/load trade-off: conventional offset clearing
 /// ([`ContourParallel`](ClearingStrategy::ContourParallel)) vs
-/// constant-engagement trochoidal ([`ContourSpiral`](ClearingStrategy::ContourSpiral)).
+/// constant-engagement ([`GeodesicAdaptive`](ClearingStrategy::GeodesicAdaptive);
+/// ContourSpiral until the removal step R2, operator ruling 2026-10-28).
 /// `recommend_clearing_strategy` times both at their load-limited params and
 /// lets machine acceleration decide. Extend by adding variants here.
 const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
     ClearingStrategy::ContourParallel,
-    ClearingStrategy::ContourSpiral,
+    ClearingStrategy::GeodesicAdaptive,
 ];
 
 /// Map a Suggest pass's warnings to the binding [`LoadRegime`] for the
@@ -1474,9 +1480,12 @@ fn regime_from_binding(
         // mostly capped descents as a light cut. On a real path this
         // binding is never dominant (plunges are a small minority of moves),
         // so the arm is close to unreachable.
-        Some(BindingConstraint::DeflectionMax | BindingConstraint::PlungeRate) => {
-            LoadRegime::ToolLimited
-        }
+        // C38 §15: a dominant `FeedCap` is a load rule on the tool.
+        Some(
+            BindingConstraint::DeflectionMax
+            | BindingConstraint::PlungeRate
+            | BindingConstraint::FeedCap,
+        ) => LoadRegime::ToolLimited,
         Some(
             BindingConstraint::PowerMax
             | BindingConstraint::MachineMaxFeed
@@ -2498,6 +2507,10 @@ impl ProjectSession {
                 } = &tc.boundary.source
             {
                 self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?;
+                // D53: the regions are tool-centre positions of the source's
+                // tool (D48); a larger tool on them must not cross the
+                // source's boundary.
+                self.refuse_larger_rest_consumer(index, *source_toolpath_id)?;
             }
             // Selection: the same fail-fast rule. A selection that names
             // a missing model or resolves to no closed region refuses

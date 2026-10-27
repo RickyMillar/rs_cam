@@ -66,6 +66,7 @@ impl SimulationCutTrace {
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
             added_material_slots: Vec::new(),
+            capped_moves: Vec::new(),
         }
     }
 
@@ -269,6 +270,7 @@ impl SimulationCutTrace {
             modulated_feeds: std::collections::BTreeMap::new(),
             modulation_summaries: std::collections::BTreeMap::new(),
             added_material_slots: Vec::new(),
+            capped_moves: Vec::new(),
         }
     }
 

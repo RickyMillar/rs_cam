@@ -2,31 +2,31 @@
 
 ## Files
 
-- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). AgentSearch
-  slice (CUT-09): `detect_and_order_regions`, `clear_one_region` into a
+- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). The slice
+  (`clear_z_level_slice`, CUT-09): `detect_and_order_regions`, `clear_one_region` into a
   `LevelSink` (new per-region work here), `coalesce_level_entries` (check).
 - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
-  facade, `ClearingStrategy3d`; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
+  facade, `ClearingStrategy3d`; `outer_band.rs` the arm's boundary reach and
+  region clip (G-CLIPAIR); `rest_regions.rs` the regions left to a rest op and their top (D44, D48, D50); `keep_down.rs` the ONE 3D keep-down read
+  (`corridor_ceiling_z`, `keep_down_excess`) and the router; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
 
 ## Invariants
 
-- All `ClearingStrategy3d` variants are live (keep the AgentSearch arm). It
-  emits UNTAGGED vertical descents; see `../dressup/CLAUDE.md`.
-- `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D).
-  Entries read floor and proof from the planner stock (`plan_entry`); no
-  link feeds down into stock.
-- `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group.
+- `ClearingStrategy3d` is `ContourParallel` and `GeodesicAdaptive` (removal R1-R6). `GeodesicAdaptive` plans each slice piece with
+  `../adaptive/geodesic`; `FeedCapStart`/`End` markers carry each cap to its cut. The F-038 forecast keeps the 2D agent planner.
+- `trochoid_cap_mult` and `engagement_measure` are load-only: no strategy reads them.
+- `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D). Entries
+  read floor and proof from the planner stock (`plan_entry`); no link feeds down into stock.
+- `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group. `linking.step_split` / `keep_down_route` `None` keep today's rule (`PathShape`, `Off`; the geodesic arm: `StockDepth`, `CutFeed`); a route replaces the travel, never the entry's cut (§16.7); `StockDepth` reads `chip_load_fraction`.
 - The planner stamps the path that ships: it applies the segment merge
   before the stamp and the dressups do not merge again (G-PLANSIMGAP). It
   stamps an entry only when a cut commits it; a replaced entry is never
   stamped, and cuts and links stamp from `PlannerCursor::tool_pos`
   (G-PHANTOMSTAMP). Never delete a segment after it is stamped. Every
   segment passes `centre_clip` before its push (G-BOUNDARYPHANTOM). The RDP rule is ONE function, `Adaptive3dGeometry::chord_tolerance`; the model gouge guard reads it (G-ROUGHGOUGE).
-- A region is in tool-centre space; the 2D planner insets it again and
-  plans one piece, so `planner_outlines` splits it (D2, G-ADAPT3DPIECES).
-- The Z plan is ONE Depth/Pass (`path.rs::step_levels`, plus Detect Flat
-  shelves); every level drapes. No step ladder (operator, 2026-09-24).
+- A region is in tool-centre space; `planner_outlines` splits it into 2D pieces (D2, G-ADAPT3DPIECES). `Produced::rest_regions` are tool-centre too, inside `centre_boundary` (D48); published only on demand. `depth.rest_top_z` caps only the START of the plan, never the floor or one Depth/Pass (D50).
+- ONE Depth/Pass Z plan (`path.rs::step_levels`, plus Detect Flat shelves); every level drapes; no step ladder (operator, 2026-09-24).
 
 ## Sentries: `cargo test -p rs_cam_core -q --features test-support --test <name>`
 
@@ -34,7 +34,7 @@
 `adaptive3d_entry_stock_aware`, `adaptive3d_entry_coalescing_f038`,
 `agent_search_coverage`, `adaptive3d_subtool_channel_gouge`,
 `adaptive3d_global_gate_drapes_below_floor`, `adaptive3d_plan_matches_merged_path_g_plansimgap`,
-`adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`,
-`adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
-`adaptive3d_plans_every_slice_piece_g_adapt3dpieces`; By Area:
-`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`.
+`adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`, `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
+`adaptive3d_plans_every_slice_piece_g_adapt3dpieces`, `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `geodesic_adaptive_holds_the_pass_load_c12` (the judge; `--ignored` heavy, about 9 min); rest regions: `a_rough_publishes_the_regions_it_leaves_d44`,
+`a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `..._starts_at_the_left_stock_top_d50`; By Area:
+`adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.

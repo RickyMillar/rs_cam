@@ -39,12 +39,19 @@
 //!
 //! 1. The fixture is what it says: the cavity insets by R to one piece
 //!    (one region) and by 2R to two pieces (the planner's split).
-//! 2. AgentSearch and ContourSpiral each clear both lobes: no judged cell
-//!    keeps material above the floor plus the leave plus
-//!    `FRESH_MATERIAL_THRESHOLD_MM`. A judged cell is in a lobe and at
-//!    least `R + CELL_MM` from the lobe walls. The band nearer the walls
-//!    is not judged: it stands in both lobes, also with the fix, because
-//!    of the double inset above (a separate finding).
+//! 2. Geodesic Adaptive (AgentSearch and ContourSpiral until removal step
+//!    R2) plans every piece of both lobes. An unplanned piece leaves a
+//!    connected region of stock over the target at least the size of the
+//!    area the tool would clear there, so the claim is: no 4-connected
+//!    region of over-target judged cells (more than one sim cell over the
+//!    floor plus the leave) is larger than one tool disc, `π R²`. Both
+//!    values derive from the tool and the simulation grid. A judged cell is
+//!    in a lobe and at least `R + CELL_MM` from the lobe walls. The band
+//!    nearer the walls is not judged: it stands in both lobes, also with
+//!    the fix, because of the double inset above (a separate finding).
+//!    Removal step R2 (lead ruling 2026-10-28) re-scoped the claim from "no
+//!    cell over `FRESH_MATERIAL_THRESHOLD_MM`": Geodesic Adaptive leaves
+//!    one cell at 0.374 mm in lobe x −1, a sliver and not a piece.
 //! 3. Each arm has no rapid collision: the move from one lobe to the
 //!    other does not rapid through stock.
 //!
@@ -58,6 +65,7 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 #![expect(clippy::print_stderr, reason = "The measured numbers ARE the record.")]
@@ -215,16 +223,13 @@ fn the_cavity_is_one_region_whose_planner_inset_splits() {
     );
 }
 
-/// 2. AgentSearch clears both lobes.
+/// Claim 2 on Geodesic Adaptive. Removal step R2 (2026-10-28): AgentSearch
+/// and ContourSpiral, the two strategies the defect was found on, left the
+/// config; Geodesic Adaptive plans each piece through the same slice
+/// pipeline (`planner_outlines`, `clear_one_region`).
 #[test]
-fn agent_search_clears_both_lobes() {
-    assert_lobes_cleared(ClearingStrategy::AgentSearch);
-}
-
-/// 2. ContourSpiral clears both lobes.
-#[test]
-fn contour_spiral_clears_both_lobes() {
-    assert_lobes_cleared(ClearingStrategy::ContourSpiral);
+fn geodesic_adaptive_clears_both_lobes() {
+    assert_lobes_cleared(ClearingStrategy::GeodesicAdaptive);
 }
 
 fn assert_lobes_cleared(strategy: ClearingStrategy) {
@@ -248,10 +253,12 @@ fn assert_lobes_cleared(strategy: ClearingStrategy) {
     );
     let grid = &stock.z_grid;
     let target = TOP - DEPTH + LEAVE;
+    let piece_mm2 = std::f64::consts::PI * TOOL_R * TOOL_R;
     let mut tally = Vec::new();
     for side in [-1.0, 1.0] {
         let (mut judged, mut standing) = (0_usize, 0_usize);
         let mut worst = f64::NEG_INFINITY;
+        let mut over = vec![false; grid.rows * grid.cols];
         for r in 0..grid.rows {
             for c in 0..grid.cols {
                 let (x, y) = grid.cell_to_world(r, c);
@@ -269,20 +276,94 @@ fn assert_lobes_cleared(strategy: ClearingStrategy) {
                 if above > FRESH_MATERIAL_THRESHOLD_MM {
                     standing += 1;
                 }
+                over[r * grid.cols + c] = above > CELL_MM;
             }
         }
+        let largest_mm2 =
+            largest_component_cells(&over, grid.rows, grid.cols) as f64 * CELL_MM * CELL_MM;
         eprintln!(
             "{strategy:?} lobe x {side:+}: {standing} of {judged} judged cells stand above \
-             the target; worst {worst:.3} mm"
+             the target; worst {worst:.3} mm; largest over-target region {largest_mm2:.2} mm2 \
+             (one tool disc {piece_mm2:.2} mm2)"
         );
-        tally.push((side, judged, standing, worst));
+        tally.push((side, judged, largest_mm2, worst));
     }
-    for (side, judged, standing, worst) in tally {
+    for (side, judged, largest_mm2, worst) in tally {
         assert!(judged > 0, "{strategy:?} lobe x {side:+}: no judged cell");
-        assert_eq!(
-            standing, 0,
-            "{strategy:?} lobe x {side:+}: material stands above the floor plus the leave in \
-             {standing} of {judged} judged cells (worst {worst:.3} mm) — G-ADAPT3DPIECES"
+        assert!(
+            largest_mm2 <= piece_mm2,
+            "{strategy:?} lobe x {side:+}: a connected region of {largest_mm2:.2} mm2 stands \
+             more than one sim cell over the floor plus the leave (worst {worst:.3} mm), larger \
+             than one tool disc {piece_mm2:.2} mm2: an unplanned piece — G-ADAPT3DPIECES"
         );
     }
+}
+
+/// The red of the re-scoped check, on the old numbers: before the D2 fix
+/// the +X lobe kept 555 of its 2209 judged cells (a 47 × 47 block) at
+/// 5.5 mm over the target, the core of the unplanned piece. Planted as one
+/// connected block of 555 cells (15 × 37) on the judged grid, it is
+/// 138.75 mm2, larger than one tool disc: the check fails it. The one cell
+/// Geodesic Adaptive leaves passes.
+#[test]
+fn the_region_check_fails_the_old_unplanned_piece() {
+    const JUDGED_SIDE: usize = 47;
+    let piece_mm2 = std::f64::consts::PI * TOOL_R * TOOL_R;
+    let area = |mask: &[bool]| {
+        largest_component_cells(mask, JUDGED_SIDE, JUDGED_SIDE) as f64 * CELL_MM * CELL_MM
+    };
+    let mut old = vec![false; JUDGED_SIDE * JUDGED_SIDE];
+    for r in 0..15 {
+        for c in 0..37 {
+            old[r * JUDGED_SIDE + c] = true;
+        }
+    }
+    assert_eq!(old.iter().filter(|&&b| b).count(), 555);
+    assert!(
+        area(&old) > piece_mm2,
+        "the old unplanned piece ({:.2} mm2) must fail the check (one tool disc {piece_mm2:.2} mm2)",
+        area(&old)
+    );
+    let mut sliver = vec![false; JUDGED_SIDE * JUDGED_SIDE];
+    sliver[JUDGED_SIDE * 20 + 20] = true;
+    assert!(area(&sliver) <= piece_mm2, "one cell must pass the check");
+}
+
+/// The cell count of the largest 4-connected region of `true` cells of a
+/// `rows × cols` row-major mask.
+fn largest_component_cells(mask: &[bool], rows: usize, cols: usize) -> usize {
+    let mut seen = vec![false; mask.len()];
+    let mut largest = 0;
+    for start in 0..mask.len() {
+        if !mask[start] || seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut stack = vec![start];
+        let mut size = 0;
+        while let Some(i) = stack.pop() {
+            size += 1;
+            let (r, c) = (i / cols, i % cols);
+            let mut push = |j: usize| {
+                if mask[j] && !seen[j] {
+                    seen[j] = true;
+                    stack.push(j);
+                }
+            };
+            if r > 0 {
+                push(i - cols);
+            }
+            if r + 1 < rows {
+                push(i + cols);
+            }
+            if c > 0 {
+                push(i - 1);
+            }
+            if c + 1 < cols {
+                push(i + 1);
+            }
+        }
+        largest = largest.max(size);
+    }
+    largest
 }

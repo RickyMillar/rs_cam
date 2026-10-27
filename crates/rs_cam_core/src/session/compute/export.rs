@@ -85,12 +85,37 @@ impl ProjectSession {
         if !gouge_rows.is_empty() {
             return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
         }
+        // D47 (G-RESTSTALE): the load gate judges the toolpaths the program
+        // emits. An enabled toolpath outside `emitted` (a CLI `--skip`, a
+        // setup the export leaves out) has no result, so the simulation did
+        // not carve it and the program does not cut it. Its row read
+        // `StaleSimulation` and refused the whole export.
+        let emitted_ids: Vec<crate::ids::ToolpathId> = emitted
+            .iter()
+            .filter_map(|idx| self.toolpath_configs.get(*idx))
+            .map(|tc| tc.id)
+            .collect();
+        let report = crate::tool_load::ToolLoadReport {
+            per_toolpath: report
+                .per_toolpath
+                .iter()
+                .filter(|verdict| emitted_ids.contains(&verdict.toolpath_id))
+                .cloned()
+                .collect(),
+        };
         let post_config = &self.post;
         let post = post_config.format.definition();
         let crate::gcode::CheckedProgram {
             mut gcode,
             load_outcome,
-        } = crate::gcode::emit_checked(&phases, post, post_config.safe_z, report, policy, overlay)?;
+        } = crate::gcode::emit_checked(
+            &phases,
+            post,
+            post_config.safe_z,
+            &report,
+            policy,
+            overlay,
+        )?;
 
         let machine_safety = validate_machine_safety(
             &gcode,
