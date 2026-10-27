@@ -45,17 +45,19 @@ Resolved through its chain (`C28_ZIGZAG_PICK` :2389 → `C20_LOCAL_ZIGZAG`
 | arcs | `Zigzag` | `ArcLink` :2127 |
 | chaining | `Whole` | `Chaining` :2075 |
 | ends | `Default` | `ArcEnds` :2149 |
-| pick | `Replay` | `ArcPick` :2170 |
+| pick | `Replay` in R; **`Off` in the product** (Q8, D52) | `ArcPick` :2170 |
 | core | `Spiral` | `CoreJoin` :2196 |
 
-The pick's plan B (`pick_variants`, R :2411) is the same options with
-`ends: HeadOn` and `meeting: Through`. So while the pick ships, `HeadOn`
-and `Through` are live code, not dead values.
+**Q8 is settled (D52, INTEGRATION_PLAN §8):** the replay pick does not
+ship. On the measured jobs it kept plan A in all 9 regions, and the runs are
+deterministic. The product preset is C35 plan A: the table above with the
+pick `Off` and the default ends (`pick_variants(C35_SPIRAL_PICK).0`, R
+:2411). Plan B (`ends: HeadOn`, `meeting: Through`) is not product code.
 
 ### 1.2 What the product keeps and deletes
 
 The product module (§2) holds no options struct. It holds the C35 path as
-plain code, with ONE switch: `pick: bool`, which Q8 decides (§6). The
+plain code, with no switch at all (Q8: no pick). The
 research file keeps `GeodesicOptions` for its own tests only until step
 7.6 deletes it (§5).
 
@@ -70,7 +72,7 @@ Delete (repo rule: delete, not archive):
 | `ArcLink::{Nearest, OneWay}` | their branches in the arc order |
 | `Chaining::TailOnly` | the tail-only branch; `chain_whole` :1660 stays |
 | `CoreJoin::Seam` | the seam core branch; `core_spiral`/`held_core_spiral` :3539–3717 stay |
-| `ArcPick::Off`, `ArcEnds::HeadOn`, `MeetingRule::Through` | only if Q8 says "no pick"; else they stay as plan B |
+| `ArcPick` (whole enum), `ArcEnds::HeadOn`, `MeetingRule::Through`, `pick_variants`, `slice_variants` | Q8 (D52): no pick. The pick score (`pick_score` :4724, `pick_kept` :4753) and the pick's use of `ReplayModel` go; `ReplayModel` (:5728) goes too if no other C35 path reads it (7.3 part c checks) |
 | presets `G1` … `C37_SPIRAL_HEADON` (:2234–2406) | all 25; the C12 judge (R `tests/adaptive3d_geodesic_arm_c12.rs`) runs the product arm instead |
 | `RESEARCH_ARM_ENV` and `research_arm_override` | R `adaptive3d/mod.rs:123`, :128–165, and the `AgentSearch` hijack at :193 |
 | `RESEARCH_ROUTE_ENV`, `RESEARCH_STEP_SPLIT_ENV`, the slab-field env | R `adaptive3d/mod.rs:439–528` |
@@ -84,11 +86,11 @@ minus the deleted options; the move step measures them.
 
 | File | Holds | From (R `adaptive/research_geodesic.rs`) | Est. lines |
 |---|---|---|---|
-| `mod.rs` | the door: `pub(crate) fn plan_piece_c35(region, params, pick, cancel)`; the module doc (the "Derived constants" list, :255–296, cut to the kept rules) | :1–340 (doc), :4976 `planner_cell` | 250 |
+| `mod.rs` | the door: `pub fn plan_piece_c35(region, params, cancel)` (no pick); the module doc (the "Derived constants" list, :255–296, cut to the kept rules) | :1–340 (doc), :4976 `planner_cell` | 250 |
 | `field.rs` | `Lattice` (:357), `Walls`, `Branches`, source tracking (`track_sources` :525, `sweep_sources` :564), `GeodesicField` (:662) with `radius_at`, `star_levels` (:1523) | :343–1600 | 1 100 |
 | `wraps.rs` | chaining (`coincide` :1602, `join_fragments` :1609, `chain_whole` :1660, `Chain` :1767–1924); the meeting line (`collect_chains` :2542, `parents_of` :2575, `meeting_trim` :2601); `ordered_wraps` :2845, `beside_core` :2881, `ordered_wraps_beside_core` :2898; the core spiral (`SpiralCore` :2868, `core_spiral` :3539, `trace_core_spiral` :3585, `held_tilt` :3630, `held_core_spiral` :3670); `EntryLaw` :3124; the spacing law :3251–3300 | as listed | 900 |
-| `arcs.rs` | arc ends and lenses (`end_at_shock` :2453 … `nearest_on` :2511, `climb_oriented` :2653, `right_growth` :2663, `arc_end_lens` :2712, `wall_normal` :2741, `end_lens_at` :2792); zigzag order; the pick score (`pick_score` :4724, `pick_kept` :4753) | as listed | 550 |
-| `plan.rs` | `clearance` :5002, `append_path` :5022, `geodesic_segments` :5062, `plan_piece` :5128–5727, `ReplayModel` :5728–5949 (the pick's replay) | as listed | 1 000 |
+| `arcs.rs` | arc ends and lenses (`end_at_shock` :2453 … `nearest_on` :2511, `climb_oriented` :2653, `right_growth` :2663, `arc_end_lens` :2712, `wall_normal` :2741, `end_lens_at` :2792); zigzag order (no pick score: Q8) | as listed | 500 |
+| `plan.rs` | `clearance` :5002, `append_path` :5022, `geodesic_segments` :5062, `plan_piece` :5128–5727 (`ReplayModel` :5728–5949 only if a C35 path reads it without the pick) | as listed | 800 |
 | `slice.rs` | the 3D-facing door: `SlicePlan` :8194, `CoreZone` :8214, `core_rapids` :8287, `plan_rapids` :8302, `classify_reentries` :8351, `slice_segments` :8381, `slice_variants` :8469, `slice_cleanup` :8485, `slice_replay` :8500, `slice_turn_records` :8527, `TurnKind` :8630, `SliceTurns` :8655, `link_length` :8904, `slice_load_margin` :8943, `split_at_turns` :8971, `HeldLinks` :9059 | :8194–9102 | 850 |
 | `CLAUDE.md` | 40 lines or fewer: file map, the C35 rules, the invariants (§4.6), the sentries | new | ≤40 |
 
@@ -195,7 +197,7 @@ variant is one more value of an existing parameter.
 | Layer | Change (M lines) |
 |---|---|
 | Config enum | `ClearingStrategy` (`compute/operation_configs.rs:136`): add `GeodesicAdaptive` after `ContourSpiral`. Serde `snake_case` gives `geodesic_adaptive`. The `ParamEnum` derive (`rs_cam_derive/src/lib.rs:79`) writes the W5 schema string `enum:…|geodesic_adaptive`; nothing is typed by hand |
-| Planner enum | `ClearingStrategy3d` (`adaptive3d/mod.rs:72`): add `GeodesicAdaptive { pick: bool }` (no `cfg`). `From<ClearingStrategy>` (:102) maps it. `pick` comes from the Q8 ruling, not from the config: the config stays one value |
+| Planner enum | `ClearingStrategy3d` (`adaptive3d/mod.rs:72`): add `GeodesicAdaptive` (no `cfg`, no payload: Q8 removed the pick). `From<ClearingStrategy>` (:102) maps it |
 | Dispatch | `compute/execute/rough_3d.rs:153` needs no change (`.into()`). `adaptive3d/path.rs:469`: the new arm joins `AgentSearch \| ContourSpiral` in `clear_z_level_agent_2d_slice` (`clearing.rs:2922`), with the per-piece generator `adaptive::geodesic::slice` (as R `path.rs:491`, R `clearing.rs:3147`) |
 | Every exhaustive match | the compiler lists them: `machine/strategy_advisor.rs:110` (`is_constant_engagement`: yes), :117 (label "Geodesic Adaptive"); `adaptive3d/clearing.rs` slice matches; `feeds/` readers that test `ContourParallel` (`feeds/suggest/adaptive_entry.rs:74`) |
 | Advisor | `ADVISOR_CANDIDATE_STRATEGIES` (`session/compute.rs:1417`) stays `[CP, ContourSpiral]` in 7.4. Add the variant in a later patch with its own measurement |
@@ -224,10 +226,13 @@ parity" means `adaptive3d_emission_byte_parity` and
 
 | Step | Patch | Gates | Parity proof |
 |---|---|---|---|
-| 7.0 | Q8 measurement (no product code): run C35 with and without the pick on Corne and wanaka200 on R; record load p99, length over bound, cycle (acceleration clock), and the run-to-run spread | the C12 judge on R | none needed (R only) |
+| 7.0 | DONE by D52 (research branch): the pick kept plan A in all 9 regions; the runs are deterministic. Q8: no pick | — | — |
 | 7.1 | Part A: `tool_load::chip_load_fraction` (the one L). Unit tests from R `slab_field.rs:215–275`, the full-pass identity `w/D` | `tool_load/` sentries, clippy | no caller changes output |
 | 7.2 | Parts B + C + D, shared, default off: `StepSplit`, `adaptive3d/keep_down.rs` (`keep_down_excess`, `corridor_ceiling_z` wrapper, `keep_down_route`), `KeepDownRoute` | `adaptive3d/` sentries; planted cases for `keep_down_excess` (one link through stock, one over cut ground) and the router (R `keep_down_route.rs` tests) | every new switch defaults to today's rule; byte parity |
-| 7.3 | The 2D module `adaptive/geodesic/` (§2), copied from R and cut to C35; `research_geodesic.rs` on M replaced by R's test-support part, which calls the new module | `--lib adaptive::geodesic`; the 2D harness controls (R `tests/adaptive_geodesic_2d_renders_g1.rs`) on C35, with C35's R numbers as the pin | no product caller yet; byte parity |
+| 7.3a | The research reference on M: R's `research_geodesic.rs` (607e52730) less `SlabField` and the 3D slice layer; R's `adaptive/path.rs` turn support (`turn_bound`, `LinkLoad::with_turns`/`admits_turn`, `subdivide_each`, the `_turns` cleanups) less `SlabField`; R's `scallop_isofield.rs` (`iso_segments_where`); R's 2D harness; the pin test `the_geodesic_preset_keeps_its_plan_s7_3` (C35 plan A on the star and pocket, checked equal on R and M) | `adaptive/` sentries, research lib tests, the pin test | `turns` empty on every shipped path: byte parity |
+| 7.3b | `adaptive/geodesic/` `field.rs` + `wraps.rs` (+ `mod.rs` door stub), cut to C35 | the pin test reads the product door where it can; field equality against the reference | no product caller; byte parity |
+| 7.3c | `arcs.rs` + `plan.rs` + `slice.rs` (with `replay_after_group_filter`); the door plans C35 plan A | the pin test reads the product door: same pins, bit for bit | no product caller; byte parity |
+| 7.3d | `research_geodesic.rs` cut to test support (readout, cascade, reports, `run_2d`) calling the product; its losing presets and their tests go (7.7 work brought forward, if the lead agrees) | pin test; research lib tests | byte parity |
 | 7.4 | The variant: parts E and G, the `ClearingStrategy` value, the planner enum, the dispatch, the GUI row, the catalog line. Feeds by the match functions (part F not yet) | new golden `tests/fixtures/adaptive3d_emission/geodesic_adaptive.txt`; the C12 judge without `research`; `schema_enum_values_g_schemaenum`; `every_op_states_its_capabilities_w2_4`; `mcp_wire_surface_pin`; the serde round trip; viz `-j 2` filtered to `surface_3d` | byte parity on the four existing strategies: the variant adds output only |
 | 7.5 | Part H producer for the variant (after step 1b lands the channel, §3.1): left pieces with their slab tops, D48 clip, D50 top | R `tests/a_rough_publishes_the_regions_it_leaves_d44.rs`, `a_derived_rest_rough_cuts_only_the_leftovers_d44.rs`, `a_rest_consumer_stays_inside_the_source_boundary_d48.rs`, `a_rest_consumer_starts_at_the_left_stock_top_d50.rs` (when R commits it), ported | byte parity on all strategies; a CP op without a `DerivedRestRegions` consumer publishes nothing |
 | 7.6 | Part F: the factor on `Adaptive3dSegment::Cut`; the emitter writes `feed_cap`; delete `apply_slice_turn_feeds`, `apply_chain_feeds`, `TurnRecord` matching | the step-1 sentry; a new census: every capped cut keeps its cap through every dressup; the arm's golden re-bless (only this op) | byte parity on the four existing strategies (factor 1 → `None`, proved by step 1's `Debug` test) |
@@ -252,9 +257,7 @@ Measurements before 7.4 ships (pre-register in the 7.4 report):
   fraction of the tool's bound. The fraction is the operator's choice; the
   rule then derives the stepover per tool and material. Is that the rule,
   and what is the fraction?
-- **Q8. The pick.** Step 7.0 measures it. Does a win under the run-to-run
-  spread mean "no pick"? Without the pick, `HeadOn`, `Through` and
-  `ReplayModel` are deleted (about 220 lines less).
+- **Q8. The pick.** Settled by D52: no pick (§1.1).
 - **Q-T. The "body + CP edges" template.** Is it one GUI action that adds
   two ops (the arm, then a CP op on `DerivedRestRegions`), or a preset op
   pair in the job file only? Does the CP edge op take the same tool?
