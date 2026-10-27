@@ -1,0 +1,4 @@
+fix36/corne_headon_2/simulation.json res 0.3 ids [1, 5, 3] total 3358.5
+   tp 1 total 1168.6 cut 1057.0 rapid 111.5 air 504.6 vol 217792
+   tp 3 total 1726.2 cut 1271.2 rapid 455.0 air 1003.7 vol 4848
+   tp 5 total 463.7 cut 227.8 rapid 235.9 air 154.8 vol 53977

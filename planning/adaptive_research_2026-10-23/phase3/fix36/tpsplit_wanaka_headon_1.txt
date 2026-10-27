@@ -1,0 +1,3 @@
+fix36/wanaka_headon_1/simulation.json res 0.6 ids [1, 7] total 3185.2
+   tp 1 total 2262.9 cut 2182.2 rapid 80.7 air 874.4 vol 591518
+   tp 7 total 922.3 cut 674.4 rapid 247.9 air 434.7 vol 1820

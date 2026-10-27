@@ -1,0 +1,42 @@
+Act on (2):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+  WARNING: high air cutting on '2 Back Rough (edges, CP rest)' is 47% air-cut of total runtime — Tighten the boundary, lower the stock-top, or pre-rough with a faster op so the finishing pass doesn't traverse uncut material. Negligible for sparse projection ops.
+
+Advisories:
+  385.3s wasted around (177.0, 164.8, 8.0) — engagement 0.19
+  9.3s wasted around (144.9, 202.8, 8.3) — engagement 0.24
+  2.9s wasted around (23.0, 196.7, 16.1) — engagement 0.02
+  2.9s wasted around (47.0, 28.0, 16.1) — engagement 0.01
+  2.7s wasted around (217.2, 155.4, 16.1) — engagement 0.01
+  2.7s wasted around (23.0, 115.3, 16.1) — engagement 0.00
+  2.7s wasted around (22.8, 150.0, 16.1) — engagement 0.03
+  2.7s wasted around (22.8, 88.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 66.0, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 78.0, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 82.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 73.8, 16.1) — engagement 0.01
+  2.7s wasted around (22.8, 61.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 88.2, 16.1) — engagement 0.01
+  2.7s wasted around (23.0, 93.8, 11.2) — engagement 0.01
+  2.7s wasted around (23.0, 99.3, 16.1) — engagement 0.00
+  2.3s wasted around (203.1, 28.0, 16.1) — engagement 0.02
+  2.2s wasted around (209.1, 28.0, 16.1) — engagement 0.03
+  2.1s wasted around (190.1, 28.0, 10.0) — engagement 0.01
+  2.1s wasted around (179.1, 28.0, 16.1) — engagement 0.04
+  ... 932 more not shown
+
+Counts: 185141 samples | 55752 flagged-air + 8503 flagged-low (per SAMPLE) | 19819 issue runs (COALESCED, the legacy "issue_count") | 952 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 12.4188 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+
+=== Project Diagnostics: wanaka200 ===
+Toolpaths: 2  |  Cutting: 86588mm  |  Rapid: 19978mm  |  Time: 3184s
+Air cutting: 41.1% of total runtime  |  Avg engagement: 0.27  |  Peak commanded advance/tooth: 0.104 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 15107 moves, 0 collisions
+      kinematics: 100% of commanded (98% feed-bound → +18% at ×1.30, 2% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #7 2 Back Rough (edges, CP rest) (3D Adaptive) — 2939 moves, 0 collisions
+      kinematics: 100% of commanded (100% feed-bound → +20% at ×1.30, 0% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [!] WARNING: 41.1% air cutting of total runtime
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix36/wanaka_pick_1

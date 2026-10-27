@@ -5722,3 +5722,60 @@ add about 100 mm². No finish op exists on this face to take it or to be overloa
 to about 0.3 mm deeper at the p95 than on CP. s2.0 stays near CP: 3760 mm², p95 0.92.
 
 Simulation files: fix35/wanaka_s2p0 deleted. Not committed.
+
+## D52: integration step 7.0, Q8: does the C28/C29 replay pick earn its place? (fix36, tree 453d52571)
+
+**Q8 verdict: no. The pick kept plan A in all 9 regions on both parts, so a product without the pick (plan A only) gives
+the same toolpath at about half the op-1 plan time. Plan B (the pick's alternative) is 6.7 % slower on Corne.**
+
+**How the arm runs with the pick on and off** (fixture worktree, detached, clean 453d52571):
+- The arm env: `RS_CAM_RESEARCH_ADAPTIVE3D_ARM` (`adaptive3d/mod.rs:123`), read through the AgentSearch hijack
+  (`adaptive3d/mod.rs:193`).
+- Pick ON: `geodesic_local_spiral_pick` → `GeodesicOptions::C35_SPIRAL_PICK` (`adaptive3d/mod.rs:153`;
+  `adaptive/research_geodesic.rs:2395`, `pick: ArcPick::Replay` from `C28_ZIGZAG_PICK` :2389–2391).
+- Pick OFF, plan B on every region: `geodesic_local_spiral_headon` → `C37_SPIRAL_HEADON` (`adaptive3d/mod.rs:157`;
+  `research_geodesic.rs:2402–2407`: `ends: HeadOn`, `meeting: Through`, `pick: Off`). This is plan B of the pick
+  (`pick_variants`, :2413–2424).
+- Pick OFF, plan A on every region: **no env path.** No `RESEARCH_ARM_ENV` value names C35 with `pick: Off` and the
+  default ends and meeting. This is the "no pick" product of step7_design §1.2. I did not edit code.
+- Why plan A can be read from the pick-on run: in 3D the pick is C29 (`adaptive3d/clearing.rs:4288`,
+  `pick_region_plan` :5041). It runs plan A (`RegionScratch::run` with the C35 options and the pick off), then plan B,
+  then keeps B only when B has fewer plunges, or equal plunges and less keep-down length (:5078). Otherwise it keeps A
+  unchanged. In every run below, every "C29 pick (3D score)" line says kept="A". So the pick-on output is the plan-A
+  output, and plan A alone would save plan B's work. That last point is inferred from the code; it was not run.
+
+**Runs** (`fix36/run_arm.sh`, no export override; 0 refusals in all 7; StockDepth split; job files: Corne
+`d44/k_body_cp_edges_s2p1_d44_rest_regions.toml` (s2.1 B), wanaka `fix33/jobs/wanaka200_body_cp_edges_d44_s2p0.toml`
+(s2.0, `--resolution 0.6`). Table: `fix36/q8_table.py` → `q8_table.json`.)
+
+| run | program.nc md5 | L max | L p99 | mm > own bound | op 1 accel s | edge op accel s | op 1 + edge | plunges op 1 / edge (G-code) | op-1 descent events | op-1 plan s | C29 kept |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Corne pick ON #1 | 344b298a63 | 0.999 | 0.493 | 171.6 | 1075.5 | 453.9 | 1529.4 | 612 / 167 | 382 | 14.2 | AAAA |
+| Corne pick ON #2 | 344b298a63 | 0.999 | 0.493 | 171.6 | 1075.5 | 453.9 | 1529.4 | 612 / 167 | 382 | 14.1 | AAAA |
+| Corne pick OFF (B) #1 | b4310b2122 | 0.999 | 0.458 | 143.3 | 1168.6 | 463.7 | 1632.3 | 602 / 216 | 370 | 7.4 | — |
+| Corne pick OFF (B) #2 | b4310b2122 | 0.999 | 0.458 | 143.3 | 1168.6 | 463.7 | 1632.3 | 602 / 216 | 370 | 7.5 | — |
+| wanaka pick ON #1 | b10de2c51a | 0.720 | 0.375 | 107.4 | 2261.9 | 922.3 | 3184.2 | 1262 / 938 | 581 | 26.4 | AAAAA |
+| wanaka pick ON #2 | b10de2c51a | 0.720 | 0.375 | 107.4 | 2261.9 | 922.3 | 3184.2 | 1262 / 938 | 581 | 26.7 | AAAAA |
+| wanaka pick OFF (B) | e7144f7dc8 | 0.720 | 0.375 | 107.4 | 2262.9 | 922.3 | 3185.2 | 1261 / 938 | 581 | 15.6 | — |
+
+Own bound: 0.489 (Corne s2.1), 0.471 (wanaka s2.0). Plan time: the stdout uptime stamps, first to last
+`generate_toolpath{index=0}` line.
+
+**Noise.** The runs are deterministic. Repeats give byte-identical program.nc (Corne ON, Corne OFF, wanaka ON), and so the
+same load and clocks. The run-to-run spread of the output is 0. The plan time varies by 0.1–0.3 s. The pick-on wanaka
+s2.0 run is also identical to D51's fix35 run (3184.2 s).
+
+**Pick ON against plan B (the only pick-off arm with an env path).**
+- Corne: the pick is 102.9 s faster on op 1 + edge op (1529.4 against 1632.3 s, −6.3 %). Plan B has lower load (p99
+  0.458 against 0.493; 143.3 against 171.6 mm over the bound) and 10 fewer op-1 plunges, but 49 more edge-op plunges.
+  Every Corne pick line has plunges_a < plunges_b (2 against 3–5).
+- wanaka: no difference that matters: 1.0 s, 1 plunge; same load. All wanaka pick lines are ties (plunges and keep-down
+  equal), which keep A.
+- The pick costs plan time: 14.1–14.2 against 7.4–7.5 s on Corne (×1.9) and 26.4–26.7 against 15.6 s on wanaka (×1.7).
+
+**Q8.** The pick never chose B on these parts, so it does not win by more than the noise (0) against plan A. It only
+doubles the plan work. Plan B on every region is worse on cycle on Corne (+6.7 %), so a no-pick product must be plan A
+(step7_design §1.2: with no pick, `ArcPick::Off`, `ArcEnds::HeadOn` and `MeetingRule::Through` are deleted). Not measured:
+a plan-A-only run (no env path); parts other than Corne and wanaka200, where B can win.
+
+Simulation files: all 7 deleted. Not committed.
