@@ -5376,3 +5376,22 @@ Plots: `fix30/img/descents_geo_s1p2.png`, `descents_geo_s2p1.png`.
   jobs are slower with it on.
 
 Simulation files deleted. Not committed.
+
+## D42b: an existing job option that limits op 5 to the real leftovers — none found; no run
+
+Searched in the tree at 7b7a8df6c. Options and what each can do for op 5
+(contour_parallel, `from_remaining_stock`, silhouette + 6 mm, centre):
+
+| option | where | can it give "band only" or "real leftovers only"? |
+|---|---|---|
+| `boundary.offset` | `compute/config.rs:759-761` | No. It grows or shrinks the region; at +6 mm the 55 mm² switch holes close, and the case interior stays inside. |
+| `boundary.containment` (Center / Inside / Outside) | `compute/config.rs:636-641`; applied in `geometry/boundary.rs:66-78` | No. `Outside` grows the boundary by R (`boundary.rs:77`, "so the cutter center can reach the edge"); it is not "outside the shape only". |
+| `boundary.source = Selection { selection, holes }` | `compute/config.rs:654-682` | Only with a model that draws the band. `holes = true` gives the holes of the union (`config.rs:673-677`: "An edge-band model then gives the area inside the band"). The project has no band model (a new DXF would be new geometry, not a job option). |
+| `boundary.source = DerivedRestRegions { source_toolpath_id }` | `compute/config.rs:683-692` | No. Its polygons come from the pencil RestDepth detector (`finish/rest_detector.rs:138`); a 3D adaptive op publishes no rest regions. |
+| `boundary.source = PlannedTierRegions` | `compute/config.rs:693-` | No. Multi-tool tier islands (cells the coarse tool cannot hold), not a band. |
+| `min_region_cut_length_mm` (F-038) | `compute/operation_configs.rs:1697-1706`, used in `adaptive3d/clearing.rs:4043-4062` (`clear_one_region`) | No for op 5. The forecast runs in the adaptive / research region path; contour_parallel goes to `clear_z_level_contour_parallel` (`clearing.rs:1753`, dispatched at `adaptive3d/path.rs:448`), whose only gate is the constant `MIN_CELLS_TO_CLEAR` (`clearing.rs:1766-1779`). Op 5 logs no F-038 line. |
+| `stock_to_leave_axial` | the op params | No. It moves the floor, so a higher value leaves more stock in the band; it is not a threshold on what counts as rest. |
+
+No existing option limits op 5 to the 0–9 mm band or to leftovers thicker
+than a threshold, so D42b made no run. The G-CPRAPID row in DEFECTS.md now
+also carries D41's rapid-order evidence.
