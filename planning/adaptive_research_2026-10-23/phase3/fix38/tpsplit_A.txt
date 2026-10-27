@@ -1,0 +1,3 @@
+fix38/A/simulation.json res 0.6 ids [1, 7] total 3125.2
+   tp 1 total 2184.8 cut 2142.1 rapid 42.7 air 851.4 vol 591516
+   tp 7 total 940.4 cut 591.4 rapid 349.0 air 375.8 vol 1805

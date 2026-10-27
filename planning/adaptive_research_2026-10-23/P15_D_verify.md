@@ -5835,3 +5835,62 @@ On Corne, op 1 + op 5 now equals CP's op 1 (−6.0 s). All of the Corne job gap 
 - wanaka s2.0's op 7 is a poor trade: 1036 s for 1805 mm³. Its rapids rose with D50 (+410 G0). The cause is not measured.
 
 Not committed.
+
+## D57: wanaka s2.0 edge op on D55 alone (A) against D55 + D56 WIP (B) (fix38)
+
+**Verdict: D56 does not reduce op 7's entry time (B against A: entry +3.9 s, op 7 +16.1 s). The edge-site rapid floors
+stay at the stock top in both trees, so the stock that holds them is not the frame beyond op 1's reach.**
+
+**Setup.** Fixture worktree, detached at f2724a5bd. A: clean f2724a5bd (D55). B: f2724a5bd +
+`d56/tree_vs_f2724a5bd_WIP.patch` (md5 f76b1910d497e198a631f9c990e37c3b, checked; 26 files modified + 1 new). Job
+`fix33/jobs/wanaka200_body_cp_edges_d44_s2p0.toml`, `--setup 0 --resolution 0.6`, StockDepth split, arm
+geodesic_local_spiral_pick, no override (`fix38/run_ab.sh`; 0 refusals in both). Analysis `fix38/analyse_ab.sh`. The
+worktree was restored to clean f2724a5bd. Both simulation.json deleted.
+
+**1. Op 7** (summary clock, s; G-code: descents = vertical G1, sites = distinct XY)
+
+| | D54 (607e52730) | A: D55 | B: D55 + D56 |
+|---|---|---|---|
+| op 7 total | 1036.4 | 940.4 | 956.5 |
+| entry / rapid / linking / cutting | 536.9 / 396.2 / 87.4 / 15.9 | 488.2 / 349.0 / 87.4 / 15.9 | 492.1 / 361.9 / 86.4 / 16.0 |
+| descent sites / descents | 339 / 916 | 339 / 386 | 342 / 389 |
+| descents per site: median / max | 3 / 5 | 1 / 4 | 1 / 4 |
+| feed-descent length | 4625 mm | 4351 mm | 4386 mm |
+| G0 moves (XY mm) | 1461 (21845) | 912 (21845) | 942 (22683) |
+| removed volume (sim) | 1805 mm³ | 1805 mm³ | 1820 mm³ |
+| band inside 0–9 mm (D47 method) | 3652 mm² | 3650 mm² | 3650 mm² |
+| removed outside op 1's reach | 0 | 0 | 0 |
+| job (op 1 + op 7) | 3298.3 | 3125.2 | 3141.2 |
+
+- D55 (A against D54): the peck ladder is gone (median 1 descent per site, 386 against 916). But the feed-descent length
+  falls only 6 % (4625 → 4351 mm), so entry falls only 48.7 s. Op 1 also changes with D55: 2261.9 → 2184.8 s.
+- D56 (B against A): no gain. Same feed-descent length (+35 mm), entry +3.9 s, rapids +30 G0, op 7 +16.1 s. The band and
+  the volume are unchanged. Nothing is cut outside op 1's reach.
+
+**2. The rapid floor at the edge sites** (`fix38/entry_floor.py`: per feed-descent run in the op-7 trace, the floor = the
+Z of the last rapid sample before it; the stock = the D47 stock map after op 1, 0.5 mm grid; 'edge' = the disc reaches the
+0–3 mm band inside the outline):
+- A: 203 descent sites, 149 at the edge. 126 edge sites start the feed at the stock top + 0.5 (G-code `G0 Z0.500`, then
+  G1 at F541). Floor p50 25.78, against the highest op-1 stock under the disc p50 10.31: 15.46 mm of feed through air per
+  site. The 54 non-edge sites read their own stock: floor = highest stock under the disc + 0.69 (p50).
+- B: 210 sites, 156 at the edge, 131 at the stock top; the same medians (25.78; 10.31).
+- These sites are on the straight left and right edges (A: 60 L, 57 R), centre 2.79–2.80 mm inside the outline. So the
+  disc ends 0.2 mm outside it.
+- Under the disc, the highest op-1 stock is in the inside 0–3 mm band at 145 of 149 edge sites (A), but it stands at about
+  10.3, not at the top. No cell of the disc (0.5 mm grid) is at full height.
+
+**Which stock holds the floor: not the frame beyond the reach.** In B, op 7's planner clears 56063 cells outside op 1's
+reach ("D56: cleared cells outside the source op's reach cells=56063", index=1). In A, op 7 clears only the mesh-footprint
+border ("Cleared border cells outside mesh footprint cells=401"). The frame cells are gone in B, but the edge floors do not
+move (126 → 131 sites at the top). So the full-height stock that the sliver-safe read sees is inside op 1's reach. The
+only place left is the cell row at the outline, between op 7's disc edge and op 1's reach line. Op 1's tool centres stop at
+x 23.01 / 216.99, so its disc reaches the outline to 0.01 mm, and a planner cell that straddles the outline keeps a
+full-height sliver. This agrees with C24's §16-band reading (d56/README.md). The planner's own stock values for that row
+are not logged. The 0.5 mm stock map cannot resolve a 0.01 mm sliver, so this last step is an inference, not a measurement.
+
+**For the lead.** D55 stays; D56 does not earn its place on wanaka. The edge sites' air feed (126 × about 15.5 mm, about
+1.95 m at F541, about 216 s) is held by a sliver at the outline inside op 1's reach. Two ways out (C24 README options 2–3):
+- the edge op's regions or reach could include that band;
+- the sliver-safe read could ignore a sliver narrower than a set width.
+
+Not committed.

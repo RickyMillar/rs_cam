@@ -1,0 +1,10 @@
+fix38/B/program.nc G0 942, XY 22683 mm, median 0.0 mm, crossing the part 67 (13047 mm)
+   z     0.5: G1   155 cut       97 mm  plunges    5  G0   15 (     16 mm)
+   z   -14.9: G1   196 cut        8 mm  plunges   72  G0  406 (  11672 mm)
+   z   -16.5: G1    20 cut       25 mm  plunges    6  G0   11 (    324 mm)
+   z   -16.6: G1    33 cut       42 mm  plunges    6  G0   20 (    556 mm)
+   z   -16.7: G1    21 cut       29 mm  plunges   12  G0   45 (    828 mm)
+   z   -16.8: G1    18 cut       27 mm  plunges   10  G0   25 (    681 mm)
+   z   -16.9: G1    19 cut       32 mm  plunges   15  G0   55 (    941 mm)
+   z   -17.3: G1    17 cut       19 mm  plunges    6  G0   40 (    769 mm)
+   levels with a cut: 58; z of cut moves, rounded 0.1: min -17.4 max 0.5
