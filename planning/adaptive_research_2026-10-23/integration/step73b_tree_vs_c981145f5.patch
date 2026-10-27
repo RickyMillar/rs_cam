@@ -1,0 +1,2182 @@
+diff --git a/crates/rs_cam_core/src/adaptive/CLAUDE.md b/crates/rs_cam_core/src/adaptive/CLAUDE.md
+index 6588bf924..5d9ea5baa 100644
+--- a/crates/rs_cam_core/src/adaptive/CLAUDE.md
++++ b/crates/rs_cam_core/src/adaptive/CLAUDE.md
+@@ -4,10 +4,10 @@
+ 
+ - `mod.rs` entry `adaptive_toolpath`, parameters, piece split; `path.rs` orchestrator, capped walker,
+   frontier hop, mop, links, emission; `spiral.rs` contour spiral; `search.rs` step measures, `PassLoad`,
+-  `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points.
+-- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs` (candidate (a),
+-  geodesic wavefront; the research branch's file at 607e52730, less SlabField and the 3D slice layer);
+-  its render harness is `tests/adaptive_geodesic_2d_renders_g1.rs`; C35 plan A pins: `the_geodesic_preset_keeps_its_plan_s7_3`.
++  `ToolCentreRegion`, direction search, entries; `material_grid.rs` 2D stock grid, fringe points;
++  `geodesic/` Geodesic Adaptive, the 2D plan (its own `CLAUDE.md`).
++- Research (`--features research,test-support`, `-- --ignored`): `research_geodesic.rs` (candidate (a), the research
++  branch's file at 607e52730 less SlabField and the 3D slice); render harness `tests/adaptive_geodesic_2d_renders_g1.rs`.
+ 
+ ## Invariants
+ 
+@@ -30,7 +30,7 @@
+   `a_clearing_cut_holds_the_pass_load_g_adaptpassload`, `a_link_feeds_only_within_the_pass_load_g_adaptlinkload`,
+   `a_rapid_leaves_cut_depth_straight_up_g_adaptrapidlift`, `adaptive_keeps_its_planner_order_g_adaptorder`,
+   `adaptive_property_harness`, `contour_spiral_gcode_validity_phase0`, `adaptive3d_emission_byte_parity`,
+-  `adaptive_plans_every_inset_piece_g_adaptpieces`. Research: `--features research --lib adaptive::research_geodesic`.
++  `adaptive_plans_every_inset_piece_g_adaptpieces`. Research: `--features research --lib adaptive::research_geodesic`. Geodesic: `geodesic/CLAUDE.md`.
+ 
+ ## Do not
+ 
+diff --git a/crates/rs_cam_core/src/adaptive/mod.rs b/crates/rs_cam_core/src/adaptive/mod.rs
+index 4790479fd..bb8a72895 100644
+--- a/crates/rs_cam_core/src/adaptive/mod.rs
++++ b/crates/rs_cam_core/src/adaptive/mod.rs
+@@ -14,10 +14,13 @@
+ //!
+ //! Reference: research/02_algorithms.md §5
+ 
+-mod material_grid;
+-pub(crate) mod path;
+ /// Research candidate (a) of the adaptive research 2026-10-23: the
+ /// geodesic-wavefront field for 2D clearing. No product path calls it.
++/// Geodesic Adaptive: the 2D plan of the geodesic-wavefront clearing
++/// (integration step 7.3). The 3D variant (step 7.4) is its first caller.
++pub mod geodesic;
++mod material_grid;
++pub(crate) mod path;
+ #[cfg(feature = "research")]
+ pub mod research_geodesic;
+ mod search;
+diff --git a/crates/rs_cam_core/tests/the_geodesic_preset_keeps_its_plan_s7_3.rs b/crates/rs_cam_core/tests/the_geodesic_preset_keeps_its_plan_s7_3.rs
+index c9b5d70c5..b75c610dc 100644
+--- a/crates/rs_cam_core/tests/the_geodesic_preset_keeps_its_plan_s7_3.rs
++++ b/crates/rs_cam_core/tests/the_geodesic_preset_keeps_its_plan_s7_3.rs
+@@ -17,9 +17,13 @@
+ //! plan. The pins were checked on both trees: the research branch at
+ //! 607e52730 and this branch give the same numbers.
+ //!
+-//! The product module `adaptive::geodesic` (step 7.3 parts b and c) must give
+-//! the same plan, bit for bit. A pin that moves is a port defect: report it,
+-//! do not re-pin.
++//! The product door `adaptive::geodesic::geodesic_toolpath` (step 7.3b) must
++//! give the same plan, bit for bit, less one research instrument: `run_2d`
++//! lowers the feed of each planned turn's moves from its own readout
++//! (`apply_turn_feeds`), which the door does not (the feed factor on the cut
++//! replaces it, design part F). That instrument changes only the feed of
++//! linear moves, so the door's plan is compared with the feed values left
++//! out. A pin that moves is a port defect: report it, do not re-pin.
+ 
+ #![expect(
+     clippy::expect_used,
+@@ -29,6 +33,7 @@
+ mod common;
+ 
+ use common::fingerprint::fnv1a_debug;
++use rs_cam_core::adaptive::geodesic::geodesic_toolpath;
+ use rs_cam_core::adaptive::research_geodesic::{Candidate2d, GeodesicOptions, run_2d};
+ use rs_cam_core::adaptive::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
+ use rs_cam_core::compute::catalog::OperationType;
+@@ -108,6 +113,17 @@ fn plan_fingerprint(tp: &Toolpath) -> (usize, u64) {
+     (tp.moves.len(), fnv1a_debug(&fields))
+ }
+ 
++/// [`plan_fingerprint`] with every feed value set to 0: the plan's
++/// geometry, move kinds and intents.
++fn shape_fingerprint(tp: &Toolpath) -> (usize, u64) {
++    let fields: Vec<_> = tp
++        .moves
++        .iter()
++        .map(|m| (m.target, m.move_type.with_feed_rate(0.0), m.intent))
++        .collect();
++    (tp.moves.len(), fnv1a_debug(&fields))
++}
++
+ /// The reference plan of the product preset on each harness shape:
+ /// `(shape, fixture, (moves, hash))`.
+ const PINS: &[(&str, &str, (usize, u64))] = &[
+@@ -135,3 +151,20 @@ fn the_research_reference_of_the_product_preset_is_pinned() {
+         );
+     }
+ }
++
++/// The product door plans what the research reference plans, move by move,
++/// with the feed values left out (module doc).
++#[test]
++fn the_product_door_plans_the_reference() {
++    for &(shape, project, _) in PINS {
++        let (outline, tool) = fixture(project);
++        let params = params(&tool);
++        let reference = run_2d(&outline, &params, Candidate2d::Geodesic(PRESET)).toolpath;
++        let product = geodesic_toolpath(&outline, &params, &|| false).expect("no cancel");
++        assert_eq!(
++            shape_fingerprint(&product),
++            shape_fingerprint(&reference),
++            "{shape}: the product door does not plan the reference"
++        );
++    }
++}
+diff --git a/crates/rs_cam_core/src/adaptive/geodesic/CLAUDE.md b/crates/rs_cam_core/src/adaptive/geodesic/CLAUDE.md
+new file mode 100644
+index 000000000..bee12722e
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive/geodesic/CLAUDE.md
+@@ -0,0 +1,36 @@
++# `adaptive/geodesic/` — Geodesic Adaptive, the 2D plan
++
++The research's candidate (a) with the one preset that ships: C35 plan A
++(INTEGRATION_PLAN Q8, D52). Design:
++`planning/adaptive_research_2026-10-23/integration/step7_design.md`.
++
++## Files
++
++- `mod.rs` the rules (module doc) and the one door, `geodesic_toolpath`.
++- `field.rs` the field `T`: source-tracked solve, front branches,
++  local-level spacing, the level sets chained whole.
++- `wraps.rs` the chains, the meeting-line trim, the cutting order, the core
++  spiral and its spacing law.
++- `plan.rs` one piece: starter pocket, field, core spiral, wraps, planned
++  turns (`plan_piece`), and the 2D cleanup (`cleaned`).
++
++## Invariants
++
++- No options: the module plans C35 plan A only. A variant is research
++  work (`../research_geodesic.rs`, `research` feature), not a switch here.
++- Every item but the door is private to the module. Code the door does not
++  reach does not exist here (no `dead_code` expects).
++- The plan holds the 2D pass load through the shared cleanup
++  (`../path.rs`); the only exemption is a planned turn no longer than
++  `turn_bound`, admitted by `LinkLoad::admits_turn`.
++- No typed constant: each rule names its derivation (module doc, "Derived
++  constants").
++- The plan equals the research reference move by move (feeds aside); a
++  moved pin is a defect, never a re-pin.
++
++## Sentries
++
++- `cargo test -p rs_cam_core -q --features research,test-support --test the_geodesic_preset_keeps_its_plan_s7_3`
++  (the reference pins on the star and the pocket, and the door against the
++  reference).
++- The 2D engine's sentries in `../CLAUDE.md` (the cleanup is shared).
+diff --git a/crates/rs_cam_core/src/adaptive/geodesic/field.rs b/crates/rs_cam_core/src/adaptive/geodesic/field.rs
+new file mode 100644
+index 000000000..cf334f46c
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive/geodesic/field.rs
+@@ -0,0 +1,951 @@
++//! The geodesic field `T` on the planner lattice: the source-tracked solve
++//! ([`track_sources`]), its front branches ([`Branches`]), the local-level
++//! spacing of its levels ([`GeodesicField::use_level_spacing`]), and the
++//! level sets as chained polylines ([`chain_whole`]). The module doc of
++//! `adaptive::geodesic` states the rules.
++
++use std::collections::HashMap;
++
++use crate::finish::scallop_isofield::{IsoScallopField, iso_segments_where};
++use crate::geo::{P2, point_to_segment_distance};
++use crate::geometry::marching_squares::{CHAIN_EPS, CHAIN_QUANTIZE_SCALE};
++use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
++
++use crate::adaptive::path::pass_step_len;
++use crate::adaptive::search::ToolCentreRegion;
++
++use super::wraps::{is_closed, law_spacing};
++use crate::adaptive::MaterialGrid;
++
++// ── The field ──────────────────────────────────────────────────────────
++
++/// The lattice the field is solved on: node `(row, col)` stands at
++/// `(origin_x + col · cell, origin_y + row · cell)`, the convention of
++/// `MaterialGrid`.
++#[derive(Debug, Clone, Copy)]
++pub(super) struct Lattice {
++    pub(super) rows: usize,
++    pub(super) cols: usize,
++    pub(super) origin_x: f64,
++    pub(super) origin_y: f64,
++    pub(super) cell: f64,
++}
++
++impl Lattice {
++    pub(super) fn of_grid(grid: &MaterialGrid) -> Self {
++        Self {
++            rows: grid.rows,
++            cols: grid.cols,
++            origin_x: grid.origin_x,
++            origin_y: grid.origin_y,
++            cell: grid.cell_size,
++        }
++    }
++
++    pub(super) fn node(&self, index: usize) -> P2 {
++        let (row, col) = (index / self.cols, index % self.cols);
++        P2::new(
++            self.origin_x + col as f64 * self.cell,
++            self.origin_y + row as f64 * self.cell,
++        )
++    }
++}
++
++/// The straight path of a node to the seed disc starts at `at`, where the
++/// distance is `t_mm` (the seed centre, `-R`; or a bend node). `branch`
++/// names the side of each wall the path went round ([`Branches`]).
++#[derive(Debug, Clone, Copy)]
++pub(super) struct Pivot {
++    pub(super) at: P2,
++    pub(super) t_mm: f64,
++    pub(super) branch: u32,
++}
++
++/// The branches of the front (G1-2). Branch 0 is every node the seed centre
++/// sees. A path that bends round a wall ring on one side starts a new
++/// branch, keyed by (parent branch, ring, left turn); further bends round
++/// the same ring on the same side stay in it. Two neighbouring nodes in
++/// different branches lie on the two sides of a meeting line (a shock: the
++/// fronts that went round the two sides of an island meet there).
++#[derive(Debug, Default)]
++pub(super) struct Branches {
++    pub(super) keys: Vec<(u32, usize, bool)>,
++}
++
++impl Branches {
++    pub(super) fn key(&self, id: u32) -> Option<(u32, usize, bool)> {
++        let index = (id as usize).checked_sub(1)?;
++        self.keys.get(index).copied()
++    }
++
++    pub(super) fn bend(&mut self, parent: u32, ring: usize, left: bool) -> u32 {
++        if self
++            .key(parent)
++            .is_some_and(|(_, r, l)| r == ring && l == left)
++        {
++            return parent;
++        }
++        let key = (parent, ring, left);
++        let index = match self.keys.iter().position(|&k| k == key) {
++            Some(i) => i,
++            None => {
++                self.keys.push(key);
++                self.keys.len() - 1
++            }
++        };
++        (index + 1) as u32
++    }
++}
++
++/// The walls a straight path must not cross: the exact tool-centre region,
++/// the planner's own test (`ToolCentreRegion::contains_segment`).
++pub(super) struct Walls<'a> {
++    pub(super) region: &'a ToolCentreRegion,
++}
++
++impl Walls<'_> {
++    pub(super) fn visible(&self, a: P2, b: P2) -> bool {
++        self.region.contains_segment(a, b)
++    }
++
++    /// The index of the ring (exterior or hole, over every piece) nearest
++    /// `p`.
++    pub(super) fn ring_near(&self, p: P2) -> usize {
++        let mut best = (f64::INFINITY, 0usize);
++        let rings = self
++            .region
++            .pieces()
++            .iter()
++            .flat_map(|piece| std::iter::once(&piece.exterior).chain(piece.holes.iter()));
++        for (index, ring) in rings.enumerate() {
++            let n = ring.len();
++            for k in 0..n {
++                let (Some(a), Some(b)) = (ring.get(k), ring.get((k + 1) % n)) else {
++                    continue;
++                };
++                let d = point_to_segment_distance(&p, a, b);
++                if d < best.0 {
++                    best = (d, index);
++                }
++            }
++        }
++        best.1
++    }
++}
++
++/// The eight lattice neighbours.
++pub(super) const NEIGHBOURS: [(isize, isize); 8] = [
++    (-1, -1),
++    (-1, 0),
++    (-1, 1),
++    (0, -1),
++    (0, 1),
++    (1, -1),
++    (1, 0),
++    (1, 1),
++];
++
++/// The source-tracked solve of the field on `lattice`. `t_mm` holds the seeded
++/// distances (mm) and `INFINITY` elsewhere; `fixed` marks the seed nodes,
++/// whose pivot is the seed centre. Gauss-Seidel sweeps in the four orders
++/// of `fast_sweep`. A node takes, from each neighbour, the neighbour's
++/// pivot when the pivot sees the node (the exact distance from it), else
++/// the neighbour itself as a new bend pivot (when it sees the node). A
++/// value only falls, and the candidates are finite, so the sweep ends; the
++/// round cap is the lattice's `rows + cols`, the longest 4-connected
++/// lattice path, since a round moves the front at least one node. Returns
++/// the branch of each node, the parent of each branch (index = branch id)
++/// the pivot of each node (the seed centre, or the bend node its straight
++/// path starts from; the seed for a node never reached), true when a
++/// round changed nothing, and the branch table.
++pub(super) fn track_sources(
++    lattice: &Lattice,
++    inside: &[bool],
++    fixed: &[bool],
++    t_mm: &mut [f64],
++    seed: P2,
++    seed_radius: f64,
++    walls: &Walls<'_>,
++) -> (Vec<u32>, Vec<u32>, Vec<P2>, bool, Branches) {
++    let pivots: Vec<Option<Pivot>> = fixed
++        .iter()
++        .map(|&f| {
++            f.then_some(Pivot {
++                at: seed,
++                t_mm: -seed_radius,
++                branch: 0,
++            })
++        })
++        .collect();
++    sweep_sources(
++        lattice,
++        inside,
++        fixed,
++        t_mm,
++        pivots,
++        Branches::default(),
++        seed,
++        walls,
++    )
++}
++
++/// The sweep of [`track_sources`] from the pivots `pivots` (one per fixed
++/// node) and the branch table `branches`; `unreached` is the pivot of a
++/// node the sweep never reaches.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one solve"
++)]
++pub(super) fn sweep_sources(
++    lattice: &Lattice,
++    inside: &[bool],
++    fixed: &[bool],
++    t_mm: &mut [f64],
++    mut pivots: Vec<Option<Pivot>>,
++    mut branches: Branches,
++    unreached: P2,
++    walls: &Walls<'_>,
++) -> (Vec<u32>, Vec<u32>, Vec<P2>, bool, Branches) {
++    let (rows, cols) = (lattice.rows, lattice.cols);
++    let dist = |a: P2, b: P2| (a.x - b.x).hypot(a.y - b.y);
++    let orders = [(true, true), (true, false), (false, true), (false, false)];
++    let mut converged = false;
++    for _round in 0..rows + cols {
++        let mut changed = false;
++        for &(row_up, col_up) in &orders {
++            for ri in 0..rows {
++                let row = if row_up { ri } else { rows - 1 - ri };
++                for ci in 0..cols {
++                    let col = if col_up { ci } else { cols - 1 - ci };
++                    let i = row * cols + col;
++                    if !inside.get(i).copied().unwrap_or(false)
++                        || fixed.get(i).copied().unwrap_or(true)
++                    {
++                        continue;
++                    }
++                    let x = lattice.node(i);
++                    let mut best = t_mm.get(i).copied().unwrap_or(f64::INFINITY);
++                    let mut best_pivot: Option<Pivot> = None;
++                    for (dr, dc) in NEIGHBOURS {
++                        let (Some(nr), Some(nc)) =
++                            (row.checked_add_signed(dr), col.checked_add_signed(dc))
++                        else {
++                            continue;
++                        };
++                        if nr >= rows || nc >= cols {
++                            continue;
++                        }
++                        let j = nr * cols + nc;
++                        let Some(Some(pivot)) = pivots.get(j).copied() else {
++                            continue;
++                        };
++                        let via = pivot.t_mm + dist(x, pivot.at);
++                        if via < best && walls.visible(pivot.at, x) {
++                            best = via;
++                            best_pivot = Some(pivot);
++                            continue;
++                        }
++                        let n = lattice.node(j);
++                        let t_n = t_mm.get(j).copied().unwrap_or(f64::INFINITY);
++                        let bend = t_n + dist(x, n);
++                        if bend < best && walls.visible(n, x) {
++                            // The turn at `n` from the pivot's leg to `x`.
++                            let turn =
++                                (n.x - pivot.at.x) * (x.y - n.y) - (n.y - pivot.at.y) * (x.x - n.x);
++                            let branch = if turn == 0.0 {
++                                pivot.branch
++                            } else {
++                                branches.bend(pivot.branch, walls.ring_near(n), turn > 0.0)
++                            };
++                            best = bend;
++                            best_pivot = Some(Pivot {
++                                at: n,
++                                t_mm: t_n,
++                                branch,
++                            });
++                        }
++                    }
++                    if let (Some(pivot), Some(t), Some(slot)) =
++                        (best_pivot, t_mm.get_mut(i), pivots.get_mut(i))
++                    {
++                        *t = best;
++                        *slot = Some(pivot);
++                        changed = true;
++                    }
++                }
++            }
++        }
++        if !changed {
++            converged = true;
++            break;
++        }
++    }
++    let branch = pivots.iter().map(|p| p.map_or(0, |p| p.branch)).collect();
++    let at = pivots
++        .iter()
++        .map(|p| p.map_or(unreached, |p| p.at))
++        .collect();
++    // The parent of each branch: 0 for the root and its children.
++    let parent = std::iter::once(0)
++        .chain(branches.keys.iter().map(|&(parent, _, _)| parent))
++        .collect();
++    (branch, parent, at, converged, branches)
++}
++
++/// The geodesic distance from an entry disc over a region whose holes and
++/// outside are unreachable, in stepovers.
++pub(super) struct GeodesicField {
++    /// The solved field. `passes` holds `T / stepover`, negative inside the
++    /// seed disc and `INFINITY` at an unreachable node; `ring_count` is the
++    /// number of wraps, `⌊max T / stepover⌋`.
++    pub(super) field: IsoScallopField,
++    pub(super) inside: Vec<bool>,
++    /// The front branch of each node ([`Branches`]).
++    pub(super) branch: Vec<u32>,
++    /// The parent of each front branch (index = branch id; the root's is 0).
++    pub(super) branch_parent: Vec<u32>,
++    pub(super) stepover: f64,
++    /// The value of `T` (stepovers) of each level, `levels[0] = 0` (the
++    /// starter rim), up to the largest `T` of the field: `0, 1, 2, ...`
++    /// from the solve, then the local-level spacing
++    /// ([`Self::use_level_spacing`]): closer levels while the front is
++    /// tightly curved.
++    pub(super) levels: Vec<f64>,
++    /// The largest finite `T` (stepovers).
++    pub(super) max_t: f64,
++}
++
++impl GeodesicField {
++    pub(super) fn on_lattice(
++        lattice: Lattice,
++        inside: Vec<bool>,
++        seed: P2,
++        seed_radius: f64,
++        stepover: f64,
++        walls: &Walls<'_>,
++    ) -> Option<Self> {
++        let n = lattice.rows * lattice.cols;
++        let mut t_mm = vec![f64::INFINITY; n];
++        let mut fixed = vec![false; n];
++        // The seed: every reachable node within one cell of the disc holds
++        // its exact signed distance from the disc rim and is fixed.
++        let mut seeded = false;
++        for (i, ((t, f), &reach)) in t_mm
++            .iter_mut()
++            .zip(fixed.iter_mut())
++            .zip(&inside)
++            .enumerate()
++        {
++            if !reach {
++                continue;
++            }
++            let p = lattice.node(i);
++            let d = (p.x - seed.x).hypot(p.y - seed.y);
++            if d <= seed_radius + lattice.cell {
++                *t = d - seed_radius;
++                *f = true;
++                seeded = true;
++            }
++        }
++        if !seeded {
++            return None;
++        }
++        let speed: Vec<f64> = inside
++            .iter()
++            .map(|&reach| if reach { stepover } else { f64::NAN })
++            .collect();
++        let (branch, branch_parent, _, _, _) = track_sources(
++            &lattice,
++            &inside,
++            &fixed,
++            &mut t_mm,
++            seed,
++            seed_radius,
++            walls,
++        );
++        let passes: Vec<f64> = t_mm.iter().map(|t| t / stepover).collect();
++        let max_pass = passes
++            .iter()
++            .copied()
++            .filter(|v| v.is_finite())
++            .fold(0.0_f64, f64::max);
++        let field = IsoScallopField {
++            rows: lattice.rows,
++            cols: lattice.cols,
++            origin_x: lattice.origin_x,
++            origin_y: lattice.origin_y,
++            cell: lattice.cell,
++            stepover_mm: speed,
++            passes,
++            ring_count: max_pass.floor() as usize,
++        };
++        let levels = (0..=field.ring_count).map(|k| k as f64).collect();
++        Some(Self {
++            field,
++            inside,
++            branch,
++            branch_parent,
++            stepover,
++            levels,
++            max_t: max_pass,
++        })
++    }
++
++    /// The local-level spacing (research C16): space the levels of `T` by the law at
++    /// each level's own curvature. Level `k` is ONE value `T_k`, so the
++    /// levels stay parallel level sets of the one field. From `T_{k-1}`, the step `ΔT` (stepovers) is the
++    /// largest for which every point `p` of the trial level set
++    /// `T = T_{k-1} + ΔT` lies within `min(s, s'(ρ(p)))` of the cut
++    /// ([`Self::level_gap`]), with `ρ(p)` the level set's own signed radius
++    /// at `p` over one pass step ([`Self::front_radius`]).
++    ///
++    /// - The gap: `T` is a distance, so a point of the trial level lies
++    ///   `ΔT·s` along its shortest path from the level before, and its
++    ///   straight distance to that level is at most `ΔT·s`. The test
++    ///   `ΔT·s ≤ min_p min(s, s'(ρ(p)))` is therefore the rule read on the
++    ///   path length, never an under-read of the gap.
++    /// - `s'(ρ)` is read at the trial (outer) level, the root form of
++    ///   the law (`ρ_k = -(R - cD) + √((R - cD)² + (ρ_{k-1} + R)² - R²)`):
++    ///   on a disc about the seed `ρ = R + T`.
++    /// - The bisection: `ΔT = 1` when it holds; else halve `[0, 1]` until
++    ///   the bracket is at most the op `tolerance` (mm), the precision the
++    ///   plan is held to (the rule of [`Self::radius_at`]), and take the
++    ///   lower end, the side that holds the rule. The test is not monotone
++    ///   in `ΔT` in general (`ρ` changes with the level), so the bisection
++    ///   finds one value at which it holds within the tolerance of one at
++    ///   which it fails.
++    /// - The walk ends when the next level passes the largest `T`, as
++    ///   field ends; or, as a guard, when no step above the
++    ///   bisection's first bracket holds (a radius under about one pass
++    ///   step's half, which the three-point reading cannot return).
++    pub(super) fn use_level_spacing(
++        &mut self,
++        tool_radius: f64,
++        ceiling_width: f64,
++        tolerance: f64,
++        cancel: &dyn CancelCheck,
++    ) -> Result<(), Cancelled> {
++        let s = self.stepover;
++        let span = pass_step_len(self.field.cell);
++        let fits =
++            |t: f64, dt: f64| dt * s <= self.level_gap(t + dt, tool_radius, ceiling_width, span);
++        let mut levels = vec![0.0];
++        let mut t = 0.0_f64;
++        loop {
++            check_cancel(cancel)?;
++            let mut dt = 1.0_f64;
++            if !fits(t, dt) {
++                let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
++                while (hi - lo) * s > tolerance {
++                    let mid = 0.5 * (lo + hi);
++                    if fits(t, mid) {
++                        lo = mid;
++                    } else {
++                        hi = mid;
++                    }
++                }
++                dt = lo;
++            }
++            if dt <= 0.0 || t + dt > self.max_t {
++                break;
++            }
++            t += dt;
++            levels.push(t);
++        }
++        self.levels = levels;
++        Ok(())
++    }
++
++    /// C35 ([`held_core_spiral`]): the turn values of `T` (stepovers) of a
++    /// core spiral from the rim (`T = 0`) to level `k`, by the walk of
++    /// [`Self::use_level_spacing`] at the width `ceiling_width`. The walk
++    /// ends on level `k` itself: a step that would pass it stops on it.
++    /// `None` when a step holds nothing above the bisection's first
++    /// bracket (the guard of [`Self::use_level_spacing`]).
++    pub(super) fn spiral_turn_levels(
++        &self,
++        k: usize,
++        tool_radius: f64,
++        ceiling_width: f64,
++        tolerance: f64,
++        cancel: &dyn CancelCheck,
++    ) -> Result<Option<Vec<f64>>, Cancelled> {
++        let s = self.stepover;
++        let end = self.level_value(k);
++        let span = pass_step_len(self.field.cell);
++        let fits =
++            |t: f64, dt: f64| dt * s <= self.level_gap(t + dt, tool_radius, ceiling_width, span);
++        let mut levels = vec![0.0];
++        let mut t = 0.0_f64;
++        while t < end {
++            check_cancel(cancel)?;
++            let mut dt = (end - t).min(1.0);
++            if !fits(t, dt) {
++                let (mut lo, mut hi) = (0.0_f64, dt);
++                while (hi - lo) * s > tolerance {
++                    let mid = 0.5 * (lo + hi);
++                    if fits(t, mid) {
++                        lo = mid;
++                    } else {
++                        hi = mid;
++                    }
++                }
++                dt = lo;
++            }
++            if dt <= 0.0 {
++                return Ok(None);
++            }
++            t = if t + dt >= end { end } else { t + dt };
++            levels.push(t);
++        }
++        Ok(Some(levels))
++    }
++
++    /// C16: the least law spacing (mm) over the level set `T = t`: at each
++    /// vertex of each piece, `min(s, s'(ρ))` ([`law_spacing`]) with `ρ` the
++    /// piece's signed radius there over `span` of arc length each side
++    /// ([`Self::front_radius`]). A vertex with less than `span` of the
++    /// piece on one side (an arc end at a wall or at a meeting line) gives
++    /// no reading; its neighbours `span` in read the piece. `INFINITY` when
++    /// no vertex reads (no level set, or every piece shorter than `2·span`).
++    pub(super) fn level_gap(&self, t: f64, tool_radius: f64, ceiling_width: f64, span: f64) -> f64 {
++        let cell = self.field.cell;
++        let mut least = f64::INFINITY;
++        for mut pts in self.chains_at(t) {
++            let closed = is_closed(&pts, cell);
++            if closed && let Some(&first) = pts.first() {
++                pts.push(first);
++            }
++            let mut cum = Vec::with_capacity(pts.len());
++            let mut run = 0.0_f64;
++            let mut prev: Option<P2> = None;
++            for &p in &pts {
++                if let Some(q) = prev {
++                    run += (p.x - q.x).hypot(p.y - q.y);
++                }
++                cum.push(run);
++                prev = Some(p);
++            }
++            if run < 2.0 * span {
++                continue;
++            }
++            let at = |u: f64| {
++                let u = if closed { u.rem_euclid(run) } else { u };
++                point_at_length(&pts, &cum, u)
++            };
++            for (&p, &u) in pts.iter().zip(&cum) {
++                if !closed && (u < span || u > run - span) {
++                    continue;
++                }
++                let (Some(a), Some(b)) = (at(u - span), at(u + span)) else {
++                    continue;
++                };
++                let rho = self.front_radius(a, p, b);
++                let gap = if rho.is_finite() {
++                    law_spacing(tool_radius, self.stepover, ceiling_width, rho)
++                } else {
++                    self.stepover
++                };
++                least = least.min(gap);
++            }
++        }
++        least
++    }
++
++    /// C16: the signed radius (mm) of the circle through `a`, `p` and `b`
++    /// (three points of one level set): its radius when its centre lies on
++    /// the cleared side of `p` (lower `T`, a convex front); `INFINITY` when
++    /// the three are collinear or the centre lies on the stock side (a
++    /// concave or straight piece takes the stepover, C15 "The level rule").
++    /// The side is read from `T` one cell from `p` toward the centre and
++    /// one cell away from it; where either sample is off the reachable
++    /// cells, the piece is taken as convex (the smaller spacing).
++    pub(super) fn front_radius(&self, a: P2, p: P2, b: P2) -> f64 {
++        let d = 2.0 * (a.x * (p.y - b.y) + p.x * (b.y - a.y) + b.x * (a.y - p.y));
++        let (sa, sp, sb) = (
++            a.x * a.x + a.y * a.y,
++            p.x * p.x + p.y * p.y,
++            b.x * b.x + b.y * b.y,
++        );
++        let ux = (sa * (p.y - b.y) + sp * (b.y - a.y) + sb * (a.y - p.y)) / d;
++        let uy = (sa * (b.x - p.x) + sp * (a.x - b.x) + sb * (p.x - a.x)) / d;
++        let rho = (ux - p.x).hypot(uy - p.y);
++        if !rho.is_finite() || rho <= 0.0 {
++            return f64::INFINITY;
++        }
++        let h = self.field.cell;
++        let (nx, ny) = ((ux - p.x) / rho, (uy - p.y) / rho);
++        match (
++            self.sample(P2::new(p.x + h * nx, p.y + h * ny)),
++            self.sample(P2::new(p.x - h * nx, p.y - h * ny)),
++        ) {
++            (Some(toward), Some(away)) if toward >= away => f64::INFINITY,
++            _ => rho,
++        }
++    }
++
++    /// The value of `T` (stepovers) of level `k`; past the last level, the
++    /// last value plus one stepover per level.
++    pub(super) fn level_value(&self, k: usize) -> f64 {
++        match self.levels.get(k) {
++            Some(&v) => v,
++            None => {
++                let last = self.levels.last().copied().unwrap_or(0.0);
++                last + (k + 1 - self.levels.len().max(1)) as f64
++            }
++        }
++    }
++
++    /// The number of wraps: the levels above the rim (`⌊max T / s⌋` under
++    /// plain spacing).
++    #[must_use]
++    pub(super) fn level_count(&self) -> usize {
++        self.levels.len().saturating_sub(1)
++    }
++
++    /// The lattice cell (mm).
++    #[must_use]
++    pub(super) fn cell(&self) -> f64 {
++        self.field.cell
++    }
++
++    pub(super) fn reachable(&self, row: usize, col: usize) -> bool {
++        self.inside.get(row * self.field.cols + col).copied() == Some(true)
++    }
++
++    /// True when the four corners of the cell at `(row, col)` are reachable.
++    pub(super) fn cell_reachable(&self, row: usize, col: usize) -> bool {
++        self.reachable(row, col)
++            && self.reachable(row, col + 1)
++            && self.reachable(row + 1, col)
++            && self.reachable(row + 1, col + 1)
++    }
++
++    /// True when the corners of the cell at `(row, col)` lie in more than one
++    /// front branch: the cell holds a meeting line.
++    pub(super) fn cell_on_shock(&self, row: usize, col: usize) -> bool {
++        let cols = self.field.cols;
++        let at = |r: usize, c: usize| self.branch.get(r * cols + c).copied().unwrap_or(0);
++        let corners = [
++            at(row, col),
++            at(row, col + 1),
++            at(row + 1, col),
++            at(row + 1, col + 1),
++        ];
++        corners
++            .iter()
++            .enumerate()
++            .any(|(k, &a)| corners.iter().skip(k + 1).any(|&b| !self.related(a, b)))
++    }
++
++    /// True when front branch `a` is `b`, or one is an ancestor of the
++    /// other. Two such branches meet on a shadow line, where a path starts
++    /// to bend round a wall and the field stays smooth: not a meeting line
++    /// (C3: the C2 rule cut every wrap there too). Two unrelated branches
++    /// went round a wall on different sides and meet on a shock.
++    pub(super) fn related(&self, a: u32, b: u32) -> bool {
++        self.is_ancestor(a, b) || self.is_ancestor(b, a)
++    }
++
++    /// True when `a` is `b` or lies on the parent chain of `b`.
++    pub(super) fn is_ancestor(&self, a: u32, b: u32) -> bool {
++        let mut at = b;
++        // A parent chain is at most one link per branch long.
++        for _ in 0..=self.branch_parent.len() {
++            if at == a {
++                return true;
++            }
++            if at == 0 {
++                return false;
++            }
++            at = self.branch_parent.get(at as usize).copied().unwrap_or(0);
++        }
++        false
++    }
++
++    /// The level set `T = level` stepovers, over the cells whose four
++    /// corners are reachable, with the fragments of each open arc joined.
++    /// The cells on a meeting line are left out too, so a wrap ends at the meeting line instead of turning through
++    /// its kink.
++    pub(super) fn level_chains(&self, level: usize) -> Vec<Vec<P2>> {
++        self.chains_at(self.level_value(level))
++    }
++
++    /// [`Self::level_chains`] at the value `t` (stepovers), chained whole
++    /// ([`chain_whole`]).
++    pub(super) fn chains_at(&self, t: f64) -> Vec<Vec<P2>> {
++        let kept =
++            |row: usize, col: usize| self.cell_reachable(row, col) && !self.cell_on_shock(row, col);
++        chain_whole(&iso_segments_where(&self.field, t, &kept))
++    }
++
++    /// `T` (stepovers) at `p`, bilinear over the cell that holds `p`, the
++    /// interpolation the level sets use. `None` unless the four corners of
++    /// the cell are reachable and solved.
++    pub(super) fn sample(&self, p: P2) -> Option<f64> {
++        let f = &self.field;
++        let x = (p.x - f.origin_x) / f.cell;
++        let y = (p.y - f.origin_y) / f.cell;
++        if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
++            return None;
++        }
++        let (col, row) = (x.floor() as usize, y.floor() as usize);
++        if col + 1 >= f.cols || row + 1 >= f.rows || !self.cell_reachable(row, col) {
++            return None;
++        }
++        let at = |r: usize, c: usize| {
++            f.passes
++                .get(r * f.cols + c)
++                .copied()
++                .filter(|t| t.is_finite())
++        };
++        let (v00, v01) = (at(row, col)?, at(row, col + 1)?);
++        let (v10, v11) = (at(row + 1, col)?, at(row + 1, col + 1)?);
++        let (tx, ty) = (x - col as f64, y - row as f64);
++        Some(
++            v00 * (1.0 - tx) * (1.0 - ty)
++                + v01 * tx * (1.0 - ty)
++                + v10 * (1.0 - tx) * ty
++                + v11 * tx * ty,
++        )
++    }
++
++    /// The sample spacing along a ray: half a cell, so every cell that a
++    /// ray crosses for more than half a cell holds a sample.
++    pub(super) fn ray_step(&self) -> f64 {
++        self.field.cell / 2.0
++    }
++
++    /// The length of the longest ray: the lattice diagonal.
++    pub(super) fn ray_length(&self) -> f64 {
++        let f = &self.field;
++        (f.rows as f64).hypot(f.cols as f64) * f.cell
++    }
++
++    /// `T` along the ray from `seed` at angle `phi`, from radius `r0` to
++    /// the lattice edge, at [`Self::ray_step`].
++    pub(super) fn ray(&self, seed: P2, phi: f64, r0: f64) -> Vec<Option<f64>> {
++        let h = self.ray_step();
++        let n = ((self.ray_length() - r0).max(0.0) / h).ceil() as usize;
++        let (c, s) = (phi.cos(), phi.sin());
++        (0..=n)
++            .map(|i| {
++                let r = r0 + i as f64 * h;
++                self.sample(P2::new(seed.x + r * c, seed.y + r * s))
++            })
++            .collect()
++    }
++
++    /// True when the ray samples `ray` cross the level set `T = level`
++    /// exactly once, and that crossing comes before the ray first leaves
++    /// the reachable cells (so the level set is closed round the seed on
++    /// this ray). A crossing is a pair of consecutive reachable samples on
++    /// the two sides of `level`.
++    pub(super) fn ray_crosses_once(ray: &[Option<f64>], level: f64) -> bool {
++        let mut crossings = 0usize;
++        let mut first_before_exit = false;
++        let mut left = false;
++        for w in ray.windows(2) {
++            let &[a, b] = w else {
++                continue;
++            };
++            let (Some(a), Some(b)) = (a, b) else {
++                left = true;
++                continue;
++            };
++            if (a < level) != (b < level) {
++                crossings += 1;
++                if crossings == 1 && !left {
++                    first_before_exit = true;
++                }
++            }
++        }
++        crossings == 1 && first_before_exit
++    }
++
++    /// The number of rays of the star-shape test: the arc between two rays
++    /// at the longest ray is at most one cell, so no reachable cell lies
++    /// between two rays unseen.
++    pub(super) fn star_rays(&self) -> usize {
++        ((std::f64::consts::TAU * self.ray_length() / self.field.cell).ceil() as usize).max(3)
++    }
++
++    /// The core zone (C4): the largest `k` such that each level set
++    /// `T = 1, ..., k` is star-shaped about `seed` and closed round it:
++    /// each of [`Self::star_rays`] rays from the seed disc rim (radius
++    /// `r0`) crosses it exactly once, before the ray leaves the reachable
++    /// cells. A level set behind an island fails: the rays toward the
++    /// island leave the region before they cross it.
++    pub(super) fn star_levels(&self, seed: P2, r0: f64) -> usize {
++        let n = self.star_rays();
++        let rays: Vec<Vec<Option<f64>>> = (0..n)
++            .map(|i| self.ray(seed, std::f64::consts::TAU * i as f64 / n as f64, r0))
++            .collect();
++        let mut k = 0usize;
++        while k < self.level_count()
++            && rays
++                .iter()
++                .all(|ray| Self::ray_crosses_once(ray, self.level_value(k + 1)))
++        {
++            k += 1;
++        }
++        k
++    }
++
++    /// The radius on the ray from `seed` at angle `phi` where `T` first
++    /// reaches `t` (stepovers), walked out from `r0` at [`Self::ray_step`]
++    /// and bisected to `tolerance`. `r0` when `T(r0) ≥ t`. `None` when the
++    /// ray leaves the reachable cells first.
++    pub(super) fn radius_at(
++        &self,
++        seed: P2,
++        phi: f64,
++        r0: f64,
++        t: f64,
++        tolerance: f64,
++    ) -> Option<f64> {
++        let (c, s) = (phi.cos(), phi.sin());
++        let at = |r: f64| self.sample(P2::new(seed.x + r * c, seed.y + r * s));
++        if at(r0).is_some_and(|v| v >= t) {
++            return Some(r0);
++        }
++        let h = self.ray_step();
++        let n = ((self.ray_length() - r0).max(0.0) / h).ceil() as usize;
++        let mut lo = r0;
++        for i in 1..=n {
++            let hi = r0 + i as f64 * h;
++            let v = at(hi)?;
++            if v >= t {
++                let (mut lo, mut hi) = (lo, hi);
++                while hi - lo > tolerance {
++                    let mid = 0.5 * (lo + hi);
++                    // The float halving has reached its resolution.
++                    if mid <= lo || mid >= hi {
++                        break;
++                    }
++                    if at(mid)? >= t {
++                        hi = mid;
++                    } else {
++                        lo = mid;
++                    }
++                }
++                return Some(hi);
++            }
++            lo = hi;
++        }
++        None
++    }
++}
++
++/// True when `a` and `b` are the same chaining point.
++pub(super) fn coincide(a: P2, b: P2) -> bool {
++    (a.x - b.x).hypot(a.y - b.y) <= CHAIN_EPS
++}
++
++/// The whole chaining (research C16): chain the contour segments of one level
++/// (`iso_segments_where`) into polylines. Each chain grows at its tail and
++/// then at its head, and a chain of one segment is kept; a loop closes
++/// without its closing point (the `chain_segments` form). Endpoints match
++/// within `CHAIN_EPS`, looked up on the quantized grid of `chain_segments`
++/// (`CHAIN_QUANTIZE_SCALE`, the 3 x 3 neighbour keys).
++///
++/// The reason (C16 diagnosis): `chain_segments` grows each chain at its
++/// tail only and drops a chain of fewer than three points. An open arc
++/// whose cells the row-major scan meets against the arc's direction (a
++/// level set falling to the right in world XY, one cell per row where it
++/// is steep) is cut into pieces of two segments, and the one segment
++/// between two pieces is a chain of two points: dropped. A fragment join
++/// cannot bridge the hole it leaves. On the star the arm whose arcs fall
++/// to the right (the arm to (5, 35)) came out in pieces of about 1 mm.
++pub(super) fn chain_whole(segments: &[(P2, P2)]) -> Vec<Vec<P2>> {
++    let key = |p: P2| {
++        (
++            (p.x * CHAIN_QUANTIZE_SCALE).round() as i64,
++            (p.y * CHAIN_QUANTIZE_SCALE).round() as i64,
++        )
++    };
++    let mut index: HashMap<(i64, i64), Vec<usize>> = HashMap::with_capacity(2 * segments.len());
++    for (i, &(a, b)) in segments.iter().enumerate() {
++        index.entry(key(a)).or_default().push(i);
++        index.entry(key(b)).or_default().push(i);
++    }
++    // The unused segment with an end at `p`, and its other end.
++    let next = |p: P2, used: &[bool]| -> Option<(usize, P2)> {
++        let (kx, ky) = key(p);
++        for dx in -1..=1 {
++            for dy in -1..=1 {
++                for &i in index.get(&(kx + dx, ky + dy)).into_iter().flatten() {
++                    if used.get(i).copied() != Some(false) {
++                        continue;
++                    }
++                    let Some(&(a, b)) = segments.get(i) else {
++                        continue;
++                    };
++                    if coincide(a, p) {
++                        return Some((i, b));
++                    }
++                    if coincide(b, p) {
++                        return Some((i, a));
++                    }
++                }
++            }
++        }
++        None
++    };
++    let mut used = vec![false; segments.len()];
++    let mut out = Vec::new();
++    for (start, &(a, b)) in segments.iter().enumerate() {
++        if used.get(start).copied() != Some(false) {
++            continue;
++        }
++        if let Some(u) = used.get_mut(start) {
++            *u = true;
++        }
++        let mut chain = vec![a, b];
++        let mut closed = false;
++        while let Some(&tail) = chain.last() {
++            let Some((i, q)) = next(tail, &used) else {
++                break;
++            };
++            if let Some(u) = used.get_mut(i) {
++                *u = true;
++            }
++            if coincide(q, a) {
++                closed = true;
++                break;
++            }
++            chain.push(q);
++        }
++        if !closed {
++            let mut head: Vec<P2> = Vec::new();
++            let mut end = a;
++            while let Some((i, q)) = next(end, &used) {
++                if let Some(u) = used.get_mut(i) {
++                    *u = true;
++                }
++                head.push(q);
++                end = q;
++            }
++            if !head.is_empty() {
++                head.reverse();
++                head.extend(chain);
++                chain = head;
++            }
++        }
++        out.push(chain);
++    }
++    out
++}
++
++/// The point at arc length `u` along `pts`, whose cumulative lengths are
++/// `cum`; `None` off the polyline.
++pub(super) fn point_at_length(pts: &[P2], cum: &[f64], u: f64) -> Option<P2> {
++    let total = *cum.last()?;
++    if !(0.0..=total).contains(&u) {
++        return None;
++    }
++    let k = cum.partition_point(|&c| c < u).max(1);
++    let (a, b, ca, cb) = (pts.get(k - 1)?, pts.get(k)?, cum.get(k - 1)?, cum.get(k)?);
++    let t = if cb > ca { (u - ca) / (cb - ca) } else { 0.0 };
++    Some(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)))
++}
+diff --git a/crates/rs_cam_core/src/adaptive/geodesic/mod.rs b/crates/rs_cam_core/src/adaptive/geodesic/mod.rs
+new file mode 100644
+index 000000000..98f789d63
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive/geodesic/mod.rs
+@@ -0,0 +1,144 @@
++//! Geodesic Adaptive: 2D adaptive clearing on a geodesic wavefront
++//! (`planning/adaptive_research_2026-10-23/integration/step7_design.md`).
++//!
++//! The research's candidate (a) with the one preset that ships, C35 plan A
++//! (INTEGRATION_PLAN Q8, D52: no replay pick, the default arc ends). The
++//! research module (`research_geodesic.rs`, `research` feature) keeps the
++//! options, the readouts and the 2D harness; this module holds no options.
++//!
++//! The one door is [`geodesic_toolpath`]. The 3D Rough variant (integration
++//! step 7.4) is its first product caller; until then only the sentry
++//! `the_geodesic_preset_keeps_its_plan_s7_3` calls it.
++//!
++//! # The plan of one piece (`plan.rs`)
++//!
++//! 1. The helical starter pocket at the entry (`path.rs`,
++//!    `emit_helical_starter_pocket`). Its last lap, radius `R` about the
++//!    plunge point, is the seed disc.
++//! 2. The field `T` (`field.rs`): the geodesic distance from the seed disc
++//!    inside the tool-centre region, islands and outside unreachable, solved
++//!    by source tracking.
++//! 3. The levels of `T`, spaced by the local-level law (`field.rs`).
++//! 4. The core spiral (`wraps.rs`): the closed, star-shaped levels round the
++//!    seed are cut as one spiral and a closing lap.
++//! 5. The wraps (`wraps.rs`): the other level sets, in cutting order, each
++//!    trimmed at its meeting-line ends.
++//! 6. The joins: each open arc that follows an open arc is joined from the
++//!    cutter (zigzag) by a planned clearing turn, when the turn is no longer
++//!    than `turn_bound` (`s + (1 + √2)·cell`) and stays in the region.
++//! 7. The 2D adaptive cleanup (`path.rs`) replays every cut under the pass
++//!    load and admits the planned turns (`LinkLoad::admits_turn`).
++//!
++//! # The field
++//!
++//! `T(x)` is the geodesic distance from the seed disc to `x`. The front goes
++//! round an island and grows into each lobe from the cleared side; the EDT
++//! of the contour spiral (`spiral.rs`) measures the distance to the wall
++//! instead. Source tracking: each node keeps the point its straight path to
++//! the seed starts from (the seed centre, or the lattice node where the path
++//! bends round a wall), and reads its distance exactly from there with the
++//! planner's straight-move test (`ToolCentreRegion::contains_segment`). The
++//! error is zero where the seed centre sees the node; behind a wall it is an
++//! over-read of at most one cell diagonal, never an under-read. `T` is held
++//! in stepovers. The lattice is the planner's (`planner_cell_size`); a node
++//! is reachable when it is in the machinable mask and inside the exact
++//! tool-centre region.
++//!
++//! # The meeting line
++//!
++//! Behind an island the fronts that went round its two sides meet on a line
++//! (a shock), and each level set has a kink there. Source tracking names the
++//! front branch of each node, so the meeting line is the cells whose corners
++//! lie in two branches. The rule: the front continues from one side only.
++//! A level set is cut at the meeting line; the branch cut first runs to the
++//! line, the other ends one stepover short of it. The trimmed piece lies
++//! within `√2·s` of the first branch's last cutter centre, inside its disc
++//! when `s ≤ R / √2`.
++//!
++//! # The spacing law
++//!
++//! A pass at cutter-centre radius `ρ` round a cleared disc meets more stock
++//! than its spacing, because the stock wraps round the cutter. The last pass
++//! at `ρ - s'` cleared the disc of radius `a = ρ - s' + R`; the swept width
++//! across the heading is `w = R - (a² - R² - ρ²) / (2ρ)`. Setting `w = c·D`
++//! (the pass ceiling) gives `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))`,
++//! capped at the stepover; it reaches `s` at `ρ* = s(2R - s) / (2(c·D - s))`.
++//! Only `R`, `s` and the ceiling enter. The local-level spacing keeps ONE
++//! value of `T` per level, so the levels stay parallel: each step is the
++//! largest for which every point of the new level lies within
++//! `min(s, s'(ρ))` of the cut, `ρ` the level set's own three-point radius
++//! over one pass step (`GeodesicField::use_level_spacing`).
++//!
++//! # Derived constants
++//!
++//! - `reach = s + (1 + √2)·cell`: one level spacing, plus the field error
++//!   (at most one cell), plus one cell diagonal (the longest contour segment
++//!   in one cell). The planned turn bound is the same sum (`turn_bound`).
++//! - A chain is closed when its ends are at most one cell diagonal apart;
++//!   fragment ends join within `CHAIN_EPS` (`geometry::marching_squares`).
++//! - The pass step is the planner's, `3·cell` (`pass_step_len`).
++//! - The core spiral's angle step keeps each chord within the op tolerance
++//!   of its arc, and holds its heading tilt to the tolerance (`held_tilt`).
++//! - The meeting-line trim is one stepover.
++//! - The local-level bisection stops at a bracket of the op tolerance.
++//!
++//! # Known limits
++//!
++//! - A meeting of two fronts that a wall does not split (a lobe junction
++//!   with no island) is one branch and is not trimmed.
++//! - Source tracking stops after `rows + cols` rounds (the longest lattice
++//!   path).
++
++use crate::interrupt::{CancelCheck, Cancelled};
++use crate::polygon::Polygon2;
++use crate::toolpath::Toolpath;
++
++use super::path::segments_to_toolpath;
++use super::search::ToolCentreRegion;
++use super::{AdaptiveParams, KeepDownLinks, PathStrategy2d};
++
++mod field;
++mod plan;
++mod wraps;
++
++use plan::{cleaned, params_with, plan_piece};
++
++/// The Geodesic Adaptive toolpath of `outline` with `params`: each inset
++/// piece (`inset_piece_outlines`, as the 2D adapter splits it) planned by
++/// [`plan_piece`], cleaned by the 2D adaptive cleanup with its planned turns
++/// ([`cleaned`]), and emitted. A piece where the field does not apply (no
++/// starter pocket fits, or no node is seeded) is not planned.
++///
++/// The params' path strategy is set to `PathStrategy2d::Agent`, so the
++/// contour spiral's corner blend does not apply. The planned turns keep the
++/// commanded feed: the feed factor of a turn is the 3D variant's work
++/// (step 7.4, design part F).
++///
++/// # Errors
++///
++/// [`Cancelled`] when `cancel` fires.
++pub fn geodesic_toolpath(
++    outline: &Polygon2,
++    params: &AdaptiveParams,
++    cancel: &dyn CancelCheck,
++) -> Result<Toolpath, Cancelled> {
++    let params = params_with(params, PathStrategy2d::Agent);
++    let pieces = super::inset_piece_outlines(outline, params.tool_radius);
++    let pieces = if pieces.is_empty() {
++        vec![outline.clone()]
++    } else {
++        pieces
++    };
++    let mut out = Toolpath::new();
++    for piece in &pieces {
++        let Some(plan) = plan_piece(piece, &params, cancel)? else {
++            continue;
++        };
++        let segments = cleaned(piece, &params, plan.segments, &plan.turns);
++        let region = (params.keep_down_links == KeepDownLinks::WithinPassLoad)
++            .then(|| ToolCentreRegion::new(piece, params.tool_radius));
++        let (tp, _) = segments_to_toolpath(&segments, &params, region.as_ref());
++        out.moves.extend(tp.moves);
++    }
++    Ok(out)
++}
+diff --git a/crates/rs_cam_core/src/adaptive/geodesic/plan.rs b/crates/rs_cam_core/src/adaptive/geodesic/plan.rs
+new file mode 100644
+index 000000000..3a09f111f
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive/geodesic/plan.rs
+@@ -0,0 +1,280 @@
++//! The plan of one piece ([`plan_piece`]): the piece set-up on the planner
++//! lattice, the starter pocket, the field, the core spiral, the wraps and
++//! the planned turns; and the 2D adaptive cleanup it goes through
++//! ([`cleaned`]).
++
++use std::f64::consts::SQRT_2;
++
++use crate::geo::P2;
++use crate::geometry::marching_squares::CHAIN_EPS;
++use crate::interrupt::{CancelCheck, Cancelled};
++use crate::polygon::{Polygon2, offset_polygon};
++
++use crate::adaptive::path::{
++    AdaptiveSegment, LinkLoad, apply_contour_parallel_residue_cleanup_turns,
++    apply_residue_mop_cleanup_turns, emit_helical_starter_pocket, pass_load_for, planner_cell_size,
++    turn_bound,
++};
++use crate::adaptive::search::{PassLoadMeasure, ToolCentreRegion};
++
++use super::field::{GeodesicField, Lattice, Walls};
++use super::wraps::{SpiralCore, held_core_spiral, ordered_wraps_beside_core};
++use crate::adaptive::{
++    AdaptiveParams, AdaptiveRuntimeEvent, CleanupStrategy, KeepDownLinks, MaterialGrid,
++    PathStrategy2d,
++};
++
++// ── The producer ───────────────────────────────────────────────────────
++
++/// The planner input every producer of one piece shares.
++pub(super) struct PieceSetup {
++    pub(super) grid: MaterialGrid,
++    pub(super) mask: Vec<bool>,
++    pub(super) link_load: LinkLoad,
++}
++
++impl PieceSetup {
++    /// The set-up of `adaptive_segments_with_debug` (`path.rs`) for
++    /// `polygon`: the material grid, its fringe, the machinable mask and the
++    /// link load. `None` when the inset by the tool radius is empty.
++    pub(super) fn new(polygon: &Polygon2, params: &AdaptiveParams, cell: f64) -> Option<Self> {
++        let machinable = offset_polygon(polygon, params.tool_radius)
++            .into_iter()
++            .next()?;
++        let mut grid = MaterialGrid::from_polygon(polygon, cell);
++        if params.keep_down_links == KeepDownLinks::WithinPassLoad {
++            grid.keep_fringe(polygon);
++        }
++        if let Some(mask) = &params.standing_material {
++            grid.seed_from_material_mask(mask);
++        }
++        let mask = MaterialGrid::build_machinable_mask(
++            &machinable,
++            grid.origin_x,
++            grid.origin_y,
++            grid.rows,
++            grid.cols,
++            grid.cell_size,
++        );
++        let link_load = LinkLoad::new(params, &grid, polygon);
++        Some(Self {
++            grid,
++            mask,
++            link_load,
++        })
++    }
++}
++
++/// The planner cell of `params` (`path.rs`, [`planner_cell_size`], the one
++/// source of the planner lattice).
++pub(super) fn planner_cell(params: &AdaptiveParams) -> f64 {
++    planner_cell_size(params.tool_radius, params.tolerance)
++}
++
++/// The plan of one piece.
++pub(super) struct Produced {
++    /// The starter pocket, then the core spiral and the wraps, before the
++    /// cleanup.
++    pub(super) segments: Vec<AdaptiveSegment>,
++    /// The planned clearing turns, each a straight step no longer than
++    /// [`turn_bound`].
++    pub(super) turns: Vec<(P2, P2)>,
++}
++
++/// Append `path` to the cutting run `run` from the cutter position `cur`:
++/// a gap no longer than `reach` is a cutting step inside the `Cut` (the
++/// spiral's seam step); a longer one is a keep-down `Link`, which the
++/// replay admits under the pass load or turns into a re-entry.
++pub(super) fn append_path(
++    path: &[P2],
++    run: &mut Vec<P2>,
++    cur: &mut P2,
++    segments: &mut Vec<AdaptiveSegment>,
++    reach: f64,
++) {
++    let Some(&start) = path.first() else {
++        return;
++    };
++    let gap = (start.x - cur.x).hypot(start.y - cur.y);
++    if gap <= reach {
++        if gap > CHAIN_EPS {
++            run.push(start);
++        }
++        run.extend(path.iter().skip(1).copied());
++    } else {
++        if run.len() >= 2 {
++            segments.push(AdaptiveSegment::Cut(std::mem::take(run)));
++        }
++        segments.push(AdaptiveSegment::Link(start));
++        *run = path.to_vec();
++    }
++    if let Some(&end) = run.last() {
++        *cur = end;
++    }
++}
++
++/// The plan of C35 plan A on one piece: the starter pocket, the core
++/// spiral, then the wraps beside the core, each open arc joined to the next
++/// by a planned clearing turn where the turn fits.
++pub(super) fn plan_piece(
++    polygon: &Polygon2,
++    params: &AdaptiveParams,
++    cancel: &dyn CancelCheck,
++) -> Result<Option<Produced>, Cancelled> {
++    let r = params.tool_radius;
++    let s = params.stepover;
++    let cell = planner_cell(params);
++    let Some(mut setup) = PieceSetup::new(polygon, params, cell) else {
++        return Ok(None);
++    };
++    let boundary_distances = setup.grid.compute_boundary_distances();
++    let holds = params.keep_down_links == KeepDownLinks::WithinPassLoad;
++    let pass = pass_load_for(params, cell);
++    let Some((mut segments, starter_end)) = emit_helical_starter_pocket(
++        &mut setup.grid,
++        &setup.mask,
++        &boundary_distances,
++        r,
++        holds.then_some((&pass, s, &setup.link_load)),
++    ) else {
++        return Ok(None);
++    };
++    let Some(seed) = segments.iter().find_map(|seg| match seg {
++        AdaptiveSegment::Marker(AdaptiveRuntimeEvent::StarterPocket { center_x, center_y }) => {
++            Some(P2::new(*center_x, *center_y))
++        }
++        _ => None,
++    }) else {
++        return Ok(None);
++    };
++
++    let region = ToolCentreRegion::new(polygon, r);
++    let walls = Walls { region: &region };
++    let lattice = Lattice::of_grid(&setup.grid);
++    let inside: Vec<bool> = setup
++        .mask
++        .iter()
++        .enumerate()
++        .map(|(i, &m)| m && region.contains(&lattice.node(i)))
++        .collect();
++    let Some(mut field) = GeodesicField::on_lattice(lattice, inside, seed, r, s, &walls) else {
++        return Ok(None);
++    };
++    field.use_level_spacing(r, pass.ceiling * 2.0 * r, params.tolerance, cancel)?;
++
++    let reach = s + (1.0 + SQRT_2) * cell;
++    let phi0 = (starter_end.y - seed.y).atan2(starter_end.x - seed.x);
++    // The closed, star-shaped levels round the seed are one spiral; the
++    // wraps start past them.
++    let (spiral, spiral_levels) = held_core_spiral(
++        &field,
++        &region,
++        seed,
++        r,
++        phi0,
++        s,
++        pass.ceiling * 2.0 * r,
++        params.tolerance,
++        cancel,
++    )?;
++    // §12.9: beside the core spiral, every piece of a core level that is not
++    // the core's own loop stays a wrap.
++    let core = (spiral_levels > 0).then_some(SpiralCore {
++        seed,
++        levels: spiral_levels,
++    });
++    let wraps = ordered_wraps_beside_core(
++        &field,
++        &region,
++        spiral.last().copied().unwrap_or(starter_end),
++        reach,
++        s,
++        spiral_levels + 1,
++        core,
++        cancel,
++    )?;
++
++    let first = if spiral.is_empty() {
++        wraps.iter().find_map(|w| w.pts.first().copied())
++    } else {
++        spiral.first().copied()
++    };
++    if let Some(first) = first {
++        segments.push(AdaptiveSegment::Marker(AdaptiveRuntimeEvent::PassEntry {
++            pass_index: 1,
++            entry_x: first.x,
++            entry_y: first.y,
++        }));
++    }
++    let mut run: Vec<P2> = vec![starter_end];
++    let mut cur = starter_end;
++    if !spiral.is_empty() {
++        append_path(&spiral, &mut run, &mut cur, &mut segments, reach);
++    }
++    // The zigzag turn from the end of the open arc just cut onto the start
++    // of the next one, where it is no longer than the turn bound and stays
++    // inside the region.
++    let bound = turn_bound(s, cell);
++    let mut turns: Vec<(P2, P2)> = Vec::new();
++    for (i, w) in wraps.iter().enumerate() {
++        if !w.closed
++            && let Some(prev) = i.checked_sub(1).and_then(|k| wraps.get(k))
++            && !prev.closed
++            && !prev.pts.is_empty()
++            && let Some(&to) = w.pts.first()
++        {
++            let len = (to.x - cur.x).hypot(to.y - cur.y);
++            if len <= bound && region.contains_segment(cur, to) && len > CHAIN_EPS {
++                turns.push((cur, to));
++            }
++        }
++        append_path(&w.pts, &mut run, &mut cur, &mut segments, reach);
++    }
++    if run.len() >= 2 {
++        segments.push(AdaptiveSegment::Cut(run));
++    }
++    Ok(Some(Produced { segments, turns }))
++}
++
++pub(super) fn params_with(params: &AdaptiveParams, strategy: PathStrategy2d) -> AdaptiveParams {
++    AdaptiveParams {
++        tool_radius: params.tool_radius,
++        stepover: params.stepover,
++        cut_depth: params.cut_depth,
++        feed_rate: params.feed_rate,
++        plunge_rate: params.plunge_rate,
++        safe_z: params.safe_z,
++        tolerance: params.tolerance,
++        slot_clearing: params.slot_clearing,
++        min_cutting_radius: params.min_cutting_radius,
++        standing_material: params.standing_material.as_ref().map(std::sync::Arc::clone),
++        cleanup_strategy: params.cleanup_strategy,
++        engagement_measure: params.engagement_measure,
++        path_strategy: strategy,
++        trochoid_cap_mult: params.trochoid_cap_mult,
++        keep_down_links: params.keep_down_links,
++        entry_helix_radius: params.entry_helix_radius,
++    }
++}
++
++/// The cleanup of `adaptive_toolpath_structured_annotated_traced_with_cancel`
++/// (`mod.rs`): the same dispatch on the cleanup strategy.
++/// C14: the replay of the kept segments admits the planned clearing turns
++/// `turns` (empty for every column before C14).
++pub(super) fn cleaned(
++    polygon: &Polygon2,
++    params: &AdaptiveParams,
++    segments: Vec<AdaptiveSegment>,
++    turns: &[(P2, P2)],
++) -> Vec<AdaptiveSegment> {
++    let m = PassLoadMeasure::SweptWidth;
++    match params.cleanup_strategy {
++        CleanupStrategy::Legacy => segments,
++        CleanupStrategy::ResidueMop | CleanupStrategy::ContourParallelNarrow => {
++            apply_residue_mop_cleanup_turns(polygon, params, &segments, m, turns)
++        }
++        CleanupStrategy::ContourParallelHybrid => {
++            apply_contour_parallel_residue_cleanup_turns(polygon, params, &segments, m, turns)
++        }
++    }
++}
+diff --git a/crates/rs_cam_core/src/adaptive/geodesic/wraps.rs b/crates/rs_cam_core/src/adaptive/geodesic/wraps.rs
+new file mode 100644
+index 000000000..f7b4f951c
+--- /dev/null
++++ b/crates/rs_cam_core/src/adaptive/geodesic/wraps.rs
+@@ -0,0 +1,625 @@
++//! The wraps: the level sets of the field as chains inside the region, the
++//! meeting-line trim, the order they are cut in
++//! ([`ordered_wraps_beside_core`]), and the core spiral round the seed
++//! ([`held_core_spiral`]) with its spacing law.
++
++use std::f64::consts::SQRT_2;
++
++use crate::geo::{P2, point_to_segment_distance};
++use crate::geometry::marching_squares::CHAIN_EPS;
++use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
++use crate::polygon::Polygon2;
++
++use crate::adaptive::search::ToolCentreRegion;
++
++use super::field::GeodesicField;
++
++// ── The wrap order ─────────────────────────────────────────────────────
++
++/// One wrap piece: a closed loop or an open arc of one level set.
++pub(super) struct Chain {
++    pub(super) level: usize,
++    pub(super) pts: Vec<P2>,
++    pub(super) closed: bool,
++    pub(super) lo: P2,
++    pub(super) hi: P2,
++    /// Whether the first and the last point end at a meeting line; false
++    /// for a loop.
++    pub(super) shock: [bool; 2],
++}
++
++impl Chain {
++    pub(super) fn new(level: usize, pts: Vec<P2>, closed: bool) -> Self {
++        let mut lo = P2::new(f64::INFINITY, f64::INFINITY);
++        let mut hi = P2::new(f64::NEG_INFINITY, f64::NEG_INFINITY);
++        for p in &pts {
++            lo = P2::new(lo.x.min(p.x), lo.y.min(p.y));
++            hi = P2::new(hi.x.max(p.x), hi.y.max(p.y));
++        }
++        Self {
++            level,
++            pts,
++            closed,
++            lo,
++            hi,
++            shock: [false; 2],
++        }
++    }
++
++    /// The segments of the chain, with the closing one for a loop.
++    pub(super) fn segments(&self) -> impl Iterator<Item = (P2, P2)> + '_ {
++        let closing = self
++            .closed
++            .then(|| self.pts.last().copied().zip(self.pts.first().copied()))
++            .flatten();
++        self.pts
++            .windows(2)
++            .filter_map(|w| match w {
++                &[a, b] => Some((a, b)),
++                _ => None,
++            })
++            .chain(closing)
++    }
++
++    /// True when a point of `self` lies within `reach` of `other`.
++    pub(super) fn within(&self, other: &Self, reach: f64) -> bool {
++        if self.lo.x > other.hi.x + reach
++            || other.lo.x > self.hi.x + reach
++            || self.lo.y > other.hi.y + reach
++            || other.lo.y > self.hi.y + reach
++        {
++            return false;
++        }
++        self.pts.iter().any(|p| {
++            other
++                .segments()
++                .any(|(a, b)| point_to_segment_distance(p, &a, &b) <= reach)
++        })
++    }
++
++    /// The distance from `p` to where the chain would be entered: the
++    /// nearer end of an arc, the nearest point of a loop.
++    pub(super) fn entry_distance(&self, p: P2) -> f64 {
++        let d = |q: &P2| (q.x - p.x).hypot(q.y - p.y);
++        if self.closed {
++            self.pts.iter().map(d).fold(f64::INFINITY, f64::min)
++        } else {
++            let a = self.pts.first().map_or(f64::INFINITY, d);
++            let b = self.pts.last().map_or(f64::INFINITY, d);
++            a.min(b)
++        }
++    }
++
++    /// The cutting order of the chain entered from `cur`: an arc from its
++    /// nearer end; a loop rotated to its point nearest `cur` and closed on
++    /// that seam (`spiral.rs`).
++    pub(super) fn oriented(&self, cur: P2) -> Vec<P2> {
++        if self.closed {
++            let seam = crate::adaptive::spiral::nearest_index(&self.pts, cur);
++            let n = self.pts.len();
++            (0..=n)
++                .filter_map(|k| self.pts.get((seam + k) % n).copied())
++                .collect()
++        } else {
++            let d = |q: Option<&P2>| q.map_or(f64::INFINITY, |q| (q.x - cur.x).hypot(q.y - cur.y));
++            let mut pts = self.pts.clone();
++            if d(self.pts.last()) < d(self.pts.first()) {
++                pts.reverse();
++            }
++            pts
++        }
++    }
++}
++
++/// True when a level chain is a closed loop: its two ends are at most one
++/// cell diagonal apart (`chain_segments` drops the closing point of a loop,
++/// so the gap is one contour segment).
++pub(super) fn is_closed(pts: &[P2], cell: f64) -> bool {
++    match (pts.first(), pts.last()) {
++        (Some(&a), Some(&b)) => (a.x - b.x).hypot(a.y - b.y) <= SQRT_2 * cell + CHAIN_EPS,
++        _ => false,
++    }
++}
++
++/// The pieces of a level chain that lie inside the tool-centre region (G1-1).
++///
++/// The level set is contoured over cells whose four corners are reachable,
++/// so every vertex lies on a cell edge between two legal nodes. Where the
++/// region boundary is concave inside one cell (an island's inset arc, a
++/// reflex corner's arc) that edge can still leave the region. The chain is
++/// cut there: a vertex outside the region, or a segment that leaves it
++/// (`ToolCentreRegion::contains_segment`, the planner's own test), ends the
++/// piece. A loop that loses no vertex stays one closed piece; every other
++/// piece is an open arc. Pieces shorter than two points are dropped.
++pub(super) fn inside_pieces(
++    pts: Vec<P2>,
++    closed: bool,
++    region: &ToolCentreRegion,
++) -> Vec<(Vec<P2>, bool)> {
++    let n = pts.len();
++    let ok_point: Vec<bool> = pts.iter().map(|p| region.contains(p)).collect();
++    // Segment k joins point k to point k + 1 (and, for a loop, n - 1 to 0).
++    let segs = if closed { n } else { n.saturating_sub(1) };
++    let ok_seg: Vec<bool> = (0..segs)
++        .map(|k| match (pts.get(k), pts.get((k + 1) % n)) {
++            (Some(&a), Some(&b)) => region.contains_segment(a, b),
++            _ => false,
++        })
++        .collect();
++    if ok_point.iter().all(|&v| v) && ok_seg.iter().all(|&v| v) {
++        return vec![(pts, closed)];
++    }
++    // Walk from a point after a break, so a loop's pieces do not wrap the
++    // index end.
++    let start = if closed {
++        (0..n)
++            .find(|&k| {
++                let prev = (k + n - 1) % n;
++                ok_point.get(k).copied().unwrap_or(false)
++                    && !(ok_point.get(prev).copied().unwrap_or(false)
++                        && ok_seg.get(prev).copied().unwrap_or(false))
++            })
++            .unwrap_or(0)
++    } else {
++        0
++    };
++    let mut out = Vec::new();
++    let mut run: Vec<P2> = Vec::new();
++    let flush = |run: &mut Vec<P2>, out: &mut Vec<(Vec<P2>, bool)>| {
++        if run.len() >= 2 {
++            out.push((std::mem::take(run), false));
++        } else {
++            run.clear();
++        }
++    };
++    for step in 0..n {
++        let k = (start + step) % n;
++        let (Some(&p), Some(&inside)) = (pts.get(k), ok_point.get(k)) else {
++            continue;
++        };
++        if !inside {
++            flush(&mut run, &mut out);
++            continue;
++        }
++        let prev = (k + n - 1) % n;
++        let joined = step > 0 && ok_seg.get(prev).copied().unwrap_or(false);
++        if !joined {
++            flush(&mut run, &mut out);
++        }
++        run.push(p);
++    }
++    flush(&mut run, &mut out);
++    out
++}
++
++/// One wrap in cutting order.
++pub(super) struct Wrap {
++    /// The level set, oriented for cutting (a loop closed on its seam).
++    pub(super) pts: Vec<P2>,
++    pub(super) closed: bool,
++}
++
++/// True when `p` (a chain end) lies next to a cell on a meeting line: the
++/// 3 x 3 cells round the cell that holds `p`.
++pub(super) fn end_at_shock(field: &GeodesicField, p: P2) -> bool {
++    let f = &field.field;
++    let col = ((p.x - f.origin_x) / f.cell).floor();
++    let row = ((p.y - f.origin_y) / f.cell).floor();
++    if col < 0.0 || row < 0.0 {
++        return false;
++    }
++    let (row, col) = (row as usize, col as usize);
++    (row.saturating_sub(1)..=row + 1).any(|r| {
++        (col.saturating_sub(1)..=col + 1).any(|c| {
++            r + 1 < f.rows
++                && c + 1 < f.cols
++                && field.cell_reachable(r, c)
++                && field.cell_on_shock(r, c)
++        })
++    })
++}
++
++/// `pts` with arc length `len` removed from its end.
++pub(super) fn trim_end(pts: &mut Vec<P2>, mut len: f64) {
++    while len > 0.0 && pts.len() >= 2 {
++        let (Some(&b), Some(&a)) = (pts.last(), pts.get(pts.len() - 2)) else {
++            return;
++        };
++        let seg = (b.x - a.x).hypot(b.y - a.y);
++        if seg > len {
++            let t = (seg - len) / seg;
++            if let Some(last) = pts.last_mut() {
++                *last = P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
++            }
++            return;
++        }
++        pts.pop();
++        len -= seg;
++    }
++}
++
++pub(super) fn polyline_length(pts: &[P2]) -> f64 {
++    pts.windows(2)
++        .filter_map(|w| match w {
++            &[a, b] => Some((b.x - a.x).hypot(b.y - a.y)),
++            _ => None,
++        })
++        .sum()
++}
++
++/// The wrap pieces of `field` from level `min_level` up, level by level,
++/// every vertex and segment inside `region` ([`inside_pieces`]); each open
++/// piece records whether its ends lie at a meeting line.
++pub(super) fn collect_chains(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    min_level: usize,
++    cancel: &dyn CancelCheck,
++) -> Result<Vec<Chain>, Cancelled> {
++    let cell = field.cell();
++    let mut chains: Vec<Chain> = Vec::new();
++    for level in min_level.max(1)..=field.level_count() {
++        check_cancel(cancel)?;
++        for pts in field.level_chains(level) {
++            if pts.len() < 2 {
++                continue;
++            }
++            let closed = is_closed(&pts, cell);
++            for (piece, closed) in inside_pieces(pts, closed, region) {
++                let mut chain = Chain::new(level, piece, closed);
++                if !closed {
++                    chain.shock = [
++                        chain.pts.first().is_some_and(|&p| end_at_shock(field, p)),
++                        chain.pts.last().is_some_and(|&p| end_at_shock(field, p)),
++                    ];
++                }
++                chains.push(chain);
++            }
++        }
++    }
++    Ok(chains)
++}
++
++/// For each chain, the chains one level lower within `reach` of it: its
++/// parents, which must be cut first.
++pub(super) fn parents_of(
++    chains: &[Chain],
++    reach: f64,
++    cancel: &dyn CancelCheck,
++) -> Result<Vec<Vec<usize>>, Cancelled> {
++    let mut parents: Vec<Vec<usize>> = Vec::with_capacity(chains.len());
++    for chain in chains {
++        check_cancel(cancel)?;
++        parents.push(
++            chains
++                .iter()
++                .enumerate()
++                .filter(|(_, p)| p.level + 1 == chain.level && chain.within(p, reach))
++                .map(|(j, _)| j)
++                .collect(),
++        );
++    }
++    Ok(parents)
++}
++
++/// The meeting-line rule on `pts`, the cutting
++/// order of `chain`: the branch cut second ends one stepover short of the
++/// line. `cut_shock_ends` holds the meeting-line ends already cut, per
++/// level; the ends of `chain` at a meeting line are added. Call it before
++/// any other change to `pts` (it compares `pts` with `chain.pts` to know
++/// the direction).
++pub(super) fn meeting_trim(
++    chain: &Chain,
++    pts: &mut Vec<P2>,
++    cut_shock_ends: &mut Vec<(usize, P2)>,
++    reach: f64,
++    stepover: f64,
++) {
++    if chain.closed {
++        return;
++    }
++    let reversed = pts.first() != chain.pts.first();
++    let [first_shock, last_shock] = if reversed {
++        [chain.shock[1], chain.shock[0]]
++    } else {
++        chain.shock
++    };
++    let met = |p: Option<&P2>, ends: &[(usize, P2)]| {
++        p.is_some_and(|&p| {
++            ends.iter()
++                .any(|&(level, q)| level == chain.level && (q.x - p.x).hypot(q.y - p.y) <= reach)
++        })
++    };
++    let trim_last = last_shock && met(pts.last(), cut_shock_ends);
++    let trim_first = first_shock && met(pts.first(), cut_shock_ends);
++    for (end, shock) in [
++        (pts.first().copied(), first_shock),
++        (pts.last().copied(), last_shock),
++    ] {
++        if let (Some(p), true) = (end, shock) {
++            cut_shock_ends.push((chain.level, p));
++        }
++    }
++    let keep =
++        polyline_length(pts) - stepover * f64::from(u8::from(trim_last) + u8::from(trim_first));
++    if keep > 0.0 {
++        if trim_last {
++            trim_end(pts, stepover);
++        }
++        if trim_first {
++            pts.reverse();
++            trim_end(pts, stepover);
++            pts.reverse();
++        }
++    }
++}
++
++/// §12.9: the core of a core spiral ([`held_core_spiral`]): its seed and
++/// its last level `K`.
++#[derive(Debug, Clone, Copy)]
++pub(super) struct SpiralCore {
++    pub(super) seed: P2,
++    pub(super) levels: usize,
++}
++
++impl SpiralCore {
++    /// True when `chain` is the core's own loop: a closed chain of level
++    /// `1..=K` that encloses the seed. The spiral cuts that loop; every
++    /// other piece of a level `≤ K` (a loop in a pocket the spiral does not
++    /// reach, an open arc) is not the core's.
++    pub(super) fn owns(&self, chain: &Chain) -> bool {
++        chain.level <= self.levels
++            && chain.closed
++            && Polygon2::new(chain.pts.clone()).contains_point(&self.seed)
++    }
++}
++
++/// §12.9: `chains` less the core's own loops ([`SpiralCore::owns`]).
++pub(super) fn beside_core(mut chains: Vec<Chain>, core: SpiralCore) -> Vec<Chain> {
++    chains.retain(|c| !core.owns(c));
++    chains
++}
++
++/// The wraps of `field` in cutting order, from `start`. Each step takes a
++/// chain whose parents ([`parents_of`]) are all cut: a child of the wrap
++/// just cut when one is ready, so a lobe is cut to its end before the
++/// cutter leaves it, else any ready chain; of those, the one whose entry is
++/// nearest the cutter. Each wrap is oriented from the cutter and trimmed at
++/// its meeting-line ends ([`meeting_trim`]).
++///
++/// Beside a core spiral (§12.9): with `core`, the chains start at level 1
++/// and the core's own loops ([`SpiralCore::owns`]) are dropped: the spiral
++/// cuts them. A star-shaped core
++/// ([`GeodesicField::star_levels`]) can still hold a pocket the plate cuts
++/// off along the rays: its loops of a level `≤ K` are not crossed by any
++/// ray before the ray leaves the reachable cells, so the spiral never
++/// sweeps them, and they stay wraps. Without `core`, the chains start at
++/// `min_level`, as before.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++pub(super) fn ordered_wraps_beside_core(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    start: P2,
++    reach: f64,
++    stepover: f64,
++    min_level: usize,
++    core: Option<SpiralCore>,
++    cancel: &dyn CancelCheck,
++) -> Result<Vec<Wrap>, Cancelled> {
++    let mut chains = collect_chains(
++        field,
++        region,
++        if core.is_some() { 1 } else { min_level },
++        cancel,
++    )?;
++    if let Some(core) = core {
++        chains = beside_core(chains, core);
++    }
++    let parents = parents_of(&chains, reach, cancel)?;
++    let mut done = vec![false; chains.len()];
++    // The shock ends already cut, per level.
++    let mut cut_shock_ends: Vec<(usize, P2)> = Vec::new();
++    let mut out: Vec<Wrap> = Vec::with_capacity(chains.len());
++    let mut cur = start;
++    let mut last: Option<usize> = None;
++    for _ in 0..chains.len() {
++        let is_done = |j: &usize| done.get(*j).copied().unwrap_or(true);
++        let ready =
++            |i: usize| !is_done(&i) && parents.get(i).is_some_and(|ps| ps.iter().all(is_done));
++        // A child of the wrap just cut goes next, so a lobe is cut to its
++        // end before the cutter leaves it (the arc links).
++        let child_of_last =
++            |i: usize| last.is_some_and(|l| parents.get(i).is_some_and(|ps| ps.contains(&l)));
++        let pick = |only_children: bool| {
++            chains
++                .iter()
++                .enumerate()
++                .filter(|&(i, _)| ready(i) && (!only_children || child_of_last(i)))
++                .map(|(i, c)| (i, c.entry_distance(cur)))
++                .min_by(|a, b| a.1.total_cmp(&b.1))
++        };
++        // The lowest level left always qualifies (its parents are all cut),
++        // so this ends only when every chain is cut.
++        let Some((i, _)) = pick(true).or_else(|| pick(false)) else {
++            break;
++        };
++        let (Some(flag), Some(chain)) = (done.get_mut(i), chains.get(i)) else {
++            break;
++        };
++        *flag = true;
++        let mut pts = chain.oriented(cur);
++        meeting_trim(chain, &mut pts, &mut cut_shock_ends, reach, stepover);
++        if let Some(&end) = pts.last() {
++            cur = end;
++        }
++        out.push(Wrap {
++            pts,
++            closed: chain.closed,
++        });
++        last = Some(i);
++    }
++    Ok(out)
++}
++
++// ── The spacing law and the core spiral ────────────────────────────────
++
++/// `s'(ρ) = ρ + R - √(R² + ρ² + 2ρ(R - c·D))`: the spacing that puts a pass
++/// at cutter-centre radius `rho` round a cleared disc on the ceiling width
++/// `ceiling_width` (`c·D`); the derivation is in the module doc of
++/// `adaptive::geodesic` ("The spacing law").
++pub(super) fn spacing_bound(tool_radius: f64, ceiling_width: f64, rho: f64) -> f64 {
++    let r = tool_radius;
++    rho + r - (r * r + rho * rho + 2.0 * rho * (r - ceiling_width)).sqrt()
++}
++
++/// The law's spacing at `rho`: `s'(ρ)` capped at the stepover (C5).
++pub(super) fn law_spacing(tool_radius: f64, stepover: f64, ceiling_width: f64, rho: f64) -> f64 {
++    spacing_bound(tool_radius, ceiling_width, rho)
++        .min(stepover)
++        .max(0.0)
++}
++
++/// The chord rule of the core spiral: the vertices per turn that keep each
++/// chord within `tolerance` of a circle of radius `outer`
++/// (`⌈π / acos(1 - tolerance / ρ)⌉`).
++pub(super) fn chord_turn_steps(outer: f64, tolerance: f64) -> usize {
++    let sag = (1.0 - (tolerance / outer).min(1.0))
++        .acos()
++        .max(f64::EPSILON);
++    (std::f64::consts::PI / sag).ceil().max(3.0) as usize
++}
++
++/// The core spiral through the turn values `levels` of `T`
++/// (stepovers): turn `n` runs from `levels[n]` to `levels[n + 1]`, linear
++/// in the angle, and one closing lap follows on the last value. Each turn
++/// has `per_turn` vertices, on the same rays as the turn before it, and
++/// each vertex radius is bisected to `radius_tolerance`. `None` when a ray
++/// does not reach its value or a chord leaves the region.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++pub(super) fn trace_core_spiral(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    seed: P2,
++    r0: f64,
++    phi0: f64,
++    levels: &[f64],
++    per_turn: usize,
++    radius_tolerance: f64,
++) -> Option<Vec<P2>> {
++    let (&last, k) = (levels.last()?, levels.len() - 1);
++    let dphi = std::f64::consts::TAU / per_turn as f64;
++    let mut pts: Vec<P2> = Vec::with_capacity(per_turn * (k + 1) + 1);
++    for j in 0..=per_turn * (k + 1) {
++        let theta = j as f64 * dphi;
++        // The unwrapped turn count, and `T` there: turn value `n` at turn
++        // `n`, linear in the angle between two values.
++        let turns = theta / std::f64::consts::TAU;
++        let t = if turns >= k as f64 {
++            last
++        } else {
++            let n = turns.floor();
++            let (lo, hi) = (
++                levels.get(n as usize).copied()?,
++                levels.get(n as usize + 1).copied()?,
++            );
++            lo + (turns - n) * (hi - lo)
++        };
++        let phi = phi0 + theta;
++        let r = field.radius_at(seed, phi, r0, t, radius_tolerance)?;
++        pts.push(P2::new(seed.x + r * phi.cos(), seed.y + r * phi.sin()));
++    }
++    pts.windows(2)
++        .all(|w| match w {
++            &[a, b] => region.contains_segment(a, b),
++            _ => true,
++        })
++        .then_some(pts)
++}
++
++/// The largest heading tilt (rad) of a step into a band of depth `s`
++/// that reads at most `margin` (mm) over the band's own width: the tilted
++/// step sweeps `R(1 - cos β) + h sin β` more, `h = √(R² - (R - s)²)`
++/// (the research entry law), so
++/// `β = atan2(R, h) + asin((margin - R) / √(h² + R²))`. 0 when no tilt holds.
++pub(super) fn held_tilt(tool_radius: f64, stepover: f64, margin: f64) -> f64 {
++    let r = tool_radius;
++    let h = (r * r - (r - stepover).max(0.0).powi(2)).max(0.0).sqrt();
++    let rho_h = h.hypot(r);
++    (r.atan2(h) + ((margin - r) / rho_h).clamp(-1.0, 1.0).asin()).max(0.0)
++}
++
++/// C35, D21b: the core spiral, spaced under the law by what its chords
++/// add. Returns the spiral and `K`, the last core level. `r0` is the seed disc's radius, which is the tool
++/// radius `R` (the field's rim).
++///
++/// A spiral spaced on the field levels alone (research C4) holds the
++/// law with no margin inside `ρ*` (D21: the replay refused 9 chords at
++/// 0.3631 to 0.3931 against 0.3626). The level holds on the curve; a chord
++/// does not follow it. Each chord heads `β = π / n` off the tangent at its
++/// end (`n` vertices per turn), out into the stock on its second half, and
++/// the previous turn's chord ahead of it lies `ρ(1 - cos β)` inside the
++/// level. The swept width reads across the heading, so the cap of stock
++/// ahead of the cutter reads `R(1 - cos β) + h sin β` wider (the entry law;
++/// on exact circles at s 2, R 3 and 22 vertices per turn, 0.44 against
++/// 0.3626; the excess falls linearly with `β`).
++///
++/// - The angle step holds the tilt to the op `tolerance`
++///   ([`held_tilt`]), or the chord rule ([`chord_turn_steps`]) when that
++///   is finer.
++/// - Each vertex radius is bisected to the float resolution: a radius
++///   error between two vertices tilts the chord too.
++/// - The turns are spaced by the local-level walk
++///   ([`GeodesicField::spiral_turn_levels`]) at the ceiling width less the
++///   tilt term at the step used, the chord sag `ρ_K(1 - cos β)` at the
++///   outer radius, and one `tolerance`: the law is read on the traced
++///   contours and the spiral on the bilinear field, and the plan holds
++///   positions to the op tolerance. The last turn ends on level `K`, so
++///   the wraps past it keep their spacing.
++#[expect(
++    clippy::too_many_arguments,
++    reason = "each parameter is a separate input of one planning call"
++)]
++pub(super) fn held_core_spiral(
++    field: &GeodesicField,
++    region: &ToolCentreRegion,
++    seed: P2,
++    r0: f64,
++    phi0: f64,
++    stepover: f64,
++    ceiling_width: f64,
++    tolerance: f64,
++    cancel: &dyn CancelCheck,
++) -> Result<(Vec<P2>, usize), Cancelled> {
++    let h = (r0 * r0 - (r0 - stepover).max(0.0).powi(2)).max(0.0).sqrt();
++    let beta = held_tilt(r0, stepover, tolerance);
++    if beta <= 0.0 {
++        return Ok((Vec::new(), 0));
++    }
++    let mut k = field.star_levels(seed, r0);
++    while k > 0 {
++        check_cancel(cancel)?;
++        let outer = r0 + field.level_value(k) * stepover;
++        let per_turn =
++            chord_turn_steps(outer, tolerance).max((std::f64::consts::PI / beta).ceil() as usize);
++        let step = std::f64::consts::PI / per_turn as f64;
++        let held_width = ceiling_width
++            - r0 * (1.0 - step.cos())
++            - h * step.sin()
++            - outer * (1.0 - step.cos())
++            - tolerance;
++        let levels = field.spiral_turn_levels(k, r0, held_width, tolerance, cancel)?;
++        if let Some(pts) = levels.and_then(|levels| {
++            trace_core_spiral(field, region, seed, r0, phi0, &levels, per_turn, 0.0)
++        }) {
++            return Ok((pts, k));
++        }
++        k -= 1;
++    }
++    Ok((Vec::new(), 0))
++}
