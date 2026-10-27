@@ -24,6 +24,7 @@ pub mod depth;
 pub mod display;
 pub mod distribution;
 pub mod drill_gates;
+pub mod load_fraction;
 pub mod locality;
 pub mod metric_guide;
 pub mod plunge_stress;
