@@ -1,7 +1,7 @@
 //! O5b regression: AgentSearch (2.5D-slice) interior coverage at every Z level.
 //!
 //! Repro for the "scattered passes" / interior-coverage class of bugs:
-//! the 2D adaptive's agent-search walk inside `clear_z_level_agent_2d_slice`
+//! the 2D adaptive's agent-search walk inside `clear_z_level_slice`
 //! can leave cells uncovered in the interior of the polygon. Deeper z-levels
 //! then bite through full-depth uncleared stock, producing axial DOC up to
 //! the full stock height.

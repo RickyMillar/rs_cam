@@ -14,7 +14,7 @@
 //!
 //! ## Root cause
 //!
-//! `clear_z_level_agent_2d_slice` calls the 2D adaptive once per
+//! `clear_z_level_slice` calls the 2D adaptive once per
 //! marching-squares region. The 2D adaptive's output is structured as
 //! `[Rapid(entry), Cut, Cut, ..., Rapid(entry), ...]` — each `Rapid`
 //! becomes a downstream retract + rapid XY + peck-plunge entry. On

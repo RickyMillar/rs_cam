@@ -85,8 +85,8 @@ use tracing::{debug, info};
 
 use super::centre_clip::CentreClip;
 use super::clearing::{
-    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_agent_2d_slice,
-    clear_z_level_contour_parallel, detect_material_regions_labeled, waterline_cleanup,
+    AreaMask, ClearZLevelContext, MaterialRegion, PlannerCursor, clear_z_level_contour_parallel,
+    clear_z_level_slice, detect_material_regions_labeled, waterline_cleanup,
 };
 use super::region_map::AreaRegionMap;
 use super::search::{blend_corners_3d, material_remaining_at_level_diag};
@@ -524,7 +524,7 @@ fn clear_planned_level(
         // Geodesic Adaptive: the slice dispatch, with the geodesic plan as
         // the per-slice generator (`clearing.rs`, `plan_one_outline`).
         ClearingStrategy3d::GeodesicAdaptive => {
-            clear_z_level_agent_2d_slice(
+            clear_z_level_slice(
                 ctx,
                 material_stock,
                 surface_hm,
@@ -869,7 +869,7 @@ pub(super) fn adaptive_3d_segments(
     // provided (e.g. the model silhouette inset by tool_radius), clear
     // cells whose center is outside the boundary. This forces the bool-grid
     // polygon at every z-level to respect the boundary, so cuts emitted by
-    // AgentSearch and ContourParallel/Adaptive stay inside it. Without this,
+    // GeodesicAdaptive and ContourParallel stay inside it. Without this,
     // toolpath generation produces cuts across the full stock, the
     // post-generation toolpath clip then converts outside-boundary cuts to
     // rapids, and the dexel for those cells is left unstamped — deeper

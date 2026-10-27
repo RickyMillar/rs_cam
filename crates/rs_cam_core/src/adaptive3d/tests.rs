@@ -154,8 +154,8 @@ fn default_params() -> Adaptive3dParams {
         engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
         initial_stock: None, // Matches the GUI/MCP default (ContourParallel) so the bulk of
         // adaptive3d unit tests exercise the code path most users reach
-        // in production. Tests that specifically validate AgentSearch
-        // or Adaptive override this field explicitly.
+        // in production. Tests that specifically validate GeodesicAdaptive
+        // override this field explicitly.
         clearing_strategy: ClearingStrategy3d::ContourParallel,
         z_blend: false,
     }
@@ -338,10 +338,50 @@ fn test_adaptive_3d_hemisphere_multi_level() {
     );
 }
 
+/// Removal step R6: `trochoid_cap_mult` and `engagement_measure` are
+/// load-only. Two values of each give the same toolpath on both
+/// strategies. Each pair holds the other field at its default, so a
+/// difference names the field that a planner reads.
+#[test]
+fn the_load_only_fields_do_not_change_the_toolpath_r6() {
+    let (mesh, si) = make_hemisphere_mesh();
+    let cutter = flat_cutter();
+    for strategy in [
+        ClearingStrategy3d::ContourParallel,
+        ClearingStrategy3d::GeodesicAdaptive,
+    ] {
+        let base = || {
+            let mut p = default_params();
+            p.depth.depth_per_pass = 5.0;
+            p.geometry.tolerance = 0.5;
+            p.clearing_strategy = strategy;
+            p
+        };
+        let reference = format!(
+            "{:?}",
+            adaptive_3d_toolpath(&mesh, &si, &cutter, &base()).moves
+        );
+        let mut cap = base();
+        cap.trochoid_cap_mult *= 2.0;
+        let mut measure = base();
+        measure.engagement_measure = crate::adaptive::EngagementMeasure::LeadingArc;
+        for (field, params) in [("trochoid_cap_mult", cap), ("engagement_measure", measure)] {
+            let moves = format!(
+                "{:?}",
+                adaptive_3d_toolpath(&mesh, &si, &cutter, &params).moves
+            );
+            assert!(
+                moves == reference,
+                "{strategy:?}: `{field}` changed the toolpath; a planner reads it"
+            );
+        }
+    }
+}
+
 /// DIAGNOSTIC: dump per-Cut-segment Z statistics for the slice pipeline
 /// (Geodesic Adaptive since removal step R4; AgentSearch before) on a
 /// hemisphere. Used to verify that the Z-drop split fix in
-/// `clear_z_level_agent_2d_slice` is working — and to detect cases
+/// `clear_z_level_slice` is working — and to detect cases
 /// the threshold misses (e.g., cumulative descent across many small
 /// dz steps).
 ///
@@ -1286,7 +1326,7 @@ fn test_contour_parallel_complete_clearing_hemisphere() {
 /// Small-DPP island regression: a small hemisphere cap at DPP=0.5
 /// should clear cleanly (no unmilled core).
 ///
-/// Pre-fix (May 2026), three filters in `clear_z_level_agent_2d_slice`
+/// Pre-fix (May 2026), three filters in `clear_z_level_slice`
 /// used DPP-blind area/fraction thresholds. At small DPP the per-level
 /// slab contributes few cells, the perimeter sweep erodes islands
 /// across many levels, and real islands fall under the threshold and

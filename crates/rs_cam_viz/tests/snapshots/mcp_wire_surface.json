@@ -3500,7 +3500,7 @@
       "additionalProperties": false,
       "properties": {
         "exit_reason": {
-          "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. Useful values for AgentSearch diagnosis:\n\"loop closed\", \"idle\", \"no entry\", \"preflight skip\", \"no viable direction\".",
+          "description": "Optional filter: only include spans whose exit_reason contains this\nsubstring. The adaptive planner writes \"idle\", \"over pass load\",\n\"no direction\" and \"no entry\".",
           "type": [
             "string",
             "null"

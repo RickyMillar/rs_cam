@@ -134,7 +134,7 @@ impl Adaptive3dRough<'_> {
                 region_ordering: cfg.region_ordering.into(),
                 // F-038: drop marching-squares regions whose forecast cut
                 // length (perimeter + 2D adaptive walk) is below this floor.
-                // Only honored by the AgentSearch strategy.
+                // Only honored by the GeodesicAdaptive strategy.
                 min_region_cut_length_mm: cfg.min_region_cut_length_mm,
                 // F-038b: keep-tool-down link policy. None lets the planner
                 // default to 8 × tool diameter; Some(0.0) disables the
@@ -154,7 +154,7 @@ impl Adaptive3dRough<'_> {
             initial_stock: inputs.seed_stock.cloned(),
             safe_z: inputs.safe_z,
             clearing_strategy: cfg.clearing_strategy.into(),
-            // "Nibble" dial — forwarded to the ContourSpiral slice path.
+            // Load-only fields: no 3D Rough strategy reads them.
             trochoid_cap_mult: cfg.trochoid_cap_mult,
             engagement_measure: cfg.engagement_measure,
             z_blend: cfg.z_blend,

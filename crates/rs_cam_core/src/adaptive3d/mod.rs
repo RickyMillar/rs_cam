@@ -76,7 +76,7 @@ pub enum ClearingStrategy3d {
     ContourParallel,
     /// Geodesic Adaptive (integration step 7.4): the 2D geodesic-wavefront
     /// plan (`adaptive::geodesic`, C35 plan A) plans each slice piece
-    /// through the AgentSearch slice dispatch. It clears the body: a piece
+    /// through the slice dispatch (`clear_z_level_slice`). It clears the body: a piece
     /// where the field does not apply is left to a rest pass. Its planned
     /// turns carry a feed cap (`Move::feed_cap`).
     GeodesicAdaptive,
@@ -149,7 +149,7 @@ pub struct Adaptive3dGeometry {
     /// center must stay inside. Cells outside this boundary are pre-cleared
     /// in the internal material stock so the bool-grid polygon at every
     /// z-level reflects the boundary, not just the stock bbox. Without this,
-    /// AgentSearch's polygon at top z-levels covers the full stock; the
+    /// the slice polygon at top z-levels covers the full stock; the
     /// downstream toolpath clip then converts the outside-boundary cuts to
     /// rapids, leaving stock unstamped, and deeper z-levels then bite
     /// through fresh stock with full-depth axial DOC. See investigation
@@ -240,7 +240,7 @@ pub struct Adaptive3dLinking {
     pub region_ordering: RegionOrdering,
     /// F-038: minimum total horizontal cutting length (mm) a marching-squares
     /// region must produce in its 2D adaptive sub-pass before the planner
-    /// commits an entry plunge to it. AgentSearch strategy only. Regions
+    /// commits an entry plunge to it. GeodesicAdaptive strategy only. Regions
     /// whose forecast cut length (perimeter-sweep + 2D adaptive walk) is
     /// below this threshold are dropped at plan time, eliminating the
     /// "perimeter micro-plunge" fragmentation the Wanaka Back Rough .nc
@@ -361,16 +361,11 @@ pub struct Adaptive3dParams {
     pub entry_style: EntryStyle3d,
     /// Clearing strategy per Z level (default: ContourParallel).
     pub clearing_strategy: ClearingStrategy3d,
-    /// Trochoid trigger cap for the ContourSpiral slice path: relief loops
-    /// fire when predicted leading-arc engagement exceeds `target x this`.
-    /// Low (~1.0-1.2) = flattest load + more travel; high (~2.0-3.0) =
-    /// relaxed + less travel. Surfaced as the GUI "Nibble" dial; ignored
-    /// by the other strategies. See the cap sweep in
-    /// `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
+    /// Load-only: no strategy reads it. The removed ContourSpiral strategy
+    /// read it as its trochoid trigger cap (removal step R4).
     pub trochoid_cap_mult: f64,
-    /// Engagement quantity the AgentSearch 2D sub-pass measures against
-    /// the alpha/2pi target. See `crate::adaptive::EngagementMeasure` (F1,
-    /// algorithm review 2026-06-12). Ignored by ContourParallel/Adaptive.
+    /// Load-only: no strategy reads it. The removed AgentSearch strategy
+    /// read it as its 2D engagement quantity (removal step R4).
     pub engagement_measure: crate::adaptive::EngagementMeasure,
     /// Blend Z toward terrain surface across contour offsets.
     /// When true, outer contours stay near z_level and inner contours
@@ -450,7 +445,7 @@ pub struct ZLevelPlanMetrics {
     pub agent_walk_cut_length_mm: f64,
     pub residual_cleanup_cell_count: usize,
     /// F-038: number of regions whose forecast cut length fell below
-    /// `min_region_cut_length_mm` and were dropped from the AgentSearch
+    /// `min_region_cut_length_mm` and were dropped from the slice
     /// emission. Parallel to `dropped_micro_region_count` (which is the
     /// Fusion-style area filter) but gated on length, not area.
     pub dropped_short_region_count: usize,

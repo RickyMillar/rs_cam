@@ -4,7 +4,7 @@
 //! ## Why this file exists
 //!
 //! CUT-04 regroups `Adaptive3dParams`'s thirty flat fields into three named
-//! groups, and CUT-09 cuts `clear_z_level_agent_2d_slice` into its three
+//! groups, and CUT-09 cuts `clear_z_level_slice` into its three
 //! named stages. Both are mechanical re-shapes with the same failure mode: a
 //! field threaded into the wrong slot, or a stage that reads an accumulator
 //! one statement too early, changes the emitted motion in silence. The

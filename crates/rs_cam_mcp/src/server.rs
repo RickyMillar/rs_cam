@@ -1452,8 +1452,8 @@ pub struct GenDebugTraceParam {
     /// kind back to its structural SpanKind when one applies.
     pub span_kind: Option<String>,
     /// Optional filter: only include spans whose exit_reason contains this
-    /// substring. Useful values for AgentSearch diagnosis:
-    /// "loop closed", "idle", "no entry", "preflight skip", "no viable direction".
+    /// substring. The adaptive planner writes "idle", "over pass load",
+    /// "no direction" and "no entry".
     pub exit_reason: Option<String>,
     /// Optional filter: only include spans where the `yield_ratio` counter is
     /// at most this value (e.g. 0.1 to see all low-yield passes). Spans without

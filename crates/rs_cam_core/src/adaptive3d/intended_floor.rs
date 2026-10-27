@@ -9,7 +9,7 @@
 //!   Z under it.
 //! * One level at `z_level` cuts a centre down to [`level_floor_z`]:
 //!   `max(surface + stock_to_leave, z_level)`. The material test
-//!   (`clearing.rs::cell_has_material`), the AgentSearch lift and the
+//!   (`clearing.rs::cell_has_material`), the Geodesic Adaptive lift and the
 //!   ContourParallel clean-up raster all read this function. The emitter's
 //!   drape (`path.rs::drape_path_to_leave`) only lifts a point to
 //!   `point_drop_cutter + stock_to_leave`, the same surface, so at a grid

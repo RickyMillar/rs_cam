@@ -2,8 +2,8 @@
 
 ## Files
 
-- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). AgentSearch
-  slice (CUT-09): `detect_and_order_regions`, `clear_one_region` into a
+- `clearing.rs` Z-level engine, regions, `AreaMask` (By Area). The slice
+  (`clear_z_level_slice`, CUT-09): `detect_and_order_regions`, `clear_one_region` into a
   `LevelSink` (new per-region work here), `coalesce_level_entries` (check).
 - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
@@ -13,9 +13,9 @@
 
 ## Invariants
 
-- All `ClearingStrategy3d` variants are live (keep the AgentSearch arm; it
-  emits UNTAGGED descents). `GeodesicAdaptive` plans each slice piece with
-  `../adaptive/geodesic`; `FeedCapStart`/`End` markers carry each cap to its cut.
+- `ClearingStrategy3d` is `ContourParallel` and `GeodesicAdaptive` (removal R1-R6). `GeodesicAdaptive` plans each slice piece with
+  `../adaptive/geodesic`; `FeedCapStart`/`End` markers carry each cap to its cut. The F-038 forecast keeps the 2D agent planner.
+- `trochoid_cap_mult` and `engagement_measure` are load-only: no strategy reads them.
 - `max_stay_down_distance_mm` is the ONE stay-down dial (CUT-05, unset 8 x D). Entries
   read floor and proof from the planner stock (`plan_entry`); no link feeds down into stock.
 - `Adaptive3dParams` groups (CUT-04): `geometry`, `depth`, `linking`; a new dial joins its group. `linking.step_split` / `keep_down_route` `None` keep today's rule (`PathShape`, `Off`; the geodesic arm: `StockDepth`, `CutFeed`); a route replaces the travel, never the entry's cut (§16.7); `StockDepth` reads `chip_load_fraction`.

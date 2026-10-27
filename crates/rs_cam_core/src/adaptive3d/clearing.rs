@@ -41,17 +41,10 @@ use crate::toolpath::simplify_path_3d;
 /// would skip it. Matches `min_cells = 4` in `detect_material_regions`.
 pub(super) const MIN_CELLS_TO_CLEAR: u64 = 4;
 
-/// In-engine fallback for the 3D ContourSpiral trochoid trigger cap.
-/// Loops fire when predicted leading-arc engagement exceeds
-/// `target × this`: 1.2 is flattest-possible load but high travel; 1.6 is
-/// the balanced knee — load still flat (p99 well under the spiky
-/// strategies) while cutting ~25-30% less distance. See the trochoid-cap
-/// sweep in `planning/ADAPTIVE_CLEARING_ALGO_REVIEW_2026-06-12.md`.
-///
-/// As of the "Optimal load + Nibble" UI reframe this is operator-tunable
-/// via `Adaptive3dConfig::trochoid_cap_mult` (GUI "Nibble" dial); the
-/// const remains the default and a sanity fallback for any context built
-/// with a non-finite or non-positive cap.
+/// The fallback for a non-finite or non-positive `trochoid_cap_mult`. The
+/// slice's 2D planner (`PathStrategy2d::Agent`) does not read the cap; the
+/// removed ContourSpiral strategy read it (removal step R4). The value is
+/// the default of the load-only `Adaptive3dConfig::trochoid_cap_mult`.
 const TROCHOID_CAP_MULT_3D: f64 = 1.6;
 
 // ── Region detection ──────────────────────────────────────────────────
@@ -370,11 +363,11 @@ pub(super) struct ClearZLevelContext<'a> {
     /// its internal dexel state (parity with the simulator replay).
     pub(super) safe_z: f64,
     pub(super) clearing_strategy: ClearingStrategy3d,
-    /// Trochoid trigger cap for the ContourSpiral slice ("Nibble" dial).
-    /// Replaces the historical `TROCHOID_CAP_MULT_3D` const so the value
-    /// is operator-tunable; the const survives as the in-engine fallback.
+    /// Load-only: passed to the slice's 2D params, which do not read it
+    /// (`PathStrategy2d::Agent`).
     pub(super) trochoid_cap_mult: f64,
-    /// Engagement quantity for the AgentSearch 2D sub-pass (F1).
+    /// Load-only: passed to the slice's 2D params, which do not read it
+    /// (`KeepDownLinks::WithinPassLoad`, `adaptive::path::pass_load_for`).
     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
     pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
@@ -384,8 +377,8 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) min_cutting_radius: f64,
     /// F-038: minimum forecast horizontal cutting length (mm) a marching-
     /// squares region must produce in its 2D adaptive sub-pass before the
-    /// AgentSearch dispatch commits an entry plunge to it. Set to 0.0 to
-    /// disable. See `clear_z_level_agent_2d_slice` for the apply site.
+    /// slice commits an entry plunge to it. Set to 0.0 to
+    /// disable. See `clear_z_level_slice` for the apply site.
     pub(super) min_region_cut_length_mm: f64,
     /// The disc radius of an entry's rapid floor read; see
     /// `path.rs::entry_floor_radius`.
@@ -1476,7 +1469,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 // gate, z_blend=true produced Link moves that crossed
                 // uncut terrain between rings at different Z heights
                 // (F-5 in planning/adaptive_review_2026-04.md). The gate
-                // matches the one in clear_z_level (the AgentSearch path).
+                // matches the one in clear_z_level_slice.
                 let should_link = cursor
                     .last_pos
                     .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, *first));
@@ -1861,7 +1854,7 @@ pub(super) fn waterline_cleanup(
     Ok(())
 }
 
-// ── 2.5D slice adaptive (AgentSearch strategy) ─────────────────────────
+// ── 2.5D slice adaptive (GeodesicAdaptive strategy) ────────────────────
 
 /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
 /// anchor for region-ordering. Vertex-average, not the area-weighted
@@ -1930,15 +1923,14 @@ fn polygon_signed_area(points: &[P2]) -> f64 {
     0.5 * acc
 }
 
-/// AgentSearch via 2.5D slices: at each Z-level, extract the 2D
-/// material polygon via marching squares, then run the proven 2D
-/// `adaptive_segments_with_debug` on it. Lift the resulting 2D path
-/// back to 3D (Z clamped to `z_level` or surface+stock_to_leave) and
-/// stamp the dexel stock along it.
+/// Geodesic Adaptive via 2.5D slices: at each Z-level, extract the 2D
+/// material polygon via marching squares, then plan each piece with the
+/// 2D geodesic plan (`plan_one_outline`). The F-038 forecast still runs
+/// the 2D agent planner (`adaptive_segments_with_debug`). Lift the
+/// resulting 2D path back to 3D (Z clamped to `z_level` or
+/// surface+stock_to_leave) and stamp the dexel stock along it.
 ///
-/// This replaces the ~700-line 3D agent-based search that struggled
-/// with surface-following, axial engagement, and boundary walking by
-/// delegating to the working 2D adaptive implementation. The trade-off
+/// The trade-off
 /// is that the tool stays at a fixed Z within each slab (no per-step
 /// terrain follow) — acceptable for roughing; finish passes handle
 /// the staircase.
@@ -1980,7 +1972,7 @@ pub(super) fn air_run_crossover_mm(
 /// The regions one Z level clears, in the order the cutter visits them, and
 /// the plan metrics the detection stage already knows.
 ///
-/// CUT-09: the product of stage 1 of `clear_z_level_agent_2d_slice`.
+/// CUT-09: the product of stage 1 of `clear_z_level_slice`.
 struct OrderedRegions {
     regions: Vec<crate::polygon::Polygon2>,
     metrics: ZLevelPlanMetrics,
@@ -2153,7 +2145,7 @@ fn detect_and_order_regions(
 /// The accumulators a Z level appends to, plus the two counters and
 /// the metrics record its stages share.
 ///
-/// CUT-09: `clear_z_level_agent_2d_slice` used to carry these as four
+/// CUT-09: `clear_z_level_slice` used to carry these as four
 /// separate `&mut` parameters, which is what made it need
 /// `clippy::too_many_arguments`.
 struct LevelEmission<'a> {
@@ -2163,7 +2155,7 @@ struct LevelEmission<'a> {
     dropped_short_regions: &'a mut usize,
 }
 
-/// The one door every segment of an AgentSearch / ContourSpiral level goes
+/// The one door every segment of a Geodesic Adaptive level goes
 /// through into the plan and the planner stock.
 ///
 /// G-PHANTOMSTAMP: with the F-038 gate on (`min_region_cut_length_mm > 0`)
@@ -3333,7 +3325,7 @@ fn plan_and_emit_region(
                 // 1mm floor: at small depth_per_pass (e.g. 0.5mm) the
                 // 1.1× factor gives a 0.55mm threshold, and any natural
                 // terrain undulation > 0.55mm between consecutive
-                // samples chops the path. AgentSearch then plans many
+                // samples chops the path. The slice then plans many
                 // short paths instead of one long sweep, and the
                 // linker may not stitch them all up. The floor
                 // preserves the safety logic without over-splitting.
@@ -3592,7 +3584,7 @@ fn coalesce_level_entries(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
 )]
-pub(super) fn clear_z_level_agent_2d_slice(
+pub(super) fn clear_z_level_slice(
     ctx: &ClearZLevelContext<'_>,
     material_stock: &mut TriDexelStock,
     surface_hm: &SurfaceHeightmap,
@@ -3674,9 +3666,7 @@ pub(super) fn clear_z_level_agent_2d_slice(
         // geodesic door sets the same value (`adaptive/geodesic/mod.rs`).
         // ContourSpiral (3D) used the spiral here until removal step R4.
         path_strategy: crate::adaptive::PathStrategy2d::Agent,
-        // Operator-tunable trochoid cap ("Nibble" dial). Fall back to the
-        // tuned const for any non-finite / non-positive value so a bad
-        // config can never disable load capping outright.
+        // Not read by the agent planner; the guard keeps the value valid.
         trochoid_cap_mult: if ctx.trochoid_cap_mult.is_finite() && ctx.trochoid_cap_mult > 0.0 {
             ctx.trochoid_cap_mult
         } else {
