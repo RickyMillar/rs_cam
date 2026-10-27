@@ -1,15 +1,26 @@
 # Design: remove the AgentSearch, ContourSpiral and Adaptive 3D clearing strategies
 
 Date: 2026-10-28. Tree: `geodesic-integration` at `7ee3d3226`. Author:
-implementer I1. Design only: no code until D64 reports and the lead
-confirms.
+implementer I1. Design only: no code until D65 is committed and the lead
+starts R1.
+
+Operator rulings on this design (OPERATOR_DECISIONS, 2026-10-28):
+- the load rule is option B: the file refuses as a whole at load, through
+  `RETIRED_VALUES` rows that name the fix (§3);
+- the advisor compares `[ContourParallel, GeodesicAdaptive]`; Suggest
+  heuristic B points at `geodesic_adaptive`;
+- the wire labels `agent2d_region` and `agent_walk_cut_length_mm` stay;
+- `trochoid_cap_mult` and `engagement_measure` stay on 3D Rough as
+  load-only fields with "Not read" help;
+- D64 is done (P15 "## D64", f1710608f): no removed strategy beats
+  Geodesic Adaptive inside the load bound, so the removal goes ahead.
 
 Operator ruling (via the lead, 2026-10-28): the 3D Adaptive op keeps two
 clearing strategies, Contour Parallel (CP) and Geodesic Adaptive. The
 strategies AgentSearch, ContourSpiral and Adaptive (the variable-offset EDT
 planner) go. D10 measures all five strategies first (D64).
 
-Line numbers are of `7ee3d3226`. "Lines" counts are measured spans unless
+Line numbers are of `7ee3d3226`. D65 (C24) edits `adaptive3d/clearing.rs` and the 2D engine before any removal step, so each step reads its line numbers again. "Lines" counts are measured spans unless
 marked "about", which is an estimate to be measured in the step.
 
 ## 1. What goes
@@ -18,9 +29,9 @@ marked "about", which is an estimate to be measured in the step.
 
 | Item | Place | Lines | Note |
 |---|---|---|---|
-| `ClearingStrategy::{Adaptive, AgentSearch, ContourSpiral}` | `compute/operation_configs.rs:136-155` (enum, 20 lines) | about 12 (three variants and their docs) | serde names `adaptive`, `agent_search`, `contour_spiral`. The load rule (§3) decides whether the values leave the type or stay as removed values |
+| `ClearingStrategy::{Adaptive, AgentSearch, ContourSpiral}` | `compute/operation_configs.rs:136-155` (enum, 20 lines) | about 12 (three variants and their docs) | serde names `adaptive`, `agent_search`, `contour_spiral`. The values leave the type; the loader refuses them by name (§3) |
 | `ClearingStrategy3d::{AgentSearch, Adaptive, ContourSpiral}` | `adaptive3d/mod.rs:75-97` (enum) | about 25 (variants and docs; the enum doc at `mod.rs:60-74` describes them too) | the planner enum keeps `ContourParallel` (default) and `GeodesicAdaptive` |
-| `From<ClearingStrategy> for ClearingStrategy3d` | `adaptive3d/mod.rs:111-123` | 3 arms | becomes a fallible map or a precondition (§3) |
+| `From<ClearingStrategy> for ClearingStrategy3d` | `adaptive3d/mod.rs:111-123` | 3 arms | the three arms go with the config values |
 | `effective_step_split`, `effective_keep_down_route` | `adaptive3d/mod.rs:333-360` | 6 arm lines | the shipped arms reduce to `ContourParallel` |
 
 ### 1.2 The planners and the dispatch
@@ -41,9 +52,9 @@ marked "about", which is an estimate to be measured in the step.
 |---|---|---|---|
 | `is_constant_engagement`, `strategy_label` arms | `machine/strategy_advisor.rs:107-123` | 4 | |
 | advisor unit tests on ContourSpiral | `machine/strategy_advisor.rs:310-430` (`:324, 347, 371, 400`) | about 30 to edit | they use ContourSpiral as the "spiral-class" candidate |
-| `ADVISOR_CANDIDATE_STRATEGIES = [CP, ContourSpiral]` | `session/compute.rs:1415-1426` | 12 | DECISION: `[CP, GeodesicAdaptive]` after D64 measures it, or retire the advisor. The advisor needs a second candidate to compare |
+| `ADVISOR_CANDIDATE_STRATEGIES = [CP, ContourSpiral]` | `session/compute.rs:1415-1426` | 12 | RULED: `[ContourParallel, GeodesicAdaptive]` |
 | capability `planner_uniform_engagement` for 3D Adaptive | `compute/catalog.rs:1026-1034` | 9 | always false after the removal; the 2D arm (`:1054-1059`) stays |
-| Suggest heuristic B (recommends `adaptive` on mixed terrain, warn-only) | `feeds/suggest/adaptive_entry.rs:30-90`, test `feeds/suggest/tests.rs:2500` | about 60 | its recommended value is removed. DECISION: delete heuristic B, or recommend `geodesic_adaptive` after D64 |
+| Suggest heuristic B (recommends `adaptive` on mixed terrain, warn-only) | `feeds/suggest/adaptive_entry.rs:30-90`, test `feeds/suggest/tests.rs:2500` | about 60 | RULED: heuristic B recommends `geodesic_adaptive` (its warning text and its test change with it) |
 
 ### 1.4 GUI, MCP, CLI
 
@@ -81,7 +92,7 @@ Integration tests that name a removed strategy (reference counts from `rg`):
 | `adaptive3d_by_area_cells_confine_jobs.rs`, `adaptive3d_by_area_matches_global_stock.rs`, `adaptive3d_global_gate_drapes_below_floor.rs` | By Area and the Global gate, per strategy | drop the removed strategies from the strategy lists; add Geodesic Adaptive where missing |
 | `adaptive3d_boundary_clear_parity.rs`, `adaptive3d_planner_never_ahead_of_emitted_path.rs` | planner/sim parity on the slice | retarget the AgentSearch arm to Geodesic Adaptive |
 | `the_volumetric_wrapper_keeps_its_produced_w6_5.rs` | the 3D Rough side channel (planner engagement from ContourSpiral) | the 3D planner engagement goes; reduce to the fields that stay |
-| `strategy_advisor_smoke.rs` | the advisor picks CP or ContourSpiral | follows the advisor DECISION |
+| `strategy_advisor_smoke.rs` | the advisor picks CP or ContourSpiral | the advisor picks CP or Geodesic Adaptive (the ruled candidates) |
 | `param_sweep.rs` (ignored harness) | the strategy sweep | drop the removed values |
 | `wanaka_z_layer_render.rs` (ignored diagnostic) | AgentSearch on wanaka | delete or retarget |
 | `a_larger_rest_consumer_tool_refuses_d53.rs` | its source rough is AgentSearch | change the source to Geodesic Adaptive (the refusal does not depend on the strategy) |
@@ -138,7 +149,7 @@ Renames (identifiers only, no behaviour change, byte parity):
 The WIRE labels `agent2d_region` (debug trace span) and
 `agent_walk_cut_length_mm` (semantic trace key) are read by MCP
 (`get_generation_debug_trace`, `narrate_toolpath`). A rename there is a
-wire change. Proposal: keep both labels in this programme; their docs say
+wire change. RULED: keep both labels; their docs say
 "the 2D planner of the slice", not AgentSearch.
 
 Two config fields become inert on 3D Rough after the removal:
@@ -146,7 +157,7 @@ Two config fields become inert on 3D Rough after the removal:
 only by the ContourSpiral 2D generator) and `engagement_measure` (`:1697`;
 the slice runs under `KeepDownLinks::WithinPassLoad`, which reads the
 swept width). Every saved 3D Rough op writes both keys, so retiring them
-(`RETIRED_KEYS`) would refuse every saved project. Proposal: keep them as
+(`RETIRED_KEYS`) would refuse every saved project. RULED: keep them as
 load-only fields with a "Not read by 3D Rough" help, as the 2D op's
 `engagement_measure` already does (`operation_configs.rs:1078-1089`). The
 step proves "inert" by a test: two values, one golden.
@@ -168,59 +179,40 @@ The codebase has one precedent for a unit value that leaves the format:
 names every retired value and its replacement (`SessionError::RetiredKeys`,
 C2), and converts nothing (rulings 2026-09-16 "no legacy" and 2026-10-15).
 
-### 3.2 Option A (the lead's recommendation): the file loads, the op refuses at generate
+### 3.2 The rule (RULED: option B, refuse at load)
 
-- `ClearingStrategy` keeps the three values as REMOVED values: a variant
-  `Removed(RemovedClearingStrategy)` with `#[serde(untagged)]`, where
-  `RemovedClearingStrategy` is the unit enum `{Adaptive, AgentSearch,
-  ContourSpiral}` with the old serde names. Serde reads and writes the old
-  string unchanged, so a file round-trips byte for byte.
-- `rs_cam_derive::ParamEnum` must leave the removed values out of the
-  schema string. Today it skips only serde-`skip` variants
-  (`rs_cam_derive/src/lib.rs:507-513`), and `skip_deserializing` would stop
-  the load. A new variant attribute (for example `#[param(removed)]`)
-  hides a variant from `enum:a|b|…`. `schema_enum_values_g_schemaenum`
-  then holds: every advertised value deserialises.
-- Generation refuses: a precondition in `session/compute.rs` (beside the
-  D53 refusal) returns `SessionError::OperationFailed("The clearing
-  strategy '<name>' was removed. Choose Geodesic Adaptive or Contour
-  Parallel.")`. The diagnostics precondition ribbon shows the same text
-  before generation (as `precondition.buried_face`). No conversion: the op
-  never cuts with another strategy without the operator's choice.
-- The planner enum has no removed value, so the map
-  `ClearingStrategy → ClearingStrategy3d` becomes a function that returns
-  `None` for a removed value; the precondition makes the `None` arm
-  unreachable at generation.
-- The doors refuse a NEW removed value: MCP `set_toolpath_param`, the
-  CLI job reader for a new op, and the GUI (the combo offers only the two
-  values; a removed value shows as a read-only "Agent Search (removed)"
-  label). W6b (`a_value_outside_its_domain_is_refused_at_every_door_w6b`)
-  is the place for the door test. The job file: a job op that names a
-  removed value refuses at generate, like a project op.
-- Cost: about 120 lines (derive attribute, enum, precondition, GUI label,
-  door check) and one sentry.
+The three values leave `ClearingStrategy`, and the loader refuses a file
+that names one, as a whole, before serde. The refusal names every hit and
+the fix. Nothing converts: no op ever cuts with another strategy without
+the operator's choice.
 
-### 3.3 Option B (the codebase precedent): refuse the file at load
+- The project file: one row per value in the retired-value tables of
+  `session/project_file.rs`. `clearing_strategy` is a key of 3D Rough only
+  (`operation_configs.rs:1679`), at
+  `setups[].toolpaths[].operation.params.clearing_strategy`. Either three
+  `RETIRED_VALUES` rows on that path, or three `RETIRED_OP_ENTRIES` rows
+  with `kinds = ["adaptive3d"]` and a `when` rule on the value; the step
+  picks the one that `check_retired_keys` reads with the least new code.
+  The replacement text: "Removed (the 3D clearing strategy <name>): set
+  clearing_strategy to "geodesic_adaptive" or "contour_parallel"". The
+  refusal is `SessionError::RetiredKeys` (C2: one refusal names every hit).
+- The job file (CLI): `parse_job_file` (`rs_cam_cli/src/job.rs:799`)
+  reads TOML with serde and does not run `check_retired_keys`; a removed
+  value would fail with "unknown variant". R2 adds the same check there,
+  with the same text, for the `[[operation]]` key `clearing_strategy`.
+- MCP `set_toolpath_param` and the GUI: the values are gone from the
+  schema (`ParamEnum`) and from the combo, so serde refuses them at the
+  door. No new code; `schema_enum_values_g_schemaenum` and W6b hold.
+- The sentry `a_retired_clearing_strategy_is_named_*` follows
+  `a_retired_boundary_source_is_named_p2_5`: a saved project with a CP op
+  loads (control); the same text with each removed value refuses and
+  names all three hits and the fix; a job file with one refuses with the
+  same text.
+- Cost: about 40 lines and one sentry.
 
-- Three `RETIRED_VALUES` rows (`setups[].toolpaths[].operation.params`,
-  key `clearing_strategy`, values `adaptive`, `agent_search`,
-  `contour_spiral`), replacement text "Removed: choose geodesic_adaptive
-  or contour_parallel". The enum values leave the type.
-- The job-file path needs the same check (it does not run
-  `check_retired_keys` today; to verify in the step).
-- Cost: about 25 lines and one sentry. It matches the 2026-09-16 ruling.
-- Effect: a project with one removed op does not open until the operator
-  edits the file by hand.
-
-### 3.4 Recommendation
-
-Both options refuse and convert nothing, so no toolpath changes silently.
-Option A lets the operator open the project and change the one op in the
-GUI; option B is smaller and follows the standing rule. I recommend
-option A for this removal, because the strategy is the main dial of the
-most used roughing op and many operator projects name it. Option A is an
-exception to the "refuse at load" precedent, so the operator must confirm
-it.
+An older build reads a new project file without change (the values are a
+subset). A new build refuses an old file that names a removed value until
+the operator edits it; the message says what to write.
 
 ## 4. The 2D Adaptive op
 
@@ -245,27 +237,25 @@ identical and the CP and Geodesic op-golden rows unchanged.
 
 | Step | Patch | Gates |
 |---|---|---|
-| R0 | D64: D10 measures all five strategies. No code | the lead's confirmation |
+| R0 | D64: D10 measures all five strategies. No code. D65 (C24: capped admission of slightly-over steps, Geodesic Adaptive only; it edits `adaptive/path.rs`, `adaptive/geodesic/slice.rs` and `adaptive3d/clearing.rs`) lands first: every removal step starts after D65 is committed, and the line numbers of this design are then read again | the lead's confirmation |
 | R1 | Fixtures: move the four test fixtures (§1.5) off the removed values. Each test that reads a rough op's numbers is re-measured and re-pinned with its cause stated; tests that read only other ops must not move. New op-golden rows `by_area_helix_cp`, `ramp_geodesic` | every loader of the four fixtures, opgolden, byte parity |
-| R2 | The load rule (option A or B) and its sentry, with the removed values still planned: the refusal is the only new behaviour | the new sentry, `schema_enum_values_g_schemaenum`, W6b, the project round trip, viz `-j 2` (surface_3d, round trip), `mcp_wire_surface_pin` |
+| R2 | The config layer and the load rule: the three values leave `ClearingStrategy`; the `RETIRED_*` rows and the job-file check (§3.2) with their sentry; the `From` arms; the GUI rows and the spiral slider; the capability arm; the advisor candidates `[ContourParallel, GeodesicAdaptive]` and its label arms; Suggest heuristic B to `geodesic_adaptive`; the serde round trip and the value lists of the tests. The planner variants stay (reachable from tests only) until R3 and R4 | the new sentry, `schema_enum_values_g_schemaenum`, W6b, `every_op_states_its_capabilities_w2_4`, `strategy_advisor_smoke`, the Suggest tests, the project round trip, viz `-j 2` (surface_3d, round trip), `mcp_wire_surface_pin` (report a move, do not re-pin), byte parity |
 | R3 | Remove 3D Adaptive: the dispatch arm, `clear_z_level_adaptive`, `edt_curvature_field`, `smooth_grid`, its golden case, its opgolden row, its entries in the strategy-list tests | byte parity (4 cases), adaptive3d sentries, clippy (dead code) |
-| R4 | Remove AgentSearch and ContourSpiral from the planner enum, the dispatch, the GUI rows and the spiral slider, the capability, the advisor arms; retarget or delete the tests of §1.5; delete their goldens | byte parity (2 cases), adaptive3d sentries, the retargeted tests, viz `-j 2` |
+| R4 | Remove AgentSearch and ContourSpiral from the planner enum and the dispatch; retarget or delete the tests of §1.5; delete their goldens | byte parity (2 cases), adaptive3d sentries, the retargeted tests, viz `-j 2` |
 | R5 | Collapse the slice: every `is_geodesic` gate keeps its geodesic branch; the 3D planner-engagement plumbing goes; `path_strategy` is fixed. Geodesic output byte-identical | byte parity, the C12 judge (by name), the cap census, the s7_4 pins, D44/D48/D50 |
-| R6 | Renames (§2), the inert-field help and its test, the advisor and Suggest DECISIONS, docs (FEATURE_CATALOG, folder maps) | fmt, clippy, folder maps, byte parity |
+| R6 | Renames (§2), the inert-field help and its test, docs (FEATURE_CATALOG: the strategies, the load rule; folder maps) | fmt, clippy, folder maps, byte parity |
 
-R1 goes first under either load rule: under option B the four fixtures do
-not load, and under option A every test that generates their rough op
-refuses.
+R1 goes first: after R2 the four fixtures do not load.
 
 ## 6. Risks
 
-1. D64 can show Geodesic Adaptive slower or worse than a removed strategy
-   on some part. The removal then takes an option from the operator. R0
-   gates every code step.
+1. D64 (done) found no removed strategy that beats Geodesic Adaptive
+   inside the load bound on the measured parts. A part outside them can
+   still favour a removed strategy; the operator accepted that.
 2. Geodesic Adaptive clears the body only. A job that roughed edges and
    channels with AgentSearch leaves them standing unless a rest op
    follows (7.8, the template, waits for the operator). A silent switch
-   would hide this; both load options refuse instead.
+   would hide this; the load rule refuses instead.
 3. Fixture migration (R1) moves the numbers of up to 24 tests that load
    the four wanaka fixtures. Each re-pin needs a stated cause; tests that
    do not read the rough op must not move, which is the check.
@@ -279,13 +269,15 @@ refuses.
    rename is an MCP wire change and needs its own ruling.
 7. `trochoid_cap_mult` and `engagement_measure` become inert on 3D Rough;
    retiring them would refuse every saved project. They stay load-only.
-8. The advisor has one candidate left. Without a decision it compares CP
-   with itself.
-9. Suggest heuristic B recommends a removed value.
-10. Option A adds a derive attribute and a removed-value variant that
-    later code must not offer at a door. The door tests (W6b,
-    `schema_enum_values_g_schemaenum`) are the guard.
+8. The advisor now compares CP with Geodesic Adaptive. Its timing runs
+   the geodesic plan, which is slower to plan than ContourSpiral; the
+   advisor's run time grows.
+9. Suggest heuristic B now recommends `geodesic_adaptive` on mixed
+   terrain; its D64 basis is the measured parts only.
+10. Refuse-at-load blocks a whole project for one op. The message names
+    every hit and the fix, so one edit opens it.
 11. 40 planning projects name a removed value. They are evidence, not
     fixtures, and stay unchanged; they no longer reproduce their runs.
 12. An older build reads a new project file without change (the values
-    are a subset). A new build reads an old file by the load rule.
+    are a subset). A new build refuses an old file that names a removed
+    value (§3.2).
