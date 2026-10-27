@@ -5636,3 +5636,89 @@ Corne op 1: 382 descent events into stock (audit). Wanaka op 1 descents and land
 - Corne B s2.1: op 5 is +24.6 s against D45 (more rapids and plunges; the raster). Op 1 + op 5 is ×1.07 of CP.
 
 Simulation files: deleted (fix34 wanaka_s3p5, corne_B_s2p1). Not committed.
+
+## D51: the stock that wanaka s3.5 leaves inside the part — is it a finishing problem? (fix35, tree 453d52571)
+
+**Runs.** CP: fix25 cp_alone_0.6 (op 1 only; stock map `fix33/stock_cp_alone_0.6.npz`). geo s3.5: D49
+(`fix34/stock_wanaka_s3p5.npz`). geo s2.0: rerun on 453d52571 (`fix35/run_one.sh wanaka_s2p0`; export passed with no
+override; op 1 2261.9 s, op 7 922.3 s, job 3184.2 s; stock map `fix35/stock_wanaka_s2p0.npz`). Stock maps: D47 item 4
+(0.5 mm grid, a flat 6 mm disc lowered to each trace sample tip). Script: `fix35/leftover.py` → `leftover.json`.
+
+**There is no finish op on this face.** In every wanaka job in `planning/multitool_2026-08-23/` (mt1, mt1b, mt1c, mt2,
+mt2_overlap02, iso_scallop, c12_agent_search), setup 0 (face bottom up) has only:
+- 1 Pin Drill;
+- 2 Back Rough (adaptive3d, `stock_to_leave_axial = 4.0`);
+- 3 Holes (drill);
+- 4 Rivers and 5 Lakes (V-bit `project_curve`, `direction = "from_below"`, depth 0.1 / 0.3 mm).
+
+The finish ops (7 tier-A R2.0, 7b tier-B R1.0, 8 Pencil R0.5; `stock_to_leave` 0.0) are all in setup 1, the front face.
+The terrain mesh is one surface (wanaka_part.npz: top − bot = 0 at every cell). So the back rough's floor (surface + 4.0
+seen from below) is the final back face: a shell 4 mm thick (axial). Stock over the target is a shell-thickness error. No
+op removes it later, except along the river and lake curves.
+
+**1. Height left above the target** (e = stock top − (reach floor + 4.0); "core" = inside the part, > 3 mm from the
+outline, 37636 mm²; the 0–3 mm row is out of reach of every run, D47 item 4):
+
+| run (after the job) | e max | e p99 | e p95 | e p50 | area e > 0 | area e > 0.6 (+1 sim cell) | area e > 0.8 | volume e > 0 |
+|---|---|---|---|---|---|---|---|---|
+| CP alone 0.6 | 3.24 | 2.09 | 0.85 | 0.13 | 29345 mm² | 3010 mm² | 2032 mm² | 8691 mm³ |
+| geo s2.0 | 3.17 | 2.01 | 0.92 | 0.17 | 31788 | 3760 | 2318 | 10023 |
+| geo s3.5 | 3.58 | 2.17 | 1.18 | 0.22 | 32452 | 6190 | 3711 | 12825 |
+
+- After op 1 only, s3.5: max 17.58 (left pieces at z 4.0), p99 2.46, e > 0.6 on 6886 mm².
+- e > 0 covers 78–86 % of the core in every run. A flat end mill on a curved floor always leaves some stock. So the
+  stock_to_leave threshold does not separate the runs; e > 0.6 does. s3.5 has ×2.06 CP's area and ×1.65 s2.0's.
+- The finish op's own axial allowance: none on this face (see above). For the front, tier-A's `stock_to_leave = 0.0`
+  takes the front rough's 0.5 mm (op 6, `stock_to_leave_axial = 0.5`). If the back had the same chain, the allowance would
+  be 0, and any e > 0 would be extra load.
+
+**2. Where the extra stock is** (`fix35/img/leftover_maps.png`: the three runs on one scale 0–3 mm, and the surface
+slope). The leftover lies in the same places in all three runs. It is round patches of about 5–15 mm on the domes and
+basins of the terrain and thin lines along the steep walls; s3.5 makes the same patches darker. By slope (mean e; area e > 0.6):
+
+| slope | core mm² | CP | geo s2.0 | geo s3.5 |
+|---|---|---|---|---|
+| 0–5° | 16823 | 0.139; 382 | 0.189; 827 | 0.250; 1709 |
+| 5–10° | 5457 | 0.139; 119 | 0.168; 176 | 0.232; 434 |
+| 10–20° | 6103 | 0.205; 282 | 0.235; 355 | 0.311; 776 |
+| 20–30° | 3506 | 0.264; 295 | 0.289; 362 | 0.372; 684 |
+| 30–45° | 3933 | 0.366; 770 | 0.389; 877 | 0.518; 1334 |
+| 45–90° | 1814 | 1.085; 1162 | 1.076; 1162 | 1.163; 1253 |
+
+- Walls over 45°: the same in all runs (the 5.46 mm level step on near-vertical walls). Not the extra.
+- The extra is on the low and middle slopes, and most in area on the 0–5° domes and basins (s3.5 ×4.5 CP's e > 0.6 area).
+- Not missed regions: of the 2927 mm² where s3.5 has e > 0.6 and s2.0 does not, op 7 touched 21 mm². Its height is
+  moderate: median 0.78 mm, p95 1.69 mm (s2.0 at the same cells: median 0.35).
+- Not gaps between wraps: the cells with e > 0.6 are not farther from an op-1 pass at the final floors (tip z < 14) than
+  clean cells (s3.5: median 0.76 against 0.95 mm; s2.0: 0.53 against 0.56). The stock is under the cutter's footprint. The
+  flat 6 mm bottom rests on the highest point under it, and on a dome or slope its low side stays high. Each cell is the
+  lowest of the passes that cover it. At 3.5 mm spacing about 6/3.5 ≈ 1.7 passes cover a cell; at 2.0 mm, about 3.
+
+**3. Cause, from op 1's log.**
+- Spacing (stepover): yes. The wrap spacing equals the stepover. The "C35b hand-off" line steps the wrap radius by the
+  stepover: s3.5 "r 92.961 -> 96.461, length 3.500"; s2.0 "r 96.500 -> 98.500". So the cutter covers each cell fewer
+  times, and the flat-bottom "scallop" on curved ground grows (item 2). This is most of the extra stock.
+- Left pieces at z 4.0: a small part. s3.5 leaves 28 pieces, 2134.9 mm², all at z 4.0 ("C38 piece left to the rest
+  pass z=4.0 ..."). Op 7 cuts them inside op 1's reach (D49). After the job, e > 2 is 503 mm² for s3.5 against 378 (s2.0)
+  and 412 (CP): about 100 mm² of left-piece stock remains. The 2927 mm² of extra e > 0.6 is not where op 7 cut.
+- Other: geo s2.0 already leaves more than CP at the same stepover (3760 against 3010 mm²; 0–5°: 827 against 382). The
+  spiral wraps and CP's offsets cover the domes differently. Not measured further.
+
+**4. Would the next op see a load over its own bound?** No finish op on this face, so the finish-load question does not
+apply to wanaka. The ops that see this stock are 4 Rivers and 5 Lakes (V-bit, 20°, 5.5 mm, `from_remaining_stock`).
+- With the flipped setup, they cut 0.1 / 0.3 mm below the surface (`ops/project_curve.rs:218-224`: "Depth goes below the
+  surface in local frame"). So they cut through the 4 mm shell plus e: depth 4.1 + e (rivers) and 4.3 + e (lakes).
+- On the p95 of e, that is 4.95 (CP), 5.02 (s2.0) and 5.28 mm (s3.5); at the max, 7.34 / 7.27 / 7.68 mm. The V-bit has
+  15 mm of cutting length.
+- The shipped tool_load gate: its depth-of-cut rule (rigidity factor 1.5 × the engaged diameter) gives 1.5 × 2h·tan 10° =
+  0.53 h for a 20° V-bit. It flags every V-bit depth h, so it cannot separate the runs, and stderr says it does not gate.
+- I did not sample e along the river and lake curves: the DXF files are outside the repo
+  (`/home/ricky/Downloads/wanaka200/rivmap_export/`), and no DXF reader is installed. The whole-core numbers above are an
+  upper envelope.
+
+**Verdict for G2.** s3.5's extra stock is a shell-thickness error on the final back face: e > 0.6 on 6190 against 3010 mm²
+(CP), p95 1.18 against 0.85 mm, max 3.58 against 3.24 mm. Most of it is spacing (fewer passes over each cell); left pieces
+add about 100 mm². No finish op exists on this face to take it or to be overloaded by it. The rivers and lakes V-bit cut up
+to about 0.3 mm deeper at the p95 than on CP. s2.0 stays near CP: 3760 mm², p95 0.92.
+
+Simulation files: fix35/wanaka_s2p0 deleted. Not committed.
