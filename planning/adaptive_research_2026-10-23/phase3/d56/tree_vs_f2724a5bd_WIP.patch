@@ -1,0 +1,699 @@
+diff --git a/crates/rs_cam_core/Cargo.toml b/crates/rs_cam_core/Cargo.toml
+index 3744cde4d..6399dd345 100644
+--- a/crates/rs_cam_core/Cargo.toml
++++ b/crates/rs_cam_core/Cargo.toml
+@@ -245,6 +245,11 @@ required-features = ["research", "test-support"]
+ name = "a_rest_consumer_starts_at_the_left_stock_top_d50"
+ required-features = ["research", "test-support"]
+ 
++# D56: a rest consumer's planner stock holds no frame beyond the source's reach.
++[[test]]
++name = "a_rest_entry_ignores_the_frame_beyond_the_source_reach_d56"
++required-features = ["research", "test-support"]
++
+ # The test-door harnesses. Each one binds a `maps/` or `surface/` item behind
+ # the `test-support` feature, so each one needs that feature to compile. The
+ # audit row FLD-04 + FLD-05 listed seven of them; `rg` found eight
+diff --git a/crates/rs_cam_core/src/adaptive3d/mod.rs b/crates/rs_cam_core/src/adaptive3d/mod.rs
+index 1c2a17b28..359326dcb 100644
+--- a/crates/rs_cam_core/src/adaptive3d/mod.rs
++++ b/crates/rs_cam_core/src/adaptive3d/mod.rs
+@@ -272,6 +272,14 @@ pub struct Adaptive3dGeometry {
+     /// as its rapid floor (rivmap350 "3D Rough 8", rapids up to 11 mm into
+     /// stock).
+     pub centre_boundary: Vec<crate::polygon::Polygon2>,
++    /// D56: the machining reach of the source op of a `DerivedRestRegions`
++    /// boundary: the region the source's tool disc can sweep (its raw
++    /// boundary for `Inside`, grown by its tool radius for `Center`). The
++    /// planner clears every planner-stock cell whose centre is outside it
++    /// (`path.rs`): the source never cut there (a holding frame), and this
++    /// op's disc never reaches there (D48 regions inside the source's
++    /// containment, D53 tool no larger). Empty: no clear.
++    pub source_reach: Vec<crate::polygon::Polygon2>,
+ }
+ 
+ impl Adaptive3dGeometry {
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index c873ab92d..be41a4c68 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1044,6 +1044,42 @@ pub(super) fn adaptive_3d_segments(
+         }
+     }
+ 
++    // D56: a `DerivedRestRegions` consumer clears the stock outside its
++    // source op's machining reach (`Adaptive3dGeometry::source_reach`): a
++    // holding frame the source never cut and this op's disc never reaches.
++    // The rapid floor then reads the region's own stock, not the frame. The
++    // clear is the boundary clear's (down to the surface, or to the stock
++    // bottom off the mesh). Empty: no clear.
++    if !params.geometry.source_reach.is_empty() {
++        let reach = &params.geometry.source_reach;
++        let mut reach_cleared = 0u32;
++        for row in 0..material_stock.z_grid.rows {
++            if row % 16 == 0 {
++                check_cancel(cancel)?;
++            }
++            for col in 0..material_stock.z_grid.cols {
++                let (x, y) = material_stock.z_grid.cell_to_world(row, col);
++                let p = crate::geo::P2::new(x, y);
++                if reach.iter().any(|q| q.contains_point(&p)) {
++                    continue;
++                }
++                let i = row * material_stock.z_grid.cols + col;
++                let clear_z = surface_hm
++                    .z_at_index(i)
++                    .covered()
++                    .map_or(material_stock.stock_bbox.min.z as f32, |z| z as f32);
++                ray_subtract_above(material_stock.z_grid.ray_mut(row, col), clear_z);
++                reach_cleared += 1;
++            }
++        }
++        if reach_cleared > 0 {
++            debug!(
++                cells = reach_cleared,
++                "D56: cleared cells outside the source op's reach"
++            );
++        }
++    }
++
+     // Compute Z levels: the level top down to surface bottom +
+     // stock_to_leave. A user-pinned heights `bottom_z`
+     // (params.depth.z_floor) clamps the plan — the surface heightmap reads
+@@ -2177,6 +2213,7 @@ mod tests {
+                 min_cutting_radius: 0.0,
+                 boundary: None,
+                 world_stock_xy_bbox: None,
++                source_reach: Vec::new(),
+                 centre_boundary: Vec::new(),
+             },
+             depth: crate::adaptive3d::Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/src/adaptive3d/tests.rs b/crates/rs_cam_core/src/adaptive3d/tests.rs
+index 2a19833ce..d52867479 100644
+--- a/crates/rs_cam_core/src/adaptive3d/tests.rs
++++ b/crates/rs_cam_core/src/adaptive3d/tests.rs
+@@ -125,6 +125,7 @@ fn default_params() -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/src/compute/execute.rs b/crates/rs_cam_core/src/compute/execute.rs
+index dce50cf72..96af5f50b 100644
+--- a/crates/rs_cam_core/src/compute/execute.rs
++++ b/crates/rs_cam_core/src/compute/execute.rs
+@@ -502,6 +502,11 @@ pub struct ExecutionContext<'a> {
+     /// planner that owns its level plan reads it (the 3D Rough). `None`:
+     /// no such boundary, or the source stated no top.
+     pub rest_top_z: Option<f64>,
++    /// D56: when the boundary is `DerivedRestRegions`, the machining reach
++    /// of the source op (`ProjectSession::rest_source_reach`): the 3D Rough
++    /// planner clears its stock outside it. `None`: no such boundary, or a
++    /// source whose reach is not resolved.
++    pub rest_source_reach: Option<&'a [crate::polygon::Polygon2]>,
+ }
+ 
+ impl<'a> ExecutionContext<'a> {
+@@ -584,6 +589,7 @@ impl<'a> ExecutionContext<'a> {
+             entry_helix_radius: None,
+             obstacles: None,
+             rest_top_z: None,
++            rest_source_reach: None,
+         }
+     }
+ }
+diff --git a/crates/rs_cam_core/src/compute/execute/rough_3d.rs b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+index 984d69ca9..faedbd6ab 100644
+--- a/crates/rs_cam_core/src/compute/execute/rough_3d.rs
++++ b/crates/rs_cam_core/src/compute/execute/rough_3d.rs
+@@ -110,6 +110,11 @@ impl Adaptive3dRough<'_> {
+                 world_stock_xy_bbox: Some(inputs.world_stock_xy),
+                 // G-BOUNDARYPHANTOM: the containment the session clips to after
+                 // generation; the planner stamps only what that clip keeps.
++                // D56: the source's reach, for a `DerivedRestRegions` consumer.
++                source_reach: inputs
++                    .source_reach
++                    .map(<[crate::polygon::Polygon2]>::to_vec)
++                    .unwrap_or_default(),
+                 centre_boundary: inputs
+                     .centre
+                     .map(<[crate::polygon::Polygon2]>::to_vec)
+diff --git a/crates/rs_cam_core/src/compute/execute/volumetric.rs b/crates/rs_cam_core/src/compute/execute/volumetric.rs
+index 4a178eddd..2f0d333c8 100644
+--- a/crates/rs_cam_core/src/compute/execute/volumetric.rs
++++ b/crates/rs_cam_core/src/compute/execute/volumetric.rs
+@@ -96,6 +96,9 @@ pub(crate) struct VolumetricInputs<'a> {
+     /// D50: the top Z of the stock the source op left in this op's
+     /// derived rest regions ([`ExecutionContext::rest_top_z`]).
+     pub rest_top_z: Option<f64>,
++    /// D56: the machining reach of the source op of this op's derived rest
++    /// regions ([`ExecutionContext::rest_source_reach`]).
++    pub source_reach: Option<&'a [Polygon2]>,
+     /// The retract plane.
+     pub safe_z: f64,
+     /// The segment merge tolerance, when the planner owns the merge and
+@@ -162,6 +165,7 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
+         z_floor: (O::HEIGHTS.pinned_bottom && ctx.heights.bottom_pinned)
+             .then_some(ctx.heights.bottom_z),
+         rest_top_z: ctx.rest_top_z,
++        source_reach: ctx.rest_source_reach,
+         safe_z: ctx.heights.retract_z,
+         segment_merge_tolerance: if O::OWNS.segment_merge {
+             ctx.segment_merge_tolerance
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index e3b37d694..65cd26137 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -105,6 +105,10 @@ pub struct ResolvedGenInputs {
+     /// `Produced::rest_regions_top_z`; it reaches the planner through
+     /// `ExecutionContext::rest_top_z`. `None` for every other boundary.
+     rest_top_z: Option<f64>,
++    /// D56: with an enabled `DerivedRestRegions` boundary, the source op's
++    /// machining reach (`ProjectSession::rest_source_reach`); it reaches the
++    /// planner through `ExecutionContext::rest_source_reach`.
++    rest_source_reach: Option<Vec<crate::polygon::Polygon2>>,
+     /// The setup's local<->global transform, hoisted off the
+     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
+     /// `generate_toolpath` needs it and the context is scoped to this
+@@ -1387,6 +1391,7 @@ pub fn execute_generation(
+             .regions(regions.as_ref())
+             .centre(boundary_centre.as_deref()),
+         rest_top_z: inputs.rest_top_z,
++        rest_source_reach: inputs.rest_source_reach.as_deref(),
+         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
+         link_kinematics: context.link_kinematics.clone(),
+         rest_analysis: Some(&context.rest_analysis),
+diff --git a/crates/rs_cam_core/src/session/compute/generation.rs b/crates/rs_cam_core/src/session/compute/generation.rs
+index 18d19c33b..3199ffc31 100644
+--- a/crates/rs_cam_core/src/session/compute/generation.rs
++++ b/crates/rs_cam_core/src/session/compute/generation.rs
+@@ -462,6 +462,15 @@ impl ProjectSession {
+                 } if boundary_config.enabled => self.derived_rest_top_z(*source_toolpath_id),
+                 _ => None,
+             };
++        // D56: the source op's machining reach, which the planner keeps.
++        let rest_source_reach = match &boundary_config.source {
++            crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id }
++                if boundary_config.enabled =>
++            {
++                self.rest_source_reach(tc, *source_toolpath_id, &emission_stock_bbox, mesh.as_ref())
++            }
++            _ => None,
++        };
+ 
+         Ok(ResolvedGenInputs {
+             setup_transform: ctx.local_to_global,
+@@ -483,9 +492,71 @@ impl ProjectSession {
+             pre_boundary,
+             pre_boundary_regions,
+             rest_top_z,
++            rest_source_reach,
+         })
+     }
+ 
++    /// D56: the machining reach of the source op of a `DerivedRestRegions`
++    /// consumer `tc`: the region the source's tool disc can sweep. The 3D
++    /// Rough planner of `tc` clears its stock outside it
++    /// (`Adaptive3dGeometry::source_reach`).
++    ///
++    /// The source never cut outside its reach (a holding frame stands
++    /// there). The consumer's disc is inside it: its centre stays in the
++    /// published regions, which lie inside the source's centre containment
++    /// (D48), and its tool is no larger than the source's unless its own
++    /// containment is `Inside` (D53). So no stock outside the reach can be
++    /// under the consumer's disc, and the sliver-safe rapid-floor read stops
++    /// reading the frame.
++    ///
++    /// `None` (no clear, as before) unless every condition holds: the
++    /// source's boundary is enabled and a single polygon (`Stock`,
++    /// `ModelSilhouette`) with `Inside` or `Center` containment, and the
++    /// source is on the setup and the model of `tc`, so `mesh` and
++    /// `stock_bbox` are its frame. The polygon is resolved with no
++    /// keep-outs, so the reach errs large (it clears less). `Inside`: the
++    /// raw polygon. `Center`: the raw polygon grown by the source's tool
++    /// radius, the radius its containment uses.
++    fn rest_source_reach(
++        &self,
++        tc: &crate::session::ToolpathConfig,
++        source_toolpath_id: crate::ids::ToolpathId,
++        stock_bbox: &crate::geo::BoundingBox3,
++        mesh: Option<&Arc<crate::mesh::TriangleMesh>>,
++    ) -> Option<Vec<crate::polygon::Polygon2>> {
++        use crate::compute::config::{BoundaryContainment, BoundarySource};
++        use crate::tool::MillingCutter as _;
++        let source = self
++            .toolpath_configs
++            .iter()
++            .find(|s| s.id == source_toolpath_id)?;
++        let boundary = &source.boundary;
++        if !boundary.enabled
++            || !matches!(
++                boundary.source,
++                BoundarySource::Stock | BoundarySource::ModelSilhouette
++            )
++            || source.model_id != tc.model_id
++            || self.setup_of_toolpath_id(source.id) != self.setup_of_toolpath_id(tc.id)
++        {
++            return None;
++        }
++        let raw = Self::resolve_containment_polygon(boundary, stock_bbox, mesh, &[]).ok()??;
++        match boundary.containment {
++            BoundaryContainment::Inside => Some(vec![raw]),
++            BoundaryContainment::Center => {
++                let radius = self
++                    .tool_by_id(source.tool_id)
++                    .and_then(|tool| crate::session::session_cutter(tool).ok())?
++                    .diameter()
++                    / 2.0;
++                let grown = crate::polygon::offset_polygon(&raw, -radius);
++                (!grown.is_empty()).then_some(grown)
++            }
++            BoundaryContainment::Outside => None,
++        }
++    }
++
+     /// D50: the top Z of the stock that the toolpath `source_toolpath_id`
+     /// left in its rest regions (`Produced::rest_regions_top_z`), or `None`
+     /// when it has no result or stated no top. The regions themselves come
+diff --git a/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs b/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
+index 96bbcbe4c..10cca0d30 100644
+--- a/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
++++ b/crates/rs_cam_core/tests/a_rough_publishes_the_regions_it_leaves_d44.rs
+@@ -68,6 +68,7 @@ fn params() -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+index 0a0e32cd5..e62e7ef6c 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_boundary_clear_parity.rs
+@@ -132,6 +132,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+index df94140e6..8c50c5ec6 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_cells_confine_jobs.rs
+@@ -58,6 +58,7 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+index 9c5b44468..493d6b6ca 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_by_area_matches_global_stock.rs
+@@ -85,6 +85,7 @@ fn params(strategy: ClearingStrategy3d, ordering: RegionOrdering) -> Adaptive3dP
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+index 51967ff94..04a12f51f 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_emission_byte_parity.rs
+@@ -97,6 +97,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: Some((-13.0, -13.0, 13.0, 13.0)),
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+index ce33e841b..08eb3f70f 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_entry_coalescing_f038.rs
+@@ -153,6 +153,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs b/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
+index 8299be111..1a33bbe0d 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_entry_stock_aware.rs
+@@ -142,6 +142,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+index 5c8b65ddc..2c00bdb93 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_geodesic_arm_c12.rs
+@@ -251,6 +251,7 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+index 772eac750..d8038c591 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_global_gate_drapes_below_floor.rs
+@@ -65,6 +65,7 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs b/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
+index 641252797..47f836eba 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_keep_down_link_f038b.rs
+@@ -165,6 +165,7 @@ fn make_params(
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs b/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
+index ad6ec5ebf..e43ff546b 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_plan_matches_merged_path_g_plansimgap.rs
+@@ -108,6 +108,7 @@ fn params(merge: Option<f64>) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+index 5c77594ca..1c2a6dc4e 100644
+--- a/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
++++ b/crates/rs_cam_core/tests/adaptive3d_planner_never_ahead_of_emitted_path.rs
+@@ -100,6 +100,7 @@ fn params(z_floor: Option<f64>) -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/agent_search_axial_doc.rs b/crates/rs_cam_core/tests/agent_search_axial_doc.rs
+index c297d0b32..daed736bc 100644
+--- a/crates/rs_cam_core/tests/agent_search_axial_doc.rs
++++ b/crates/rs_cam_core/tests/agent_search_axial_doc.rs
+@@ -100,6 +100,7 @@ fn agent_search_axial_doc_diag() {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/agent_search_coverage.rs b/crates/rs_cam_core/tests/agent_search_coverage.rs
+index 577c8a0d4..c7e296c4a 100644
+--- a/crates/rs_cam_core/tests/agent_search_coverage.rs
++++ b/crates/rs_cam_core/tests/agent_search_coverage.rs
+@@ -227,6 +227,7 @@ fn agent_search_clears_concave_interior_at_every_z_level() {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/end_to_end.rs b/crates/rs_cam_core/tests/end_to_end.rs
+index 1c472b369..edcf94ba6 100644
+--- a/crates/rs_cam_core/tests/end_to_end.rs
++++ b/crates/rs_cam_core/tests/end_to_end.rs
+@@ -585,6 +585,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/param_sweep.rs b/crates/rs_cam_core/tests/param_sweep.rs
+index c7f79e2e6..0fd87a9bb 100644
+--- a/crates/rs_cam_core/tests/param_sweep.rs
++++ b/crates/rs_cam_core/tests/param_sweep.rs
+@@ -1531,6 +1531,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/wanaka_z_layer_render.rs b/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
+index ab54a3e7e..7f1e29951 100644
+--- a/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
++++ b/crates/rs_cam_core/tests/wanaka_z_layer_render.rs
+@@ -213,6 +213,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
+             min_cutting_radius: 0.0,
+             boundary: None,
+             world_stock_xy_bbox: None,
++            source_reach: Vec::new(),
+             centre_boundary: Vec::new(),
+         },
+         depth: Adaptive3dDepth {
+diff --git a/crates/rs_cam_core/tests/a_rest_entry_ignores_the_frame_beyond_the_source_reach_d56.rs b/crates/rs_cam_core/tests/a_rest_entry_ignores_the_frame_beyond_the_source_reach_d56.rs
+new file mode 100644
+index 000000000..91b2bf885
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_rest_entry_ignores_the_frame_beyond_the_source_reach_d56.rs
+@@ -0,0 +1,210 @@
++//! D56 (G-AIRPECK option b, `planning/adaptive_research_2026-10-23/phase3/
++//! d56/PREREG.md`): a `DerivedRestRegions` consumer's planner stock holds no
++//! holding frame outside its source op's machining reach, so the rapid
++//! floor of an entry beside the frame is the region's own stock, not the
++//! frame top.
++//!
++//! The source (op 0) roughs inside the model silhouette (`Inside`), so the
++//! stock ring outside the mesh (the frame) stays at the stock top. The
++//! consumer (op 1, contour parallel on remaining stock, `Center` on op 0's
++//! derived rest regions, `Plunge`) cuts the two channels that op 0 left;
++//! the channels run out to the mesh edge, beside the frame. Two regions:
++//! the consumer has no single pre-boundary, so the boundary clear did not
++//! clear the frame (wanaka op 7). The sliver-safe rapid-floor read took the
++//! frame cells beside the disc, and each entry there came down from the
++//! frame top. Now the planner clears the stock outside op 0's reach (the
++//! silhouette), and no entry's descent starts at the frame top.
++//!
++//! The research arm is selected only by `RS_CAM_RESEARCH_ADAPTIVE3D_ARM`
++//! (read once per process), so the test runs with that variable set.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    clippy::print_stderr,
++    reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{
++    BoundaryConfig, BoundaryContainment, BoundarySource, StockSource,
++};
++use rs_cam_core::compute::operation_configs::{
++    Adaptive3dConfig, Adaptive3dEntryStyle, ClearingStrategy,
++};
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::session::{
++    AddToolpathArgs, Command, ProjectSession, ProjectSessionBuilder, SimulationOptions,
++    SimulationResolution,
++};
++use rs_cam_core::toolpath::MoveIntent;
++use std::sync::atomic::AtomicBool;
++
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++/// The Y of the two channel centre lines.
++const CHANNEL_Y: f64 = 12.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++const TOOL_DIAMETER: f64 = 6.0;
++const SIM_CELL: f64 = 0.5;
++/// The research arm the run must select.
++const ARM: &str = "geodesic_local_spiral_pick";
++
++fn rough(strategy: ClearingStrategy) -> OperationConfig {
++    OperationConfig::Adaptive3d(Adaptive3dConfig {
++        stepover: 2.0,
++        depth_per_pass: 3.0,
++        clearing_strategy: strategy,
++        entry_style: Adaptive3dEntryStyle::Plunge,
++        ..Adaptive3dConfig::default()
++    })
++}
++
++/// The two channels and the wide pocket run the full X length of the mesh,
++/// so inside the silhouette nothing near a channel end stands above the
++/// wide floor; only the frame outside the mesh is at the stock top.
++fn session() -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |_, y| {
++        if (y - CHANNEL_Y).abs() <= CHANNEL_HALF_WIDTH
++            || (y + CHANNEL_Y).abs() <= CHANNEL_HALF_WIDTH
++        {
++            FLOOR_Z
++        } else if y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
++    let tool_id = ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(mesh_model(mesh, "channels"));
++    let mut op0 = toolpath_config(
++        "rough",
++        rough(ClearingStrategy::AgentSearch),
++        tool_id,
++        model_id,
++    );
++    op0.rest_analysis.enabled = true;
++    op0.boundary = BoundaryConfig {
++        enabled: true,
++        source: BoundarySource::ModelSilhouette,
++        containment: BoundaryContainment::Inside,
++        offset: 0.0,
++    };
++    let index0 = builder.add_toolpath(0, op0).expect("add the rough");
++    let mut session = builder.build();
++    let source_toolpath_id = session.toolpath_configs()[index0].id;
++    let mut op1 = toolpath_config(
++        "edges, CP rest",
++        rough(ClearingStrategy::ContourParallel),
++        tool_id,
++        model_id,
++    );
++    op1.stock_source = StockSource::FromRemainingStock;
++    op1.boundary = BoundaryConfig {
++        enabled: true,
++        source: BoundarySource::DerivedRestRegions { source_toolpath_id },
++        containment: BoundaryContainment::Center,
++        offset: 0.0,
++    };
++    let _ = session
++        .apply(Command::AddToolpath(AddToolpathArgs {
++            setup_index: 0,
++            config: Box::new(op1),
++        }))
++        .expect("add the consumer");
++    session
++}
++
++#[test]
++#[ignore = "external: needs RS_CAM_RESEARCH_ADAPTIVE3D_ARM=geodesic_local_spiral_pick; run with -- --ignored"]
++fn a_rest_entry_ignores_the_frame_beyond_the_source_reach() {
++    assert_eq!(
++        std::env::var("RS_CAM_RESEARCH_ADAPTIVE3D_ARM").as_deref(),
++        Ok(ARM),
++        "run this test with RS_CAM_RESEARCH_ADAPTIVE3D_ARM={ARM}"
++    );
++    let mut session = session();
++    let cancel = AtomicBool::new(false);
++    session
++        .generate_toolpath(0, &cancel)
++        .expect("generate the rough");
++    let regions = session
++        .result_at(0)
++        .expect("the rough's result")
++        .annotated()
++        .produced
++        .rest_regions
++        .as_deref()
++        .expect("the rough states the regions it left")
++        .len();
++    assert!(regions >= 2, "the consumer needs two regions: {regions}");
++    session
++        .run_simulation(
++            &SimulationOptions {
++                resolution: SimulationResolution::Fixed(SIM_CELL),
++                ..SimulationOptions::default()
++            },
++            &cancel,
++        )
++        .expect("simulate the rough");
++    session
++        .generate_toolpath(1, &cancel)
++        .expect("generate the consumer");
++    let moves = &session
++        .result_at(1)
++        .expect("the consumer's result")
++        .annotated()
++        .toolpath
++        .moves;
++
++    // Each entry: its XY and the Z its first plunge feed starts from (the
++    // descent floor the rapid or the keep-down link stopped at).
++    let mut entries: Vec<(f64, f64, f64)> = Vec::new();
++    for w in moves.windows(2) {
++        if w[1].intent == MoveIntent::EntryPlunge && w[0].intent != MoveIntent::EntryPlunge {
++            entries.push((w[1].target.x, w[1].target.y, w[0].target.z));
++        }
++    }
++    // An entry whose sliver-safe read can take a frame cell: its disc comes
++    // within one cell of the mesh edge in X.
++    let r = TOOL_DIAMETER / 2.0;
++    let near_frame: Vec<&(f64, f64, f64)> = entries
++        .iter()
++        .filter(|(x, _, _)| x.abs() + r >= MESH_HALF - SIM_CELL)
++        .collect();
++    let highest = entries
++        .iter()
++        .map(|e| e.2)
++        .fold(f64::NEG_INFINITY, f64::max);
++    eprintln!(
++        "consumer: {} moves, {} entries, {} beside the frame, highest descent start {highest:.3}; \
++         entries (x, y, start) {entries:?}",
++        moves.len(),
++        entries.len(),
++        near_frame.len()
++    );
++    assert!(
++        !near_frame.is_empty(),
++        "no entry's disc comes near the frame: the fixture tests nothing"
++    );
++    assert!(
++        highest < TOP_Z,
++        "an entry's descent starts at {highest:.3}, at or above the frame top {TOP_Z}: \
++         the planner read the frame outside the source's reach"
++    );
++}
