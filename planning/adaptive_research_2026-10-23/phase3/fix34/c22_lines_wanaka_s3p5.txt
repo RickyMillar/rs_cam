@@ -1,0 +1,11 @@
+C22 2D re-entry cause x=149.774 y=218.397 cause="link refused" from=Some((150.77383779667116, 212.79072929387743))
+C22 2D re-entry cause x=143.272 y=220.791 cause="step refused" refused_at=Some((143.27265229485874, 219.42214118084578)) reading=Some(0.6668109745408234) ceiling=0.6258131711953779 on_turn_mm=None turn_bound_mm=4.707106781186548
+C22 2D re-entry cause x=151.219 y=221.291 cause="link refused" from=Some((144.30941187596565, 221.29072929387743))
+C22 2D re-entry cause x=148.774 y=206.922 cause="link refused" from=Some((151.2186436166382, 221.29072929387743))
+C22 2D re-entry cause x=147.274 y=200.121 cause="step refused" refused_at=Some((147.6071711300045, 202.44766363438384)) reading=Some(0.8130934546300234) ceiling=0.6258131711953779 on_turn_mm=None turn_bound_mm=4.707106781186548
+C22 2D re-entry cause x=149.774 y=218.397 cause="link refused" from=Some((150.77383779667116, 212.79072929387743))
+C22 2D re-entry cause x=143.272 y=220.791 cause="step refused" refused_at=Some((143.27265229485874, 219.42214118084578)) reading=Some(0.6668109745408234) ceiling=0.6258131711953779 on_turn_mm=None turn_bound_mm=4.707106781186548
+C22 2D re-entry cause x=151.219 y=221.291 cause="link refused" from=Some((144.30941187596565, 221.29072929387743))
+C22 2D re-entry cause x=148.774 y=206.922 cause="link refused" from=Some((151.2186436166382, 221.29072929387743))
+C22 2D re-entry cause x=147.274 y=200.121 cause="step refused" refused_at=Some((147.6071711300045, 202.44766363438384)) reading=Some(0.8130934546300234) ceiling=0.6258131711953779 on_turn_mm=None turn_bound_mm=4.707106781186548
+C22 split entries (stock below the entry, planner read) split_entries=466 over_dpp=302 max_stock_mm=16.380

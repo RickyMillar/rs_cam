@@ -1,0 +1,68 @@
+{
+ "wanaka CP alone 0.6": {
+  "stepover": 2.0,
+  "read": 88091,
+  "L_max": 2.62,
+  "L_p99": 1.0,
+  "L_p95": 0.4,
+  "own_bound": 0.471,
+  "mm_over_own_bound": 2258.3,
+  "mm_over_0.471": 2258.3,
+  "xy_mm_read": 52457.4
+ },
+ "wanaka geo s3.5 D47": {
+  "stepover": 3.5,
+  "read": 48212,
+  "L_max": 0.992,
+  "L_p99": 0.642,
+  "L_p95": 0.625,
+  "own_bound": 0.734,
+  "mm_over_own_bound": 16.2,
+  "mm_over_0.471": 19456.6,
+  "xy_mm_read": 27981.6
+ },
+ "wanaka geo s3.5 D49": {
+  "stepover": 3.5,
+  "read": 48212,
+  "L_max": 0.992,
+  "L_p99": 0.642,
+  "L_p95": 0.625,
+  "own_bound": 0.734,
+  "mm_over_own_bound": 16.2,
+  "mm_over_0.471": 19456.6,
+  "xy_mm_read": 27981.6
+ },
+ "Corne CP (D37)": {
+  "stepover": 1.2,
+  "read": 100021,
+  "L_max": 1.031,
+  "L_p99": 1.008,
+  "L_p95": 0.781,
+  "own_bound": 0.327,
+  "mm_over_own_bound": 3512.4,
+  "mm_over_0.471": 2426.8,
+  "xy_mm_read": 28718.1
+ },
+ "Corne geo s2.1 B D45": {
+  "stepover": 2.1,
+  "read": 59255,
+  "L_max": 0.999,
+  "L_p99": 0.493,
+  "L_p95": 0.392,
+  "own_bound": 0.489,
+  "mm_over_own_bound": 171.3,
+  "mm_over_0.471": 183.0,
+  "xy_mm_read": 16669.3
+ },
+ "Corne geo s2.1 B D49": {
+  "stepover": 2.1,
+  "read": 59255,
+  "L_max": 0.999,
+  "L_p99": 0.493,
+  "L_p95": 0.392,
+  "own_bound": 0.489,
+  "mm_over_own_bound": 171.3,
+  "mm_over_0.471": 183.0,
+  "xy_mm_read": 16669.3
+ }
+}

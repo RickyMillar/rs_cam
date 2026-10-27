@@ -5534,3 +5534,105 @@ and fix33 have the same artefact.
 
 Simulation files: deleted (fix33 s2p0, s3p5; fix25 cp_alone_0.6/wanaka200 and body_cp/wanaka200 after the band control and
 the full CP area read). Not committed.
+
+## D49: wanaka s3.5 and Corne B s2.1 on 453d52571 (G-RESTSTALE fix 13caf4b29 + G-RESTFRAME fix), no override, fixtures fix34
+
+**Export: both runs PASS with no override.** `fix34/run_one.sh` without `--accept-unmodeled-tool-load`. Neither stderr has a
+refusal. The only notes are "Exceeded without refusing the export, because the bound does not gate one" (depth of cut against
+the rigidity rule of thumb: wanaka toolpath 1 peak 10.90 mm and toolpath 7 16.23 mm against 9.0; Corne toolpath 3 14.5 against
+4.5). No override run was needed.
+
+**Setup.** Fixture worktree detached at clean 453d52571 (clean at the end), release build with `rs_cam_core/research`.
+Job files unchanged: wanaka `fix33/jobs/wanaka200_body_cp_edges_d44_s3p5.toml` (`--setup 0 --resolution 0.6`), Corne
+`d44/k_body_cp_edges_s2p1_d44_rest_regions.toml` (`--setup 0 --skip 4`). Both runs: arm geodesic_local_spiral_pick,
+`RS_CAM_RESEARCH_STEP_SPLIT=stock_depth`. Analysis: `fix34/analyse.sh`.
+
+**Only the edge op changed.** The program.nc sections of op 1 (both parts) and of the Corne copy op are byte-identical to
+D47 / D45 (md5 per section). So the op-1 rows of D47 (wanaka s3.5) and D45 (Corne B s2.1) stand: load, descents, landings.
+
+**1. Acceleration clock (summary, s)**
+
+| run | op 1 | edge op | copy | job | CP job | job / CP |
+|---|---|---|---|---|---|---|
+| wanaka s3.5, D47 (7bf7738a1) | 1323.6 | 1738.2 | — | 3061.8 | 5776.8 | 0.53 |
+| wanaka s3.5, D49 | 1323.6 | 620.7 | — | 1944.3 | 5776.8 | 0.34 |
+| Corne B s2.1, D45 (7bf7738a1) | 1076 | 429.3 | 1733 | 3238 | 2841 | 1.14 |
+| Corne B s2.1, D49 | 1075.5 | 453.9 | 1732.8 | 3262.2 | 2841 | 1.15 |
+
+Corne op 1 + op 5: 1529.4 s against CP op 1 1427.2 s (×1.07; D45 ×1.05). The Corne job gap is still the copy op
+(1732.8 against 1413.6 s, G-LEVELPHASE).
+
+Edge op by class (summary, s; moves): cutting / entry / linking / rapid.
+- wanaka op 7: D47 125.6 / 649.5 / 236.3 / 726.8 (2578 G0); D49 35.1 / 256.3 / 67.6 / 261.7 (902 G0).
+- Corne op 5: D45 229.1 / 7.0 / 44.1 / 149.0 (281 G0); D49 169.8 / 13.3 / 71.2 / 199.6 (413 G0).
+
+**2. The edge op** (`op7_wanaka_s3p5.json`, `op7_gcode_wanaka_s3p5.txt`, `op5_corne_B_s2p1.json`, `corne_reach.txt`)
+
+| | G0 | plunges (G-code) | air share of cut time | G0 crossing the part | sim volume (mm³) |
+|---|---|---|---|---|---|
+| wanaka op 7 D47 | 2578 | 1473 | 41 % | 135 (26487 mm) | 36496 |
+| wanaka op 7 D49 | 902 | 534 | 48 % | 61 (11710 mm) | 10440 |
+| Corne op 5 D45 | 281 | 72 entry moves | 62 % | — | — |
+| Corne op 5 D49 | 413 | 167 (132 entry moves) | 47 % | — | 53577 |
+
+**Outside the reach of op 1's boundary (target 0).** The measure is the stock that the edge op lowers beyond the cutter's
+reach of op 1's boundary, and the edge op's tool centres beyond op 1's centre region:
+- wanaka: op 1 is model_silhouette, inside, offset 0, so its centres stay ≥ 3 mm inside the outline and its reach ends at
+  the outline. Measure: the trace on the 0.5 mm grid (`op7_wanaka.py`), cells outside the outline.
+- Corne: op 1 is model_silhouette, center, offset 6, so its reach ends 9 mm outside the silhouette. Measure: program.nc in
+  the model frame (x = X, y = Y − 109.3155, z = Z + 23; checked on op 1's extents against the trace). Silhouette from
+  fix9/corne_part.npz padded by 40 mm, 0.25 mm grid (`corne_reach.py`). The silhouette mask has about 0.4 mm of error:
+  op 1's own G1 ends reach 6.38 mm.
+- D41/D45's "outside > 9" row of `op5_analysis.py` is not this measure: the Corne part grid ends about 2 mm past the
+  part, and that row takes every cell off the grid too.
+
+| | edge-op volume beyond reach | area lowered > 0.8 mm beyond reach | tool centres: max beyond the outline / silhouette |
+|---|---|---|---|
+| wanaka op 7 D47 | 20963 mm³ (s3.5); 47765 mm³ (s2.0) | 1159 mm² (s3.5) | 0.48 mm outside (x 19.52–220.48) |
+| wanaka op 7 D49 | **0** | **0** | 2.76 mm inside (x 22.76–217.24, = CP op 1's extent) |
+| Corne op 5 D45 | 529 mm³ > 9.5 mm (+1484 at 9–9.5) | 24 mm² (+67) | 7.27 mm (161 G1 ends > 6.3) |
+| Corne op 5 D49 | **17 mm³** > 9.5 mm (+366 at 9–9.5) | 1 mm² (+18) | 6.55 mm (20 G1 ends > 6.3) |
+
+The Corne residue is within the mask error: op 1's own G1 ends reach 6.38 mm. Inside the reach, Corne op 5 lowers the same
+band as in D45: outside 0–3 / 3–6.2 / 6.2–9 mm: 1125 / 1481 / 1024 mm² (D45 1125 / 1481 / 1116).
+
+**3. Band left**
+- wanaka (D47's method, inside 0–9 mm of the outline, > 0.8 mm above the target): D49 3856 mm² (inside 0–3 / 3–6.2 / 6.2–9:
+  2364 / 1274 / 218). CP 3589, D47 s3.5 3153 (D47 cut part of it from the frame side). Inside > 9 mm: D49 2218, CP 806.
+  Stock above the target inside the part after the job: D49 25505 mm³, CP 21378, D47 20264. By the grid, op 1 + op 7 now
+  remove 588056 mm³ inside the part against CP's 592526 (−0.75 %). Since G-RESTFRAME, op 7 removes only 9598 mm³ inside, not
+  the 14934 mm³ of D47.
+- Corne (D41's method, `op5_analysis.py`): after op 5, outside 0–3 / 3–6.2 / 6.2–9: 193 / 0 / 18 mm² (D45 193 / 0 / 0).
+  After the copy op: 190 / 0 / 18.
+
+**4. Op 1 load** (`fix34/load_table.json`; the D47 rule; the G-code is byte-identical, and the fresh reads agree):
+
+| op 1 | L max | p99 | p95 | own bound | mm > own bound |
+|---|---|---|---|---|---|
+| wanaka CP alone 0.6 | 2.620 | 1.000 | 0.400 | 0.471 | 2258.3 |
+| wanaka geo s3.5 D49 | 0.992 | 0.642 | 0.625 | 0.734 | 16.2 |
+| Corne CP (D37) | 1.031 | 1.008 | 0.781 | 0.327 | 3512.4 |
+| Corne geo s2.1 B D49 | 0.999 | 0.493 | 0.392 | 0.489 | 171.3 |
+
+Corne op 1: 382 descent events into stock (audit). Wanaka op 1 descents and landings: D47 item 2.
+
+**5. Renders** (`fix34/index_wanaka.html`, `index_corne.html`, `img/`; `render_d47.py` copy with a level window of
+±0.005 mm, so the D47 item 5 false levels are gone):
+- wanaka op 7 (`img/wanaka_fix34_wanaka_s3p5_op1.png`): the tool stays inside op 1's centre region. Rapids still run
+  left–right across the part between the strips (61 crossings; G-CPRAPID).
+- Corne op 5 (`img/corne_fix34_corne_B_s2p1_op1.png`): the tool stays on the edge band. A raster of rapids runs across the
+  lower region, between the left edge and the lower-right edge (G-CPRAPID). One long diagonal G0 crosses the case. That is
+  the cause of the op 5 growth: rapids 149.0 → 199.6 s, 281 → 413 G0.
+- wanaka op 1 by level: three full levels with > 200 exact-Z moves (−5.46, −10.92, −14.0). The z 8.62 and 4.0 levels are
+  draped.
+
+**Findings.**
+- G-RESTSTALE: fixed on both parts. The export passes with no override.
+- G-RESTFRAME: fixed. Wanaka op 7 cuts 0 mm³ outside the outline (D47: 20963 at s3.5). Corne op 5 cuts 17 mm³ beyond
+  9.5 mm, within the mask error (D45: 529).
+- Wanaka s3.5: the job takes 1944.3 s against CP 5776.8 s (×0.34). But it leaves more stock than CP inside the part:
+  25505 against 21378 mm³ above the target (+19 %), and 2218 against 806 mm² of area > 9 mm inside. Op 7 now cuts only
+  op 1's left pieces, and those pieces exist only at z 4.0.
+- Corne B s2.1: op 5 is +24.6 s against D45 (more rapids and plunges; the raster). Op 1 + op 5 is ×1.07 of CP.
+
+Simulation files: deleted (fix34 wanaka_s3p5, corne_B_s2p1). Not committed.

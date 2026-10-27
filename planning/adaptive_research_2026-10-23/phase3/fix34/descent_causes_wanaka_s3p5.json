@@ -1,0 +1,92 @@
+{
+ "run": "fix34/wanaka_s3p5",
+ "c40_records": 324,
+ "descent_moves": 1059,
+ "z_offset_move_end_minus_record": 0.719,
+ "air_quantum_mm3": 0.216,
+ "causes": {
+  "LargeZ": {
+   "c40_records": 197,
+   "records_matched": 196,
+   "descent_moves": 584,
+   "time_s": 283.9,
+   "air_share": 0.672,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 13.57
+  },
+  "Reentry2d/OverBound": {
+   "c40_records": 103,
+   "records_matched": 99,
+   "descent_moves": 264,
+   "time_s": 118.2,
+   "air_share": 0.472,
+   "median_move_len_mm": 4.96,
+   "median_drop_mm": 5.96
+  },
+  "unmatched": {
+   "c40_records": 0,
+   "records_matched": 0,
+   "descent_moves": 147,
+   "time_s": 26.1,
+   "air_share": 0.921,
+   "median_move_len_mm": 5.37,
+   "median_drop_mm": null
+  },
+  "LargeZHeld": {
+   "c40_records": 7,
+   "records_matched": 6,
+   "descent_moves": 23,
+   "time_s": 10.8,
+   "air_share": 0.643,
+   "median_move_len_mm": 5.37,
+   "median_drop_mm": 15.31
+  },
+  "HeldLinkRefused": {
+   "c40_records": 6,
+   "records_matched": 5,
+   "descent_moves": 20,
+   "time_s": 9.0,
+   "air_share": 0.693,
+   "median_move_len_mm": 5.37,
+   "median_drop_mm": 11.42
+  },
+  "Waterline": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 6,
+   "time_s": 2.5,
+   "air_share": 0.189,
+   "median_move_len_mm": 3.63,
+   "median_drop_mm": 2.87
+  },
+  "Start": {
+   "c40_records": 4,
+   "records_matched": 4,
+   "descent_moves": 7,
+   "time_s": 2.3,
+   "air_share": 0.0,
+   "median_move_len_mm": 0.55,
+   "median_drop_mm": 5.96
+  },
+  "Reentry2d/CoreHandOff": {
+   "c40_records": 3,
+   "records_matched": 3,
+   "descent_moves": 6,
+   "time_s": 2.1,
+   "air_share": 0.045,
+   "median_move_len_mm": 2.73,
+   "median_drop_mm": 5.96
+  },
+  "Sweep": {
+   "c40_records": 1,
+   "records_matched": 1,
+   "descent_moves": 2,
+   "time_s": 0.3,
+   "air_share": 0.719,
+   "median_move_len_mm": 1.04,
+   "median_drop_mm": 1.33
+  }
+ },
+ "total_time_s": 455.3,
+ "total_air_share": 0.625
+}

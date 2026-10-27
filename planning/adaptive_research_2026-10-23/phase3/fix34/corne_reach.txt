@@ -1,0 +1,16 @@
+fix34/../fix31/B_s2p1/program.nc
+  op 1 G1 ends: max distance outside 6.38 mm; op 5 G1 ends 1230: > 6.3 mm 161, max 7.27 mm
+  op 5 lowers silhouette    : area > 0.8 mm       4 mm2, volume      67 mm3
+  op 5 lowers outside 0-3   : area > 0.8 mm    1125 mm2, volume   18672 mm3
+  op 5 lowers outside 3-6.2 : area > 0.8 mm    1481 mm2, volume   25327 mm3
+  op 5 lowers outside 6.2-9 : area > 0.8 mm    1116 mm2, volume   21383 mm3
+  op 5 lowers outside 9-9.5 : area > 0.8 mm      67 mm2, volume    1484 mm3
+  op 5 lowers outside > 9.5 : area > 0.8 mm      24 mm2, volume     529 mm3
+fix34/corne_B_s2p1/program.nc
+  op 1 G1 ends: max distance outside 6.38 mm; op 5 G1 ends 1180: > 6.3 mm 20, max 6.55 mm
+  op 5 lowers silhouette    : area > 0.8 mm       4 mm2, volume      67 mm3
+  op 5 lowers outside 0-3   : area > 0.8 mm    1125 mm2, volume   18659 mm3
+  op 5 lowers outside 3-6.2 : area > 0.8 mm    1481 mm2, volume   25327 mm3
+  op 5 lowers outside 6.2-9 : area > 0.8 mm    1024 mm2, volume   19308 mm3
+  op 5 lowers outside 9-9.5 : area > 0.8 mm      18 mm2, volume     366 mm3
+  op 5 lowers outside > 9.5 : area > 0.8 mm       1 mm2, volume      17 mm3
