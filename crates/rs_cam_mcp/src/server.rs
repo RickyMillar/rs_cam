@@ -2161,7 +2161,9 @@ impl From<SelectionParam> for rs_cam_core::selection::Selection {
 }
 
 /// One edit of the selection of an op. Exactly one key:
-/// `{"add_pick": <key>}`, `{"remove_pick": <key>}`, `{"add_rule": <rule>}`,
+/// `{"add_pick": <key>}`, `{"remove_pick": <key>}`,
+/// `{"add_picks": [<key>, ...]}`, `{"remove_picks": [<key>, ...]}`,
+/// `{"add_rule": <rule>}`,
 /// `{"remove_rule": <index>}`, `{"replace": <selection>}`, or `"reset"`
 /// (the default selection of the op).
 #[derive(Debug, Clone, PartialEq, Default, Deserialize, schemars::JsonSchema)]
@@ -2179,6 +2181,11 @@ pub enum SelectionEditParam {
     /// Remove the pick of an item. With no pick of it, exclude the item
     /// from the rule matches.
     RemovePick(MatchKeyParam),
+    /// Pick every item of the list in one edit (one undo step). Each key
+    /// must name one item, or the whole edit refuses and writes nothing.
+    AddPicks(Vec<MatchKeyParam>),
+    /// Remove every item of the list in one edit.
+    RemovePicks(Vec<MatchKeyParam>),
     /// Back to the default selection of the op.
     #[default]
     Reset,
@@ -2192,8 +2199,124 @@ impl From<SelectionEditParam> for rs_cam_core::selection::SelectionEdit {
             SelectionEditParam::RemoveRule(i) => Self::RemoveRule(i),
             SelectionEditParam::AddPick(k) => Self::AddPick(k.into()),
             SelectionEditParam::RemovePick(k) => Self::RemovePick(k.into()),
+            SelectionEditParam::AddPicks(ks) => {
+                Self::AddPicks(ks.into_iter().map(Into::into).collect())
+            }
+            SelectionEditParam::RemovePicks(ks) => {
+                Self::RemovePicks(ks.into_iter().map(Into::into).collect())
+            }
             SelectionEditParam::Reset => Self::Reset,
         }
+    }
+}
+
+// ── The reverse direction (F166): core -> wire ────────────────────────
+//
+// Each match is exhaustive with no wildcard and each struct converts by a
+// full destructure with no `..` (F118), so a variant or a field that core
+// gains does not compile here until the wire carries it.
+
+impl From<rs_cam_core::selection::SelectionEdit> for SelectionEditParam {
+    fn from(edit: rs_cam_core::selection::SelectionEdit) -> Self {
+        use rs_cam_core::selection::SelectionEdit;
+        match edit {
+            SelectionEdit::Replace(s) => Self::Replace((*s).into()),
+            SelectionEdit::AddRule(r) => Self::AddRule(r.into()),
+            SelectionEdit::RemoveRule(i) => Self::RemoveRule(i),
+            SelectionEdit::AddPick(k) => Self::AddPick(k.into()),
+            SelectionEdit::RemovePick(k) => Self::RemovePick(k.into()),
+            SelectionEdit::AddPicks(ks) => Self::AddPicks(ks.into_iter().map(Into::into).collect()),
+            SelectionEdit::RemovePicks(ks) => {
+                Self::RemovePicks(ks.into_iter().map(Into::into).collect())
+            }
+            SelectionEdit::Reset => Self::Reset,
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::Selection> for SelectionParam {
+    /// `Selection` keeps its fields private; its three readers give the
+    /// whole value.
+    fn from(s: rs_cam_core::selection::Selection) -> Self {
+        Self {
+            rules: s.rules().iter().cloned().map(Into::into).collect(),
+            picks: s.picks().iter().cloned().map(Into::into).collect(),
+            excludes: s.excludes().iter().cloned().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::Rule> for RuleParam {
+    fn from(rule: rs_cam_core::selection::Rule) -> Self {
+        let rs_cam_core::selection::Rule { source, filter } = rule;
+        Self {
+            source: source.into(),
+            filter: filter.into(),
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::Filter> for FilterParam {
+    fn from(filter: rs_cam_core::selection::Filter) -> Self {
+        let rs_cam_core::selection::Filter {
+            layers,
+            kinds,
+            diameter,
+            face,
+            z,
+        } = filter;
+        Self {
+            layers,
+            kinds: kinds.into(),
+            diameter: diameter.map(Into::into),
+            face: face.map(Into::into),
+            z: z.map(Into::into),
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::KindFilter> for KindFilterParam {
+    fn from(kinds: rs_cam_core::selection::KindFilter) -> Self {
+        use rs_cam_core::selection::KindFilter;
+        match kinds {
+            KindFilter::Served => Self::Served,
+            KindFilter::Only(kinds) => Self::Only(kinds.into_iter().map(Into::into).collect()),
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::DiameterRange> for DiameterRangeParam {
+    fn from(range: rs_cam_core::selection::DiameterRange) -> Self {
+        let rs_cam_core::selection::DiameterRange {
+            nominal_mm,
+            tolerance_mm,
+        } = range;
+        Self {
+            nominal_mm,
+            tolerance_mm,
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::FaceFilter> for FaceFilterParam {
+    fn from(face: rs_cam_core::selection::FaceFilter) -> Self {
+        use rs_cam_core::selection::Facing;
+        let rs_cam_core::selection::FaceFilter { facing, z } = face;
+        Self {
+            facing: match facing {
+                Facing::Up => FacingParam::Up,
+                Facing::Down => FacingParam::Down,
+                Facing::Either => FacingParam::Either,
+            },
+            z: z.map(Into::into),
+        }
+    }
+}
+
+impl From<rs_cam_core::selection::ZRange> for ZRangeParam {
+    fn from(range: rs_cam_core::selection::ZRange) -> Self {
+        let rs_cam_core::selection::ZRange { min, max } = range;
+        Self { min, max }
     }
 }
 
@@ -3717,6 +3840,10 @@ pub fn build_info() -> serde_json::Value {
             // kind. `get_ui_view` reads the focus summary and the camera.
             "view_camera",
             "get_ui_view",
+            // E1-E3 (2026-10-29): `edit_toolpath_selection` takes
+            // `add_picks` / `remove_picks` (one edit, one undo step); a pick
+            // key that names no item refuses `PickNamesNoItem`.
+            "selection_batch",
         ],
     })
 }
@@ -3816,6 +3943,7 @@ mod tests {
             "selection_hole_fit",
             "view_camera",
             "get_ui_view",
+            "selection_batch",
         ] {
             assert!(
                 features.contains(&flag),
@@ -3985,14 +4113,54 @@ mod tests {
             SelectionEdit::RemoveRule(2),
             SelectionEdit::AddPick(selection.picks()[0].clone()),
             SelectionEdit::RemovePick(selection.picks()[1].clone()),
+            SelectionEdit::AddPicks(selection.picks().to_vec()),
+            SelectionEdit::RemovePicks(selection.picks().to_vec()),
             SelectionEdit::Reset,
         ];
+        // Every core variant has a sample above: this match has no
+        // wildcard, so a new variant does not compile until it has one.
+        for edit in &edits {
+            match edit {
+                SelectionEdit::Replace(_)
+                | SelectionEdit::AddRule(_)
+                | SelectionEdit::RemoveRule(_)
+                | SelectionEdit::AddPick(_)
+                | SelectionEdit::RemovePick(_)
+                | SelectionEdit::AddPicks(_)
+                | SelectionEdit::RemovePicks(_)
+                | SelectionEdit::Reset => {}
+            }
+        }
         for edit in edits {
             let json = serde_json::to_value(&edit).unwrap();
             let wire: SelectionEditParam = serde_json::from_value(json.clone())
                 .unwrap_or_else(|e| panic!("the wire does not parse the file JSON {json}: {e}"));
             assert_eq!(SelectionEdit::from(wire), edit, "{json}");
+            // E3: core -> wire -> core gives the same edit.
+            let back = SelectionEdit::from(SelectionEditParam::from(edit.clone()));
+            assert_eq!(back, edit, "the reverse conversion of {json}");
         }
+        // SEL-4: the list forms.
+        let picks = serde_json::to_value(selection.picks()).unwrap();
+        for (name, json) in [
+            ("add_picks", serde_json::json!({ "add_picks": &picks })),
+            ("remove_picks", serde_json::json!({ "remove_picks": picks })),
+        ] {
+            let wire: SelectionEditParam = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
+            let edit = SelectionEdit::from(wire);
+            let keys = match &edit {
+                SelectionEdit::AddPicks(keys) | SelectionEdit::RemovePicks(keys) => keys.clone(),
+                other => panic!("{name} gave {other:?}"),
+            };
+            assert_eq!(keys, selection.picks(), "{name}");
+        }
+        let wire = SelectionParam::from(selection.clone());
+        assert_eq!(
+            Selection::from(wire),
+            selection,
+            "Selection -> wire -> core"
+        );
         let json = serde_json::to_value(&selection).unwrap();
         let wire: SelectionParam = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(Selection::from(wire), selection, "{json}");

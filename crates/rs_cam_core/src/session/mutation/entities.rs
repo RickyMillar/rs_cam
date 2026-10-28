@@ -270,8 +270,12 @@ impl ProjectSession {
     ///
     /// - O-PICK: on a selection that is still its default, `AddPick` and
     ///   `AddRule` replace the default (`Selection::apply`).
-    /// - GT-Q8: a `RemovePick` of an item that a rule holds turns each such
-    ///   rule into picks, all its members less the item
+    /// - SEL-4: an `AddPick` or `AddPicks` whose key names no item, or two
+    ///   or more, refuses `PickNamesNoItem` and writes nothing
+    ///   (`ProjectSession::check_keys_name_items`). `Replace` keeps no
+    ///   check: a file may hold a lost pick.
+    /// - GT-Q8: a `RemovePick` or `RemovePicks` of items that a rule holds
+    ///   turns each such rule into picks, all its members less the items
     ///   (`ProjectSession::rule_drop_edit`), in this one command.
     /// - Q2 (UX-7b: a model ring is an area as a face is): when the edit
     ///   adds an area with a model Z to the op selection (a face pick, a
@@ -290,10 +294,23 @@ impl ProjectSession {
     ) -> Result<Effects, SessionError> {
         use crate::selection::SelectionEdit;
         use crate::session::SelectionTarget;
-        // GT-Q8: resolve first (the slot borrow below is mutable).
+        // Resolve first (the slot borrow below is mutable).
+        // SEL-4: a pick edit whose key names no item refuses and writes
+        // nothing. GT-Q8: a remove of a rule item turns the rule into picks.
         let edit = match (&edit, self.toolpath_configs.get(index)) {
-            (SelectionEdit::RemovePick(key), Some(tc)) => {
-                self.rule_drop_edit(tc, target, key)?.unwrap_or(edit)
+            (SelectionEdit::AddPick(key), Some(tc)) => {
+                self.check_keys_name_items(tc, target, std::slice::from_ref(key))?;
+                edit
+            }
+            (SelectionEdit::AddPicks(keys), Some(tc)) => {
+                self.check_keys_name_items(tc, target, keys)?;
+                edit
+            }
+            (SelectionEdit::RemovePick(key), Some(tc)) => self
+                .rule_drop_edit(tc, target, std::slice::from_ref(key))?
+                .unwrap_or(edit),
+            (SelectionEdit::RemovePicks(keys), Some(tc)) if !keys.is_empty() => {
+                self.rule_drop_edit(tc, target, keys)?.unwrap_or(edit)
             }
             _ => edit,
         };
