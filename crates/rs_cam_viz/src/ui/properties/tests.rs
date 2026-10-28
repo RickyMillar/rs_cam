@@ -2144,3 +2144,30 @@ fn use_inside_sits_on_the_containment_row_g_c() {
         "the act is off when Inside collapses"
     );
 }
+
+/// W1b follow-up: the Waterline row names its field, `helical`.
+#[test]
+fn the_waterline_row_reads_helical_w1b() {
+    let mut cfg = crate::state::toolpath::WaterlineConfig::default();
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        super::operations::draw_waterline_params(ui, &mut cfg, None);
+    });
+    let texts: Vec<String> = out
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    out.textures_delta.clear();
+    assert!(texts.iter().any(|t| t == "Helical:"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t == "Continuous:"), "{texts:?}");
+    assert!(
+        super::help_for(crate::state::toolpath::OperationType::Waterline, "helical").is_some(),
+        "the row's hover is the registry help"
+    );
+}

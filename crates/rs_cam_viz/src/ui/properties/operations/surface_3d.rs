@@ -261,8 +261,11 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             " mm",
             0.1,
         );
-        ui.label("Continuous:");
-        ui.checkbox(&mut cfg.helical, "");
+        // W1b: the field is `helical`; the label names it, and the hover is
+        // its registry help (UI-04: keyed on the parameter name).
+        let help = super::super::help_for(OperationType::Waterline, "helical").unwrap_or_default();
+        ui.label("Helical:").on_hover_text(help);
+        ui.checkbox(&mut cfg.helical, "").on_hover_text(help);
         ui.end_row();
         // Z range now comes from the Heights tab (top_z / bottom_z)
     });
