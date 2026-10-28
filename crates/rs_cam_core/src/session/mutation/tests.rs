@@ -849,7 +849,10 @@ fn a_face_pick_edit_invalidates() {
         .unwrap();
     s.results.insert(0, fake_result());
 
-    // P2.6: a face pick is a `MatchKey` pick of the op selection.
+    // P2.6: a face pick is a `MatchKey` pick of the op selection. The
+    // fixture model has no such face, and SEL-4 refuses an `AddPick` of a
+    // key that names no item, so the pick arrives as a `Replace`: the door
+    // a project file uses, which keeps no check.
     let key = crate::selection::MatchKey {
         source: crate::selection::SourceRef::ToolpathModel,
         kind: crate::selection::ItemKind::Face,
@@ -863,7 +866,9 @@ fn a_face_pick_edit_invalidates() {
         .edit_toolpath_selection(
             0,
             crate::session::SelectionTarget::Op,
-            crate::selection::SelectionEdit::AddPick(key.clone()),
+            crate::selection::SelectionEdit::Replace(Box::new(
+                crate::selection::Selection::from_picks(vec![key.clone()]),
+            )),
         )
         .unwrap();
 
