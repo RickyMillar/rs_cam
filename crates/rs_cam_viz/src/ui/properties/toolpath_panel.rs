@@ -400,15 +400,32 @@ pub(super) fn draw_toolpath_panel(
         table.show(ui);
     }
 
-    for d in &actionable {
-        render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
-    }
+    // G-E (2), §7.2 rule 4: the findings are a bounded list. At most
+    // `FOOTER_FINDINGS_CAP` rows, then the `NoticeStack` remainder line,
+    // which shows the rest. Every critical and blocking row shows whatever
+    // the cap (the `NoticeStack` safety rule).
     let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
-    for d in &merged_gate_rows {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    let rows: Vec<(&rs_cam_core::diagnostics::Diagnostic, RowTier)> = actionable
+        .iter()
+        .map(|d| (*d, RowTier::Actionable))
+        .chain(merged_gate_rows.iter().map(|d| (d, RowTier::Stateful)))
+        .chain(stateful_rest.iter().map(|d| (*d, RowTier::Stateful)))
+        .collect();
+    let expand_id = ui.id().with("tp_findings_all").with(entry.id.raw());
+    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
+    let shown = bounded_findings(
+        &rows.iter().map(|(d, _)| d.severity).collect::<Vec<_>>(),
+        expanded,
+    );
+    for &index in &shown {
+        if let Some((d, tier)) = rows.get(index) {
+            render_diagnostic_row(ui, d, *tier, entry, stale_default_defects);
+        }
     }
-    for d in &stateful_rest {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    if shown.len() < rows.len()
+        && crate::ui::components::notice::overflow_row(ui, shown.len(), rows.len())
+    {
+        ui.data_mut(|d| d.insert_temp(expand_id, true));
     }
 
     // DC5 (Pattern C): the hint list is a COUNT at the bottom of the panel,
@@ -1284,6 +1301,29 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool 
         clicked
     })
     .inner
+}
+
+/// G-E (2): the footer shows at most this many finding rows before the
+/// remainder line.
+pub(super) const FOOTER_FINDINGS_CAP: usize = 3;
+
+/// G-E (2): the indices of the footer finding rows to draw, in their
+/// order. All of them when `expanded`. Else the first
+/// [`FOOTER_FINDINGS_CAP`], and every critical or blocking row however far
+/// down it is (the `NoticeStack` safety rule: a cap never hides one).
+pub(super) fn bounded_findings(
+    severities: &[rs_cam_core::diagnostics::Severity],
+    expanded: bool,
+) -> Vec<usize> {
+    use rs_cam_core::diagnostics::Severity;
+    severities
+        .iter()
+        .enumerate()
+        .filter(|(index, severity)| {
+            expanded || *index < FOOTER_FINDINGS_CAP || severity.rank() >= Severity::Critical.rank()
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// G-D (§3): the clearing strategy that the Suggest run recommends and did

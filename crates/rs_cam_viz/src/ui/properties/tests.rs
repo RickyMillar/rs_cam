@@ -1794,3 +1794,28 @@ fn the_boundary_summary_is_the_source_hover_d1() {
         "the summary row is back: {texts:?}"
     );
 }
+
+/// G-E (2): the footer findings are bounded. Five caution rows show three
+/// and the remainder line "Showing 3 of 5 · Show all"; expanded, all five.
+/// A blocking row past the cap still shows (the safety rule).
+#[test]
+fn the_footer_findings_are_bounded_g_e() {
+    use super::toolpath_panel::{FOOTER_FINDINGS_CAP, bounded_findings};
+    use rs_cam_core::diagnostics::Severity;
+    let five = [Severity::Caution; 5];
+    assert_eq!(FOOTER_FINDINGS_CAP, 3);
+    assert_eq!(bounded_findings(&five, false), vec![0, 1, 2]);
+    assert_eq!(bounded_findings(&five, true), vec![0, 1, 2, 3, 4]);
+    assert_eq!(
+        crate::ui::components::notice::overflow_line(3, 5),
+        "Showing 3 of 5 \u{00B7} Show all"
+    );
+    let mut late_block = five;
+    late_block[4] = Severity::Blocking;
+    assert_eq!(bounded_findings(&late_block, false), vec![0, 1, 2, 4]);
+    assert_eq!(
+        bounded_findings(&five[..2], false),
+        vec![0, 1],
+        "under the cap"
+    );
+}
