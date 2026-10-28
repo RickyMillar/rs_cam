@@ -94,3 +94,13 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 - Waterline: very shallow cuts (z_step 1 mm, 88.5 % air), hops between 84 regions per level (283 retracts); asks whether it could spiral in the holes, or whether that is Bore; asks for tabs.
 - Planning: skip the small holes in the 6 mm rough, and do them all with the 3 mm op.
 - Research first (S2, phase3/d69), then the optimisations. "So far looking great."
+
+## Operator rulings on D69 (2026-10-28 afternoon)
+
+- Helical Waterline: ON by default, for holes and walls.
+- Waterline levels on vertical walls may widen up to the rough's DPP where rings coincide, after a deflection check.
+- Contour on each level: one visible 3D Rough option, off by default, covering walls and the boundary band; it fixes G-RESTDOC when on.
+- Through cut: the Waterline stops at the web, and the job ends with a tabbed Profile. Waterline gets no tabs.
+- The hex hole corners matter: the 3 mm op keeps cleaning them.
+- Feeds tab: rename to "Feeds" and make the shared tab strip compact at panel width.
+- C2 pre-registration run (5-10 min): approved.
