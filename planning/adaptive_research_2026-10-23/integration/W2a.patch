@@ -1,0 +1,635 @@
+diff --git a/crates/rs_cam_core/src/compute/execute.rs b/crates/rs_cam_core/src/compute/execute.rs
+index dce50cf72..123a71ccf 100644
+--- a/crates/rs_cam_core/src/compute/execute.rs
++++ b/crates/rs_cam_core/src/compute/execute.rs
+@@ -502,6 +502,16 @@ pub struct ExecutionContext<'a> {
+     /// planner that owns its level plan reads it (the 3D Rough). `None`:
+     /// no such boundary, or the source stated no top.
+     pub rest_top_z: Option<f64>,
++    /// W2 (D69 §3): the workpiece material, for a generator that runs the
++    /// shared deflection model (`feeds::predict::tip_deflection_from_engagement`).
++    /// Today only the helical Waterline reads it. `None`: no material.
++    pub material: Option<&'a crate::material::Material>,
++    /// W2 (D69 §3): on an op that cuts the remaining stock, the smallest
++    /// axial step (`OperationConfig::depth_per_pass`) of the earlier
++    /// enabled ops of the setup: the depth at which the rough cut the
++    /// walls. The helical Waterline widens its step on a vertical wall up
++    /// to it. `None`: a fresh op, or no earlier op states a step.
++    pub rest_axial_step_mm: Option<f64>,
+ }
+ 
+ impl<'a> ExecutionContext<'a> {
+@@ -584,6 +594,8 @@ impl<'a> ExecutionContext<'a> {
+             entry_helix_radius: None,
+             obstacles: None,
+             rest_top_z: None,
++            material: None,
++            rest_axial_step_mm: None,
+         }
+     }
+ }
+diff --git a/crates/rs_cam_core/src/compute/execute/finish_raster.rs b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+index 878371948..0ce00f5df 100644
+--- a/crates/rs_cam_core/src/compute/execute/finish_raster.rs
++++ b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+@@ -347,11 +347,27 @@ pub(crate) fn generate_waterline(
+     } else {
+         None
+     };
++    // W2 (D69 §3): the inputs of the wall step. All four must be known;
++    // else the helix keeps every ring (the W1 ladder).
++    let wall = match (ctx.material, ctx.rest_axial_step_mm, cfg.spindle_rpm) {
++        (Some(material), Some(max_step_mm), Some(rpm))
++            if rpm > 0 && ctx.tool_cfg.flute_count > 0 =>
++        {
++            Some(WallInputs {
++                material,
++                max_step_mm,
++                // The feed per tooth: feed / (rpm x flutes).
++                fz_mm: params.feed_rate / (f64::from(rpm) * f64::from(ctx.tool_cfg.flute_count)),
++            })
++        }
++        _ => None,
++    };
+     let pass = WaterlinePass {
+         surface,
+         cutter: ctx.tool_def,
+         params,
+         link_probe,
++        wall,
+         levels: ladder.levels,
+         hookup_mm: cfg.hookup_mm,
+         op_type: op.op_type(),
+@@ -361,6 +377,68 @@ pub(crate) fn generate_waterline(
+     run_layered(&pass, ctx, prepared)
+ }
+ 
++/// W2 (D69 §3): what the wall step of the helical Waterline reads.
++struct WallInputs<'a> {
++    material: &'a crate::material::Material,
++    /// The rough's axial step (`ExecutionContext::rest_axial_step_mm`).
++    max_step_mm: f64,
++    /// The feed per tooth of the op (mm).
++    fz_mm: f64,
++}
++
++/// W2 (D69 §3): the deflection check of a wall step. The tool `tool` cuts
++/// a wall at axial depth `ap` (mm) with radial skin `skin` (mm) at feed per
++/// tooth `fz` (mm). It passes when the shared force and cantilever model of
++/// the deflection gate (`feeds::predict::tip_deflection_from_engagement`,
++/// which `tool_load::deflection::sample_tip_deflection_mm` also reads; the
++/// cantilever is `ToolDefinition::tip_deflection_mm`) predicts at most
++/// `tool_load::deflection::WITHIN_BOUND_MM` (the gate's "Within, Validated"
++/// bound; lead ruling 2026-10-28). No skin: no load, so it passes. A model
++/// refusal (no force line, no stickout) fails.
++fn wall_step_admits(
++    tool: &ToolDefinition,
++    material: &crate::material::Material,
++    skin: f64,
++    ap: f64,
++    fz: f64,
++) -> bool {
++    if skin <= 0.0 {
++        return true;
++    }
++    let radius = crate::tool::MillingCutter::radius(tool);
++    crate::feeds::predict::tip_deflection_from_engagement(
++        tool,
++        material,
++        ap,
++        crate::feeds::force::immersion_angle(skin, radius),
++        fz,
++    )
++    .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
++}
++
++impl WaterlinePass<'_> {
++    /// W2 (D69 §3): [`wall_step_admits`] along `ring`, with the widest
++    /// radial skin that the remaining stock shows there
++    /// (`StandingNear::radial_skin_mm`). No rest rule (fresh stock): fails.
++    fn wall_admits(
++        &self,
++        wall: &WallInputs<'_>,
++        standing: Option<&crate::compute::execute::standing_material::StandingNear<'_>>,
++        ring: &[crate::geo::P3],
++        ap: f64,
++    ) -> bool {
++        let Some(standing) = standing else {
++            return false;
++        };
++        let radius = crate::tool::MillingCutter::radius(self.cutter);
++        let skin = ring
++            .iter()
++            .map(|p| standing.radial_skin_mm(P2::new(p.x, p.y), radius))
++            .fold(0.0_f64, f64::max);
++        wall_step_admits(self.cutter, wall.material, skin, ap, wall.fz_mm)
++    }
++}
++
+ /// The Waterline op: the push-cutter contours of the surface at each level
+ /// of its ladder. The Z-independent geometry is the surface itself; each
+ /// level queries it (W6.1).
+@@ -372,6 +450,9 @@ struct WaterlinePass<'a> {
+     /// judges a chain link. `Some`: the op cuts the helical waterline;
+     /// `None`: the stacked form, one entry per ring and level.
+     link_probe: Option<ToolDefinition>,
++    /// W2 (D69 §3): the inputs of the wall step, or `None` (no material, no
++    /// rough step or no spindle speed): the helix keeps every ring.
++    wall: Option<WallInputs<'a>>,
+     /// The ladder of `waterline_ladder`: nudged off the flat facets and
+     /// floored at the stock bottom.
+     levels: Vec<f64>,
+@@ -523,8 +604,27 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+                 rest.tally(level.rest_kept, level.rest_dropped);
+                 rings.push(level);
+             }
+-            let tp =
+-                crate::ops::waterline::helical_waterline(&rings, &self.params, &probe, cancel)?;
++            let admits = |k: usize, ring: &[crate::geo::P3], ap: f64| {
++                let Some((wall, &z)) = self.wall.as_ref().zip(levels.get(k)) else {
++                    return false;
++                };
++                let rest = rest(z);
++                self.wall_admits(wall, rest.standing.as_ref(), ring, ap)
++            };
++            let wall_step = self
++                .wall
++                .as_ref()
++                .map(|wall| crate::ops::waterline::WallStep {
++                    max_step_mm: wall.max_step_mm,
++                    admits: &admits,
++                });
++            let tp = crate::ops::waterline::helical_waterline(
++                &rings,
++                &self.params,
++                &probe,
++                wall_step.as_ref(),
++                cancel,
++            )?;
+             // P6.0c: a surface op states no material side.
+             Ok(SidedToolpath::without_closed_passes(tp))
+         };
+@@ -568,3 +668,39 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+         })
+     }
+ }
++
++#[cfg(test)]
++#[expect(
++    clippy::expect_used,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++mod tests {
++    use super::wall_step_admits;
++    use crate::compute::tool_config::{ToolConfig, ToolType};
++    use crate::ids::ToolId;
++    use crate::material::{Material, WoodSpecies};
++
++    fn endmill(diameter: f64, stickout: f64) -> crate::tool::ToolDefinition {
++        let mut cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
++        cfg.diameter = diameter;
++        cfg.shank_diameter = diameter;
++        cfg.stickout = stickout;
++        crate::compute::cutter::build_cutter(&cfg).expect("a valid end mill")
++    }
++
++    /// W2: the wall step passes the deflection check for a stiff tool and
++    /// a thin skin, and fails for a long thin tool at the same cut. No skin
++    /// always passes.
++    #[test]
++    fn the_wall_step_reads_the_deflection_model_w2() {
++        let maple = Material::SolidWood {
++            species: WoodSpecies::HardMaple,
++        };
++        let (skin, ap, fz) = (0.5, 6.0, 0.05);
++        let stiff = endmill(6.0, 20.0);
++        let thin = endmill(2.0, 40.0);
++        assert!(wall_step_admits(&stiff, &maple, skin, ap, fz));
++        assert!(!wall_step_admits(&thin, &maple, skin, ap, fz));
++        assert!(wall_step_admits(&thin, &maple, 0.0, ap, fz));
++    }
++}
+diff --git a/crates/rs_cam_core/src/compute/execute/standing_material.rs b/crates/rs_cam_core/src/compute/execute/standing_material.rs
+index 48f4a10a4..e7da107dd 100644
+--- a/crates/rs_cam_core/src/compute/execute/standing_material.rs
++++ b/crates/rs_cam_core/src/compute/execute/standing_material.rs
+@@ -560,14 +560,16 @@ pub(crate) fn standing_near(
+ }
+ 
+ impl StandingNear<'_> {
+-    /// True when the contour point `p` passes material, or when the grid
+-    /// holds no answer in its band. See [`standing_near`].
++    /// The cells whose centre lies within the band of `p`: for each, its
++    /// distance (mm) from `p` and its `(row, col)`, or `None` for a cell
++    /// off the grid. One walk for [`Self::keeps`] and
++    /// [`Self::radial_skin_mm`].
+     #[expect(
+         clippy::cast_possible_truncation,
+         clippy::cast_sign_loss,
+         reason = "a far point saturates its cell index, and the range test rejects it; r and c are cast only after `on_grid` proves them not negative"
+     )]
+-    pub(crate) fn keeps(&self, p: P2) -> bool {
++    fn cells_in_band(&self, p: P2) -> impl Iterator<Item = (f64, Option<(usize, usize)>)> + '_ {
+         let grid = self.grid;
+         let cell = grid.cell_size;
+         let index = |u: f64, origin: f64| ((u - origin) / cell).floor() as isize;
+@@ -579,26 +581,59 @@ impl StandingNear<'_> {
+             index(p.y - self.band, grid.origin_v),
+             index(p.y + self.band, grid.origin_v) + 1,
+         );
+-        let mut seen = false;
+-        for r in r0..=r1 {
+-            for c in c0..=c1 {
++        (r0..=r1)
++            .flat_map(move |r| (c0..=c1).map(move |c| (r, c)))
++            .filter_map(move |(r, c)| {
+                 let (x, y) = (
+                     grid.origin_u + c as f64 * cell,
+                     grid.origin_v + r as f64 * cell,
+                 );
+-                if (x - p.x).hypot(y - p.y) > self.band {
+-                    continue;
++                let d = (x - p.x).hypot(y - p.y);
++                if d > self.band {
++                    return None;
+                 }
+-                seen = true;
+                 let on_grid =
+                     r >= 0 && c >= 0 && (r as usize) < grid.rows && (c as usize) < grid.cols;
+-                if !on_grid || grid.has_material_above(r as usize, c as usize, self.floor) {
+-                    return true;
+-                }
++                Some((d, on_grid.then_some((r as usize, c as usize))))
++            })
++    }
++
++    /// True when the contour point `p` passes material, or when the grid
++    /// holds no answer in its band. See [`standing_near`].
++    pub(crate) fn keeps(&self, p: P2) -> bool {
++        let mut seen = false;
++        for (_, at) in self.cells_in_band(p) {
++            seen = true;
++            match at {
++                None => return true,
++                Some((r, c)) if self.grid.has_material_above(r, c, self.floor) => return true,
++                Some(_) => {}
+             }
+         }
+         !seen
+     }
++
++    /// W2 (D69 §3): the widest radial skin (mm) that the tool of radius
++    /// `tool_radius` meets at `p`: for each cell of the band that holds
++    /// material above the level, `R + cell / 2 - d` (`d` the distance of
++    /// its centre; the half cell is the part of the cell nearest the
++    /// tool), at most `2R` (a full slot). A cell off the grid holds no
++    /// answer, so it counts as a full slot (cut more, never less).
++    pub(crate) fn radial_skin_mm(&self, p: P2, tool_radius: f64) -> f64 {
++        let half_cell = self.grid.cell_size / 2.0;
++        let full = 2.0 * tool_radius;
++        let mut skin: f64 = 0.0;
++        for (d, at) in self.cells_in_band(p) {
++            match at {
++                None => return full,
++                Some((r, c)) if self.grid.has_material_above(r, c, self.floor) => {
++                    skin = skin.max(tool_radius + half_cell - d);
++                }
++                Some(_) => {}
++            }
++        }
++        skin.clamp(0.0, full)
++    }
+ }
+ 
+ /// `RestUse::ContourFilter` (W6.1, W6.4.6): the rule a runner owns. The
+diff --git a/crates/rs_cam_core/src/ops/waterline.rs b/crates/rs_cam_core/src/ops/waterline.rs
+index 316b3ca9a..8d9422bc0 100644
+--- a/crates/rs_cam_core/src/ops/waterline.rs
++++ b/crates/rs_cam_core/src/ops/waterline.rs
+@@ -902,6 +902,84 @@ fn emit_chain(
+     toolpath.final_retract(params.safe_z);
+ }
+ 
++/// W2 (D69 §3): what lets a helical chain cut a vertical wall at a wider
++/// step. See [`thin_wall_chain`].
++pub struct WallStep<'a> {
++    /// The rough's axial step (mm): no gap between two kept rings exceeds
++    /// it (`ExecutionContext::rest_axial_step_mm`).
++    pub max_step_mm: f64,
++    /// The deflection check: true when the tool may cut the wall at axial
++    /// depth `ap` (mm, the third argument) along `ring` (the second) at
++    /// level index `k` (the first), with the radial skin the remaining
++    /// stock shows there.
++    pub admits: &'a dyn Fn(usize, &[P3], f64) -> bool,
++}
++
++/// W2 (D69 §3): the rings of `chain` that the helix keeps on a vertical
++/// wall. Ring `i` (not the first, not the last) is skipped when:
++///
++/// 1. the rings from the last kept ring to ring `i + 1` coincide (each lies
++///    inside the other to within `tol`, the W1 test [`ring_inside`] both
++///    ways), and
++/// 2. the gap from the last kept ring to ring `i + 1` is at most
++///    [`WallStep::max_step_mm`] (to within the ladder's own epsilon
++///    [`WATERLINE_LADDER_EPSILON`]), and
++/// 3. [`WallStep::admits`] that gap at ring `i + 1`.
++///
++/// The first and the last ring always stay. The lap from a kept ring then
++/// descends over the wider gap ([`lap_count`]).
++fn thin_wall_chain<'p>(
++    chain: &[(usize, usize)],
++    polygons: &[Vec<Option<Polygon2>>],
++    path_of: &dyn Fn(usize, usize) -> Option<&'p [P3]>,
++    wall: &WallStep<'_>,
++    tol: f64,
++) -> Vec<(usize, usize)> {
++    let polygon = |(k, c): (usize, usize)| {
++        polygons
++            .get(k)
++            .and_then(|l| l.get(c))
++            .and_then(Option::as_ref)
++    };
++    let coincide = |u: (usize, usize), v: (usize, usize)| match (polygon(u), polygon(v)) {
++        (Some(a), Some(b)) => ring_inside(a, b, tol) && ring_inside(b, a, tol),
++        _ => false,
++    };
++    let z_of = |at: (usize, usize)| path_of(at.0, at.1).and_then(|p| p.first()).map(|p| p.z);
++    let (Some(&first), Some(&last)) = (chain.first(), chain.last()) else {
++        return chain.to_vec();
++    };
++    let mut kept = vec![first];
++    let mut anchor = 0;
++    for i in 1..chain.len().saturating_sub(1) {
++        let (Some(&ring), Some(&next), Some(&from)) =
++            (chain.get(i), chain.get(i + 1), chain.get(anchor))
++        else {
++            continue;
++        };
++        let skip = (|| {
++            let all_coincide = chain
++                .get(anchor + 1..=i + 1)?
++                .iter()
++                .all(|&at| coincide(from, at));
++            let gap = z_of(from)? - z_of(next)?;
++            let path = path_of(next.0, next.1)?;
++            Some(
++                all_coincide
++                    && gap <= wall.max_step_mm + WATERLINE_LADDER_EPSILON
++                    && (wall.admits)(next.0, path, gap),
++            )
++        })()
++        .unwrap_or(false);
++        if !skip {
++            kept.push(ring);
++            anchor = i;
++        }
++    }
++    kept.push(last);
++    kept
++}
++
+ /// The helical waterline (D69 §2, `WaterlineConfig::helical`): the
+ /// levels of [`waterline_level_rings`], top first, with each chain of
+ /// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
+@@ -921,6 +999,7 @@ pub fn helical_waterline(
+     levels: &[LevelRings],
+     params: &WaterlineParams,
+     probe: &ChainLinkProbe<'_>,
++    wall: Option<&WallStep<'_>>,
+     cancel: &dyn CancelCheck,
+ ) -> Result<Toolpath, Cancelled> {
+     let polygons: Vec<Vec<Option<Polygon2>>> = levels
+@@ -994,15 +1073,18 @@ pub fn helical_waterline(
+                 emit_run(&mut toolpath, run, params);
+                 continue;
+             }
+-            let rings: Vec<&[P3]> = chain
+-                .iter()
+-                .filter_map(|&(ck, cc)| path_of(ck, cc))
+-                .collect();
+             for &(ck, cc) in &chain {
+                 if let Some(slot) = consumed.get_mut(ck).and_then(|c| c.get_mut(cc)) {
+                     *slot = true;
+                 }
+             }
++            if let Some(wall) = wall {
++                chain = thin_wall_chain(&chain, &polygons, &path_of, wall, params.sampling);
++            }
++            let rings: Vec<&[P3]> = chain
++                .iter()
++                .filter_map(|&(ck, cc)| path_of(ck, cc))
++                .collect();
+             emit_chain(&mut toolpath, &rings, params, probe);
+         }
+     }
+diff --git a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+index 4a6ee89e5..34db37516 100644
+--- a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
++++ b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+@@ -274,7 +274,7 @@ fn an_unmatched_ring_keeps_the_stacked_form() {
+         reduced_tool: &tool,
+     };
+     let helical = rs_cam_core::interrupt::run_uncancellable(|cancel| {
+-        helical_waterline(&levels, &params, &probe, cancel)
++        helical_waterline(&levels, &params, &probe, None, cancel)
+     });
+     let mut stacked = Toolpath::new();
+     for level in &levels {
+diff --git a/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs b/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs
+new file mode 100644
+index 000000000..14cdd7ede
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs
+@@ -0,0 +1,192 @@
++//! W2 (D69 §3): the helical Waterline widens its step on a vertical wall.
++//!
++//! Pre-registration:
++//! `planning/adaptive_research_2026-10-23/integration/W2_PREREG.md`. Inside a
++//! W1 chain, ring `i` is skipped when the rings from the last kept ring to
++//! ring `i + 1` coincide (the W1 containment test both ways), the gap is at
++//! most the rough's axial step, and the deflection check admits the gap.
++//! The first and the last ring stay. The deflection check itself is the
++//! lib test `the_wall_step_reads_the_deflection_model_w2`
++//! (`compute/execute/finish_raster.rs`).
++//!
++//! The fixture is one chain of square rings, one per level, 10 to 1 in
++//! steps of 1 mm.
++//!
++//! 1. A vertical wall (all rings the same), rough step 3: the helix keeps
++//!    the rings at 10, 7, 4 and 1.
++//! 2. The check refuses: every ring stays (the W1 output, move for move).
++//! 3. A drafted wall (each ring 0.6 mm wider than the one above, more than
++//!    the 0.5 mm sampling): every ring stays.
++//! 4. No wall step: the W1 output.
++
++#![expect(
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++use rs_cam_core::geo::P3;
++use rs_cam_core::mesh::{SpatialIndex, make_test_hemisphere};
++use rs_cam_core::ops::waterline::{
++    ChainLinkProbe, LevelRings, LevelRun, WallStep, WaterlineParams, helical_waterline,
++};
++use rs_cam_core::tool::FlatEndmill;
++use rs_cam_core::toolpath::{MoveIntent, Toolpath};
++
++const TOP: f64 = 10.0;
++const LEVELS: usize = 10;
++const ROUGH_STEP: f64 = 3.0;
++
++fn params() -> WaterlineParams {
++    WaterlineParams {
++        sampling: 0.5,
++        feed_rate: 1000.0,
++        plunge_rate: 300.0,
++        safe_z: 20.0,
++        stock_to_leave: 0.0,
++    }
++}
++
++/// One square ring per level; `draft` widens each ring by that much per
++/// level below the top.
++fn levels(draft: f64) -> Vec<LevelRings> {
++    (0..LEVELS)
++        .map(|k| {
++            let z = TOP - k as f64;
++            let half = 20.0 + draft * k as f64;
++            let ring = vec![
++                P3::new(-half, -half, z),
++                P3::new(half, -half, z),
++                P3::new(half, half, z),
++                P3::new(-half, half, z),
++            ];
++            LevelRings {
++                runs: vec![LevelRun {
++                    path: ring.clone(),
++                    whole: true,
++                    contour: 0,
++                }],
++                contours: vec![ring],
++                rest_kept: false,
++                rest_dropped: false,
++            }
++        })
++        .collect()
++}
++
++fn helix(levels: &[LevelRings], wall: Option<&WallStep<'_>>) -> Toolpath {
++    let mesh = make_test_hemisphere(5.0, 8);
++    let index = SpatialIndex::build(&mesh, 5.0);
++    // The rings stand far outside the hemisphere: every link is clear.
++    let tool = FlatEndmill::new(6.0, 25.0);
++    let probe = ChainLinkProbe {
++        mesh: &mesh,
++        index: &index,
++        reduced_tool: &tool,
++    };
++    rs_cam_core::interrupt::run_uncancellable(|cancel| {
++        helical_waterline(levels, &params(), &probe, wall, cancel)
++    })
++}
++
++/// The Z of each flat lap end and descent end: the Z values the chain
++/// reaches, top first, one per kept ring.
++fn ring_levels(tp: &Toolpath) -> Vec<f64> {
++    let mut zs: Vec<f64> = tp
++        .moves
++        .iter()
++        .filter(|m| m.intent == MoveIntent::FinishingCut || m.intent == MoveIntent::EntryPlunge)
++        .map(|m| m.target.z)
++        .filter(|z| (z - z.round()).abs() < 1e-9)
++        .collect();
++    zs.dedup();
++    zs
++}
++
++fn same_moves(a: &Toolpath, b: &Toolpath) -> bool {
++    a.moves.len() == b.moves.len()
++        && a.moves
++            .iter()
++            .zip(&b.moves)
++            .all(|(x, y)| x.target == y.target && x.intent == y.intent)
++}
++
++#[test]
++fn a_vertical_wall_keeps_the_rings_at_the_rough_step() {
++    let admits = |_: usize, _: &[P3], _: f64| true;
++    let wall = WallStep {
++        max_step_mm: ROUGH_STEP,
++        admits: &admits,
++    };
++    let rings = levels(0.0);
++    let widened = helix(&rings, Some(&wall));
++    let w1 = helix(&rings, None);
++    assert_eq!(
++        ring_levels(&w1),
++        vec![10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
++        "control: the W1 helix reaches every level"
++    );
++    assert_eq!(
++        ring_levels(&widened),
++        vec![10.0, 7.0, 4.0, 1.0],
++        "kept rings at most the rough step apart; the first and last stay"
++    );
++    let entries = |tp: &Toolpath| {
++        tp.moves
++            .iter()
++            .filter(|m| m.intent == MoveIntent::EntryPlunge)
++            .count()
++    };
++    assert_eq!(entries(&widened), 1, "still one chain, one entry");
++}
++
++#[test]
++fn a_refused_deflection_check_keeps_every_ring() {
++    let refuses = |_: usize, _: &[P3], _: f64| false;
++    let wall = WallStep {
++        max_step_mm: ROUGH_STEP,
++        admits: &refuses,
++    };
++    let rings = levels(0.0);
++    assert!(same_moves(
++        &helix(&rings, Some(&wall)),
++        &helix(&rings, None)
++    ));
++}
++
++#[test]
++fn a_drafted_wall_keeps_every_ring() {
++    let admits = |_: usize, _: &[P3], _: f64| true;
++    let wall = WallStep {
++        max_step_mm: ROUGH_STEP,
++        admits: &admits,
++    };
++    // 0.6 mm per level: more than the 0.5 mm sampling, so no two rings
++    // coincide, while each still lies inside the next (one chain).
++    let rings = levels(0.6);
++    let widened = helix(&rings, Some(&wall));
++    assert_eq!(ring_levels(&widened).len(), LEVELS, "no ring is skipped");
++    assert!(same_moves(&widened, &helix(&rings, None)));
++}
++
++#[test]
++fn the_admit_reads_the_gap_and_the_lower_ring() {
++    // The check sees the gap to the next ring and that ring's level.
++    let seen = std::cell::RefCell::new(Vec::new());
++    let record = |k: usize, ring: &[P3], ap: f64| {
++        seen.borrow_mut().push((k, ring[0].z, ap));
++        true
++    };
++    let wall = WallStep {
++        max_step_mm: ROUGH_STEP,
++        admits: &record,
++    };
++    let _ = helix(&levels(0.0), Some(&wall));
++    for &(k, z, ap) in seen.borrow().iter() {
++        assert!(
++            (z - (TOP - k as f64)).abs() < 1e-9,
++            "level index {k} is Z {z}"
++        );
++        assert!(ap > 0.0 && ap <= ROUGH_STEP + 1e-9, "gap {ap}");
++    }
++    assert!(!seen.borrow().is_empty());
++}
