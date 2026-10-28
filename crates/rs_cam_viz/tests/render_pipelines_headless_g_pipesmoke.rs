@@ -8,23 +8,28 @@
 //! a wgpu device, so no gate could see it.
 //!
 //! This sentry adds that gate. It requests a headless adapter: a software
-//! adapter first, any adapter second. It then calls
-//! `RenderResources::new(&device, format)`. That function is the app's ONE
+//! adapter first, any adapter second (`fixtures/gpu.rs`). It then calls
+//! `RenderResources::new(&device, format, sample_count)`. That function is the app's ONE
 //! construction site for the viewport's GPU state, and it builds:
 //!
-//! - 4 shader modules: `mesh_shader`, `sim_mesh_shader`, `line_shader`,
-//!   `blit_shader`
-//! - 3 bind group layouts: `mesh_bgl`, `line_bgl`, `blit_bgl`
-//! - 6 render pipelines: `mesh_pipeline`, `sim_mesh_pipeline`,
-//!   `height_plane_pipeline`, `colored_opaque_pipeline`, `line_pipeline`,
-//!   `blit_pipeline`
+//! - 5 shader modules: `mesh_shader`, `face_mesh_shader`, `sim_mesh_shader`,
+//!   `line_shader`, `blit_shader`
+//! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
+//!   `blit_bgl`
+//! - 7 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
+//!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
+//!   `line_pipeline`, `blit_pipeline`
 //!
 //! `app.rs` calls the same function with `render_state.target_format`, and
 //! nothing else in the crate creates a pipeline, a layout, or a shader
 //! module. So the sentry's subject is the whole surface.
 //!
-//! Every pipeline uses `MultisampleState::default()` (sample count 1), so the
-//! sample count is not a parameter of the seam and the test does not vary it.
+//! The five scene pipelines take the scene sample count from `new` (D1:
+//! 4× MSAA where the adapter supports it). The blit stays at count 1,
+//! because egui's pass is single-sample. A pipeline and an attachment with
+//! different counts fail at pass time, not at pipeline creation. So the
+//! second arm renders one frame through `render_headless_frame` at the
+//! count that `scene_sample_count` gives, and one frame at count 1.
 //!
 //! The format list is the app's own. `egui_wgpu::preferred_framebuffer_format`
 //! picks `Rgba8Unorm` or `Bgra8Unorm` when the surface offers one, else the
@@ -35,11 +40,11 @@
 //!
 //! Two gaps. State them before you read a pass as total cover.
 //!
-//! - `blit_bg` is built per frame in the private `ensure_offscreen`, not in
-//!   `new`. It is the same defect class — a resource against a layout — but
-//!   it is outside this sentry's subject.
+//! - The headless frame records the scene pass only. The blit into egui's
+//!   pass (`paint`) does not run. `ensure_offscreen` builds `blit_bg`, so
+//!   wgpu checks it against `blit_bgl`, but no pass binds it.
 //! - A uniform buffer that is SMALLER than its WGSL struct still passes. All
-//!   three layouts set `min_binding_size: None`, so wgpu defers that check to
+//!   the layouts set `min_binding_size: None`, so wgpu defers that check to
 //!   draw time. The `_pad` field on `LineUniforms` guards the size by
 //!   convention alone. `min_binding_size: Some(...)` on each layout entry
 //!   would move the check here; that is a `render/mod.rs` change.
@@ -59,11 +64,21 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
-use std::future::Future;
+#[path = "fixtures/gpu.rs"]
+mod gpu;
+
 use std::sync::{Arc, Mutex};
 
 use egui_wgpu::wgpu;
-use rs_cam_viz::render::RenderResources;
+use gpu::{adapter_line, block_on, headless_device};
+use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::enriched_mesh::{
+    EnrichedMesh, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+};
+use rs_cam_core::ids::ModelId;
+use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
+use rs_cam_viz::render::{MSAA_SAMPLES, PolygonGpuData, RenderResources, scene_sample_count};
+use wgpu::util::DeviceExt;
 
 /// The surface formats the app can be handed, in `egui_wgpu`'s own priority
 /// order. See the module doc.
@@ -74,104 +89,29 @@ const APP_TARGET_FORMATS: &[wgpu::TextureFormat] = &[
     wgpu::TextureFormat::Rgba8UnormSrgb,
 ];
 
-/// Poll ceiling for [`block_on`].
-///
-/// Every wgpu future this test awaits is already resolved on a native
-/// backend, so one poll is enough. The ceiling exists so a future that never
-/// resolves fails the test instead of hanging the suite.
-const MAX_POLLS: u32 = 100_000;
+/// The headless frame size: small, and not square, so a swapped width and
+/// height cannot pass.
+const FRAME_WIDTH: u32 = 64;
+const FRAME_HEIGHT: u32 = 48;
 
-/// Drive a future to completion on the calling thread.
-///
-/// The test adds no executor dependency. `wgpu`'s native futures resolve on
-/// the first poll, and `Waker::noop` covers the rest.
-fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
-    for _ in 0..MAX_POLLS {
-        if let std::task::Poll::Ready(value) = future.as_mut().poll(&mut cx) {
-            return value;
-        }
-        std::thread::yield_now();
-    }
-    panic!("a wgpu future did not resolve after {MAX_POLLS} polls");
+/// A one-triangle STEP mesh with one face and its boundary loop.
+fn one_face_mesh() -> EnrichedMesh {
+    let p = |x: f64, y: f64| P3::new(x, y, 0.0);
+    let ring = vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)];
+    let face = FaceTessellation {
+        vertices: ring.clone(),
+        triangles: vec![[0, 1, 2]],
+        surface_type: SurfaceType::Unknown,
+        surface_params: SurfaceParams::Unknown,
+        boundary_loops: vec![ring],
+    };
+    build_enriched_mesh(vec![face], Vec::new(), Vec::new())
+        .unwrap_or_else(|e| panic!("the one-face mesh builds: {e}"))
 }
 
-/// Ask for a software adapter first, then for any adapter.
-///
-/// The error collects both refusals, so a skip says which backends were
-/// tried and why each declined.
-fn request_any_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, String> {
-    let mut refusals = Vec::new();
-    for force_fallback_adapter in [true, false] {
-        let options = wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            force_fallback_adapter,
-            compatible_surface: None,
-            // wgpu 30 added limit bucketing. It exists to stop untrusted
-            // content fingerprinting the adapter, and this is a desktop
-            // binary, so `false` is correct and it is also wgpu's own
-            // default. The smoke test asks for the real adapter limits,
-            // exactly as it did on wgpu 29.
-            apply_limit_buckets: false,
-        };
-        match block_on(instance.request_adapter(&options)) {
-            Ok(adapter) => return Ok(adapter),
-            Err(err) => {
-                refusals.push(format!(
-                    "force_fallback_adapter={force_fallback_adapter}: {err}"
-                ));
-            }
-        }
-    }
-    Err(refusals.join("; "))
-}
-
-#[test]
-fn every_render_pipeline_builds_on_a_headless_adapter_g_pipesmoke() {
-    // The noop backend accepts everything and validates nothing. Exclude it
-    // so this sentry can never pass on a device that cannot fail.
-    let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
-    instance_desc.backends = wgpu::Backends::all() - wgpu::Backends::NOOP;
-    let instance = wgpu::Instance::new(instance_desc);
-
-    let adapter = match request_any_adapter(&instance) {
-        Ok(adapter) => adapter,
-        Err(reason) => {
-            eprintln!("G-PIPESMOKE SKIPPED — no wgpu adapter on this machine ({reason})");
-            return;
-        }
-    };
-
-    let info = adapter.get_info();
-    eprintln!(
-        "G-PIPESMOKE adapter: {} | backend {:?} | type {:?} | driver {} {}",
-        info.name, info.backend, info.device_type, info.driver, info.driver_info
-    );
-    assert_ne!(
-        info.backend,
-        wgpu::Backend::Noop,
-        "the noop backend validates nothing, so it cannot serve this sentry"
-    );
-
-    let device_request = adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("g_pipesmoke_device"),
-        required_limits: adapter.limits(),
-        ..Default::default()
-    });
-    let (device, _queue) = match block_on(device_request) {
-        Ok(pair) => pair,
-        Err(err) => {
-            eprintln!(
-                "G-PIPESMOKE SKIPPED — adapter {} gave no device ({err})",
-                info.name
-            );
-            return;
-        }
-    };
-
-    // The uncaptured handler catches anything the validation scope does not
-    // filter. Install it before the first construction.
+/// Collects the errors that no error scope filters. Install it before the
+/// first construction.
+fn uncaptured_sink(device: &wgpu::Device) -> Arc<Mutex<Vec<String>>> {
     let uncaptured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&uncaptured);
     device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
@@ -179,10 +119,35 @@ fn every_render_pipeline_builds_on_a_headless_adapter_g_pipesmoke() {
             messages.push(error.to_string());
         }
     }));
+    uncaptured
+}
+
+fn assert_no_uncaptured(uncaptured: &Arc<Mutex<Vec<String>>>, what: &str) {
+    let messages = uncaptured
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(
+        messages.is_empty(),
+        "uncaptured wgpu errors while {what}: {messages:?}"
+    );
+}
+
+#[test]
+fn every_render_pipeline_builds_on_a_headless_adapter_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
 
     for &format in APP_TARGET_FORMATS {
-        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let resources = RenderResources::new(&device, format);
+        let samples = scene_sample_count(&gpu.adapter, format);
+        let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let resources = RenderResources::new(&gpu.device, format, samples);
         let error = block_on(scope.pop());
         assert!(
             error.is_none(),
@@ -192,11 +157,86 @@ fn every_render_pipeline_builds_on_a_headless_adapter_g_pipesmoke() {
         drop(resources);
     }
 
-    let messages = uncaptured
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(
-        messages.is_empty(),
-        "uncaptured wgpu errors while building the viewport's render resources: {messages:?}"
-    );
+    assert_no_uncaptured(&uncaptured, "building the viewport's render resources");
+}
+
+#[test]
+fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_frame_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    let x4 = |format: wgpu::TextureFormat| {
+        gpu.adapter
+            .get_texture_format_features(format)
+            .flags
+            .sample_count_supported(MSAA_SAMPLES)
+    };
+    let depth_x4 = x4(wgpu::TextureFormat::Depth32Float);
+
+    for &format in APP_TARGET_FORMATS {
+        let samples = scene_sample_count(&gpu.adapter, format);
+        let expected = if x4(format) && depth_x4 {
+            MSAA_SAMPLES
+        } else {
+            1
+        };
+        assert_eq!(
+            samples, expected,
+            "{format:?}: scene_sample_count disagrees with the adapter's X4 flags"
+        );
+        eprintln!("G-PIPESMOKE {format:?}: scene sample count {samples}");
+
+        // Both paths: the adapter's count, then the single-sample fallback.
+        // The count is stored once per `RenderResources`, so each path
+        // needs its own instance.
+        for count in [samples, 1] {
+            let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let mut resources = RenderResources::new(&gpu.device, format, count);
+            assert_eq!(resources.sample_count(), count);
+            // One face mesh, so the frame draws the face pipeline with its
+            // state bind group (D2), and its loop, so the frame draws the
+            // model edges with the edge bind group (D4).
+            let enriched = one_face_mesh();
+            let face_mesh = face_mesh_gpu_data(
+                &gpu.device,
+                &resources.gpu_limits,
+                &resources.face_state_bgl,
+                &resources.face_palette_buffer,
+                ModelId::from_wire(1),
+                &enriched,
+                &None,
+            )
+            .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
+            resources.face_mesh_data_list.push(face_mesh);
+            let edges = face_edge_vertices(&enriched, &None);
+            assert_eq!(edges.len(), 6, "a 3-point loop gives 3 closed pairs");
+            resources.model_edge_lines = Some(PolygonGpuData {
+                vertex_buffer: gpu
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("g_pipesmoke_edges"),
+                        contents: bytemuck::cast_slice(&edges),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                vertex_count: edges.len() as u32,
+            });
+            resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+            let error = block_on(scope.pop());
+            assert!(
+                error.is_none(),
+                "{format:?} at {count} samples: wgpu rejected the headless scene frame — {}",
+                error.as_ref().map_or_else(String::new, |e| e.to_string())
+            );
+            drop(resources);
+        }
+    }
+
+    assert_no_uncaptured(&uncaptured, "rendering the headless scene frame");
 }

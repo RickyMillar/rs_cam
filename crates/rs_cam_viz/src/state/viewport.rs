@@ -72,6 +72,9 @@ pub struct ViewportState {
     /// STEP model untouched (audit §3.1, fix §6.2). One flag, both loops,
     /// one honest meaning.
     pub show_model: bool,
+    /// D4: the boundary of each STEP face, in ink over the part. It draws
+    /// only with `show_model`.
+    pub show_model_edges: bool,
     /// The stock wireframe box.
     pub show_stock: bool,
     /// The opaque stock block. Split from `show_stock` (audit §3.2 — one
@@ -258,6 +261,7 @@ impl ViewportState {
         Self {
             show_grid: true,
             show_model: true,
+            show_model_edges: true,
             show_stock: true,
             show_stock_solid: false,
             show_origin_axes: true,

@@ -6,6 +6,8 @@ use std::path::Path;
 use thiserror::Error;
 use tracing::warn;
 
+pub mod bvh;
+
 #[derive(Error, Debug)]
 pub enum MeshError {
     #[error("Failed to read STL file: {0}")]

@@ -161,20 +161,49 @@ pub struct MeshUploadKey {
     pub meshes: Vec<ArcId<rs_cam_core::mesh::TriangleMesh>>,
 }
 
-/// Key for `RenderResources::enriched_mesh_data_list` — the per-face-coloured
-/// STEP/BREP path (`enriched_mesh_gpu_data`).
+/// Key for `RenderResources::face_mesh_data_list` — the STEP/BREP face
+/// pipeline geometry (`face_mesh_gpu_data`, D2).
 ///
-/// Inputs: the enriched-mesh `Arc` identities, the display frame, and the two
-/// colour inputs the builder reads per triangle — the selected face set and
-/// the hovered face. The hover entry is what makes V13 (BREP hover highlight
-/// never re-uploading) fixable without a full-scene rebuild per pointer move.
+/// Inputs: the display frame and each model's id with its enriched-mesh
+/// `Arc` identity. The geometry holds no colour, so no hover and no
+/// selection input is here: those are [`FaceStateKey`] inputs (D3).
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnrichedUploadKey {
     pub frame: FrameKey,
-    /// Pinned identity of each contributing `EnrichedMesh`, in model order.
-    pub meshes: Vec<ArcId<rs_cam_core::geometry::enriched_mesh::EnrichedMesh>>,
-    pub selected_faces: Vec<FaceGroupId>,
-    pub hovered_face: Option<FaceGroupId>,
+    /// Each contributing model and the pinned identity of its
+    /// `EnrichedMesh`, in model order.
+    pub meshes: Vec<(
+        rs_cam_core::ids::ModelId,
+        ArcId<rs_cam_core::geometry::enriched_mesh::EnrichedMesh>,
+    )>,
+}
+
+/// Key for `RenderResources::model_edge_lines` — the face edges of the
+/// drawn STEP models (D4). The same models and frame as the face meshes;
+/// the edges hold no hover and no selection input.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelEdgesKey {
+    pub frame: FrameKey,
+    pub meshes: Vec<(
+        rs_cam_core::ids::ModelId,
+        ArcId<rs_cam_core::geometry::enriched_mesh::EnrichedMesh>,
+    )>,
+}
+
+/// Key for the per-face state words of the face pipeline (D3).
+///
+/// A hover or a selection change moves this key and not
+/// [`EnrichedUploadKey`], so the upload rewrites `face_count` × 4 B per
+/// model and builds no mesh. The mesh key is inside: a rebuilt mesh has
+/// zeroed state buffers, so this key must move whenever that key moves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceStateKey {
+    pub mesh: EnrichedUploadKey,
+    pub hovered: Option<(rs_cam_core::ids::ModelId, FaceGroupId)>,
+    pub selected: Vec<(rs_cam_core::ids::ModelId, FaceGroupId)>,
+    /// The item-state palette slot of a face, when the face path shows
+    /// item states.
+    pub states: Vec<(rs_cam_core::ids::ModelId, FaceGroupId, u8)>,
 }
 
 /// Key for the collision-marker line buffer.
@@ -313,6 +342,17 @@ pub trait SlotInputs {
     fn key(&self) -> Self::Key;
 }
 
+/// A borrowed input value keys as the value. A slot whose inputs a later
+/// slot also reads (the face mesh inputs, which the face state key embeds)
+/// hands [`refresh`] a reference.
+impl<T: SlotInputs> SlotInputs for &T {
+    type Key = T::Key;
+
+    fn key(&self) -> Self::Key {
+        (**self).key()
+    }
+}
+
 /// The answer of [`refresh`].
 pub enum Refresh<I> {
     /// The stored key matches: keep the resource as it is.
@@ -373,6 +413,8 @@ pub struct UploadStats {
     pub toolpath_reuses: u64,
     pub collision_builds: u64,
     pub rest_heatmap_builds: u64,
+    /// Passes that rewrote the face state words (D3).
+    pub face_state_writes: u64,
 }
 
 impl UploadStats {
@@ -391,6 +433,9 @@ impl UploadStats {
             rest_heatmap_builds: self
                 .rest_heatmap_builds
                 .saturating_sub(earlier.rest_heatmap_builds),
+            face_state_writes: self
+                .face_state_writes
+                .saturating_sub(earlier.face_state_writes),
         }
     }
 }
@@ -559,11 +604,11 @@ mod tests {
         assert_ne!(a, new_report, "an equal report in a new Arc is a new key");
     }
 
-    /// V13's hover input: the enriched key moves with the hovered face, and
-    /// the plain-mesh key has no hover input at all — so a pointer move over
-    /// a STEP model cannot drag the STL upload with it.
+    /// D3: a hover or a selection change moves the face state key and
+    /// not the mesh key, so a pointer move over a STEP model builds no mesh.
+    /// A mesh key change moves the face state key too.
     #[test]
-    fn hover_moves_the_enriched_key_only() {
+    fn hover_moves_the_face_state_key_only() {
         let frame = FrameKey {
             setup: None,
             stock: StockConfig::default(),
@@ -580,19 +625,47 @@ mod tests {
             frame: frame.clone(),
             meshes: vec![ArcId::new(&plain)],
         };
+        let model = rs_cam_core::ids::ModelId::from_wire(3);
         let enriched = EnrichedUploadKey {
             frame,
-            meshes: vec![ArcId::new(&enriched_mesh)],
-            selected_faces: Vec::new(),
-            hovered_face: None,
+            meshes: vec![(model, ArcId::new(&enriched_mesh))],
         };
-        let hovered = EnrichedUploadKey {
-            hovered_face: Some(FaceGroupId(4)),
-            ..enriched.clone()
+        let idle = FaceStateKey {
+            mesh: enriched.clone(),
+            hovered: None,
+            selected: Vec::new(),
+            states: Vec::new(),
         };
-        assert_ne!(enriched, hovered);
-        // The plain-mesh key is untouched by hover: it has no such field, so
-        // rebuilding it is structurally impossible from a pointer move.
+        let hovered = FaceStateKey {
+            hovered: Some((model, FaceGroupId(4))),
+            ..idle.clone()
+        };
+        let selected = FaceStateKey {
+            selected: vec![(model, FaceGroupId(4))],
+            ..idle.clone()
+        };
+        assert_ne!(idle, hovered);
+        assert_ne!(idle, selected);
+        // The mesh key is the same value in all three: the hover and the
+        // selection are not its fields, so they cannot move it.
+        assert_eq!(hovered.mesh, enriched);
+        assert_eq!(selected.mesh, enriched);
+        // A setup flip moves the mesh key, and the face state key with it.
+        let flipped = EnrichedUploadKey {
+            frame: FrameKey {
+                setup: Some((SetupId::from_wire(1), FaceUp::Bottom, ZRotation::Deg0)),
+                stock: StockConfig::default(),
+            },
+            ..enriched
+        };
+        assert_ne!(
+            FaceStateKey {
+                mesh: flipped,
+                ..idle.clone()
+            },
+            idle
+        );
+        // The plain-mesh key has no hover input at all.
         assert_eq!(mesh, mesh.clone());
     }
 

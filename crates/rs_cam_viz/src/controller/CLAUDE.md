@@ -4,7 +4,7 @@
 
 - `../controller.rs` — the type, the apply path, the plan progress accessor and `PlanResolutionConfirm`.
 - `events/` — the handlers by area: compute (the plan driver), model, toolpath, simulation, planner,
-  preferences, undo, pins (the one pin-edit door for GUI and MCP, P5), `model_faces.rs` (STL faces). S11: `handle_add_toolpath` (= `add_toolpath_with_model`) builds the op with core `draft_toolpath` (the MCP and CLI door); no op is built here. Q7: it passes the selected model (`Selection::Model`) and no faces (an op takes faces from its own selection); R2: no fitting tool adds the op with no tool and one Warning toast (the Bore add too).
+  preferences, undo, pins (the one pin-edit door for GUI and MCP, P5), `model_faces.rs` (STL faces), `model_pick_index.rs` (the SEL-2 pick BVH). S11: `handle_add_toolpath` (= `add_toolpath_with_model`) builds the op with core `draft_toolpath` (the MCP and CLI door); no op is built here. Q7: it passes the selected model (`Selection::Model`) and no faces (an op takes faces from its own selection); R2: no fitting tool adds the op with no tool and one Warning toast (the Bore add too).
   E4 `push_act_step`: `EditTabs`, `EditSelection` and the boundary switch push one undo step per act; the panel snapshot moves past the act.
   `TogglePick` asks core `click_edit`; a `BoundaryToSelection` is one `SetBoundaryConfig` (`apply_boundary_switch`) with a notice.
   `AddPick` (P3) asks the same, and a `RemovePick` answer is no edit.
@@ -22,8 +22,8 @@
   F096: every controller and MCP write takes `AppController::apply` (the state door, then the view sim clears at once).
   F2: a focus write takes `AppController::set_focus`; a change of focus or of its setup raises `pending_upload`.
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new toolpath is a wrong picture.
-- A GUI `Job` (the tier-map preview; the STL faces: `process_model_faces`, one submit per cold model)
-  sets `AppState::job_run`; only `deliver_gui_job` clears it.
+- A GUI `Job` (the tier-map preview; the STL faces: `process_model_faces`, one submit per cold model; the pick BVH:
+  `process_model_pick_index`, every mesh model, a failed one never again) sets `AppState::job_run`; only `deliver_gui_job` clears it.
 - Generate is a PLAN over the dependency edges; core owns its order. Do not make it one pass or re-derive the walk.
 - The plan advances by DIRECT CALL from `drain_compute_results`. A step that pushed an `AppEvent` would
   wait for a painted frame, which a parked compositor never gives (the 137 s stall).

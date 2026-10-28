@@ -96,6 +96,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use super::cycle_time::{self, CycleTime};
+use super::pick_index::{BuildModelPickIndexHandle, ModelPickIndexBuilt};
 use super::selection_status::{BuildModelFacesHandle, ModelFacesBuilt, ModelItem, SelectionReport};
 use super::tab_layout::TabLayoutAnswer;
 use super::{
@@ -922,6 +923,13 @@ macro_rules! for_each_command {
                      "CLI generation builds the faces of a mesh itself",
                  ),
              }),
+            (Job, BuildModelPickIndex, "build_model_pick_index", BuildModelPickIndexArgs,
+             ModelPickIndexBuilt,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("MCP picks by key; it casts no screen ray"),
+                 cli: Reach::Skip("the batch CLI casts no ray"),
+             }),
         }
     };
 }
@@ -1251,6 +1259,14 @@ pub struct PreviewTierMapArgs {
 /// P4.7): the mesh model whose flat-region faces the job computes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildModelFacesArgs {
+    /// The model id (`LoadedModel::id`).
+    pub model_id: crate::ids::ModelId,
+}
+
+/// The arguments of the `build_model_pick_index` job (SEL-2): the mesh
+/// model whose ray-pick BVH the job builds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildModelPickIndexArgs {
     /// The model id (`LoadedModel::id`).
     pub model_id: crate::ids::ModelId,
 }
@@ -2636,6 +2652,8 @@ pub enum JobHandle {
     PreviewTierMap(Box<PreviewTierMapHandle>),
     /// What the `build_model_faces` job captured.
     BuildModelFaces(Box<BuildModelFacesHandle>),
+    /// What the `build_model_pick_index` job captured.
+    BuildModelPickIndex(Box<BuildModelPickIndexHandle>),
 }
 
 impl JobHandle {
@@ -2646,6 +2664,7 @@ impl JobHandle {
             JobHandle::RecommendClearingStrategy(_) => CommandId::RecommendClearingStrategy,
             JobHandle::PreviewTierMap(_) => CommandId::PreviewTierMap,
             JobHandle::BuildModelFaces(_) => CommandId::BuildModelFaces,
+            JobHandle::BuildModelPickIndex(_) => CommandId::BuildModelPickIndex,
         }
     }
 }
@@ -3173,9 +3192,9 @@ impl ProjectSession {
     /// boundary walks a full-grid tier map. A `start` that resolved that
     /// map under a flag of its own would make Cancel a lie for the whole
     /// of it.
-    /// Three of the four rows leave the caller's session alone.
-    /// `recommend_clearing_strategy`, `preview_tier_map` and
-    /// `build_model_faces` are READS:
+    /// Four of the five rows leave the caller's session alone.
+    /// `recommend_clearing_strategy`, `preview_tier_map`,
+    /// `build_model_faces` and `build_model_pick_index` are READS:
     /// they mutate nothing, so their step (i) drops no result and moves
     /// no revision, and they carry no step (iii). `&mut self` is the
     /// door's signature, not a claim that every row writes the caller's
@@ -3197,6 +3216,10 @@ impl ProjectSession {
             Job::BuildModelFaces(args) => {
                 let handle = self.capture_build_model_faces(args.model_id)?;
                 Ok(JobHandle::BuildModelFaces(Box::new(handle)))
+            }
+            Job::BuildModelPickIndex(args) => {
+                let handle = self.capture_build_model_pick_index(args.model_id)?;
+                Ok(JobHandle::BuildModelPickIndex(Box::new(handle)))
             }
         }
     }

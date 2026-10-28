@@ -13,7 +13,6 @@ use crate::state::toolpath::ToolpathId;
 use crate::state::viewport::{ToolpathDrawFilter, toolpaths_to_draw};
 use rs_cam_core::geo::{BoundingBox3, P2, P3, V3};
 use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
-use rs_cam_core::mesh::ray_pick_triangle;
 use rs_cam_core::selection::ItemKind;
 use rs_cam_core::session::ProjectSession;
 
@@ -268,13 +267,10 @@ fn pick_model_face(
     };
     let mut best: Option<(f64, PickHit)> = None;
     for model in session.models().iter().filter(|m| ctx.shows(m.id)) {
+        // SEL-2: `ray_pick` holds the box gate and casts on the BVH when
+        // the pick table has one, else by brute force: the same answer.
         if let Some(enriched) = &model.enriched_mesh {
-            let mesh = enriched.as_mesh();
-            // Fast AABB rejection
-            if mesh.bbox.ray_intersect(&model_origin, &model_dir).is_none() {
-                continue;
-            }
-            if let Some((tri_idx, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
+            if let Some((tri_idx, t)) = model.ray_pick(&model_origin, &model_dir)
                 && best.as_ref().is_none_or(|(b, _)| t < *b)
             {
                 let face_id = enriched.face_for_triangle(tri_idx);
@@ -288,9 +284,7 @@ fn pick_model_face(
             }
         } else if meshes
             && model.faces_are_flat_regions()
-            && let Some(mesh) = &model.mesh
-            && mesh.bbox.ray_intersect(&model_origin, &model_dir).is_some()
-            && let Some((_, t)) = ray_pick_triangle(mesh, &model_origin, &model_dir)
+            && let Some((_, t)) = model.ray_pick(&model_origin, &model_dir)
             && best.as_ref().is_none_or(|(b, _)| t < *b)
         {
             best = Some((
@@ -312,8 +306,9 @@ fn pick_model_face(
 /// the enriched mesh of a STEP model, else the mesh. The ray moves into the
 /// model frame through the inverse of the display transform, as
 /// [`pick_model_face`] does; the transform is rigid, so the ray parameter
-/// gives the point in the display frame. Brute force over the triangles:
-/// it runs once per drag start, never per frame. `pick` does not call it.
+/// gives the point in the display frame. `LoadedModel::ray_pick` casts on
+/// the BVH when the pick table has one, else by brute force (SEL-2); it runs
+/// once per drag start, never per frame. `pick` does not call it.
 pub fn surface_hit(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -345,14 +340,7 @@ pub fn surface_hit(
         .models()
         .iter()
         .filter(|m| ctx.shows(m.id))
-        .filter_map(|model| {
-            let mesh = match (&model.enriched_mesh, &model.mesh) {
-                (Some(enriched), _) => enriched.as_mesh(),
-                (None, Some(mesh)) => mesh.as_ref(),
-                (None, None) => return None,
-            };
-            ray_pick_triangle(mesh, &model_origin, &model_dir).map(|(_, t)| t)
-        })
+        .filter_map(|model| model.ray_pick(&model_origin, &model_dir).map(|(_, t)| t))
         .min_by(f64::total_cmp)?;
     Some(origin + dir * best_t)
 }

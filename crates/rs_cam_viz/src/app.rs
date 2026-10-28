@@ -81,7 +81,10 @@ pub struct RsCamApp {
     /// normal session.
     minimize_after_frames: Option<u32>,
     /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
-    last_hover_face: Option<rs_cam_core::geometry::enriched_mesh::FaceGroupId>,
+    last_hover_face: Option<(
+        rs_cam_core::ids::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )>,
     /// The unsaved-changes confirmation dialog, and what it is guarding.
     /// `None` means it is not shown. See [`UnsavedGuard`].
     unsaved_guard: Option<UnsavedGuard>,
@@ -217,7 +220,15 @@ impl RsCamApp {
         configure_theme(&cc.egui_ctx);
 
         if let Some(render_state) = cc.wgpu_render_state.as_ref() {
-            let resources = RenderResources::new(&render_state.device, render_state.target_format);
+            let sample_count = crate::render::scene_sample_count(
+                &render_state.adapter,
+                render_state.target_format,
+            );
+            let resources = RenderResources::new(
+                &render_state.device,
+                render_state.target_format,
+                sample_count,
+            );
             render_state
                 .renderer
                 .write()
@@ -869,6 +880,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
     }
@@ -1377,6 +1390,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
 
         // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
         // frame to reach it — the compute drain, `generate_all`'s fixpoint

@@ -102,6 +102,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::compute::transform::SetupTransformInfo;
 use crate::maps::memo::MeshMemo;
+use crate::mesh::bvh::MeshBvh;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::Polygon2;
 use crate::selection::ItemSet;
@@ -449,6 +450,107 @@ pub fn cached_transform(mesh: &Arc<TriangleMesh>, info: &SetupTransformInfo) -> 
     built
 }
 
+/// The pick table has no count cap: the dead-mesh sweep bounds it. A cap
+/// would thrash, because the shared table also holds the setup-transformed
+/// meshes of a generation, and five shown models would evict a BVH that the
+/// GUI job then builds again, in a loop (design C §3).
+const PICK_CAPACITY: usize = usize::MAX;
+
+/// The pick table: one [`MeshBvh`] per live mesh, apart from the shared
+/// [`Table`] so that a BVH never takes a slot of the four-mesh cap.
+type PickTable = MeshMemo<(), Arc<MeshBvh>, PICK_CAPACITY>;
+
+fn pick_table() -> &'static Mutex<PickTable> {
+    static TABLE: OnceLock<Mutex<PickTable>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(PickTable::new()))
+}
+
+/// The build and hit counters of the pick table.
+static BVH: crate::maps::memo::CacheCounters = crate::maps::memo::CacheCounters::new();
+
+/// The pick BVH of `mesh` (SEL-2), built at most once per mesh. It BUILDS on
+/// a miss, so call it only off the frame loop (the GUI job, a test). The
+/// lock covers the lookup and the insert, not the build. `None` only when
+/// the mesh has too many triangles for the BVH index (`BvhError`), with a
+/// warning.
+#[must_use]
+pub fn cached_bvh(mesh: &Arc<TriangleMesh>) -> Option<Arc<MeshBvh>> {
+    if let Some(hit) = pick_table().lock().ok().and_then(|t| t.get(mesh, &())) {
+        BVH.record_hit();
+        return Some(hit);
+    }
+    let built = match MeshBvh::build(mesh) {
+        Ok(bvh) => Arc::new(bvh),
+        Err(error) => {
+            tracing::warn!(
+                target: "rs_cam_core::maps::geom_cache",
+                %error,
+                "the pick BVH was not built; a ray pick on this mesh stays brute force"
+            );
+            return None;
+        }
+    };
+    BVH.record_build();
+    tracing::debug!(
+        target: "rs_cam_core::maps::geom_cache",
+        kind = "bvh",
+        triangles = mesh.faces.len(),
+        nodes = built.node_count(),
+        heap_bytes = built.heap_bytes(),
+        "geom cache build"
+    );
+    if let Ok(mut table) = pick_table().lock() {
+        table.put(mesh, (), Arc::clone(&built));
+    }
+    Some(built)
+}
+
+/// The cached pick BVH of `mesh`, or `None`. It never builds and counts
+/// nothing, so the frame loop may call it: one lock. A miss also sweeps the
+/// entries of dead meshes, because the pick table has no count cap and the
+/// memo sweeps only on a write.
+#[must_use]
+pub fn peek_bvh(mesh: &Arc<TriangleMesh>) -> Option<Arc<MeshBvh>> {
+    let mut table = pick_table().lock().ok()?;
+    let hit = table.get(mesh, &());
+    if hit.is_none() {
+        table.sweep();
+    }
+    hit
+}
+
+/// The pick-table counters as `(builds, hits)`.
+///
+/// **Test door** (FLD-04). No product path reads it.
+#[cfg(feature = "test-support")]
+#[must_use]
+pub fn bvh_stats() -> (u64, u64) {
+    BVH.read()
+}
+
+/// Number of live entries of the pick table.
+///
+/// **Test door** (FLD-04/05 tail). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers, so it sits behind
+/// `test-support`.
+#[cfg(feature = "test-support")]
+#[must_use]
+pub fn bvh_cache_len() -> usize {
+    pick_table().lock().map_or(0, |t| t.entry_count())
+}
+
+/// Drop every entry of the pick table, so a test starts from a known state.
+///
+/// **Test door** (FLD-04/05 tail). The harnesses under
+/// `crates/rs_cam_core/tests` are the only callers, so it sits behind
+/// `test-support`.
+#[cfg(feature = "test-support")]
+pub fn clear_bvh() {
+    if let Ok(mut t) = pick_table().lock() {
+        t.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,6 +608,61 @@ mod tests {
             cache_len(),
             1,
             "the dropped mesh's entry should have been swept, not accumulated"
+        );
+    }
+
+    /// A dropped mesh leaves the pick table at the next peek miss: the
+    /// table has no count cap, so the sweep is its only bound.
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn a_dropped_mesh_leaves_the_pick_table_at_a_peek_miss() {
+        let _guard = cache_test_lock();
+        clear_bvh();
+        let other = Arc::new(make_test_flat(10.0));
+        {
+            let m = Arc::new(make_test_hemisphere(20.0, 8));
+            assert!(cached_bvh(&m).is_some());
+            assert!(peek_bvh(&m).is_some(), "a peek on the built mesh hits");
+            assert_eq!(bvh_cache_len(), 1);
+        }
+        assert_eq!(bvh_cache_len(), 1, "no write ran, so no sweep ran yet");
+        assert!(peek_bvh(&other).is_none(), "the other mesh has no BVH");
+        assert_eq!(bvh_cache_len(), 0, "the peek miss swept the dead entry");
+    }
+
+    /// A pick BVH never takes a slot of the shared four-mesh table. Other
+    /// lib tests write the shared table without the lock, so the check reads
+    /// the entries of these meshes, not the table length.
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn a_pick_bvh_never_enters_the_shared_table() {
+        let _guard = cache_test_lock();
+        clear_bvh();
+        let meshes: Vec<Arc<TriangleMesh>> = (0..CAPACITY + 2)
+            .map(|k| Arc::new(make_test_hemisphere(10.0 + k as f64, 4)))
+            .collect();
+        for m in &meshes {
+            assert!(cached_bvh(m).is_some());
+        }
+        let in_shared = |m: &Arc<TriangleMesh>| get(m, |_| Some(())).is_some();
+        assert!(
+            !meshes.iter().any(in_shared),
+            "a BVH build wrote the shared table"
+        );
+        assert_eq!(
+            bvh_cache_len(),
+            meshes.len(),
+            "the pick table has no count cap"
+        );
+        assert!(meshes.iter().all(|m| peek_bvh(m).is_some()));
+        for m in meshes.iter().take(1) {
+            let _ = cached_auto_index(m);
+            assert!(in_shared(m), "the index build did write the shared table");
+        }
+        assert_eq!(
+            bvh_cache_len(),
+            meshes.len(),
+            "the shared table leaves the pick table alone"
         );
     }
 
