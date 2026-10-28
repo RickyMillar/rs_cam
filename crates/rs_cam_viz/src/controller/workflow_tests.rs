@@ -479,7 +479,9 @@ fn take_snapshot(c: &mut AppController<ScriptedBackend>, tp_id: ToolpathId) {
 
 /// Flush the snapshot into one undo step, as the panel does when the
 /// operator navigates away from the toolpath
-/// (`ui::properties::panel_apply::flush_toolpath_snapshot`).
+/// (`ui::properties::panel_apply::flush_toolpath_snapshot`). A snapshot
+/// whose parts did not move pushes no step (`toolpath_parts_moved`, E4):
+/// a click is its own step and moves the snapshot past it.
 fn flush_snapshot(c: &mut AppController<ScriptedBackend>) {
     let (snap_id, old_op, old_dressups, old_boundary, old_provenance) =
         c.state.history.toolpath_snapshot.take().unwrap();
@@ -488,16 +490,26 @@ fn flush_snapshot(c: &mut AppController<ScriptedBackend>) {
         .session()
         .find_toolpath_config_by_id(snap_id)
         .unwrap();
+    let old = (old_op, old_dressups, old_boundary, old_provenance);
+    let now = (
+        tc.operation.clone(),
+        tc.dressups.clone(),
+        tc.boundary.clone(),
+        tc.feeds_provenance.clone(),
+    );
+    if !crate::state::history::toolpath_parts_moved(&old, &now) {
+        return;
+    }
     let action = crate::state::history::UndoAction::ToolpathParamChange {
         tp_id: snap_id,
-        old_op,
-        new_op: tc.operation.clone(),
-        old_dressups,
-        new_dressups: tc.dressups.clone(),
-        old_boundary,
-        new_boundary: tc.boundary.clone(),
-        old_feeds_provenance: old_provenance,
-        new_feeds_provenance: tc.feeds_provenance.clone(),
+        old_op: old.0,
+        new_op: now.0,
+        old_dressups: old.1,
+        new_dressups: now.1,
+        old_boundary: old.2,
+        new_boundary: now.2,
+        old_feeds_provenance: old.3,
+        new_feeds_provenance: now.3,
     };
     c.state.history.push(action);
 }

@@ -486,6 +486,10 @@ pub(super) fn flush_machine_snapshot(state: &mut AppState) {
 }
 
 /// Flush toolpath params undo snapshot if the user navigated away from a toolpath.
+///
+/// A snapshot whose parts did not move pushes no step
+/// (`toolpath_parts_moved`, E4). An act door moves the snapshot past its
+/// own step, so an unconditional push here gave an empty step after the act.
 pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
     if let Some((tp_id, old_op, old_dressups, old_boundary, old_provenance)) =
         state.history.toolpath_snapshot.take()
@@ -493,20 +497,29 @@ pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
         if !matches!(*state.focus(), crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some((_, tc)) = state.session().find_toolpath_config_by_id(tp_id) {
-                state
-                    .history
-                    .push(crate::state::history::UndoAction::ToolpathParamChange {
-                        tp_id,
-                        old_op,
-                        new_op: tc.operation.clone(),
-                        old_dressups,
-                        new_dressups: tc.dressups.clone(),
-                        old_boundary,
-                        new_boundary: tc.boundary.clone(),
-                        old_feeds_provenance: old_provenance,
-                        new_feeds_provenance: tc.feeds_provenance.clone(),
-                    });
-                state.gui.mark_edited();
+                let old = (old_op, old_dressups, old_boundary, old_provenance);
+                let now = (
+                    tc.operation.clone(),
+                    tc.dressups.clone(),
+                    tc.boundary.clone(),
+                    tc.feeds_provenance.clone(),
+                );
+                if crate::state::history::toolpath_parts_moved(&old, &now) {
+                    state
+                        .history
+                        .push(crate::state::history::UndoAction::ToolpathParamChange {
+                            tp_id,
+                            old_op: old.0,
+                            new_op: now.0,
+                            old_dressups: old.1,
+                            new_dressups: now.1,
+                            old_boundary: old.2,
+                            new_boundary: now.2,
+                            old_feeds_provenance: old.3,
+                            new_feeds_provenance: now.3,
+                        });
+                    state.gui.mark_edited();
+                }
             }
         } else {
             state.history.toolpath_snapshot =

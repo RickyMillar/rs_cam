@@ -105,6 +105,29 @@ pub(crate) type ToolpathSnapshot = (
     FeedsProvenance,
 );
 
+/// The parts of one toolpath that a `ToolpathParamChange` holds: the
+/// operation, the dressups, the boundary (D11) and the feeds provenance.
+/// A [`ToolpathSnapshot`] is the toolpath id and these parts.
+pub(crate) type ToolpathParts = (
+    OperationConfig,
+    DressupConfig,
+    BoundaryConfig,
+    FeedsProvenance,
+);
+
+/// The one rule that tells if the parts of a toolpath moved (E4). An undo
+/// step whose two sides do not move is not pushed.
+///
+/// `OperationConfig` and `DressupConfig` have no `PartialEq`, so the rule
+/// compares their JSON values. The boundary and the provenance compare
+/// with `!=`.
+pub(crate) fn toolpath_parts_moved(a: &ToolpathParts, b: &ToolpathParts) -> bool {
+    serde_json::to_value(&a.0).ok() != serde_json::to_value(&b.0).ok()
+        || serde_json::to_value(&a.1).ok() != serde_json::to_value(&b.1).ok()
+        || a.2 != b.2
+        || a.3 != b.3
+}
+
 /// Simple undo/redo stack.
 pub struct UndoHistory {
     undo_stack: Vec<UndoAction>,

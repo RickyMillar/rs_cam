@@ -103,9 +103,9 @@ impl<B: ComputeBackend> AppController<B> {
     /// (WP8): the stamp follows `Effects::stale`, which holds the
     /// downstream stock chain.
     ///
-    /// The edit lands in `operation` or in `boundary`, and the inspector
-    /// undo snapshot of the toolpath (`toolpath_snapshot`) covers both
-    /// (D11).
+    /// The edit lands in `operation` or in `boundary` (D11). One act is
+    /// one undo step (E4, [`Self::push_act_step`]). An edit that moves no
+    /// part pushes no step. A refusal pushes no step.
     fn apply_selection_edit(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
@@ -115,6 +115,9 @@ impl<B: ComputeBackend> AppController<B> {
         let Some((index, _)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
+        let Some(before) = self.toolpath_parts(toolpath_id) else {
+            return;
+        };
         let command = Command::EditSelection(EditSelectionArgs {
             index,
             target,
@@ -122,6 +125,9 @@ impl<B: ComputeBackend> AppController<B> {
         });
         match self.apply(command) {
             Ok(effects) => {
+                if let Some(after) = self.toolpath_parts(toolpath_id) {
+                    self.push_act_step(toolpath_id, before, after);
+                }
                 self.set_focus(Selection::Toolpath(toolpath_id));
                 self.state.gui.mark_edited();
                 self.pending_upload = true;
@@ -160,9 +166,9 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Ruling L-8 revised (geometry selection P4.D): a click on the
     /// boundary of a toolpath whose boundary source is not a selection.
-    /// ONE `SetBoundaryConfig` writes the new boundary, so the inspector
-    /// undo snapshot (it holds `boundary`, D11) makes it one undo step. A
-    /// notice says what happened.
+    /// ONE `SetBoundaryConfig` writes the new boundary, and the click is
+    /// one undo step (E4, [`Self::push_act_step`]; the step holds
+    /// `boundary`, D11). A notice says what happened.
     fn apply_boundary_switch(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
@@ -174,11 +180,17 @@ impl<B: ComputeBackend> AppController<B> {
         let Some((index, _)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
             return;
         };
+        let Some(before) = self.toolpath_parts(toolpath_id) else {
+            return;
+        };
         let command = Command::SetBoundaryConfig(rs_cam_core::session::SetBoundaryConfigArgs {
             index,
             boundary: (**boundary).clone(),
         });
         if self.apply_controller_command(command, "the boundary") {
+            if let Some(after) = self.toolpath_parts(toolpath_id) {
+                self.push_act_step(toolpath_id, before, after);
+            }
             self.set_focus(Selection::Toolpath(toolpath_id));
             self.state.gui.mark_edited();
             self.pending_upload = true;
@@ -188,94 +200,59 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    /// One act of the viewport tab editor (geometry selection P4.6): read
-    /// the tab layout (core, the tabs generation cuts), build the new
-    /// `tab_points` (`apply_tab_edit`: the L-5 conversion, the O-4 refusal)
-    /// and write them with ONE `SetToolpathParam`. A refusal is a notice
-    /// and writes nothing.
+    /// The undo parts of `toolpath_id` as stored now: the operation, the
+    /// dressups, the boundary and the feeds provenance.
+    fn toolpath_parts(
+        &self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+    ) -> Option<crate::state::history::ToolpathParts> {
+        let (_, tc) = self
+            .state
+            .session()
+            .find_toolpath_config_by_id(toolpath_id)?;
+        Some((
+            tc.operation.clone(),
+            tc.dressups.clone(),
+            tc.boundary.clone(),
+            tc.feeds_provenance.clone(),
+        ))
+    }
+
+    /// One undo step per act (E4). `before` and `after` are the toolpath parts
+    /// around the act. The panel edits since the inspector snapshot go first as
+    /// their own step; then the act; then the snapshot moves to `after`.
     ///
-    /// One act is one undo step. The inspector undo snapshot of the
-    /// toolpath (`toolpath_snapshot`) flushes as one step when the operator
-    /// leaves the toolpath, so this door first pushes the edits the
-    /// snapshot holds as their own step, then the act, and then moves the
-    /// snapshot to the state after the act. The flush then holds only the
-    /// later panel edits.
-    fn apply_tab_edit(
+    /// The inspector snapshot (`toolpath_snapshot`) flushes as one step when
+    /// the operator leaves the toolpath. Without this door, every act since
+    /// the snapshot folds into that one step. A snapshot of another toolpath
+    /// stays as it is. An act that moves no part pushes no step and leaves
+    /// the snapshot as it is.
+    fn push_act_step(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,
-        edit: &rs_cam_core::session::TabEdit,
+        before: crate::state::history::ToolpathParts,
+        after: crate::state::history::ToolpathParts,
     ) {
-        use crate::state::history::UndoAction;
-        use rs_cam_core::compute::catalog::OperationConfig;
-        let Some((index, tc)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
-            return;
-        };
-        let OperationConfig::Profile(cfg) = &tc.operation else {
-            return;
-        };
-        let points =
-            crate::state::tab_edit::read_layout(self.state.session(), index).and_then(|layout| {
-                rs_cam_core::session::apply_tab_edit(&layout, &cfg.tab_points, edit)
-            });
-        let points = match points {
-            Ok(points) if points == cfg.tab_points => return,
-            Ok(points) => points,
-            Err(refusal) => {
-                self.push_notification(
-                    format!("Could not edit the tabs: {refusal}"),
-                    crate::controller::Severity::Warning,
-                );
-                return;
-            }
-        };
-        let before = (
-            tc.operation.clone(),
-            tc.dressups.clone(),
-            tc.boundary.clone(),
-            tc.feeds_provenance.clone(),
-        );
-        let command = Command::SetToolpathParam(rs_cam_core::session::SetToolpathParamArgs {
-            index,
-            param: "tab_points".to_owned(),
-            value: serde_json::json!(points),
-        });
-        if !self.apply_controller_command(command, "the tabs") {
+        use crate::state::history::{UndoAction, toolpath_parts_moved};
+        if !toolpath_parts_moved(&before, &after) {
             return;
         }
-        let Some((_, tc)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
-            return;
-        };
-        let after = (
-            tc.operation.clone(),
-            tc.dressups.clone(),
-            tc.boundary.clone(),
-            tc.feeds_provenance.clone(),
-        );
-        let same = |a: &crate::state::toolpath::OperationConfig,
-                    b: &crate::state::toolpath::OperationConfig,
-                    c: &crate::state::toolpath::DressupConfig,
-                    d: &crate::state::toolpath::DressupConfig| {
-            serde_json::to_value(a).ok() == serde_json::to_value(b).ok()
-                && serde_json::to_value(c).ok() == serde_json::to_value(d).ok()
-        };
         // The panel edits since the snapshot: their own step first.
         if let Some((snap_id, old_op, old_dressups, old_boundary, old_provenance)) =
             self.state.history.toolpath_snapshot.take()
         {
             if snap_id == toolpath_id {
-                let moved = !same(&old_op, &before.0, &old_dressups, &before.1)
-                    || old_boundary != before.2
-                    || old_provenance != before.3;
-                if moved {
+                let old = (old_op, old_dressups, old_boundary, old_provenance);
+                if toolpath_parts_moved(&old, &before) {
                     self.state.history.push(UndoAction::ToolpathParamChange {
                         tp_id: toolpath_id,
-                        old_op,
+                        old_op: old.0,
                         new_op: before.0.clone(),
-                        old_dressups,
+                        old_dressups: old.1,
                         new_dressups: before.1.clone(),
-                        old_boundary,
+                        old_boundary: old.2,
                         new_boundary: before.2.clone(),
-                        old_feeds_provenance: old_provenance,
+                        old_feeds_provenance: old.3,
                         new_feeds_provenance: before.3.clone(),
                     });
                 }
@@ -302,6 +279,57 @@ impl<B: ComputeBackend> AppController<B> {
             old_feeds_provenance: before.3,
             new_feeds_provenance: after.3,
         });
+    }
+
+    /// One act of the viewport tab editor (geometry selection P4.6): read
+    /// the tab layout (core, the tabs generation cuts), build the new
+    /// `tab_points` (`apply_tab_edit`: the L-5 conversion, the O-4 refusal)
+    /// and write them with ONE `SetToolpathParam`. A refusal is a notice
+    /// and writes nothing.
+    ///
+    /// One act is one undo step ([`Self::push_act_step`]).
+    fn apply_tab_edit(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        edit: &rs_cam_core::session::TabEdit,
+    ) {
+        use rs_cam_core::compute::catalog::OperationConfig;
+        let Some((index, tc)) = self.state.session().find_toolpath_config_by_id(toolpath_id) else {
+            return;
+        };
+        let OperationConfig::Profile(cfg) = &tc.operation else {
+            return;
+        };
+        let points =
+            crate::state::tab_edit::read_layout(self.state.session(), index).and_then(|layout| {
+                rs_cam_core::session::apply_tab_edit(&layout, &cfg.tab_points, edit)
+            });
+        let points = match points {
+            Ok(points) if points == cfg.tab_points => return,
+            Ok(points) => points,
+            Err(refusal) => {
+                self.push_notification(
+                    format!("Could not edit the tabs: {refusal}"),
+                    crate::controller::Severity::Warning,
+                );
+                return;
+            }
+        };
+        let Some(before) = self.toolpath_parts(toolpath_id) else {
+            return;
+        };
+        let command = Command::SetToolpathParam(rs_cam_core::session::SetToolpathParamArgs {
+            index,
+            param: "tab_points".to_owned(),
+            value: serde_json::json!(points),
+        });
+        if !self.apply_controller_command(command, "the tabs") {
+            return;
+        }
+        let Some(after) = self.toolpath_parts(toolpath_id) else {
+            return;
+        };
+        self.push_act_step(toolpath_id, before, after);
         self.set_focus(Selection::Toolpath(toolpath_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;

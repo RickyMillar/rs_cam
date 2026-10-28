@@ -220,8 +220,11 @@ fn stored_selection(
 }
 
 /// One section edit inside one inspector undo snapshot, as the panel takes
-/// it: the snapshot on the first frame, the edit event, the flush when the
-/// operator leaves the toolpath.
+/// it: the snapshot on the first frame, then the edit event. E4: the edit
+/// pushes its own undo step and moves the snapshot to the state after the
+/// edit, so the flush when the operator leaves the toolpath pushes no step
+/// (`toolpath_parts_moved`). The helper asserts both, then drops the
+/// snapshot as that flush does.
 fn edit_in_one_step(
     c: &mut AppController<ScriptedBackend>,
     index: usize,
@@ -236,30 +239,42 @@ fn edit_in_one_step(
         tc.boundary.clone(),
         tc.feeds_provenance.clone(),
     ));
+    let steps = c.state.history.undo_len();
     c.handle_internal_event(crate::ui::AppEvent::EditToolpathSelection {
         toolpath_id: tc.id,
         target,
         edit,
     });
-    let (snap_id, old_op, old_dressups, old_boundary, old_provenance) =
-        c.state.history.toolpath_snapshot.take().unwrap();
+    assert_eq!(
+        c.state.history.undo_len(),
+        steps + 1,
+        "E4: the edit is one undo step of its own"
+    );
+    let (snap_id, old_op, old_dressups, old_boundary, old_provenance) = c
+        .state
+        .history
+        .toolpath_snapshot
+        .take()
+        .expect("the snapshot stays on the toolpath");
+    assert_eq!(snap_id, tc.id, "the snapshot stays on the toolpath");
     let (_, now) = c
         .state
         .session()
         .find_toolpath_config_by_id(snap_id)
         .unwrap();
-    let action = crate::state::history::UndoAction::ToolpathParamChange {
-        tp_id: snap_id,
-        old_op,
-        new_op: now.operation.clone(),
-        old_dressups,
-        new_dressups: now.dressups.clone(),
-        old_boundary,
-        new_boundary: now.boundary.clone(),
-        old_feeds_provenance: old_provenance,
-        new_feeds_provenance: now.feeds_provenance.clone(),
-    };
-    c.state.history.push(action);
+    let now = (
+        now.operation.clone(),
+        now.dressups.clone(),
+        now.boundary.clone(),
+        now.feeds_provenance.clone(),
+    );
+    assert!(
+        !crate::state::history::toolpath_parts_moved(
+            &(old_op, old_dressups, old_boundary, old_provenance),
+            &now
+        ),
+        "E4: the snapshot moved to the state after the edit, so the flush pushes no step"
+    );
 }
 
 /// Geometry selection P4.3: the four edits of the Selection section
@@ -311,6 +326,86 @@ fn each_selection_section_edit_undoes_in_one_step_p4_3() {
             );
         }
     }
+}
+
+/// E4: one viewport pick is one undo step. Two `TogglePick` clicks on two
+/// loops of the boundary selection of the Pocket push two steps. The first
+/// undo gives the selection after the first click; the second undo gives
+/// the selection before both. A selection edit that changes nothing pushes
+/// no step.
+///
+/// Before E4, `apply_selection_edit` pushed no step: the clicks rode the
+/// inspector snapshot, so ten clicks were one step.
+#[test]
+fn a_viewport_pick_is_one_undo_step_e4() {
+    use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit};
+    use rs_cam_core::session::SelectionTarget;
+
+    let mut c = selection_controller();
+    let index = 1;
+    let target = SelectionTarget::Boundary;
+    let tp_id = c.state.session().toolpath_configs()[index].id;
+    let loops: Vec<MatchKey> = c.state.session().models()[0]
+        .items
+        .iter()
+        .map(|item| item.key().clone())
+        .filter(|key| key.kind == ItemKind::Loop)
+        .take(2)
+        .collect();
+    assert_eq!(loops.len(), 2, "fixture: the drawing holds two loops");
+
+    let start = stored_selection(&c, index, target);
+    let steps = c.state.history.undo_len();
+    c.handle_internal_event(crate::ui::AppEvent::TogglePick {
+        toolpath_id: tp_id,
+        target,
+        key: loops[0].clone(),
+    });
+    let first = stored_selection(&c, index, target);
+    assert_ne!(first, start, "the first click must land");
+    assert_eq!(
+        c.state.history.undo_len(),
+        steps + 1,
+        "one click is one undo step"
+    );
+    c.handle_internal_event(crate::ui::AppEvent::TogglePick {
+        toolpath_id: tp_id,
+        target,
+        key: loops[1].clone(),
+    });
+    let second = stored_selection(&c, index, target);
+    assert_ne!(second, first, "the second click must land");
+    assert_eq!(
+        c.state.history.undo_len(),
+        steps + 2,
+        "two clicks, two steps"
+    );
+
+    // An edit that writes the stored selection again changes nothing.
+    c.handle_internal_event(crate::ui::AppEvent::EditToolpathSelection {
+        toolpath_id: tp_id,
+        target,
+        edit: SelectionEdit::Replace(Box::new(second.clone())),
+    });
+    assert_eq!(stored_selection(&c, index, target), second);
+    assert_eq!(
+        c.state.history.undo_len(),
+        steps + 2,
+        "an edit that changes nothing pushes no step"
+    );
+
+    c.handle_internal_event(crate::ui::AppEvent::Undo);
+    assert_eq!(
+        stored_selection(&c, index, target),
+        first,
+        "the first undo takes back the second click only"
+    );
+    c.handle_internal_event(crate::ui::AppEvent::Undo);
+    assert_eq!(
+        stored_selection(&c, index, target),
+        start,
+        "the second undo takes back the first click"
+    );
 }
 
 // ── P4.7: an STL face click adds one pick ─────────────────────────────
