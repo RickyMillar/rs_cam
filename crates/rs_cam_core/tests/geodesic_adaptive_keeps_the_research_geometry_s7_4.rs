@@ -175,10 +175,13 @@ fn fixtures() -> Vec<(&'static str, TriangleMesh, f64)> {
 }
 
 /// The geometry of each fixture, in [`fixtures`] order: the research
-/// branch's, as D65 changed it (the capped steps; module doc).
+/// branch's, as D65 changed it (the capped steps; module doc). C3, the D55
+/// port (G-AIRPECK): "island pocket, two levels" 1976 → 1941 moves; 16
+/// `EntryPlunge` feeds and 19 `Retract` rapids go, every XY move is the
+/// same.
 const PINS: [(usize, u64); 4] = [
     (957, 5931675112365951456),
-    (1976, 17577482464951561279),
+    (1941, 14901688868866573348),
     (1008, 6172482053443525791),
     (0, 675868731199239589),
 ];

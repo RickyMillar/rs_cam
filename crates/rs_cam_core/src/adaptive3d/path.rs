@@ -159,9 +159,32 @@ fn default_max_link_dist(tool_radius: f64, stepover: f64) -> f64 {
 /// `depth_per_pass` added. What changed is that the residual is now a
 /// named, shared safety margin instead of a side effect of the retract
 /// plane's height.
-fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adaptive3dParams) {
+///
+/// G-AIRPECK (D55): the ladder starts where the material starts, as the
+/// helix and the ramp do (`dressup::entry_descent::rapid_to_entry_top`,
+/// G-AIRRAMP). `start_z` is the sliver-safe rapid floor: the conservative
+/// stock top over the cells that touch the tool disc. A cell beside the
+/// disc that a previous op left (a holding frame outside the boundary)
+/// holds that floor up, so a ladder from it pecked down in Depth/Pass
+/// strokes through air the previous op had cleared. `contact_top` is the
+/// planner's closer read of the material top (the cell-centre read,
+/// `Adaptive3dSegment::RapidWithFloor::contact_z`). From the rapid floor
+/// one straight feed goes down through air to `contact_top +
+/// entry_clearance_mm`, the start the helix and the ramp take, and the
+/// ladder starts there. `None` (a plain `Rapid` entry: no stock read) keeps
+/// the ladder from the safe clearance, as before.
+fn emit_peck_plunge(
+    tp: &mut Toolpath,
+    entry: &P3,
+    start_z: f64,
+    contact_top: Option<f64>,
+    params: &Adaptive3dParams,
+) {
     use crate::toolpath::MoveIntent;
     const PECK_CLEARANCE_MM: f64 = 0.5;
+    // The shortest vertical move worth a move of its own: a gap below it
+    // is not rapided (G-PECKROOT) and not fed through air (G-AIRPECK).
+    const MIN_VERTICAL_MOVE_MM: f64 = 0.1;
     let dpp = params.depth.depth_per_pass.max(0.1);
 
     // G-PECKROOT. Never rapid below the shared stock guard, never below the
@@ -170,11 +193,32 @@ fn emit_peck_plunge(tp: &mut Toolpath, entry: &P3, start_z: f64, params: &Adapti
     // known-cleared air) from being lifted back to the stock top.
     let safe_rapid_floor = params.depth.stock_top_z + crate::dressup::ENTRY_CLEARANCE;
     let ladder_start = entry.z.max(safe_rapid_floor).min(start_z);
-    if start_z - ladder_start > 0.1 {
+    if start_z - ladder_start > MIN_VERTICAL_MOVE_MM {
         tp.rapid_to_with_intent(P3::new(entry.x, entry.y, ladder_start), MoveIntent::Linking);
     }
 
     let mut current_z = ladder_start;
+    // G-AIRPECK: the contact start, never above the ladder start. When the
+    // column below it needs a peck, one straight feed goes through the air
+    // above it first; when it needs none, the last feed below goes down
+    // from the ladder start in one move. An air gap of
+    // `MIN_VERTICAL_MOVE_MM` or less gets no feed of its own: the ladder
+    // starts at the ladder start, as before, so no sub-micron move is fed.
+    let peck_top = contact_top.map_or(ladder_start, |top| {
+        (top.max(entry.z) + params.entry_clearance_mm.max(0.0)).min(ladder_start)
+    });
+    if peck_top - entry.z > dpp + 1e-6 {
+        if current_z - peck_top > MIN_VERTICAL_MOVE_MM {
+            tp.feed_to_with_intent(
+                P3::new(entry.x, entry.y, peck_top),
+                params.plunge_rate,
+                MoveIntent::EntryPlunge,
+            );
+            current_z = peck_top;
+        }
+    } else {
+        current_z = peck_top;
+    }
     while current_z - entry.z > dpp + 1e-6 {
         let next_z = current_z - dpp;
         tp.feed_to_with_intent(
@@ -1776,7 +1820,7 @@ pub(super) fn segments_to_toolpath(
                     let start = P3::new(entry.x, entry.y, descent_floor);
                     match params.entry_style {
                         EntryStyle3d::Plunge => {
-                            emit_peck_plunge(&mut tp, entry, descent_floor, params);
+                            emit_peck_plunge(&mut tp, entry, descent_floor, contact_z, params);
                         }
                         EntryStyle3d::Helix { radius, pitch } => {
                             crate::dressup::emit_helix(
@@ -2029,6 +2073,144 @@ mod tests {
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
             z_blend: false,
+        }
+    }
+
+    /// G-AIRPECK (D55): the fed descent strokes of the first entry in
+    /// `tp`. A stroke is a run of `EntryPlunge` feeds with no move between
+    /// them; a retract ends it. Each stroke is `(top Z, bottom Z)`.
+    fn plunge_strokes(tp: &Toolpath) -> Vec<(f64, f64)> {
+        let mut strokes: Vec<(f64, f64)> = Vec::new();
+        let mut open = false;
+        let mut prev_z = f64::NAN;
+        for m in &tp.moves {
+            if m.intent == MoveIntent::EntryPlunge {
+                if open {
+                    if let Some(last) = strokes.last_mut() {
+                        last.1 = m.target.z;
+                    }
+                } else {
+                    strokes.push((prev_z, m.target.z));
+                    open = true;
+                }
+            } else {
+                open = false;
+            }
+            prev_z = m.target.z;
+        }
+        strokes
+    }
+
+    /// The emitted entry for one `RapidWithFloor` segment at the origin.
+    fn floor_entry(rapid_floor_z: f64, contact_z: f64, params: &Adaptive3dParams) -> Toolpath {
+        let (mesh, si) = flat_mesh_at(100.0, -50.0);
+        let cutter = legacy_test_cutter();
+        segments_to_toolpath(
+            &[Adaptive3dSegment::RapidWithFloor {
+                entry: P3::new(0.0, 0.0, 0.0),
+                rapid_floor_z,
+                contact_z,
+                stay_down: None,
+            }],
+            params,
+            &mesh,
+            &si,
+            &cutter,
+        )
+        .0
+    }
+
+    /// G-AIRPECK (D55): a plunge beside a high wall. The sliver-safe rapid
+    /// floor reads the wall top (a cell beside the disc); the contact read
+    /// says the column the tool cuts is cleared down to just above the
+    /// entry. The entry is ONE fed stroke from the rapid floor, not a peck
+    /// ladder through the air.
+    #[test]
+    fn a_plunge_through_cleared_air_is_one_stroke_d55() {
+        let mut params = minimal_params();
+        params.safe_z = 20.0;
+        params.depth.depth_per_pass = 3.0;
+        let wall_top = 10.0;
+        params.depth.stock_top_z = wall_top;
+        let skin = 0.2;
+        let tp = floor_entry(wall_top, skin, &params);
+        let strokes = plunge_strokes(&tp);
+        assert_eq!(strokes.len(), 1, "the air column pecked: {strokes:?}");
+        // No peck retract between the first and the last feed (the lifts
+        // to safe Z before and after the entry are retracts too).
+        let feeds: Vec<usize> = (0..tp.moves.len())
+            .filter(|&i| tp.moves[i].intent == MoveIntent::EntryPlunge)
+            .collect();
+        let (first, last) = (feeds[0], feeds[feeds.len() - 1]);
+        assert!(
+            tp.moves[first..=last]
+                .iter()
+                .all(|m| m.intent != MoveIntent::Retract),
+            "a peck retract in a one-stroke entry"
+        );
+        // The rapid still stops at the sliver-safe floor.
+        let (top, bottom) = strokes[0];
+        assert!(
+            (top - (wall_top + RAPID_DESCENT_BUFFER_MM)).abs() < 1e-9,
+            "the stroke starts at {top}, not at the rapid floor"
+        );
+        assert!(bottom.abs() < 1e-9, "the stroke ends at {bottom}");
+    }
+
+    /// G-AIRPECK (D55): real stock above the entry still pecks. With the
+    /// stock at the rapid floor (contact = floor) every stroke cuts at most
+    /// one Depth/Pass below the floor it left, plus the re-entry from the
+    /// retract.
+    #[test]
+    fn a_plunge_into_real_stock_still_pecks_d55() {
+        let mut params = minimal_params();
+        params.safe_z = 20.0;
+        params.depth.depth_per_pass = 3.0;
+        let stock_top = 10.0;
+        params.depth.stock_top_z = stock_top;
+        let tp = floor_entry(stock_top, stock_top, &params);
+        let strokes = plunge_strokes(&tp);
+        assert!(strokes.len() > 1, "real stock did not peck: {strokes:?}");
+        for (top, bottom) in &strokes {
+            assert!(
+                top - bottom <= params.depth.depth_per_pass + PECK_CLEARANCE_MM + 1e-9,
+                "a stroke {top} -> {bottom} is deeper than one Depth/Pass: {strokes:?}"
+            );
+        }
+    }
+
+    /// G-AIRPECK (D55): air above real stock. One straight stroke goes down
+    /// through the air to the contact start (`contact_z +
+    /// entry_clearance_mm`); below it the ladder pecks, each stroke at most
+    /// one Depth/Pass deep.
+    #[test]
+    fn air_above_real_stock_feeds_then_pecks_d55() {
+        let mut params = minimal_params();
+        params.safe_z = 20.0;
+        params.depth.depth_per_pass = 3.0;
+        let (wall_top, contact) = (10.0, 6.0);
+        params.depth.stock_top_z = wall_top;
+        let tp = floor_entry(wall_top, contact, &params);
+        let strokes = plunge_strokes(&tp);
+        let contact_start = contact + params.entry_clearance_mm;
+        let feeds = entry_plunge_zs(&tp);
+        assert!(
+            (feeds[0] - contact_start).abs() < 1e-9,
+            "the first feed ends at {}, not at the contact start {contact_start}",
+            feeds[0]
+        );
+        assert!(
+            strokes.len() > 1,
+            "the stock below the air did not peck: {strokes:?}"
+        );
+        // Below the contact start every stroke is one Depth/Pass or less.
+        let mut floor = contact_start;
+        for z in feeds.iter().skip(1) {
+            assert!(
+                floor - z <= params.depth.depth_per_pass + 1e-9,
+                "a peck from {floor} to {z} is deeper than one Depth/Pass: {feeds:?}"
+            );
+            floor = *z;
         }
     }
 

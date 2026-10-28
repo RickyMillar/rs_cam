@@ -61,17 +61,17 @@ spans_hash = "7cf02096aabac105"
 
 ["adaptive3d/fresh"]
 outcome = "ok"
-move_count = 379
-rapid_count = 18
-linear_count = 361
+move_count = 368
+rapid_count = 12
+linear_count = 356
 arc_count = 0
-cutting_length_mm = 1958.852
-rapid_length_mm = 105.62
+cutting_length_mm = 1955.852
+rapid_length_mm = 102.62
 bbox_min = [-15.7938, -15.5292, 0.5]
 bbox_max = [15.9563, 15.9563, 13.0]
-moves_hash = "fc7bd966aaee3c06"
-span_count = 86
-spans_hash = "afdac8b3c21199c4"
+moves_hash = "ec929dc206dee4db"
+span_count = 80
+spans_hash = "4e43789fa0f1e0cc"
 
 ["adaptive3d/ramp_geodesic"]
 outcome = "ok"
