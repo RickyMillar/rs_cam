@@ -1370,6 +1370,50 @@ pub(super) fn adaptive_3d_segments(
                         &mut cursor,
                         cancel,
                     )?;
+                    // C4b (`level_contour`, the F9 fix): the walls of this
+                    // region at this level, masked to the points whose tool
+                    // meets no stock of another region above the level
+                    // (`level_contour::keeps_to_region`). Off: the walls
+                    // are cut once, at the bottom, below.
+                    if params.linking.level_contour.is_some() {
+                        let reach = tool_radius + cell_size * 0.5;
+                        let keep = |stock: &TriDexelStock, p: P3| {
+                            super::level_contour::keeps_to_region(
+                                stock,
+                                &surface_hm,
+                                params.depth.stock_to_leave,
+                                mask,
+                                p,
+                                z_level,
+                                reach,
+                            )
+                        };
+                        segments.push(Adaptive3dSegment::Marker(
+                            Adaptive3dRuntimeEvent::WaterlineCleanup,
+                        ));
+                        waterline_cleanup(
+                            mesh,
+                            index,
+                            cutter,
+                            &lut,
+                            &slope_map,
+                            &mut material_stock,
+                            z_level,
+                            tool_radius,
+                            entry_floor_radius(params, tool_radius),
+                            cell_size,
+                            params.safe_z,
+                            params.emission_chord_tolerance(),
+                            params.geometry.min_cutting_radius,
+                            params.depth.stock_to_leave,
+                            &ctx,
+                            Some(&keep),
+                            &mut segments,
+                            &mut cursor,
+                            debug_ctx,
+                            cancel,
+                        )?;
+                    }
                 }
             }
 
@@ -1377,10 +1421,11 @@ pub(super) fn adaptive_3d_segments(
 
             // Waterline cleanup once at bottom Z, after every region.
             //
-            // F9 (known limit, 2026-09-24): the cleanup does not run per
-            // region. `waterline_cleanup` traces every mesh contour at the Z
-            // and has no cell mask. A per-region run would cut the contours
-            // of regions that are not roughed yet, through their full stock.
+            // F9 (2026-09-24): an UNMASKED per-region run would cut the
+            // contours of regions that are not roughed yet, through their
+            // full stock. With "Contour each level" (C4b) the region-level
+            // runs above are masked; this bottom run, after every region,
+            // takes the points they left.
             if let Some(&bottom) = z_levels.last() {
                 segments.push(Adaptive3dSegment::Marker(
                     Adaptive3dRuntimeEvent::WaterlineCleanup,
@@ -1401,6 +1446,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &ctx,
+                    None,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,
@@ -1450,6 +1496,7 @@ pub(super) fn adaptive_3d_segments(
                     params.geometry.min_cutting_radius,
                     params.depth.stock_to_leave,
                     &ctx,
+                    None,
                     &mut segments,
                     &mut cursor,
                     debug_ctx,

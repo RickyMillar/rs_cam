@@ -32,7 +32,7 @@ use super::{Adaptive3dRuntimeEvent, stock_has_material_above, stock_top_z_at};
 
 /// The margin above a cell's floor under which the cell holds no material:
 /// the margin of the level anchor (`path::level_anchor_z`).
-const MATERIAL_MARGIN_MM: f64 = 0.01;
+pub(super) const MATERIAL_MARGIN_MM: f64 = 0.01;
 
 /// The reach band of a rest rough and the line its contour runs on.
 pub(super) struct BandEdge {
@@ -631,10 +631,66 @@ pub(super) fn level_contour_pass(
     stats
 }
 
+/// C4b (the F9 fix): whether a wall-cleanup point `p` at `z_level` of the
+/// region `mask` may be cut now. It may when no planner cell whose centre
+/// is within `reach` of `p` (R + cs/2, the reach of [`BandEdge`] and
+/// [`PriorStockTops`]) holds MATERIAL above `z_level` outside the mask:
+/// stock above both the level and the cell's own floor (surface plus stock
+/// to leave), by `MATERIAL_MARGIN_MM`, the test of
+/// [`planner_top_in_reach`]. The planner stock holds the part too, so a
+/// wall cell below its own floor is the part, not material. Stock of the
+/// region itself is the material the cleanup cuts; another region blocks
+/// only while its material stands above the level, so a cut never reaches
+/// a region that is not roughed yet.
+pub(super) fn keeps_to_region(
+    stock: &TriDexelStock,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    mask: &super::clearing::AreaMask,
+    p: P3,
+    z_level: f64,
+    reach: f64,
+) -> bool {
+    let grid = &stock.z_grid;
+    let cs = grid.cell_size;
+    if cs <= 0.0 {
+        return true;
+    }
+    let to_index = |v: f64| -> usize {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "floored at 0 and clamped to the grid size below"
+        )]
+        let i = v.max(0.0) as usize;
+        i
+    };
+    let c0 = to_index(((p.x - reach - grid.origin_u) / cs).floor());
+    let c1 = to_index(((p.x + reach - grid.origin_u) / cs).ceil()).min(grid.cols.saturating_sub(1));
+    let r0 = to_index(((p.y - reach - grid.origin_v) / cs).floor());
+    let r1 = to_index(((p.y + reach - grid.origin_v) / cs).ceil()).min(grid.rows.saturating_sub(1));
+    for row in r0..=r1 {
+        for col in c0..=c1 {
+            let (cx, cy) = grid.cell_to_world(row, col);
+            if (cx - p.x).powi(2) + (cy - p.y).powi(2) > reach * reach {
+                continue;
+            }
+            let floor = (surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave).max(z_level);
+            if !mask.owns(row, col)
+                && stock_has_material_above(stock, row, col, floor + MATERIAL_MARGIN_MM)
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,
-    reason = "test code: the indices are inside the ring the test builds"
+    clippy::expect_used,
+    reason = "test code: the indices are inside the ring the test builds, and an expect is how a test reports a failure"
 )]
 mod tests {
     use super::merge_short_gaps;
@@ -673,5 +729,51 @@ mod tests {
         );
         let unmerged = merge_short_gaps(&points, &standing, 1000.0, 300.0, 20.0, None);
         assert_eq!(unmerged, standing, "no kinematics: no gap is fed");
+    }
+
+    /// C4b sentry 3: the mask rule. A 20 × 20 mm stock (top 10, 1 mm
+    /// cells) on a flat surface at 0; the mask owns the left half.
+    #[test]
+    fn the_wall_mask_keeps_off_unroughed_regions_c4b() {
+        use crate::dexel_stock::TriDexelStock;
+        use crate::surface::slope::SurfaceHeightmap;
+        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, -10.0, 10.0, 1.0);
+        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
+        let surface = SurfaceHeightmap::from_parts(
+            vec![0.0; rows * cols],
+            vec![true; rows * cols],
+            rows,
+            cols,
+            stock.z_grid.origin_u,
+            stock.z_grid.origin_v,
+            1.0,
+        );
+        let half_x = 10.0;
+        let owned: Vec<bool> = (0..rows * cols)
+            .map(|i| stock.z_grid.cell_to_world(i / cols, i % cols).0 < half_x)
+            .collect();
+        let mask = super::super::clearing::AreaMask::from_owned(0, owned, cols)
+            .expect("the mask owns cells");
+        let (z, reach) = (5.0, 3.5);
+        let near_edge = P3::new(half_x - 1.0, 10.0, z);
+        let inside = P3::new(3.0, 10.0, z);
+        // The other half stands at 10, above the level: rejected.
+        assert!(!super::keeps_to_region(
+            &stock, &surface, 0.0, &mask, near_edge, z, reach
+        ));
+        // The own half stands at 10 too: that is the cleanup's material.
+        assert!(super::keeps_to_region(
+            &stock, &surface, 0.0, &mask, inside, z, reach
+        ));
+        // The other half cut to the level: accepted.
+        for i in 0..rows * cols {
+            let (row, col) = (i / cols, i % cols);
+            if stock.z_grid.cell_to_world(row, col).0 >= half_x {
+                crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 5.0);
+            }
+        }
+        assert!(super::keeps_to_region(
+            &stock, &surface, 0.0, &mask, near_edge, z, reach
+        ));
     }
 }

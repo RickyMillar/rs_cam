@@ -1730,6 +1730,7 @@ pub(super) fn waterline_cleanup(
     min_cutting_radius: f64,
     stock_to_leave: f64,
     ctx: &ClearZLevelContext<'_>,
+    keep: Option<CleanupKeep<'_>>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -1812,19 +1813,6 @@ pub(super) fn waterline_cleanup(
             }
         }
 
-        push_segment_with_stamp(
-            segments,
-            material_stock,
-            lut,
-            tool_radius,
-            cursor,
-            Adaptive3dSegment::Rapid(contour[0]),
-            safe_z,
-            tolerance,
-            min_cutting_radius,
-            &drape,
-        );
-
         let mut cleanup_path = vec![contour[0]];
         for i in 0..contour.len() {
             let a = contour[i];
@@ -1842,18 +1830,50 @@ pub(super) fn waterline_cleanup(
             }
         }
         cleanup_path.push(contour[0]);
-        push_segment_with_stamp(
-            segments,
-            material_stock,
-            lut,
-            tool_radius,
-            cursor,
-            Adaptive3dSegment::Cut(cleanup_path),
-            safe_z,
-            tolerance,
-            min_cutting_radius,
-            &drape,
-        );
+        // C4b (By Area with "Contour each level"): only the points `keep`
+        // accepts, read once on the stock before this contour. No `keep`
+        // (Global, the By Area bottom run): the whole closed contour, as
+        // before.
+        let runs = match keep {
+            None => vec![cleanup_path],
+            Some(keep) => {
+                let flags: Vec<bool> = cleanup_path
+                    .iter()
+                    .map(|p| keep(material_stock, *p))
+                    .collect();
+                kept_runs(&cleanup_path, &flags)
+            }
+        };
+        if runs.is_empty() {
+            continue;
+        }
+        for run in runs {
+            let Some(&first) = run.first() else { continue };
+            push_segment_with_stamp(
+                segments,
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                Adaptive3dSegment::Rapid(first),
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                &drape,
+            );
+            push_segment_with_stamp(
+                segments,
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                Adaptive3dSegment::Cut(run),
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                &drape,
+            );
+        }
         traced += 1;
     }
     if !contours.is_empty() {
@@ -1883,6 +1903,40 @@ pub(super) fn waterline_cleanup(
 /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
 /// anchor for region-ordering. Vertex-average, not the area-weighted
 /// centroid — cheaper and adequate as a travel-ordering proxy.
+/// C4b: which points of a wall-cleanup contour `waterline_cleanup` may cut,
+/// read on the planner stock (`level_contour::keeps_to_region`).
+pub(super) type CleanupKeep<'a> = &'a dyn Fn(&TriDexelStock, P3) -> bool;
+
+/// C4b: the runs of the closed path `path` (first point repeated last)
+/// whose `flags` are set, each of two points or more. All set: the path
+/// itself. A run that reaches the end continues into the run at the start,
+/// because the path is closed.
+fn kept_runs(path: &[P3], flags: &[bool]) -> Vec<Vec<P3>> {
+    if flags.iter().all(|&f| f) {
+        return vec![path.to_vec()];
+    }
+    let mut runs: Vec<Vec<P3>> = Vec::new();
+    let mut cur: Vec<P3> = Vec::new();
+    for (p, &f) in path.iter().zip(flags) {
+        if f {
+            cur.push(*p);
+        } else if !cur.is_empty() {
+            runs.push(std::mem::take(&mut cur));
+        }
+    }
+    // The closing point repeats the first: join the last run to the first.
+    let closes = flags.first().copied().unwrap_or(false) && flags.last().copied().unwrap_or(false);
+    if closes && !runs.is_empty() && !cur.is_empty() {
+        let head = runs.remove(0);
+        cur.extend(head.into_iter().skip(1));
+    }
+    if !cur.is_empty() {
+        runs.push(cur);
+    }
+    runs.retain(|r| r.len() >= 2);
+    runs
+}
+
 fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
     let n = poly.exterior.len().max(1) as f64;
     let (sx, sy) = poly
