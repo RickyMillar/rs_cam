@@ -1601,12 +1601,13 @@ impl ProjectSession {
         })
     }
 
-    /// Operator ruling GT-Q8 (2026-10-22): the edit that drops the item
-    /// `key` from the rules of the selection `target` of `tc`. Each rule
-    /// that holds the item turns into picks: all its members less the
-    /// dropped item. The rules that do not hold it, the other picks and the
-    /// excludes stay. A pick that names the item goes too. The answer is
-    /// ONE `Replace`, so the act is one undo step.
+    /// Operator ruling GT-Q8 (2026-10-22): the edit that drops the items
+    /// `keys` from the rules of the selection `target` of `tc`. Each rule
+    /// that holds ANY of the items turns into picks: all its members less
+    /// ALL the dropped items. The rules that hold none, the other picks and
+    /// the excludes stay. A pick that names a dropped item goes too. The
+    /// answer is ONE `Replace`, so the act is one undo step (a
+    /// `RemovePick` and a `RemovePicks` batch alike, SEL-4).
     ///
     /// The members of a rule are the items that it gives the op on its
     /// own (with the excludes of the selection): for a default rule
@@ -1616,22 +1617,29 @@ impl ProjectSession {
     /// become a named item that refuses. A rule that names its kinds gives
     /// every item that it matches.
     ///
-    /// `None` when no rule holds the item: the plain `RemovePick` then
-    /// applies. `edit_toolpath_selection` calls it for every `RemovePick`,
-    /// so the GUI click and the MCP `remove_pick` take one rule.
+    /// `None` when no rule holds an item: the plain edit then applies.
+    /// `edit_toolpath_selection` calls it for every `RemovePick` and
+    /// `RemovePicks`, so the GUI click and the MCP `remove_pick` take one
+    /// rule.
     pub(crate) fn rule_drop_edit(
         &self,
         tc: &ToolpathConfig,
         target: SelectionTarget,
-        key: &MatchKey,
+        keys: &[MatchKey],
     ) -> Result<Option<SelectionEdit>, SessionError> {
         let model = tc.model_id;
         let Some(current) = tc.selection_of(target)? else {
             return Ok(None);
         };
         let current = current.clone().for_toolpath_model(model);
-        let key = key.clone().for_toolpath_model(model);
-        let names_key = |k: &MatchKey| k.clone().for_toolpath_model(model).matches(&key);
+        let keys: Vec<MatchKey> = keys
+            .iter()
+            .map(|k| k.clone().for_toolpath_model(model))
+            .collect();
+        let names_key = |k: &MatchKey| {
+            let k = k.clone().for_toolpath_model(model);
+            keys.iter().any(|key| k.matches(key))
+        };
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
         let mut kept_rules = Vec::new();
@@ -1667,6 +1675,67 @@ impl ProjectSession {
         Ok(Some(SelectionEdit::Replace(Box::new(
             Selection::from_parts(kept_rules, picks, current.excludes().to_vec()),
         ))))
+    }
+
+    /// SEL-4 (rule 4, no silent fallback): refuse a pick edit whose keys do
+    /// not each name one item. The keys resolve through THE resolution
+    /// ([`Self::resolve_spec_frames`] with `Selection::from_picks(keys)`,
+    /// [`FaceAccess::Peek`]), so no second matcher exists. The first key
+    /// that matches no item or two or more items refuses with
+    /// [`RefusalCause::PickNamesNoItem`]; a key whose source does not
+    /// exist refuses the same way (it names no item). A mesh model whose
+    /// faces are not computed yet is not a refusal here: generation builds
+    /// them, and the report says "computing faces".
+    pub(crate) fn check_keys_name_items(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        keys: &[MatchKey],
+    ) -> Result<(), SessionError> {
+        let label = match target {
+            SelectionTarget::Op => tc.operation.op_type().label(),
+            SelectionTarget::Boundary => BOUNDARY_LABEL,
+        };
+        let setup = self.find_setup_for_toolpath_id(tc.id);
+        let ctx = SetupEvalContext::build_for_setup(self, setup);
+        let frames = self
+            .resolve_spec_frames(
+                tc,
+                &Selection::from_picks(keys.to_vec()),
+                &ctx,
+                FaceAccess::Peek,
+                target_uses(tc, target),
+            )
+            .map_err(|e| SessionError::OperationFailed(e.to_string()))?;
+        let refuse = |key: &MatchKey, matches: usize| {
+            SessionError::Selection(Box::new(
+                SelectionRefusal::new(
+                    None,
+                    RefusalCause::PickNamesNoItem {
+                        key: Box::new(key.clone()),
+                        matches,
+                    },
+                )
+                .for_op(label),
+            ))
+        };
+        if let Some(lost) = frames.model.lost().first() {
+            return Err(refuse(&lost.key, lost.matches));
+        }
+        let missing = frames.model.missing_sources();
+        if !missing.is_empty() {
+            // `missing_sources` names a model by id; a key may name it as
+            // the toolpath model.
+            let names_missing = |k: &&MatchKey| {
+                missing.contains(&k.source)
+                    || (k.source == SourceRef::ToolpathModel
+                        && missing.contains(&SourceRef::Model(tc.model_id)))
+            };
+            if let Some(key) = keys.iter().find(names_missing).or(keys.first()) {
+                return Err(refuse(key, 0));
+            }
+        }
+        Ok(())
     }
 
     /// The members of `rule` in the selection `target` of `tc`: the items

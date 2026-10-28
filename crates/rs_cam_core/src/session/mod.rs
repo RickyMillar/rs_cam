@@ -31,7 +31,11 @@ pub use op_draft::{
     DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME, GeodesicPairDraft,
     GeodesicPairRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
 };
+mod pick_index;
 mod pin_report;
+pub use pick_index::{
+    BuildModelPickIndexHandle, ModelPickIndexBuilt, execute_build_model_pick_index,
+};
 mod pins;
 pub mod project_file;
 mod reach;
@@ -54,15 +58,15 @@ pub use command::{
     AddAlignmentPinArgs, AddBoreFromDrillArgs, AddGeodesicBodyAndEdgesArgs, AddModelArgs,
     AddObstacleArgs, AddSetupArgs, AddStockChangeArgs, AddToolArgs, AddToolpathArgs,
     AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs,
-    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId,
-    CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation,
-    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
-    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
-    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
-    ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
-    PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
-    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, BuildModelPickIndexArgs,
+    Command, CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects,
+    FeedModulation, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
+    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
+    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
+    JobHandle, LedgerEdit, ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs,
+    MoveToolpathToSetupArgs, PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer,
+    Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,
@@ -871,6 +875,36 @@ impl LoadedModel {
         match (&self.mesh, self.faces_are_flat_regions()) {
             (Some(mesh), true) => crate::maps::geom_cache::peek_flat_regions(mesh).is_some(),
             _ => true,
+        }
+    }
+
+    /// The mesh a ray pick tests (SEL-2): the enriched mesh, else the
+    /// plain mesh. The two are one `Arc` today; this form does not rely on
+    /// it.
+    pub fn pick_mesh(&self) -> Option<&Arc<TriangleMesh>> {
+        self.enriched_mesh
+            .as_ref()
+            .map(|enriched| &enriched.mesh)
+            .or(self.mesh.as_ref())
+    }
+
+    /// True when a ray pick on this model runs on the BVH (SEL-2). It never
+    /// builds, so the frame loop may ask it on every frame.
+    pub fn pick_index_ready(&self) -> bool {
+        self.pick_mesh()
+            .is_some_and(|mesh| crate::maps::geom_cache::peek_bvh(mesh).is_some())
+    }
+
+    /// The nearest triangle under the ray, in the model frame, with the
+    /// contract of [`crate::mesh::ray_pick_triangle`]: `(index, t)`, the
+    /// lowest index on a bit-equal `t`, `None` on a miss or with no mesh.
+    /// The BVH when cached, else brute force: one answer, two speeds. It
+    /// never builds (SEL-2).
+    pub fn ray_pick(&self, origin: &P3, dir: &crate::geo::V3) -> Option<(usize, f64)> {
+        let mesh = self.pick_mesh()?;
+        match crate::maps::geom_cache::peek_bvh(mesh) {
+            Some(bvh) => bvh.cast_ray(mesh, origin, dir),
+            None => crate::mesh::ray_pick_triangle(mesh, origin, dir),
         }
     }
 

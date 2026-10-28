@@ -70,6 +70,10 @@ pub struct RsCamApp {
     viewport_rect: egui::Rect,
     /// Flag: need to load checkpoint mesh for backward scrubbing on next frame.
     pending_checkpoint_load: bool,
+    /// A C4 (design A Q4): the F12 screenshot request that came during a
+    /// camera move. The frame sends it on the first frame after the move
+    /// ends, so the file holds the end pose. One shot.
+    screenshot_after_motion: Option<egui::UserData>,
     /// Frame counter for auto-screenshot mode (RS_CAM_SCREENSHOT env var).
     auto_screenshot_frame: Option<u32>,
     /// G-LV.1 repro lever (RS_CAM_MINIMIZE_AFTER_FRAMES env var): frames left
@@ -415,6 +419,7 @@ impl RsCamApp {
             egui_ctx: cc.egui_ctx.clone(),
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
+            screenshot_after_motion: None,
             auto_screenshot_frame,
             minimize_after_frames,
             last_hover_face: None,
@@ -439,7 +444,10 @@ impl RsCamApp {
         // auto-screenshot run framed on an empty default scene. Same routine
         // as the other two routes and as Reset View.
         if loaded_a_job {
-            crate::state::camera::fit_to_first_model(app.controller.state_mut());
+            crate::state::camera::fit_to_first_model(
+                app.controller.state_mut(),
+                crate::state::camera::CameraWrite::Instant,
+            );
         }
         app
     }
@@ -456,6 +464,7 @@ impl RsCamApp {
         id: crate::state::toolpath::ToolpathId,
         keys: Vec<rs_cam_core::selection::MatchKey>,
         now: f64,
+        how: crate::state::camera::CameraWrite,
     ) -> Option<rs_cam_core::geo::BoundingBox3> {
         let bbox = crate::state::display_frame::selection_frame_bounds(
             self.controller.state().session(),
@@ -463,7 +472,7 @@ impl RsCamApp {
             &keys,
         )?;
         let (min, max) = crate::state::camera::bbox_corners(&bbox);
-        self.controller.state_mut().camera.fit(min, max);
+        self.controller.state_mut().camera.fit(min, max, how);
         self.controller.state_mut().viewport.selection_flash =
             Some(crate::state::viewport::SelectionFlash {
                 toolpath: id,
@@ -481,6 +490,7 @@ impl RsCamApp {
         &mut self,
         model_id: crate::state::job::ModelId,
         keys: &[rs_cam_core::selection::MatchKey],
+        how: crate::state::camera::CameraWrite,
     ) -> Option<rs_cam_core::geo::BoundingBox3> {
         let bbox = crate::interaction::picking::model_items_bounds(
             self.controller.state().session(),
@@ -488,7 +498,7 @@ impl RsCamApp {
             keys,
         )?;
         let (min, max) = crate::state::camera::bbox_corners(&bbox);
-        self.controller.state_mut().camera.fit(min, max);
+        self.controller.state_mut().camera.fit(min, max, how);
         Some(bbox)
     }
 
@@ -870,6 +880,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
     }
@@ -910,6 +922,15 @@ impl eframe::App for RsCamApp {
     }
 }
 
+/// The eased camera write of a GUI view command (design A, C4): it starts
+/// at the egui clock time and lasts `ui::tokens::MOTION_SLOW`.
+pub(crate) fn eased_camera_write(ctx: &egui::Context) -> crate::state::camera::CameraWrite {
+    crate::state::camera::CameraWrite::Eased {
+        now: ctx.input(|i| i.time),
+        duration: f64::from(crate::ui::tokens::MOTION_SLOW),
+    }
+}
+
 impl RsCamApp {
     fn draw_frame(&mut self, ctx: &egui::Context, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         // Intercept OS close button when there are unsaved changes
@@ -943,9 +964,15 @@ impl RsCamApp {
             }
         });
 
-        // F12: request screenshot
+        // F12: request screenshot. During a camera move it waits for the
+        // end (A C4, Q4), so the file holds the end pose.
         if ctx.input(|i| i.key_pressed(egui::Key::F12)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            let request = egui::UserData::default();
+            if self.controller.state().camera.is_moving() {
+                self.screenshot_after_motion = Some(request);
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(request));
+            }
         }
 
         crate::ui::automation::begin_frame(ctx);
@@ -959,6 +986,18 @@ impl RsCamApp {
         #[cfg(feature = "mcp")]
         self.begin_mcp_frame();
         self.pump_dispatch();
+
+        // A C4: the camera move writes its pose for this frame before the
+        // UI pass draws it. On the last frame it writes the end pose and
+        // gives false, so that frame draws the end and asks for no more.
+        let camera_moving = self
+            .controller
+            .state_mut()
+            .camera
+            .advance(ctx.input(|i| i.time));
+        if !camera_moving && let Some(request) = self.screenshot_after_motion.take() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(request));
+        }
 
         // Request repaint while MCP highlights are fading or notifications are active.
         #[cfg(feature = "mcp")]
@@ -1351,6 +1390,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
 
         // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
         // frame to reach it — the compute drain, `generate_all`'s fixpoint
@@ -1375,7 +1416,12 @@ impl RsCamApp {
             .lane_snapshots()
             .into_iter()
             .any(|lane| lane.is_active() || lane.queue_depth > 0);
-        if active_lanes || self.controller.state().simulation.playback.playing {
+        // A C4 (G-LV.1): the camera asks for frames only while its move
+        // runs. `camera_moving` is the `advance` answer of this frame; a move
+        // that `handle_events` started after the advance (a key preset) asks
+        // through `is_moving`, so its first sample draws on the next frame.
+        let camera_moving = camera_moving || self.controller.state().camera.is_moving();
+        if active_lanes || self.controller.state().simulation.playback.playing || camera_moving {
             ctx.request_repaint();
         }
 

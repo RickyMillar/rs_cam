@@ -122,6 +122,8 @@ fn arm_of(cause: &RefusalCause) -> &'static str {
         RefusalCause::HoleInTurnedSetup => "hole_in_turned_setup",
         RefusalCause::NoHoleDepth => "no_hole_depth",
         RefusalCause::PartOutlineIsThePart => "part_outline_is_the_part",
+        RefusalCause::PickNamesNoItem { .. } => "pick_names_no_item",
+        RefusalCause::NoKey => "no_key",
     }
 }
 
@@ -147,6 +149,8 @@ const ARMS: &[&str] = &[
     "hole_in_turned_setup",
     "no_hole_depth",
     "part_outline_is_the_part",
+    "pick_names_no_item",
+    "no_key",
 ];
 
 fn square(cx: f64) -> Polygon2 {
@@ -306,6 +310,11 @@ fn every_cause_has_an_arm() {
         RefusalCause::HoleInTurnedSetup,
         RefusalCause::NoHoleDepth,
         RefusalCause::PartOutlineIsThePart,
+        RefusalCause::PickNamesNoItem {
+            key: Box::new(pick_of(&loop_item("CUT", 0.0))),
+            matches: 0,
+        },
+        RefusalCause::NoKey,
     ];
     let causes: BTreeSet<&str> = samples.iter().map(arm_of).collect();
     let arms: BTreeSet<&str> = ARMS.iter().copied().collect();
@@ -716,7 +725,14 @@ fn ambiguous_pick() {
         Selection::drawing(),
         |_| {},
     );
-    edit(&mut s, SelectionEdit::AddPick(pick_of(&a))).unwrap();
+    // SEL-4: an `AddPick` of an ambiguous key refuses at the door
+    // (`pick_names_no_item`); a stored selection (a project file) can still
+    // hold one, so the arm writes it with `Replace`.
+    edit(
+        &mut s,
+        SelectionEdit::Replace(Box::new(Selection::from_picks(vec![pick_of(&a)]))),
+    )
+    .unwrap();
     let r = refusal_of(&mut s);
     assert_eq!(r.cause, RefusalCause::AmbiguousPick { matches: 2 });
     assert_names(
@@ -808,6 +824,44 @@ fn no_such_rule() {
     };
     assert_eq!(r.cause, RefusalCause::NoSuchRule { index: 5, rules: 1 });
     assert_names(&r, &["rule 5"]);
+}
+
+/// SEL-4: an edit-time cause, as `NoSuchRule`. A pick key that names no
+/// item refuses at the `EditSelection` door and writes nothing.
+#[test]
+fn pick_names_no_item() {
+    let mut s = pocket_session(
+        drawing_model(vec![loop_item("CUT", 0.0)]),
+        Selection::drawing(),
+        |_| {},
+    );
+    let lost = pick_of(&loop_item("CUT", GAP_X));
+    let Err(SessionError::Selection(r)) = edit(&mut s, SelectionEdit::AddPick(lost.clone())) else {
+        panic!("a pick of a key that names no item did not refuse as a selection refusal");
+    };
+    assert_eq!(
+        r.cause,
+        RefusalCause::PickNamesNoItem {
+            key: Box::new(lost),
+            matches: 0
+        }
+    );
+    assert_names(&r, &["loop on layer 'CUT'"]);
+}
+
+/// SEL-4: an edit-time cause. A batch pick edit with no key refuses.
+#[test]
+fn no_key() {
+    let mut s = pocket_session(
+        drawing_model(vec![loop_item("CUT", 0.0)]),
+        Selection::drawing(),
+        |_| {},
+    );
+    let Err(SessionError::Selection(r)) = edit(&mut s, SelectionEdit::AddPicks(Vec::new())) else {
+        panic!("an empty batch did not refuse as a selection refusal");
+    };
+    assert_eq!(r.cause, RefusalCause::NoKey);
+    assert_names(&r, &["no item key"]);
 }
 
 // ── FaceNotFlat: a STEP part ─────────────────────────────────────────

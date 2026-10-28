@@ -336,6 +336,9 @@ impl RsCamApp {
             requested_at: std::time::Instant::now(),
             response_tx,
         });
+        // A C4: a camera move that runs ends now on its end pose, so the
+        // settle frames capture the end pose, not a pose in the middle.
+        self.controller.state_mut().camera.finish();
         // Keep frames pumping while the app is headless-idle so the
         // capture actually happens.
         ctx.request_repaint();
@@ -679,7 +682,12 @@ impl RsCamApp {
                 }));
             };
             let now = ctx.input(|i| i.time);
-            let Some(bbox) = self.frame_selection_items(tp_id, keys, now) else {
+            let Some(bbox) = self.frame_selection_items(
+                tp_id,
+                keys,
+                now,
+                crate::state::camera::CameraWrite::Instant,
+            ) else {
                 return json_str(serde_json::json!({
                     "error": "frame_items names no item and no position to frame"
                 }));

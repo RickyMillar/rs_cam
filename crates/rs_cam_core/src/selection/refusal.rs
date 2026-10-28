@@ -564,6 +564,12 @@ pub enum RefusalCause {
     UnknownLayer(String),
     /// A selection edit names a rule index that does not exist.
     NoSuchRule { index: usize, rules: usize },
+    /// A pick edit names a key that matches no item (`matches` 0) or two or
+    /// more equal items (`matches` 2+). An edit-time cause: the edit writes
+    /// nothing (SEL-4, rule 4: no silent fallback).
+    PickNamesNoItem { key: Box<MatchKey>, matches: usize },
+    /// A batch pick edit holds no key (SEL-4). An edit-time cause.
+    NoKey,
 }
 
 /// One structured refusal: the item, the cause and the fix.
@@ -717,6 +723,8 @@ impl SelectionRefusal {
                 "Correct the layer name in the rule, or add the layer to the drawing"
             }
             RefusalCause::NoSuchRule { .. } => "Name a rule that the selection holds",
+            RefusalCause::PickNamesNoItem { .. } => "Copy the key from `list_model_items`",
+            RefusalCause::NoKey => "Name at least one item key",
             RefusalCause::FacesNotReady { .. } => {
                 "Wait until the faces are computed; Generate computes them itself"
             }
@@ -813,6 +821,15 @@ impl SelectionRefusal {
             RefusalCause::NoSuchRule { index, rules } => {
                 format!("rule {index} does not exist (the selection holds {rules})")
             }
+            RefusalCause::PickNamesNoItem { key, matches: 0 } => format!(
+                "the pick key {} names no item",
+                ItemRef::new((**key).clone())
+            ),
+            RefusalCause::PickNamesNoItem { key, matches } => format!(
+                "the pick key {} names {matches} equal items",
+                ItemRef::new((**key).clone())
+            ),
+            RefusalCause::NoKey => "the edit names no item key".to_owned(),
             RefusalCause::FacesNotReady { model } => {
                 format!(
                     "the flat faces of model {} are not computed yet",

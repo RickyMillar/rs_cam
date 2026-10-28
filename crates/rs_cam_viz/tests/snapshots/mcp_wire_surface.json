@@ -3204,6 +3204,262 @@
               "type": "object"
             },
             {
+              "additionalProperties": false,
+              "description": "Pick every item of the list in one edit (one undo step). Each key\nmust name one item, or the whole edit refuses and writes nothing.",
+              "properties": {
+                "add_picks": {
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
+                    "properties": {
+                      "anchor": {
+                        "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
+                        "items": {
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                      },
+                      "brep": {
+                        "default": null,
+                        "description": "Face only: the BREP face id.",
+                        "format": "uint16",
+                        "maximum": 65535,
+                        "minimum": 0,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "kind": {
+                        "description": "The kind of an item.",
+                        "oneOf": [
+                          {
+                            "const": "loop",
+                            "description": "A closed loop.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "path",
+                            "description": "An open path.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "point",
+                            "description": "A point.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "circle",
+                            "description": "A circle (one item; centre and diameter).",
+                            "type": "string"
+                          },
+                          {
+                            "const": "face",
+                            "description": "A flat face of a STEP model.",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "layer": {
+                        "default": null,
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "measure": {
+                        "description": "Loop and face: the square root of the area (mm). Path: the length.\nCircle: the diameter. Point: 0.",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "source": {
+                        "description": "Where an item comes from: `\"toolpath_model\"`, `{\"model\": <id>}` (an\n`inspect_model` id) or `\"stock\"`.",
+                        "oneOf": [
+                          {
+                            "const": "toolpath_model",
+                            "description": "The model of the toolpath.",
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "description": "A project model by its `inspect_model` id.",
+                            "properties": {
+                              "model": {
+                                "format": "uint",
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "model"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "const": "stock",
+                            "description": "The stock outline of the setup.",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "z": {
+                        "default": null,
+                        "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                        "format": "double",
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "kind",
+                      "anchor",
+                      "measure"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "add_picks"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "description": "Remove every item of the list in one edit.",
+              "properties": {
+                "remove_picks": {
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "The match key of one item. Copy it from a `list_model_items` row (or a\n`selection_status` key); do not type it. A key matches an item when the\nsource, kind, layer, BREP id and Z are equal and the anchor and measure\nagree within 1e-6 mm.",
+                    "properties": {
+                      "anchor": {
+                        "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
+                        "items": {
+                          "format": "double",
+                          "type": "number"
+                        },
+                        "maxItems": 2,
+                        "minItems": 2,
+                        "type": "array"
+                      },
+                      "brep": {
+                        "default": null,
+                        "description": "Face only: the BREP face id.",
+                        "format": "uint16",
+                        "maximum": 65535,
+                        "minimum": 0,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "kind": {
+                        "description": "The kind of an item.",
+                        "oneOf": [
+                          {
+                            "const": "loop",
+                            "description": "A closed loop.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "path",
+                            "description": "An open path.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "point",
+                            "description": "A point.",
+                            "type": "string"
+                          },
+                          {
+                            "const": "circle",
+                            "description": "A circle (one item; centre and diameter).",
+                            "type": "string"
+                          },
+                          {
+                            "const": "face",
+                            "description": "A flat face of a STEP model.",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "layer": {
+                        "default": null,
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "measure": {
+                        "description": "Loop and face: the square root of the area (mm). Path: the length.\nCircle: the diameter. Point: 0.",
+                        "format": "double",
+                        "type": "number"
+                      },
+                      "source": {
+                        "description": "Where an item comes from: `\"toolpath_model\"`, `{\"model\": <id>}` (an\n`inspect_model` id) or `\"stock\"`.",
+                        "oneOf": [
+                          {
+                            "const": "toolpath_model",
+                            "description": "The model of the toolpath.",
+                            "type": "string"
+                          },
+                          {
+                            "additionalProperties": false,
+                            "description": "A project model by its `inspect_model` id.",
+                            "properties": {
+                              "model": {
+                                "format": "uint",
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "model"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "const": "stock",
+                            "description": "The stock outline of the setup.",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "z": {
+                        "default": null,
+                        "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+                        "format": "double",
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "source",
+                      "kind",
+                      "anchor",
+                      "measure"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "remove_picks"
+              ],
+              "type": "object"
+            },
+            {
               "const": "reset",
               "description": "Back to the default selection of the op.",
               "type": "string"

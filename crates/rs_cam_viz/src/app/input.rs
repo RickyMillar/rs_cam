@@ -5,8 +5,9 @@ use crate::ui_command::{
     NoArgs, SetToolLoadOverrideArgs, SimJumpToMoveArgs, SimJumpToOpStartArgs, UiCommand,
 };
 
-use super::RsCamApp;
 use super::file_dialog::{AfterPick, Contents, FileDialogRequest};
+use super::{RsCamApp, eased_camera_write};
+use crate::state::camera::CameraWrite;
 
 impl RsCamApp {
     pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
@@ -21,7 +22,10 @@ impl RsCamApp {
                 AppEvent::ImportStl(path) => match self.controller.import_stl_path(&path) {
                     Ok(Some(bbox)) => {
                         let (min, max) = crate::state::camera::bbox_corners(&bbox);
-                        self.controller.state_mut().camera.fit(min, max);
+                        self.controller
+                            .state_mut()
+                            .camera
+                            .fit(min, max, CameraWrite::Instant);
                     }
                     Ok(None) => {}
                     Err(error) => self.controller.push_error(&error),
@@ -29,17 +33,26 @@ impl RsCamApp {
                 AppEvent::ImportDialogConfirm => match self.controller.confirm_import_dialog() {
                     Ok(Some(bbox)) => {
                         let (min, max) = crate::state::camera::bbox_corners(&bbox);
-                        self.controller.state_mut().camera.fit(min, max);
+                        self.controller
+                            .state_mut()
+                            .camera
+                            .fit(min, max, CameraWrite::Instant);
                     }
                     Ok(None) => {
-                        crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                        crate::state::camera::fit_to_first_model(
+                            self.controller.state_mut(),
+                            CameraWrite::Instant,
+                        );
                     }
                     Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportStep(path) => match self.controller.import_step_path(&path) {
                     Ok(Some(bbox)) => {
                         let (min, max) = crate::state::camera::bbox_corners(&bbox);
-                        self.controller.state_mut().camera.fit(min, max);
+                        self.controller
+                            .state_mut()
+                            .camera
+                            .fit(min, max, CameraWrite::Instant);
                     }
                     Ok(None) => {}
                     Err(error) => self.controller.push_error(&error),
@@ -48,7 +61,10 @@ impl RsCamApp {
                     match self.controller.rescale_model(model_id, new_units) {
                         Ok(Some(bbox)) => {
                             let (min, max) = crate::state::camera::bbox_corners(&bbox);
-                            self.controller.state_mut().camera.fit(min, max);
+                            self.controller
+                                .state_mut()
+                                .camera
+                                .fit(min, max, CameraWrite::Instant);
                         }
                         Ok(None) => {}
                         Err(error) => self.controller.push_error(&error),
@@ -232,11 +248,12 @@ impl RsCamApp {
                 }
                 AppEvent::ExportSvgPreview => self.export_svg_preview(),
                 AppEvent::FrameModelItems { model_id, keys } => {
-                    let _ = self.frame_model_items(model_id, &keys);
+                    let _ = self.frame_model_items(model_id, &keys, eased_camera_write(ctx));
                 }
                 AppEvent::FrameSelectionItems { toolpath_id, keys } => {
                     let now = ctx.input(|i| i.time);
-                    let _ = self.frame_selection_items(toolpath_id, keys, now);
+                    let _ =
+                        self.frame_selection_items(toolpath_id, keys, now, eased_camera_write(ctx));
                     // The flash paints on the next frame's upload.
                     ctx.request_repaint();
                 }
@@ -287,30 +304,26 @@ impl RsCamApp {
                 // the controller's own `Ui` arm.
                 AppEvent::Ui(cmd) => match cmd {
                     UiCommand::SetViewPreset(preset) => {
-                        self.controller.state_mut().camera.preset(preset);
+                        self.controller
+                            .state_mut()
+                            .camera
+                            .preset(preset, eased_camera_write(ctx));
                     }
                     UiCommand::ToggleProjection(NoArgs) => {
                         self.controller.state_mut().camera.toggle_projection();
                     }
                     UiCommand::PreviewOrientation(face_up) => {
-                        use crate::render::camera::PITCH_LIMIT;
-                        use crate::state::job::FaceUp;
-                        use std::f32::consts::{FRAC_PI_2, PI};
+                        let how = eased_camera_write(ctx);
                         let camera = &mut self.controller.state_mut().camera;
-                        // Top and Bottom keep the yaw; the side views set it.
-                        let yaw = camera.pose().yaw;
-                        let (yaw, pitch) = match face_up {
-                            FaceUp::Top => (yaw, PITCH_LIMIT),
-                            FaceUp::Bottom => (yaw, -PITCH_LIMIT),
-                            FaceUp::Front => (0.0, 0.0),
-                            FaceUp::Back => (PI, 0.0),
-                            FaceUp::Left => (FRAC_PI_2, 0.0),
-                            FaceUp::Right => (-FRAC_PI_2, 0.0),
-                        };
-                        camera.orientation(yaw, pitch);
+                        let (yaw, pitch) =
+                            crate::state::camera::face_up_orientation(face_up, camera.pose().yaw);
+                        camera.orientation(yaw, pitch, how);
                     }
                     UiCommand::ResetView(NoArgs) => {
-                        crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                        crate::state::camera::fit_to_first_model(
+                            self.controller.state_mut(),
+                            eased_camera_write(ctx),
+                        );
                     }
                     // Workspace transitions (need camera/viewport changes in app)
                     UiCommand::SwitchWorkspace(target) => {
@@ -730,7 +743,10 @@ impl RsCamApp {
                 // project's scale was. Same routine as Reset View, not a
                 // second fit. It runs only on `Ok`, and only after the
                 // unsaved guard has been answered.
-                crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                crate::state::camera::fit_to_first_model(
+                    self.controller.state_mut(),
+                    CameraWrite::Instant,
+                );
                 tracing::info!("Loaded job from {}", path.display());
             }
             // G-D (§4): a load refusal opens the "Project not opened"
