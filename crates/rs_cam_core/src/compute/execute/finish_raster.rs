@@ -335,10 +335,23 @@ pub(crate) fn generate_waterline(
         dropped_below_stock: ladder.dropped_below_stock,
         delivered_levels: ladder.levels.len(),
     });
+    // D69 §2: the helical waterline judges each link between two chained
+    // rings with the model gouge guard's reduced tool. A tool that cannot
+    // shrink (no cutter) joins no level: the op cuts the stacked form.
+    let link_probe = if cfg.continuous {
+        crate::compute::cutter::build_cutter(&crate::compute::model_gouge::reduced_tool_config(
+            ctx.tool_cfg,
+            crate::compute::model_gouge::MODEL_GOUGE_TOL_MM,
+        ))
+        .ok()
+    } else {
+        None
+    };
     let pass = WaterlinePass {
         surface,
         cutter: ctx.tool_def,
         params,
+        link_probe,
         levels: ladder.levels,
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
@@ -355,6 +368,10 @@ struct WaterlinePass<'a> {
     surface: MeshInput<'a>,
     cutter: &'a ToolDefinition,
     params: crate::ops::waterline::WaterlineParams,
+    /// D69 §2 (`WaterlineConfig::continuous`): the reduced tool that
+    /// judges a chain link. `Some`: the op cuts the helical waterline;
+    /// `None`: the stacked form, one entry per ring and level.
+    link_probe: Option<ToolDefinition>,
     /// The ladder of `waterline_ladder`: nudged off the flat facets and
     /// floored at the stock bottom.
     levels: Vec<f64>,
@@ -447,6 +464,79 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
         // P6.0c: a surface op states no material side (the lead dressup's
         // surface probe holds the lead).
         Ok(SidedToolpath::without_closed_passes(tp))
+    }
+
+    /// D69 §2: the helical waterline. The rings of every level, with the
+    /// rest rule and its tally of [`Self::emit_level`], then each chain of
+    /// whole rings over consecutive levels as one entry
+    /// (`ops::waterline::helical_waterline`). `None` when the dial is off.
+    fn emit_ladder<'r>(
+        &self,
+        geometry: &Self::Geometry,
+        levels: &[f64],
+        rest: &dyn Fn(f64) -> LevelRest<'r>,
+        cancel: &dyn CancelCheck,
+    ) -> Option<Result<SidedToolpath, OperationError>> {
+        let reduced_tool = self.link_probe.as_ref()?;
+        let probe = crate::ops::waterline::ChainLinkProbe {
+            mesh: self.surface.mesh,
+            index: self.surface.index,
+            reduced_tool,
+        };
+        let run = || -> Result<SidedToolpath, OperationError> {
+            let mut rings = Vec::with_capacity(levels.len());
+            for &z in levels {
+                crate::interrupt::check_cancel(cancel)?;
+                let rest = rest(z);
+                let standing = rest.standing.as_ref();
+                let keep = |p: P2| standing.is_none_or(|s| s.keeps(p));
+                let filter = crate::ops::waterline::RunFilter {
+                    boundary_regions: self.boundary_regions,
+                    keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
+                    split_timing: rest.split_timing,
+                };
+                let mut level = crate::ops::waterline::LevelRings {
+                    contours: Vec::new(),
+                    runs: Vec::new(),
+                    rest_kept: false,
+                    rest_dropped: false,
+                };
+                for surface in geometry {
+                    let piece = crate::ops::waterline::waterline_level_rings(
+                        surface.mesh,
+                        surface.index,
+                        self.cutter,
+                        z,
+                        &self.params,
+                        &filter,
+                        cancel,
+                    )?;
+                    let offset = level.contours.len();
+                    level.contours.extend(piece.contours);
+                    level.runs.extend(piece.runs.into_iter().map(|mut run| {
+                        run.contour += offset;
+                        run
+                    }));
+                    level.rest_kept |= piece.rest_kept;
+                    level.rest_dropped |= piece.rest_dropped;
+                }
+                rest.tally(level.rest_kept, level.rest_dropped);
+                rings.push(level);
+            }
+            let tp =
+                crate::ops::waterline::helical_waterline(&rings, &self.params, &probe, cancel)?;
+            // P6.0c: a surface op states no material side.
+            Ok(SidedToolpath::without_closed_passes(tp))
+        };
+        Some(run())
+    }
+
+    /// The depth-run spans, and (D69 §2) a barrier round each helical
+    /// chain, so the rapid-order pass keeps the chain in its place.
+    fn spans(&self, toolpath: Toolpath, levels: &[f64]) -> GeneratedToolpath {
+        let mut spans = crate::compute::spans::spans_from_depth_runs(&toolpath, levels);
+        spans.extend(crate::compute::spans::chain_barriers(&toolpath, levels));
+        super::shared::generated_with_spans(toolpath, spans)
     }
 
     /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this

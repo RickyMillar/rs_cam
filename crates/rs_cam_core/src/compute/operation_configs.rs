@@ -1828,6 +1828,10 @@ impl Adaptive3dConfig {
     }
 }
 
+/// The help of `WaterlineConfig::continuous` (D69 §2).
+const HELP_WATERLINE_CONTINUOUS: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
+     descends along the lower ring from level to level. Off: one entry per ring and level.";
+
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
@@ -1850,6 +1854,13 @@ pub struct WaterlineConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
+    /// D69 §2 (G-WLCONTINUOUS): the helical waterline. `true`: each chain
+    /// of whole rings over consecutive levels (one ring inside the other,
+    /// no ring between them, one to one) is ONE entry; the tool descends
+    /// along the lower ring (`ops::waterline::helical_waterline`).
+    /// `false`: one entry per ring and level. Before D69 no generator read
+    /// the field.
+    #[param(help = HELP_WATERLINE_CONTINUOUS)]
     pub continuous: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
@@ -1877,7 +1888,8 @@ impl Default for WaterlineConfig {
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
-            continuous: false,
+            // D69: on by default (operator ruling 2026-10-28).
+            continuous: true,
             spindle_rpm: None,
             // OFF. See the field doc.
             hookup_mm: 0.0,

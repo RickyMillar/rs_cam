@@ -460,5 +460,9 @@ name = "waterline_auto_ladder_is_model_top_to_bottom_r3"
 required-features = ["test-support"]
 
 [[test]]
+name = "a_helical_waterline_cuts_a_stack_with_one_entry_d69"
+required-features = ["test-support"]
+
+[[test]]
 name = "zone_coherence_census"
 required-features = ["test-support"]

@@ -16,6 +16,7 @@ use crate::geometry::region_set::RegionSet;
 use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::machine::kinematics::{LinkKinematics, RetractDescent, retract_saves_time};
 use crate::mesh::{SpatialIndex, TriangleMesh};
+use crate::polygon::Polygon2;
 use crate::surface::pushcutter::batch_push_cutter_with_cancel;
 use crate::tool::MillingCutter;
 use crate::toolpath::{MoveIntent, RingMaterial, Toolpath};
@@ -446,7 +447,8 @@ pub(crate) fn bridge_air_stretches(
 /// One waterline level: the contours at `z`, the leave lift, the run split
 /// of `filter` and the emit. Every waterline ladder (the standalone op on
 /// the Layered runner, and [`waterline_toolpath_at_levels`]) cuts its
-/// levels here.
+/// levels here, or through [`waterline_level_rings`] and
+/// [`helical_waterline`] when the op joins its levels (D69 §2).
 ///
 /// # Errors
 ///
@@ -460,7 +462,62 @@ pub fn waterline_level(
     filter: &RunFilter<'_>,
     cancel: &dyn CancelCheck,
 ) -> Result<WaterlineLevel, Cancelled> {
+    let rings = waterline_level_rings(mesh, index, cutter, z, params, filter, cancel)?;
     let mut toolpath = Toolpath::new();
+    for run in &rings.runs {
+        emit_run(&mut toolpath, run, params);
+    }
+    Ok(WaterlineLevel {
+        toolpath,
+        rest_kept: rings.rest_kept,
+        rest_dropped: rings.rest_dropped,
+    })
+}
+
+/// One run of a waterline level, ready to emit: a whole ring, or an open
+/// stretch of one.
+#[derive(Debug, Clone)]
+pub struct LevelRun {
+    /// The points, after the minimum-segment floor.
+    pub path: Vec<P3>,
+    /// True when the whole contour survived the filter: a closed ring.
+    pub whole: bool,
+    /// The index of the contour in [`LevelRings::contours`] that holds the
+    /// run.
+    pub contour: usize,
+}
+
+/// One waterline level before the emit (D69 §2).
+#[derive(Debug, Clone)]
+pub struct LevelRings {
+    /// The contours at the level, after the leave lift. They are the
+    /// topology of the level: a contour that the filter drops still
+    /// separates two rings of the levels above and below.
+    pub contours: Vec<Vec<P3>>,
+    /// The runs to cut, in the emit order of [`waterline_level`].
+    pub runs: Vec<LevelRun>,
+    /// See [`WaterlineLevel::rest_kept`].
+    pub rest_kept: bool,
+    /// See [`WaterlineLevel::rest_dropped`].
+    pub rest_dropped: bool,
+}
+
+/// The contours at `z`, the leave lift and the run split of `filter`:
+/// [`waterline_level`] without the emit.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires inside the push cutter.
+pub fn waterline_level_rings(
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    z: f64,
+    params: &WaterlineParams,
+    filter: &RunFilter<'_>,
+    cancel: &dyn CancelCheck,
+) -> Result<LevelRings, Cancelled> {
+    let mut runs = Vec::new();
     let (mut rest_kept, mut rest_dropped) = (false, false);
     let mut contours =
         waterline_contours_with_cancel(mesh, index, cutter, z, params.sampling, cancel)?;
@@ -478,7 +535,7 @@ pub fn waterline_level(
         }
     }
 
-    for contour in &contours {
+    for (c, contour) in contours.iter().enumerate() {
         if contour.len() < 3 {
             continue;
         }
@@ -487,16 +544,11 @@ pub fn waterline_level(
             if path.len() < 3 {
                 continue;
             }
-            // P6.0c: a surface op states no material side: the lead
-            // dressup's surface probe lifts each lead sample onto the model.
-            let _ = toolpath.emit_closed_contour_with_intent(
-                &path,
-                params.safe_z,
-                params.feed_rate,
-                params.plunge_rate,
-                MoveIntent::FinishingCut,
-                RingMaterial::NotStated,
-            );
+            runs.push(LevelRun {
+                path,
+                whole: true,
+                contour: c,
+            });
             continue;
         }
         let inside: Vec<bool> = contour.iter().map(|p| filter.inside(p)).collect();
@@ -525,13 +577,13 @@ pub fn waterline_level(
                 }
             }
         }
-        let runs = crate::geometry::point_runs::split_runs(
+        let split = crate::geometry::point_runs::split_runs(
             contour,
             |i, _: &P3| keep.get(i).copied().unwrap_or(false),
             crate::geometry::point_runs::RunTopology::Closed,
             2,
         );
-        for run in runs {
+        for run in split {
             if run.len() < 2 {
                 continue;
             }
@@ -543,37 +595,418 @@ pub fn waterline_level(
             if path.len() < 2 {
                 continue;
             }
-            if whole_loop {
-                // The whole loop survived — safe to close it.
-                // P6.0c: a surface op states no material side: the lead
-                // dressup's surface probe lifts each lead sample onto the model.
-                let _ = toolpath.emit_closed_contour_with_intent(
-                    &path,
-                    params.safe_z,
-                    params.feed_rate,
-                    params.plunge_rate,
-                    MoveIntent::FinishingCut,
-                    RingMaterial::NotStated,
-                );
-            } else {
-                // Partial survivor: an open run, not a closed loop —
-                // closing it would chord straight across the dropped
-                // stretch.
-                toolpath.emit_path_segment_with_intent(
-                    &path,
-                    params.safe_z,
-                    params.feed_rate,
-                    params.plunge_rate,
-                    MoveIntent::FinishingCut,
-                );
-            }
+            runs.push(LevelRun {
+                path,
+                whole: whole_loop,
+                contour: c,
+            });
         }
     }
-    Ok(WaterlineLevel {
-        toolpath,
+    Ok(LevelRings {
+        contours,
+        runs,
         rest_kept,
         rest_dropped,
     })
+}
+
+/// Emit one run as its own pass: retract, rapid, plunge, cut, retract.
+fn emit_run(toolpath: &mut Toolpath, run: &LevelRun, params: &WaterlineParams) {
+    if run.whole {
+        // The whole loop survived — safe to close it.
+        // P6.0c: a surface op states no material side: the lead
+        // dressup's surface probe lifts each lead sample onto the model.
+        let _ = toolpath.emit_closed_contour_with_intent(
+            &run.path,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+            MoveIntent::FinishingCut,
+            RingMaterial::NotStated,
+        );
+    } else {
+        // Partial survivor: an open run, not a closed loop — closing it
+        // would chord straight across the dropped stretch.
+        toolpath.emit_path_segment_with_intent(
+            &run.path,
+            params.safe_z,
+            params.feed_rate,
+            params.plunge_rate,
+            MoveIntent::FinishingCut,
+        );
+    }
+}
+
+/// The ring of `points` as a polygon in XY, or `None` for fewer than three
+/// points.
+fn ring_polygon(points: &[P3]) -> Option<Polygon2> {
+    (points.len() >= 3).then(|| Polygon2::new(points.iter().map(|p| P2::new(p.x, p.y)).collect()))
+}
+
+/// True when ring `inner` lies inside ring `outer`, or on it to within
+/// `tol` (D69 §2, rule 1).
+fn ring_inside(inner: &Polygon2, outer: &Polygon2, tol: f64) -> bool {
+    let [ix0, iy0, ix1, iy1] = inner.bbox();
+    let [ox0, oy0, ox1, oy1] = outer.bbox();
+    // Exact reject: a point within `tol` of `outer` lies in its box grown
+    // by `tol`.
+    if ix0 < ox0 - tol || iy0 < oy0 - tol || ix1 > ox1 + tol || iy1 > oy1 + tol {
+        return false;
+    }
+    inner
+        .exterior
+        .iter()
+        .all(|p| outer.contains_point_eps(p, tol))
+}
+
+/// The chain links of D69 §2 between two consecutive levels: for each ring
+/// of `upper`, the ring of `lower` it chains to.
+///
+/// Ring `u` of `upper` and ring `v` of `lower` chain when:
+///
+/// 1. one lies inside the other, to within `tol` (the op's `sampling`: the
+///    weave places a ring to within it);
+/// 2. no third ring of the two levels lies between them; and
+/// 3. the match is the only one both ways.
+///
+/// The rule is topological; it has no distance bound. `None` in a slice is
+/// a contour with no ring (fewer than three points).
+#[must_use]
+pub fn chain_links(
+    upper: &[Option<Polygon2>],
+    lower: &[Option<Polygon2>],
+    tol: f64,
+) -> Vec<Option<usize>> {
+    // One index space over both levels: `upper` first, then `lower`.
+    let ring = |i: usize| {
+        if i < upper.len() {
+            upper.get(i).and_then(Option::as_ref)
+        } else {
+            lower.get(i - upper.len()).and_then(Option::as_ref)
+        }
+    };
+    let count = upper.len() + lower.len();
+    let mut memo = std::collections::HashMap::new();
+    let mut inside = |a: usize, b: usize| -> bool {
+        *memo
+            .entry((a, b))
+            .or_insert_with(|| match (ring(a), ring(b)) {
+                (Some(a), Some(b)) => ring_inside(a, b, tol),
+                _ => false,
+            })
+    };
+    let area = |i: usize| ring(i).map_or(0.0, Polygon2::area);
+    let mut matches = |u: usize, v: usize| -> bool {
+        let (outer, inner) = if area(u) >= area(v) { (u, v) } else { (v, u) };
+        if !inside(inner, outer) {
+            return false;
+        }
+        // Rule 2. `inside(inner, w)` first: its box test rejects most `w`.
+        !(0..count)
+            .any(|w| w != u && w != v && inside(inner, w) && inside(w, outer) && !inside(outer, w))
+    };
+    let n_upper = upper.len();
+    let mut candidates: Vec<Vec<usize>> = vec![Vec::new(); n_upper];
+    let mut back: Vec<usize> = vec![0; lower.len()];
+    for (u, found) in candidates.iter_mut().enumerate() {
+        if ring(u).is_none() {
+            continue;
+        }
+        for v in 0..lower.len() {
+            if ring(n_upper + v).is_some() && matches(u, n_upper + v) {
+                found.push(v);
+                if let Some(b) = back.get_mut(v) {
+                    *b += 1;
+                }
+            }
+        }
+    }
+    // Rule 3.
+    candidates
+        .iter()
+        .map(|found| match found.as_slice() {
+            [v] if back.get(*v) == Some(&1) => Some(*v),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The tool that judges a link between two chained rings (D69 §2): the
+/// model gouge guard's reduced tool (the cutter less
+/// [`crate::compute::model_gouge::MODEL_GOUGE_TOL_MM`], so a tangent wall
+/// does not read as a gouge) and the surface it reads.
+pub struct ChainLinkProbe<'a> {
+    pub mesh: &'a TriangleMesh,
+    pub index: &'a SpatialIndex,
+    pub reduced_tool: &'a dyn MillingCutter,
+}
+
+impl ChainLinkProbe<'_> {
+    /// True when the straight feed from `from` to `to` at the Z of `from`
+    /// cuts nothing below the surface: at each sample (at most `sampling`
+    /// apart) the tip less `leave` stays at or above the drop-cutter CL Z,
+    /// to within the guard's Z tolerance
+    /// ([`crate::compute::model_gouge::MODEL_GOUGE_Z_TOL_MM`]).
+    fn clear(&self, from: P3, to: P2, leave: f64, sampling: f64) -> bool {
+        let (dx, dy) = (to.x - from.x, to.y - from.y);
+        let n = crate::util::steps::steps(dx.hypot(dy), sampling)
+            .unwrap_or(0)
+            .max(1);
+        let tip = from.z - leave + crate::compute::model_gouge::MODEL_GOUGE_Z_TOL_MM;
+        (0..=n).all(|k| {
+            let t = k as f64 / n as f64;
+            let cl = crate::surface::dropcutter::point_drop_cutter(
+                from.x + t * dx,
+                from.y + t * dy,
+                self.mesh,
+                self.index,
+                self.reduced_tool,
+            );
+            !cl.contacted || cl.z <= tip
+        })
+    }
+}
+
+/// The XY length of the closed ring `ring`.
+fn ring_length(ring: &[P3]) -> f64 {
+    ring.iter()
+        .zip(ring.iter().cycle().skip(1))
+        .map(|(a, b)| (b.x - a.x).hypot(b.y - a.y))
+        .sum()
+}
+
+/// The laps a descent of `dz` along a ring of XY length `length` takes,
+/// so that no lap descends steeper than the dressup ramp angle
+/// ([`crate::compute::config::DRESSUP_RAMP_ANGLE_DEG`], the angle of a
+/// ramp entry: the bottom of the tool cuts on the descent as on a ramp).
+/// At least one.
+fn lap_count(dz: f64, length: f64) -> usize {
+    let per_lap = length
+        * crate::compute::config::DRESSUP_RAMP_ANGLE_DEG
+            .to_radians()
+            .tan();
+    crate::util::steps::steps(dz, per_lap).unwrap_or(1).max(1)
+}
+
+/// Feed `laps` laps of the closed ring `ring` from vertex `start` back to
+/// it, Z linear in the XY arc length from `z_from` to `z_to`.
+fn emit_laps(
+    toolpath: &mut Toolpath,
+    ring: &[P3],
+    start: usize,
+    (z_from, z_to): (f64, f64),
+    laps: usize,
+    feed: f64,
+) {
+    let n = ring.len();
+    let total = ring_length(ring) * laps as f64;
+    let Some(&first) = ring.get(start) else {
+        return;
+    };
+    let mut prev = first;
+    let mut s = 0.0;
+    for lap in 0..laps {
+        for k in 1..=n {
+            let Some(&p) = ring.get((start + k) % n) else {
+                continue;
+            };
+            s += (p.x - prev.x).hypot(p.y - prev.y);
+            prev = p;
+            let z = if lap + 1 == laps && k == n {
+                z_to
+            } else {
+                z_from + (z_to - z_from) * (s / total)
+            };
+            toolpath.feed_to_with_intent(P3::new(p.x, p.y, z), feed, MoveIntent::FinishingCut);
+        }
+    }
+}
+
+/// The index of the vertex of `ring` nearest to `p` in XY.
+fn nearest_vertex(ring: &[P3], p: P3) -> usize {
+    ring.iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            let da = (a.x - p.x).hypot(a.y - p.y);
+            let db = (b.x - p.x).hypot(b.y - p.y);
+            da.total_cmp(&db)
+        })
+        .map_or(0, |(i, _)| i)
+}
+
+/// Cut one chain of rings (D69 §2), top level first, with ONE entry.
+///
+/// The first ring is cut flat at its level. For each next ring: a feed at
+/// the upper Z to the nearest vertex of the lower ring, then laps of the
+/// LOWER ring that descend linearly to its own level ([`lap_count`]).
+/// Last, one flat lap of the last ring. In 3-axis the set the tool cannot
+/// enter grows (or stays) as Z falls, so the lower ring at a higher Z is
+/// never in it: a lap cannot gouge. A link the probe does not clear ends
+/// the chain there: the ring gets its flat lap, the tool retracts, and
+/// the next ring starts a new chain.
+fn emit_chain(
+    toolpath: &mut Toolpath,
+    chain: &[&[P3]],
+    params: &WaterlineParams,
+    probe: &ChainLinkProbe<'_>,
+) {
+    // The ring the tool is on, the vertex it stands at, the ring's level
+    // and whether the ring still needs its flat lap.
+    let mut on: Option<(&[P3], usize, f64, bool)> = None;
+    for &ring in chain {
+        let Some(level_z) = ring.first().map(|p| p.z) else {
+            continue;
+        };
+        if let Some((upper, at, z, owed)) = on
+            && let Some(&here) = upper.get(at)
+        {
+            let here = P3::new(here.x, here.y, z);
+            let j = nearest_vertex(ring, here);
+            if let Some(&to) = ring.get(j)
+                && probe.clear(
+                    here,
+                    P2::new(to.x, to.y),
+                    params.stock_to_leave,
+                    params.sampling,
+                )
+            {
+                toolpath.feed_to_with_intent(
+                    P3::new(to.x, to.y, z),
+                    params.feed_rate,
+                    MoveIntent::FinishingCut,
+                );
+                let laps = lap_count(z - level_z, ring_length(ring));
+                emit_laps(toolpath, ring, j, (z, level_z), laps, params.feed_rate);
+                on = Some((ring, j, level_z, true));
+                continue;
+            }
+            if owed {
+                emit_laps(toolpath, upper, at, (z, z), 1, params.feed_rate);
+            }
+            toolpath.final_retract(params.safe_z);
+        }
+        let Some(&first) = ring.first() else {
+            continue;
+        };
+        toolpath.rapid_to_with_intent(
+            P3::new(first.x, first.y, params.safe_z),
+            MoveIntent::Linking,
+        );
+        toolpath.feed_to_with_intent(first, params.plunge_rate, MoveIntent::EntryPlunge);
+        emit_laps(toolpath, ring, 0, (level_z, level_z), 1, params.feed_rate);
+        on = Some((ring, 0, level_z, false));
+    }
+    if let Some((ring, at, z, true)) = on {
+        emit_laps(toolpath, ring, at, (z, z), 1, params.feed_rate);
+    }
+    toolpath.final_retract(params.safe_z);
+}
+
+/// The helical waterline (D69 §2, `WaterlineConfig::continuous`): the
+/// levels of [`waterline_level_rings`], top first, with each chain of
+/// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
+/// ([`emit_chain`]).
+///
+/// The order is the level order of the stacked form: each level emits its
+/// runs in turn, and a whole ring that starts a chain emits the whole
+/// chain at its place. A run that is not a whole ring, and a ring that
+/// matches no ring of the next level, keep the stacked form (their own
+/// retract and entry). With no chain the output is the stacked form, move
+/// for move.
+///
+/// # Errors
+///
+/// [`Cancelled`] when `cancel` fires.
+pub fn helical_waterline(
+    levels: &[LevelRings],
+    params: &WaterlineParams,
+    probe: &ChainLinkProbe<'_>,
+    cancel: &dyn CancelCheck,
+) -> Result<Toolpath, Cancelled> {
+    let polygons: Vec<Vec<Option<Polygon2>>> = levels
+        .iter()
+        .map(|level| level.contours.iter().map(|c| ring_polygon(c)).collect())
+        .collect();
+    let mut links = Vec::with_capacity(levels.len());
+    for pair in polygons.windows(2) {
+        check_cancel(cancel)?;
+        if let [upper, lower] = pair {
+            links.push(chain_links(upper, lower, params.sampling));
+        }
+    }
+    // The run of each contour when the contour is ONE whole run: only a
+    // whole ring chains (a ring the filter split stays stacked).
+    let whole_run: Vec<Vec<Option<usize>>> = levels
+        .iter()
+        .map(|level| {
+            let mut of = vec![None; level.contours.len()];
+            let mut count = vec![0_usize; level.contours.len()];
+            for (r, run) in level.runs.iter().enumerate() {
+                if let Some(n) = count.get_mut(run.contour) {
+                    *n += 1;
+                }
+                if run.whole
+                    && let Some(slot) = of.get_mut(run.contour)
+                {
+                    *slot = Some(r);
+                }
+            }
+            of.iter()
+                .zip(&count)
+                .map(|(&r, &n)| r.filter(|_| n == 1))
+                .collect()
+        })
+        .collect();
+    let mut consumed: Vec<Vec<bool>> = levels
+        .iter()
+        .map(|level| vec![false; level.contours.len()])
+        .collect();
+    let path_of = |k: usize, c: usize| -> Option<&[P3]> {
+        let r = whole_run.get(k)?.get(c).copied().flatten()?;
+        levels.get(k)?.runs.get(r).map(|run| run.path.as_slice())
+    };
+    let mut toolpath = Toolpath::new();
+    for (k, level) in levels.iter().enumerate() {
+        check_cancel(cancel)?;
+        for run in &level.runs {
+            if consumed
+                .get(k)
+                .and_then(|c| c.get(run.contour))
+                .copied()
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            // The chain from this ring: follow the links while the next
+            // ring is one whole run.
+            let mut chain: Vec<(usize, usize)> = vec![(k, run.contour)];
+            if path_of(k, run.contour).is_some() {
+                let (mut lk, mut lc) = (k, run.contour);
+                while let Some(next) = links.get(lk).and_then(|l| l.get(lc)).copied().flatten()
+                    && path_of(lk + 1, next).is_some()
+                {
+                    lk += 1;
+                    lc = next;
+                    chain.push((lk, lc));
+                }
+            }
+            if chain.len() < 2 {
+                emit_run(&mut toolpath, run, params);
+                continue;
+            }
+            let rings: Vec<&[P3]> = chain
+                .iter()
+                .filter_map(|&(ck, cc)| path_of(ck, cc))
+                .collect();
+            for &(ck, cc) in &chain {
+                if let Some(slot) = consumed.get_mut(ck).and_then(|c| c.get_mut(cc)) {
+                    *slot = true;
+                }
+            }
+            emit_chain(&mut toolpath, &rings, params, probe);
+        }
+    }
+    Ok(toolpath)
 }
 
 pub fn waterline_contours_with_cancel(
