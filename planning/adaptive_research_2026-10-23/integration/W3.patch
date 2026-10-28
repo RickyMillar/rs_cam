@@ -1,0 +1,232 @@
+diff --git a/crates/rs_cam_core/src/stock/sim_measurability.rs b/crates/rs_cam_core/src/stock/sim_measurability.rs
+index 8bd6ed3dd..2def84e70 100644
+--- a/crates/rs_cam_core/src/stock/sim_measurability.rs
++++ b/crates/rs_cam_core/src/stock/sim_measurability.rs
+@@ -400,7 +400,7 @@ fn classify_engagement(
+         .iter()
+         .filter(|s| s.toolpath_id == toolpath_id)
+     {
+-        if !s.is_cutting || s.removed_volume_est_mm3 <= 0.0 {
++        if !s.removes_material() {
+             continue;
+         }
+         removing += 1;
+diff --git a/crates/rs_cam_core/src/stock/simulation_cut.rs b/crates/rs_cam_core/src/stock/simulation_cut.rs
+index a63a472ba..998e330f0 100644
+--- a/crates/rs_cam_core/src/stock/simulation_cut.rs
++++ b/crates/rs_cam_core/src/stock/simulation_cut.rs
+@@ -288,6 +288,17 @@ impl SimulationCutSample {
+         }
+     }
+ 
++    /// True when the sample removes material: a cutting sample with a
++    /// removed volume above zero. The one definition of "removing" (the
++    /// `sim_measurability` population, Checkpoint D Q2). G-WLAIRLABEL: an
++    /// [`RadialEngagementClass::Air`] sample that removes material is a
++    /// skin the flank cuts above the tip, not air
++    /// ([`SimulationCutTrace::air_cut_removing_share`]).
++    #[must_use]
++    pub fn removes_material(&self) -> bool {
++        self.is_cutting && self.removed_volume_est_mm3 > 0.0
++    }
++
+     /// True when the sample removes no material: a rapid or a retract
+     /// (`is_cutting == false`), or a fed move in air
+     /// ([`RadialEngagementClass::Air`]). The chipload and power gates leave
+diff --git a/crates/rs_cam_core/src/stock/simulation_cut/analysis.rs b/crates/rs_cam_core/src/stock/simulation_cut/analysis.rs
+index 60e720745..388181f0d 100644
+--- a/crates/rs_cam_core/src/stock/simulation_cut/analysis.rs
++++ b/crates/rs_cam_core/src/stock/simulation_cut/analysis.rs
+@@ -44,6 +44,32 @@ fn new_open_segment(
+ }
+ 
+ impl SimulationCutTrace {
++    /// G-WLAIRLABEL (D69 §3): the share (0 to 1) of the air-cut time that
++    /// removes material ([`SimulationCutSample::removes_material`]): the
++    /// time of the cutting samples in [`RadialEngagementClass::Air`] that
++    /// remove material, over the time of all of them. Measured on the
++    /// samples' own clock (`segment_time_s`). Of `toolpath_id`, or of the
++    /// whole trace with `None`. `0.0` when no sample is air.
++    ///
++    /// The air-cut figures, the gates and the thresholds do not read it.
++    /// A label reads it to report the true air, `air × (1 − share)`, and
++    /// the skin, `air × share`.
++    #[must_use]
++    pub fn air_cut_removing_share(&self, toolpath_id: Option<crate::ids::ToolpathId>) -> f64 {
++        let (mut air_s, mut removing_s) = (0.0, 0.0);
++        for sample in self.samples.iter().filter(|s| {
++            s.is_cutting
++                && toolpath_id.is_none_or(|id| s.toolpath_id == id)
++                && s.radial_engagement_class() == RadialEngagementClass::Air
++        }) {
++            air_s += sample.segment_time_s;
++            if sample.removes_material() {
++                removing_s += sample.segment_time_s;
++            }
++        }
++        if air_s > 0.0 { removing_s / air_s } else { 0.0 }
++    }
++
+     /// Neutral test fixture: an empty trace at the current
+     /// [`SIMULATION_CUT_TRACE_SCHEMA_VERSION`] with no samples, summaries,
+     /// issues, or drill data. Test code overrides the fields under test via
+diff --git a/crates/rs_cam_core/src/stock/simulation_cut/tests.rs b/crates/rs_cam_core/src/stock/simulation_cut/tests.rs
+index 6e55f07a0..b02c6f4e2 100644
+--- a/crates/rs_cam_core/src/stock/simulation_cut/tests.rs
++++ b/crates/rs_cam_core/src/stock/simulation_cut/tests.rs
+@@ -1308,3 +1308,45 @@ fn per_toolpath_peak_doc_respects_transit_flag() {
+         tp.peak_axial_doc_mm
+     );
+ }
++
++/// G-WLAIRLABEL (D69 §3, W3): an air sample that removes material is a skin,
++/// not air. The share is the time of the air samples that remove material
++/// over the time of all air samples, on the sample clock; air less that share
++/// is the time of the air samples that remove nothing. A pass over cleared
++/// ground removes nothing: share 0. A rapid that reports a volume does not
++/// remove material.
++#[test]
++fn air_that_removes_material_is_a_skin_g_wlairlabel() {
++    let id = ToolpathId::from_raw(4);
++    let timed = |seconds: f64, woc: f64, removed: f64| SimulationCutSample {
++        toolpath_id: id,
++        is_cutting: true,
++        segment_time_s: seconds,
++        removed_volume_est_mm3: removed,
++        engagement: Engagement::with_radial_woc(woc),
++        ..SimulationCutSample::test_fixture()
++    };
++    let trace = SimulationCutTrace::from_samples(
++        1.0,
++        vec![
++            timed(279.3, 0.0, 4018.0),
++            timed(56.6, 0.0, 0.0),
++            timed(60.0, 0.5, 3508.0),
++        ],
++    );
++    let share = trace.air_cut_removing_share(Some(id));
++    assert!((share - 279.3 / 335.9).abs() < 1e-12, "{share}");
++    assert!((trace.air_cut_removing_share(None) - share).abs() < 1e-12);
++    let air = trace.toolpath_summaries[0].air_cut_time_s;
++    assert!((air * (1.0 - share) - 56.6).abs() < 1e-9, "true air {air}");
++
++    let cleared = SimulationCutTrace::from_samples(1.0, vec![timed(10.0, 0.0, 0.0)]);
++    assert_eq!(cleared.air_cut_removing_share(Some(id)), 0.0);
++
++    let rapid = SimulationCutSample {
++        is_cutting: false,
++        ..timed(1.0, 0.0, 5.0)
++    };
++    assert!(!rapid.removes_material());
++    assert!(timed(1.0, 0.0, 5.0).removes_material());
++}
+diff --git a/crates/rs_cam_core/src/trace/narrate.rs b/crates/rs_cam_core/src/trace/narrate.rs
+index 7ad1b2cec..60abb7739 100644
+--- a/crates/rs_cam_core/src/trace/narrate.rs
++++ b/crates/rs_cam_core/src/trace/narrate.rs
+@@ -2128,6 +2128,22 @@ fn append_air_cut_anomaly(
+         .operation_kind
+         .and_then(|kind| kind.capabilities().air_cut_high_threshold_pct)
+         .unwrap_or(AIR_CUT_WARNING_FALLBACK_PERCENT);
++    // G-WLAIRLABEL (D69 §3, lead ruling 2026-10-28): an air sample that
++    // removes material is a skin the flank cuts above the tip. The line
++    // reports the TRUE air and names the skin, and the marker reads the
++    // true share. The air-cut figures and the gates do not change.
++    let removing = trace.air_cut_removing_share(context.toolpath_id);
++    let skin_pct_of_cutting = air_pct_of_cutting * removing;
++    let air_pct_of_cutting = air_pct_of_cutting - skin_pct_of_cutting;
++    let air_pct_of_total = air_pct_of_total * (1.0 - removing);
++    let skin = if removing > 0.0 {
++        format!(
++            " (+{skin_pct_of_cutting:.1}% skin cut under {:.0}% WOC)",
++            crate::stock::simulation_cut::AIR_CUT_RADIAL_WOC_FRACTION * 100.0
++        )
++    } else {
++        String::new()
++    };
+     let marker = if air_pct_of_total > air_cut_bar {
+         "⚠"
+     } else {
+@@ -2159,8 +2175,9 @@ fn append_air_cut_anomaly(
+         }
+     };
+     anomalies.push(format!(
+-        "{marker} {:.1}% of CUTTING time is air-cut ({:.1}% of TOTAL runtime, the measure \
+-         the GUI banner and the per-operation thresholds use); average engagement {:.3}.{}",
++        "{marker} {:.1}% of CUTTING time is air-cut{skin} ({:.1}% of TOTAL runtime, the \
++         measure the GUI banner and the per-operation thresholds use); average engagement \
++         {:.3}.{}",
+         air_pct_of_cutting, air_pct_of_total, average_engagement, hint
+     ));
+ }
+@@ -2543,6 +2560,55 @@ mod tests {
+         }
+     }
+ 
++    /// G-WLAIRLABEL (D69 §3, W3): the air line reports the TRUE air and the
++    /// marker reads the true share. The D69 Corne Waterline split (sample
++    /// clock, `passes_base_corne.json`): 279.3 s of air samples that remove
++    /// material, 56.6 s of air samples that remove nothing, 60.0 s
++    /// engaged. Old share 84.8 % of the runtime (over the 45 % Waterline
++    /// bar: ⚠); true share 14.3 % (under it: ℹ). The same op whose air
++    /// removes nothing keeps the ⚠ and the old line.
++    #[test]
++    fn the_air_line_reads_the_true_air_share_g_wlairlabel() {
++        let id = ToolpathId::from_raw(4);
++        let timed = |seconds: f64, woc: f64, removed: f64| SimulationCutSample {
++            segment_time_s: seconds,
++            removed_volume_est_mm3: removed,
++            ..sample(id, 1, 0.5, woc)
++        };
++        let context = ToolpathNarrationContext {
++            toolpath_id: Some(id),
++            operation_kind: Some(crate::compute::catalog::OperationType::Waterline),
++            ..ToolpathNarrationContext::default()
++        };
++        let line = |samples: Vec<SimulationCutSample>| {
++            let trace = SimulationCutTrace::from_samples(1.0, samples);
++            let mut anomalies = Vec::new();
++            append_air_cut_anomaly(&mut anomalies, &trace, &context);
++            assert_eq!(anomalies.len(), 1, "one air line: {anomalies:?}");
++            anomalies.remove(0)
++        };
++
++        let skin = line(vec![
++            timed(279.3, 0.0, 4018.0),
++            timed(56.6, 0.0, 0.0),
++            timed(60.0, 0.5, 3508.0),
++        ]);
++        assert!(
++            skin.starts_with("ℹ 14.3% of CUTTING time is air-cut"),
++            "{skin}"
++        );
++        assert!(skin.contains("(+70.5% skin cut under 2% WOC)"), "{skin}");
++        assert!(skin.contains("(14.3% of TOTAL runtime"), "{skin}");
++        assert!(!skin.contains('\n'), "one line: {skin}");
++
++        let air = line(vec![timed(335.9, 0.0, 0.0), timed(60.0, 0.5, 3508.0)]);
++        assert!(
++            air.starts_with("⚠ 84.8% of CUTTING time is air-cut ("),
++            "{air}"
++        );
++        assert!(!air.contains("skin cut"), "{air}");
++    }
++
+     fn sample(
+         toolpath_id: ToolpathId,
+         move_index: usize,
+diff --git a/crates/rs_cam_viz/src/app/mcp/simulation.rs b/crates/rs_cam_viz/src/app/mcp/simulation.rs
+index 0c951e0d8..49d00acfd 100644
+--- a/crates/rs_cam_viz/src/app/mcp/simulation.rs
++++ b/crates/rs_cam_viz/src/app/mcp/simulation.rs
+@@ -773,6 +773,10 @@ pub(crate) fn build_cut_trace_response(
+                 // reports the cutting-time one.
+                 "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
+                 "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
++                // G-WLAIRLABEL: the share of the air time that removes
++                // material (a skin cut under the air WOC); true air is
++                // air x (1 - share).
++                "air_cut_removing_share": ct.air_cut_removing_share(Some(s.toolpath_id)),
+                 "low_engagement_time_s": s.low_engagement_time_s,
+                 "metrics_not_applicable": s.metrics_not_applicable,
+                 "runtime_by_intent": s.runtime_by_intent,
