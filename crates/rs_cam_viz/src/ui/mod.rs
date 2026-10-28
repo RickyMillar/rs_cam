@@ -6,6 +6,7 @@ pub mod export_wizard;
 pub mod feeds;
 pub mod generation_resolution_modal;
 pub mod import_modal;
+pub mod load_refusal_modal;
 pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;

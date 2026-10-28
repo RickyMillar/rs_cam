@@ -250,7 +250,15 @@ pub(super) fn draw_toolpath_panel(
             super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
         }
         ToolpathTab::Cut => {
-            draw_cut_tab(ui, entry, inputs, model_bbox, selection_ui, events);
+            draw_cut_tab(
+                ui,
+                entry,
+                inputs,
+                model_bbox,
+                strategy_suggestion(suggest_warnings),
+                selection_ui,
+                events,
+            );
         }
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
@@ -429,6 +437,7 @@ pub(super) fn draw_cut_tab(
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
@@ -545,6 +554,7 @@ pub(super) fn draw_cut_tab(
         selection_ui: &mut *selection_ui,
         model_areas: op_report(inputs)
             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
+        strategy_suggestion,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
@@ -578,15 +588,12 @@ pub(super) fn draw_cut_tab(
         if entry.boundary.enabled {
             // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
             // one generation uses (`session/compute.rs` clones
-            // `tc.boundary` unconditionally). Name it, then show the
-            // controls that drive it. The controller assigns the model
+            // `tc.boundary` unconditionally). G-D (ruling D-1): its name is
+            // the hover of the Source combo, not a row above it; the row
+            // repeated the combo. The controller assigns the model
             // silhouette on add for 3D ops on a mesh; that provenance is
-            // not stored, so the line never claims "(auto)".
-            ui.add(OneLine::new(boundary_summary_line(
-                &entry.boundary,
-                false,
-                models,
-            )));
+            // not stored, so the hover never claims "(auto)".
+            let source_summary = boundary_summary_line(&entry.boundary, false, models);
             // Source selector
             ui.horizontal(|ui| {
                 ui.label("Source:");
@@ -667,9 +674,9 @@ pub(super) fn draw_cut_tab(
                                 ),
                             )
                             .on_hover_text(if has_rest_candidates {
-                                "Boundary = rest regions computed by another \
-                                 toolpath's rest analysis. Pick the source \
-                                 toolpath below."
+                                "The regions another toolpath leaves: the pieces a \
+                                 Geodesic Adaptive rough did not cut, or another op's \
+                                 rest analysis. Pick the source below."
                             } else {
                                 "No other toolpaths in this project yet — add \
                                  one and generate it to use as the source. Picking it here \
@@ -685,7 +692,9 @@ pub(super) fn draw_cut_tab(
                                 source_toolpath_id: default_source,
                             };
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text(source_summary);
             });
 
             // GT-Q7: the Geometry tab draws the boundary selection, with the
@@ -747,11 +756,8 @@ pub(super) fn draw_cut_tab(
                         })
                         .response
                         .on_hover_text(
-                            "The toolpath whose rest analysis supplies the \
-                             rest regions. ANY operation produces them: picking it here \
-                             switches its analysis on, and the project needs a mesh. The \
-                             pencil rest-depth detector and the Unified Finish claims \
-                             pipeline attach their own.",
+                            "The toolpath whose regions bound this one. Picking it \
+                             switches its rest analysis on.",
                         );
                 });
 
@@ -1265,6 +1271,22 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool 
         clicked
     })
     .inner
+}
+
+/// G-D (§3): the clearing strategy that the Suggest run recommends and did
+/// not apply, from its records. The token is the serde spelling of
+/// `ClearingStrategy`, so serde reads it; there is no second token table.
+pub(super) fn strategy_suggestion(
+    warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
+) -> Option<crate::state::toolpath::ClearingStrategy> {
+    warnings?.iter().find_map(|warning| match warning {
+        rs_cam_core::feeds::suggest::SuggestWarning::StrategyRecommendedNotApplied {
+            param: "clearing_strategy",
+            recommended,
+            ..
+        } => serde_json::from_value(serde_json::Value::String(recommended.clone())).ok(),
+        _ => None,
+    })
 }
 
 /// The figures as one hover line, for a state word that may push them

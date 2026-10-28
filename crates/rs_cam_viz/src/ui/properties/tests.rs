@@ -443,6 +443,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
                 &mut entry,
                 &inputs,
                 None,
+                None,
                 &mut crate::state::pick::SelectionUi::default(),
                 &mut events,
             );
@@ -526,6 +527,7 @@ fn tab_texts(
             ui,
             &mut entry,
             &inputs,
+            None,
             None,
             &mut crate::state::pick::SelectionUi::default(),
             &mut events,
@@ -1634,6 +1636,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
             &mut entry,
             &inputs,
             None,
+            None,
             &mut crate::state::pick::SelectionUi::default(),
             &mut events,
         );
@@ -1655,5 +1658,146 @@ fn the_tool_picker_greys_refused_tools_r2() {
             .iter()
             .any(|t| t == rs_cam_core::session::NO_TOOL_NAME),
         "the Tool combo reads `No tool`; it rendered {texts:?}"
+    );
+}
+
+/// G-D (§3): the Suggest advice to use Geodesic Adaptive is one ⚡ chip in
+/// the Strategy row, not a text row. A click writes the strategy to the
+/// draft (the panel commits it as one `ReplaceToolpathConfig`). With no
+/// advice, or when the draft already holds it, there is no chip.
+#[test]
+fn the_strategy_row_carries_the_suggest_chip_g_d() {
+    use crate::state::toolpath::{Adaptive3dConfig, ClearingStrategy};
+    use rs_cam_core::feeds::suggest::SuggestWarning;
+    let warning = SuggestWarning::StrategyRecommendedNotApplied {
+        param: "clearing_strategy",
+        current: "contour_parallel".to_owned(),
+        recommended: "geodesic_adaptive".to_owned(),
+        reason: "mixed_terrain_classifier",
+    };
+    let suggestion = super::toolpath_panel::strategy_suggestion(Some(&[warning]));
+    assert_eq!(suggestion, Some(ClearingStrategy::GeodesicAdaptive));
+    assert_eq!(super::toolpath_panel::strategy_suggestion(Some(&[])), None);
+
+    // (the chips painted, the strategy after the frames) for one run.
+    let run = |strategy: ClearingStrategy, suggestion, click: bool| {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut cfg = Adaptive3dConfig {
+            clearing_strategy: strategy,
+            ..Adaptive3dConfig::default()
+        };
+        let mut chip_at: Option<egui::Pos2> = None;
+        let mut chips = 0;
+        for pass in 0..5 {
+            let mut input = egui::RawInput::default();
+            if click && let Some(pos) = chip_at {
+                match pass {
+                    3 => input.events.push(egui::Event::PointerMoved(pos)),
+                    4 => {
+                        for pressed in [true, false] {
+                            input.events.push(egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut out = ctx.run_ui(input, |ui| {
+                ui.set_max_width(264.0);
+                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion);
+            });
+            if pass == 2 {
+                for clipped in &out.shapes {
+                    if let egui::epaint::Shape::Text(text) = &clipped.shape
+                        && text.galley.job.text == "\u{26A1}"
+                    {
+                        chips += 1;
+                        chip_at = Some(clipped.shape.visual_bounding_rect().center());
+                    }
+                }
+            }
+            out.textures_delta.clear();
+        }
+        (chips, cfg.clearing_strategy)
+    };
+    let cp = ClearingStrategy::ContourParallel;
+    let ga = ClearingStrategy::GeodesicAdaptive;
+    // The two ⚡ pills of Stepover and Depth/Pass need pill data; with
+    // `pills: None` the only ⚡ is the Strategy chip.
+    assert_eq!(run(cp, None, false), (0, cp), "no advice, no chip");
+    assert_eq!(
+        run(ga, Some(ga), false),
+        (0, ga),
+        "the draft holds it: no chip"
+    );
+    assert_eq!(run(cp, Some(ga), false), (1, cp), "one chip, no write");
+    assert_eq!(run(cp, Some(ga), true), (1, ga), "a click writes the draft");
+}
+
+/// G-D (ruling D-1): with the boundary on, the Cut tab draws the `Source:`
+/// combo and no `Boundary: …` row above it; the row's text is the combo's
+/// hover. The row repeated the combo one line above.
+#[test]
+fn the_boundary_summary_is_the_source_hover_d1() {
+    use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Cut),
+        false,
+    );
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id.expect("the case tool"),
+        tc.model_id,
+        OperationType::Pocket,
+    );
+    entry.boundary.enabled = true;
+    entry.boundary.source = BoundarySource::Stock;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let mut events = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            super::toolpath_panel::draw_cut_tab(
+                ui,
+                &mut entry,
+                &inputs,
+                None,
+                None,
+                &mut crate::state::pick::SelectionUi::default(),
+                &mut events,
+            );
+        });
+        texts = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        out.textures_delta.clear();
+    }
+    assert!(
+        texts.iter().any(|t| t == "Source:"),
+        "non-vacuity: the boundary controls draw: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.starts_with("Boundary:")),
+        "the summary row is back: {texts:?}"
     );
 }

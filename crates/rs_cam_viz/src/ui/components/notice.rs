@@ -46,6 +46,9 @@ pub struct Notice {
     pub text: String,
     /// Optional grouping key. Notices sharing a group draw under one header.
     pub group: Option<String>,
+    /// Optional hover text of the row: the fix or the cause, so the row
+    /// stays one short line (G-D).
+    pub detail: Option<String>,
 }
 
 impl Notice {
@@ -54,7 +57,15 @@ impl Notice {
             role,
             text: text.into(),
             group: None,
+            detail: None,
         }
+    }
+
+    /// The hover text of the row.
+    #[must_use]
+    pub fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 
     #[must_use]
@@ -234,7 +245,7 @@ impl NoticeStack {
 /// One notice row. Geometry is ruling R13.
 fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
     let role = row.notice.role;
-    egui::Frame::default()
+    let frame = egui::Frame::default()
         .fill(role.tint())
         .corner_radius(tokens::RADIUS_SM)
         .inner_margin(egui::Margin::symmetric(
@@ -255,6 +266,9 @@ fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
                 }
             });
         });
+    if let Some(detail) = row.notice.detail.as_deref() {
+        frame.response.on_hover_text(detail);
+    }
 }
 
 /// A full-width tinted strip carrying one sentence and at most one action.

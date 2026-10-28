@@ -127,6 +127,15 @@ impl Notification {
     }
 }
 
+/// G-D (§4): an interactive project open that the loader refused: the file
+/// and the core error, kept typed so the modal lists the retired keys
+/// without a parse of the text.
+#[derive(Debug)]
+pub struct LoadRefusal {
+    pub path: std::path::PathBuf,
+    pub error: Box<rs_cam_core::session::SessionError>,
+}
+
 pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     pub state: AppState,
     events: Vec<AppEvent>,
@@ -143,6 +152,9 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// it in place while it stands.
     pin_drill_refusals_toasted: Vec<String>,
     show_load_warnings: bool,
+    /// G-D (§4): the last interactive open that the loader refused. The
+    /// app draws it as the "Project not opened" modal, not a toast.
+    load_refusal: Option<LoadRefusal>,
     status_message: Option<(String, Instant)>,
     notifications: Vec<Notification>,
     /// G-REGEN-RACE: toolpaths whose in-flight generation this controller
@@ -283,6 +295,7 @@ impl<B: ComputeBackend> AppController<B> {
             load_pin_warnings: Vec::new(),
             pin_drill_refusals_toasted: Vec::new(),
             show_load_warnings: false,
+            load_refusal: None,
             status_message: None,
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
@@ -555,6 +568,32 @@ impl<B: ComputeBackend> AppController<B> {
 
     pub fn set_show_load_warnings(&mut self, show: bool) {
         self.show_load_warnings = show;
+    }
+
+    /// G-D (§4): the refused open the modal shows, or `None`.
+    pub fn load_refusal(&self) -> Option<&LoadRefusal> {
+        self.load_refusal.as_ref()
+    }
+
+    /// Close the "Project not opened" modal.
+    pub fn clear_load_refusal(&mut self) {
+        self.load_refusal = None;
+    }
+
+    /// The failure of an interactive open of `path`. A load refusal
+    /// (`VizError::ProjectLoad`) opens the modal with the structured error;
+    /// every other error is a toast, as before.
+    pub fn report_open_error(&mut self, path: &std::path::Path, error: VizError) {
+        match error {
+            VizError::ProjectLoad(error) => {
+                tracing::error!("Failed to load project {}: {error}", path.display());
+                self.load_refusal = Some(LoadRefusal {
+                    path: path.to_path_buf(),
+                    error,
+                });
+            }
+            other => self.push_error(&other),
+        }
     }
 
     /// Push a notification from a VizError (logs via tracing AND shows toast).

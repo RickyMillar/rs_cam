@@ -182,3 +182,32 @@ fn reset_clears_the_run_and_the_stamps_without_dirtying_project() {
     );
     assert_eq!(controller.state.gui.dirty, dirty_before);
 }
+
+/// G-D (§4): an interactive open of a missing file is a load refusal. It
+/// opens the "Project not opened" modal with one row, not a toast. Any
+/// other error stays a toast.
+#[test]
+fn a_refused_open_opens_the_modal_not_a_toast_g_d() {
+    let mut controller = AppController::with_backend(ScriptedBackend::new());
+    let path = std::path::Path::new("/nonexistent/rs_cam_g_d/missing.toml");
+    let error = controller
+        .open_job_from_path(path)
+        .expect_err("a missing file does not load");
+    assert!(
+        matches!(error, crate::error::VizError::ProjectLoad(_)),
+        "the load door builds ProjectLoad: {error:?}"
+    );
+    let toasts = controller.notifications().len();
+    controller.report_open_error(path, error);
+    assert_eq!(controller.notifications().len(), toasts, "no toast");
+    let refusal = controller.load_refusal().expect("the modal opens");
+    let view = crate::ui::load_refusal_modal::RefusalView::of(refusal);
+    assert_eq!(view.file_name, "missing.toml");
+    assert_eq!(view.notices.len(), 1, "one row: {view:?}");
+    controller.clear_load_refusal();
+    assert!(controller.load_refusal().is_none());
+
+    controller.report_open_error(path, crate::error::VizError::Other("x".to_owned()));
+    assert!(controller.load_refusal().is_none(), "not a load refusal");
+    assert_eq!(controller.notifications().len(), toasts + 1, "a toast");
+}

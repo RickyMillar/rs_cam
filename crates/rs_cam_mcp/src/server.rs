@@ -1680,7 +1680,7 @@ impl TryFrom<SetStockConfigParam> for rs_cam_core::compute::stock_config::StockC
 
 /// `set_machine_kinematics` — typed write path for the accel /
 /// junction-deviation numbers that decide cycle time and the
-/// parallel-vs-spiral strategy verdict.
+/// strategy advisor's ranking.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SetMachineKinematicsParam {
@@ -1725,7 +1725,8 @@ pub struct SetBoundaryConfigParam {
     pub offset: Option<f64>,
     /// Required when `source` is "derived_rest_regions": the stable id
     /// (from `get_toolpath_params`'s `id` field, not an index) of the
-    /// toolpath whose pencil rest-depth result supplies the boundary.
+    /// toolpath whose rest regions supply the boundary (its rest analysis,
+    /// or the pieces a Geodesic Adaptive rough left).
     pub source_toolpath_id: Option<usize>,
     /// Required when `source` is "selection": the selection whose closed
     /// regions bound the toolpath, as the project file holds it. The closed

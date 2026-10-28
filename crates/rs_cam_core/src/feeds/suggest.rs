@@ -449,7 +449,7 @@ pub enum SuggestWarning {
     /// ruling Q11, G10, 2026-09-25.)
     /// Shipped for `clearing_strategy`, where auto-selection is
     /// deferred to v4 until the classifier is calibrated (the
-    /// `ContourParallel` → `Adaptive` promotion on mixed terrain needs
+    /// `ContourParallel` → `GeodesicAdaptive` promotion on mixed terrain needs
     /// uncut-band evidence, not just a bbox heuristic).
     ///
     /// `param` is the snake-case field name, the values are labels, and

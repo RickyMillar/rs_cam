@@ -823,8 +823,9 @@ pub(crate) fn build_entry_from_session_and_gui(
     toolpath_panel_snapshot(id, session, gui).map(|snapshot| snapshot.entry)
 }
 
-/// The one line the Geometry tab prints above the boundary controls
-/// (UX-R03-009, G-BOUNDARYINHERIT). It names the STORED `boundary.source`,
+/// The hover of the Cut tab's boundary `Source:` combo (UX-R03-009,
+/// G-BOUNDARYINHERIT; a row until G-D, ruling D-1). It names the STORED
+/// `boundary.source`,
 /// which is the boundary generation clips to. `auto` appends "(auto)" when
 /// the caller can prove the controller assigned the source on add; the
 /// panel cannot today (no provenance is stored), so it passes `false`.

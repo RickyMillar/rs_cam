@@ -83,6 +83,10 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// `SelectionReport::holds_a_model_area`). The Pocket editor shows the
     /// setting only then, or while it is on.
     pub model_areas: bool,
+    /// G-D (§3): the clearing strategy that the Suggest run recommends and
+    /// did not apply (`SuggestWarning::StrategyRecommendedNotApplied`).
+    /// The 3D Rough editor draws a ⚡ chip for it beside the Strategy combo.
+    pub strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -303,7 +307,7 @@ editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
     draw_dropcutter_params(ui, cfg, cx.pills);
 });
 editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
-    draw_adaptive3d_params(ui, cfg, cx.pills);
+    draw_adaptive3d_params(ui, cfg, cx.pills, cx.strategy_suggestion);
 });
 editor!(
     ed_waterline,

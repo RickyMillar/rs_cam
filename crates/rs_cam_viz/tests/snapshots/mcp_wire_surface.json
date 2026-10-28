@@ -5630,7 +5630,7 @@
           "description": "The boundary source. Omit for `stock`."
         },
         "source_toolpath_id": {
-          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose pencil rest-depth result supplies the boundary.",
+          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose rest regions supply the boundary (its rest analysis,\nor the pieces a Geodesic Adaptive rough left).",
           "format": "uint",
           "minimum": 0,
           "type": [
@@ -5892,7 +5892,7 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
+      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nstrategy advisor's ranking.",
       "properties": {
         "acceleration_mm_s2": {
           "description": "Isotropic fallback acceleration in mm/s^2. Only used when the\nper-axis triple is absent; when all three axes are given this is\nset to their mean unless explicitly passed.",

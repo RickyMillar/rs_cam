@@ -722,7 +722,9 @@ impl RsCamApp {
                 self.fit_camera_to_first_model();
                 tracing::info!("Loaded job from {}", path.display());
             }
-            Err(error) => self.controller.push_error(&error),
+            // G-D (§4): a load refusal opens the "Project not opened"
+            // modal; any other error stays a toast.
+            Err(error) => self.controller.report_open_error(path, error),
         }
     }
 }
