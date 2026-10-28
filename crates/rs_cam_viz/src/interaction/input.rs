@@ -116,8 +116,13 @@ pub enum InputAction {
     /// Zoom by the distance ratio `factor` toward the point under `at`
     /// (screen points), or toward the target when `at` is `None`.
     Zoom { factor: f32, at: Option<egui::Pos2> },
-    /// Hand the click to the click chain (`handle_viewport_click`).
-    Click { pos: egui::Pos2, shift: bool },
+    /// Hand the click to the click chain (`handle_viewport_click`) with
+    /// the modifiers of the press. `ui::pick_bar::PickClick::primary` is the
+    /// one translation of the modifiers to a pick click (B4).
+    Click {
+        pos: egui::Pos2,
+        modifiers: egui::Modifiers,
+    },
     /// Hand the right-click to the tab delete, then the layer pick.
     SecondaryClick { pos: egui::Pos2 },
     /// The release of a box: the rectangle and its rule.
@@ -237,7 +242,7 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
     {
         actions.push(InputAction::Click {
             pos,
-            shift: s.modifiers.shift,
+            modifiers: s.modifiers,
         });
     }
     if s.secondary_clicked
@@ -643,22 +648,29 @@ mod tests {
 
     #[test]
     fn step_a_click_is_a_click() {
-        let mut state = DragState::Idle;
-        let s = InputSample {
-            clicked: true,
-            pointer: Some(egui::pos2(5.0, 6.0)),
-            modifiers: egui::Modifiers::SHIFT,
-            ..sample()
-        };
-        let actions = step(&mut state, &s, &ENV);
-        assert_eq!(state, DragState::Idle);
-        assert_eq!(
-            actions,
-            vec![InputAction::Click {
-                pos: egui::pos2(5.0, 6.0),
-                shift: true
-            }]
-        );
+        for modifiers in [
+            egui::Modifiers::NONE,
+            egui::Modifiers::SHIFT,
+            egui::Modifiers::COMMAND,
+        ] {
+            let mut state = DragState::Idle;
+            let s = InputSample {
+                clicked: true,
+                pointer: Some(egui::pos2(5.0, 6.0)),
+                modifiers,
+                ..sample()
+            };
+            let actions = step(&mut state, &s, &ENV);
+            assert_eq!(state, DragState::Idle);
+            assert_eq!(
+                actions,
+                vec![InputAction::Click {
+                    pos: egui::pos2(5.0, 6.0),
+                    modifiers
+                }],
+                "{modifiers:?}"
+            );
+        }
     }
 
     #[test]

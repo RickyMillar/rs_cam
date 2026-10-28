@@ -575,6 +575,33 @@ impl<B: ComputeBackend> AppController<B> {
                     ),
                 }
             }
+            AppEvent::RemovePick {
+                toolpath_id,
+                target,
+                key,
+            } => {
+                // B4: the same resolution as a click (`click_edit`, O-PICK
+                // in core), but only a `RemovePick` answer gives an edit.
+                let edit = self
+                    .state
+                    .session()
+                    .find_toolpath_config_by_id(toolpath_id)
+                    .map(|(_, tc)| self.state.session().click_edit(tc, target, key));
+                match edit {
+                    Some(Ok(rs_cam_core::session::ClickEdit::Selection(
+                        edit @ rs_cam_core::selection::SelectionEdit::RemovePick(_),
+                    ))) => self.apply_selection_edit(toolpath_id, target, edit),
+                    Some(Ok(
+                        rs_cam_core::session::ClickEdit::Selection(_)
+                        | rs_cam_core::session::ClickEdit::BoundaryToSelection { .. },
+                    ))
+                    | None => {}
+                    Some(Err(error)) => self.push_notification(
+                        format!("Could not read the selection: {error}"),
+                        super::Severity::Warning,
+                    ),
+                }
+            }
             AppEvent::TogglePick {
                 toolpath_id,
                 target,

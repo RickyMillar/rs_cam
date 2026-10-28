@@ -777,7 +777,8 @@ fn click(
         .selection_ui
         .pick_mut()
         .expect("pick mode on");
-    let event = click_event(mode, item_use, &held, key, chip_off, button);
+    let event = click_event(mode, item_use, &held, key, chip_off, button)
+        .expect("a plain, shift or right click always sends an event");
     let name = match &event {
         AppEvent::TogglePick { .. } => "TogglePick",
         AppEvent::AddPick { .. } => "AddPick",

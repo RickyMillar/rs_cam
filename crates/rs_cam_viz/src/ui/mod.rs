@@ -401,6 +401,17 @@ pub enum AppEvent {
         key: rs_cam_core::selection::MatchKey,
     },
 
+    // B4: one viewport Ctrl-click on an item in pick mode. It removes the
+    // item and never adds it. The controller asks core `click_edit`, as for
+    // `AddPick`; only a `RemovePick` answer gives an edit (a Ctrl-click on
+    // an item that is not selected, or on a default selection, writes
+    // nothing).
+    RemovePick {
+        toolpath_id: ToolpathId,
+        target: rs_cam_core::session::SelectionTarget,
+        key: rs_cam_core::selection::MatchKey,
+    },
+
     // Geometry selection P4.5, P3: one viewport right-click on an item in
     // pick mode. The layer of the item becomes a rule for the kinds `kinds`
     // (the chips that are on) and, for the circles, the diameter range

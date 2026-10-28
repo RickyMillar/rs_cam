@@ -1003,6 +1003,55 @@ mod tests {
         );
     }
 
+    /// B4 (SEL-3), MCP parity of a Ctrl-click: the GUI Ctrl-click (the
+    /// `AppEvent::RemovePick` handler: core `click_edit`, applied only when
+    /// it answers `RemovePick`) and the wire `{"remove_pick": key}` of the
+    /// same item store ONE selection. On toolpath 0 (a CUT rule that is
+    /// not the default) the rule turns into picks less the item (GT-Q8).
+    #[test]
+    fn mcp_and_gui_give_one_ctrl_click_remove_sel3() {
+        let cut = project()
+            .list_model_items(rs_cam_core::ids::ModelId::from_raw(0), Some("CUT"), None)
+            .unwrap();
+        let mut gui = project();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
+        let report = gui.selection_status(&tc, SelectionTarget::Op).unwrap();
+        let held = cut
+            .iter()
+            .find(|i| {
+                report
+                    .selected
+                    .iter()
+                    .any(|k| k.names_same_geometry(&i.key))
+            })
+            .expect("fixture: the CUT rule holds an item")
+            .key
+            .clone();
+        let click = gui
+            .click_edit(&tc, SelectionTarget::Op, held.clone())
+            .unwrap();
+        let rs_cam_core::session::ClickEdit::Selection(remove @ SelectionEdit::RemovePick(_)) =
+            click
+        else {
+            panic!("a Ctrl-click on a held item resolves to RemovePick: {click:?}");
+        };
+        edit(&mut gui, 0, remove);
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({ "remove_pick": serde_json::to_value(&held).unwrap() }),
+        );
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one remove, two doors");
+        assert!(
+            !stored(&gui, 0)
+                .picks()
+                .iter()
+                .any(|k| k.names_same_geometry(&held)),
+            "the item left the selection"
+        );
+    }
+
     /// SEL-4 / E1-E3, MCP parity of a box select: the GUI batch
     /// (`SelectionEdit::AddPicks` / `RemovePicks` through `EditSelection`)
     /// and the wire `add_picks` / `remove_picks` / `replace` of the same

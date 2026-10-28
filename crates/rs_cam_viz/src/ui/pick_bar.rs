@@ -33,8 +33,8 @@ use crate::ui::tokens;
 const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 
 /// The help line of the bar.
-pub const PICK_HELP: &str =
-    "Click: add or remove the item. Shift-click: add the item. Right-click: add its layer.";
+pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the item. \
+     Ctrl-click: remove the item. Right-click: add its layer.";
 
 /// The button of a pick-mode click (P3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,8 +43,24 @@ pub enum PickClick {
     Plain,
     /// A primary click with Shift: add the item (CAD convention).
     Shift,
+    /// A primary click with Ctrl (Cmd on macOS): remove the item (B4).
+    Ctrl,
     /// A secondary click: add the layer of the item as a rule.
     Secondary,
+}
+
+impl PickClick {
+    /// The click of a primary press with `modifiers`: THE translation of
+    /// the modifiers of a pick click. Ctrl wins over Shift.
+    pub fn primary(modifiers: egui::Modifiers) -> Self {
+        if modifiers.command {
+            Self::Ctrl
+        } else if modifiers.shift {
+            Self::Shift
+        } else {
+            Self::Plain
+        }
+    }
 }
 
 /// THE event of a pick-mode click on the item `key` (P3, P4). When
@@ -54,6 +70,8 @@ pub enum PickClick {
 /// - [`PickClick::Plain`]: `TogglePick`; on an item whose chip was off,
 ///   `AddPick` (the click picks the item and never removes it).
 /// - [`PickClick::Shift`]: `AddPick`, one item.
+/// - [`PickClick::Ctrl`]: `RemovePick`, one item; on an item whose chip
+///   was off, no event (that item is not selected).
 /// - [`PickClick::Secondary`]: `PickLayer` with the kinds of the chips
 ///   that are on and the circle range.
 pub fn click_event(
@@ -63,30 +81,36 @@ pub fn click_event(
     key: rs_cam_core::selection::MatchKey,
     chip_off: Option<ItemKind>,
     click: PickClick,
-) -> crate::ui::AppEvent {
+) -> Option<crate::ui::AppEvent> {
     use crate::ui::AppEvent;
     if let Some(kind) = chip_off {
         let _ = mode.filter.kinds.insert(kind);
     }
     let (toolpath_id, target) = (mode.toolpath_id, mode.target);
     match click {
-        PickClick::Plain if chip_off.is_none() => AppEvent::TogglePick {
+        PickClick::Plain if chip_off.is_none() => Some(AppEvent::TogglePick {
             toolpath_id,
             target,
             key,
-        },
-        PickClick::Plain | PickClick::Shift => AppEvent::AddPick {
+        }),
+        PickClick::Plain | PickClick::Shift => Some(AppEvent::AddPick {
             toolpath_id,
             target,
             key,
-        },
-        PickClick::Secondary => AppEvent::PickLayer {
+        }),
+        PickClick::Ctrl if chip_off.is_none() => Some(AppEvent::RemovePick {
+            toolpath_id,
+            target,
+            key,
+        }),
+        PickClick::Ctrl => None,
+        PickClick::Secondary => Some(AppEvent::PickLayer {
             toolpath_id,
             target,
             key,
             kinds: mode.filter.effective_kinds(item_use, held),
             circle: mode.filter.circle,
-        },
+        }),
     }
 }
 
@@ -413,7 +437,7 @@ pub fn hover_text(
         "Right-click: the item is on no layer."
     };
     format!(
-        "{} \u{2014} {click}.{chip}\nShift-click: add the item. {layer}",
+        "{} \u{2014} {click}.{chip}\nShift-click: add the item. Ctrl-click: remove the item. {layer}",
         ItemRef::new(key.clone())
     )
 }

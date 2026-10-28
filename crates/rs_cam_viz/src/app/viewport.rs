@@ -224,7 +224,7 @@ impl RsCamApp {
                             click,
                         )
                     });
-                if let Some(event) = event {
+                if let Some(event) = event.flatten() {
                     self.controller.events_mut().push(event);
                 }
             }
@@ -455,7 +455,11 @@ impl RsCamApp {
     }
 
     /// Click-to-select: find nearest toolpath to click position in screen space.
-    fn handle_viewport_click(&mut self, click_pos: egui::Pos2, shift: bool) {
+    fn handle_viewport_click(
+        &mut self,
+        click_pos: egui::Pos2,
+        click: crate::ui::pick_bar::PickClick,
+    ) {
         let rect = self.viewport_rect;
         if rect.width() < 1.0 || rect.height() < 1.0 {
             return;
@@ -465,11 +469,6 @@ impl RsCamApp {
         if self.handle_tab_click(click_pos) {
             return;
         }
-        let click = if shift {
-            crate::ui::pick_bar::PickClick::Shift
-        } else {
-            crate::ui::pick_bar::PickClick::Plain
-        };
         if self.handle_pick_mode_click(click_pos, click) {
             return;
         }
@@ -768,10 +767,10 @@ impl RsCamApp {
         // Click-to-select toolpath in viewport. A click that only closed a
         // dock popover does not also select (MOCKUPS §12, Q1).
         for action in &actions {
-            if let InputAction::Click { pos, shift } = *action
+            if let InputAction::Click { pos, modifiers } = *action
                 && !dock.closed_popover_on_click
             {
-                self.handle_viewport_click(pos, shift);
+                self.handle_viewport_click(pos, crate::ui::pick_bar::PickClick::primary(modifiers));
             }
         }
 
