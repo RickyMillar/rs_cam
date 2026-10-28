@@ -86,3 +86,4 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 - **Advisor:** about 38 s is acceptable for now.
 - **Merge:** merge now, test-cut later. Done: master cc00aa0c3 merges geodesic-integration.
 - **G-RESTDOC:** the operator likes the edge contour pass. They asked what the region-side fix would do to the numbers, and how either option behaves when there are many boundaries or regions. Study first (C24), then decide.
+- **Core full gate:** not run yet; the operator deferred it (2026-10-28). C1 can make a core test that generated through a collapsed boundary refuse; only the full gate would show it.
