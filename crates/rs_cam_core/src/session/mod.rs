@@ -76,7 +76,7 @@ pub use command::{
     UpdateStockFromBboxArgs,
 };
 pub use compute::{
-    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle,
+    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle, LargerRestConsumer,
     RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
     execute_generation, execute_job, execute_recommend_clearing_strategy,
 };

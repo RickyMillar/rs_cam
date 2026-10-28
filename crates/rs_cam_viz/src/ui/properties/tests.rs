@@ -438,6 +438,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
                 None,
                 None,
                 &mut crate::state::pick::SelectionUi::default(),
+                &mut crate::state::panels::ContainmentAutoCorrect::default(),
                 &mut events,
             );
         });
@@ -523,6 +524,7 @@ fn tab_texts(
             None,
             None,
             &mut crate::state::pick::SelectionUi::default(),
+            &mut crate::state::panels::ContainmentAutoCorrect::default(),
             &mut events,
         ),
         _ => super::geometry_tab::draw_geometry_tab(
@@ -1631,6 +1633,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
             None,
             None,
             &mut crate::state::pick::SelectionUi::default(),
+            &mut crate::state::panels::ContainmentAutoCorrect::default(),
             &mut events,
         );
     });
@@ -1772,6 +1775,7 @@ fn the_boundary_summary_is_the_source_hover_d1() {
                 None,
                 None,
                 &mut crate::state::pick::SelectionUi::default(),
+                &mut crate::state::panels::ContainmentAutoCorrect::default(),
                 &mut events,
             );
         });
@@ -1922,5 +1926,221 @@ fn the_rest_refusal_faces_are_short_g_e() {
     assert!(
         ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), glyph)),
         "the app fonts have no {GENERATE_SOURCE_GLYPH}"
+    );
+}
+
+/// A larger consumer of `source` (Ø10 against Ø6) with an `Inside` answer.
+fn larger_consumer(
+    source: rs_cam_core::ToolpathId,
+    inside: crate::state::runtime::InsideAnswer,
+) -> super::RestContainment {
+    super::RestContainment {
+        larger: rs_cam_core::session::LargerRestConsumer {
+            op_name: "Edges".to_owned(),
+            source_toolpath_id: source,
+            source_name: "Body rough".to_owned(),
+            tool_radius_mm: 5.0,
+            source_tool_radius_mm: 3.0,
+        },
+        inside,
+    }
+}
+
+/// G-C (D-2): the `Rest Regions` pick writes `Inside` with the `⟲` badge
+/// when the tool is larger and `Inside` keeps area. It writes nothing when
+/// `Inside` would collapse, when the answer is unknown, for another source,
+/// or when the containment is `Inside` already. An edit clears the badge;
+/// another toolpath drops it.
+#[test]
+fn the_rest_pick_sets_inside_with_a_badge_d2() {
+    use super::toolpath_panel::pick_sets_inside;
+    use crate::state::runtime::InsideAnswer;
+    use crate::state::toolpath::BoundaryContainment;
+    let source = rs_cam_core::ToolpathId::from_raw(3);
+    let other = rs_cam_core::ToolpathId::from_raw(4);
+    let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
+    badge.scope(rs_cam_core::ToolpathId::from_raw(9));
+
+    let keeps = larger_consumer(source, InsideAnswer::Keeps);
+    let mut containment = BoundaryContainment::Center;
+    assert!(pick_sets_inside(
+        &mut containment,
+        Some(&keeps),
+        source,
+        &mut badge
+    ));
+    assert_eq!(containment, BoundaryContainment::Inside);
+    assert_eq!(
+        badge.hover(),
+        Some(
+            "Set to Inside: this tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00)."
+        )
+    );
+    badge.clear();
+    assert_eq!(badge.hover(), None, "an edit clears the badge");
+
+    for (pick, to) in [
+        (
+            larger_consumer(source, InsideAnswer::Collapses("x".to_owned())),
+            source,
+        ),
+        (
+            larger_consumer(source, InsideAnswer::Unknown("y".to_owned())),
+            source,
+        ),
+        (keeps.clone(), other),
+    ] {
+        let mut containment = BoundaryContainment::Outside;
+        assert!(!pick_sets_inside(
+            &mut containment,
+            Some(&pick),
+            to,
+            &mut badge
+        ));
+        assert_eq!(containment, BoundaryContainment::Outside);
+    }
+    let mut containment = BoundaryContainment::Center;
+    assert!(!pick_sets_inside(
+        &mut containment,
+        None,
+        source,
+        &mut badge
+    ));
+
+    badge.set("h".to_owned());
+    badge.scope(rs_cam_core::ToolpathId::from_raw(10));
+    assert_eq!(badge.hover(), None, "another toolpath drops the badge");
+}
+
+/// G-C (§2 c, d): the refused-option hover names the sizes, the overrun
+/// and the fix; under a collapse the fix is the smaller tool. The region
+/// count reads `· N regions` (one phrase, §6).
+#[test]
+fn the_containment_hover_and_the_region_count_g_c() {
+    use super::toolpath_panel::{regions_phrase, rest_source_label};
+    use crate::state::runtime::InsideAnswer;
+    let source = rs_cam_core::ToolpathId::from_raw(3);
+    assert_eq!(
+        larger_consumer(source, InsideAnswer::Keeps).hover(),
+        "This tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00). \
+         It could cut 2.00 mm past that op's boundary. Use Inside."
+    );
+    assert!(
+        larger_consumer(source, InsideAnswer::Collapses("c".to_owned()))
+            .hover()
+            .ends_with(
+                "Inside leaves no area for this tool here: use a tool no larger than \u{00D8}6.00."
+            )
+    );
+    let square = rs_cam_core::polygon::Polygon2::rectangle(0.0, 0.0, 1.0, 1.0);
+    assert_eq!(
+        rest_source_label("Body rough", Some(&vec![square.clone(); 14])),
+        "Body rough \u{00B7} 14 regions"
+    );
+    assert_eq!(
+        rest_source_label("Body rough", Some(&vec![square])),
+        "Body rough \u{00B7} 1 region"
+    );
+    assert_eq!(
+        rest_source_label("Body rough", Some(&Vec::new())),
+        "Body rough"
+    );
+    assert_eq!(rest_source_label("Body rough", None), "Body rough");
+    assert_eq!(regions_phrase(2), "2 regions");
+}
+
+/// G-C (§2 c, d): with a larger consumer on a `Center` containment, the
+/// Containment row draws `Use Inside`, and a click writes `Inside` to the
+/// draft. When `Inside` would collapse, the act is off and the click
+/// writes nothing. The two options `Center` and `Outside` are refused in
+/// the combo (their hover is the sizes).
+#[test]
+fn use_inside_sits_on_the_containment_row_g_c() {
+    use crate::state::runtime::InsideAnswer;
+    use crate::state::toolpath::{
+        BoundaryContainment, BoundarySource, OperationType, ToolpathEntry,
+    };
+    let source = rs_cam_core::ToolpathId::from_raw(42);
+    let run = |inside: InsideAnswer| {
+        let (session, _mesh) = one_pocket_session();
+        let tc = &session.toolpath_configs()[0];
+        let mut inputs = super::toolpath_panel_inputs(
+            tc.id,
+            &session,
+            &crate::state::runtime::GuiState::default(),
+            None,
+            Some(ToolpathTab::Cut),
+            false,
+        );
+        inputs.rest_containment = Some(larger_consumer(source, inside));
+        inputs.boundary_source_candidates =
+            vec![(source, "Body rough".to_owned(), false, None, None, None)];
+        let mut entry = ToolpathEntry::for_operation(
+            tc.id,
+            "Edges".to_owned(),
+            tc.tool_id.expect("the case tool"),
+            tc.model_id,
+            OperationType::Pocket,
+        );
+        entry.boundary.enabled = true;
+        entry.boundary.source = BoundarySource::DerivedRestRegions {
+            source_toolpath_id: source,
+        };
+        entry.boundary.containment = BoundaryContainment::Center;
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
+        let mut act_at: Option<egui::Pos2> = None;
+        let mut painted = false;
+        for pass in 0..5 {
+            let mut input = egui::RawInput::default();
+            if pass == 3
+                && let Some(pos) = act_at
+            {
+                input.events.push(egui::Event::PointerMoved(pos));
+                for pressed in [true, false] {
+                    input.events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+            let mut events = Vec::new();
+            let mut out = ctx.run_ui(input, |ui| {
+                super::toolpath_panel::draw_cut_tab(
+                    ui,
+                    &mut entry,
+                    &inputs,
+                    None,
+                    None,
+                    &mut crate::state::pick::SelectionUi::default(),
+                    &mut badge,
+                    &mut events,
+                );
+            });
+            for clipped in &out.shapes {
+                if let egui::epaint::Shape::Text(text) = &clipped.shape
+                    && text.galley.job.text == super::toolpath_panel::USE_INSIDE
+                {
+                    painted = true;
+                    act_at = Some(clipped.shape.visual_bounding_rect().center());
+                }
+            }
+            out.textures_delta.clear();
+        }
+        (painted, entry.boundary.containment)
+    };
+    assert_eq!(
+        run(InsideAnswer::Keeps),
+        (true, BoundaryContainment::Inside),
+        "the act writes Inside"
+    );
+    assert_eq!(
+        run(InsideAnswer::Collapses("c".to_owned())),
+        (true, BoundaryContainment::Center),
+        "the act is off when Inside collapses"
     );
 }

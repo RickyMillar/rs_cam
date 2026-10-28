@@ -111,6 +111,10 @@ pub struct ToolpathRuntime {
     /// G-B2: the feed caps of the stored result, counted once per result.
     /// Read it through [`Self::caps`].
     pub cap_memo: CapMemo,
+    /// G-C: whether `Inside` containment would collapse this toolpath's
+    /// rest-regions boundary, asked once per revision and source result.
+    /// Read it through [`InsideMemo::answer`].
+    pub inside_memo: InsideMemo,
 }
 
 impl ToolpathRuntime {
@@ -136,7 +140,80 @@ impl ToolpathRuntime {
             semantic_trace: None,
             debug_trace_path: None,
             cap_memo: CapMemo::default(),
+            inside_memo: InsideMemo::default(),
         }
+    }
+}
+
+// ── Would Inside collapse? (G-C) ──────────────────────────────────────
+
+/// G-C: the answer of core `ProjectSession::boundary_collapse_with` for a
+/// rest-regions boundary switched to `Inside`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsideAnswer {
+    /// `Inside` keeps area for the tool: the `[Use Inside]` act and the
+    /// D-2 pick may write it.
+    Keeps,
+    /// `Inside` leaves no area (G-BOUNDCOLLAPSE): the refusal sentence.
+    Collapses(String),
+    /// The inputs do not resolve (for example the source has no result):
+    /// the answer is not known, so nothing writes `Inside`.
+    Unknown(String),
+}
+
+/// The key of an [`InsideAnswer`]: the consumer's revision, the source,
+/// and the source's result (a `Weak`, so a regenerated source asks again).
+#[derive(Debug)]
+struct InsideKey {
+    revision: u64,
+    source: ToolpathId,
+    source_result: Option<std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
+}
+
+impl InsideKey {
+    fn matches(&self, other: &Self) -> bool {
+        self.revision == other.revision
+            && self.source == other.source
+            && match (&self.source_result, &other.source_result) {
+                (Some(a), Some(b)) => std::sync::Weak::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+/// The last [`InsideAnswer`] of one toolpath. The answer costs one input
+/// resolution, so the panel asks it once per key, not once per frame. A
+/// frame reads through `&GuiState`, so the memo writes through a lock.
+#[derive(Debug, Default)]
+pub struct InsideMemo(std::sync::Mutex<Option<(InsideKey, InsideAnswer)>>);
+
+impl InsideMemo {
+    /// The answer for the consumer at `revision` and the source `source`
+    /// with its result `source_result`; `ask` runs only on a new key.
+    pub fn answer(
+        &self,
+        revision: u64,
+        source: ToolpathId,
+        source_result: Option<&Arc<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
+        ask: impl FnOnce() -> InsideAnswer,
+    ) -> InsideAnswer {
+        let key = InsideKey {
+            revision,
+            source,
+            source_result: source_result.map(Arc::downgrade),
+        };
+        let Ok(mut slot) = self.0.lock() else {
+            return ask();
+        };
+        if let Some((stored, answer)) = slot.as_ref()
+            && stored.matches(&key)
+        {
+            return answer.clone();
+        }
+        let answer = ask();
+        *slot = Some((key, answer.clone()));
+        answer
     }
 }
 

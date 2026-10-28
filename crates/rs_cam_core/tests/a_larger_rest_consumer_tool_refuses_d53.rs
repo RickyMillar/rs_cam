@@ -227,3 +227,62 @@ fn a_larger_rest_consumer_tool_refuses() {
     }
     assert!(wide.result_at(1).is_some(), "wide channel: no result");
 }
+
+/// G-C (§2 a): the read doors of the GUI. `larger_rest_consumer` is `Some`
+/// for the larger tool whatever the containment, and `None` for an equal
+/// tool. `larger_rest_consumer_refusal` is the generation refusal word for
+/// word, and `None` under `Inside`. `boundary_collapse_with` answers "would
+/// Inside collapse?" before any write: yes on the narrow channel, no on the
+/// wide one.
+#[test]
+fn the_read_doors_answer_as_generation_does_g_c() {
+    let (own, theirs) = (LARGER_DIAMETER / 2.0, SOURCE_DIAMETER / 2.0);
+    for containment in [
+        BoundaryContainment::Center,
+        BoundaryContainment::Outside,
+        BoundaryContainment::Inside,
+    ] {
+        let s = session(LARGER_DIAMETER, containment);
+        let source = s.toolpath_configs()[0].id;
+        let larger = s
+            .larger_rest_consumer(1, source)
+            .expect("a larger tool, whatever the containment");
+        assert!((larger.tool_radius_mm - own).abs() < 1e-9);
+        assert!((larger.source_tool_radius_mm - theirs).abs() < 1e-9);
+        assert!((larger.overrun_mm() - (own - theirs)).abs() < 1e-9);
+    }
+    let mut center = session(LARGER_DIAMETER, BoundaryContainment::Center);
+    let refusal = center
+        .larger_rest_consumer_refusal(1)
+        .expect("Center refuses");
+    match generate_consumer(&mut center) {
+        Err(SessionError::OperationFailed(text)) => assert_eq!(text, refusal),
+        other => panic!("Center did not refuse: {other:?}"),
+    }
+    let inside = session(LARGER_DIAMETER, BoundaryContainment::Inside);
+    assert_eq!(inside.larger_rest_consumer_refusal(1), None);
+    let equal = session(SOURCE_DIAMETER, BoundaryContainment::Center);
+    let source = equal.toolpath_configs()[0].id;
+    assert_eq!(equal.larger_rest_consumer(1, source), None);
+
+    let to_inside = |s: &ProjectSession| {
+        let mut boundary = s.toolpath_configs()[1].boundary.clone();
+        boundary.containment = BoundaryContainment::Inside;
+        s.boundary_collapse_with(1, &boundary)
+            .expect("the inputs resolve")
+    };
+    assert!(
+        to_inside(&center).is_some(),
+        "Inside collapses on the narrow channel"
+    );
+    let wide = session_on(
+        WIDE_CHANNEL_HALF_WIDTH,
+        LARGER_DIAMETER,
+        BoundaryContainment::Center,
+    );
+    assert_eq!(
+        to_inside(&wide),
+        None,
+        "Inside keeps area on the wide channel"
+    );
+}

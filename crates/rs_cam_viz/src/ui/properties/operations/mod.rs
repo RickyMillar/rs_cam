@@ -42,12 +42,12 @@ pub(super) use shape_diagrams::{
     draw_ramp_finish_diagram, draw_spiral_diagram, draw_steep_shallow_diagram,
     draw_stepover_diagram, draw_tab_diagram,
 };
-pub(in crate::ui::properties) use validate::hole_refusal;
 pub use validate::{
     DepthBeyondStock, ThroughCut, ToolpathValidationContext, collect_diagnostics,
     depth_beyond_stock, profile_through_cut, profile_through_cut_line, validate_toolpath,
     validate_toolpath_config,
 };
+pub(in crate::ui::properties) use validate::{hole_refusal, rest_consumer_refusal};
 
 use crate::state::toolpath::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, OperationType, ReferenceOffset,

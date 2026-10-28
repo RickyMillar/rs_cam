@@ -198,6 +198,9 @@ pub struct PanelDrafts {
     /// The last refused heights edit of the selected toolpath (F033). The
     /// Heights tab names it under its rows.
     pub heights_refusal: HeightsRefusal,
+    /// G-C (D-2): the `⟲` badge of a containment the `Rest Regions` pick
+    /// set to `Inside`, scoped to its toolpath.
+    pub containment_autocorrect: ContainmentAutoCorrect,
 }
 
 /// The last refused heights edit (F033), which the Heights tab names under
@@ -242,6 +245,45 @@ impl HeightsRefusal {
     pub fn text(&self, now: f64) -> Option<&str> {
         let (text, at) = self.line.as_ref()?;
         (now - at <= Self::SHOW_S).then_some(text.as_str())
+    }
+}
+
+/// G-C (D-2, review §2 e): the `Rest Regions` pick wrote `Inside` to the
+/// containment of a toolpath whose tool is larger than its source's. The
+/// Containment combo shows the `ProvKind::AutoCorrect` badge `⟲` with this
+/// hover until the first containment edit or a change of toolpath. GUI
+/// state, not a project field, and not the per-frame draft (which the
+/// session rebuilds each frame).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ContainmentAutoCorrect {
+    toolpath: Option<rs_cam_core::ToolpathId>,
+    hover: Option<String>,
+}
+
+impl ContainmentAutoCorrect {
+    /// Give the slot to toolpath `id`. The badge of another toolpath is
+    /// dropped.
+    pub fn scope(&mut self, id: rs_cam_core::ToolpathId) {
+        if self.toolpath != Some(id) {
+            self.toolpath = Some(id);
+            self.hover = None;
+        }
+    }
+
+    /// The pick set `Inside`; `hover` says why.
+    pub fn set(&mut self, hover: String) {
+        self.hover = Some(hover);
+    }
+
+    /// The operator edited the containment: the badge goes.
+    pub fn clear(&mut self) {
+        self.hover = None;
+    }
+
+    /// The badge hover while the badge stands.
+    #[must_use]
+    pub fn hover(&self) -> Option<&str> {
+        self.hover.as_deref()
     }
 }
 

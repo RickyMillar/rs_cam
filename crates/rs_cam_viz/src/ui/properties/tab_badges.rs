@@ -28,7 +28,7 @@ impl TabBadges {
     }
 
     /// Raise the dot of `tab` to `color` when `color` ranks higher.
-    fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
+    pub(super) fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
         if let Some(at) = ToolpathTab::ALL.iter().position(|t| *t == tab)
             && let Some(dot) = self.dots.get_mut(at)
         {

@@ -524,53 +524,84 @@ impl ProjectSession {
         index: usize,
         source_toolpath_id: crate::ids::ToolpathId,
     ) -> Result<(), SessionError> {
-        use crate::compute::config::BoundaryContainment;
-        use crate::tool::MillingCutter as _;
-        let Some(tc) = self.toolpath_configs.get(index) else {
+        if self.toolpath_configs.get(index).is_none() {
             return Err(SessionError::ToolpathNotFound(index));
-        };
-        let containment = match tc.boundary.containment {
-            BoundaryContainment::Inside => return Ok(()),
-            BoundaryContainment::Center => "Center",
-            BoundaryContainment::Outside => "Outside",
-        };
-        let Some(source) = self
+        }
+        match self.larger_rest_consumer_text(index, source_toolpath_id) {
+            Some(text) => Err(SessionError::OperationFailed(text)),
+            None => Ok(()),
+        }
+    }
+
+    /// G-C (§2 a): the D53 read door. `Some` when the tool of the toolpath
+    /// at `index` is larger than the tool of `source_toolpath_id`, whatever
+    /// the containment; the refusal of [`Self::refuse_larger_rest_consumer`]
+    /// adds the containment. The radii are the radii the containment uses
+    /// (the built cutter's diameter over two). A tool or a source that does
+    /// not resolve gives `None`: it is left to its own refusal.
+    #[must_use]
+    pub fn larger_rest_consumer(
+        &self,
+        index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Option<LargerRestConsumer> {
+        use crate::tool::MillingCutter as _;
+        let tc = self.toolpath_configs.get(index)?;
+        let source = self
             .toolpath_configs
             .iter()
-            .find(|s| s.id == source_toolpath_id)
-        else {
-            return Ok(());
-        };
+            .find(|s| s.id == source_toolpath_id)?;
         let radius = |tool_id: Option<crate::ids::ToolId>| {
             tool_id
                 .and_then(|id| self.tool_by_id(id))
                 .and_then(|tool| crate::session::session_cutter(tool).ok())
                 .map(|def| def.diameter() / 2.0)
         };
-        let (Some(own), Some(theirs)) = (radius(tc.tool_id), radius(source.tool_id)) else {
-            return Ok(());
-        };
-        if own <= theirs {
-            return Ok(());
+        let own = radius(tc.tool_id)?;
+        let theirs = radius(source.tool_id)?;
+        (own > theirs).then(|| LargerRestConsumer {
+            op_name: tc.name.clone(),
+            source_toolpath_id,
+            source_name: source.name.clone(),
+            tool_radius_mm: own,
+            source_tool_radius_mm: theirs,
+        })
+    }
+
+    /// G-C: the D53 refusal text of the toolpath at `index` as it stands:
+    /// its `DerivedRestRegions` source, its containment and its tool.
+    /// `None` when the boundary is off, is not `DerivedRestRegions`, keeps
+    /// the tool inside (`Inside`), or the tool is not larger.
+    #[must_use]
+    pub fn larger_rest_consumer_refusal(&self, index: usize) -> Option<String> {
+        let tc = self.toolpath_configs.get(index)?;
+        if !tc.boundary.enabled {
+            return None;
         }
-        // C1 ruling (2026-10-28): the tool fix comes first. `Inside` can
-        // collapse narrow regions, and a collapse refuses (G-BOUNDCOLLAPSE).
-        Err(SessionError::OperationFailed(format!(
-            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
-             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
-             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
-             tool could cut up to {:.3} mm past the machining boundary of '{}'. Use a tool no \
-             larger than the tool of '{}' (Ø{:.3}), or Inside containment if the regions are \
-             wider than this tool (Ø{:.3}).",
-            tc.name,
-            source.name,
-            source.name,
-            own - theirs,
-            source.name,
-            source.name,
-            2.0 * theirs,
-            2.0 * own,
-        )))
+        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+            tc.boundary.source
+        else {
+            return None;
+        };
+        self.larger_rest_consumer_text(index, source_toolpath_id)
+    }
+
+    /// The D53 refusal text for the containment of the toolpath at
+    /// `index`, or `None` when it does not refuse.
+    fn larger_rest_consumer_text(
+        &self,
+        index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Option<String> {
+        use crate::compute::config::BoundaryContainment;
+        let tc = self.toolpath_configs.get(index)?;
+        let containment = match tc.boundary.containment {
+            BoundaryContainment::Inside => return None,
+            BoundaryContainment::Center => "Center",
+            BoundaryContainment::Outside => "Outside",
+        };
+        let larger = self.larger_rest_consumer(index, source_toolpath_id)?;
+        Some(larger.refusal(containment))
     }
 
     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
@@ -1210,6 +1241,37 @@ impl ProjectSession {
         Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
     }
 
+    /// G-C: [`Self::boundary_collapse`] for the toolpath at `index` with
+    /// `boundary` in place of its stored boundary: "would this boundary
+    /// collapse?". The GUI asks it before it writes `Inside` (the
+    /// `[Use Inside]` act and the D-2 pick), so it never switches to a
+    /// boundary that refuses. The inputs resolve from the stored config;
+    /// only the boundary of the collapse test is the candidate.
+    pub fn boundary_collapse_with(
+        &self,
+        index: usize,
+        boundary: &crate::compute::config::BoundaryConfig,
+    ) -> Result<Option<BoundaryCollapse>, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if !boundary.enabled
+            || !tc
+                .operation
+                .capabilities()
+                .territory_xy
+                .session_clip_applies()
+        {
+            return Ok(None);
+        }
+        let cancel = AtomicBool::new(false);
+        let mut inputs = self.resolve_generation_inputs(index, &cancel)?;
+        inputs.boundary_config = boundary.clone();
+        let regions = self.post_clip_regions(&tc.name, index, &inputs, &cancel)?;
+        Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
+    }
+
     /// The collapse test of [`Self::boundary_collapse`] on resolved inputs.
     ///
     /// It reads the containment set of the post-generation clip
@@ -1439,6 +1501,56 @@ pub(crate) struct ClipContainment {
     pub(crate) offset_failure: Option<crate::polygon::OffsetFailure>,
     /// The number of source regions (1 for `Single`).
     pub(crate) source_region_count: usize,
+}
+
+/// G-C (§2 a): a `DerivedRestRegions` consumer whose tool is larger than
+/// the tool of its source ([`ProjectSession::larger_rest_consumer`]). The
+/// source's regions are tool-centre positions of its smaller tool, so with
+/// `Center` or `Outside` containment this tool can cut past the source's
+/// machining boundary by the difference of the radii (D53).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LargerRestConsumer {
+    /// The name of the consumer.
+    pub op_name: String,
+    pub source_toolpath_id: crate::ids::ToolpathId,
+    pub source_name: String,
+    /// The radius of the consumer's built cutter, mm.
+    pub tool_radius_mm: f64,
+    /// The radius of the source's built cutter, mm.
+    pub source_tool_radius_mm: f64,
+}
+
+impl LargerRestConsumer {
+    /// How far past the source's boundary the tool can cut, mm.
+    #[must_use]
+    pub fn overrun_mm(&self) -> f64 {
+        self.tool_radius_mm - self.source_tool_radius_mm
+    }
+
+    /// The D53 refusal sentence for `containment` (the word the panel and
+    /// the project file use: `Center` or `Outside`).
+    #[must_use]
+    pub fn refusal(&self, containment: &str) -> String {
+        let (own, theirs) = (self.tool_radius_mm, self.source_tool_radius_mm);
+        // C1 ruling (2026-10-28): the tool fix comes first. `Inside` can
+        // collapse narrow regions, and a collapse refuses (G-BOUNDCOLLAPSE).
+        format!(
+            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
+             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
+             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
+             tool could cut up to {:.3} mm past the machining boundary of '{}'. Use a tool no \
+             larger than the tool of '{}' (Ø{:.3}), or Inside containment if the regions are \
+             wider than this tool (Ø{:.3}).",
+            self.op_name,
+            self.source_name,
+            self.source_name,
+            self.overrun_mm(),
+            self.source_name,
+            self.source_name,
+            2.0 * theirs,
+            2.0 * own,
+        )
+    }
 }
 
 /// G-E (3): why a `DerivedRestRegions` boundary refuses generation. Its

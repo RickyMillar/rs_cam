@@ -351,7 +351,7 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
 fn the_validation_errors_are_one_line() {
     let src = properties_src();
     let at = src
-        .find("let face = if owned.is_empty()")
+        .find("let face = if !owned.is_empty()")
         .expect("the validation-error face moved");
     let body = &src[at..(at + 400).min(src.len())];
     assert!(
