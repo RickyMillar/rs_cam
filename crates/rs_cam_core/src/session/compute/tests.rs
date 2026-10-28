@@ -2553,7 +2553,6 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
         None,
         &semantic_ctx,
         &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut crate::compute::execute::GenerationFindings::default(),
     )
     .expect("a boundary that resolves cannot refuse");
 
@@ -2589,18 +2588,17 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
 }
 
 #[test]
-fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
+fn apply_boundary_clip_multi_all_regions_collapsed_refuses() {
     use crate::trace::toolpath_spans::AnnotatedToolpath;
 
-    // A tiny region with a large negative user offset collapses; with
-    // every region gone the toolpath must pass through unchanged (the
-    // single-polygon path's "boundary collapsed" semantics).
+    // A tiny region with a large negative user offset collapses. With
+    // every region gone the clip refuses (G-BOUNDCOLLAPSE, operator ruling
+    // 2026-10-28). Before, the toolpath passed through UNCLIPPED.
     let regions = vec![crate::polygon::Polygon2::rectangle(0.0, 0.0, 2.0, 2.0)];
 
     let mut tp = crate::toolpath::Toolpath::new();
     tp.feed_to(P3::new(50.0, 50.0, -1.0), 1000.0);
     tp.feed_to(P3::new(60.0, 50.0, -1.0), 1000.0);
-    let move_count = tp.moves.len();
     let annotated = AnnotatedToolpath::new(tp);
 
     let mut boundary = derived_boundary(0);
@@ -2608,54 +2606,23 @@ fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
 
     let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
     let semantic_ctx = recorder.root_context();
-    let mut findings = crate::compute::execute::GenerationFindings::default();
 
-    let clipped = ProjectSession::apply_boundary_clip_multi(
+    let err = ProjectSession::apply_boundary_clip_multi(
         annotated,
         &boundary,
         &regions,
         &[],
         2.0,
         20.0,
-        // No operation here — the re-entry keeps the crossing move's
-        // cut feed, which is what this test has always pinned.
         None,
         &semantic_ctx,
         &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut findings,
     )
-    .expect(
-        "a GENUINE collapse still passes through — Checkpoint C only \
-             refuses when the offset FAILED",
-    );
-
-    assert_eq!(
-        clipped.toolpath.moves.len(),
-        move_count,
-        "collapsed boundary set must leave the toolpath unchanged"
-    );
+    .expect_err("a collapsed boundary set must refuse, not pass through");
+    let msg = err.to_string();
     assert!(
-        clipped
-            .toolpath
-            .moves
-            .iter()
-            .all(|m| m.move_type != crate::toolpath::MoveType::Rapid),
-        "no retracts inserted when the boundary collapses"
-    );
-    // Checkpoint C, Q2: the pass-through is kept, and it is no longer
-    // silent. Before this the operator got an unclipped path and a
-    // `tracing::warn!` in a process with no subscriber.
-    let dropped = findings
-        .boundary_clip_dropped
-        .expect("a dropped containment must be recorded as a finding");
-    assert_eq!(
-        dropped.containment,
-        crate::compute::config::BoundaryContainment::default(),
-        "the finding names the containment that was requested"
-    );
-    assert_eq!(
-        dropped.source_region_count, 1,
-        "the finding names how many source regions all collapsed"
+        msg.contains("collapsed") && msg.contains("1 region"),
+        "the refusal names the collapse and the region count: {msg}"
     );
 }
 

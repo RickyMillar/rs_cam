@@ -33,6 +33,7 @@ mod params;
 mod simulation;
 
 pub use diagnostics::TriageSessionKey;
+pub use generation::BoundaryCollapse;
 pub(crate) use params::strip_outer_quotes;
 
 /// Fully-owned, per-generation inputs resolved from session state by
@@ -718,11 +719,11 @@ impl JobPhases<'_, '_> {
         ),
         SessionError,
     > {
-        let (annotated, mut findings) = self.generate(cancel)?;
+        let (annotated, findings) = self.generate(cancel)?;
         let mut channels =
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
         let annotated = self.apply_dressups(annotated, &mut channels);
-        let annotated = self.clip_and_split_entries(annotated, &mut channels, &mut findings)?;
+        let annotated = self.clip_and_split_entries(annotated, &mut channels)?;
         Ok((annotated, findings))
     }
 
@@ -1016,7 +1017,6 @@ impl JobPhases<'_, '_> {
         &self,
         annotated: crate::compute::execute::GeneratedToolpath,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-        findings: &mut crate::compute::execute::GenerationFindings,
     ) -> Result<crate::compute::execute::GeneratedToolpath, SessionError> {
         let mut annotated = annotated;
         // ── Boundary clipping ─────────────────────────────────
@@ -1065,7 +1065,6 @@ impl JobPhases<'_, '_> {
                     Some(self.context.plunge_rate),
                     self.semantic_root,
                     channels,
-                    findings,
                 )?
             } else {
                 ProjectSession::apply_boundary_clip(
@@ -1079,7 +1078,6 @@ impl JobPhases<'_, '_> {
                     Some(self.context.plunge_rate),
                     self.semantic_root,
                     channels,
-                    findings,
                 )?
             };
         }
@@ -2583,75 +2581,29 @@ impl ProjectSession {
         // a machine edit compares it to find the results it stales (B7).
         let link_kinematics = Some(self.machine.link_kinematics());
 
-        // The POST-generation clip's own region set, for the three sources
-        // that resolve to a set of disjoint regions. The monolith resolved
-        // it after the generator ran; the handle carries it instead, so
-        // the executor holds no session.
-        //
-        // Re-resolved, never carried over from the pre-clip: the tier map
-        // is memoised on (mesh identity, ladder, params), so this is a
-        // cache hit on the exact map that produced the pre-decompose
-        // boundary. Agreement between the two clips is therefore
-        // structural — the P2.3 rule that made `DerivedRestRegions` safe.
-        // It is also the RAW set. `inputs.pre_boundary_regions` is the
-        // PROCESSED set, and the clip processes the raw set itself.
-        let post_clip_regions: Option<Arc<Vec<crate::polygon::Polygon2>>> =
-            if inputs.boundary_config.enabled {
-                match &inputs.boundary_config.source {
-                    crate::compute::config::BoundarySource::PlannedTierRegions {
-                        tool_ids,
-                        tier,
-                        cell_mm,
-                        tolerance_mm,
-                        margin_mm,
-                        treatment,
-                        islands,
-                    } => {
-                        // The tier map reads a BUILT index; force the
-                        // lazy one here, as the resolver's own tier arm
-                        // does.
-                        let tier_index = inputs
-                            .spatial_index
-                            .as_ref()
-                            .map(|lazy| Arc::clone(lazy.force()));
-                        let regions = self.resolve_planned_tier_region_polys(
-                            &tc.name,
-                            inputs.mesh.as_ref(),
-                            tier_index.as_ref(),
-                            &super::multitool::PlannedTierRecipe {
-                                tool_ids,
-                                tier: *tier,
-                                cell_mm: *cell_mm,
-                                tolerance_mm: *tolerance_mm,
-                                margin_mm: *margin_mm,
-                                treatment: *treatment,
-                                islands: *islands,
-                            },
-                            cancel,
-                        )?;
-                        Some(Arc::new(regions))
-                    }
-                    crate::compute::config::BoundarySource::DerivedRestRegions {
-                        source_toolpath_id,
-                    } => {
-                        // The precondition above already validated this —
-                        // it can only fail here if the source toolpath's
-                        // result was invalidated in between, which cannot
-                        // happen under `&mut self`. Propagate defensively
-                        // rather than `#[allow(clippy::unwrap_used)]`.
-                        Some(self.resolve_derived_rest_region_polys(index, *source_toolpath_id)?)
-                    }
-                    crate::compute::config::BoundarySource::Selection { selection, holes } => {
-                        // The same resolution as the pre-boundary, so the
-                        // two clips bound the same set.
-                        Some(self.resolve_boundary_selection_polys(index, selection, *holes)?)
-                    }
-                    crate::compute::config::BoundarySource::Stock
-                    | crate::compute::config::BoundarySource::ModelSilhouette => None,
-                }
-            } else {
-                None
-            };
+        // The POST-generation clip's own region set. The monolith resolved
+        // it after the generator ran; the handle carries it instead, so the
+        // executor holds no session.
+        let post_clip_regions = self.post_clip_regions(&tc.name, index, &inputs, cancel)?;
+
+        // G-BOUNDCOLLAPSE (operator ruling 2026-10-28): a boundary that
+        // collapses refuses here, with the op named. Before, the clip got an
+        // empty set and passed the toolpath through UNCLIPPED. The read door
+        // `boundary_collapse` gives the same answer. D2: an op that the
+        // session never clips (Pin Drill) does not refuse.
+        if tc
+            .operation
+            .capabilities()
+            .territory_xy
+            .session_clip_applies()
+            && let Some(collapse) = Self::boundary_collapse_of(
+                &tc.name,
+                &inputs,
+                post_clip_regions.as_deref().map(Vec::as_slice),
+            )?
+        {
+            return Err(SessionError::OperationFailed(collapse.message()));
+        }
 
         // S11: an op with a value that is not set (a depth, then the
         // feeds) refuses here, before any work, with the generator's own

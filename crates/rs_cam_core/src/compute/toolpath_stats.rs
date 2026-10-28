@@ -306,6 +306,11 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it. The toolpath is real and runnable;
     /// what it is not is contained.
+    ///
+    /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): the session clip no
+    /// longer records it. A collapse now refuses the generation
+    /// (`ProjectSession::boundary_collapse`), so this slot stays `None` on
+    /// every shipped path.
     pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
     /// R3 / R4 (Corne case, 2026-09-18): what the standalone waterline's Z
     /// ladder builder did to the requested ladder. See
@@ -650,6 +655,11 @@ impl StockSnapshotStamp {
 /// is real: when the tool is larger than the stock nothing is machinable
 /// anyway, and emitting the unclipped path is better than silently deleting
 /// it. What was missing is the operator being told. That is this finding.
+///
+/// G-BOUNDCOLLAPSE (operator ruling 2026-10-28) reversed that: a collapse
+/// refuses the generation, because the unclipped path can cut outside a
+/// declared boundary (a frame or a clamp zone). The session clip no longer
+/// records this finding.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundaryClipDroppedFinding {
     /// The containment mode that was requested and not applied. `Center`

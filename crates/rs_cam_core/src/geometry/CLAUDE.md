@@ -22,9 +22,9 @@ principal type is `RegionSet`; the boundary entry points are
 
 - A setup-local boundary and a world-frame boundary are different. Keep the
   frame with the boundary; never mix the two in one comparison.
-- `ToolContainment::Inside` can fall back to unclipped geometry when the
-  boundary offset collapses. Inspect `boundary_clip_dropped` before you
-  assert containment.
+- An empty containment set passes `clip_annotated_to_boundary_set`
+  unclipped. The session refuses that case (G-BOUNDCOLLAPSE,
+  `ProjectSession::boundary_collapse`); a new caller must refuse it too.
 - `build_enriched_mesh` refuses with `EnrichedMeshError`, never a `String`.
 
 ## Sentries

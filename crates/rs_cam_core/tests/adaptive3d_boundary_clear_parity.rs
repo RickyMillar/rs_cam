@@ -235,8 +235,8 @@ struct Measured {
     /// predicate exactly.
     border_clear_zone: u64,
     /// P1 — polygon count from `effective_boundary_reported`. Zero means the
-    /// offset collapsed and the path ships UNCLIPPED (the `boundary_clip_dropped`
-    /// escape hatch), which would make this whole fixture measure something else.
+    /// offset collapsed and production refuses the generation
+    /// (G-BOUNDCOLLAPSE), which would make this whole fixture measure something else.
     effective_polys: usize,
     /// Pre-clip emitted cutting-move endpoints fully outside the containment,
     /// planned with an empty `centre_boundary` (the `waterline_cleanup` leak;
@@ -343,9 +343,8 @@ fn measure(label: &str, strategy: ClearingStrategy3d, boundary: Option<&Polygon2
     if boundary.is_some() {
         eprintln!(
             "[{label}] effective_boundary: {} polygon(s), offset_failure {:?} \
-             (empty => COLLAPSE escape hatch: the path ships UNCLIPPED with only the \
-             report-only boundary_clip_dropped finding, and this fixture would be \
-             measuring the wrong thing — bar P1 refuses that)",
+             (empty => COLLAPSE: production refuses the generation (G-BOUNDCOLLAPSE), \
+             and this fixture would be measuring the wrong thing — bar P1 refuses that)",
             effective.len(),
             offset_failure.as_ref().map(|f| f.describe()),
         );
@@ -570,9 +569,8 @@ fn assert_containment_parity_bars(m: &Measured) {
     assert_eq!(
         m.effective_polys, 1,
         "[{label}] P1: `effective_boundary_reported` must return exactly ONE polygon for this \
-         rectangle. Zero means the offset COLLAPSED and production would ship the path UNCLIPPED \
-         behind the report-only `boundary_clip_dropped` finding — a different configuration with \
-         different (lower!) divergence, which this fixture must not silently slide onto. More \
+         rectangle. Zero means the offset COLLAPSED and production refuses the generation \
+         (G-BOUNDCOLLAPSE) — a configuration this fixture must not silently slide onto. More \
          than one means the inset split and `clip_toolpath_to_boundary`'s single-polygon call \
          below is no longer the production analogue."
     );

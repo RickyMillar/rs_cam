@@ -1216,9 +1216,9 @@ pub struct InlayConfig {
                 boundary of the closed shapes of this design, containment Inside, offset minus \
                 pocket_depth x \
                 tan(half the V angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket first. \
-                CAUTION: where the floor is narrower than the end mill plus that inset, the Inside \
-                clip collapses and the Pocket cuts the whole design and the V walls; read \
-                boundary_clip_dropped. Use the same pocket_depth on the Inlay Plug op.",
+                Where the floor is narrower than the end mill plus that inset, the Inside \
+                clip collapses and the Pocket refuses to generate; use a smaller end mill. Use \
+                the same pocket_depth on the Inlay Plug op.",
         range = 0.1..=50.0,
     )]
     pub pocket_depth: Option<f64>,
