@@ -1,0 +1,482 @@
+diff --git a/crates/rs_cam_core/src/compute/execute/finish_raster.rs b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+index c902954b0..878371948 100644
+--- a/crates/rs_cam_core/src/compute/execute/finish_raster.rs
++++ b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+@@ -338,7 +338,7 @@ pub(crate) fn generate_waterline(
+     // D69 §2: the helical waterline judges each link between two chained
+     // rings with the model gouge guard's reduced tool. A tool that cannot
+     // shrink (no cutter) joins no level: the op cuts the stacked form.
+-    let link_probe = if cfg.continuous {
++    let link_probe = if cfg.helical {
+         crate::compute::cutter::build_cutter(&crate::compute::model_gouge::reduced_tool_config(
+             ctx.tool_cfg,
+             crate::compute::model_gouge::MODEL_GOUGE_TOL_MM,
+@@ -368,7 +368,7 @@ struct WaterlinePass<'a> {
+     surface: MeshInput<'a>,
+     cutter: &'a ToolDefinition,
+     params: crate::ops::waterline::WaterlineParams,
+-    /// D69 §2 (`WaterlineConfig::continuous`): the reduced tool that
++    /// D69 §2 (`WaterlineConfig::helical`): the reduced tool that
+     /// judges a chain link. `Some`: the op cuts the helical waterline;
+     /// `None`: the stacked form, one entry per ring and level.
+     link_probe: Option<ToolDefinition>,
+diff --git a/crates/rs_cam_core/src/compute/operation_configs.rs b/crates/rs_cam_core/src/compute/operation_configs.rs
+index 513fc6126..3e3f06f68 100644
+--- a/crates/rs_cam_core/src/compute/operation_configs.rs
++++ b/crates/rs_cam_core/src/compute/operation_configs.rs
+@@ -1828,10 +1828,16 @@ impl Adaptive3dConfig {
+     }
+ }
+ 
+-/// The help of `WaterlineConfig::continuous` (D69 §2).
+-const HELP_WATERLINE_CONTINUOUS: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
++/// The help of `WaterlineConfig::helical` (D69 §2).
++const HELP_WATERLINE_HELICAL: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
+      descends along the lower ring from level to level. Off: one entry per ring and level.";
+ 
++/// The helical waterline is on by default (D69, operator ruling
++/// 2026-10-28), also for a file with no `helical` key (W1b).
++fn default_waterline_helical() -> bool {
++    true
++}
++
+ #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
+ pub struct WaterlineConfig {
+     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
+@@ -1858,10 +1864,22 @@ pub struct WaterlineConfig {
+     /// of whole rings over consecutive levels (one ring inside the other,
+     /// no ring between them, one to one) is ONE entry; the tool descends
+     /// along the lower ring (`ops::waterline::helical_waterline`).
+-    /// `false`: one entry per ring and level. Before D69 no generator read
+-    /// the field.
+-    #[param(help = HELP_WATERLINE_CONTINUOUS)]
+-    pub continuous: bool,
++    /// `false`: one entry per ring and level.
++    ///
++    /// W1b (operator ruling 2026-10-28): the key was `continuous`, a dial
++    /// no generator read. A file with no `helical` key loads `true`; the
++    /// loader reads an old `continuous` key as the old default and says so
++    /// (`ProjectLoadWarning::WaterlineHelical`).
++    #[serde(default = "default_waterline_helical")]
++    #[param(help = HELP_WATERLINE_HELICAL)]
++    pub helical: bool,
++    /// W1b: the old key `continuous`, as a file before W1b stored it. The
++    /// loader reads it ONLY to name the migration: it sets `helical` and
++    /// pushes `ProjectLoadWarning::WaterlineHelical`, then clears this
++    /// field (`session::project_file`). Never written.
++    #[serde(default, rename = "continuous", skip_serializing)]
++    #[param(skip = "W1b: the retired key `continuous`, read only by the loader's migration")]
++    pub legacy_continuous: Option<bool>,
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     #[param(gt = 0.0)]
+     pub spindle_rpm: Option<u32>,
+@@ -1889,7 +1907,8 @@ impl Default for WaterlineConfig {
+             plunge_rate: None,
+             ramp_feed_rate: None,
+             // D69: on by default (operator ruling 2026-10-28).
+-            continuous: true,
++            helical: default_waterline_helical(),
++            legacy_continuous: None,
+             spindle_rpm: None,
+             // OFF. See the field doc.
+             hookup_mm: 0.0,
+diff --git a/crates/rs_cam_core/src/ops/waterline.rs b/crates/rs_cam_core/src/ops/waterline.rs
+index 8fd1c0c38..316b3ca9a 100644
+--- a/crates/rs_cam_core/src/ops/waterline.rs
++++ b/crates/rs_cam_core/src/ops/waterline.rs
+@@ -902,7 +902,7 @@ fn emit_chain(
+     toolpath.final_retract(params.safe_z);
+ }
+ 
+-/// The helical waterline (D69 §2, `WaterlineConfig::continuous`): the
++/// The helical waterline (D69 §2, `WaterlineConfig::helical`): the
+ /// levels of [`waterline_level_rings`], top first, with each chain of
+ /// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
+ /// ([`emit_chain`]).
+diff --git a/crates/rs_cam_core/src/session/compute/params.rs b/crates/rs_cam_core/src/session/compute/params.rs
+index 12e66f0b1..b3dcb694d 100644
+--- a/crates/rs_cam_core/src/session/compute/params.rs
++++ b/crates/rs_cam_core/src/session/compute/params.rs
+@@ -174,6 +174,18 @@ impl ProjectSession {
+             .toolpath_configs
+             .get_mut(index)
+             .ok_or(SessionError::ToolpathNotFound(index))?;
++        // W1b: `continuous` is the old name of the Waterline `helical` dial.
++        // An alias for one release, so an MCP client written before W1b
++        // still sets the dial (the `set_toolpath_param` tool doc says so).
++        let param = if param == "continuous"
++            && matches!(
++                tc.operation,
++                crate::compute::catalog::OperationConfig::Waterline(_)
++            ) {
++            "helical"
++        } else {
++            param
++        };
+         // Removal step R2: a retired value refuses with the loader's text,
+         // not with serde's "unknown variant".
+         if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {
+diff --git a/crates/rs_cam_core/src/session/project_file.rs b/crates/rs_cam_core/src/session/project_file.rs
+index 177f36e37..f8f94579d 100644
+--- a/crates/rs_cam_core/src/session/project_file.rs
++++ b/crates/rs_cam_core/src/session/project_file.rs
+@@ -538,6 +538,10 @@ pub enum ProjectLoadWarning {
+         /// One `dial: before to after` phrase per rewritten value.
+         changes: Vec<String>,
+     },
++    /// W1b: a Waterline stored the old key `continuous` (`stored` is its
++    /// value). The key was a dial no generator read, so the loader turned
++    /// the helical waterline on (`WaterlineConfig::helical`).
++    WaterlineHelical { toolpath: String, stored: bool },
+     /// A toolpath's rest-analysis flag did not match the demand the
+     /// project declares, so the loader rewrote it. `enabled` is the value
+     /// the loader wrote.
+@@ -610,6 +614,9 @@ impl ProjectLoadWarning {
+                  The loader changed {}. Save the project to keep the change.",
+                 changes.join(", ")
+             ),
++            Self::WaterlineHelical { toolpath, .. } => {
++                format!("Waterline '{toolpath}': helical descent is now on (was the old default).")
++            }
+         }
+     }
+ }
+@@ -1260,11 +1267,25 @@ fn toolpath_config_from_section(
+             changes: dressup_changes(&tp.dressups, &dressups),
+         });
+     }
++    // W1b (operator ruling 2026-10-28): the Waterline dial was the key
++    // `continuous`, which no generator read before D69. A stored value is
++    // the old default, so the op loads helical. The warning names the
++    // change; a save writes `helical` and drops the old key.
++    let mut operation = operation.clone();
++    if let OperationConfig::Waterline(cfg) = &mut operation
++        && let Some(old) = cfg.legacy_continuous.take()
++    {
++        cfg.helical = true;
++        warnings.push(ProjectLoadWarning::WaterlineHelical {
++            toolpath: tp.name.clone(),
++            stored: old,
++        });
++    }
+     ToolpathConfig {
+         id: tp_id,
+         name: tp.name.clone(),
+         enabled: tp.enabled,
+-        operation: operation.clone(),
++        operation,
+         dressups,
+         heights: tp.heights.clone(),
+         tool_id: tp.tool_id,
+diff --git a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+index 2b2cdc4a5..4a6ee89e5 100644
+--- a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
++++ b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+@@ -93,8 +93,8 @@ fn holed_plate() -> TriangleMesh {
+     TriangleMesh::from_raw(vertices, triangles)
+ }
+ 
+-/// The op output (no dressup) on the plate, with the dial at `continuous`.
+-fn waterline(continuous: bool) -> Toolpath {
++/// The op output (no dressup) on the plate, with the dial at `helical`.
++fn waterline(helical: bool) -> Toolpath {
+     let annotated = common::op_fixtures::generated_op(
+         stock_over(OUTER_BOTTOM + 3.0, PLATE + 2.0),
+         endmill_tool_config(TOOL_D),
+@@ -102,7 +102,7 @@ fn waterline(continuous: bool) -> Toolpath {
+         OperationConfig::Waterline(WaterlineConfig {
+             z_step: Z_STEP,
+             sampling: 0.5,
+-            continuous,
++            helical,
+             ..WaterlineConfig::default()
+         }),
+         |tc| {
+diff --git a/crates/rs_cam_core/tests/a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels.rs b/crates/rs_cam_core/tests/a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels.rs
+index 4b0edef80..d103d9dcd 100644
+--- a/crates/rs_cam_core/tests/a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels.rs
++++ b/crates/rs_cam_core/tests/a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels.rs
+@@ -1748,7 +1748,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
+             // between the levels, so this file pins the stacked form. The
+             // helix runs the same rest filter per level
+             // (`ops::waterline::waterline_level_rings`).
+-            continuous: false,
++            helical: false,
+             ..WaterlineConfig::default()
+         }),
+         rs_cam_core::ids::ToolId::from_raw(tool_id),
+diff --git a/crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs b/crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs
+index 41ec99e09..987c3b8fd 100644
+--- a/crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs
++++ b/crates/rs_cam_core/tests/air_cut_family_calibration_w5bf4.rs
+@@ -703,7 +703,8 @@ fn hemi_cases() -> Vec<HemiCase> {
+                     sampling: 0.4,
+                     feed_rate: Some(1000.0),
+                     plunge_rate: Some(400.0),
+-                    continuous: false,
++                    helical: false,
++                    legacy_continuous: None,
+                     spindle_rpm: Some(18_000),
+                     hookup_mm: 0.0,
+                 })
+diff --git a/crates/rs_cam_core/tests/link_counters_visible_g_linkvisible.rs b/crates/rs_cam_core/tests/link_counters_visible_g_linkvisible.rs
+index 9b1eb3a68..7a99c7b78 100644
+--- a/crates/rs_cam_core/tests/link_counters_visible_g_linkvisible.rs
++++ b/crates/rs_cam_core/tests/link_counters_visible_g_linkvisible.rs
+@@ -214,7 +214,7 @@ fn waterline_session(hookup_mm: f64) -> ProjectSession {
+             // waterline (D69 §2, on by default) joins each flank's rings
+             // into one fragment, and the 8 left stand too far apart for
+             // the stage. The stacked form keeps the arm's population.
+-            continuous: false,
++            helical: false,
+             ..WaterlineConfig::default()
+         }),
+         // A surface op carries no depth dial, so `bottom_z: Auto` would
+diff --git a/crates/rs_cam_core/tests/perf_golden_sim_metrics.rs b/crates/rs_cam_core/tests/perf_golden_sim_metrics.rs
+index 04550a7d9..88d701da9 100644
+--- a/crates/rs_cam_core/tests/perf_golden_sim_metrics.rs
++++ b/crates/rs_cam_core/tests/perf_golden_sim_metrics.rs
+@@ -590,7 +590,8 @@ fn fixture_session_3d() -> ProjectSession {
+         sampling: 0.4,
+         feed_rate: Some(1000.0),
+         plunge_rate: Some(400.0),
+-        continuous: false,
++        helical: false,
++        legacy_continuous: None,
+         spindle_rpm: Some(18_000),
+         hookup_mm: 0.0,
+     });
+diff --git a/crates/rs_cam_core/tests/retract_intent_move_type_census_w6.rs b/crates/rs_cam_core/tests/retract_intent_move_type_census_w6.rs
+index a86ec2922..79cca09fa 100644
+--- a/crates/rs_cam_core/tests/retract_intent_move_type_census_w6.rs
++++ b/crates/rs_cam_core/tests/retract_intent_move_type_census_w6.rs
+@@ -775,7 +775,8 @@ fn hemi_cases() -> Vec<HemiCase> {
+                     sampling: 0.4,
+                     feed_rate: Some(1000.0),
+                     plunge_rate: Some(400.0),
+-                    continuous: false,
++                    helical: false,
++                    legacy_continuous: None,
+                     spindle_rpm: Some(18_000),
+                     hookup_mm: 0.0,
+                 })
+diff --git a/crates/rs_cam_viz/src/mcp_server.rs b/crates/rs_cam_viz/src/mcp_server.rs
+index b50c66053..111c2004e 100644
+--- a/crates/rs_cam_viz/src/mcp_server.rs
++++ b/crates/rs_cam_viz/src/mcp_server.rs
+@@ -1127,7 +1127,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "set_toolpath_param",
+-        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Geometry selection P6: Profile `side` takes `\"on\"` (the tool centre on the line); Pocket `open_paths` takes `\"skip\"`, `\"extend_left\"` or `\"extend_right\"` (extend each open path to the stock, on that side of the drawn direction). Pocket `cut_past_open_sides` takes `true` or `false` (default false): on a model face or ring, clear the stock beyond the edges of the face that have no wall, out to the stock edge. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. This writes the OPERATION's own params only: it cannot change which cutter or which input model the toolpath is bound to, and refuses those keys — use `set_toolpath_tool` / `set_toolpath_model`. Marks the toolpath as stale — regenerate to apply."
++        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Geometry selection P6: Profile `side` takes `\"on\"` (the tool centre on the line); Pocket `open_paths` takes `\"skip\"`, `\"extend_left\"` or `\"extend_right\"` (extend each open path to the stock, on that side of the drawn direction). Pocket `cut_past_open_sides` takes `true` or `false` (default false): on a model face or ring, clear the stock beyond the edges of the face that have no wall, out to the stock edge. Waterline `helical` takes `true` (default: each stack of matching rings cuts with one entry) or `false` (one entry per ring and level); the old name `continuous` is accepted as an alias for one release. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. This writes the OPERATION's own params only: it cannot change which cutter or which input model the toolpath is bound to, and refuses those keys — use `set_toolpath_tool` / `set_toolpath_model`. Marks the toolpath as stale — regenerate to apply."
+     )]
+     async fn set_toolpath_param(
+         &self,
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index b2d1d5533..e79509406 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -262,7 +262,7 @@ pub(in crate::ui::properties) fn draw_waterline_params(
+             0.1,
+         );
+         ui.label("Continuous:");
+-        ui.checkbox(&mut cfg.continuous, "");
++        ui.checkbox(&mut cfg.helical, "");
+         ui.end_row();
+         // Z range now comes from the Heights tab (top_z / bottom_z)
+     });
+diff --git a/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs b/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs
+new file mode 100644
+index 000000000..c1d3baf5d
+--- /dev/null
++++ b/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs
+@@ -0,0 +1,188 @@
++//! W1b (operator ruling 2026-10-28): an old project's Waterline loads helical.
++//!
++//! Pre-registration:
++//! `planning/adaptive_research_2026-10-23/integration/W1b_PREREG.md`. Before
++//! D69 the Waterline dial was the key `continuous`, and no generator read
++//! it, so every stored value was the old default. W1b renames the key to
++//! `helical` (default `true`). The loader reads an old `continuous` key as
++//! the old default: the op loads helical, and one
++//! `ProjectLoadWarning::WaterlineHelical` names the change.
++//!
++//! 1. An old file (`continuous = false`, no `helical`) loads helical, with
++//!    one warning.
++//! 2. A new file with `helical = false` loads `false`, with no warning.
++//! 3. Save, load, save keeps `helical = false` and `helical = true`, and
++//!    the writer never writes `continuous`.
++//! 4. `set_toolpath_param` takes `continuous` as an alias of `helical` on a
++//!    Waterline, for one release (lead condition 2026-10-28).
++//!
++//! The warning is ONE short line (the operator's rule against text
++//! clutter).
++
++#![expect(
++    clippy::unwrap_used,
++    clippy::expect_used,
++    clippy::panic,
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++use common::make_endmill_6mm;
++use common::session::toolpath_config;
++
++use std::path::PathBuf;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::operation_configs::WaterlineConfig;
++use rs_cam_core::session::{
++    Command, ProjectLoadWarning, ProjectSession, ProjectSessionBuilder, SetToolpathParamArgs,
++};
++
++/// A directory of its own for each call: the tests run in parallel.
++fn temp_path() -> PathBuf {
++    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++    let mut dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
++    dir.push(format!("rs_cam_w1b_{}_{n}", std::process::id()));
++    std::fs::create_dir_all(&dir).unwrap();
++    dir.push("project.toml");
++    dir
++}
++
++/// A session with one Waterline at `helical`.
++fn session_with(helical: bool) -> ProjectSession {
++    let mut builder = ProjectSessionBuilder::new();
++    let tool_idx = builder.add_tool(make_endmill_6mm());
++    let tool_id = builder.tools()[tool_idx].id.raw();
++    let tc = toolpath_config(
++        "Waterline",
++        OperationConfig::Waterline(WaterlineConfig {
++            helical,
++            ..WaterlineConfig::default()
++        }),
++        rs_cam_core::ids::ToolId::from_raw(tool_id),
++        rs_cam_core::ids::ModelId::from_raw(0),
++    );
++    let _ = builder.add_toolpath(0, tc).expect("add toolpath");
++    builder.build()
++}
++
++fn saved_text(session: &ProjectSession) -> String {
++    let path = temp_path();
++    session.save(&path).unwrap();
++    let text = std::fs::read_to_string(&path).unwrap();
++    let _ = std::fs::remove_file(&path);
++    text
++}
++
++/// Load `text` through the file door; the Waterline's dial and the W1b
++/// warnings.
++fn load(text: &str) -> (bool, Vec<ProjectLoadWarning>, ProjectSession) {
++    let path = temp_path();
++    std::fs::write(&path, text).unwrap();
++    let (session, warnings) = ProjectSession::load_with_warnings(&path).expect("the file loads");
++    let _ = std::fs::remove_file(&path);
++    let OperationConfig::Waterline(cfg) = &session.toolpath_configs()[0].operation else {
++        panic!("toolpath 0 is the Waterline");
++    };
++    let helical = cfg.helical;
++    let w1b = warnings
++        .into_iter()
++        .filter(|w| matches!(w, ProjectLoadWarning::WaterlineHelical { .. }))
++        .collect();
++    (helical, w1b, session)
++}
++
++/// The Waterline params table of a saved text.
++fn params(text: &str) -> toml::Value {
++    let raw: toml::Value = toml::from_str(text).unwrap();
++    raw["setups"][0]["toolpaths"][0]["operation"]["params"].clone()
++}
++
++#[test]
++fn an_old_file_loads_helical_with_one_warning() {
++    let text = saved_text(&session_with(false));
++    // The file as a build before W1b wrote it: `continuous`, no `helical`.
++    let mut raw: toml::Value = toml::from_str(&text).unwrap();
++    let table = raw["setups"][0]["toolpaths"][0]["operation"]["params"]
++        .as_table_mut()
++        .unwrap();
++    assert!(
++        table.remove("helical").is_some(),
++        "the writer writes helical"
++    );
++    table.insert("continuous".to_owned(), toml::Value::Boolean(false));
++    let old = toml::to_string(&raw).unwrap();
++
++    let (helical, warnings, session) = load(&old);
++    assert!(helical, "an old Waterline loads helical");
++    assert_eq!(
++        warnings,
++        vec![ProjectLoadWarning::WaterlineHelical {
++            toolpath: "Waterline".to_owned(),
++            stored: false,
++        }],
++        "one warning names the change"
++    );
++    let line = warnings[0].message();
++    assert!(
++        !line.contains('\n') && line.starts_with("Waterline 'Waterline': helical descent"),
++        "one short line: {line}"
++    );
++    // The save writes the new key only.
++    let resaved = params(&saved_text(&session));
++    assert_eq!(
++        resaved.get("helical").and_then(toml::Value::as_bool),
++        Some(true)
++    );
++    assert!(resaved.get("continuous").is_none(), "no old key is written");
++}
++
++#[test]
++fn a_new_file_keeps_an_explicit_false() {
++    let text = saved_text(&session_with(false));
++    assert_eq!(
++        params(&text).get("helical").and_then(toml::Value::as_bool),
++        Some(false)
++    );
++    let (helical, warnings, _) = load(&text);
++    assert!(!helical, "an explicit helical = false stays stacked");
++    assert!(
++        warnings.is_empty(),
++        "no migration on a new file: {warnings:?}"
++    );
++}
++
++#[test]
++fn a_round_trip_keeps_the_value() {
++    for value in [false, true] {
++        let first = saved_text(&session_with(value));
++        let (helical, warnings, session) = load(&first);
++        assert_eq!(helical, value);
++        assert!(warnings.is_empty());
++        let second = saved_text(&session);
++        assert_eq!(params(&first), params(&second), "helical = {value}");
++        assert!(params(&second).get("continuous").is_none());
++    }
++}
++
++#[test]
++fn the_param_door_takes_the_old_name_as_an_alias() {
++    let mut session = session_with(true);
++    let _ = session
++        .apply(Command::SetToolpathParam(SetToolpathParamArgs {
++            index: 0,
++            param: "continuous".to_owned(),
++            value: serde_json::Value::Bool(false),
++        }))
++        .expect("the alias sets the dial");
++    let OperationConfig::Waterline(cfg) = &session.toolpath_configs()[0].operation else {
++        panic!("toolpath 0 is the Waterline");
++    };
++    assert!(!cfg.helical, "continuous = false sets helical = false");
++    assert!(
++        cfg.legacy_continuous.is_none(),
++        "the alias writes the new field"
++    );
++}
