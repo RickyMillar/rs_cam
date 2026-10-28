@@ -1,0 +1,4 @@
+d68/base_corne/simulation.json res 0.3 ids [1, 5, 3] total 3033.9
+   tp 1 total 890.3 cut 810.8 rapid 79.5 air 364.4 vol 218067
+   tp 3 total 1689.9 cut 1271.7 rapid 418.3 air 988.7 vol 4992
+   tp 5 total 453.7 cut 254.1 rapid 199.6 air 173.1 vol 53572

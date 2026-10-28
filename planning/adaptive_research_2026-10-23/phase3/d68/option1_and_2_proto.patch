@@ -1,0 +1,711 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index fd5ba5f2e..c88a294fe 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -407,6 +407,11 @@ pub(super) struct ClearZLevelContext<'a> {
+     /// them), each with its Z level. The waterline cleanup of that level
+     /// skips a contour inside one.
+     pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
++    /// D68 prototype (G-RESTDOC option 2): the reach band and its pass.
++    pub(super) band_edge: std::cell::RefCell<Option<BandEdge>>,
++    /// D68 prototype (G-RESTDOC option 1): per planner cell, the centre is
++    /// inside the containment.
++    pub(super) option1_inside: Option<Vec<bool>>,
+ }
+ 
+ // ── Contour-parallel clearing ─────────────────────────────────────────
+@@ -1331,13 +1336,14 @@ pub(super) fn clear_z_level_contour_parallel(
+     }
+ 
+     // 1. Build boolean material grid (material = true)
+-    let (material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
++    let (mut material_grid, rows, cols, origin_x, origin_y, cell_size) = build_material_bool_grid(
+         material_stock,
+         surface_hm,
+         z_level,
+         ctx.stock_to_leave,
+         area_mask,
+     );
++    option1_regions(ctx, material_stock, surface_hm, z_level, &mut material_grid, rows, cols);
+ 
+     let mat_count = material_grid.iter().filter(|&&b| b).count();
+     // Check if any material exists
+@@ -1511,13 +1517,14 @@ pub(super) fn clear_z_level_contour_parallel(
+     // Cleanup: narrow sections of the material region (annular rings near steep
+     // walls) may have EDT below the starting threshold, leaving them without a
+     // contour pass. Identify remaining material cells and stamp a raster cleanup.
+-    let (cleanup_grid, cr, cc, co_x, co_y, c_cs) = build_material_bool_grid(
++    let (mut cleanup_grid, cr, cc, co_x, co_y, c_cs) = build_material_bool_grid(
+         material_stock,
+         surface_hm,
+         z_level,
+         ctx.stock_to_leave,
+         area_mask,
+     );
++    option1_regions(ctx, material_stock, surface_hm, z_level, &mut cleanup_grid, cr, cc);
+     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
+     if cleanup_count > 0 {
+         // Raster through remaining material rows.  For each row with material
+@@ -2009,6 +2016,7 @@ fn detect_and_order_regions(
+         if let Some(clip) = ctx.region_clip.as_ref() {
+             clip.restrict_regions(&mut grid, rows, cols);
+         }
++        option1_regions(ctx, material_stock, surface_hm, z_level, &mut grid, rows, cols);
+         grid
+     };
+     if !material_grid.iter().any(|&b| b) {
+@@ -3796,6 +3804,366 @@ fn update_level_marker_metrics(
+     }
+ }
+ 
++// ── D68 prototype, G-RESTDOC option 1: the region side ────────────────
++
++/// D68 (prototype, option 1): restrict a padded level grid to the centre
++/// containment, and add the containment cells whose disc meets material
++/// outside it above the level.
++pub(super) fn option1_regions(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    grid: &mut [bool],
++    padded_rows: usize,
++    padded_cols: usize,
++) {
++    let Some(inside) = ctx.option1_inside.as_ref() else {
++        return;
++    };
++    let rows = material_stock.z_grid.rows;
++    let cols = material_stock.z_grid.cols;
++    if padded_rows != rows + 2 || padded_cols != cols + 2 || inside.len() != rows * cols {
++        return;
++    }
++    let mut src = vec![false; padded_rows * padded_cols];
++    let mut any = false;
++    for r in 0..rows {
++        for c in 0..cols {
++            if !inside.get(r * cols + c).copied().unwrap_or(true)
++                && cell_has_material(material_stock, surface_hm, r, c, z_level, ctx.stock_to_leave)
++                && let Some(s) = src.get_mut((r + 1) * padded_cols + c + 1)
++            {
++                *s = true;
++                any = true;
++            }
++        }
++    }
++    let reach_cells = (ctx.tool_radius + material_stock.z_grid.cell_size * 0.5)
++        / material_stock.z_grid.cell_size;
++    let dist = any.then(|| crate::geometry::grid_field::distance_transform_2d(&src, padded_rows, padded_cols));
++    for r in 0..rows {
++        for c in 0..cols {
++            let i = (r + 1) * padded_cols + c + 1;
++            let ins = inside.get(r * cols + c).copied().unwrap_or(true);
++            let near = dist.as_ref().is_some_and(|d| d.get(i).copied().unwrap_or(f64::INFINITY) <= reach_cells);
++            if let Some(g) = grid.get_mut(i) {
++                *g = ins && (*g || near);
++            }
++        }
++    }
++}
++
++// ── D68 prototype, G-RESTDOC option 2: the edge pass per level ────────
++
++/// D68 (prototype, not product): the reach band of a rest op. The band is
++/// the planner cells a disc centred inside the centre containment reaches,
++/// whose centre is outside it, with the column top read before the
++/// boundary clear. The pass state lowers a band top where an emitted cut
++/// reaches it.
++pub(super) struct BandEdge {
++    tops: Vec<Option<f64>>,
++    rows: usize,
++    cols: usize,
++    origin_u: f64,
++    origin_v: f64,
++    cell: f64,
++    reach: f64,
++    rings: Vec<Vec<P2>>,
++    scanned: usize,
++}
++
++impl BandEdge {
++    /// `None` when there is no containment or no band cell holds stock.
++    pub(super) fn new(
++        stock: &TriDexelStock,
++        prior: &super::path::PriorStockTops,
++        centre_clip: Option<&CentreClip>,
++        tool_radius: f64,
++    ) -> Option<Self> {
++        let clip = centre_clip?;
++        let grid = &stock.z_grid;
++        let polys = clip.polygons();
++        let mut tops = vec![None; grid.rows * grid.cols];
++        let mut n = 0usize;
++        for (i, top) in prior.tops.iter().enumerate() {
++            let Some(t) = top else { continue };
++            let (row, col) = (i / prior.cols.max(1), i % prior.cols.max(1));
++            let (x, y) = grid.cell_to_world(row, col);
++            let p = P2::new(x, y);
++            if !polys.iter().any(|q| q.contains_point(&p))
++                && let Some(slot) = tops.get_mut(i)
++            {
++                *slot = Some(*t);
++                n += 1;
++            }
++        }
++        if n == 0 {
++            return None;
++        }
++        // The pass line: the containment, 0.02 mm inside the clip.
++        let step = grid.cell_size;
++        let mut rings = Vec::new();
++        for poly in polys {
++            for shrunk in crate::polygon::offset_polygon(poly, 0.02) {
++                for ring in polygon_rings(&shrunk) {
++                    let mut pts = Vec::new();
++                    for k in 0..ring.len() {
++                        let (Some(a), Some(b)) = (ring.get(k), ring.get((k + 1) % ring.len()))
++                        else {
++                            continue;
++                        };
++                        let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
++                        let m = (len / step).ceil().max(1.0) as usize;
++                        for j in 0..m {
++                            let t = j as f64 / m as f64;
++                            pts.push(P2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)));
++                        }
++                    }
++                    if pts.len() >= 3 {
++                        rings.push(pts);
++                    }
++                }
++            }
++        }
++        tracing::info!(
++            band_cells = n,
++            polygons = polys.len(),
++            rings = rings.len(),
++            ring_mm = rings.iter().map(|r| r.len() as f64 * step).sum::<f64>(),
++            "D68 band edge: band"
++        );
++        Some(Self {
++            tops,
++            rows: grid.rows,
++            cols: grid.cols,
++            origin_u: grid.origin_u,
++            origin_v: grid.origin_v,
++            cell: grid.cell_size,
++            reach: tool_radius + grid.cell_size * 0.5,
++            rings,
++            scanned: 0,
++        })
++    }
++
++    /// Visit the band cells within reach of `(x, y)`.
++    fn for_reach(&mut self, x: f64, y: f64, mut f: impl FnMut(&mut f64)) {
++        let r = self.reach;
++        let c0 = ((x - r - self.origin_u) / self.cell).floor().max(0.0) as usize;
++        let c1 = (((x + r - self.origin_u) / self.cell).ceil().max(0.0) as usize)
++            .min(self.cols.saturating_sub(1));
++        let r0 = ((y - r - self.origin_v) / self.cell).floor().max(0.0) as usize;
++        let r1 = (((y + r - self.origin_v) / self.cell).ceil().max(0.0) as usize)
++            .min(self.rows.saturating_sub(1));
++        for row in r0..=r1 {
++            for col in c0..=c1 {
++                let cx = self.origin_u + col as f64 * self.cell;
++                let cy = self.origin_v + row as f64 * self.cell;
++                if (cx - x).powi(2) + (cy - y).powi(2) > r * r {
++                    continue;
++                }
++                if let Some(Some(t)) = self.tops.get_mut(row * self.cols + col) {
++                    f(t);
++                }
++            }
++        }
++    }
++
++    fn max_top_in_reach(&mut self, x: f64, y: f64) -> f64 {
++        let mut m = f64::NEG_INFINITY;
++        self.for_reach(x, y, |t| m = m.max(*t));
++        m
++    }
++
++    fn lower_along(&mut self, path: &[P3]) {
++        let step = self.cell;
++        for w in path.windows(2) {
++            let (Some(a), Some(b)) = (w.first(), w.get(1)) else {
++                continue;
++            };
++            let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
++            let m = (len / step).ceil().max(1.0) as usize;
++            for j in 0..=m {
++                let t = j as f64 / m as f64;
++                let (x, y, z) = (
++                    a.x + t * (b.x - a.x),
++                    a.y + t * (b.y - a.y),
++                    a.z + t * (b.z - a.z),
++                );
++                self.for_reach(x, y, |top| *top = top.min(z));
++            }
++        }
++        if path.len() == 1
++            && let Some(a) = path.first()
++        {
++            self.for_reach(a.x, a.y, |top| *top = top.min(a.z));
++        }
++    }
++
++    /// Lower the band under every cut and link emitted since the last scan.
++    fn scan(&mut self, segments: &[Adaptive3dSegment]) {
++        let from = self.scanned.min(segments.len());
++        for seg in segments.get(from..).unwrap_or(&[]) {
++            match seg {
++                Adaptive3dSegment::Cut(path) => self.lower_along(path),
++                Adaptive3dSegment::Link(p) => self.lower_along(&[*p]),
++                _ => {}
++            }
++        }
++        self.scanned = segments.len();
++    }
++}
++
++/// D68 (prototype, option 2): at `z_level`, one contour along the
++/// containment line wherever the reach band stands above the cut. Each run
++/// of the line where the band stands is one cut; its Z is the level,
++/// draped onto the surface, and never more than one Depth/Pass under the
++/// highest band top in reach.
++pub(super) fn band_edge_pass(
++    ctx: &ClearZLevelContext<'_>,
++    material_stock: &mut TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    z_level: f64,
++    segments: &mut Vec<Adaptive3dSegment>,
++    cursor: &mut PlannerCursor,
++) {
++    let mut guard = ctx.band_edge.borrow_mut();
++    let Some(band) = guard.as_mut() else { return };
++    band.scan(segments);
++    let rings = std::mem::take(&mut band.rings);
++    let mut runs: Vec<Vec<P3>> = Vec::new();
++    for ring in &rings {
++        let n = ring.len();
++        let mut flag = Vec::with_capacity(n);
++        let mut zs = Vec::with_capacity(n);
++        for p in ring {
++            let surf = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
++            let floor = if surf == f64::NEG_INFINITY {
++                z_level
++            } else {
++                (surf + ctx.stock_to_leave).max(z_level)
++            };
++            let top = band.max_top_in_reach(p.x, p.y);
++            let z = floor.max(top - ctx.depth_per_pass - ctx.tolerance);
++            flag.push(top > z + 0.05);
++            zs.push(z);
++        }
++        let Some(start) = (0..n).find(|&i| !flag.get(i).copied().unwrap_or(true)) else {
++            // The band stands along the whole ring: one closed cut.
++            let mut path: Vec<P3> = ring
++                .iter()
++                .zip(&zs)
++                .map(|(p, z)| P3::new(p.x, p.y, *z))
++                .collect();
++            if let Some(f) = path.first().copied() {
++                path.push(f);
++            }
++            runs.push(path);
++            continue;
++        };
++        let mut cur: Vec<P3> = Vec::new();
++        for k in 1..=n {
++            let i = (start + k) % n;
++            if flag.get(i).copied().unwrap_or(false) {
++                if let (Some(p), Some(z)) = (ring.get(i), zs.get(i)) {
++                    cur.push(P3::new(p.x, p.y, *z));
++                }
++            } else if !cur.is_empty() {
++                runs.push(std::mem::take(&mut cur));
++            }
++        }
++        if !cur.is_empty() {
++            runs.push(cur);
++        }
++    }
++    band.rings = rings;
++    drop(guard);
++    let seg_len = |r: &Vec<P3>| -> f64 {
++        r.windows(2)
++            .map(|w| match (w.first(), w.get(1)) {
++                (Some(a), Some(b)) => ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt(),
++                _ => 0.0,
++            })
++            .sum()
++    };
++    let total_mm: f64 = runs.iter().map(seg_len).sum();
++    let short = runs.iter().filter(|r| seg_len(r) < 5.0).count();
++    tracing::info!(
++        z = z_level,
++        segments = runs.len(),
++        under_5mm = short,
++        length_mm = total_mm,
++        "D68 band edge: level"
++    );
++    // Nearest first from the tool.
++    let mut left: Vec<Vec<P3>> = runs;
++    while !left.is_empty() {
++        let here = cursor.last_pos.map_or((0.0, 0.0), |p| (p.x, p.y));
++        let mut best = 0usize;
++        let mut best_d = f64::INFINITY;
++        let mut rev = false;
++        for (k, r) in left.iter().enumerate() {
++            for (end, is_rev) in [(r.first(), false), (r.last(), true)] {
++                if let Some(e) = end {
++                    let d = (e.x - here.0).powi(2) + (e.y - here.1).powi(2);
++                    if d < best_d {
++                        best_d = d;
++                        best = k;
++                        rev = is_rev;
++                    }
++                }
++            }
++        }
++        let mut path = left.swap_remove(best);
++        if rev {
++            path.reverse();
++        }
++        if path.len() == 1
++            && let Some(f) = path.first().copied()
++        {
++            path.push(P3::new(f.x + ctx.step_len, f.y, f.z));
++        }
++        let Some(first) = path.first().copied() else {
++            continue;
++        };
++        let should_link = cursor
++            .last_pos
++            .is_some_and(|lp| side_link_ok(ctx, material_stock, surface_hm, lp, first));
++        let entry_seg = if should_link {
++            Adaptive3dSegment::Link(first)
++        } else {
++            Adaptive3dSegment::Rapid(first)
++        };
++        push_segment_with_stamp(
++            segments,
++            material_stock,
++            ctx.lut,
++            ctx.tool_radius,
++            cursor,
++            entry_seg,
++            ctx.safe_z,
++            ctx.cut_tolerance,
++            ctx.min_cutting_radius,
++            &ctx.stamp_drape(),
++        );
++        push_segment_with_stamp(
++            segments,
++            material_stock,
++            ctx.lut,
++            ctx.tool_radius,
++            cursor,
++            Adaptive3dSegment::Cut(path),
++            ctx.safe_z,
++            ctx.cut_tolerance,
++            ctx.min_cutting_radius,
++            &ctx.stamp_drape(),
++        );
++    }
++    if let Some(band) = ctx.band_edge.borrow_mut().as_mut() {
++        band.scan(segments);
++    }
++}
++
+ #[cfg(test)]
+ mod region_order_tests {
+     use super::{air_run_crossover_mm, nearest_neighbor_order};
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index c9747494c..cea86906f 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -315,23 +315,19 @@ pub(super) fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLev
+ /// the box top put the first 8 mm level at Z 6, not at Z 4, and the
+ /// first level held 2 mm of air.
+ pub(super) fn level_anchor_z(
+-    material_stock: &TriDexelStock,
++    prior: Option<&PriorStockTops>,
+     surface_hm: &SurfaceHeightmap,
+     stock_to_leave: f64,
+     stock_top_z: f64,
+-    reads_prior_stock: bool,
+ ) -> f64 {
+-    if !reads_prior_stock {
++    let Some(prior) = prior else {
+         return stock_top_z;
+-    }
+-    let grid = &material_stock.z_grid;
++    };
+     let mut top = f64::NEG_INFINITY;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01) {
+-                top = top.max(super::stock_top_z_at(material_stock, row, col));
+-            }
++    for (row, col, cell_top) in prior.cells() {
++        let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
++        if cell_top > floor + 0.01 {
++            top = top.max(cell_top);
+         }
+     }
+     if top.is_finite() {
+@@ -341,6 +337,77 @@ pub(super) fn level_anchor_z(
+     }
+ }
+ 
++/// D63 (G-RESTDOC): the planner cells the tool can meet (port of 805368f98).
++pub(super) fn tool_reach_cells(
++    stock: &TriDexelStock,
++    centre_boundary: &[crate::polygon::Polygon2],
++    tool_radius: f64,
++) -> Option<Vec<bool>> {
++    if centre_boundary.is_empty() {
++        return None;
++    }
++    let grid = &stock.z_grid;
++    let grow = tool_radius.max(0.0) + grid.cell_size * 0.5;
++    let reach: Vec<crate::polygon::Polygon2> = centre_boundary
++        .iter()
++        .flat_map(|p| crate::polygon::offset_polygon(p, -grow))
++        .collect();
++    let mut cells = Vec::with_capacity(grid.rows * grid.cols);
++    for row in 0..grid.rows {
++        for col in 0..grid.cols {
++            let (x, y) = grid.cell_to_world(row, col);
++            let p = crate::geo::P2::new(x, y);
++            cells.push(reach.iter().any(|q| q.contains_point(&p)));
++        }
++    }
++    Some(cells)
++}
++
++/// D63 (G-RESTDOC): the column tops of the cells in the tool's reach, read
++/// after the border clear and BEFORE the boundary clear (port of 805368f98).
++pub(super) struct PriorStockTops {
++    /// Row-major; `None` for a cell out of reach or with no material.
++    pub(super) tops: Vec<Option<f64>>,
++    pub(super) cols: usize,
++}
++
++impl PriorStockTops {
++    pub(super) fn read(
++        stock: &TriDexelStock,
++        centre_boundary: &[crate::polygon::Polygon2],
++        tool_radius: f64,
++    ) -> Self {
++        let reach = tool_reach_cells(stock, centre_boundary, tool_radius);
++        let grid = &stock.z_grid;
++        let mut tops = Vec::with_capacity(grid.rows * grid.cols);
++        for row in 0..grid.rows {
++            for col in 0..grid.cols {
++                let in_reach = reach
++                    .as_ref()
++                    .is_none_or(|r| r.get(row * grid.cols + col).copied().unwrap_or(false));
++                tops.push(
++                    in_reach
++                        .then(|| crate::stock::dexel::ray_top(grid.ray(row, col)).map(f64::from))
++                        .flatten(),
++                );
++            }
++        }
++        Self {
++            tops,
++            cols: grid.cols,
++        }
++    }
++
++    /// `(row, col, top)` of every reach cell that holds material.
++    pub(super) fn cells(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
++        let cols = self.cols.max(1);
++        self.tops
++            .iter()
++            .enumerate()
++            .filter_map(move |(i, top)| top.map(|t| (i / cols, i % cols, t)))
++    }
++}
++
+ /// D50: the level anchor of a consumer of a source's derived rest regions
+ /// (`Adaptive3dDepth::rest_top_z`): the anchor rule with the source's left
+ /// stock top as its ceiling, on remaining stock only. On fresh stock the
+@@ -379,36 +446,20 @@ pub(super) fn rest_capped_level_top(
+ /// floor ([`super::intended_floor::level_floor_z`]); a cell with no
+ /// material above it is skipped with the margin [`level_anchor_z`] uses.
+ pub(super) fn rest_ceiling_keeps_doc(
+-    material_stock: &TriDexelStock,
++    prior: &PriorStockTops,
+     surface_hm: &SurfaceHeightmap,
+     params: &Adaptive3dParams,
+     first_level: f64,
+ ) -> bool {
+-    let reach = &params.geometry.centre_boundary;
+     let limit = params.depth.depth_per_pass + params.geometry.tolerance;
+-    let grid = &material_stock.z_grid;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            if !reach.is_empty() {
+-                let (x, y) = grid.cell_to_world(row, col);
+-                let p = crate::geo::P2::new(x, y);
+-                if !reach.iter().any(|q| q.contains_point(&p)) {
+-                    continue;
+-                }
+-            }
+-            let floor = super::intended_floor::level_floor_z(
+-                surface_hm.z_or_bbox_floor_at(row, col),
+-                params.depth.stock_to_leave,
+-                first_level,
+-            );
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01)
+-                && super::stock_top_z_at(material_stock, row, col) - floor > limit
+-            {
+-                return false;
+-            }
+-        }
+-    }
+-    true
++    prior.cells().all(|(row, col, top)| {
++        let floor = super::intended_floor::level_floor_z(
++            surface_hm.z_or_bbox_floor_at(row, col),
++            params.depth.stock_to_leave,
++            first_level,
++        );
++        top <= floor + 0.01 || top - floor <= limit
++    })
+ }
+ 
+ /// The levels from `z_top` down to `z_bot`: `z_top - step`,
+@@ -537,6 +588,8 @@ fn clear_planned_level(
+             )?;
+         }
+     }
++    // D68 prototype (G-RESTDOC option 2): the edge pass of this level.
++    super::clearing::band_edge_pass(ctx, material_stock, surface_hm, z_level, segments, cursor);
+     if let Some(scope) = level_scope {
+         let tally = tally_segments_for_z_level(segments.get(segs_before..).unwrap_or(&[]));
+         scope.set_counter("planner_cut_segments", tally.cut_segs as f64);
+@@ -810,6 +863,17 @@ pub(super) fn adaptive_3d_segments(
+     // contour parallel / adaptive) plans passes that stamp them down
+     // DPP at a time. The simulator then sees pre-cleared rays at the
+     // boundary cells the same way it does for in-mesh cells.
++    // D68 prototype (option 2b): the band read BEFORE the border clear, so
++    // stock a previous op left beyond the mesh footprint counts too.
++    let band_prior = (std::env::var_os("RS_CAM_D68_OPTION2").is_some()
++        && params.initial_stock.is_some())
++    .then(|| {
++        PriorStockTops::read(
++            &material_stock,
++            &params.geometry.centre_boundary,
++            tool_radius,
++        )
++    });
+     let border_scope =
+         debug_ctx.map(|ctx| ctx.start_span(DebugSpanKind::BorderClear, "Border clear"));
+     let border_margin = r * 0.5;
+@@ -865,6 +929,16 @@ pub(super) fn adaptive_3d_segments(
+         scope.set_counter("cells", border_cleared as f64);
+     }
+ 
++    // D63 (G-RESTDOC): on prior stock, the column tops the tool can meet,
++    // read now, after the border clear and before the boundary clear.
++    let prior_tops = params.initial_stock.is_some().then(|| {
++        PriorStockTops::read(
++            &material_stock,
++            &params.geometry.centre_boundary,
++            tool_radius,
++        )
++    });
++
+     // Boundary clip on the internal stock. When a 2D boundary polygon is
+     // provided (e.g. the model silhouette inset by tool_radius), clear
+     // cells whose center is outside the boundary. This forces the bool-grid
+@@ -882,8 +956,10 @@ pub(super) fn adaptive_3d_segments(
+     if let Some(ref boundary) = params.geometry.boundary {
+         // Geodesic Adaptive with Global ordering only (§13.8: the strategy
+         // test sits here, the helper is geometry only).
+-        let reach = (params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
++        let reach = ((params.clearing_strategy == ClearingStrategy3d::GeodesicAdaptive
+             && matches!(params.linking.region_ordering, RegionOrdering::Global))
++            || (std::env::var_os("RS_CAM_D68_OPTION1").is_some()
++                && params.initial_stock.is_some()))
+         .then(|| super::outer_band::boundary_reach(boundary, tool_radius))
+         .flatten();
+         let mut inside_mask: Vec<bool> = Vec::new();
+@@ -951,11 +1027,10 @@ pub(super) fn adaptive_3d_segments(
+     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
+     // top of the material it can still cut, not at the stock box top.
+     let anchor = level_anchor_z(
+-        &material_stock,
++        prior_tops.as_ref(),
+         &surface_hm,
+         params.depth.stock_to_leave,
+         params.depth.stock_top_z,
+-        params.initial_stock.is_some(),
+     );
+     // D50: a consumer of a source's derived rest regions starts no higher
+     // than the top of the stock the source left in them, but only while no
+@@ -967,12 +1042,14 @@ pub(super) fn adaptive_3d_segments(
+         params.initial_stock.is_some(),
+     );
+     let level_top = if capped < anchor
+-        && !rest_ceiling_keeps_doc(
+-            &material_stock,
+-            &surface_hm,
+-            params,
+-            (capped - params.depth.depth_per_pass).max(z_bottom),
+-        ) {
++        && prior_tops.as_ref().is_some_and(|prior| {
++            !rest_ceiling_keeps_doc(
++                prior,
++                &surface_hm,
++                params,
++                (capped - params.depth.depth_per_pass).max(z_bottom),
++            )
++        }) {
+         debug!(
+             anchor,
+             capped,
+@@ -1065,6 +1142,38 @@ pub(super) fn adaptive_3d_segments(
+         keep_down_route: super::effective_keep_down_route(params),
+         region_clip,
+         left_pieces: std::cell::RefCell::new(Vec::new()),
++        option1_inside: (std::env::var_os("RS_CAM_D68_OPTION1").is_some()
++            && params.initial_stock.is_some())
++        .then(|| {
++            centre_clip.as_ref().map(|clip| {
++                let g = &material_stock.z_grid;
++                let mut v = Vec::with_capacity(g.rows * g.cols);
++                for row in 0..g.rows {
++                    for col in 0..g.cols {
++                        let (x, y) = g.cell_to_world(row, col);
++                        let p = crate::geo::P2::new(x, y);
++                        v.push(clip.polygons().iter().any(|q| q.contains_point(&p)));
++                    }
++                }
++                v
++            })
++        })
++        .flatten(),
++        band_edge: std::cell::RefCell::new(
++            std::env::var_os("RS_CAM_D68_OPTION2")
++                .is_some()
++                .then(|| {
++                    (if std::env::var_os("RS_CAM_D68_BORDER").is_some() { band_prior.as_ref() } else { prior_tops.as_ref() }).and_then(|prior| {
++                        super::clearing::BandEdge::new(
++                            &material_stock,
++                            prior,
++                            centre_clip.as_ref(),
++                            tool_radius,
++                        )
++                    })
++                })
++                .flatten(),
++        ),
+     };
+ 
+     let mut segments = Vec::new();

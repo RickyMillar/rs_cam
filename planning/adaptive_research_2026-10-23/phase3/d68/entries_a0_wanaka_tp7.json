@@ -1,0 +1,24 @@
+{
+ "run": "a0_wanaka",
+ "descent_moves": 1195,
+ "classes": {
+  "drop <= 1 mm": {
+   "moves": 154,
+   "time_s": 13.4,
+   "air_share": 0.683,
+   "median_drop_mm": 0.51
+  },
+  "drop 1 mm - 1 DPP": {
+   "moves": 841,
+   "time_s": 508.7,
+   "air_share": 0.913,
+   "median_drop_mm": 4.96
+  },
+  "drop > 1 DPP": {
+   "moves": 200,
+   "time_s": 187.0,
+   "air_share": 0.991,
+   "median_drop_mm": 14.88
+  }
+ }
+}

@@ -1,0 +1,210 @@
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index c9747494c..3b7136e96 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -315,23 +315,19 @@ pub(super) fn tally_segments_for_z_level(segments: &[Adaptive3dSegment]) -> ZLev
+ /// the box top put the first 8 mm level at Z 6, not at Z 4, and the
+ /// first level held 2 mm of air.
+ pub(super) fn level_anchor_z(
+-    material_stock: &TriDexelStock,
++    prior: Option<&PriorStockTops>,
+     surface_hm: &SurfaceHeightmap,
+     stock_to_leave: f64,
+     stock_top_z: f64,
+-    reads_prior_stock: bool,
+ ) -> f64 {
+-    if !reads_prior_stock {
++    let Some(prior) = prior else {
+         return stock_top_z;
+-    }
+-    let grid = &material_stock.z_grid;
++    };
+     let mut top = f64::NEG_INFINITY;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01) {
+-                top = top.max(super::stock_top_z_at(material_stock, row, col));
+-            }
++    for (row, col, cell_top) in prior.cells() {
++        let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
++        if cell_top > floor + 0.01 {
++            top = top.max(cell_top);
+         }
+     }
+     if top.is_finite() {
+@@ -341,6 +337,77 @@ pub(super) fn level_anchor_z(
+     }
+ }
+ 
++/// D63 (G-RESTDOC): the planner cells the tool can meet (port of 805368f98).
++pub(super) fn tool_reach_cells(
++    stock: &TriDexelStock,
++    centre_boundary: &[crate::polygon::Polygon2],
++    tool_radius: f64,
++) -> Option<Vec<bool>> {
++    if centre_boundary.is_empty() {
++        return None;
++    }
++    let grid = &stock.z_grid;
++    let grow = tool_radius.max(0.0) + grid.cell_size * 0.5;
++    let reach: Vec<crate::polygon::Polygon2> = centre_boundary
++        .iter()
++        .flat_map(|p| crate::polygon::offset_polygon(p, -grow))
++        .collect();
++    let mut cells = Vec::with_capacity(grid.rows * grid.cols);
++    for row in 0..grid.rows {
++        for col in 0..grid.cols {
++            let (x, y) = grid.cell_to_world(row, col);
++            let p = crate::geo::P2::new(x, y);
++            cells.push(reach.iter().any(|q| q.contains_point(&p)));
++        }
++    }
++    Some(cells)
++}
++
++/// D63 (G-RESTDOC): the column tops of the cells in the tool's reach, read
++/// after the border clear and BEFORE the boundary clear (port of 805368f98).
++pub(super) struct PriorStockTops {
++    /// Row-major; `None` for a cell out of reach or with no material.
++    pub(super) tops: Vec<Option<f64>>,
++    pub(super) cols: usize,
++}
++
++impl PriorStockTops {
++    pub(super) fn read(
++        stock: &TriDexelStock,
++        centre_boundary: &[crate::polygon::Polygon2],
++        tool_radius: f64,
++    ) -> Self {
++        let reach = tool_reach_cells(stock, centre_boundary, tool_radius);
++        let grid = &stock.z_grid;
++        let mut tops = Vec::with_capacity(grid.rows * grid.cols);
++        for row in 0..grid.rows {
++            for col in 0..grid.cols {
++                let in_reach = reach
++                    .as_ref()
++                    .is_none_or(|r| r.get(row * grid.cols + col).copied().unwrap_or(false));
++                tops.push(
++                    in_reach
++                        .then(|| crate::stock::dexel::ray_top(grid.ray(row, col)).map(f64::from))
++                        .flatten(),
++                );
++            }
++        }
++        Self {
++            tops,
++            cols: grid.cols,
++        }
++    }
++
++    /// `(row, col, top)` of every reach cell that holds material.
++    pub(super) fn cells(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
++        let cols = self.cols.max(1);
++        self.tops
++            .iter()
++            .enumerate()
++            .filter_map(move |(i, top)| top.map(|t| (i / cols, i % cols, t)))
++    }
++}
++
+ /// D50: the level anchor of a consumer of a source's derived rest regions
+ /// (`Adaptive3dDepth::rest_top_z`): the anchor rule with the source's left
+ /// stock top as its ceiling, on remaining stock only. On fresh stock the
+@@ -379,36 +446,20 @@ pub(super) fn rest_capped_level_top(
+ /// floor ([`super::intended_floor::level_floor_z`]); a cell with no
+ /// material above it is skipped with the margin [`level_anchor_z`] uses.
+ pub(super) fn rest_ceiling_keeps_doc(
+-    material_stock: &TriDexelStock,
++    prior: &PriorStockTops,
+     surface_hm: &SurfaceHeightmap,
+     params: &Adaptive3dParams,
+     first_level: f64,
+ ) -> bool {
+-    let reach = &params.geometry.centre_boundary;
+     let limit = params.depth.depth_per_pass + params.geometry.tolerance;
+-    let grid = &material_stock.z_grid;
+-    for row in 0..grid.rows {
+-        for col in 0..grid.cols {
+-            if !reach.is_empty() {
+-                let (x, y) = grid.cell_to_world(row, col);
+-                let p = crate::geo::P2::new(x, y);
+-                if !reach.iter().any(|q| q.contains_point(&p)) {
+-                    continue;
+-                }
+-            }
+-            let floor = super::intended_floor::level_floor_z(
+-                surface_hm.z_or_bbox_floor_at(row, col),
+-                params.depth.stock_to_leave,
+-                first_level,
+-            );
+-            if super::stock_has_material_above(material_stock, row, col, floor + 0.01)
+-                && super::stock_top_z_at(material_stock, row, col) - floor > limit
+-            {
+-                return false;
+-            }
+-        }
+-    }
+-    true
++    prior.cells().all(|(row, col, top)| {
++        let floor = super::intended_floor::level_floor_z(
++            surface_hm.z_or_bbox_floor_at(row, col),
++            params.depth.stock_to_leave,
++            first_level,
++        );
++        top <= floor + 0.01 || top - floor <= limit
++    })
+ }
+ 
+ /// The levels from `z_top` down to `z_bot`: `z_top - step`,
+@@ -865,6 +916,16 @@ pub(super) fn adaptive_3d_segments(
+         scope.set_counter("cells", border_cleared as f64);
+     }
+ 
++    // D63 (G-RESTDOC): on prior stock, the column tops the tool can meet,
++    // read now, after the border clear and before the boundary clear.
++    let prior_tops = params.initial_stock.is_some().then(|| {
++        PriorStockTops::read(
++            &material_stock,
++            &params.geometry.centre_boundary,
++            tool_radius,
++        )
++    });
++
+     // Boundary clip on the internal stock. When a 2D boundary polygon is
+     // provided (e.g. the model silhouette inset by tool_radius), clear
+     // cells whose center is outside the boundary. This forces the bool-grid
+@@ -951,11 +1012,10 @@ pub(super) fn adaptive_3d_segments(
+     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
+     // top of the material it can still cut, not at the stock box top.
+     let anchor = level_anchor_z(
+-        &material_stock,
++        prior_tops.as_ref(),
+         &surface_hm,
+         params.depth.stock_to_leave,
+         params.depth.stock_top_z,
+-        params.initial_stock.is_some(),
+     );
+     // D50: a consumer of a source's derived rest regions starts no higher
+     // than the top of the stock the source left in them, but only while no
+@@ -967,12 +1027,14 @@ pub(super) fn adaptive_3d_segments(
+         params.initial_stock.is_some(),
+     );
+     let level_top = if capped < anchor
+-        && !rest_ceiling_keeps_doc(
+-            &material_stock,
+-            &surface_hm,
+-            params,
+-            (capped - params.depth.depth_per_pass).max(z_bottom),
+-        ) {
++        && prior_tops.as_ref().is_some_and(|prior| {
++            !rest_ceiling_keeps_doc(
++                prior,
++                &surface_hm,
++                params,
++                (capped - params.depth.depth_per_pass).max(z_bottom),
++            )
++        }) {
+         debug!(
+             anchor,
+             capped,

@@ -1,0 +1,70 @@
+{
+ "run": "d68/a0_holes",
+ "edge_band_0_9_mm2": 1986,
+ "cleared_by_op5_mm2": {
+  "outside 0-3": 0,
+  "outside 3-6.2": 0,
+  "outside 6.2-9": 0,
+  "outside > 9": 0,
+  "switch hole": 109,
+  "inside case": 0
+ },
+ "left_before_op5_mm2": {
+  "outside 0-3": 861,
+  "outside 3-6.2": 696,
+  "outside 6.2-9": 424,
+  "outside > 9": 3853,
+  "switch hole": 1046,
+  "inside case": 355
+ },
+ "left_after_op5_mm2": {
+  "outside 0-3": 861,
+  "outside 3-6.2": 696,
+  "outside 6.2-9": 424,
+  "outside > 9": 3853,
+  "switch hole": 937,
+  "inside case": 355
+ },
+ "left_after_copy_mm2": {
+  "outside 0-3": 122,
+  "outside 3-6.2": 357,
+  "outside 6.2-9": 424,
+  "outside > 9": 3031,
+  "switch hole": 278,
+  "inside case": 344
+ },
+ "op5_removed_mm3_by_place": {
+  "outside 0-3": 0,
+  "outside 3-6.2": 0,
+  "outside 6.2-9": 0,
+  "outside > 9": 0,
+  "switch hole": 380,
+  "inside case": 1
+ },
+ "op5_cut_centres": 8632,
+ "centres_beyond_6mm": 0,
+ "centre_out_max_mm": 0.0,
+ "time_by_class_s": {
+  "cut, air, stock <= 0.8 before": 104.8,
+  "rapid": 40.9,
+  "plunge/ramp": 8.0,
+  "cut, removes": 7.2,
+  "cut, air, stock > 0.8 before": 2.2,
+  "link at feed": 1.2
+ },
+ "xy_mm_by_class": {
+  "rapid": 1144.0,
+  "cut, air, stock <= 0.8 before": 747.8,
+  "cut, removes": 177.2,
+  "link at feed": 29.5,
+  "cut, air, stock > 0.8 before": 21.6,
+  "plunge/ramp": 0.5
+ },
+ "cut_time_by_place_s": {
+  "cut, air, stock <= 0.8 before | inside case": 60.5,
+  "cut, air, stock <= 0.8 before | switch hole": 44.3,
+  "cut, removes | inside case": 4.4,
+  "cut, removes | switch hole": 2.8,
+  "cut, air, stock > 0.8 before | switch hole": 2.2
+ }
+}

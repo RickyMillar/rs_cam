@@ -1,0 +1,5 @@
+cc00aa0c33b833a8dcf824f62155c73c779ea411
+bffdd9eeb215f4747ea755d52a8d6a8d  -
+ crates/rs_cam_core/src/adaptive3d/clearing.rs | 312 ++++++++++++++++++++++++++
+ crates/rs_cam_core/src/adaptive3d/path.rs     | 167 ++++++++++----
+ 2 files changed, 435 insertions(+), 44 deletions(-)

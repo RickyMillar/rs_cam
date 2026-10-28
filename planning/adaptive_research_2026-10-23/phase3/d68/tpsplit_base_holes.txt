@@ -1,0 +1,4 @@
+d68/base_holes/simulation.json res 0.3 ids [1, 5, 3] total 2946.5
+   tp 1 total 890.3 cut 810.8 rapid 79.5 air 364.4 vol 218067
+   tp 3 total 1962.0 cut 1502.2 rapid 459.8 air 1059.5 vol 36624
+   tp 5 total 94.1 cut 36.7 rapid 57.5 air 34.6 vol 478

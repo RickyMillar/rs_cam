@@ -1,0 +1,6 @@
+a0_holes rc=0 12s; Toolpaths: 3  |  Cutting: 54810mm  |  Rapid: 26539mm  |  Time: 3063s; refusals 0
+  analysed
+opt2b_holes rc=0 12s; Toolpaths: 3  |  Cutting: 61763mm  |  Rapid: 33070mm  |  Time: 3982s; refusals 0
+  analysed
+opt1_holes rc=1 32s; ; refusals 1
+  analysed

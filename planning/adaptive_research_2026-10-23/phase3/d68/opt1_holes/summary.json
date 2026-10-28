@@ -1,0 +1,63 @@
+{
+  "project": "corne_job",
+  "setup_count": 2,
+  "toolpath_count": 3,
+  "total_cutting_distance_mm": 73328.72394111005,
+  "total_rapid_distance_mm": 413797.6020912456,
+  "total_runtime_s": 12272.916265613709,
+  "air_cut_pct_of_total_runtime": 24.802319218396182,
+  "air_cut_pct_of_cutting_time": 75.11785630431022,
+  "average_engagement": 0.10869397463100969,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6201,
+      "collision_count": 0
+    },
+    {
+      "id": 5,
+      "name": "3D Rough 1 (edges, CP rest)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 9788,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 16766,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "ok",
+    "headline": "OK"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": "G-code export refused: tool load exceeded on toolpath(s):\n  toolpath 3: deflection=stiffness\nExceeded without refusing the export, because the bound does not gate one:\n  toolpath 3: depth of cut, peak 16.5000 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source\nTo override (a known-dangerous override): MCP `accept_exceeded_tool_load: true`, CLI `--accept-exceeded-tool-load`, or the GUI pre-flight checkbox \"Accept EXCEEDED criteria\".",
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d68/../fix26/three_clocks.py", line 21, in <module>
+    allm = C.op_moves(str(d / "program.nc"), op)
+  File "/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/fix26/c39_lib.py", line 16, in op_moves
+    L = open(path).read().splitlines(); i = L.index(f"({op})") + 1; cmds = []
+        ~~~~^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d68/opt1_holes/program.nc'

@@ -1,0 +1,93 @@
+{
+ "run": "d68/opt2_wanaka",
+ "tp": 7,
+ "grid_mm": 0.5,
+ "inside_mm2": 40000,
+ "places_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "lowered_by_op1_mm2": {
+  "inside 0-3": 2245,
+  "inside 3-6.2": 2292,
+  "inside 6.2-9": 2220,
+  "inside > 9": 33124,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "cleared_by_edge_op_mm2": {
+  "inside 0-3": 81,
+  "inside 3-6.2": 54,
+  "inside 6.2-9": 1,
+  "inside > 9": 124,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "left_before_edge_op_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 1266,
+  "inside 6.2-9": 76,
+  "inside > 9": 1232,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "left_after_edge_op_mm2": {
+  "inside 0-3": 2364,
+  "inside 3-6.2": 1159,
+  "inside 6.2-9": 76,
+  "inside > 9": 921,
+  "outside 0-3": 2422,
+  "outside > 3": 17578
+ },
+ "band_inside_0_9_left_before_mm2": 3706,
+ "band_inside_0_9_left_after_mm2": 3599,
+ "left_after_max_mm": 20.44,
+ "left_after_vol_above_target_inside_mm3": 20543,
+ "edge_op_removed_mm3_by_place": {
+  "inside 0-3": 625,
+  "inside 3-6.2": 336,
+  "inside 6.2-9": 15,
+  "inside > 9": 369,
+  "outside 0-3": 0,
+  "outside > 3": 0
+ },
+ "edge_op_removed_outside_outline_mm3": 0,
+ "edge_op_cut_centres": 28799,
+ "centres_beyond_op1_centre_region": 21125,
+ "centre_beyond_max_mm": 0.24,
+ "samples_total_s": 1508.9,
+ "time_by_class_s": {
+  "plunge/ramp": 1215.1,
+  "rapid": 150.1,
+  "cut, air, stock > 0.8 before": 59.2,
+  "cut, removes": 39.0,
+  "link at feed": 35.6,
+  "cut, air, stock <= 0.8 before": 9.9
+ },
+ "xy_mm_by_class": {
+  "rapid": 17816.1,
+  "cut, air, stock > 0.8 before": 898.6,
+  "cut, removes": 615.7,
+  "link at feed": 501.7,
+  "cut, air, stock <= 0.8 before": 153.2,
+  "plunge/ramp": 112.8
+ },
+ "air_share_of_cut_time": 0.639,
+ "rapid_runs_in_trace": 1290,
+ "cut_time_by_place_s": {
+  "cut, air, stock > 0.8 before | inside 0-3": 30.8,
+  "cut, removes | inside 0-3": 27.9,
+  "cut, air, stock > 0.8 before | inside 3-6.2": 19.7,
+  "cut, air, stock > 0.8 before | inside > 9": 8.7,
+  "cut, air, stock <= 0.8 before | inside > 9": 7.0,
+  "cut, removes | inside > 9": 6.8,
+  "cut, removes | inside 3-6.2": 4.3,
+  "cut, air, stock <= 0.8 before | inside 3-6.2": 2.4,
+  "cut, air, stock <= 0.8 before | inside 6.2-9": 0.5,
+  "cut, removes | inside 6.2-9": 0.0
+ }
+}

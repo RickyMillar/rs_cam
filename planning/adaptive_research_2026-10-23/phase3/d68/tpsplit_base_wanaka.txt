@@ -1,0 +1,3 @@
+d68/base_wanaka/simulation.json res 0.6 ids [1, 7] total 3120.7
+   tp 1 total 2079.6 cut 2002.9 rapid 76.8 air 828.0 vol 591311
+   tp 7 total 1041.1 cut 642.1 rapid 399.0 air 407.0 vol 1816

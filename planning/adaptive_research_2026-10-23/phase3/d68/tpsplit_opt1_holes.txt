@@ -1,0 +1,4 @@
+d68/opt1_holes/simulation.json res 0.3 ids [1, 5, 3] total 12272.9
+   tp 1 total 890.3 cut 810.8 rapid 79.5 air 364.4 vol 218067
+   tp 3 total 6215.2 cut 2682.6 rapid 3532.5 air 2122.6 vol 37692
+   tp 5 total 5167.5 cut 558.9 rapid 4608.6 air 556.9 vol 567

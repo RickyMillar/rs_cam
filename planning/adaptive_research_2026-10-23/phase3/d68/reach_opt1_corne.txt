@@ -1,0 +1,8 @@
+d68/opt1_corne/program.nc
+  op 1 G1 ends: max distance outside 6.38 mm; op 5 G1 ends 4116: > 6.3 mm 1300, max 7.10 mm
+  op 5 lowers silhouette    : area > 0.8 mm       3 mm2, volume      62 mm3
+  op 5 lowers outside 0-3   : area > 0.8 mm    1141 mm2, volume   18987 mm3
+  op 5 lowers outside 3-6.2 : area > 0.8 mm    1481 mm2, volume   25327 mm3
+  op 5 lowers outside 6.2-9 : area > 0.8 mm    1116 mm2, volume   21356 mm3
+  op 5 lowers outside 9-9.5 : area > 0.8 mm      55 mm2, volume    1212 mm3
+  op 5 lowers outside > 9.5 : area > 0.8 mm      13 mm2, volume     285 mm3

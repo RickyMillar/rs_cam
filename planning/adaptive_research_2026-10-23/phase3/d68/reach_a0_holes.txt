@@ -1,0 +1,8 @@
+d68/a0_holes/program.nc
+  op 1 G1 ends: max distance outside 6.38 mm; op 5 G1 ends 440: > 6.3 mm 0, max 0.00 mm
+  op 5 lowers silhouette    : area > 0.8 mm     111 mm2, volume     388 mm3
+  op 5 lowers outside 0-3   : area > 0.8 mm       0 mm2, volume       0 mm3
+  op 5 lowers outside 3-6.2 : area > 0.8 mm       0 mm2, volume       0 mm3
+  op 5 lowers outside 6.2-9 : area > 0.8 mm       0 mm2, volume       0 mm3
+  op 5 lowers outside 9-9.5 : area > 0.8 mm       0 mm2, volume       0 mm3
+  op 5 lowers outside > 9.5 : area > 0.8 mm       0 mm2, volume       0 mm3

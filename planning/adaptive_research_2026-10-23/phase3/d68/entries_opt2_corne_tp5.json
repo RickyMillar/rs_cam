@@ -1,0 +1,24 @@
+{
+ "run": "opt2_corne",
+ "descent_moves": 429,
+ "classes": {
+  "drop <= 1 mm": {
+   "moves": 115,
+   "time_s": 6.0,
+   "air_share": 0.858,
+   "median_drop_mm": 0.25
+  },
+  "drop 1 mm - 1 DPP": {
+   "moves": 161,
+   "time_s": 31.9,
+   "air_share": 0.789,
+   "median_drop_mm": 1.26
+  },
+  "drop > 1 DPP": {
+   "moves": 153,
+   "time_s": 157.8,
+   "air_share": 0.741,
+   "median_drop_mm": 13.75
+  }
+ }
+}
