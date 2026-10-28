@@ -2516,6 +2516,55 @@ fn derived_rest_regions_resolve_happy_path_returns_regions() {
     assert_eq!(resolved.len(), 2, "both disjoint regions come through");
 }
 
+/// G-E (3): the read door gives the typed refusal that generation refuses
+/// with, and its text is the refusal text. Not generated, no regions,
+/// regions: `NotGenerated`, `NoRegions`, `None`.
+#[test]
+fn the_rest_boundary_refusal_is_the_generation_refusal_g_e() {
+    use crate::session::RestBoundaryRefusal;
+    let mut s = make_session();
+    let mut source_tc = make_tc(s.tools()[0].id.raw());
+    source_tc.name = "Pencil Rest".to_owned();
+    let _ = s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+    let mut tc = make_tc(s.tools()[0].id.raw());
+    tc.boundary = derived_boundary(0);
+    let _ = s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+    let cancel = AtomicBool::new(false);
+    let source = ToolpathId::from_raw(0);
+
+    let refusal = s
+        .rest_boundary_refusal(1)
+        .expect("the source has no result");
+    assert_eq!(
+        refusal,
+        RestBoundaryRefusal::NotGenerated {
+            source_toolpath_id: source,
+            source_name: "Pencil Rest".to_owned(),
+        }
+    );
+    assert_eq!(
+        expect_operation_failed(s.generate_toolpath(1, &cancel)),
+        refusal.to_string()
+    );
+
+    s.results.insert(0, fake_result_with_regions(None));
+    let refusal = s.rest_boundary_refusal(1).expect("no regions");
+    assert!(matches!(refusal, RestBoundaryRefusal::NoRegions { .. }));
+    assert_eq!(
+        expect_operation_failed(s.generate_toolpath(1, &cancel)),
+        refusal.to_string()
+    );
+
+    s.results.insert(
+        0,
+        fake_result_with_regions(Some(vec![crate::polygon::Polygon2::rectangle(
+            0.0, 0.0, 10.0, 10.0,
+        )])),
+    );
+    assert_eq!(s.rest_boundary_refusal(1), None, "the regions resolve");
+    assert_eq!(s.rest_boundary_refusal(0), None, "no derived boundary");
+}
+
 #[test]
 fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
     use crate::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};

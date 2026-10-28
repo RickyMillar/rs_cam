@@ -590,48 +590,76 @@ impl ProjectSession {
         this_index: usize,
         source_toolpath_id: crate::ids::ToolpathId,
     ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
+        self.derived_rest_regions(this_index, source_toolpath_id)
+            .map_err(|refusal| match refusal {
+                RestRegionsLookup::Refused(refusal) => {
+                    SessionError::OperationFailed(refusal.to_string())
+                }
+                RestRegionsLookup::NotFound(index) => SessionError::ToolpathNotFound(index),
+            })
+    }
+
+    /// G-E (3): why the `DerivedRestRegions` boundary of the toolpath at
+    /// `index` refuses generation, or `None` when it resolves (or the
+    /// toolpath has no such boundary on). The same rule as
+    /// [`Self::resolve_derived_rest_region_polys`]: its `Display` is the
+    /// text generation refuses with, so a surface can match the two.
+    #[must_use]
+    pub fn rest_boundary_refusal(&self, index: usize) -> Option<RestBoundaryRefusal> {
+        let tc = self.toolpath_configs.get(index)?;
+        if !tc.boundary.enabled {
+            return None;
+        }
+        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+            tc.boundary.source
+        else {
+            return None;
+        };
+        match self.derived_rest_regions(index, source_toolpath_id) {
+            Err(RestRegionsLookup::Refused(refusal)) => Some(refusal),
+            Ok(_) | Err(RestRegionsLookup::NotFound(_)) => None,
+        }
+    }
+
+    /// The one rule of the derived regions: the regions, or the typed
+    /// refusal ([`RestBoundaryRefusal`]).
+    fn derived_rest_regions(
+        &self,
+        this_index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, RestRegionsLookup> {
         let Some(source_index) = self
             .toolpath_configs
             .iter()
             .position(|tc| tc.id == source_toolpath_id)
         else {
-            return Err(SessionError::OperationFailed(format!(
-                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
-                 but no toolpath with that id exists anymore. Pick a different source toolpath \
-                 for the boundary, or disable the boundary.",
-            )));
-        };
-
-        if source_index == this_index {
-            return Err(SessionError::OperationFailed(
-                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
-                 itself as the source for a derived-rest-regions boundary. Pick a different \
-                 source toolpath."
-                    .to_owned(),
+            return Err(RestRegionsLookup::Refused(
+                RestBoundaryRefusal::SourceMissing { source_toolpath_id },
             ));
+        };
+        if source_index == this_index {
+            return Err(RestRegionsLookup::Refused(RestBoundaryRefusal::OwnRegions));
         }
-
         let Some(source_tc) = self.toolpath_configs.get(source_index) else {
             // Unreachable in practice: `source_index` came from `position()`
             // on this same Vec a few lines above.
-            return Err(SessionError::ToolpathNotFound(source_index));
+            return Err(RestRegionsLookup::NotFound(source_index));
         };
-        let source_name = &source_tc.name;
-
+        let source_name = source_tc.name.clone();
         let Some(result) = self.results.get(&source_index) else {
-            return Err(SessionError::OperationFailed(format!(
-                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
-                 its rest analysis produces the regions this boundary needs.",
-            )));
+            return Err(RestRegionsLookup::Refused(
+                RestBoundaryRefusal::NotGenerated {
+                    source_toolpath_id,
+                    source_name,
+                },
+            ));
         };
-
         match result.annotated().produced.rest_regions.as_ref() {
             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
-            _ => Err(SessionError::OperationFailed(format!(
-                "'{source_name}' produced no rest regions. Its rest analysis found no material \
-                 above the threshold, or it is switched off. Check the rest analysis settings \
-                 on '{source_name}' and regenerate it.",
-            ))),
+            _ => Err(RestRegionsLookup::Refused(RestBoundaryRefusal::NoRegions {
+                source_toolpath_id,
+                source_name,
+            })),
         }
     }
 
@@ -1413,6 +1441,65 @@ pub(crate) struct ClipContainment {
     pub(crate) source_region_count: usize,
 }
 
+/// G-E (3): why a `DerivedRestRegions` boundary refuses generation. Its
+/// `Display` is the refusal text generation gives (unchanged by G-E), so
+/// the wire and MCP text do not move; a surface reads the variant to draw
+/// a short face and its action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RestBoundaryRefusal {
+    /// No toolpath has the source id any more.
+    SourceMissing {
+        source_toolpath_id: crate::ids::ToolpathId,
+    },
+    /// The boundary names the toolpath's own regions.
+    OwnRegions,
+    /// The source has no generated result.
+    NotGenerated {
+        source_toolpath_id: crate::ids::ToolpathId,
+        source_name: String,
+    },
+    /// The source's result has no rest regions.
+    NoRegions {
+        source_toolpath_id: crate::ids::ToolpathId,
+        source_name: String,
+    },
+}
+
+impl std::fmt::Display for RestBoundaryRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SourceMissing { source_toolpath_id } => write!(
+                f,
+                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
+                 but no toolpath with that id exists anymore. Pick a different source toolpath \
+                 for the boundary, or disable the boundary.",
+            ),
+            Self::OwnRegions => f.write_str(
+                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
+                 itself as the source for a derived-rest-regions boundary. Pick a different \
+                 source toolpath.",
+            ),
+            Self::NotGenerated { source_name, .. } => write!(
+                f,
+                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
+                 its rest analysis produces the regions this boundary needs.",
+            ),
+            Self::NoRegions { source_name, .. } => write!(
+                f,
+                "'{source_name}' produced no rest regions. Its rest analysis found no material \
+                 above the threshold, or it is switched off. Check the rest analysis settings \
+                 on '{source_name}' and regenerate it.",
+            ),
+        }
+    }
+}
+
+/// The failure of [`ProjectSession::derived_rest_regions`]: a typed
+/// refusal, or an index that does not resolve.
+enum RestRegionsLookup {
+    Refused(RestBoundaryRefusal),
+    NotFound(usize),
+}
 /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): a machining boundary that
 /// leaves no area for the tool. [`ProjectSession::boundary_collapse`] reads
 /// it; generation refuses with [`Self::message`].

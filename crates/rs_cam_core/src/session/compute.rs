@@ -33,7 +33,7 @@ mod params;
 mod simulation;
 
 pub use diagnostics::TriageSessionKey;
-pub use generation::BoundaryCollapse;
+pub use generation::{BoundaryCollapse, RestBoundaryRefusal};
 pub(crate) use params::strip_outer_quotes;
 
 /// Fully-owned, per-generation inputs resolved from session state by

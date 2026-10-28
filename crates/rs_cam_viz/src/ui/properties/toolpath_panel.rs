@@ -136,7 +136,19 @@ pub(super) fn draw_toolpath_panel(
     if let crate::state::freshness::FreshnessState::Error(e) = freshness
         && validation_errors.is_empty()
     {
-        ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
+        // G-E (3): a rest-boundary refusal that is the last run's text
+        // gets its short face and its action; any other refusal shows its
+        // own text, truncated.
+        match inputs
+            .rest_boundary_refusal
+            .as_ref()
+            .and_then(|refusal| rest_refusal_face(refusal).filter(|_| refusal.to_string() == *e))
+        {
+            Some(face) => draw_refusal_face(ui, &face, e, events),
+            None => {
+                ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
+            }
+        }
     }
     if !validation_errors.is_empty() {
         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
@@ -1301,6 +1313,83 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool 
         clicked
     })
     .inner
+}
+
+/// G-E (3): the one-line face of a rest-boundary refusal, and the
+/// toolpath its action generates.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct RefusalFace {
+    pub text: String,
+    /// The source toolpath that the `⟳` action generates, and its name.
+    pub generate: Option<(crate::state::toolpath::ToolpathId, String)>,
+}
+
+/// G-E (3), §7.7: the short face of a rest-boundary refusal. `None` for a
+/// refusal with no short face (a lost source id), which keeps its text.
+pub(super) fn rest_refusal_face(
+    refusal: &rs_cam_core::session::RestBoundaryRefusal,
+) -> Option<RefusalFace> {
+    use crate::ui::tokens::GLYPH_DANGER;
+    use rs_cam_core::session::RestBoundaryRefusal;
+    match refusal {
+        RestBoundaryRefusal::NotGenerated {
+            source_toolpath_id,
+            source_name,
+        } => Some(RefusalFace {
+            text: format!("{GLYPH_DANGER} Generate '{source_name}' first"),
+            generate: Some((*source_toolpath_id, source_name.clone())),
+        }),
+        RestBoundaryRefusal::NoRegions {
+            source_toolpath_id,
+            source_name,
+        } => Some(RefusalFace {
+            text: format!("{GLYPH_DANGER} '{source_name}' left no regions"),
+            generate: Some((*source_toolpath_id, source_name.clone())),
+        }),
+        RestBoundaryRefusal::OwnRegions => Some(RefusalFace {
+            text: "Refused \u{00B7} source is this op".to_owned(),
+            generate: None,
+        }),
+        RestBoundaryRefusal::SourceMissing { .. } => None,
+    }
+}
+
+/// The glyph of the action that generates a refusal's source.
+pub(super) const GENERATE_SOURCE_GLYPH: &str = "\u{27F3}";
+
+/// Draw one refusal face: the face truncates in the width the action
+/// leaves; `detail` (the full refusal) is its hover.
+fn draw_refusal_face(
+    ui: &mut egui::Ui,
+    face: &RefusalFace,
+    detail: &str,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some((source, name)) = &face.generate
+                && ui
+                    .small_button(GENERATE_SOURCE_GLYPH)
+                    .on_hover_text(format!("Generate '{name}'"))
+                    .clicked()
+            {
+                events.push(AppEvent::GenerateToolpath(*source));
+            }
+            let rest = ui.available_width().max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_max_width(rest);
+                    ui.add(
+                        OneLine::new(face.text.as_str())
+                            .color(crate::ui::tokens::DANGER)
+                            .detail(detail),
+                    );
+                },
+            );
+        });
+    });
 }
 
 /// G-E (2): the footer shows at most this many finding rows before the

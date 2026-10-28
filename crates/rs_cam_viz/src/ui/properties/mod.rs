@@ -428,6 +428,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// G-B: the feed caps of the stored result, counted once per result
     /// (`ToolpathRuntime::caps`). `None` when no move has a cap.
     pub caps: Option<crate::state::runtime::CapFigures>,
+    /// G-E (3): why this toolpath's rest-regions boundary refuses
+    /// generation (`ProjectSession::rest_boundary_refusal`), or `None`.
+    /// The header draws a short face with an action for it.
+    pub rest_boundary_refusal: Option<rs_cam_core::session::RestBoundaryRefusal>,
     /// Operator ruling 2026-10-15: this rest toolpath's current comparison
     /// with fresh stock, when one was asked for
     /// (`ProjectSession::current_rest_fresh_comparisons`).
@@ -808,6 +812,9 @@ pub(crate) fn toolpath_panel_inputs(
             .toolpath_rt
             .get(&id)
             .and_then(crate::state::runtime::ToolpathRuntime::caps),
+        rest_boundary_refusal: session
+            .find_toolpath_config_by_id(id)
+            .and_then(|(index, _)| session.rest_boundary_refusal(index)),
         rest_fresh,
         shoe: shoe_row_inputs(id, session, gui),
     }

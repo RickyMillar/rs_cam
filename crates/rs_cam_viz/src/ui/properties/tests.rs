@@ -1881,3 +1881,46 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
     assert!(texts.iter().any(|t| t == "Max Rate:"), "{texts:?}");
     assert!(!texts.iter().any(|t| t.contains("Ramp Rate")), "{texts:?}");
 }
+
+/// G-E (3): the face of each rest-boundary refusal, and the `⟳` action
+/// glyph is in the app fonts (a missing glyph paints a box).
+#[test]
+fn the_rest_refusal_faces_are_short_g_e() {
+    use super::toolpath_panel::{GENERATE_SOURCE_GLYPH, rest_refusal_face};
+    use rs_cam_core::session::RestBoundaryRefusal;
+    let source = rs_cam_core::ToolpathId::from_raw(7);
+    let name = "Body rough".to_owned();
+    let not_generated = rest_refusal_face(&RestBoundaryRefusal::NotGenerated {
+        source_toolpath_id: source,
+        source_name: name.clone(),
+    })
+    .expect("a face");
+    assert_eq!(not_generated.text, "\u{2715} Generate 'Body rough' first");
+    assert_eq!(not_generated.generate, Some((source, name.clone())));
+    let no_regions = rest_refusal_face(&RestBoundaryRefusal::NoRegions {
+        source_toolpath_id: source,
+        source_name: name,
+    })
+    .expect("a face");
+    assert_eq!(no_regions.text, "\u{2715} 'Body rough' left no regions");
+    let own = rest_refusal_face(&RestBoundaryRefusal::OwnRegions).expect("a face");
+    assert_eq!(own.text, "Refused \u{00B7} source is this op");
+    assert_eq!(own.generate, None);
+    assert_eq!(
+        rest_refusal_face(&RestBoundaryRefusal::SourceMissing {
+            source_toolpath_id: source
+        }),
+        None
+    );
+
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    out.textures_delta.clear();
+    let glyph = GENERATE_SOURCE_GLYPH.chars().next().expect("one char");
+    assert!(
+        ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), glyph)),
+        "the app fonts have no {GENERATE_SOURCE_GLYPH}"
+    );
+}

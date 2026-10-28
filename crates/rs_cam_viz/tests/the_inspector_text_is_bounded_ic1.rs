@@ -602,3 +602,75 @@ fn a_generate_refusal_takes_one_line_g_e() {
         "no row is wider than the panel"
     );
 }
+
+/// G-E sub-step 3: a rest-boundary refusal from the last generate has a
+/// short face and the `⟳` action that generates its source. Here the 3D
+/// Finish takes its boundary from the rest regions of the 3D Rough, which
+/// has no result: the face is `✕ Generate '3D Rough' first`, on one row
+/// with the action, and the full refusal stays on the hover.
+#[test]
+fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource};
+    use rs_cam_core::session::{Command, RestBoundaryRefusal, SetBoundaryConfigArgs};
+    let mut state = fixture();
+    let configs = state.session().toolpath_configs();
+    let index = |name: &str| {
+        configs
+            .iter()
+            .position(|c| c.name == name)
+            .expect("fixture toolpath")
+    };
+    let (rough, finish) = (index("3D Rough"), index("3D Finish"));
+    let rough_id = configs[rough].id;
+    let finish_id = configs[finish].id;
+    let mut boundary: BoundaryConfig = configs[finish].boundary.clone();
+    boundary.enabled = true;
+    boundary.source = BoundarySource::DerivedRestRegions {
+        source_toolpath_id: rough_id,
+    };
+    let _ = state
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index: finish,
+            boundary,
+        }))
+        .expect("the boundary edit applies");
+    let refusal = state
+        .session()
+        .rest_boundary_refusal(finish)
+        .expect("the source has no result");
+    assert!(matches!(refusal, RestBoundaryRefusal::NotGenerated { .. }));
+    state
+        .gui
+        .toolpath_rt
+        .get_mut(&finish_id)
+        .expect("fixture runtime")
+        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(refusal.to_string());
+
+    let frame = surface(
+        &mut state,
+        Selection::Toolpath(finish_id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    let face = frame
+        .painted
+        .iter()
+        .find(|p| p.text == format!("{} Generate '3D Rough' first", tokens::GLYPH_DANGER))
+        .expect("the short face");
+    let action = frame
+        .painted
+        .iter()
+        .find(|p| p.text == "\u{27F3}")
+        .expect("the generate action");
+    assert_eq!(face.rows, 1);
+    assert!(
+        (face.bands[0].0 - action.bands[0].0).abs() < 8.0,
+        "the face and its action share one row"
+    );
+    assert!(
+        !frame.painted.iter().any(|p| p.text == refusal.to_string()),
+        "the full refusal is on the hover, not the face"
+    );
+    assert!(frame.painted.iter().all(|p| p.rows == 1), "no text wraps");
+    assert!(frame.excess_width <= 0.5, "the row fits the panel");
+}

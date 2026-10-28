@@ -77,8 +77,8 @@ pub use command::{
 };
 pub use compute::{
     BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle,
-    RecommendClearingStrategyHandle, ResolvedGenInputs, TriageSessionKey, execute_generation,
-    execute_job, execute_recommend_clearing_strategy,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
+    execute_generation, execute_job, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,
