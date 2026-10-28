@@ -574,6 +574,11 @@ pub(crate) fn neutral_drawing_vertices(
     verts
 }
 
+/// The line vertices of the hover ring of the item that `key` names on the
+/// model of `tc` (geometry selection P4.5). A STEP face and a drawing item
+/// are in `items`; an STL face is a flat region from `face_items` (D5).
+/// A cold flat-region cache gives no STL face ring: the frame loop builds
+/// nothing. An unknown key gives no vertex.
 pub(crate) fn hover_vertices(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
@@ -584,12 +589,19 @@ pub(crate) fn hover_vertices(
     };
     use crate::render::{LineVertex, colors};
     let color = colors::SELECTION_HOVER;
-    let Some(item) = session
-        .models()
-        .iter()
-        .find(|m| m.id == tc.model_id)
-        .and_then(|m| m.items.iter().find(|i| i.key().names_same_geometry(key)))
-    else {
+    let Some(model) = session.models().iter().find(|m| m.id == tc.model_id) else {
+        return Vec::new();
+    };
+    // D5: the faces of an STL are its flat regions, bound to the model by
+    // `face_items` (no build). A cold cache gives `None`, and the lookup
+    // then reads `items` only (the part outline, no face).
+    let faces = if model.faces_are_flat_regions() {
+        model.face_items()
+    } else {
+        None
+    };
+    let set = faces.as_ref().unwrap_or(&model.items);
+    let Some(item) = set.iter().find(|i| i.key().names_same_geometry(key)) else {
         return Vec::new();
     };
     let stock = session.stock_config();
@@ -719,5 +731,167 @@ mod tests {
         }
         // Original untouched.
         assert_eq!(annotated.toolpath.moves[0].target.z, 3.0);
+    }
+
+    /// D5: the pick-mode hover ring of an STL face. An STL has no BREP
+    /// face; its faces are the flat regions of `face_items`, not `items`.
+    ///
+    /// 1. A warm flat-region cache: the ring of the Z 5 face has lines, and
+    ///    each vertex lies at the face Z in the toolpath setup frame.
+    /// 2. A cold cache (a fresh mesh, `face_items` gives `None`): the same
+    ///    key gives no vertex, and the call builds nothing.
+    ///
+    /// Red proof: the lookup in `m.items` only finds no flat face, so step
+    /// 1 gives no vertex.
+    mod an_stl_face_hover_d5 {
+        use std::sync::Arc;
+
+        use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits, StockConfig};
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::mesh::TriangleMesh;
+        use rs_cam_core::selection::{ItemKind, Shape};
+        use rs_cam_core::session::{
+            LoadedModel, ProjectSession, ProjectSessionBuilder, ToolpathConfig,
+        };
+
+        use crate::state::job::{ToolConfig, ToolId, ToolType};
+        use crate::state::toolpath::{OperationConfig, OperationType, ToolpathId};
+
+        /// The stepped mesh of `controller/tests/selection.rs`
+        /// (`an_stl_face_click_p4_7`): a Z 5 top with a Z 8 block.
+        fn stepped_top() -> TriangleMesh {
+            let mut vertices = Vec::new();
+            let mut triangles = Vec::new();
+            let mut quad = |a: P3, b: P3, c: P3, d: P3| {
+                let i = u32::try_from(vertices.len()).unwrap_or(0);
+                vertices.extend([a, b, c, d]);
+                triangles.push([i, i + 1, i + 2]);
+                triangles.push([i, i + 2, i + 3]);
+            };
+            let p = P3::new;
+            quad(p(0., 0., 5.), p(20., 0., 5.), p(20., 3., 5.), p(0., 3., 5.));
+            quad(
+                p(0., 7., 5.),
+                p(20., 7., 5.),
+                p(20., 10., 5.),
+                p(0., 10., 5.),
+            );
+            quad(p(0., 3., 5.), p(8., 3., 5.), p(8., 7., 5.), p(0., 7., 5.));
+            quad(
+                p(12., 3., 5.),
+                p(20., 3., 5.),
+                p(20., 7., 5.),
+                p(12., 7., 5.),
+            );
+            quad(p(8., 3., 8.), p(12., 3., 8.), p(12., 7., 8.), p(8., 7., 8.));
+            quad(p(8., 3., 5.), p(12., 3., 5.), p(12., 3., 8.), p(8., 3., 8.));
+            TriangleMesh::from_raw(vertices, triangles)
+        }
+
+        /// A session with one STL model (a fresh mesh `Arc`, so a cold
+        /// flat-region cache) and one Pocket on it.
+        fn stl_session() -> ProjectSession {
+            let stock = StockConfig {
+                x: 20.0,
+                y: 10.0,
+                z: Some(8.0),
+                origin_x: 0.0,
+                origin_y: 0.0,
+                origin_z: 0.0,
+                auto_from_model: false,
+                ..StockConfig::default()
+            };
+            let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+            let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
+            let model_id = builder.add_model(LoadedModel {
+                id: rs_cam_core::ids::ModelId::from_raw(0),
+                name: "stepped.stl".to_owned(),
+                mesh: Some(Arc::new(stepped_top())),
+                items: Default::default(),
+                path: std::path::PathBuf::from("synthetic://stepped.stl"),
+                kind: Some(ModelKind::Stl),
+                units: Some(ModelUnits::Millimeters),
+                enriched_mesh: None,
+                winding_report: None,
+                load_error: None,
+                import_options: Default::default(),
+                import_report: None,
+                drawing: Default::default(),
+            });
+            let tc = ToolpathConfig {
+                shoe: Default::default(),
+                id: ToolpathId::from_raw(0),
+                name: "Pocket".to_owned(),
+                enabled: true,
+                operation: OperationConfig::new_default(OperationType::Pocket),
+                dressups: Default::default(),
+                heights: Default::default(),
+                tool_id: Some(ToolId::from_raw(1)),
+                model_id,
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            };
+            let _ = builder.add_toolpath(0, tc).unwrap();
+            builder.build()
+        }
+
+        #[test]
+        fn an_stl_face_hover_draws_its_ring_d5() {
+            // 1. The warm cache.
+            let session = stl_session();
+            let tc = &session.toolpath_configs()[0];
+            let model = &session.models()[0];
+            assert!(model.faces_are_flat_regions(), "an STL has no BREP face");
+            let faces = model.face_items_built();
+            let face = faces
+                .iter()
+                .find(|i| {
+                    i.kind() == ItemKind::Face
+                        && i.plane_z().is_some_and(|z| (z - 5.0).abs() < 1e-9)
+                })
+                .unwrap_or_else(|| panic!("the stepped mesh has a Z 5 flat face"));
+            let Shape::Face(face_shape) = face.shape() else {
+                panic!("a face item has a face shape");
+            };
+            let corner = face_shape.rings.exterior[0];
+            let verts = super::super::hover_vertices(&session, tc, face.key());
+            assert!(!verts.is_empty(), "the STL face hover draws its ring");
+            let frame = crate::interaction::picking::toolpath_setup_frame(&session, tc.id);
+            let z = face_shape.plane_z;
+            let at = P3::new(corner.x, corner.y, z);
+            let want = frame
+                .as_ref()
+                .map_or(z, |f| f.transform_point(at, session.stock_config()).z)
+                as f32;
+            for v in &verts {
+                assert!(
+                    (v.position[2] - want).abs() <= 1e-6,
+                    "every ring vertex is at the face Z {want}: {:?}",
+                    v.position
+                );
+            }
+
+            // 2. The cold cache: a fresh mesh, so no flat region is cached.
+            let cold = stl_session();
+            let cold_tc = &cold.toolpath_configs()[0];
+            assert!(
+                cold.models()[0].face_items().is_none(),
+                "a fresh mesh has a cold flat-region cache"
+            );
+            let none = super::super::hover_vertices(&cold, cold_tc, face.key());
+            assert!(none.is_empty(), "a cold cache gives no ring");
+            assert!(
+                cold.models()[0].face_items().is_none(),
+                "the hover builds no flat region"
+            );
+        }
     }
 }
