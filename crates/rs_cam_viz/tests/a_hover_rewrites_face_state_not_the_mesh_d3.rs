@@ -11,7 +11,8 @@
 //! 3. `app/gpu_upload/face_state.rs` is the only file that writes a
 //!    `face_state` buffer, and `upload_gpu_data` runs it after
 //!    `meshes::upload`.
-//! 4. The hover names its model: `last_hover_face` takes the `model_id` of
+//! 4. The hover names its model: the face hover target
+//!    (`HoverTarget::Face`, F4: the one hover slot) takes the `model_id` of
 //!    `PickHit::ModelFace`, so one face index on model A does not light
 //!    model B.
 //!
@@ -181,8 +182,10 @@ fn one_file_writes_the_face_state_words_d3() {
 
 #[test]
 fn the_hover_names_its_model_d3() {
+    // F4: `last_hover_face` became the face arm of the one hover target
+    // (`HoverDetector`); the needle follows the new write.
     let viewport = code(&source("src/app/viewport.rs"));
-    let anchor = "self.last_hover_face = match";
+    let anchor = "let hover_face = match";
     let at = viewport
         .find(anchor)
         .unwrap_or_else(|| panic!("anchor `{anchor}` is missing in viewport.rs"));
@@ -194,7 +197,7 @@ fn the_hover_names_its_model_d3() {
         "the hover write does not read both fields of PickHit::ModelFace"
     );
     assert!(
-        arms.contains("Some((*model_id, *face_id))"),
-        "last_hover_face does not take the model id"
+        arms.contains("HoverTarget::Face(*model_id, *face_id)"),
+        "the face hover target does not take the model id"
     );
 }

@@ -241,6 +241,12 @@ impl SelectionUi {
             .is_some_and(|m| m.target == target)
     }
 
+    /// End the viewport mode that is on (the pick mode or the tab editor;
+    /// F4, Escape). The gesture resets with it (L-3).
+    pub fn end_mode(&mut self) {
+        self.set_mode(None);
+    }
+
     /// Turn the pick mode of `target` on `toolpath_id` on (with `mode`) or
     /// off. Any other mode ends (L-3).
     pub fn set_pick(&mut self, mode: Option<PickMode>) {

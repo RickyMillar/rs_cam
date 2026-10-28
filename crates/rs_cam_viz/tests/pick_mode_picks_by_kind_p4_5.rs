@@ -85,7 +85,7 @@ use rs_cam_viz::state::display_frame::drawing_plane_z;
 use rs_cam_viz::state::job::{ModelId, SetupFrame};
 use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
 use rs_cam_viz::state::selection::Selection as UiSelection;
-use rs_cam_viz::state::selection_highlight::HoverDetector;
+use rs_cam_viz::state::selection_highlight::{HoverDetector, HoverTarget};
 use rs_cam_viz::ui::AppEvent;
 use rs_cam_viz::ui::pick_bar::{PickClick, click_event, kind_chips};
 use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
@@ -616,7 +616,7 @@ fn the_hover_uploads_once_per_hover_change_p4_5() {
         let at = drawn(&c, &camera, p);
         let key = pick_at(&c, &camera, &mode.filter, at);
         hovered.push(key.clone());
-        if detector.changed(key) {
+        if detector.changed(key.map(HoverTarget::Item)) {
             uploads += 1;
         }
     }

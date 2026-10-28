@@ -80,11 +80,6 @@ pub struct RsCamApp {
     /// before this window minimises itself. `None` = never, which is every
     /// normal session.
     minimize_after_frames: Option<u32>,
-    /// Currently hovered BREP face (updated on mouse move in Toolpaths workspace).
-    last_hover_face: Option<(
-        rs_cam_core::ids::ModelId,
-        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
-    )>,
     /// The unsaved-changes confirmation dialog, and what it is guarding.
     /// `None` means it is not shown. See [`UnsavedGuard`].
     unsaved_guard: Option<UnsavedGuard>,
@@ -422,7 +417,6 @@ impl RsCamApp {
             screenshot_after_motion: None,
             auto_screenshot_frame,
             minimize_after_frames,
-            last_hover_face: None,
             unsaved_guard: None,
             file_dialogs: file_dialog::FileDialogSlot::new(cc.egui_ctx.clone()),
             last_overlay_upload_key,

@@ -421,6 +421,12 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("set_ui_view camera.fit: selection writes the same fit"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
+            (UiCommand, EndViewportMode, "end_viewport_mode", NoArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("the agent names keys; it has no pick mode"),
+                 cli: Reach::Skip("the batch CLI draws no viewport"),
+             }),
             (UiCommand, SwitchWorkspace, "switch_workspace", SwitchWorkspaceArgs, (),
              Surfaces {
                  gui: Reach::Reached,

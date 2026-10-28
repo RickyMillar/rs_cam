@@ -576,6 +576,9 @@ impl<B: ComputeBackend> AppController<B> {
                     ),
                 }
             }
+            AppEvent::PickRefused(text) => {
+                self.push_notification(text, super::Severity::Warning);
+            }
             AppEvent::RemovePick {
                 toolpath_id,
                 target,
@@ -921,6 +924,12 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::PreviewOrientation(_) => {}
                 UiCommand::ResetView(NoArgs) => {}
                 UiCommand::FitSelection(NoArgs) => {}
+                // F4: Escape ends the viewport mode (the pick mode or the tab
+                // editor) through `SelectionUi`; the gesture resets with it
+                // (L-3).
+                UiCommand::EndViewportMode(NoArgs) => {
+                    self.state.gui.selection_ui.end_mode();
+                }
                 UiCommand::SwitchWorkspace(_) => {}
                 UiCommand::ShowShortcuts(NoArgs) => {}
                 UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs { .. }) => {}

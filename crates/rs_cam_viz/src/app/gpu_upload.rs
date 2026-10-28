@@ -156,7 +156,7 @@ impl RsCamApp {
         let verts = {
             let state = self.controller.state();
             match (
-                self.hover_detector.hovered(),
+                self.hover_detector.hovered_item(),
                 crate::state::selection_highlight::highlight_toolpath(state),
             ) {
                 (Some(key), Some(tc)) => hover_vertices(state.session(), tc, key),
@@ -284,7 +284,7 @@ impl RsCamApp {
             face_state::FaceStateInputs {
                 mesh: &enriched,
                 marks: face_state::FaceMarks {
-                    hovered: self.last_hover_face,
+                    hovered: self.hover_detector.hovered_face(),
                     selected: self.selected_faces(),
                     states: Vec::new(),
                 },

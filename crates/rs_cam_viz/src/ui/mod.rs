@@ -401,6 +401,10 @@ pub enum AppEvent {
         key: rs_cam_core::selection::MatchKey,
     },
 
+    // F4: a viewport click that could not pick (a face with no key). The
+    // controller shows the text as a warning.
+    PickRefused(String),
+
     // B4: one viewport Ctrl-click on an item in pick mode. It removes the
     // item and never adds it. The controller asks core `click_edit`, as for
     // `AddPick`; only a `RemovePick` answer gives an edit (a Ctrl-click on

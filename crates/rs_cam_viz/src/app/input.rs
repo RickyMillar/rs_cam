@@ -456,10 +456,29 @@ impl RsCamApp {
         // Geometry selection P4.5: Escape ends the pick mode, after the
         // dock surfaces above took theirs. The key is consumed. P4.6: it
         // ends the tab editor too (a drag in progress sends nothing).
+        // F4: the key goes through the one gesture translation, which
+        // sends `UiCommand::EndViewportMode`; the controller ends the mode.
+        // B6: a first Escape will cancel a running box and keep the mode.
         if self.controller.state().gui.selection_ui.mode.is_some()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            self.controller.state_mut().gui.selection_ui.set_pick(None);
+            let events = {
+                let state = self.controller.state();
+                crate::interaction::intent::gesture_events(
+                    &crate::interaction::intent::ViewportGesture::Key {
+                        key: crate::interaction::intent::ViewKey::Escape,
+                    },
+                    &crate::interaction::intent::ViewContext {
+                        workspace: state.workspace,
+                        focus: state.focus(),
+                        selection_ui: &state.gui.selection_ui,
+                        session: state.session(),
+                    },
+                )
+            };
+            for event in events {
+                self.controller.events_mut().push(event);
+            }
         }
         // E5 (SEL-13): Ctrl+A in pick mode adds the rules of the chip
         // kinds; under the default it writes nothing and says why (O-PICK,

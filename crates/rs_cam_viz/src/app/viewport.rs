@@ -2,6 +2,7 @@ use crate::interaction::input::InputAction;
 use crate::render::{LineUniforms, MeshUniforms, ViewportCallback};
 use crate::state::Workspace;
 use crate::state::selection::Selection;
+use crate::state::selection_highlight::HoverTarget;
 use crate::ui::AppEvent;
 use crate::ui_command::{SimJumpToMoveArgs, UiCommand};
 
@@ -535,10 +536,26 @@ impl RsCamApp {
             )
         };
 
-        if let Some(hit) = hit {
-            self.handle_pick_hit(hit);
-        } else {
-            self.controller.set_focus(Selection::None);
+        // F4: the writes of a hit that are not the focus stay here (the
+        // pin ring, the collision jump); the focus and the selection go
+        // through the events of the one gesture translation.
+        if let Some(hit) = &hit {
+            self.pick_hit_side_effects(hit);
+        }
+        let events = {
+            let state = self.controller.state();
+            crate::interaction::intent::gesture_events(
+                &crate::interaction::intent::ViewportGesture::Click { hit, click },
+                &crate::interaction::intent::ViewContext {
+                    workspace,
+                    focus: state.focus(),
+                    selection_ui: &state.gui.selection_ui,
+                    session: state.session(),
+                },
+            )
+        };
+        for event in events {
+            self.controller.events_mut().push(event);
         }
     }
 
@@ -619,31 +636,23 @@ impl RsCamApp {
         false
     }
 
-    fn handle_pick_hit(&mut self, hit: crate::interaction::PickHit) {
+    /// The writes of a scene hit that are not the focus (F4): a pin click
+    /// rings the pin (P7), a stock click drops that ring, and a collision
+    /// marker moves the playback. The focus itself is the `UiCommand::Select`
+    /// event of `interaction::intent::gesture_events`.
+    fn pick_hit_side_effects(&mut self, hit: &crate::interaction::PickHit) {
         use crate::interaction::PickHit;
 
         let workspace = self.controller.state().workspace;
         match (workspace, hit) {
-            (
-                Workspace::Setup,
-                PickHit::Obstacle {
-                    setup_id,
-                    obstacle_id,
-                },
-            ) => {
-                self.controller
-                    .set_focus(Selection::Obstacle(setup_id, obstacle_id));
-            }
             (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { pin_index }) => {
                 // Pins are stock-level: a pin click opens the stock panel
                 // with that pin's row marked (P7), and the viewport rings
                 // the pin.
-                self.controller.set_focus(Selection::Stock);
-                self.controller.state_mut().panels.selected_pin = Some(pin_index);
+                self.controller.state_mut().panels.selected_pin = Some(*pin_index);
                 self.controller.set_pending_upload();
             }
             (_, PickHit::StockFace { .. }) => {
-                self.controller.set_focus(Selection::Stock);
                 if self
                     .controller
                     .state_mut()
@@ -667,71 +676,13 @@ impl RsCamApp {
                     .state()
                     .simulation
                     .located_holder_collisions()
-                    .get(index)
+                    .get(*index)
                     .and_then(|hit| hit.global_move);
                 if let Some(move_idx) = move_idx {
                     let pb = &mut self.controller.state_mut().simulation.playback;
                     pb.current_move = move_idx;
                     pb.playing = false;
                     self.pending_checkpoint_load = true;
-                }
-            }
-            (_, PickHit::Toolpath { id, .. }) => {
-                self.controller.set_focus(Selection::Toolpath(id));
-            }
-            (Workspace::Toolpaths, PickHit::Item { toolpath_id, key }) => {
-                // Geometry selection P2.6: toggle this item in the op
-                // selection. The edit lands in `operation`, which the
-                // inspector undo snapshot covers.
-                self.controller
-                    .events_mut()
-                    .push(crate::ui::AppEvent::TogglePick {
-                        toolpath_id,
-                        target: rs_cam_core::session::SelectionTarget::Op,
-                        key,
-                    });
-            }
-            (Workspace::Toolpaths, PickHit::ModelFace { model_id, face_id }) => {
-                // A face pick is a `MatchKey` pick (P2.6). The key comes
-                // from the Face item of the face; a face that is not flat
-                // has no item and is named. P4.1: an op with no selection
-                // slot (a 3D op) takes the pick in its boundary
-                // selection. P4.D (L-8 revised): on a boundary that is not
-                // a selection, the click sets the source to `Selection` with
-                // that face (`ProjectSession::click_edit`), one undo step,
-                // and the controller gives a notice.
-                if let Selection::Toolpath(tp_id) = *self.controller.state().focus() {
-                    let pick = {
-                        let session = self.controller.state().session();
-                        // P4.3 (L-3): the section whose Pick button is on
-                        // takes the click; with none on, today's rule.
-                        let pick_target =
-                            self.controller.state().gui.selection_ui.pick_target(tp_id);
-                        session.find_toolpath_config_by_id(tp_id).map(|(_, tc)| {
-                            (
-                                pick_target.unwrap_or_else(|| {
-                                    rs_cam_core::session::SelectionTarget::for_face_pick(tc)
-                                }),
-                                session.face_pick_key(tc, model_id, face_id),
-                            )
-                        })
-                    };
-                    match pick {
-                        Some((target, Ok(key))) => {
-                            self.controller
-                                .events_mut()
-                                .push(crate::ui::AppEvent::TogglePick {
-                                    toolpath_id: tp_id,
-                                    target,
-                                    key,
-                                });
-                        }
-                        Some((_, Err(refusal))) => self.controller.push_notification(
-                            format!("Could not pick the face: {refusal}"),
-                            crate::controller::Severity::Warning,
-                        ),
-                        None => {}
-                    }
                 }
             }
             _ => {}
@@ -813,14 +764,47 @@ impl RsCamApp {
         if hovered_item.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        // GT-2: with no pick hover, the row of the Geometry tab list under
-        // the pointer lights its item.
-        let hovered_key = hovered_item
+        // F4: ONE hover target per frame. The pick-mode item first; with
+        // none, the row of the Geometry tab list under the pointer (GT-2);
+        // with none, the STEP face under the pointer in Toolpaths.
+        let hover_face = match &hover.scene {
+            Some(crate::interaction::picking::PickHit::ModelFace { model_id, face_id })
+                if self.controller.state().workspace == Workspace::Toolpaths =>
+            {
+                Some(HoverTarget::Face(*model_id, *face_id))
+            }
+            _ => None,
+        };
+        let target = hovered_item
             .as_ref()
-            .map(|(_, key, _)| key.clone())
-            .or_else(|| self.controller.state().gui.selection_ui.row_hover.clone());
-        if self.hover_detector.changed(hovered_key) {
-            self.hover_upload_pending = true;
+            .map(|(_, key, _)| HoverTarget::Item(key.clone()))
+            .or_else(|| {
+                self.controller
+                    .state()
+                    .gui
+                    .selection_ui
+                    .row_hover
+                    .clone()
+                    .map(HoverTarget::Item)
+            })
+            .or(hover_face);
+        let before = self.hover_detector.hovered().cloned();
+        if self.hover_detector.changed(target.clone()) {
+            // The hover ring uploads when an item comes or goes; the face
+            // state words (D3: `upload_gpu_data` reads
+            // `HoverDetector::hovered_face`, a rewrite, no mesh build) when
+            // a face comes or goes. The paired `request_repaint` fires on
+            // the same change only (G-LV.1): a pointer at rest on a new
+            // target makes no egui repaint of its own.
+            let touches = |is: fn(&HoverTarget) -> bool| {
+                before.as_ref().is_some_and(is) || target.as_ref().is_some_and(is)
+            };
+            if touches(HoverTarget::is_item) {
+                self.hover_upload_pending = true;
+            }
+            if touches(HoverTarget::is_face) {
+                self.controller.set_pending_upload();
+            }
             ui.ctx().request_repaint();
         }
         if let Some((pick, key, chip_off)) = &hovered_item {
@@ -843,29 +827,6 @@ impl RsCamApp {
                     ui.label(tip);
                 });
             }
-        }
-
-        // The BREP face hover highlight.
-        //
-        // D3: `upload_gpu_data` reads `last_hover_face` (the model and the
-        // face) for the face state words. Only a change of the hovered face
-        // sets the upload flag, and the pass then rewrites the state words
-        // and builds no mesh. The paired
-        // `request_repaint` fires on the same change only (G-LV.1). It is
-        // necessary because a pointer at rest on a new face makes no egui
-        // repaint of its own.
-        let previous_hover_face = self.last_hover_face;
-        self.last_hover_face = match &hover.scene {
-            Some(crate::interaction::picking::PickHit::ModelFace { model_id, face_id })
-                if self.controller.state().workspace == Workspace::Toolpaths =>
-            {
-                Some((*model_id, *face_id))
-            }
-            _ => None,
-        };
-        if self.last_hover_face != previous_hover_face {
-            self.controller.set_pending_upload();
-            ui.ctx().request_repaint();
         }
 
         // Span-path tooltip on toolpath hover. Shows the SpanKind path for

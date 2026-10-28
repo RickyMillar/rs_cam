@@ -123,20 +123,48 @@ impl ReportDetector {
     }
 }
 
-/// The upload trigger of the pick hover (geometry selection P4.5): the item
-/// under the pointer that the hover buffer last drew. The `last_hover_face`
-/// pattern (V13): the viewport asks for one hover upload on a CHANGE of the
-/// hovered item only, never per frame, and the hover buffer is its own
-/// small buffer, so a pointer move never rebuilds the drawing buffer.
+/// What the pointer hovers in the viewport (F4, design F §4.5): ONE slot
+/// per frame. The viewport resolves the pick-mode item, else the Geometry
+/// tab row (`SelectionUi::row_hover`), else the STEP face under the pointer.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HoverTarget {
+    /// A drawing item, a STEP edge or an STL face key: the hover ring
+    /// (`hover_lines`) draws it.
+    Item(rs_cam_core::selection::MatchKey),
+    /// A STEP face outside pick mode: the face state words light it.
+    Face(
+        super::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    ),
+}
+
+impl HoverTarget {
+    /// True for an item (the hover ring reads it).
+    pub fn is_item(&self) -> bool {
+        matches!(self, Self::Item(_))
+    }
+
+    /// True for a face (the face state words read it).
+    pub fn is_face(&self) -> bool {
+        matches!(self, Self::Face(..))
+    }
+}
+
+/// The upload trigger of the hover (geometry selection P4.5, F4): the
+/// target that the hover buffers last drew. The viewport asks for one
+/// upload on a CHANGE of the target only, never per frame (V13, G-LV.1):
+/// the hover ring when an item comes or goes, the face state words when a
+/// face comes or goes. A pointer move never rebuilds the drawing buffer or
+/// a mesh.
 #[derive(Debug, Default)]
 pub struct HoverDetector {
-    last: Option<rs_cam_core::selection::MatchKey>,
+    last: Option<HoverTarget>,
 }
 
 impl HoverDetector {
-    /// Compare the hovered item of this frame with the last one. `true`
-    /// (once) when it changed; the caller then uploads the hover buffer.
-    pub fn changed(&mut self, now: Option<rs_cam_core::selection::MatchKey>) -> bool {
+    /// Compare the hover target of this frame with the last one. `true`
+    /// (once) when it changed; the caller then asks for the uploads.
+    pub fn changed(&mut self, now: Option<HoverTarget>) -> bool {
         if self.last == now {
             return false;
         }
@@ -144,9 +172,31 @@ impl HoverDetector {
         true
     }
 
-    /// The item the hover buffer draws.
-    pub fn hovered(&self) -> Option<&rs_cam_core::selection::MatchKey> {
+    /// The target the hover buffers draw. The hover ring and the face state
+    /// upload read this one slot.
+    pub fn hovered(&self) -> Option<&HoverTarget> {
         self.last.as_ref()
+    }
+
+    /// The hovered item, for the hover ring.
+    pub fn hovered_item(&self) -> Option<&rs_cam_core::selection::MatchKey> {
+        match self.last.as_ref()? {
+            HoverTarget::Item(key) => Some(key),
+            HoverTarget::Face(..) => None,
+        }
+    }
+
+    /// The hovered face, for the face state words.
+    pub fn hovered_face(
+        &self,
+    ) -> Option<(
+        super::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )> {
+        match self.last.as_ref()? {
+            HoverTarget::Face(model, face) => Some((*model, *face)),
+            HoverTarget::Item(_) => None,
+        }
     }
 }
 
@@ -288,4 +338,44 @@ pub fn side_point(
         middle.x - dy * distance * sign,
         middle.y + dx * distance * sign,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(x: f64) -> rs_cam_core::selection::MatchKey {
+        rs_cam_core::selection::MatchKey {
+            source: rs_cam_core::selection::SourceRef::ToolpathModel,
+            kind: rs_cam_core::selection::ItemKind::Loop,
+            layer: None,
+            anchor: [x, 0.0],
+            measure: 1.0,
+            brep: None,
+            z: None,
+        }
+    }
+
+    /// F4: one hover slot. Item, then Face, then nothing: each change fires
+    /// once; the same target twice does not fire.
+    #[test]
+    fn one_hover_slot_fires_once_per_change_f4() {
+        let face = HoverTarget::Face(
+            rs_cam_core::ids::ModelId::from_raw(2),
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId(5),
+        );
+        let mut detector = HoverDetector::default();
+        assert!(detector.changed(Some(HoverTarget::Item(key(1.0)))));
+        assert!(!detector.changed(Some(HoverTarget::Item(key(1.0)))));
+        assert_eq!(detector.hovered_item(), Some(&key(1.0)));
+        assert_eq!(detector.hovered_face(), None);
+        assert!(detector.changed(Some(face.clone())));
+        assert!(!detector.changed(Some(face.clone())));
+        assert_eq!(detector.hovered(), Some(&face));
+        assert_eq!(detector.hovered_item(), None);
+        assert!(detector.hovered_face().is_some());
+        assert!(detector.changed(None));
+        assert!(!detector.changed(None));
+        assert_eq!(detector.hovered(), None);
+    }
 }
