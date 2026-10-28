@@ -538,6 +538,10 @@ pub enum ProjectLoadWarning {
         /// One `dial: before to after` phrase per rewritten value.
         changes: Vec<String>,
     },
+    /// W1b: a Waterline stored the old key `continuous` (`stored` is its
+    /// value). The key was a dial no generator read, so the loader turned
+    /// the helical waterline on (`WaterlineConfig::helical`).
+    WaterlineHelical { toolpath: String, stored: bool },
     /// A toolpath's rest-analysis flag did not match the demand the
     /// project declares, so the loader rewrote it. `enabled` is the value
     /// the loader wrote.
@@ -610,6 +614,9 @@ impl ProjectLoadWarning {
                  The loader changed {}. Save the project to keep the change.",
                 changes.join(", ")
             ),
+            Self::WaterlineHelical { toolpath, .. } => {
+                format!("Waterline '{toolpath}': helical descent is now on (was the old default).")
+            }
         }
     }
 }
@@ -1260,11 +1267,25 @@ fn toolpath_config_from_section(
             changes: dressup_changes(&tp.dressups, &dressups),
         });
     }
+    // W1b (operator ruling 2026-10-28): the Waterline dial was the key
+    // `continuous`, which no generator read before D69. A stored value is
+    // the old default, so the op loads helical. The warning names the
+    // change; a save writes `helical` and drops the old key.
+    let mut operation = operation.clone();
+    if let OperationConfig::Waterline(cfg) = &mut operation
+        && let Some(old) = cfg.legacy_continuous.take()
+    {
+        cfg.helical = true;
+        warnings.push(ProjectLoadWarning::WaterlineHelical {
+            toolpath: tp.name.clone(),
+            stored: old,
+        });
+    }
     ToolpathConfig {
         id: tp_id,
         name: tp.name.clone(),
         enabled: tp.enabled,
-        operation: operation.clone(),
+        operation,
         dressups,
         heights: tp.heights.clone(),
         tool_id: tp.tool_id,

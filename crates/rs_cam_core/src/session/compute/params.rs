@@ -174,6 +174,18 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        // W1b: `continuous` is the old name of the Waterline `helical` dial.
+        // An alias for one release, so an MCP client written before W1b
+        // still sets the dial (the `set_toolpath_param` tool doc says so).
+        let param = if param == "continuous"
+            && matches!(
+                tc.operation,
+                crate::compute::catalog::OperationConfig::Waterline(_)
+            ) {
+            "helical"
+        } else {
+            param
+        };
         // Removal step R2: a retired value refuses with the loader's text,
         // not with serde's "unknown variant".
         if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {

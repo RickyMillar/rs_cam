@@ -262,7 +262,7 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             0.1,
         );
         ui.label("Continuous:");
-        ui.checkbox(&mut cfg.continuous, "");
+        ui.checkbox(&mut cfg.helical, "");
         ui.end_row();
         // Z range now comes from the Heights tab (top_z / bottom_z)
     });

@@ -1828,9 +1828,15 @@ impl Adaptive3dConfig {
     }
 }
 
-/// The help of `WaterlineConfig::continuous` (D69 §2).
-const HELP_WATERLINE_CONTINUOUS: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
+/// The help of `WaterlineConfig::helical` (D69 §2).
+const HELP_WATERLINE_HELICAL: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
      descends along the lower ring from level to level. Off: one entry per ring and level.";
+
+/// The helical waterline is on by default (D69, operator ruling
+/// 2026-10-28), also for a file with no `helical` key (W1b).
+fn default_waterline_helical() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
@@ -1858,10 +1864,22 @@ pub struct WaterlineConfig {
     /// of whole rings over consecutive levels (one ring inside the other,
     /// no ring between them, one to one) is ONE entry; the tool descends
     /// along the lower ring (`ops::waterline::helical_waterline`).
-    /// `false`: one entry per ring and level. Before D69 no generator read
-    /// the field.
-    #[param(help = HELP_WATERLINE_CONTINUOUS)]
-    pub continuous: bool,
+    /// `false`: one entry per ring and level.
+    ///
+    /// W1b (operator ruling 2026-10-28): the key was `continuous`, a dial
+    /// no generator read. A file with no `helical` key loads `true`; the
+    /// loader reads an old `continuous` key as the old default and says so
+    /// (`ProjectLoadWarning::WaterlineHelical`).
+    #[serde(default = "default_waterline_helical")]
+    #[param(help = HELP_WATERLINE_HELICAL)]
+    pub helical: bool,
+    /// W1b: the old key `continuous`, as a file before W1b stored it. The
+    /// loader reads it ONLY to name the migration: it sets `helical` and
+    /// pushes `ProjectLoadWarning::WaterlineHelical`, then clears this
+    /// field (`session::project_file`). Never written.
+    #[serde(default, rename = "continuous", skip_serializing)]
+    #[param(skip = "W1b: the retired key `continuous`, read only by the loader's migration")]
+    pub legacy_continuous: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
@@ -1889,7 +1907,8 @@ impl Default for WaterlineConfig {
             plunge_rate: None,
             ramp_feed_rate: None,
             // D69: on by default (operator ruling 2026-10-28).
-            continuous: true,
+            helical: default_waterline_helical(),
+            legacy_continuous: None,
             spindle_rpm: None,
             // OFF. See the field doc.
             hookup_mm: 0.0,

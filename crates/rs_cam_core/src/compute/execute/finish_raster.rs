@@ -338,7 +338,7 @@ pub(crate) fn generate_waterline(
     // D69 §2: the helical waterline judges each link between two chained
     // rings with the model gouge guard's reduced tool. A tool that cannot
     // shrink (no cutter) joins no level: the op cuts the stacked form.
-    let link_probe = if cfg.continuous {
+    let link_probe = if cfg.helical {
         crate::compute::cutter::build_cutter(&crate::compute::model_gouge::reduced_tool_config(
             ctx.tool_cfg,
             crate::compute::model_gouge::MODEL_GOUGE_TOL_MM,
@@ -368,7 +368,7 @@ struct WaterlinePass<'a> {
     surface: MeshInput<'a>,
     cutter: &'a ToolDefinition,
     params: crate::ops::waterline::WaterlineParams,
-    /// D69 §2 (`WaterlineConfig::continuous`): the reduced tool that
+    /// D69 §2 (`WaterlineConfig::helical`): the reduced tool that
     /// judges a chain link. `Some`: the op cuts the helical waterline;
     /// `None`: the stacked form, one entry per ring and level.
     link_probe: Option<ToolDefinition>,

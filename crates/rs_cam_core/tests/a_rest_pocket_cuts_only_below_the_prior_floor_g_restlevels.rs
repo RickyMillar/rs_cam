@@ -1748,7 +1748,7 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
             // between the levels, so this file pins the stacked form. The
             // helix runs the same rest filter per level
             // (`ops::waterline::waterline_level_rings`).
-            continuous: false,
+            helical: false,
             ..WaterlineConfig::default()
         }),
         rs_cam_core::ids::ToolId::from_raw(tool_id),

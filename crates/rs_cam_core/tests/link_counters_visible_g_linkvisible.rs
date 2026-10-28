@@ -214,7 +214,7 @@ fn waterline_session(hookup_mm: f64) -> ProjectSession {
             // waterline (D69 §2, on by default) joins each flank's rings
             // into one fragment, and the 8 left stand too far apart for
             // the stage. The stacked form keeps the arm's population.
-            continuous: false,
+            helical: false,
             ..WaterlineConfig::default()
         }),
         // A surface op carries no depth dial, so `bottom_z: Auto` would

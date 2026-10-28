@@ -93,8 +93,8 @@ fn holed_plate() -> TriangleMesh {
     TriangleMesh::from_raw(vertices, triangles)
 }
 
-/// The op output (no dressup) on the plate, with the dial at `continuous`.
-fn waterline(continuous: bool) -> Toolpath {
+/// The op output (no dressup) on the plate, with the dial at `helical`.
+fn waterline(helical: bool) -> Toolpath {
     let annotated = common::op_fixtures::generated_op(
         stock_over(OUTER_BOTTOM + 3.0, PLATE + 2.0),
         endmill_tool_config(TOOL_D),
@@ -102,7 +102,7 @@ fn waterline(continuous: bool) -> Toolpath {
         OperationConfig::Waterline(WaterlineConfig {
             z_step: Z_STEP,
             sampling: 0.5,
-            continuous,
+            helical,
             ..WaterlineConfig::default()
         }),
         |tc| {

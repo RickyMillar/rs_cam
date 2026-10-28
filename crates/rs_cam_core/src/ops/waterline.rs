@@ -902,7 +902,7 @@ fn emit_chain(
     toolpath.final_retract(params.safe_z);
 }
 
-/// The helical waterline (D69 §2, `WaterlineConfig::continuous`): the
+/// The helical waterline (D69 §2, `WaterlineConfig::helical`): the
 /// levels of [`waterline_level_rings`], top first, with each chain of
 /// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
 /// ([`emit_chain`]).
