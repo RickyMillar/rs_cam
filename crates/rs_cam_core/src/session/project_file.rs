@@ -316,6 +316,36 @@ pub(crate) fn retired_param_value(param: &str, value: &serde_json::Value) -> Opt
         .map(|r| r.replacement)
 }
 
+/// GA2: what a parameter table of a job file (`[[operation]]`) does with a
+/// key that the schema does not publish, by the [`RETIRED_VALUES`] rows:
+/// the same rule as the project loader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetiredParam {
+    /// The key left the format with this value: refuse with the text.
+    Refuse(&'static str),
+    /// The key left the format, and this value changes nothing (G-A
+    /// `z_blend = false`): drop it, as the project loader does.
+    Drop,
+}
+
+/// GA2: the [`RetiredParam`] of the toolpath parameter `param = value` in a
+/// file, or `None` when no [`RETIRED_VALUES`] row names the key. A row with
+/// a boolean value refuses that value; another boolean of a boolean row is
+/// dropped, because the project loader loads it and ignores the key.
+#[must_use]
+pub fn retired_file_param(param: &str, value: &toml::Value) -> Option<RetiredParam> {
+    let rows: Vec<&RetiredValue> = RETIRED_VALUES
+        .iter()
+        .filter(|r| r.table == TOOLPATH_PARAMS && r.key == param)
+        .collect();
+    if let Some(row) = rows.iter().find(|r| r.value.matches(value)) {
+        return Some(RetiredParam::Refuse(row.replacement));
+    }
+    rows.iter()
+        .any(|r| matches!(r.value, RetiredLiteral::Bool(_)) && value.is_bool())
+        .then_some(RetiredParam::Drop)
+}
+
 /// One retired key of a toolpath table that left the format for some op
 /// kinds only (geometry selection P3.2). A [`RetiredKey`] matches a path
 /// and a key, but `depth` still lives on Face, Trace and Project Curve,

@@ -279,13 +279,27 @@ impl OperationDef {
     /// publish and a dressup key that `DressupConfig::FIELD_DEFS` does not
     /// name. The refusal names each bad key and the valid set.
     pub(crate) fn operation_type(&self) -> Result<OperationType> {
+        use rs_cam_core::session::project_file::{RetiredParam, retired_file_param};
         let op_type = crate::run::parse_op_type(&self.op_type)?;
         let defs = op_type.registry_entry().params.defs;
+        // GA2: a retired parameter takes the project loader's rule (the one
+        // `RETIRED_VALUES` table): a value that left the format refuses with
+        // the fix, and a value that changes nothing (`z_blend = false`) is
+        // dropped. The parameters are read by the schema names only, so a
+        // dropped key reaches no op.
+        for (key, value) in &self.params {
+            if let Some(RetiredParam::Refuse(replacement)) = retired_file_param(key, value) {
+                bail!("{key} = {value} is retired. {replacement}.");
+            }
+        }
         let unknown: Vec<&str> = self
             .params
-            .keys()
-            .map(String::as_str)
-            .filter(|key| !defs.iter().any(|d| d.name == *key))
+            .iter()
+            .filter(|(key, value)| {
+                !defs.iter().any(|d| d.name == key.as_str())
+                    && retired_file_param(key, value) != Some(RetiredParam::Drop)
+            })
+            .map(|(key, _)| key.as_str())
             .collect();
         if !unknown.is_empty() {
             let valid: Vec<&str> = defs.iter().map(|d| d.name).collect();
@@ -1916,6 +1930,46 @@ mod tests {
         let result = execute_job(&demo, &root, false).unwrap();
         assert_eq!(result.phases.len(), demo.operation.len());
         assert!(result.phases.iter().all(|p| !p.toolpath.moves.is_empty()));
+    }
+
+    /// GA2: the job door takes the project loader's rule for a retired
+    /// parameter (the one `RETIRED_VALUES` table). An old 3D Rough with
+    /// `z_blend = false` passes the key check and the key is dropped;
+    /// `z_blend = true` refuses with the loader's fix text. An unknown key
+    /// still refuses.
+    #[test]
+    fn a_job_takes_the_project_rule_for_z_blend_ga2() {
+        let op = |extra: &str| -> OperationDef {
+            let source = format!(
+                "[job]\noutput = \"o.nc\"\n[tools.t]\ntype = \"end_mill\"\ndiameter = 6.0\n\
+                 [[operation]]\ntype = \"adaptive3d\"\ninput = \"m.stl\"\ntool = \"t\"\n{extra}"
+            );
+            let mut job: JobFile = toml::from_str(&source).unwrap();
+            job.operation.remove(0)
+        };
+        assert_eq!(
+            op("z_blend = false\n").operation_type().unwrap(),
+            OperationType::Adaptive3d,
+            "z_blend = false is dropped, as the project loader drops it"
+        );
+        let refusal = op("z_blend = true\n")
+            .operation_type()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refusal.contains("z_blend = true is retired")
+                && refusal.contains("Depth/Pass")
+                && refusal.contains("Delete the key"),
+            "{refusal}"
+        );
+        let unknown = op("no_such_key = 1\n")
+            .operation_type()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            unknown.contains("has no parameter no_such_key"),
+            "{unknown}"
+        );
     }
 
     /// C2: a parameter and a dressup field of the job file reach the
