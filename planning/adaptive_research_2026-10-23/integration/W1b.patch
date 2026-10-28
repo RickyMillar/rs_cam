@@ -117,7 +117,7 @@ index 12e66f0b1..b3dcb694d 100644
          // not with serde's "unknown variant".
          if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {
 diff --git a/crates/rs_cam_core/src/session/project_file.rs b/crates/rs_cam_core/src/session/project_file.rs
-index 177f36e37..f8f94579d 100644
+index 177f36e37..522e4da08 100644
 --- a/crates/rs_cam_core/src/session/project_file.rs
 +++ b/crates/rs_cam_core/src/session/project_file.rs
 @@ -538,6 +538,10 @@ pub enum ProjectLoadWarning {
@@ -125,23 +125,25 @@ index 177f36e37..f8f94579d 100644
          changes: Vec<String>,
      },
 +    /// W1b: a Waterline stored the old key `continuous` (`stored` is its
-+    /// value). The key was a dial no generator read, so the loader turned
-+    /// the helical waterline on (`WaterlineConfig::helical`).
++    /// value). The loader turned the helical waterline on
++    /// (`WaterlineConfig::helical`, operator ruling 2026-10-28).
 +    WaterlineHelical { toolpath: String, stored: bool },
      /// A toolpath's rest-analysis flag did not match the demand the
      /// project declares, so the loader rewrote it. `enabled` is the value
      /// the loader wrote.
-@@ -610,6 +614,9 @@ impl ProjectLoadWarning {
+@@ -610,6 +614,11 @@ impl ProjectLoadWarning {
                   The loader changed {}. Save the project to keep the change.",
                  changes.join(", ")
              ),
-+            Self::WaterlineHelical { toolpath, .. } => {
-+                format!("Waterline '{toolpath}': helical descent is now on (was the old default).")
++            Self::WaterlineHelical { toolpath, stored } => {
++                format!(
++                    "Waterline '{toolpath}': helical descent is now on (was continuous = {stored})."
++                )
 +            }
          }
      }
  }
-@@ -1260,11 +1267,25 @@ fn toolpath_config_from_section(
+@@ -1260,11 +1269,25 @@ fn toolpath_config_from_section(
              changes: dressup_changes(&tp.dressups, &dressups),
          });
      }
@@ -288,10 +290,10 @@ index b2d1d5533..e79509406 100644
      });
 diff --git a/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs b/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs
 new file mode 100644
-index 000000000..c1d3baf5d
+index 000000000..8eccdb09d
 --- /dev/null
 +++ b/crates/rs_cam_core/tests/an_old_waterline_loads_helical_w1b.rs
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,189 @@
 +//! W1b (operator ruling 2026-10-28): an old project's Waterline loads helical.
 +//!
 +//! Pre-registration:
@@ -421,7 +423,8 @@ index 000000000..c1d3baf5d
 +    );
 +    let line = warnings[0].message();
 +    assert!(
-+        !line.contains('\n') && line.starts_with("Waterline 'Waterline': helical descent"),
++        !line.contains('\n')
++            && line == "Waterline 'Waterline': helical descent is now on (was continuous = false).",
 +        "one short line: {line}"
 +    );
 +    // The save writes the new key only.

@@ -1,8 +1,8 @@
 # W1b report: an old project's Waterline loads helical
 
-Patch: `W1b.patch` (against HEAD `26a2925bd`, 14 paths: 13 tracked files and 1 new file), md5
-`fd366b66153beb6ad489ca88e96f568d`. Nothing is committed. The second freeze adds the lead's two conditions (the MCP
-alias and the one-line warning).
+Patch: `W1b.patch` = `git diff d303f4103 -- <13 paths>` + the new test file (14 paths), md5
+`0ed3dbaa14745030c8e5cfb671aa98e8`. `git apply --check` passes on a clean `d303f4103` checkout. Nothing is
+committed. The third freeze adds the lead's review fixes (the warning text; the MCP door audit).
 
 ## Mechanism
 
@@ -26,8 +26,15 @@ alias and the one-line warning).
 1. MCP alias: `session/compute/params.rs::set_toolpath_param_impl` maps the param `continuous` to `helical` on a
    Waterline, for one release. The `set_toolpath_param` tool doc (`rs_cam_viz/src/mcp_server.rs`, about line 1130)
    says so in one sentence. No wire snapshot holds the tool description, so no snapshot row moves.
-2. The warning is one line: "Waterline '<name>': helical descent is now on (was the old default)." The sentry checks
-   that it has no line break.
+2. The warning is one line: "Waterline '<name>': helical descent is now on (was continuous = <stored>)." The sentry
+   checks the exact text.
+3. MCP doors that take a Waterline config from a caller (audit): only `set_toolpath_param` (per key), which the alias
+   covers with the caller's value (not forced to true, no warning). The CLI job file sets each param through the same
+   core setter, so it takes the alias too. `ReplaceToolpathConfig` is not an MCP tool (the MCP command table lists it
+   as reached by no `CoreRequest`), and `ReplaceToolpathConfigArgs` has no `Deserialize`, so no door reads a whole
+   `WaterlineConfig` from caller JSON. "Both keys" cannot happen on a per-key door. The project file is the only
+   whole-config reader; a hand-edited file with both keys loads helical (the loader cannot see which key the file
+   stated first).
 
 ## Lines touched outside my area
 
