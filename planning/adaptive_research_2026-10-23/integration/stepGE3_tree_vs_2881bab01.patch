@@ -1,0 +1,526 @@
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index e9f80f64a..f64e3d9b9 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -33,7 +33,7 @@ mod params;
+ mod simulation;
+ 
+ pub use diagnostics::TriageSessionKey;
+-pub use generation::BoundaryCollapse;
++pub use generation::{BoundaryCollapse, RestBoundaryRefusal};
+ pub(crate) use params::strip_outer_quotes;
+ 
+ /// Fully-owned, per-generation inputs resolved from session state by
+diff --git a/crates/rs_cam_core/src/session/compute/generation.rs b/crates/rs_cam_core/src/session/compute/generation.rs
+index 5afc89f95..0326ba9f8 100644
+--- a/crates/rs_cam_core/src/session/compute/generation.rs
++++ b/crates/rs_cam_core/src/session/compute/generation.rs
+@@ -590,48 +590,76 @@ impl ProjectSession {
+         this_index: usize,
+         source_toolpath_id: crate::ids::ToolpathId,
+     ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
++        self.derived_rest_regions(this_index, source_toolpath_id)
++            .map_err(|refusal| match refusal {
++                RestRegionsLookup::Refused(refusal) => {
++                    SessionError::OperationFailed(refusal.to_string())
++                }
++                RestRegionsLookup::NotFound(index) => SessionError::ToolpathNotFound(index),
++            })
++    }
++
++    /// G-E (3): why the `DerivedRestRegions` boundary of the toolpath at
++    /// `index` refuses generation, or `None` when it resolves (or the
++    /// toolpath has no such boundary on). The same rule as
++    /// [`Self::resolve_derived_rest_region_polys`]: its `Display` is the
++    /// text generation refuses with, so a surface can match the two.
++    #[must_use]
++    pub fn rest_boundary_refusal(&self, index: usize) -> Option<RestBoundaryRefusal> {
++        let tc = self.toolpath_configs.get(index)?;
++        if !tc.boundary.enabled {
++            return None;
++        }
++        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
++            tc.boundary.source
++        else {
++            return None;
++        };
++        match self.derived_rest_regions(index, source_toolpath_id) {
++            Err(RestRegionsLookup::Refused(refusal)) => Some(refusal),
++            Ok(_) | Err(RestRegionsLookup::NotFound(_)) => None,
++        }
++    }
++
++    /// The one rule of the derived regions: the regions, or the typed
++    /// refusal ([`RestBoundaryRefusal`]).
++    fn derived_rest_regions(
++        &self,
++        this_index: usize,
++        source_toolpath_id: crate::ids::ToolpathId,
++    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, RestRegionsLookup> {
+         let Some(source_index) = self
+             .toolpath_configs
+             .iter()
+             .position(|tc| tc.id == source_toolpath_id)
+         else {
+-            return Err(SessionError::OperationFailed(format!(
+-                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
+-                 but no toolpath with that id exists anymore. Pick a different source toolpath \
+-                 for the boundary, or disable the boundary.",
+-            )));
++            return Err(RestRegionsLookup::Refused(
++                RestBoundaryRefusal::SourceMissing { source_toolpath_id },
++            ));
+         };
+-
+         if source_index == this_index {
+-            return Err(SessionError::OperationFailed(
+-                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
+-                 itself as the source for a derived-rest-regions boundary. Pick a different \
+-                 source toolpath."
+-                    .to_owned(),
+-            ));
++            return Err(RestRegionsLookup::Refused(RestBoundaryRefusal::OwnRegions));
+         }
+-
+         let Some(source_tc) = self.toolpath_configs.get(source_index) else {
+             // Unreachable in practice: `source_index` came from `position()`
+             // on this same Vec a few lines above.
+-            return Err(SessionError::ToolpathNotFound(source_index));
++            return Err(RestRegionsLookup::NotFound(source_index));
+         };
+-        let source_name = &source_tc.name;
+-
++        let source_name = source_tc.name.clone();
+         let Some(result) = self.results.get(&source_index) else {
+-            return Err(SessionError::OperationFailed(format!(
+-                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
+-                 its rest analysis produces the regions this boundary needs.",
+-            )));
++            return Err(RestRegionsLookup::Refused(
++                RestBoundaryRefusal::NotGenerated {
++                    source_toolpath_id,
++                    source_name,
++                },
++            ));
+         };
+-
+         match result.annotated().produced.rest_regions.as_ref() {
+             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
+-            _ => Err(SessionError::OperationFailed(format!(
+-                "'{source_name}' produced no rest regions. Its rest analysis found no material \
+-                 above the threshold, or it is switched off. Check the rest analysis settings \
+-                 on '{source_name}' and regenerate it.",
+-            ))),
++            _ => Err(RestRegionsLookup::Refused(RestBoundaryRefusal::NoRegions {
++                source_toolpath_id,
++                source_name,
++            })),
+         }
+     }
+ 
+@@ -1413,6 +1441,65 @@ pub(crate) struct ClipContainment {
+     pub(crate) source_region_count: usize,
+ }
+ 
++/// G-E (3): why a `DerivedRestRegions` boundary refuses generation. Its
++/// `Display` is the refusal text generation gives (unchanged by G-E), so
++/// the wire and MCP text do not move; a surface reads the variant to draw
++/// a short face and its action.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub enum RestBoundaryRefusal {
++    /// No toolpath has the source id any more.
++    SourceMissing {
++        source_toolpath_id: crate::ids::ToolpathId,
++    },
++    /// The boundary names the toolpath's own regions.
++    OwnRegions,
++    /// The source has no generated result.
++    NotGenerated {
++        source_toolpath_id: crate::ids::ToolpathId,
++        source_name: String,
++    },
++    /// The source's result has no rest regions.
++    NoRegions {
++        source_toolpath_id: crate::ids::ToolpathId,
++        source_name: String,
++    },
++}
++
++impl std::fmt::Display for RestBoundaryRefusal {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            Self::SourceMissing { source_toolpath_id } => write!(
++                f,
++                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
++                 but no toolpath with that id exists anymore. Pick a different source toolpath \
++                 for the boundary, or disable the boundary.",
++            ),
++            Self::OwnRegions => f.write_str(
++                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
++                 itself as the source for a derived-rest-regions boundary. Pick a different \
++                 source toolpath.",
++            ),
++            Self::NotGenerated { source_name, .. } => write!(
++                f,
++                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
++                 its rest analysis produces the regions this boundary needs.",
++            ),
++            Self::NoRegions { source_name, .. } => write!(
++                f,
++                "'{source_name}' produced no rest regions. Its rest analysis found no material \
++                 above the threshold, or it is switched off. Check the rest analysis settings \
++                 on '{source_name}' and regenerate it.",
++            ),
++        }
++    }
++}
++
++/// The failure of [`ProjectSession::derived_rest_regions`]: a typed
++/// refusal, or an index that does not resolve.
++enum RestRegionsLookup {
++    Refused(RestBoundaryRefusal),
++    NotFound(usize),
++}
+ /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): a machining boundary that
+ /// leaves no area for the tool. [`ProjectSession::boundary_collapse`] reads
+ /// it; generation refuses with [`Self::message`].
+diff --git a/crates/rs_cam_core/src/session/compute/tests.rs b/crates/rs_cam_core/src/session/compute/tests.rs
+index 0fe7792c2..1d5a000d5 100644
+--- a/crates/rs_cam_core/src/session/compute/tests.rs
++++ b/crates/rs_cam_core/src/session/compute/tests.rs
+@@ -2516,6 +2516,55 @@ fn derived_rest_regions_resolve_happy_path_returns_regions() {
+     assert_eq!(resolved.len(), 2, "both disjoint regions come through");
+ }
+ 
++/// G-E (3): the read door gives the typed refusal that generation refuses
++/// with, and its text is the refusal text. Not generated, no regions,
++/// regions: `NotGenerated`, `NoRegions`, `None`.
++#[test]
++fn the_rest_boundary_refusal_is_the_generation_refusal_g_e() {
++    use crate::session::RestBoundaryRefusal;
++    let mut s = make_session();
++    let mut source_tc = make_tc(s.tools()[0].id.raw());
++    source_tc.name = "Pencil Rest".to_owned();
++    let _ = s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
++    let mut tc = make_tc(s.tools()[0].id.raw());
++    tc.boundary = derived_boundary(0);
++    let _ = s.add_toolpath(0, tc).unwrap(); // id 1, index 1
++    let cancel = AtomicBool::new(false);
++    let source = ToolpathId::from_raw(0);
++
++    let refusal = s
++        .rest_boundary_refusal(1)
++        .expect("the source has no result");
++    assert_eq!(
++        refusal,
++        RestBoundaryRefusal::NotGenerated {
++            source_toolpath_id: source,
++            source_name: "Pencil Rest".to_owned(),
++        }
++    );
++    assert_eq!(
++        expect_operation_failed(s.generate_toolpath(1, &cancel)),
++        refusal.to_string()
++    );
++
++    s.results.insert(0, fake_result_with_regions(None));
++    let refusal = s.rest_boundary_refusal(1).expect("no regions");
++    assert!(matches!(refusal, RestBoundaryRefusal::NoRegions { .. }));
++    assert_eq!(
++        expect_operation_failed(s.generate_toolpath(1, &cancel)),
++        refusal.to_string()
++    );
++
++    s.results.insert(
++        0,
++        fake_result_with_regions(Some(vec![crate::polygon::Polygon2::rectangle(
++            0.0, 0.0, 10.0, 10.0,
++        )])),
++    );
++    assert_eq!(s.rest_boundary_refusal(1), None, "the regions resolve");
++    assert_eq!(s.rest_boundary_refusal(0), None, "no derived boundary");
++}
++
+ #[test]
+ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
+     use crate::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
+diff --git a/crates/rs_cam_core/src/session/mod.rs b/crates/rs_cam_core/src/session/mod.rs
+index 63ce55fc2..4255cf133 100644
+--- a/crates/rs_cam_core/src/session/mod.rs
++++ b/crates/rs_cam_core/src/session/mod.rs
+@@ -77,8 +77,8 @@ pub use command::{
+ };
+ pub use compute::{
+     BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle,
+-    RecommendClearingStrategyHandle, ResolvedGenInputs, TriageSessionKey, execute_generation,
+-    execute_job, execute_recommend_clearing_strategy,
++    RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
++    execute_generation, execute_job, execute_recommend_clearing_strategy,
+ };
+ pub use cycle_time::{
+     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,
+diff --git a/crates/rs_cam_viz/src/ui/properties/mod.rs b/crates/rs_cam_viz/src/ui/properties/mod.rs
+index 7587bafda..948bc9d13 100644
+--- a/crates/rs_cam_viz/src/ui/properties/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/mod.rs
+@@ -428,6 +428,10 @@ pub(crate) struct ToolpathPanelInputs {
+     /// G-B: the feed caps of the stored result, counted once per result
+     /// (`ToolpathRuntime::caps`). `None` when no move has a cap.
+     pub caps: Option<crate::state::runtime::CapFigures>,
++    /// G-E (3): why this toolpath's rest-regions boundary refuses
++    /// generation (`ProjectSession::rest_boundary_refusal`), or `None`.
++    /// The header draws a short face with an action for it.
++    pub rest_boundary_refusal: Option<rs_cam_core::session::RestBoundaryRefusal>,
+     /// Operator ruling 2026-10-15: this rest toolpath's current comparison
+     /// with fresh stock, when one was asked for
+     /// (`ProjectSession::current_rest_fresh_comparisons`).
+@@ -808,6 +812,9 @@ pub(crate) fn toolpath_panel_inputs(
+             .toolpath_rt
+             .get(&id)
+             .and_then(crate::state::runtime::ToolpathRuntime::caps),
++        rest_boundary_refusal: session
++            .find_toolpath_config_by_id(id)
++            .and_then(|(index, _)| session.rest_boundary_refusal(index)),
+         rest_fresh,
+         shoe: shoe_row_inputs(id, session, gui),
+     }
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index f0a12cd2e..53ecf6293 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -1881,3 +1881,46 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
+     assert!(texts.iter().any(|t| t == "Max Rate:"), "{texts:?}");
+     assert!(!texts.iter().any(|t| t.contains("Ramp Rate")), "{texts:?}");
+ }
++
++/// G-E (3): the face of each rest-boundary refusal, and the `⟳` action
++/// glyph is in the app fonts (a missing glyph paints a box).
++#[test]
++fn the_rest_refusal_faces_are_short_g_e() {
++    use super::toolpath_panel::{GENERATE_SOURCE_GLYPH, rest_refusal_face};
++    use rs_cam_core::session::RestBoundaryRefusal;
++    let source = rs_cam_core::ToolpathId::from_raw(7);
++    let name = "Body rough".to_owned();
++    let not_generated = rest_refusal_face(&RestBoundaryRefusal::NotGenerated {
++        source_toolpath_id: source,
++        source_name: name.clone(),
++    })
++    .expect("a face");
++    assert_eq!(not_generated.text, "\u{2715} Generate 'Body rough' first");
++    assert_eq!(not_generated.generate, Some((source, name.clone())));
++    let no_regions = rest_refusal_face(&RestBoundaryRefusal::NoRegions {
++        source_toolpath_id: source,
++        source_name: name,
++    })
++    .expect("a face");
++    assert_eq!(no_regions.text, "\u{2715} 'Body rough' left no regions");
++    let own = rest_refusal_face(&RestBoundaryRefusal::OwnRegions).expect("a face");
++    assert_eq!(own.text, "Refused \u{00B7} source is this op");
++    assert_eq!(own.generate, None);
++    assert_eq!(
++        rest_refusal_face(&RestBoundaryRefusal::SourceMissing {
++            source_toolpath_id: source
++        }),
++        None
++    );
++
++    let ctx = egui::Context::default();
++    crate::ui::tokens::apply(&ctx);
++    crate::ui::tokens::apply_fonts(&ctx);
++    let mut out = ctx.run_ui(egui::RawInput::default(), |_ui| {});
++    out.textures_delta.clear();
++    let glyph = GENERATE_SOURCE_GLYPH.chars().next().expect("one char");
++    assert!(
++        ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), glyph)),
++        "the app fonts have no {GENERATE_SOURCE_GLYPH}"
++    );
++}
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index f749ef7ee..954f02aca 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -136,7 +136,19 @@ pub(super) fn draw_toolpath_panel(
+     if let crate::state::freshness::FreshnessState::Error(e) = freshness
+         && validation_errors.is_empty()
+     {
+-        ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
++        // G-E (3): a rest-boundary refusal that is the last run's text
++        // gets its short face and its action; any other refusal shows its
++        // own text, truncated.
++        match inputs
++            .rest_boundary_refusal
++            .as_ref()
++            .and_then(|refusal| rest_refusal_face(refusal).filter(|_| refusal.to_string() == *e))
++        {
++            Some(face) => draw_refusal_face(ui, &face, e, events),
++            None => {
++                ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
++            }
++        }
+     }
+     if !validation_errors.is_empty() {
+         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
+@@ -1303,6 +1315,83 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool
+     .inner
+ }
+ 
++/// G-E (3): the one-line face of a rest-boundary refusal, and the
++/// toolpath its action generates.
++#[derive(Debug, Clone, PartialEq)]
++pub(super) struct RefusalFace {
++    pub text: String,
++    /// The source toolpath that the `⟳` action generates, and its name.
++    pub generate: Option<(crate::state::toolpath::ToolpathId, String)>,
++}
++
++/// G-E (3), §7.7: the short face of a rest-boundary refusal. `None` for a
++/// refusal with no short face (a lost source id), which keeps its text.
++pub(super) fn rest_refusal_face(
++    refusal: &rs_cam_core::session::RestBoundaryRefusal,
++) -> Option<RefusalFace> {
++    use crate::ui::tokens::GLYPH_DANGER;
++    use rs_cam_core::session::RestBoundaryRefusal;
++    match refusal {
++        RestBoundaryRefusal::NotGenerated {
++            source_toolpath_id,
++            source_name,
++        } => Some(RefusalFace {
++            text: format!("{GLYPH_DANGER} Generate '{source_name}' first"),
++            generate: Some((*source_toolpath_id, source_name.clone())),
++        }),
++        RestBoundaryRefusal::NoRegions {
++            source_toolpath_id,
++            source_name,
++        } => Some(RefusalFace {
++            text: format!("{GLYPH_DANGER} '{source_name}' left no regions"),
++            generate: Some((*source_toolpath_id, source_name.clone())),
++        }),
++        RestBoundaryRefusal::OwnRegions => Some(RefusalFace {
++            text: "Refused \u{00B7} source is this op".to_owned(),
++            generate: None,
++        }),
++        RestBoundaryRefusal::SourceMissing { .. } => None,
++    }
++}
++
++/// The glyph of the action that generates a refusal's source.
++pub(super) const GENERATE_SOURCE_GLYPH: &str = "\u{27F3}";
++
++/// Draw one refusal face: the face truncates in the width the action
++/// leaves; `detail` (the full refusal) is its hover.
++fn draw_refusal_face(
++    ui: &mut egui::Ui,
++    face: &RefusalFace,
++    detail: &str,
++    events: &mut Vec<AppEvent>,
++) {
++    ui.horizontal(|ui| {
++        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
++            if let Some((source, name)) = &face.generate
++                && ui
++                    .small_button(GENERATE_SOURCE_GLYPH)
++                    .on_hover_text(format!("Generate '{name}'"))
++                    .clicked()
++            {
++                events.push(AppEvent::GenerateToolpath(*source));
++            }
++            let rest = ui.available_width().max(0.0);
++            ui.allocate_ui_with_layout(
++                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
++                egui::Layout::left_to_right(egui::Align::Center),
++                |ui| {
++                    ui.set_max_width(rest);
++                    ui.add(
++                        OneLine::new(face.text.as_str())
++                            .color(crate::ui::tokens::DANGER)
++                            .detail(detail),
++                    );
++                },
++            );
++        });
++    });
++}
++
+ /// G-E (2): the footer shows at most this many finding rows before the
+ /// remainder line.
+ pub(super) const FOOTER_FINDINGS_CAP: usize = 3;
+diff --git a/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs b/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
+index a2c206327..8eb04f43c 100644
+--- a/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
++++ b/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
+@@ -602,3 +602,75 @@ fn a_generate_refusal_takes_one_line_g_e() {
+         "no row is wider than the panel"
+     );
+ }
++
++/// G-E sub-step 3: a rest-boundary refusal from the last generate has a
++/// short face and the `⟳` action that generates its source. Here the 3D
++/// Finish takes its boundary from the rest regions of the 3D Rough, which
++/// has no result: the face is `✕ Generate '3D Rough' first`, on one row
++/// with the action, and the full refusal stays on the hover.
++#[test]
++fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
++    use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource};
++    use rs_cam_core::session::{Command, RestBoundaryRefusal, SetBoundaryConfigArgs};
++    let mut state = fixture();
++    let configs = state.session().toolpath_configs();
++    let index = |name: &str| {
++        configs
++            .iter()
++            .position(|c| c.name == name)
++            .expect("fixture toolpath")
++    };
++    let (rough, finish) = (index("3D Rough"), index("3D Finish"));
++    let rough_id = configs[rough].id;
++    let finish_id = configs[finish].id;
++    let mut boundary: BoundaryConfig = configs[finish].boundary.clone();
++    boundary.enabled = true;
++    boundary.source = BoundarySource::DerivedRestRegions {
++        source_toolpath_id: rough_id,
++    };
++    let _ = state
++        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
++            index: finish,
++            boundary,
++        }))
++        .expect("the boundary edit applies");
++    let refusal = state
++        .session()
++        .rest_boundary_refusal(finish)
++        .expect("the source has no result");
++    assert!(matches!(refusal, RestBoundaryRefusal::NotGenerated { .. }));
++    state
++        .gui
++        .toolpath_rt
++        .get_mut(&finish_id)
++        .expect("fixture runtime")
++        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(refusal.to_string());
++
++    let frame = surface(
++        &mut state,
++        Selection::Toolpath(finish_id),
++        Some(ToolpathTab::Cut),
++        PANEL_WIDTH,
++    );
++    let face = frame
++        .painted
++        .iter()
++        .find(|p| p.text == format!("{} Generate '3D Rough' first", tokens::GLYPH_DANGER))
++        .expect("the short face");
++    let action = frame
++        .painted
++        .iter()
++        .find(|p| p.text == "\u{27F3}")
++        .expect("the generate action");
++    assert_eq!(face.rows, 1);
++    assert!(
++        (face.bands[0].0 - action.bands[0].0).abs() < 8.0,
++        "the face and its action share one row"
++    );
++    assert!(
++        !frame.painted.iter().any(|p| p.text == refusal.to_string()),
++        "the full refusal is on the hover, not the face"
++    );
++    assert!(frame.painted.iter().all(|p| p.rows == 1), "no text wraps");
++    assert!(frame.excess_width <= 0.5, "the row fits the panel");
++}
