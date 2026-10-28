@@ -90,16 +90,24 @@ Full `--all-targets` clippy stops on I5's new
   `retime_respects_no_kinematics_n7`, `simulation_issue_channel_m1`, one
   test of `modulated_feeds_read_their_own_prefix_b5`.
 - `perf_golden_sim_metrics` (Profile air-cut 1.9083 against 1.9295;
-  modulation off). Red with the same numbers at `f098d1623` (before C1),
-  in an isolated target directory.
+  modulation off). Red with the same numbers on a clean `f098d1623` (before
+  C1) and a clean `e5614d2b8`, each in a detached worktree run by ITS OWN
+  `scripts/cargo_lane.sh` (correction, see below).
 - `a_rest_pocket_cuts_only_below_the_prior_floor_g_restlevels::a_rest_waterline_cuts_only_the_runs_that_pass_material`:
-  red at clean `f098d1623` and clean `5974e642c`, in an isolated target
-  directory. My base run passed it, because the main tree then already held
-  I5's early waterline edits (its runtimes differ: fresh 30.21 s against
-  26.55 s clean). I5 now edits this test. Not C2: the test does not
-  modulate.
+  **green (21/21) on a clean `e5614d2b8`** (C1 and C2 included). Its red
+  in the shared tree comes from I5's uncommitted waterline edits, not from
+  C2. (The first version of this report said "red at clean commits"; that
+  was wrong, see below.)
 
-Hazard found: a temporary worktree that shares this tree's `target/`
-writes the SAME test binary names (one hash per test), so a "clean" run
-can reuse a binary built from the main tree. The evidence above uses a
-separate `CARGO_TARGET_DIR` (deleted after).
+**Correction (after the first freeze).** `scripts/cargo_lane.sh` does `cd`
+to the git top level of the directory that holds the SCRIPT. I called the
+shared tree's copy from the temporary worktrees, so those "clean" runs ran
+in the shared tree (with I5's edits), only with another target directory.
+The two checks above were run again with each worktree's own lane script.
+The C2 patch and its gates are not affected.
+
+Hazards found, for any "clean base" check:
+- A temporary worktree that shares this tree's `target/` writes the SAME
+  test binary names (one hash per test). Use a separate `CARGO_TARGET_DIR`.
+- Call the temporary worktree's OWN `scripts/cargo_lane.sh`. The shared
+  tree's copy runs cargo in the shared tree.
