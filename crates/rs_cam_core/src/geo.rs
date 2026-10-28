@@ -146,6 +146,12 @@ impl BoundingBox3 {
     }
 }
 
+/// The barycentric tolerance of `Triangle::ray_intersect`. The same value
+/// is the floor of `|det|` below which the test calls the ray parallel.
+/// The pick BVH (`mesh::bvh`) derives its box pad from it, so the two
+/// cannot drift.
+pub const RAY_BARY_EPS: f64 = 1e-10;
+
 /// A triangle in 3D space with precomputed normal.
 #[derive(Debug, Clone)]
 pub struct Triangle {
@@ -200,7 +206,7 @@ impl Triangle {
     /// (hit point = origin + t * dir), or `None` if the ray misses.
     /// Only returns hits with `t >= 0` (in front of the ray origin).
     pub fn ray_intersect(&self, origin: &P3, dir: &V3) -> Option<f64> {
-        let eps = 1e-10;
+        let eps = RAY_BARY_EPS;
         let e1 = self.v[1] - self.v[0];
         let e2 = self.v[2] - self.v[0];
         let h = dir.cross(&e2);
