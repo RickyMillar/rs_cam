@@ -834,13 +834,18 @@ impl RsCamApp {
         }
         if !tab_drag && response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
-            self.camera.orbit(delta.x, delta.y);
+            // C1: the pivot is the target. The pivot under the cursor is C3a.
+            let pivot = self.camera.target;
+            self.camera.orbit_about(pivot, delta.x, delta.y);
         }
         if response.dragged_by(egui::PointerButton::Secondary)
             || response.dragged_by(egui::PointerButton::Middle)
         {
             let delta = response.drag_delta();
-            self.camera.pan(delta.x, delta.y);
+            // The pan step follows the viewport height, so a point at the
+            // target depth stays under the cursor.
+            self.camera
+                .pan_pixels(delta.x, delta.y, rect.height(), None);
         }
 
         // The wheel belongs to whatever is UNDER the pointer, and the
@@ -865,7 +870,21 @@ impl RsCamApp {
             // to a reasonable range so track-pad and mouse-wheel both feel right.
             let magnitude = scroll_raw.abs().clamp(1.0, 120.0);
             let scroll = scroll_raw.signum() * magnitude;
-            self.camera.zoom(scroll);
+            // The wheel zooms toward the point under the cursor at the target
+            // depth. Without a pointer position it zooms toward the target.
+            let k = (-scroll * crate::render::camera::ZOOM_PER_WHEEL).exp();
+            let point = ui
+                .input(|i| i.pointer.hover_pos())
+                .and_then(|pos| {
+                    self.camera.point_at_target_depth(
+                        pos.x - rect.min.x,
+                        pos.y - rect.min.y,
+                        rect.width(),
+                        rect.height(),
+                    )
+                })
+                .unwrap_or(self.camera.target);
+            self.camera.zoom_toward(point, k);
         }
 
         let aspect = if rect.height() > 0.0 {

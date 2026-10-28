@@ -550,7 +550,7 @@ mod an_stl_face_click_p4_7 {
         let frame = SetupFrame::of(&state.session().list_setups()[0]);
         let (w, d, h) = frame.effective_stock(&stock);
         let mut camera = OrbitCamera::new();
-        camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
+        camera.set_pose(camera.fit_pose([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]));
         let q = frame.transform_point(p, &stock);
         let at = camera
             .project_to_screen(

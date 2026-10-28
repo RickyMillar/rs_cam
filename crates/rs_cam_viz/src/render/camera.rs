@@ -16,7 +16,43 @@ pub enum ProjectionMode {
     Orthographic,
 }
 
+/// The largest pitch magnitude. The camera never looks straight down the Z
+/// axis, so the view matrix keeps a defined up vector.
+pub const PITCH_LIMIT: f32 = std::f32::consts::FRAC_PI_2 - 0.01;
+
+/// The range that holds the orbit distance.
+pub const DISTANCE_RANGE: (f32, f32) = (0.1, 50_000.0);
+
+/// The orbit angle for one pixel of drag.
+pub const ORBIT_RAD_PER_PX: f32 = 0.005;
+
+/// The zoom rate for one unit of wheel scroll: `k = exp(-scroll * ZOOM_PER_WHEEL)`.
+pub const ZOOM_PER_WHEEL: f32 = 0.001;
+
+/// The part of the camera state that a navigation gesture writes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraPose {
+    pub target: Point3<f32>,
+    pub distance: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+}
+
+/// The eye and the three unit axes of the view, in world space. They are
+/// the same axes that `OrbitCamera::view_matrix` uses.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraBasis {
+    pub eye: Point3<f32>,
+    /// The unit vector from the eye to the target.
+    pub forward: Vector3<f32>,
+    /// The unit vector to the right of the screen.
+    pub right: Vector3<f32>,
+    /// The unit vector to the top of the screen.
+    pub up: Vector3<f32>,
+}
+
 /// Orbit camera for the 3D viewport.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrbitCamera {
     pub target: Point3<f32>,
     pub distance: f32,
@@ -99,52 +135,139 @@ impl OrbitCamera {
         ]
     }
 
-    /// Handle orbit input (delta in screen-space pixels).
-    pub fn orbit(&mut self, dx: f32, dy: f32) {
-        self.yaw -= dx * 0.005;
-        self.pitch = (self.pitch + dy * 0.005).clamp(
-            -std::f32::consts::FRAC_PI_2 + 0.01,
-            std::f32::consts::FRAC_PI_2 - 0.01,
-        );
+    /// The navigation pose: target, distance, yaw and pitch.
+    pub fn pose(&self) -> CameraPose {
+        CameraPose {
+            target: self.target,
+            distance: self.distance,
+            yaw: self.yaw,
+            pitch: self.pitch,
+        }
     }
 
-    /// Handle pan input (delta in screen-space pixels).
-    pub fn pan(&mut self, dx: f32, dy: f32) {
-        let scale = self.distance * 0.001;
-        // Right vector in world space
-        let right = Vector3::new(-self.yaw.sin(), self.yaw.cos(), 0.0);
-        // Up vector in world space (perpendicular to view direction, in the vertical plane)
-        let forward = Vector3::new(
-            self.pitch.cos() * self.yaw.cos(),
-            self.pitch.cos() * self.yaw.sin(),
-            self.pitch.sin(),
-        );
-        let up = Vector3::new(0.0, 0.0, 1.0);
-        let cam_up = up - forward * forward.dot(&up);
-        let cam_up = if cam_up.norm() > 1e-6 {
-            cam_up.normalize()
-        } else {
-            up
+    /// Write a pose. The function clamps the pitch to `PITCH_LIMIT` and the
+    /// distance to `DISTANCE_RANGE`.
+    pub fn set_pose(&mut self, pose: CameraPose) {
+        self.target = pose.target;
+        self.distance = pose.distance.clamp(DISTANCE_RANGE.0, DISTANCE_RANGE.1);
+        self.yaw = pose.yaw;
+        self.pitch = pose.pitch.clamp(-PITCH_LIMIT, PITCH_LIMIT);
+    }
+
+    /// The eye and the view axes. `right` and `up` are the axes of
+    /// `Matrix4::look_at_rh` with the world Z axis as up.
+    pub fn basis(&self) -> CameraBasis {
+        let (sy, cy) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        // The eye sits at `target - forward * distance` (see `eye`).
+        let forward = Vector3::new(-cp * cy, -cp * sy, -sp);
+        let right = Vector3::new(-sy, cy, 0.0);
+        let up = right.cross(&forward);
+        CameraBasis {
+            eye: self.eye(),
+            forward,
+            right,
+            up,
+        }
+    }
+
+    /// The point on the ray through the pixel `(sx, sy)` in the plane through
+    /// `target` normal to `forward`. `vw` and `vh` are the viewport size in
+    /// pixels. The function gives `None` when the ray is parallel to the plane.
+    pub fn point_at_target_depth(&self, sx: f32, sy: f32, vw: f32, vh: f32) -> Option<Point3<f32>> {
+        if vw <= 0.0 || vh <= 0.0 {
+            return None;
+        }
+        let (origin, dir) = self.unproject_ray(sx, sy, vw / vh, vw, vh)?;
+        let forward = self.basis().forward;
+        let denom = dir.dot(&forward);
+        if denom.abs() < 1e-6 {
+            return None;
+        }
+        let t = (self.target - origin).dot(&forward) / denom;
+        Some(origin + dir * t)
+    }
+
+    /// The world size of one pixel at the camera depth `depth`. `vh` is the
+    /// viewport height in pixels. The orthographic projection ignores
+    /// `depth` and uses the half-height of `projection_matrix`.
+    pub fn world_per_pixel(&self, depth: f32, vh: f32) -> f32 {
+        let tan_half = (self.fov * 0.5).tan();
+        match self.projection {
+            ProjectionMode::Perspective => 2.0 * depth * tan_half / vh,
+            ProjectionMode::Orthographic => {
+                let half_h = self.distance * tan_half;
+                2.0 * half_h / vh
+            }
+        }
+    }
+
+    /// Orbit about the world point `pivot` by a drag of `(dx, dy)` pixels.
+    /// The pivot keeps its camera-space coordinates, so it keeps its pixel in
+    /// both projections. The distance does not change. With
+    /// `pivot = target` this is the plain turntable orbit.
+    pub fn orbit_about(&mut self, pivot: Point3<f32>, dx: f32, dy: f32) {
+        let old = self.basis();
+        let rel = pivot - old.eye;
+        let q = Vector3::new(rel.dot(&old.right), rel.dot(&old.up), rel.dot(&old.forward));
+        self.yaw -= dx * ORBIT_RAD_PER_PX;
+        self.pitch = (self.pitch + dy * ORBIT_RAD_PER_PX).clamp(-PITCH_LIMIT, PITCH_LIMIT);
+        let new = self.basis();
+        let eye = pivot - (new.right * q.x + new.up * q.y + new.forward * q.z);
+        self.target = eye + new.forward * self.distance;
+    }
+
+    /// Zoom by the distance ratio `k` toward the world point `point`. The
+    /// move is a homothety about `point` with the clamped ratio, so `point`
+    /// keeps its pixel in both projections.
+    pub fn zoom_toward(&mut self, point: Point3<f32>, k: f32) {
+        let d = self.distance;
+        let d_new = (k * d).clamp(DISTANCE_RANGE.0, DISTANCE_RANGE.1);
+        let kk = d_new / d;
+        self.target += (point - self.target) * (1.0 - kk);
+        self.distance = d_new;
+    }
+
+    /// Pan by a drag of `(dx, dy)` pixels in a viewport `vh` pixels high.
+    /// A point at the camera depth `grab_depth` (default: the target depth)
+    /// moves by the same `(dx, dy)` pixels.
+    pub fn pan_pixels(&mut self, dx: f32, dy: f32, vh: f32, grab_depth: Option<f32>) {
+        if vh <= 0.0 {
+            return;
+        }
+        let s = self.world_per_pixel(grab_depth.unwrap_or(self.distance), vh);
+        let b = self.basis();
+        self.target += b.right * (-dx * s) + b.up * (dy * s);
+    }
+
+    /// The pose of a view preset. The target and the distance do not change.
+    pub fn preset_pose(&self, preset: ViewPreset) -> CameraPose {
+        let (yaw, pitch) = match preset {
+            ViewPreset::Top => (0.0, PITCH_LIMIT),
+            ViewPreset::Front => (0.0, 0.0),
+            ViewPreset::Right => (std::f32::consts::FRAC_PI_2, 0.0),
+            ViewPreset::Isometric => (std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_6),
         };
-
-        self.target += right * (-dx * scale) + cam_up * (dy * scale);
+        CameraPose {
+            yaw,
+            pitch,
+            ..self.pose()
+        }
     }
 
-    /// Handle zoom input (scroll delta).
-    pub fn zoom(&mut self, delta: f32) {
-        self.distance *= (-delta * 0.001).exp();
-        self.distance = self.distance.clamp(0.1, 50000.0);
-    }
-
-    /// Fit the camera to a bounding box.
-    pub fn fit_to_bounds(&mut self, min: [f32; 3], max: [f32; 3]) {
+    /// The pose that frames the box `min`..`max`: the target at the box
+    /// centre and the distance 1.8 times the largest box extent. The yaw and
+    /// the pitch do not change.
+    pub fn fit_pose(&self, min: [f32; 3], max: [f32; 3]) -> CameraPose {
         let cx = (min[0] + max[0]) * 0.5;
         let cy = (min[1] + max[1]) * 0.5;
         let cz = (min[2] + max[2]) * 0.5;
-        self.target = Point3::new(cx, cy, cz);
-
         let extent = (max[0] - min[0]).max(max[1] - min[1]).max(max[2] - min[2]);
-        self.distance = extent * 1.8;
+        CameraPose {
+            target: Point3::new(cx, cy, cz),
+            distance: extent * 1.8,
+            ..self.pose()
+        }
     }
 
     /// Project a world-space point to screen coordinates (in pixels).
@@ -212,28 +335,6 @@ impl OrbitCamera {
         let dir = (far_pt - near_pt).normalize();
         Some((near_pt, dir))
     }
-
-    /// Set a preset view orientation.
-    pub fn set_preset(&mut self, preset: ViewPreset) {
-        match preset {
-            ViewPreset::Top => {
-                self.yaw = 0.0;
-                self.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
-            }
-            ViewPreset::Front => {
-                self.yaw = 0.0;
-                self.pitch = 0.0;
-            }
-            ViewPreset::Right => {
-                self.yaw = std::f32::consts::FRAC_PI_2;
-                self.pitch = 0.0;
-            }
-            ViewPreset::Isometric => {
-                self.yaw = std::f32::consts::FRAC_PI_4;
-                self.pitch = std::f32::consts::FRAC_PI_6;
-            }
-        }
-    }
 }
 
 impl Default for OrbitCamera {
@@ -276,6 +377,41 @@ mod tests {
         assert!(
             error < 0.1,
             "Ray should pass near original point, error = {error}"
+        );
+    }
+
+    #[test]
+    fn unproject_round_trip_orthographic() {
+        let mut cam = OrbitCamera::new();
+        cam.projection = ProjectionMode::Orthographic;
+        let aspect = 16.0 / 9.0;
+        let vw = 1920.0;
+        let vh = 1080.0;
+        let world = [10.0f32, 5.0, 3.0];
+
+        let screen = cam
+            .project_to_screen(world, aspect, vw, vh)
+            .expect("point should be in the view box");
+
+        let (origin, dir) = cam
+            .unproject_ray(screen[0], screen[1], aspect, vw, vh)
+            .expect("should produce a ray");
+
+        // The orthographic ray is parallel to the view axis and must pass
+        // near the original point.
+        let w = Point3::new(world[0], world[1], world[2]);
+        let ow = w - origin;
+        let t = ow.dot(&dir);
+        let closest = origin + dir * t;
+        let error = (closest - w).norm();
+        assert!(
+            error < 0.1,
+            "Ray should pass near original point, error = {error}"
+        );
+        let along = dir.dot(&cam.basis().forward);
+        assert!(
+            (along - 1.0).abs() < 1e-4,
+            "the orthographic ray must follow the view axis, dot = {along}"
         );
     }
 }

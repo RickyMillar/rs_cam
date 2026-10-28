@@ -5,10 +5,10 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 ## Files
 
 - `mod.rs` — the pipeline facade.
-- `camera.rs` — the camera and its projection.
+- `camera.rs` — the camera and its projection. `CameraPose`, `basis`; `orbit_about` a pivot,
+  `zoom_toward` a point, `pan_pixels` (step from `world_per_pixel`); `preset_pose`, `fit_pose` (A C1).
 - `toolpath_render.rs`, `sim_render.rs`, `stock_render.rs`, `mesh_render.rs` — the four content pipelines.
-- `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference
-  geometry.
+- `grid_render.rs`, `fixture_render.rs`, `height_planes.rs` — the reference geometry.
 - `colors.rs` — every colour constant. A selection state colour is its UI token
   / 255 (`token_rgb`); `DRAWING_NEUTRAL` colours a drawing that no drawn toolpath reads; P6.7 `PATH_SIDE`, `HOLE_MISFIT`.
 - `mod.rs` `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,

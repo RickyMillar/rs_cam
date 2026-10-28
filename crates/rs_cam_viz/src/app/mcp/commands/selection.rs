@@ -2131,8 +2131,8 @@ mod tests {
         let stock = gui.stock_config().clone();
         let (w, d, h) = frame.effective_stock(&stock);
         let mut camera = OrbitCamera::new();
-        camera.fit_to_bounds([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]);
-        camera.set_preset(ViewPreset::Top);
+        camera.set_pose(camera.fit_pose([0.0, 0.0, 0.0], [w as f32, d as f32, h as f32]));
+        camera.set_pose(camera.preset_pose(ViewPreset::Top));
         camera.toggle_projection();
         let visibility = crate::state::overlays::ModelVisibility::default();
         let click_at = |xy: [f64; 2], z: f64| {

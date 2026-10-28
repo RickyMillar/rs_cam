@@ -271,16 +271,18 @@ impl RsCamApp {
                 // window or a file dialog. Every other view command
                 // falls through to the controller's own `Ui` arm.
                 AppEvent::Ui(cmd) => match cmd {
-                    UiCommand::SetViewPreset(preset) => self.camera.set_preset(preset),
+                    UiCommand::SetViewPreset(preset) => {
+                        self.camera.set_pose(self.camera.preset_pose(preset));
+                    }
                     UiCommand::ToggleProjection(NoArgs) => self.camera.toggle_projection(),
                     UiCommand::PreviewOrientation(face_up) => {
                         use crate::state::job::FaceUp;
                         match face_up {
                             FaceUp::Top => {
-                                self.camera.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
+                                self.camera.pitch = crate::render::camera::PITCH_LIMIT;
                             }
                             FaceUp::Bottom => {
-                                self.camera.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
+                                self.camera.pitch = -crate::render::camera::PITCH_LIMIT;
                             }
                             FaceUp::Front => {
                                 self.camera.yaw = 0.0;

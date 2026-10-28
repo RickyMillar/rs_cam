@@ -418,7 +418,7 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
     );
 
     let mut camera = OrbitCamera::new();
-    camera.fit_to_bounds([0.0, 0.0, 0.0], [65.0, 65.0, 24.5]);
+    camera.set_pose(camera.fit_pose([0.0, 0.0, 0.0], [65.0, 65.0, 24.5]));
     let (w, h) = (800.0_f32, 600.0_f32);
     let screen = camera
         .project_to_screen(

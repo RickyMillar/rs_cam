@@ -438,10 +438,10 @@ impl RsCamApp {
     }
 
     fn fit_camera_to_bbox(&mut self, bbox: &rs_cam_core::geo::BoundingBox3) {
-        self.camera.fit_to_bounds(
+        self.camera.set_pose(self.camera.fit_pose(
             [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
             [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
-        );
+        ));
     }
 
     /// "Show me" (geometry selection P4.4): fit the camera to the items

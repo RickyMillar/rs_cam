@@ -188,7 +188,7 @@ fn an_arc_move_draws_on_its_arc_r_arc() {
 fn a_click_on_an_arc_picks_the_arc_move_r_arc() {
     let tp = toolpath();
     let mut camera = OrbitCamera::new();
-    camera.fit_to_bounds([-12.0, -12.0, -2.0], [37.0, 12.0, 6.0]);
+    camera.set_pose(camera.fit_pose([-12.0, -12.0, -2.0], [37.0, 12.0, 6.0]));
     let project = |p: [f32; 3]| camera.project_to_screen(p, VIEW_W / VIEW_H, VIEW_W, VIEW_H);
 
     // The mid-point of each arc, far from its chord: (0, -10) on the half
