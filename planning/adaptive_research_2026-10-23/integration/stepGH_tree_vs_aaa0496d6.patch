@@ -1,0 +1,53 @@
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index e79509406..b40f0a362 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -261,8 +261,11 @@ pub(in crate::ui::properties) fn draw_waterline_params(
+             " mm",
+             0.1,
+         );
+-        ui.label("Continuous:");
+-        ui.checkbox(&mut cfg.helical, "");
++        // W1b: the field is `helical`; the label names it, and the hover is
++        // its registry help (UI-04: keyed on the parameter name).
++        let help = super::super::help_for(OperationType::Waterline, "helical").unwrap_or_default();
++        ui.label("Helical:").on_hover_text(help);
++        ui.checkbox(&mut cfg.helical, "").on_hover_text(help);
+         ui.end_row();
+         // Z range now comes from the Heights tab (top_z / bottom_z)
+     });
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index 1ab4ed1b3..ae4db069d 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -2144,3 +2144,30 @@ fn use_inside_sits_on_the_containment_row_g_c() {
+         "the act is off when Inside collapses"
+     );
+ }
++
++/// W1b follow-up: the Waterline row names its field, `helical`.
++#[test]
++fn the_waterline_row_reads_helical_w1b() {
++    let mut cfg = crate::state::toolpath::WaterlineConfig::default();
++    let ctx = egui::Context::default();
++    crate::ui::tokens::apply(&ctx);
++    crate::ui::tokens::apply_fonts(&ctx);
++    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
++        super::operations::draw_waterline_params(ui, &mut cfg, None);
++    });
++    let texts: Vec<String> = out
++        .shapes
++        .iter()
++        .filter_map(|c| match &c.shape {
++            egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
++            _ => None,
++        })
++        .collect();
++    out.textures_delta.clear();
++    assert!(texts.iter().any(|t| t == "Helical:"), "{texts:?}");
++    assert!(!texts.iter().any(|t| t == "Continuous:"), "{texts:?}");
++    assert!(
++        super::help_for(crate::state::toolpath::OperationType::Waterline, "helical").is_some(),
++        "the row's hover is the registry help"
++    );
++}

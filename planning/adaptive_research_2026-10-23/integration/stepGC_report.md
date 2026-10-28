@@ -117,3 +117,19 @@ I formatted `session/mod.rs` with `rustfmt`. rustfmt also formats the
 child modules, and I5's uncommitted `session/compute/params.rs` and
 `session/project_file.rs` were in the tree at that time. Any change it
 made there is whitespace only. I5 should check their diff.
+
+## Line counts by state (added at the lead's request)
+
+These counts are derived, not measured. The IC1 fixture has no rest edge
+op. The base is the design's measure (`gui_fix_design.md` §0.2: rest edge
+op clean, Cut tab, 25 lines), less the D-1 row (G-D), so 24. GT changes
+the tab strip only when the strip fits one line; that depends on the tab
+dots of the op, so I do not count it here.
+
+| State (rest edge op, Cut tab, Advanced closed) | Before G-C | After G-C |
+|---|---|---|
+| Clean | 24 | 24 (`· N regions` replaces `(regions ready)` in the same combo) |
+| Larger tool at `Center`, no generate yet | 24: nothing shows; D53 waits for a generate | 25: the `Refused · see Cut` header line; `[Use Inside]` sits on the existing Containment row; the options are grey; there is a dot on Cut |
+| The same after a generate | 25: the `Refused` word and the G-E1 face line | 25: the header line takes the one refusal line (§7.5), and the `Refused` word stays in the Generate row |
+| The D-2 pick with a larger tool | 24, then 25 after a generate (D53) | 24: `Inside` with `⟲` on the existing row; no refusal |
+| Worst state (§7.6: D53, the Suggest chip, a pathology line, a refusal from the last generate) | 26 (24 + the face line + the pathology line) | 26 (24 + the header line + the pathology line). This is the design's 26-line target. |
