@@ -110,6 +110,25 @@ Evidence per commit: an MCP screenshot pair (`set_ui_view` then
 `planning/viewport_parity_2026-10-28/evidence/`, on a release binary built
 from HEAD.
 
+## Landed
+
+| Phase | Commit | Hash | Date |
+|---|---|---|---|
+| 0 | F1 retire `Selection::Face/Faces` | 4b509e57b | 2026-10-29 |
+| 0 | F2 the focus door (`focus()`, `set_focus()`, `wire_kind()`; `AppState::set_focus` is `pub` for the integration tests, as `replace_session` is) | d2903b42b | 2026-10-29 |
+| 0 | B1 one hover pick per frame (`HoverResult`, no pick during a drag, PointingHand cursor) | 03e5fa752 | 2026-10-29 |
+| 0 | E4 undo per act (`push_act_step`, `toolpath_parts_moved` in `state/history.rs`) | 591c4740f | 2026-10-29 |
+| 0 | D5 STL flat-face hover ring (option A) | 7c9b90595 | 2026-10-29 |
+
+Phase 0 took every recommendation; the `RULINGS.md` column was still
+empty. E4 also fixed a latent defect no design file names: the panel
+flush (`flush_toolpath_snapshot`) pushed with no check for a change, so a
+tab act followed by a move off the toolpath pushed an empty undo step.
+MCP `edit_toolpath_selection` takes `controller.apply` directly and still
+rides the inspector snapshot. E4 and D5 are verified by tests, not on
+screen: Undo has no MCP tool and the hover has no pointer; they need the
+operator's GUI look.
+
 ## What the lead rules before phase 1
 
 `RULINGS.md` holds 47 questions, each with a recommendation. The ones that

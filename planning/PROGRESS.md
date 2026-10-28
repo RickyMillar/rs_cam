@@ -14,6 +14,20 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-10-29 — viewport parity: phase 0 landed
+
+`planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,
+RULINGS.md, DESIGN.md with the merged commit order). Phase 0 landed on
+master in five commits (4b509e57b..7c9b90595): the dead tree variants
+`Selection::Face/Faces` are gone; the tree focus has one read door
+(`AppState::focus`) and one write door (`set_focus`, compiler-enforced);
+the viewport picks once per frame; a selection act is one undo step
+(and the empty flush step after a tab act is gone); the STL flat-face
+hover ring finds its face. The RULINGS.md column is still empty; phase 0
+took the recommendations. Next: phase 1 (camera math and the camera on
+`AppState`, the input state machine; then the own BVH in core once the
+disk allows a core build).
+
 ## Update 2026-10-13 — the optimizer is culled
 
 Operator ruling (2026-10-13): "maybe just cull the entire optimize code for
