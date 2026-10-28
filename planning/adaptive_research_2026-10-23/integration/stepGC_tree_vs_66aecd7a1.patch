@@ -1,0 +1,1456 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index 5f00f6c3d..4f2b690f7 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -105,7 +105,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ - Generate All submits only ENABLED operations on every project (G-GENALLDISABLED, 2026-09-10); before, a project with no rest-stock chain took a branch that submitted every operation, enabled or not. A project with nothing enabled now says "No enabled toolpaths to generate" rather than starting a run with no work in it
+ - Generate is a plan over the dependency edges (2026-09-19, `planning/gen_sim_rest_ux_2026-09-18/`): Generate All, a single Generate and the setup row's "Regenerate setup only" all walk one core plan that simulates a setup prefix before an operation that starts from remaining stock, generates in plan order, and finishes with one full simulation. A single Generate first makes the operation's upstream current. The plan's simulations run at the Simulation panel's setting; on "Auto from tool size" the plan takes the finer of auto and the cell size the rest tool needs (tip radius / 5), silently; a manual value coarser than that raises a confirm naming both values before the plan starts, and that confirm is the only place the plan writes the panel. A blocked operation never toasts; its row reads WAIT. The Generate All button carries the step count and the current activity while a plan runs, and a click cancels it
+ - the Operations list draws each dependency as a rail down the swatch column from the source to the dependent operation: green solid when ready, amber dashed while it waits on a generation or a simulation, red dashed when nothing can satisfy it; the rail breaks at a setup header. A row in a running simulation draws a ring in its dot slot, a generating row a spinner. One edit stales every dependent row and every waiting rail, through the setup boundary
+-- rest analysis runs only on demand: another operation's boundary set to "Rest regions of …", or the rest-heatmap overlay switched on for the operation. The Rest Analysis checkbox is gone; the dials sit behind a disclosure titled by the demand. The loader derives the flag from the demand, so a saved flag with no consumer loads off A Geodesic Adaptive 3D Rough states its own rest regions under that demand (integration step 7.5, D44): the pieces it left, one union grown by one planner cell, in tool-centre space and clipped to its own containment (D48), so a consumer with `Center` containment and a tool no larger than the rough's stays inside the rough's boundary. The generic analysis then keeps them and attaches only its heatmap grid. With no demand nothing is published, and the output is unchanged. With the regions it states the top Z of the stock it left in them (D50, step 7.5b); a 3D Adaptive consumer on remaining stock starts its levels no higher, but never moves its floor and never puts more than one Depth/Pass on its first level. A consumer with `Center` or `Outside` containment and a tool larger than its source's refuses to generate and names both radii and both fixes (D53). Sentries: `a_rough_publishes_the_regions_it_leaves_d44`, `a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `a_rest_consumer_starts_at_the_left_stock_top_d50`, `a_larger_rest_consumer_tool_refuses_d53`.
++- rest analysis runs only on demand: another operation's boundary set to "Rest regions of …", or the rest-heatmap overlay switched on for the operation. The Rest Analysis checkbox is gone; the dials sit behind a disclosure titled by the demand. The loader derives the flag from the demand, so a saved flag with no consumer loads off A Geodesic Adaptive 3D Rough states its own rest regions under that demand (integration step 7.5, D44): the pieces it left, one union grown by one planner cell, in tool-centre space and clipped to its own containment (D48), so a consumer with `Center` containment and a tool no larger than the rough's stays inside the rough's boundary. The generic analysis then keeps them and attaches only its heatmap grid. With no demand nothing is published, and the output is unchanged. With the regions it states the top Z of the stock it left in them (D50, step 7.5b); a 3D Adaptive consumer on remaining stock starts its levels no higher, but never moves its floor and never puts more than one Depth/Pass on its first level. A consumer with `Center` or `Outside` containment and a tool larger than its source's refuses to generate and names both radii and both fixes (D53). The GUI shows it before a generate (step G-C): `Center` and `Outside` are grey in the Containment combo with the sizes on hover, the header reads `Refused · see Cut` with Generate off, and `Use Inside` on the Containment row writes `Inside` unless `Inside` would collapse the boundary (core `boundary_collapse_with`); the `Rest Regions` pick writes `Inside` for a larger tool with the `⟲` badge (D-2). The source combo and the source's rest disclosure read `· N regions`, and the combo hover gives the top Z of the regions. A rest-boundary refusal from the last generate reads as a short line with a `⟳` that generates the source (G-E). Sentries: `a_rough_publishes_the_regions_it_leaves_d44`, `a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `a_rest_consumer_starts_at_the_left_stock_top_d50`, `a_larger_rest_consumer_tool_refuses_d53`.
+ 
+ ## Simulation, verification, and export
+ 
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index f64e3d9b9..f56da125c 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -33,7 +33,7 @@ mod params;
+ mod simulation;
+ 
+ pub use diagnostics::TriageSessionKey;
+-pub use generation::{BoundaryCollapse, RestBoundaryRefusal};
++pub use generation::{BoundaryCollapse, LargerRestConsumer, RestBoundaryRefusal};
+ pub(crate) use params::strip_outer_quotes;
+ 
+ /// Fully-owned, per-generation inputs resolved from session state by
+diff --git a/crates/rs_cam_core/src/session/compute/generation.rs b/crates/rs_cam_core/src/session/compute/generation.rs
+index 0326ba9f8..79036cec6 100644
+--- a/crates/rs_cam_core/src/session/compute/generation.rs
++++ b/crates/rs_cam_core/src/session/compute/generation.rs
+@@ -524,53 +524,84 @@ impl ProjectSession {
+         index: usize,
+         source_toolpath_id: crate::ids::ToolpathId,
+     ) -> Result<(), SessionError> {
+-        use crate::compute::config::BoundaryContainment;
+-        use crate::tool::MillingCutter as _;
+-        let Some(tc) = self.toolpath_configs.get(index) else {
++        if self.toolpath_configs.get(index).is_none() {
+             return Err(SessionError::ToolpathNotFound(index));
+-        };
+-        let containment = match tc.boundary.containment {
+-            BoundaryContainment::Inside => return Ok(()),
+-            BoundaryContainment::Center => "Center",
+-            BoundaryContainment::Outside => "Outside",
+-        };
+-        let Some(source) = self
++        }
++        match self.larger_rest_consumer_text(index, source_toolpath_id) {
++            Some(text) => Err(SessionError::OperationFailed(text)),
++            None => Ok(()),
++        }
++    }
++
++    /// G-C (§2 a): the D53 read door. `Some` when the tool of the toolpath
++    /// at `index` is larger than the tool of `source_toolpath_id`, whatever
++    /// the containment; the refusal of [`Self::refuse_larger_rest_consumer`]
++    /// adds the containment. The radii are the radii the containment uses
++    /// (the built cutter's diameter over two). A tool or a source that does
++    /// not resolve gives `None`: it is left to its own refusal.
++    #[must_use]
++    pub fn larger_rest_consumer(
++        &self,
++        index: usize,
++        source_toolpath_id: crate::ids::ToolpathId,
++    ) -> Option<LargerRestConsumer> {
++        use crate::tool::MillingCutter as _;
++        let tc = self.toolpath_configs.get(index)?;
++        let source = self
+             .toolpath_configs
+             .iter()
+-            .find(|s| s.id == source_toolpath_id)
+-        else {
+-            return Ok(());
+-        };
++            .find(|s| s.id == source_toolpath_id)?;
+         let radius = |tool_id: Option<crate::ids::ToolId>| {
+             tool_id
+                 .and_then(|id| self.tool_by_id(id))
+                 .and_then(|tool| crate::session::session_cutter(tool).ok())
+                 .map(|def| def.diameter() / 2.0)
+         };
+-        let (Some(own), Some(theirs)) = (radius(tc.tool_id), radius(source.tool_id)) else {
+-            return Ok(());
+-        };
+-        if own <= theirs {
+-            return Ok(());
++        let own = radius(tc.tool_id)?;
++        let theirs = radius(source.tool_id)?;
++        (own > theirs).then(|| LargerRestConsumer {
++            op_name: tc.name.clone(),
++            source_toolpath_id,
++            source_name: source.name.clone(),
++            tool_radius_mm: own,
++            source_tool_radius_mm: theirs,
++        })
++    }
++
++    /// G-C: the D53 refusal text of the toolpath at `index` as it stands:
++    /// its `DerivedRestRegions` source, its containment and its tool.
++    /// `None` when the boundary is off, is not `DerivedRestRegions`, keeps
++    /// the tool inside (`Inside`), or the tool is not larger.
++    #[must_use]
++    pub fn larger_rest_consumer_refusal(&self, index: usize) -> Option<String> {
++        let tc = self.toolpath_configs.get(index)?;
++        if !tc.boundary.enabled {
++            return None;
+         }
+-        // C1 ruling (2026-10-28): the tool fix comes first. `Inside` can
+-        // collapse narrow regions, and a collapse refuses (G-BOUNDCOLLAPSE).
+-        Err(SessionError::OperationFailed(format!(
+-            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
+-             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
+-             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
+-             tool could cut up to {:.3} mm past the machining boundary of '{}'. Use a tool no \
+-             larger than the tool of '{}' (Ø{:.3}), or Inside containment if the regions are \
+-             wider than this tool (Ø{:.3}).",
+-            tc.name,
+-            source.name,
+-            source.name,
+-            own - theirs,
+-            source.name,
+-            source.name,
+-            2.0 * theirs,
+-            2.0 * own,
+-        )))
++        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
++            tc.boundary.source
++        else {
++            return None;
++        };
++        self.larger_rest_consumer_text(index, source_toolpath_id)
++    }
++
++    /// The D53 refusal text for the containment of the toolpath at
++    /// `index`, or `None` when it does not refuse.
++    fn larger_rest_consumer_text(
++        &self,
++        index: usize,
++        source_toolpath_id: crate::ids::ToolpathId,
++    ) -> Option<String> {
++        use crate::compute::config::BoundaryContainment;
++        let tc = self.toolpath_configs.get(index)?;
++        let containment = match tc.boundary.containment {
++            BoundaryContainment::Inside => return None,
++            BoundaryContainment::Center => "Center",
++            BoundaryContainment::Outside => "Outside",
++        };
++        let larger = self.larger_rest_consumer(index, source_toolpath_id)?;
++        Some(larger.refusal(containment))
+     }
+ 
+     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
+@@ -1210,6 +1241,37 @@ impl ProjectSession {
+         Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
+     }
+ 
++    /// G-C: [`Self::boundary_collapse`] for the toolpath at `index` with
++    /// `boundary` in place of its stored boundary: "would this boundary
++    /// collapse?". The GUI asks it before it writes `Inside` (the
++    /// `[Use Inside]` act and the D-2 pick), so it never switches to a
++    /// boundary that refuses. The inputs resolve from the stored config;
++    /// only the boundary of the collapse test is the candidate.
++    pub fn boundary_collapse_with(
++        &self,
++        index: usize,
++        boundary: &crate::compute::config::BoundaryConfig,
++    ) -> Result<Option<BoundaryCollapse>, SessionError> {
++        let tc = self
++            .toolpath_configs
++            .get(index)
++            .ok_or(SessionError::ToolpathNotFound(index))?;
++        if !boundary.enabled
++            || !tc
++                .operation
++                .capabilities()
++                .territory_xy
++                .session_clip_applies()
++        {
++            return Ok(None);
++        }
++        let cancel = AtomicBool::new(false);
++        let mut inputs = self.resolve_generation_inputs(index, &cancel)?;
++        inputs.boundary_config = boundary.clone();
++        let regions = self.post_clip_regions(&tc.name, index, &inputs, &cancel)?;
++        Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
++    }
++
+     /// The collapse test of [`Self::boundary_collapse`] on resolved inputs.
+     ///
+     /// It reads the containment set of the post-generation clip
+@@ -1441,6 +1503,56 @@ pub(crate) struct ClipContainment {
+     pub(crate) source_region_count: usize,
+ }
+ 
++/// G-C (§2 a): a `DerivedRestRegions` consumer whose tool is larger than
++/// the tool of its source ([`ProjectSession::larger_rest_consumer`]). The
++/// source's regions are tool-centre positions of its smaller tool, so with
++/// `Center` or `Outside` containment this tool can cut past the source's
++/// machining boundary by the difference of the radii (D53).
++#[derive(Debug, Clone, PartialEq)]
++pub struct LargerRestConsumer {
++    /// The name of the consumer.
++    pub op_name: String,
++    pub source_toolpath_id: crate::ids::ToolpathId,
++    pub source_name: String,
++    /// The radius of the consumer's built cutter, mm.
++    pub tool_radius_mm: f64,
++    /// The radius of the source's built cutter, mm.
++    pub source_tool_radius_mm: f64,
++}
++
++impl LargerRestConsumer {
++    /// How far past the source's boundary the tool can cut, mm.
++    #[must_use]
++    pub fn overrun_mm(&self) -> f64 {
++        self.tool_radius_mm - self.source_tool_radius_mm
++    }
++
++    /// The D53 refusal sentence for `containment` (the word the panel and
++    /// the project file use: `Center` or `Outside`).
++    #[must_use]
++    pub fn refusal(&self, containment: &str) -> String {
++        let (own, theirs) = (self.tool_radius_mm, self.source_tool_radius_mm);
++        // C1 ruling (2026-10-28): the tool fix comes first. `Inside` can
++        // collapse narrow regions, and a collapse refuses (G-BOUNDCOLLAPSE).
++        format!(
++            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
++             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
++             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
++             tool could cut up to {:.3} mm past the machining boundary of '{}'. Use a tool no \
++             larger than the tool of '{}' (Ø{:.3}), or Inside containment if the regions are \
++             wider than this tool (Ø{:.3}).",
++            self.op_name,
++            self.source_name,
++            self.source_name,
++            self.overrun_mm(),
++            self.source_name,
++            self.source_name,
++            2.0 * theirs,
++            2.0 * own,
++        )
++    }
++}
++
+ /// G-E (3): why a `DerivedRestRegions` boundary refuses generation. Its
+ /// `Display` is the refusal text generation gives (unchanged by G-E), so
+ /// the wire and MCP text do not move; a surface reads the variant to draw
+diff --git a/crates/rs_cam_core/src/session/mod.rs b/crates/rs_cam_core/src/session/mod.rs
+index 4255cf133..23b42066b 100644
+--- a/crates/rs_cam_core/src/session/mod.rs
++++ b/crates/rs_cam_core/src/session/mod.rs
+@@ -76,7 +76,7 @@ pub use command::{
+     UpdateStockFromBboxArgs,
+ };
+ pub use compute::{
+-    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle,
++    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle, LargerRestConsumer,
+     RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
+     execute_generation, execute_job, execute_recommend_clearing_strategy,
+ };
+diff --git a/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+index 1d975b5cf..a4c9ae16c 100644
+--- a/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
++++ b/crates/rs_cam_core/tests/a_larger_rest_consumer_tool_refuses_d53.rs
+@@ -227,3 +227,62 @@ fn a_larger_rest_consumer_tool_refuses() {
+     }
+     assert!(wide.result_at(1).is_some(), "wide channel: no result");
+ }
++
++/// G-C (§2 a): the read doors of the GUI. `larger_rest_consumer` is `Some`
++/// for the larger tool whatever the containment, and `None` for an equal
++/// tool. `larger_rest_consumer_refusal` is the generation refusal word for
++/// word, and `None` under `Inside`. `boundary_collapse_with` answers "would
++/// Inside collapse?" before any write: yes on the narrow channel, no on the
++/// wide one.
++#[test]
++fn the_read_doors_answer_as_generation_does_g_c() {
++    let (own, theirs) = (LARGER_DIAMETER / 2.0, SOURCE_DIAMETER / 2.0);
++    for containment in [
++        BoundaryContainment::Center,
++        BoundaryContainment::Outside,
++        BoundaryContainment::Inside,
++    ] {
++        let s = session(LARGER_DIAMETER, containment);
++        let source = s.toolpath_configs()[0].id;
++        let larger = s
++            .larger_rest_consumer(1, source)
++            .expect("a larger tool, whatever the containment");
++        assert!((larger.tool_radius_mm - own).abs() < 1e-9);
++        assert!((larger.source_tool_radius_mm - theirs).abs() < 1e-9);
++        assert!((larger.overrun_mm() - (own - theirs)).abs() < 1e-9);
++    }
++    let mut center = session(LARGER_DIAMETER, BoundaryContainment::Center);
++    let refusal = center
++        .larger_rest_consumer_refusal(1)
++        .expect("Center refuses");
++    match generate_consumer(&mut center) {
++        Err(SessionError::OperationFailed(text)) => assert_eq!(text, refusal),
++        other => panic!("Center did not refuse: {other:?}"),
++    }
++    let inside = session(LARGER_DIAMETER, BoundaryContainment::Inside);
++    assert_eq!(inside.larger_rest_consumer_refusal(1), None);
++    let equal = session(SOURCE_DIAMETER, BoundaryContainment::Center);
++    let source = equal.toolpath_configs()[0].id;
++    assert_eq!(equal.larger_rest_consumer(1, source), None);
++
++    let to_inside = |s: &ProjectSession| {
++        let mut boundary = s.toolpath_configs()[1].boundary.clone();
++        boundary.containment = BoundaryContainment::Inside;
++        s.boundary_collapse_with(1, &boundary)
++            .expect("the inputs resolve")
++    };
++    assert!(
++        to_inside(&center).is_some(),
++        "Inside collapses on the narrow channel"
++    );
++    let wide = session_on(
++        WIDE_CHANNEL_HALF_WIDTH,
++        LARGER_DIAMETER,
++        BoundaryContainment::Center,
++    );
++    assert_eq!(
++        to_inside(&wide),
++        None,
++        "Inside keeps area on the wide channel"
++    );
++}
+diff --git a/crates/rs_cam_viz/src/state/panels.rs b/crates/rs_cam_viz/src/state/panels.rs
+index 814ea82fb..2fb98f610 100644
+--- a/crates/rs_cam_viz/src/state/panels.rs
++++ b/crates/rs_cam_viz/src/state/panels.rs
+@@ -198,6 +198,9 @@ pub struct PanelDrafts {
+     /// The last refused heights edit of the selected toolpath (F033). The
+     /// Heights tab names it under its rows.
+     pub heights_refusal: HeightsRefusal,
++    /// G-C (D-2): the `⟲` badge of a containment the `Rest Regions` pick
++    /// set to `Inside`, scoped to its toolpath.
++    pub containment_autocorrect: ContainmentAutoCorrect,
+ }
+ 
+ /// The last refused heights edit (F033), which the Heights tab names under
+@@ -245,6 +248,45 @@ impl HeightsRefusal {
+     }
+ }
+ 
++/// G-C (D-2, review §2 e): the `Rest Regions` pick wrote `Inside` to the
++/// containment of a toolpath whose tool is larger than its source's. The
++/// Containment combo shows the `ProvKind::AutoCorrect` badge `⟲` with this
++/// hover until the first containment edit or a change of toolpath. GUI
++/// state, not a project field, and not the per-frame draft (which the
++/// session rebuilds each frame).
++#[derive(Debug, Default, Clone, PartialEq)]
++pub struct ContainmentAutoCorrect {
++    toolpath: Option<rs_cam_core::ToolpathId>,
++    hover: Option<String>,
++}
++
++impl ContainmentAutoCorrect {
++    /// Give the slot to toolpath `id`. The badge of another toolpath is
++    /// dropped.
++    pub fn scope(&mut self, id: rs_cam_core::ToolpathId) {
++        if self.toolpath != Some(id) {
++            self.toolpath = Some(id);
++            self.hover = None;
++        }
++    }
++
++    /// The pick set `Inside`; `hover` says why.
++    pub fn set(&mut self, hover: String) {
++        self.hover = Some(hover);
++    }
++
++    /// The operator edited the containment: the badge goes.
++    pub fn clear(&mut self) {
++        self.hover = None;
++    }
++
++    /// The badge hover while the badge stands.
++    #[must_use]
++    pub fn hover(&self) -> Option<&str> {
++        self.hover.as_deref()
++    }
++}
++
+ /// The values in flight of the committed number fields, by widget id.
+ pub type NumberDrafts = std::collections::HashMap<egui::Id, f64>;
+ 
+diff --git a/crates/rs_cam_viz/src/state/runtime.rs b/crates/rs_cam_viz/src/state/runtime.rs
+index c14421a19..0f2f833db 100644
+--- a/crates/rs_cam_viz/src/state/runtime.rs
++++ b/crates/rs_cam_viz/src/state/runtime.rs
+@@ -111,6 +111,10 @@ pub struct ToolpathRuntime {
+     /// G-B2: the feed caps of the stored result, counted once per result.
+     /// Read it through [`Self::caps`].
+     pub cap_memo: CapMemo,
++    /// G-C: whether `Inside` containment would collapse this toolpath's
++    /// rest-regions boundary, asked once per revision and source result.
++    /// Read it through [`InsideMemo::answer`].
++    pub inside_memo: InsideMemo,
+ }
+ 
+ impl ToolpathRuntime {
+@@ -136,10 +140,83 @@ impl ToolpathRuntime {
+             semantic_trace: None,
+             debug_trace_path: None,
+             cap_memo: CapMemo::default(),
++            inside_memo: InsideMemo::default(),
+         }
+     }
+ }
+ 
++// ── Would Inside collapse? (G-C) ──────────────────────────────────────
++
++/// G-C: the answer of core `ProjectSession::boundary_collapse_with` for a
++/// rest-regions boundary switched to `Inside`.
++#[derive(Debug, Clone, PartialEq)]
++pub enum InsideAnswer {
++    /// `Inside` keeps area for the tool: the `[Use Inside]` act and the
++    /// D-2 pick may write it.
++    Keeps,
++    /// `Inside` leaves no area (G-BOUNDCOLLAPSE): the refusal sentence.
++    Collapses(String),
++    /// The inputs do not resolve (for example the source has no result):
++    /// the answer is not known, so nothing writes `Inside`.
++    Unknown(String),
++}
++
++/// The key of an [`InsideAnswer`]: the consumer's revision, the source,
++/// and the source's result (a `Weak`, so a regenerated source asks again).
++#[derive(Debug)]
++struct InsideKey {
++    revision: u64,
++    source: ToolpathId,
++    source_result: Option<std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
++}
++
++impl InsideKey {
++    fn matches(&self, other: &Self) -> bool {
++        self.revision == other.revision
++            && self.source == other.source
++            && match (&self.source_result, &other.source_result) {
++                (Some(a), Some(b)) => std::sync::Weak::ptr_eq(a, b),
++                (None, None) => true,
++                _ => false,
++            }
++    }
++}
++
++/// The last [`InsideAnswer`] of one toolpath. The answer costs one input
++/// resolution, so the panel asks it once per key, not once per frame. A
++/// frame reads through `&GuiState`, so the memo writes through a lock.
++#[derive(Debug, Default)]
++pub struct InsideMemo(std::sync::Mutex<Option<(InsideKey, InsideAnswer)>>);
++
++impl InsideMemo {
++    /// The answer for the consumer at `revision` and the source `source`
++    /// with its result `source_result`; `ask` runs only on a new key.
++    pub fn answer(
++        &self,
++        revision: u64,
++        source: ToolpathId,
++        source_result: Option<&Arc<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
++        ask: impl FnOnce() -> InsideAnswer,
++    ) -> InsideAnswer {
++        let key = InsideKey {
++            revision,
++            source,
++            source_result: source_result.map(Arc::downgrade),
++        };
++        let Ok(mut slot) = self.0.lock() else {
++            return ask();
++        };
++        if let Some((stored, answer)) = slot.as_ref()
++            && stored.matches(&key)
++        {
++            return answer.clone();
++        }
++        let answer = ask();
++        *slot = Some((key, answer.clone()));
++        answer
++    }
++}
++
+ // ── The feed caps of a stored result (G-B, G-B2) ──────────────────────
+ 
+ /// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
+diff --git a/crates/rs_cam_viz/src/ui/properties/mod.rs b/crates/rs_cam_viz/src/ui/properties/mod.rs
+index 948bc9d13..4d49e1aeb 100644
+--- a/crates/rs_cam_viz/src/ui/properties/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/mod.rs
+@@ -78,8 +78,106 @@ type BoundaryRestCandidate = (
+     bool,
+     Option<std::sync::Arc<Vec<rs_cam_core::polygon::Polygon2>>>,
+     Option<f64>,
++    // G-C (§6): the top Z of the source's regions
++    // (`Produced::rest_regions_top_z`).
++    Option<f64>,
+ );
+ 
++/// G-C (§2): a rest-regions consumer whose tool is larger than its
++/// source's (core `ProjectSession::larger_rest_consumer`), and whether
++/// `Inside` containment would collapse its boundary.
++#[derive(Debug, Clone, PartialEq)]
++pub(crate) struct RestContainment {
++    pub larger: rs_cam_core::session::LargerRestConsumer,
++    pub inside: crate::state::runtime::InsideAnswer,
++}
++
++impl RestContainment {
++    /// The hover of a refused containment option (`Center`, `Outside`)
++    /// and of the `[Use Inside]` act: the sizes, the overrun and the fix.
++    pub fn hover(&self) -> String {
++        let l = &self.larger;
++        let sizes = format!(
++            "This tool (\u{00D8}{:.2}) is larger than the tool of '{}' (\u{00D8}{:.2}). \
++             It could cut {:.2} mm past that op's boundary.",
++            2.0 * l.tool_radius_mm,
++            l.source_name,
++            2.0 * l.source_tool_radius_mm,
++            l.overrun_mm(),
++        );
++        match &self.inside {
++            crate::state::runtime::InsideAnswer::Keeps => format!("{sizes} Use Inside."),
++            crate::state::runtime::InsideAnswer::Collapses(_) => format!(
++                "{sizes} Inside leaves no area for this tool here: use a tool no larger \
++                 than \u{00D8}{:.2}.",
++                2.0 * l.source_tool_radius_mm
++            ),
++            crate::state::runtime::InsideAnswer::Unknown(why) => format!("{sizes} {why}"),
++        }
++    }
++}
++
++/// G-C: the [`RestContainment`] of the toolpath `id`: `.0` for its stored
++/// `DerivedRestRegions` source, `.1` for the source that the `Rest Regions`
++/// pick writes (the first candidate, D-2) while the source is another
++/// one and the containment is not `Inside`.
++fn rest_containment_inputs(
++    id: ToolpathId,
++    session: &rs_cam_core::session::ProjectSession,
++    gui: &crate::state::runtime::GuiState,
++    candidates: &[BoundaryRestCandidate],
++) -> (Option<RestContainment>, Option<RestContainment>) {
++    use rs_cam_core::compute::config::{BoundaryContainment, BoundarySource};
++    let Some((index, tc)) = session.find_toolpath_config_by_id(id) else {
++        return (None, None);
++    };
++    if !tc.boundary.enabled {
++        return (None, None);
++    }
++    let check = |source: ToolpathId| {
++        let larger = session.larger_rest_consumer(index, source)?;
++        let ask = || {
++            let mut boundary = tc.boundary.clone();
++            boundary.source = BoundarySource::DerivedRestRegions {
++                source_toolpath_id: source,
++            };
++            boundary.containment = BoundaryContainment::Inside;
++            match session.boundary_collapse_with(index, &boundary) {
++                Ok(None) => crate::state::runtime::InsideAnswer::Keeps,
++                Ok(Some(collapse)) => {
++                    crate::state::runtime::InsideAnswer::Collapses(collapse.message())
++                }
++                Err(error) => crate::state::runtime::InsideAnswer::Unknown(error.to_string()),
++            }
++        };
++        let source_result = gui
++            .toolpath_rt
++            .get(&source)
++            .and_then(|rt| rt.run.result())
++            .map(|result| &result.annotated);
++        let inside = match gui.toolpath_rt.get(&id) {
++            Some(rt) => rt.inside_memo.answer(
++                session.toolpath_revision_at(index),
++                source,
++                source_result,
++                ask,
++            ),
++            None => ask(),
++        };
++        Some(RestContainment { larger, inside })
++    };
++    match tc.boundary.source {
++        BoundarySource::DerivedRestRegions { source_toolpath_id } => {
++            (check(source_toolpath_id), None)
++        }
++        _ if tc.boundary.containment != BoundaryContainment::Inside => (
++            None,
++            candidates.first().and_then(|candidate| check(candidate.0)),
++        ),
++        _ => (None, None),
++    }
++}
++
+ /// The part's covered XY footprint (mm²) measured on a rest grid — the
+ /// denominator [`rs_cam_core::surface::rest_field::classify_rest_regions`] requires.
+ /// `None` when there is no grid to measure it on.
+@@ -432,6 +530,11 @@ pub(crate) struct ToolpathPanelInputs {
+     /// generation (`ProjectSession::rest_boundary_refusal`), or `None`.
+     /// The header draws a short face with an action for it.
+     pub rest_boundary_refusal: Option<rs_cam_core::session::RestBoundaryRefusal>,
++    /// G-C (§2): the D53 state of the stored rest-regions source.
++    pub rest_containment: Option<RestContainment>,
++    /// G-C (D-2): the D53 state of the source the `Rest Regions` pick
++    /// writes.
++    pub rest_pick: Option<RestContainment>,
+     /// Operator ruling 2026-10-15: this rest toolpath's current comparison
+     /// with fresh stock, when one was asked for
+     /// (`ProjectSession::current_rest_fresh_comparisons`).
+@@ -626,12 +729,14 @@ pub(crate) fn toolpath_panel_inputs(
+             let ready = cached_regions
+                 .as_ref()
+                 .is_some_and(|regions| !regions.is_empty());
++            let top_z = cached.and_then(|r| r.annotated.produced.rest_regions_top_z);
+             (
+                 tc.id,
+                 tc.name.clone(),
+                 ready,
+                 cached_regions,
+                 footprint_area,
++                top_z,
+             )
+         })
+         .collect();
+@@ -651,6 +756,8 @@ pub(crate) fn toolpath_panel_inputs(
+         .collect();
+ 
+     let validation = ToolpathValidationContext::from_session(session);
++    let (rest_containment, rest_pick) =
++        rest_containment_inputs(id, session, gui, &boundary_source_candidates);
+     let material = session.stock_config().material.clone();
+     let machine = session.machine().clone();
+ 
+@@ -815,6 +922,8 @@ pub(crate) fn toolpath_panel_inputs(
+         rest_boundary_refusal: session
+             .find_toolpath_config_by_id(id)
+             .and_then(|(index, _)| session.rest_boundary_refusal(index)),
++        rest_containment,
++        rest_pick,
+         rest_fresh,
+         shoe: shoe_row_inputs(id, session, gui),
+     }
+@@ -1721,6 +1830,7 @@ fn draw_toolpath_selection(
+         // the view state while `inputs` holds its read of the session.
+         let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
+         let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
++        let mut containment_autocorrect = std::mem::take(&mut state.panels.containment_autocorrect);
+         draw_toolpath_panel(
+             ui,
+             &mut snapshot,
+@@ -1728,12 +1838,14 @@ fn draw_toolpath_selection(
+             &mut show_reach_map,
+             &mut selection_ui,
+             &mut heights_refusal,
++            &mut containment_autocorrect,
+             events,
+         );
+ 
+         state.viewport.show_reach_map = show_reach_map;
+         state.gui.selection_ui = selection_ui;
+         state.panels.heights_refusal = heights_refusal;
++        state.panels.containment_autocorrect = containment_autocorrect;
+ 
+         // ORDER IS LOAD-BEARING. The runtime write-back runs
+         // FIRST, because it copies `entry.stale_since` — the
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/mod.rs b/crates/rs_cam_viz/src/ui/properties/operations/mod.rs
+index 15c77f402..be950de39 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/mod.rs
+@@ -42,12 +42,12 @@ pub(super) use shape_diagrams::{
+     draw_ramp_finish_diagram, draw_spiral_diagram, draw_steep_shallow_diagram,
+     draw_stepover_diagram, draw_tab_diagram,
+ };
+-pub(in crate::ui::properties) use validate::hole_refusal;
+ pub use validate::{
+     DepthBeyondStock, ThroughCut, ToolpathValidationContext, collect_diagnostics,
+     depth_beyond_stock, profile_through_cut, profile_through_cut_line, validate_toolpath,
+     validate_toolpath_config,
+ };
++pub(in crate::ui::properties) use validate::{hole_refusal, rest_consumer_refusal};
+ 
+ use crate::state::toolpath::{
+     HeightContext, HeightMode, HeightReference, HeightsConfig, OperationType, ReferenceOffset,
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/validate.rs b/crates/rs_cam_viz/src/ui/properties/operations/validate.rs
+index 949ff05c2..eb0af115d 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/validate.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/validate.rs
+@@ -19,6 +19,10 @@ pub struct ToolpathValidationContext {
+     /// R2: the no-tool state of each op with no tool
+     /// (`ProjectSession::no_tool_state`), with the fix.
+     no_tool_states: Vec<(rs_cam_core::ids::ToolpathId, String)>,
++    /// G-C (§2 d): the D53 refusal of each rest-regions consumer whose
++    /// tool is larger than its source's, under its stored containment
++    /// (`ProjectSession::larger_rest_consumer_refusal`).
++    rest_consumer_refusals: Vec<(rs_cam_core::ids::ToolpathId, String)>,
+ }
+ 
+ pub(in crate::ui::properties) struct ValidationTool {
+@@ -77,6 +81,14 @@ impl ToolpathValidationContext {
+                     Some((tc.id, refusal))
+                 })
+                 .collect(),
++            rest_consumer_refusals: session
++                .toolpath_configs()
++                .iter()
++                .enumerate()
++                .filter_map(|(index, tc)| {
++                    Some((tc.id, session.larger_rest_consumer_refusal(index)?))
++                })
++                .collect(),
+         }
+     }
+ }
+@@ -175,6 +187,29 @@ pub(in crate::ui::properties) fn hole_refusal(
+         .map(|(_, refusal)| refusal.as_str())
+ }
+ 
++/// G-C (§2 d): the D53 refusal of rest-regions consumer `toolpath_id`
++/// (the core sentence), so Generate is off and the header names the Cut
++/// tab. The text is the stored containment's; the draft's `Inside` drops it.
++pub(in crate::ui::properties) fn rest_consumer_refusal<'a>(
++    ctx: &'a ToolpathValidationContext,
++    entry: &ToolpathEntry,
++) -> Option<&'a str> {
++    use rs_cam_core::compute::config::{BoundaryContainment, BoundarySource};
++    if !entry.boundary.enabled
++        || entry.boundary.containment == BoundaryContainment::Inside
++        || !matches!(
++            entry.boundary.source,
++            BoundarySource::DerivedRestRegions { .. }
++        )
++    {
++        return None;
++    }
++    ctx.rest_consumer_refusals
++        .iter()
++        .find(|(id, _)| *id == entry.id)
++        .map(|(_, refusal)| refusal.as_str())
++}
++
+ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
+     let mut errs = Vec::new();
+ 
+@@ -184,6 +219,9 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
+     };
+ 
+     validate_geometry_selection(entry, ctx, &mut errs);
++    if let Some(refusal) = rest_consumer_refusal(ctx, entry) {
++        errs.push(refusal.to_owned());
++    }
+ 
+     super::registry::op_errors(
+         &entry.operation,
+diff --git a/crates/rs_cam_viz/src/ui/properties/tab_badges.rs b/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
+index 75960073f..5378407d9 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
+@@ -28,7 +28,7 @@ impl TabBadges {
+     }
+ 
+     /// Raise the dot of `tab` to `color` when `color` ranks higher.
+-    fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
++    pub(super) fn raise(&mut self, tab: ToolpathTab, color: egui::Color32) {
+         if let Some(at) = ToolpathTab::ALL.iter().position(|t| *t == tab)
+             && let Some(dot) = self.dots.get_mut(at)
+         {
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index 53ecf6293..1ab4ed1b3 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -438,6 +438,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
+                 None,
+                 None,
+                 &mut crate::state::pick::SelectionUi::default(),
++                &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                 &mut events,
+             );
+         });
+@@ -523,6 +524,7 @@ fn tab_texts(
+             None,
+             None,
+             &mut crate::state::pick::SelectionUi::default(),
++            &mut crate::state::panels::ContainmentAutoCorrect::default(),
+             &mut events,
+         ),
+         _ => super::geometry_tab::draw_geometry_tab(
+@@ -1631,6 +1633,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
+             None,
+             None,
+             &mut crate::state::pick::SelectionUi::default(),
++            &mut crate::state::panels::ContainmentAutoCorrect::default(),
+             &mut events,
+         );
+     });
+@@ -1772,6 +1775,7 @@ fn the_boundary_summary_is_the_source_hover_d1() {
+                 None,
+                 None,
+                 &mut crate::state::pick::SelectionUi::default(),
++                &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                 &mut events,
+             );
+         });
+@@ -1924,3 +1928,219 @@ fn the_rest_refusal_faces_are_short_g_e() {
+         "the app fonts have no {GENERATE_SOURCE_GLYPH}"
+     );
+ }
++
++/// A larger consumer of `source` (Ø10 against Ø6) with an `Inside` answer.
++fn larger_consumer(
++    source: rs_cam_core::ToolpathId,
++    inside: crate::state::runtime::InsideAnswer,
++) -> super::RestContainment {
++    super::RestContainment {
++        larger: rs_cam_core::session::LargerRestConsumer {
++            op_name: "Edges".to_owned(),
++            source_toolpath_id: source,
++            source_name: "Body rough".to_owned(),
++            tool_radius_mm: 5.0,
++            source_tool_radius_mm: 3.0,
++        },
++        inside,
++    }
++}
++
++/// G-C (D-2): the `Rest Regions` pick writes `Inside` with the `⟲` badge
++/// when the tool is larger and `Inside` keeps area. It writes nothing when
++/// `Inside` would collapse, when the answer is unknown, for another source,
++/// or when the containment is `Inside` already. An edit clears the badge;
++/// another toolpath drops it.
++#[test]
++fn the_rest_pick_sets_inside_with_a_badge_d2() {
++    use super::toolpath_panel::pick_sets_inside;
++    use crate::state::runtime::InsideAnswer;
++    use crate::state::toolpath::BoundaryContainment;
++    let source = rs_cam_core::ToolpathId::from_raw(3);
++    let other = rs_cam_core::ToolpathId::from_raw(4);
++    let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
++    badge.scope(rs_cam_core::ToolpathId::from_raw(9));
++
++    let keeps = larger_consumer(source, InsideAnswer::Keeps);
++    let mut containment = BoundaryContainment::Center;
++    assert!(pick_sets_inside(
++        &mut containment,
++        Some(&keeps),
++        source,
++        &mut badge
++    ));
++    assert_eq!(containment, BoundaryContainment::Inside);
++    assert_eq!(
++        badge.hover(),
++        Some(
++            "Set to Inside: this tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00)."
++        )
++    );
++    badge.clear();
++    assert_eq!(badge.hover(), None, "an edit clears the badge");
++
++    for (pick, to) in [
++        (
++            larger_consumer(source, InsideAnswer::Collapses("x".to_owned())),
++            source,
++        ),
++        (
++            larger_consumer(source, InsideAnswer::Unknown("y".to_owned())),
++            source,
++        ),
++        (keeps.clone(), other),
++    ] {
++        let mut containment = BoundaryContainment::Outside;
++        assert!(!pick_sets_inside(
++            &mut containment,
++            Some(&pick),
++            to,
++            &mut badge
++        ));
++        assert_eq!(containment, BoundaryContainment::Outside);
++    }
++    let mut containment = BoundaryContainment::Center;
++    assert!(!pick_sets_inside(
++        &mut containment,
++        None,
++        source,
++        &mut badge
++    ));
++
++    badge.set("h".to_owned());
++    badge.scope(rs_cam_core::ToolpathId::from_raw(10));
++    assert_eq!(badge.hover(), None, "another toolpath drops the badge");
++}
++
++/// G-C (§2 c, d): the refused-option hover names the sizes, the overrun
++/// and the fix; under a collapse the fix is the smaller tool. The region
++/// count reads `· N regions` (one phrase, §6).
++#[test]
++fn the_containment_hover_and_the_region_count_g_c() {
++    use super::toolpath_panel::{regions_phrase, rest_source_label};
++    use crate::state::runtime::InsideAnswer;
++    let source = rs_cam_core::ToolpathId::from_raw(3);
++    assert_eq!(
++        larger_consumer(source, InsideAnswer::Keeps).hover(),
++        "This tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00). \
++         It could cut 2.00 mm past that op's boundary. Use Inside."
++    );
++    assert!(
++        larger_consumer(source, InsideAnswer::Collapses("c".to_owned()))
++            .hover()
++            .ends_with(
++                "Inside leaves no area for this tool here: use a tool no larger than \u{00D8}6.00."
++            )
++    );
++    let square = rs_cam_core::polygon::Polygon2::rectangle(0.0, 0.0, 1.0, 1.0);
++    assert_eq!(
++        rest_source_label("Body rough", Some(&vec![square.clone(); 14])),
++        "Body rough \u{00B7} 14 regions"
++    );
++    assert_eq!(
++        rest_source_label("Body rough", Some(&vec![square])),
++        "Body rough \u{00B7} 1 region"
++    );
++    assert_eq!(
++        rest_source_label("Body rough", Some(&Vec::new())),
++        "Body rough"
++    );
++    assert_eq!(rest_source_label("Body rough", None), "Body rough");
++    assert_eq!(regions_phrase(2), "2 regions");
++}
++
++/// G-C (§2 c, d): with a larger consumer on a `Center` containment, the
++/// Containment row draws `Use Inside`, and a click writes `Inside` to the
++/// draft. When `Inside` would collapse, the act is off and the click
++/// writes nothing. The two options `Center` and `Outside` are refused in
++/// the combo (their hover is the sizes).
++#[test]
++fn use_inside_sits_on_the_containment_row_g_c() {
++    use crate::state::runtime::InsideAnswer;
++    use crate::state::toolpath::{
++        BoundaryContainment, BoundarySource, OperationType, ToolpathEntry,
++    };
++    let source = rs_cam_core::ToolpathId::from_raw(42);
++    let run = |inside: InsideAnswer| {
++        let (session, _mesh) = one_pocket_session();
++        let tc = &session.toolpath_configs()[0];
++        let mut inputs = super::toolpath_panel_inputs(
++            tc.id,
++            &session,
++            &crate::state::runtime::GuiState::default(),
++            None,
++            Some(ToolpathTab::Cut),
++            false,
++        );
++        inputs.rest_containment = Some(larger_consumer(source, inside));
++        inputs.boundary_source_candidates =
++            vec![(source, "Body rough".to_owned(), false, None, None, None)];
++        let mut entry = ToolpathEntry::for_operation(
++            tc.id,
++            "Edges".to_owned(),
++            tc.tool_id.expect("the case tool"),
++            tc.model_id,
++            OperationType::Pocket,
++        );
++        entry.boundary.enabled = true;
++        entry.boundary.source = BoundarySource::DerivedRestRegions {
++            source_toolpath_id: source,
++        };
++        entry.boundary.containment = BoundaryContainment::Center;
++        let ctx = egui::Context::default();
++        crate::ui::tokens::apply(&ctx);
++        crate::ui::tokens::apply_fonts(&ctx);
++        let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
++        let mut act_at: Option<egui::Pos2> = None;
++        let mut painted = false;
++        for pass in 0..5 {
++            let mut input = egui::RawInput::default();
++            if pass == 3
++                && let Some(pos) = act_at
++            {
++                input.events.push(egui::Event::PointerMoved(pos));
++                for pressed in [true, false] {
++                    input.events.push(egui::Event::PointerButton {
++                        pos,
++                        button: egui::PointerButton::Primary,
++                        pressed,
++                        modifiers: egui::Modifiers::NONE,
++                    });
++                }
++            }
++            let mut events = Vec::new();
++            let mut out = ctx.run_ui(input, |ui| {
++                super::toolpath_panel::draw_cut_tab(
++                    ui,
++                    &mut entry,
++                    &inputs,
++                    None,
++                    None,
++                    &mut crate::state::pick::SelectionUi::default(),
++                    &mut badge,
++                    &mut events,
++                );
++            });
++            for clipped in &out.shapes {
++                if let egui::epaint::Shape::Text(text) = &clipped.shape
++                    && text.galley.job.text == super::toolpath_panel::USE_INSIDE
++                {
++                    painted = true;
++                    act_at = Some(clipped.shape.visual_bounding_rect().center());
++                }
++            }
++            out.textures_delta.clear();
++        }
++        (painted, entry.boundary.containment)
++    };
++    assert_eq!(
++        run(InsideAnswer::Keeps),
++        (true, BoundaryContainment::Inside),
++        "the act writes Inside"
++    );
++    assert_eq!(
++        run(InsideAnswer::Collapses("c".to_owned())),
++        (true, BoundaryContainment::Center),
++        "the act is off when Inside collapses"
++    );
++}
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 94bf1112d..717abb3d8 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -30,6 +30,17 @@ pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
+ /// refused. The full refusal is its hover.
+ pub(crate) const REFUSED_STATE: &str = "Refused";
+ 
++/// G-C (§2 d, review): the header line of the D53 refusal. The Cut tab owns
++/// the fix (the Containment row); the full text is the hover.
++pub(crate) const REFUSED_SEE_CUT: &str = "Refused \u{00B7} see Cut";
++
++/// G-C (§2 d): the act on the Containment row that writes `Inside`.
++pub(crate) const USE_INSIDE: &str = "Use Inside";
++
++#[expect(
++    clippy::too_many_arguments,
++    reason = "the snapshot, the inputs and the GUI state slots the panel edits in place (`state.panels`, `state.gui`), each threaded in alone"
++)]
+ pub(super) fn draw_toolpath_panel(
+     ui: &mut egui::Ui,
+     // The panel's whole read side: the owned entry, both static
+@@ -51,6 +62,9 @@ pub(super) fn draw_toolpath_panel(
+     // F033 / UI-09: the last refused heights edit (`state.panels`), threaded
+     // in as `selection_ui` is.
+     heights_refusal: &mut crate::state::panels::HeightsRefusal,
++    // G-C (D-2): the `⟲` badge of an auto-set containment (`state.panels`),
++    // threaded in as `heights_refusal` is.
++    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+     events: &mut Vec<AppEvent>,
+ ) {
+     // Disjoint borrows of the snapshot's fields. The body edits the entry
+@@ -149,6 +163,8 @@ pub(super) fn draw_toolpath_panel(
+             }
+         }
+     }
++    // G-C (§2 d): the D53 refusal, owned by the Cut tab.
++    let cut_refusal = operations::rest_consumer_refusal(validation, entry).map(str::to_owned);
+     if !validation_errors.is_empty() {
+         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
+         // the selection. A validation error that IS that refusal (the
+@@ -168,6 +184,10 @@ pub(super) fn draw_toolpath_panel(
+                 section_refusal.as_deref() == Some(err.as_str())
+                     || hole_refusal == Some(err.as_str())
+             });
++        // G-C: the D53 refusal is the Cut tab's (the Containment row).
++        let cut_owned = other
++            .iter()
++            .any(|err| cut_refusal.as_deref() == Some(err.as_str()));
+         // G-E (4), §7.2 rule 5: above the tab strip at most ONE refusal
+         // line. The Geometry tab's refusal names its tab; else the first
+         // validator sentence is the face, truncated. The hover holds every
+@@ -179,10 +199,12 @@ pub(super) fn draw_toolpath_panel(
+             .map(|err| err.as_str())
+             .collect::<Vec<_>>()
+             .join("\n");
+-        let face = if owned.is_empty() {
+-            other.first().map_or("", |err| err.as_str())
+-        } else {
++        let face = if !owned.is_empty() {
+             REFUSED_SEE_GEOMETRY
++        } else if cut_owned {
++            REFUSED_SEE_CUT
++        } else {
++            other.first().map_or("", |err| err.as_str())
+         };
+         ui.add(
+             OneLine::new(face)
+@@ -258,12 +280,17 @@ pub(super) fn draw_toolpath_panel(
+         ui.memory(|mem| mem.data.get_temp(tab_id))
+             .unwrap_or(ToolpathTab::Geometry)
+     });
+-    let tab_badges = compute_tab_badges(
++    let mut tab_badges = compute_tab_badges(
+         entry,
+         &diagnostics,
+         toolpath_heights,
+         shoe_finding.is_some(),
+     );
++    // G-C (review §2 d): the D53 refusal puts a dot on the Cut tab, which
++    // holds its fix.
++    if cut_refusal.is_some() {
++        tab_badges.raise(ToolpathTab::Cut, crate::ui::tokens::DANGER);
++    }
+     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
+     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
+     ui.separator();
+@@ -283,6 +310,7 @@ pub(super) fn draw_toolpath_panel(
+                 model_bbox,
+                 strategy_suggestion(suggest_warnings),
+                 selection_ui,
++                containment_autocorrect,
+                 events,
+             );
+         }
+@@ -475,6 +503,10 @@ pub(super) fn draw_toolpath_panel(
+ /// tool, the input model, the start stock, the op parameters and the
+ /// machining boundary source. The selection is in the Geometry tab.
+ /// `properties::tests` renders it (D3).
++#[expect(
++    clippy::too_many_arguments,
++    reason = "the entry, its inputs, the Suggest advice and the GUI state slots the tab edits in place, each threaded in alone"
++)]
+ pub(super) fn draw_cut_tab(
+     ui: &mut egui::Ui,
+     entry: &mut crate::state::toolpath::ToolpathEntry,
+@@ -482,8 +514,10 @@ pub(super) fn draw_cut_tab(
+     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
+     selection_ui: &mut crate::state::pick::SelectionUi,
++    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+     events: &mut Vec<AppEvent>,
+ ) {
++    containment_autocorrect.scope(entry.id);
+     let tools = inputs.tools.as_slice();
+     let models = inputs.models.as_slice();
+     let tool_configs = inputs.tool_configs.as_slice();
+@@ -729,11 +763,18 @@ pub(super) fn draw_cut_tab(
+                         {
+                             let default_source = boundary_source_candidates
+                                 .first()
+-                                .map(|(candidate_id, _, _, _, _)| *candidate_id)
++                                .map(|(candidate_id, _, _, _, _, _)| *candidate_id)
+                                 .unwrap_or(entry.id);
+                             entry.boundary.source = BoundarySource::DerivedRestRegions {
+                                 source_toolpath_id: default_source,
+                             };
++                            // G-C (D-2): the pick may set `Inside`.
++                            pick_sets_inside(
++                                &mut entry.boundary.containment,
++                                inputs.rest_pick.as_ref(),
++                                default_source,
++                                containment_autocorrect,
++                            );
+                         }
+                     })
+                     .response
+@@ -759,7 +800,7 @@ pub(super) fn draw_cut_tab(
+             // when `Source` above is set to `DerivedRestRegions`.
+             // Candidates are every other toolpath in the session;
+             // ones with a cached result whose rest regions are
+-            // already non-empty are labelled "(regions ready)" and
++            // already non-empty are labelled "· N regions" (G-C) and
+             // sorted first, but a not-yet-generated toolpath is
+             // still selectable — generation fails hard with a clear
+             // message if the source turns out unusable.
+@@ -768,29 +809,32 @@ pub(super) fn draw_cut_tab(
+             {
+                 ui.horizontal(|ui| {
+                     ui.label("Rest source:");
+-                    let current_label = boundary_source_candidates
++                    let current = boundary_source_candidates
+                         .iter()
+-                        .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id)
+-                        .map(|(_, name, ready, _, _)| {
+-                            if *ready {
+-                                format!("{name} (regions ready)")
+-                            } else {
+-                                name.clone()
+-                            }
+-                        })
+-                        .unwrap_or_else(|| "(toolpath not found)".to_owned());
++                        .find(|(candidate_id, _, _, _, _, _)| candidate_id == source_toolpath_id);
++                    let current_label = current.map_or_else(
++                        || "(toolpath not found)".to_owned(),
++                        |(_, name, _, regions, _, _)| rest_source_label(name, regions.as_deref()),
++                    );
++                    // G-C (§6 b): the top of the regions first, then the
++                    // combo's own hover.
++                    let hover = match current.and_then(|(_, _, _, _, _, top_z)| *top_z) {
++                        Some(z) => format!(
++                            "Top of the regions: Z {z:.2}.\nThe toolpath whose regions bound \
++                             this one. Picking it switches its rest analysis on."
++                        ),
++                        None => "The toolpath whose regions bound this one. Picking it \
++                                 switches its rest analysis on."
++                            .to_owned(),
++                    };
+                     let mut sorted = boundary_source_candidates.to_vec();
+-                    sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
++                    sorted.sort_by_key(|(_, _, ready, _, _, _)| !*ready);
+                     egui::ComboBox::from_id_salt("boundary_rest_source")
+                         .truncate()
+                         .selected_text(current_label)
+                         .show_ui(ui, |ui| {
+-                            for (candidate_id, name, ready, _, _) in &sorted {
+-                                let label = if *ready {
+-                                    format!("{name} (regions ready)")
+-                                } else {
+-                                    name.clone()
+-                                };
++                            for (candidate_id, name, _, regions, _, _) in &sorted {
++                                let label = rest_source_label(name, regions.as_deref());
+                                 let selected = *source_toolpath_id == *candidate_id;
+                                 if ui.selectable_label(selected, label).clicked() {
+                                     *source_toolpath_id = *candidate_id;
+@@ -798,10 +842,7 @@ pub(super) fn draw_cut_tab(
+                             }
+                         })
+                         .response
+-                        .on_hover_text(
+-                            "The toolpath whose regions bound this one. Picking it \
+-                             switches its rest analysis on.",
+-                        );
++                        .on_hover_text(hover);
+                 });
+ 
+                 // Sliver-storm / giant-region caption (2026-07-06
+@@ -818,12 +859,13 @@ pub(super) fn draw_cut_tab(
+                 // regions), not this model's bounding rectangle.
+                 let selected = boundary_source_candidates
+                     .iter()
+-                    .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
+-                let selected_regions = selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
++                    .find(|(candidate_id, _, _, _, _, _)| candidate_id == source_toolpath_id);
++                let selected_regions =
++                    selected.and_then(|(_, _, _, regions, _, _)| regions.as_ref());
+                 // `None` twice over: no candidate selected, or the
+                 // selected one has no rest grid. Both are "not
+                 // measured", and `classify_rest_regions` stays silent.
+-                let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
++                let source_footprint_area = selected.and_then(|(_, _, _, _, area, _)| *area);
+                 if let Some(regions) = selected_regions
+                     && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
+                         regions,
+@@ -834,7 +876,23 @@ pub(super) fn draw_cut_tab(
+                 }
+             }
+ 
+-            // Containment mode
++            // Containment mode. G-C (§2 c-e): for a rest-regions source
++            // whose tool is smaller than this one, `Center` and `Outside`
++            // are grey (they refuse, D53) with the sizes on hover; while the
++            // draft holds one of them, `[Use Inside]` sits at the right of
++            // the row, unless `Inside` would collapse the boundary. The `⟲`
++            // badge marks a containment the `Rest Regions` pick set (D-2).
++            let draft_source = match entry.boundary.source {
++                BoundarySource::DerivedRestRegions { source_toolpath_id } => {
++                    Some(source_toolpath_id)
++                }
++                _ => None,
++            };
++            let refused = inputs
++                .rest_containment
++                .as_ref()
++                .filter(|check| Some(check.larger.source_toolpath_id) == draft_source);
++            let before = entry.boundary.containment;
+             ui.horizontal(|ui| {
+                 ui.label("Containment:");
+                 egui::ComboBox::from_id_salt("boundary_contain")
+@@ -845,28 +903,75 @@ pub(super) fn draw_cut_tab(
+                         BoundaryContainment::Outside => "Outside",
+                     })
+                     .show_ui(ui, |ui| {
+-                        ui.selectable_value(
+-                            &mut entry.boundary.containment,
++                        let mut option = |ui: &mut egui::Ui,
++                                          value: BoundaryContainment,
++                                          label: &str,
++                                          hover: &str| {
++                            let enabled = refused.is_none() || value == BoundaryContainment::Inside;
++                            let response = ui
++                                .add_enabled(
++                                    enabled,
++                                    egui::Button::selectable(
++                                        entry.boundary.containment == value,
++                                        label,
++                                    ),
++                                )
++                                .on_hover_text(hover);
++                            let response = match refused {
++                                Some(check) => response.on_disabled_hover_text(check.hover()),
++                                None => response,
++                            };
++                            if response.clicked() {
++                                entry.boundary.containment = value;
++                            }
++                        };
++                        option(
++                            ui,
+                             BoundaryContainment::Center,
+                             "Center",
+-                        )
+-                        .on_hover_text("Tool center stays inside boundary");
+-                        ui.selectable_value(
+-                            &mut entry.boundary.containment,
++                            "Tool center stays inside boundary",
++                        );
++                        option(
++                            ui,
+                             BoundaryContainment::Inside,
+                             "Inside",
+-                        )
+-                        .on_hover_text(
+                             "Entire tool stays inside boundary (shrinks by tool radius)",
+                         );
+-                        ui.selectable_value(
+-                            &mut entry.boundary.containment,
++                        option(
++                            ui,
+                             BoundaryContainment::Outside,
+                             "Outside",
++                            "Tool edge can extend outside boundary",
++                        );
++                    });
++                if let Some(hover) = containment_autocorrect.hover() {
++                    ui.add(
++                        crate::ui::components::ProvenanceBadge::new(
++                            crate::ui::components::ProvKind::AutoCorrect,
+                         )
+-                        .on_hover_text("Tool edge can extend outside boundary");
++                        .compact(),
++                    )
++                    .on_hover_text(hover);
++                }
++                if let Some(check) = refused
++                    && entry.boundary.containment != BoundaryContainment::Inside
++                {
++                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
++                        let keeps = check.inside == crate::state::runtime::InsideAnswer::Keeps;
++                        let response = ui
++                            .add_enabled(keeps, egui::Button::new(USE_INSIDE).small())
++                            .on_hover_text(check.hover())
++                            .on_disabled_hover_text(check.hover());
++                        if response.clicked() {
++                            entry.boundary.containment = BoundaryContainment::Inside;
++                        }
+                     });
++                }
+             });
++            // The badge stands until the operator edits the containment.
++            if entry.boundary.containment != before {
++                containment_autocorrect.clear();
++            }
+ 
+             // Offset
+             ui.horizontal(|ui| {
+@@ -907,7 +1012,22 @@ pub(super) fn draw_cut_tab(
+         let title = if rest_region_consumers.is_empty() {
+             "Rest heatmap overlay".to_owned()
+         } else {
+-            format!("Rest regions \u{2192} {}", rest_region_consumers.join(", "))
++            // G-C (§6 c): the count of this op's own regions, in the
++            // phrase of the consumer's source combo.
++            let count = entry
++                .run
++                .result()
++                .and_then(|result| result.annotated.produced.rest_regions.as_ref())
++                .map_or(0, |regions| regions.len());
++            let consumers = rest_region_consumers.join(", ");
++            if count > 0 {
++                format!(
++                    "Rest regions \u{2192} {consumers} \u{00B7} {}",
++                    regions_phrase(count)
++                )
++            } else {
++                format!("Rest regions \u{2192} {consumers}")
++            }
+         };
+         ui.add_space(8.0);
+         ui.disclosure("rest_regions", &title, false, |ui| {
+@@ -1316,6 +1436,59 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool
+     .inner
+ }
+ 
++/// G-C (D-2, ruled yes): the `Rest Regions` pick of `source` writes
++/// `Inside` when this op's tool is larger than the source's (`pick`), the
++/// containment is not `Inside` yet, and `Inside` keeps area (the collapse
++/// check, G-BOUNDCOLLAPSE). The Containment combo then shows the `⟲` badge
++/// with the sizes on its hover. True when it wrote `Inside`.
++pub(super) fn pick_sets_inside(
++    containment: &mut BoundaryContainment,
++    pick: Option<&super::RestContainment>,
++    source: crate::state::toolpath::ToolpathId,
++    autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
++) -> bool {
++    let Some(pick) = pick.filter(|pick| {
++        pick.larger.source_toolpath_id == source
++            && pick.inside == crate::state::runtime::InsideAnswer::Keeps
++    }) else {
++        return false;
++    };
++    if *containment == BoundaryContainment::Inside {
++        return false;
++    }
++    *containment = BoundaryContainment::Inside;
++    autocorrect.set(format!(
++        "Set to Inside: this tool (\u{00D8}{:.2}) is larger than the tool of '{}' \
++         (\u{00D8}{:.2}).",
++        2.0 * pick.larger.tool_radius_mm,
++        pick.larger.source_name,
++        2.0 * pick.larger.source_tool_radius_mm,
++    ));
++    true
++}
++
++/// G-C (§6, review): the item text of a rest source: `{name} · {N} regions`
++/// when its result has regions, else the plain name. One phrase for the
++/// count, as the source's own disclosure title.
++pub(super) fn rest_source_label(
++    name: &str,
++    regions: Option<&Vec<rs_cam_core::polygon::Polygon2>>,
++) -> String {
++    match regions.map(Vec::len) {
++        Some(n) if n > 0 => format!("{name} \u{00B7} {}", regions_phrase(n)),
++        _ => name.to_owned(),
++    }
++}
++
++/// `N regions` (`1 region`).
++pub(super) fn regions_phrase(n: usize) -> String {
++    if n == 1 {
++        "1 region".to_owned()
++    } else {
++        format!("{n} regions")
++    }
++}
++
+ /// G-E (3): the one-line face of a rest-boundary refusal, and the
+ /// toolpath its action generates.
+ #[derive(Debug, Clone, PartialEq)]
+diff --git a/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs b/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
+index fecfddf0b..17031bba1 100644
+--- a/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
++++ b/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
+@@ -351,7 +351,7 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
+ fn the_validation_errors_are_one_line() {
+     let src = properties_src();
+     let at = src
+-        .find("let face = if owned.is_empty()")
++        .find("let face = if !owned.is_empty()")
+         .expect("the validation-error face moved");
+     let body = &src[at..(at + 400).min(src.len())];
+     assert!(
