@@ -1,0 +1,585 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index f2be811c7..b6103ccb9 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -30,7 +30,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ | 2.5D | Bore (`bore`) | `ops/bore.rs` | Yes | No | Shipped (2026-10-22, geometry selection P6.6). A helix mills each picked circle to its drawn size: the tool centre runs on `r = (d - D) / 2`, so the wall stands at `d / 2`. The op cuts a circle larger than the tool and at most two tool diameters (one helix then reaches the centre, so no core is left). Under the default rule it leaves out a circle of the tool size, a smaller circle and a circle of more than two tool diameters, with one note each that names the fix ("drill it with a Drill op", "use a smaller tool, or a Drill with a tool of the circle size", "use a Pocket on the circle or a larger tool"); a picked misfit circle refuses by item. A point states no size, so a Bore does not cut it. The helix descends in whole turns of at most `pitch` (default 1 mm, the dressup helix pitch), counter-clockwise for `climb`, then cuts one turn on the floor. A `finish_allowance` above zero cuts the helix at `r - a`, then one floor turn and a helix up the wall at `r`. The floor is the op floor (`floor`, as Pocket); `Floor::StockBottom` gives a through hole. A flat or bull-nose end mill only. The helix runs at the ramp feed, else the plunge rate; the feeds rows are those of the 2.5D clearing family (Pocket, Roughing); the feeds matrix gains 40 Bore cells (16 ship: end mill and bull nose; 24 refuse), 1000 in all. The dressups that add an entry, a lead or a link are stripped. With stock source "remaining stock" each hole starts at the highest remaining stock within the hole radius of its centre, and a hole with no stock above its floor is dropped. The simulation sweeps the moves and the export writes them as moves (not a drill cycle). Sentry: `a_bore_cuts_the_stated_size_p6_6` |
+ | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped. Runs on the Layered runner (W3.5, 2026-10-15): one level, `top_z - (w + t) / tan(a)`, from the tool angle. With stock source "remaining stock" the chamfer is skipped when no material stands within `w + t` of its tip path above that level (an edge a prior op removed); it is never clipped, because a clipped ring would start its bevel in the middle of an edge (G-RESTLEVELS claim 11). R-C and F21 (operator ruling 2026-10-23, SAFETY): each outline cuts one level below ITS OWN top: a drawing area below the op Top Z (as before), a mesh face below its plane under an auto top, a STEP edge below its Z. On a STEP model the Chamfer bevels the convex top edges only (`ItemUse::Edges`): the STEP door states the form of each ring, chain, circle and up face from the two faces at each segment (`selection::EdgeForm`); the default takes the convex top edge chains and rims (not the face rings, a departure from ruling Q3 for Chamfer only); a pick of a concave edge, of a bottom edge, or of any model edge in a Bottom or side setup refuses `NotAConvexEdge` by name. A model edge takes its material side from the model, so the Side dial applies to drawing areas only; an open edge is cut in its point order with no chord. Each item refuses `BuriedFace` against its own Z (fresh stock: the lowest item; remaining stock: each area and a band of `w + 2 t` round each edge). The model gouge guard reads a Chamfer (`Bevel`): a cut deeper than the bevel depth `w / tan(a)` below the V-bit CL Z gouges (an edge that runs into a wall); it does not see a cut into another face that is shallower than the bevel depth. Break: a STEP Chamfer default changes from the face rings to the convex chains. Sentry: `a_step_chamfer_cuts_convex_edges_only_rc` (`--features step`). |
+ | 3D | Parallel finish | `dropcutter.rs` | Yes | Yes | Shipped |
+-| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The GUI shows a load refusal in the "Project not opened" modal: one row per retired key with its fix on hover, the fix line, and `Copy` (step G-D). The fields `trochoid_cap_mult` and `engagement_measure` stay load-only (removal step R6): no strategy reads them, their help says so, and saved projects load unchanged (sentry `--lib the_load_only_fields_do_not_change_the_toolpath_r6`). Z Blend is removed (GUI fix G-A, operator ruling D-3, 2026-10-28): it cut the inner Contour Parallel rings deeper than one Depth/Pass, and Geodesic Adaptive never read it. A file with `z_blend = false` loads and ignores the key (the output does not change); `z_blend = true` refuses at load and names the fix; MCP `set_toolpath_param z_blend` refuses with the same text (sentry `a_z_blend_true_refuses_at_load_g_a`). The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only; the Cut tab shows it as a ⚡ chip on the Strategy row, and a click switches the strategy, step G-D). Sentry: `a_retired_clearing_strategy_is_named_r2`. Option **Contour each level** (`contour_each_level`, C4, operator ruling D69 2026-10-28; off by default, and off the output is unchanged): on a rest rough (remaining stock) with a machining boundary, after each level one contour runs along the boundary where stock the tool can reach still stands beyond it, never more than one Depth/Pass under any stock in reach, so the next level does not cut it deeper (G-RESTDOC); short gaps on one ring join by the machine's feed-or-retract rule, and a contour cut over the pass load carries a feed cap. Corne play job: the edge op's volume over Depth/Pass 6750 → 3138 mm³, job time +19 %. A fresh rough is unchanged. Sentries: `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. A capped move draws dashed in every move colour mode of the 3D view (legend entry "dashed: fed at a load cap"); the move count's hover on the Generate row gives the planned count and the lowest cap; MCP `get_cut_trace` carries `capped_move_count`, `capped_min_feed_mm_min` and the bounded `capped_moves` rows (step G-B, 2026-10-28). It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
++| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The GUI shows a load refusal in the "Project not opened" modal: one row per retired key with its fix on hover, the fix line, and `Copy` (step G-D). The fields `trochoid_cap_mult` and `engagement_measure` stay load-only (removal step R6): no strategy reads them, their help says so, and saved projects load unchanged (sentry `--lib the_load_only_fields_do_not_change_the_toolpath_r6`). Z Blend is removed (GUI fix G-A, operator ruling D-3, 2026-10-28): it cut the inner Contour Parallel rings deeper than one Depth/Pass, and Geodesic Adaptive never read it. A file with `z_blend = false` loads and ignores the key (the output does not change); `z_blend = true` refuses at load and names the fix; MCP `set_toolpath_param z_blend` refuses with the same text (sentry `a_z_blend_true_refuses_at_load_g_a`). The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only; the Cut tab shows it as a ⚡ chip on the Strategy row, and a click switches the strategy, step G-D). Sentry: `a_retired_clearing_strategy_is_named_r2`. Option **Contour each level** (`contour_each_level`, C4, operator ruling D69 2026-10-28; off by default, and off the output is unchanged): on a rest rough (remaining stock) with a machining boundary, after each level one contour runs along the boundary where stock the tool can reach still stands beyond it, never more than one Depth/Pass under any stock in reach, so the next level does not cut it deeper (G-RESTDOC); short gaps on one ring join by the machine's feed-or-retract rule, and a contour cut over the pass load carries a feed cap. Corne play job: the edge op's volume over Depth/Pass 6750 → 3138 mm³, job time +19 %. In Global order a fresh rough is unchanged. In By Area order (C4b, the F9 fix) the option also cuts the walls of each region at each of its levels, keeping every cut off another region's material above the level; with the option off By Area cuts the walls once, at the bottom, as before. Sentries: `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`, `by_area_walls_cut_each_region_level_c4b`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. A capped move draws dashed in every move colour mode of the 3D view (legend entry "dashed: fed at a load cap"); the move count's hover on the Generate row gives the planned count and the lowest cap; MCP `get_cut_trace` carries `capped_move_count`, `capped_min_feed_mm_min` and the bounded `capped_moves` rows (step G-B, 2026-10-28). It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
+ | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped. Helical (D69 W1, `WaterlineConfig::helical`, default on; GUI "Helical:", MCP `helical`, `continuous` accepted as an alias for one release): two whole rings of consecutive levels chain when one lies inside the other (within `sampling`), no ring of the two levels lies between them, and the match is one to one; a chain is ONE entry, and the tool descends along the LOWER ring (each lap at most the dressup ramp angle, 3°), so it cannot gouge in 3-axis; each link is checked with the model gouge guard's reduced tool; a ring with no match, or one the rest filter splits, keeps its own entry. W1b: a project saved before the rename stored `continuous` (a dial no generator read) and loads helical with one warning ("Waterline '<name>': helical descent is now on (was continuous = <v>)."). Wall step (W2): on a rest Waterline a chain skips rings where the wall is vertical (rings that coincide within `sampling`), up to the smallest depth per pass of the earlier enabled roughing ops of the setup, where the deflection check passes (the deflection gate's force and cantilever model, at most 50 µm, `tool_load::deflection::WITHIN_BOUND_MM`, with the radial skin read on the remaining stock); no widening on fresh stock or with a material that has no force line. Through cut (W4): when the model bottom is at the stock bottom, no OUTER ring is cut at or below the web Z: the tab top of a later tabbed Profile that cuts to the stock bottom, else the floor plus axial leave of an earlier rough that cuts to the model bottom (from the configs, never from results); hole and inner rings keep their levels; the ladder finding names the web and the skipped rings, and the one-line Caution `geom.waterline_part_unheld` says when no tabbed Profile follows (the job adds the Profile; the Waterline gets no tabs). Air label (W3, G-WLAIRLABEL, every op): a cutting sample under 2 % radial WOC that removes material is a skin the flank cuts, not air; the narration air line reports the true air and names the skin, its ⚠ reads the true share, and MCP `toolpath_summaries` carry `air_cut_removing_share`; the air figures, the gates and the thresholds do not change. Sentries: `a_helical_waterline_cuts_a_stack_with_one_entry_d69`, `an_old_waterline_loads_helical_w1b`, `a_waterline_widens_its_step_on_a_vertical_wall_w2`, `a_rest_waterline_after_a_rough_widens_its_wall_step_w2`, `a_waterline_stops_at_the_web_of_a_through_cut_w4`, lib `the_wall_step_reads_the_deflection_model_w2`, `air_that_removes_material_is_a_skin_g_wlairlabel`, `the_air_line_reads_the_true_air_share_g_wlairlabel` |
+ | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
+ | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped. `iso_field` dial (2026-09-03, default off): rings from the iso-scallop field — per-point spacing, spec-correct cosine slope law, completion by construction; measured 0.875× the unified op's time at 2.5 pp better envelope coverage on terrain (`planning/metrology_2026-09-02/FINDINGS.md` §M7–M8) |
+diff --git a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+index c7e6abd73..0c3dcd0ea 100644
+--- a/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
++++ b/crates/rs_cam_core/src/adaptive3d/CLAUDE.md
+@@ -8,7 +8,7 @@
+ - `path.rs` Z levels, level loop, emitter; `search.rs` clear-path test;
+   `centre_clip.rs` session boundary clip (before each stamp); `mod.rs`
+   facade, `ClearingStrategy3d`; `outer_band.rs` the arm's boundary reach and
+-  region clip (G-CLIPAIR); `rest_regions.rs` the regions left to a rest op and their top (D44, D48, D50); `level_contour.rs` C4 "Contour each level" (`linking.level_contour`, off: today's plan): the reach band of a rest rough, its contour per level on the containment (read and lowered along the line the emitter ships; closed rings start at a fixed point), the `retract_saves_time` merge and the `FeedCapStart` load cap; `keep_down.rs` the ONE 3D keep-down read
++  region clip (G-CLIPAIR); `rest_regions.rs` the regions left to a rest op and their top (D44, D48, D50); `level_contour.rs` C4 "Contour each level" (`linking.level_contour`, off: today's plan): the reach band of a rest rough, its contour per level on the containment (read and lowered along the line the emitter ships; closed rings start at a fixed point), the `retract_saves_time` merge and the `FeedCapStart` load cap; C4b `keeps_to_region`, the By Area per-region-level wall mask (F9); `keep_down.rs` the ONE 3D keep-down read
+   (`corridor_ceiling_z`, `keep_down_excess`) and the router; `region_map.rs` By Area map; `intended_floor.rs` the ONE level floor (`level_floor_z`, `plan_bottom_z`; G-ROUGHCOV A3 reads it; never inline it).
+ 
+ ## Invariants
+@@ -36,5 +36,5 @@
+ `adaptive3d_global_gate_drapes_below_floor`, `adaptive3d_plan_matches_merged_path_g_plansimgap`,
+ `adaptive3d_planner_never_ahead_of_emitted_path`, `adaptive3d_emission_byte_parity`, `adaptive3d_boundary_clip_leaves_no_phantom_stock_g_boundaryphantom`,
+ `adaptive3d_plans_every_slice_piece_g_adapt3dpieces`, `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `geodesic_adaptive_holds_the_pass_load_c12` (the judge; `--ignored` heavy, about 9 min); rest regions: `a_rough_publishes_the_regions_it_leaves_d44`,
+-`a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`, `--lib _c4`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `..._starts_at_the_left_stock_top_d50`; D55 (G-AIRPECK) `a_rest_entry_does_not_peck_through_cleared_air_d55` and `--lib _d55` (the peck ladder starts at the contact read, as the helix and the ramp do; real stock still pecks); By Area:
++`a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_op_holds_one_depth_at_the_band_c4`, `contour_each_level_is_off_by_default_c4`, `by_area_walls_cut_each_region_level_c4b`, `--lib _c4`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `..._starts_at_the_left_stock_top_d50`; D55 (G-AIRPECK) `a_rest_entry_does_not_peck_through_cleared_air_d55` and `--lib _d55` (the peck ladder starts at the contact read, as the helix and the ramp do; real stock still pecks); By Area:
+ `adaptive3d_by_area_cells_confine_jobs`, `..._by_area_matches_global_stock`; `--lib adaptive3d::keep_down`, `--lib adaptive3d::tests::the_step_reads_tell_a_full_pass_from_a_thin_layer`.
+diff --git a/crates/rs_cam_core/src/adaptive3d/clearing.rs b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+index 77179f520..c6735b379 100644
+--- a/crates/rs_cam_core/src/adaptive3d/clearing.rs
++++ b/crates/rs_cam_core/src/adaptive3d/clearing.rs
+@@ -1730,6 +1730,7 @@ pub(super) fn waterline_cleanup(
+     min_cutting_radius: f64,
+     stock_to_leave: f64,
+     ctx: &ClearZLevelContext<'_>,
++    keep: Option<CleanupKeep<'_>>,
+     segments: &mut Vec<Adaptive3dSegment>,
+     cursor: &mut PlannerCursor,
+     debug_ctx: Option<&ToolpathDebugContext>,
+@@ -1812,19 +1813,6 @@ pub(super) fn waterline_cleanup(
+             }
+         }
+ 
+-        push_segment_with_stamp(
+-            segments,
+-            material_stock,
+-            lut,
+-            tool_radius,
+-            cursor,
+-            Adaptive3dSegment::Rapid(contour[0]),
+-            safe_z,
+-            tolerance,
+-            min_cutting_radius,
+-            &drape,
+-        );
+-
+         let mut cleanup_path = vec![contour[0]];
+         for i in 0..contour.len() {
+             let a = contour[i];
+@@ -1842,18 +1830,50 @@ pub(super) fn waterline_cleanup(
+             }
+         }
+         cleanup_path.push(contour[0]);
+-        push_segment_with_stamp(
+-            segments,
+-            material_stock,
+-            lut,
+-            tool_radius,
+-            cursor,
+-            Adaptive3dSegment::Cut(cleanup_path),
+-            safe_z,
+-            tolerance,
+-            min_cutting_radius,
+-            &drape,
+-        );
++        // C4b (By Area with "Contour each level"): only the points `keep`
++        // accepts, read once on the stock before this contour. No `keep`
++        // (Global, the By Area bottom run): the whole closed contour, as
++        // before.
++        let runs = match keep {
++            None => vec![cleanup_path],
++            Some(keep) => {
++                let flags: Vec<bool> = cleanup_path
++                    .iter()
++                    .map(|p| keep(material_stock, *p))
++                    .collect();
++                kept_runs(&cleanup_path, &flags)
++            }
++        };
++        if runs.is_empty() {
++            continue;
++        }
++        for run in runs {
++            let Some(&first) = run.first() else { continue };
++            push_segment_with_stamp(
++                segments,
++                material_stock,
++                lut,
++                tool_radius,
++                cursor,
++                Adaptive3dSegment::Rapid(first),
++                safe_z,
++                tolerance,
++                min_cutting_radius,
++                &drape,
++            );
++            push_segment_with_stamp(
++                segments,
++                material_stock,
++                lut,
++                tool_radius,
++                cursor,
++                Adaptive3dSegment::Cut(run),
++                safe_z,
++                tolerance,
++                min_cutting_radius,
++                &drape,
++            );
++        }
+         traced += 1;
+     }
+     if !contours.is_empty() {
+@@ -1883,6 +1903,40 @@ pub(super) fn waterline_cleanup(
+ /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
+ /// anchor for region-ordering. Vertex-average, not the area-weighted
+ /// centroid — cheaper and adequate as a travel-ordering proxy.
++/// C4b: which points of a wall-cleanup contour `waterline_cleanup` may cut,
++/// read on the planner stock (`level_contour::keeps_to_region`).
++pub(super) type CleanupKeep<'a> = &'a dyn Fn(&TriDexelStock, P3) -> bool;
++
++/// C4b: the runs of the closed path `path` (first point repeated last)
++/// whose `flags` are set, each of two points or more. All set: the path
++/// itself. A run that reaches the end continues into the run at the start,
++/// because the path is closed.
++fn kept_runs(path: &[P3], flags: &[bool]) -> Vec<Vec<P3>> {
++    if flags.iter().all(|&f| f) {
++        return vec![path.to_vec()];
++    }
++    let mut runs: Vec<Vec<P3>> = Vec::new();
++    let mut cur: Vec<P3> = Vec::new();
++    for (p, &f) in path.iter().zip(flags) {
++        if f {
++            cur.push(*p);
++        } else if !cur.is_empty() {
++            runs.push(std::mem::take(&mut cur));
++        }
++    }
++    // The closing point repeats the first: join the last run to the first.
++    let closes = flags.first().copied().unwrap_or(false) && flags.last().copied().unwrap_or(false);
++    if closes && !runs.is_empty() && !cur.is_empty() {
++        let head = runs.remove(0);
++        cur.extend(head.into_iter().skip(1));
++    }
++    if !cur.is_empty() {
++        runs.push(cur);
++    }
++    runs.retain(|r| r.len() >= 2);
++    runs
++}
++
+ fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
+     let n = poly.exterior.len().max(1) as f64;
+     let (sx, sy) = poly
+diff --git a/crates/rs_cam_core/src/adaptive3d/level_contour.rs b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+index 63dcbe7e1..60d5e3a17 100644
+--- a/crates/rs_cam_core/src/adaptive3d/level_contour.rs
++++ b/crates/rs_cam_core/src/adaptive3d/level_contour.rs
+@@ -32,7 +32,7 @@ use super::{Adaptive3dRuntimeEvent, stock_has_material_above, stock_top_z_at};
+ 
+ /// The margin above a cell's floor under which the cell holds no material:
+ /// the margin of the level anchor (`path::level_anchor_z`).
+-const MATERIAL_MARGIN_MM: f64 = 0.01;
++pub(super) const MATERIAL_MARGIN_MM: f64 = 0.01;
+ 
+ /// The reach band of a rest rough and the line its contour runs on.
+ pub(super) struct BandEdge {
+@@ -631,10 +631,66 @@ pub(super) fn level_contour_pass(
+     stats
+ }
+ 
++/// C4b (the F9 fix): whether a wall-cleanup point `p` at `z_level` of the
++/// region `mask` may be cut now. It may when no planner cell whose centre
++/// is within `reach` of `p` (R + cs/2, the reach of [`BandEdge`] and
++/// [`PriorStockTops`]) holds MATERIAL above `z_level` outside the mask:
++/// stock above both the level and the cell's own floor (surface plus stock
++/// to leave), by `MATERIAL_MARGIN_MM`, the test of
++/// [`planner_top_in_reach`]. The planner stock holds the part too, so a
++/// wall cell below its own floor is the part, not material. Stock of the
++/// region itself is the material the cleanup cuts; another region blocks
++/// only while its material stands above the level, so a cut never reaches
++/// a region that is not roughed yet.
++pub(super) fn keeps_to_region(
++    stock: &TriDexelStock,
++    surface_hm: &SurfaceHeightmap,
++    stock_to_leave: f64,
++    mask: &super::clearing::AreaMask,
++    p: P3,
++    z_level: f64,
++    reach: f64,
++) -> bool {
++    let grid = &stock.z_grid;
++    let cs = grid.cell_size;
++    if cs <= 0.0 {
++        return true;
++    }
++    let to_index = |v: f64| -> usize {
++        #[expect(
++            clippy::cast_possible_truncation,
++            clippy::cast_sign_loss,
++            reason = "floored at 0 and clamped to the grid size below"
++        )]
++        let i = v.max(0.0) as usize;
++        i
++    };
++    let c0 = to_index(((p.x - reach - grid.origin_u) / cs).floor());
++    let c1 = to_index(((p.x + reach - grid.origin_u) / cs).ceil()).min(grid.cols.saturating_sub(1));
++    let r0 = to_index(((p.y - reach - grid.origin_v) / cs).floor());
++    let r1 = to_index(((p.y + reach - grid.origin_v) / cs).ceil()).min(grid.rows.saturating_sub(1));
++    for row in r0..=r1 {
++        for col in c0..=c1 {
++            let (cx, cy) = grid.cell_to_world(row, col);
++            if (cx - p.x).powi(2) + (cy - p.y).powi(2) > reach * reach {
++                continue;
++            }
++            let floor = (surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave).max(z_level);
++            if !mask.owns(row, col)
++                && stock_has_material_above(stock, row, col, floor + MATERIAL_MARGIN_MM)
++            {
++                return false;
++            }
++        }
++    }
++    true
++}
++
+ #[cfg(test)]
+ #[expect(
+     clippy::indexing_slicing,
+-    reason = "test code: the indices are inside the ring the test builds"
++    clippy::expect_used,
++    reason = "test code: the indices are inside the ring the test builds, and an expect is how a test reports a failure"
+ )]
+ mod tests {
+     use super::merge_short_gaps;
+@@ -674,4 +730,50 @@ mod tests {
+         let unmerged = merge_short_gaps(&points, &standing, 1000.0, 300.0, 20.0, None);
+         assert_eq!(unmerged, standing, "no kinematics: no gap is fed");
+     }
++
++    /// C4b sentry 3: the mask rule. A 20 × 20 mm stock (top 10, 1 mm
++    /// cells) on a flat surface at 0; the mask owns the left half.
++    #[test]
++    fn the_wall_mask_keeps_off_unroughed_regions_c4b() {
++        use crate::dexel_stock::TriDexelStock;
++        use crate::surface::slope::SurfaceHeightmap;
++        let mut stock = TriDexelStock::from_stock(0.0, 0.0, 20.0, 20.0, -10.0, 10.0, 1.0);
++        let (rows, cols) = (stock.z_grid.rows, stock.z_grid.cols);
++        let surface = SurfaceHeightmap::from_parts(
++            vec![0.0; rows * cols],
++            vec![true; rows * cols],
++            rows,
++            cols,
++            stock.z_grid.origin_u,
++            stock.z_grid.origin_v,
++            1.0,
++        );
++        let half_x = 10.0;
++        let owned: Vec<bool> = (0..rows * cols)
++            .map(|i| stock.z_grid.cell_to_world(i / cols, i % cols).0 < half_x)
++            .collect();
++        let mask = super::super::clearing::AreaMask::from_owned(0, owned, cols)
++            .expect("the mask owns cells");
++        let (z, reach) = (5.0, 3.5);
++        let near_edge = P3::new(half_x - 1.0, 10.0, z);
++        let inside = P3::new(3.0, 10.0, z);
++        // The other half stands at 10, above the level: rejected.
++        assert!(!super::keeps_to_region(
++            &stock, &surface, 0.0, &mask, near_edge, z, reach
++        ));
++        // The own half stands at 10 too: that is the cleanup's material.
++        assert!(super::keeps_to_region(
++            &stock, &surface, 0.0, &mask, inside, z, reach
++        ));
++        // The other half cut to the level: accepted.
++        for i in 0..rows * cols {
++            let (row, col) = (i / cols, i % cols);
++            if stock.z_grid.cell_to_world(row, col).0 >= half_x {
++                crate::stock::dexel::ray_subtract_above(stock.z_grid.ray_mut(row, col), 5.0);
++            }
++        }
++        assert!(super::keeps_to_region(
++            &stock, &surface, 0.0, &mask, near_edge, z, reach
++        ));
++    }
+ }
+diff --git a/crates/rs_cam_core/src/adaptive3d/path.rs b/crates/rs_cam_core/src/adaptive3d/path.rs
+index cecf40167..0051bf730 100644
+--- a/crates/rs_cam_core/src/adaptive3d/path.rs
++++ b/crates/rs_cam_core/src/adaptive3d/path.rs
+@@ -1370,6 +1370,50 @@ pub(super) fn adaptive_3d_segments(
+                         &mut cursor,
+                         cancel,
+                     )?;
++                    // C4b (`level_contour`, the F9 fix): the walls of this
++                    // region at this level, masked to the points whose tool
++                    // meets no stock of another region above the level
++                    // (`level_contour::keeps_to_region`). Off: the walls
++                    // are cut once, at the bottom, below.
++                    if params.linking.level_contour.is_some() {
++                        let reach = tool_radius + cell_size * 0.5;
++                        let keep = |stock: &TriDexelStock, p: P3| {
++                            super::level_contour::keeps_to_region(
++                                stock,
++                                &surface_hm,
++                                params.depth.stock_to_leave,
++                                mask,
++                                p,
++                                z_level,
++                                reach,
++                            )
++                        };
++                        segments.push(Adaptive3dSegment::Marker(
++                            Adaptive3dRuntimeEvent::WaterlineCleanup,
++                        ));
++                        waterline_cleanup(
++                            mesh,
++                            index,
++                            cutter,
++                            &lut,
++                            &slope_map,
++                            &mut material_stock,
++                            z_level,
++                            tool_radius,
++                            entry_floor_radius(params, tool_radius),
++                            cell_size,
++                            params.safe_z,
++                            params.emission_chord_tolerance(),
++                            params.geometry.min_cutting_radius,
++                            params.depth.stock_to_leave,
++                            &ctx,
++                            Some(&keep),
++                            &mut segments,
++                            &mut cursor,
++                            debug_ctx,
++                            cancel,
++                        )?;
++                    }
+                 }
+             }
+ 
+@@ -1377,10 +1421,11 @@ pub(super) fn adaptive_3d_segments(
+ 
+             // Waterline cleanup once at bottom Z, after every region.
+             //
+-            // F9 (known limit, 2026-09-24): the cleanup does not run per
+-            // region. `waterline_cleanup` traces every mesh contour at the Z
+-            // and has no cell mask. A per-region run would cut the contours
+-            // of regions that are not roughed yet, through their full stock.
++            // F9 (2026-09-24): an UNMASKED per-region run would cut the
++            // contours of regions that are not roughed yet, through their
++            // full stock. With "Contour each level" (C4b) the region-level
++            // runs above are masked; this bottom run, after every region,
++            // takes the points they left.
+             if let Some(&bottom) = z_levels.last() {
+                 segments.push(Adaptive3dSegment::Marker(
+                     Adaptive3dRuntimeEvent::WaterlineCleanup,
+@@ -1401,6 +1446,7 @@ pub(super) fn adaptive_3d_segments(
+                     params.geometry.min_cutting_radius,
+                     params.depth.stock_to_leave,
+                     &ctx,
++                    None,
+                     &mut segments,
+                     &mut cursor,
+                     debug_ctx,
+@@ -1450,6 +1496,7 @@ pub(super) fn adaptive_3d_segments(
+                     params.geometry.min_cutting_radius,
+                     params.depth.stock_to_leave,
+                     &ctx,
++                    None,
+                     &mut segments,
+                     &mut cursor,
+                     debug_ctx,
+diff --git a/crates/rs_cam_core/tests/by_area_walls_cut_each_region_level_c4b.rs b/crates/rs_cam_core/tests/by_area_walls_cut_each_region_level_c4b.rs
+new file mode 100644
+index 000000000..3a0f2991e
+--- /dev/null
++++ b/crates/rs_cam_core/tests/by_area_walls_cut_each_region_level_c4b.rs
+@@ -0,0 +1,191 @@
++//! C4b (the F9 fix; operator ruling D69, 2026-10-28): with "Contour each
++//! level" on, a By Area 3D Rough cuts the walls of each region at each of
++//! its levels, masked so that no cut meets another region's material above
++//! the level.
++//!
++//! The fixture is one block (top 10) with two pockets, one with a hole and a ridge at the
++//! stock top between them, so the planner detects two regions. Pocket A
++//! (x > 0) goes down to 1. Pocket B (x < 0) has a shallow floor at 7 with a
++//! deep hole in it down to 1. By Area roughs pocket A to the bottom before
++//! pocket B. The wall cleanup traces every mesh contour at a Z: the hole's
++//! wall contour first exists at Z 4, where pocket B still stands at the top
++//! (10). An UNMASKED region-level run (F9) at pocket A's level 4 would cut
++//! that wall through 6 mm of stock, two Depth/Pass.
++//!
++//! 1. Option off: the walls are cut once, at the bottom (one cleanup span).
++//! 2. Option on: one cleanup per region-level plus the bottom run, and the
++//!    op cuts more moves (non-vacuity); the simulated axial engagement of
++//!    the op stays within one Depth/Pass plus one simulation cell (the mask
++//!    keeps every cut off pocket B's unroughed stock). The planted red (the
++//!    mask accepts every point) cuts the hole's wall through full stock.
++//! 3. Two option-on runs in one process give the same moves.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::print_stderr,
++    reason = "test code: an expect is how a test reports a failure; the test prints its measurements for the reader"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over, toolpath_config};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::operation_configs::{Adaptive3dConfig, ClearingStrategy, RegionOrdering};
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::session::{
++    ProjectSession, ProjectSessionBuilder, SimulationOptions, SimulationResolution,
++};
++use std::sync::atomic::AtomicBool;
++
++const TOP_Z: f64 = 10.0;
++/// Pocket A's floor and the hole's floor.
++const DEEP_Z: f64 = 1.0;
++/// Pocket B's shallow floor.
++const SHALLOW_Z: f64 = 7.0;
++const MESH_HALF: f64 = 30.0;
++const MESH_STEP: f64 = 0.5;
++/// Each pocket: 20 × 30 mm, centred 13 mm either side of the ridge.
++const POCKET_HALF_X: f64 = 10.0;
++const POCKET_HALF_Y: f64 = 15.0;
++const POCKET_CENTRE_X: f64 = 13.0;
++/// The hole in pocket B: 8 × 12 mm at its centre.
++const HOLE_HALF_X: f64 = 4.0;
++const HOLE_HALF_Y: f64 = 6.0;
++const TOOL_DIAMETER: f64 = 6.0;
++const DEPTH_PER_PASS: f64 = 3.0;
++const SIM_CELL: f64 = 0.5;
++
++fn session(contour: bool) -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        let in_pocket =
++            (x.abs() - POCKET_CENTRE_X).abs() <= POCKET_HALF_X && y.abs() <= POCKET_HALF_Y;
++        let in_hole = (x + POCKET_CENTRE_X).abs() <= HOLE_HALF_X && y.abs() <= HOLE_HALF_Y;
++        if !in_pocket {
++            TOP_Z
++        } else if x > 0.0 || in_hole {
++            DEEP_Z
++        } else {
++            SHALLOW_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_DIAMETER));
++    let tool = ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(mesh_model(mesh, "two pockets, one with a hole"));
++    let mut op = toolpath_config(
++        "rough",
++        OperationConfig::Adaptive3d(Adaptive3dConfig {
++            stepover: 2.0,
++            depth_per_pass: DEPTH_PER_PASS,
++            clearing_strategy: ClearingStrategy::ContourParallel,
++            region_ordering: RegionOrdering::ByArea,
++            contour_each_level: contour,
++            ..Adaptive3dConfig::default()
++        }),
++        tool,
++        model_id,
++    );
++    op.debug_options.enabled = true;
++    builder.add_toolpath(0, op).expect("add the rough");
++    builder.build()
++}
++
++struct Run {
++    regions: f64,
++    cleanups: usize,
++    moves: String,
++    move_count: usize,
++    max_axial: f64,
++}
++
++fn run(contour: bool) -> Run {
++    let mut s = session(contour);
++    let cancel = AtomicBool::new(false);
++    s.generate_toolpath(0, &cancel).expect("generate the rough");
++    let result = s.result_at(0).expect("the result");
++    let spans = &result.debug_trace.as_ref().expect("the debug trace").spans;
++    let regions = spans
++        .iter()
++        .find(|span| span.kind == "region_detect")
++        .and_then(|span| span.counters.get("regions").copied())
++        .expect("the region span states the count");
++    let cleanups = spans
++        .iter()
++        .filter(|span| span.kind == "waterline_cleanup")
++        .count();
++    let moves = format!("{:?}", result.toolpath().moves);
++    let move_count = result.toolpath().moves.len();
++    s.run_simulation(
++        &SimulationOptions {
++            resolution: SimulationResolution::Fixed(SIM_CELL),
++            ..SimulationOptions::default()
++        },
++        &cancel,
++    )
++    .expect("simulate");
++    let id = s.toolpath_configs()[0].id;
++    let max_axial = s
++        .simulation_result()
++        .and_then(|r| r.cut_trace.as_deref())
++        .expect("the cut trace")
++        .samples
++        .iter()
++        .filter(|x| x.toolpath_id == id && x.removed_volume_est_mm3 > 0.0)
++        .map(|x| x.axial_engagement_mm)
++        .fold(0.0, f64::max);
++    eprintln!(
++        "contour each level {contour}: {regions} regions, {cleanups} wall cleanups, \
++         {move_count} moves, max axial {max_axial:.3} (DPP {DEPTH_PER_PASS})"
++    );
++    Run {
++        regions,
++        cleanups,
++        moves,
++        move_count,
++        max_axial,
++    }
++}
++
++#[test]
++fn by_area_walls_cut_each_region_level_c4b() {
++    let off = run(false);
++    assert!(
++        (off.regions - 2.0).abs() < 1e-9,
++        "the fixture must hold two regions, or it tests nothing: {}",
++        off.regions
++    );
++    assert_eq!(
++        off.cleanups, 1,
++        "option off: the walls are cut once, at the bottom"
++    );
++
++    let on = run(true);
++    assert!(
++        on.cleanups > off.cleanups,
++        "option on: no region-level wall cleanup ran ({} cleanups)",
++        on.cleanups
++    );
++    assert!(
++        on.move_count > off.move_count,
++        "option on: the region-level cleanups cut nothing ({} moves against {})",
++        on.move_count,
++        off.move_count
++    );
++    assert!(
++        on.max_axial <= DEPTH_PER_PASS + SIM_CELL + 1e-6,
++        "option on: a wall cut reaches {:.3} mm axially, over one Depth/Pass plus one sim \
++         cell: a region-level cleanup cut stock that is not roughed yet (F9)",
++        on.max_axial
++    );
++}
++
++#[test]
++fn by_area_contour_each_level_is_deterministic_c4b() {
++    assert_eq!(run(true).moves, run(true).moves, "two runs differ");
++}
