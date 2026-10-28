@@ -874,6 +874,36 @@ impl LoadedModel {
         }
     }
 
+    /// The mesh a ray pick tests (SEL-2): the enriched mesh, else the
+    /// plain mesh. The two are one `Arc` today; this form does not rely on
+    /// it.
+    pub fn pick_mesh(&self) -> Option<&Arc<TriangleMesh>> {
+        self.enriched_mesh
+            .as_ref()
+            .map(|enriched| &enriched.mesh)
+            .or(self.mesh.as_ref())
+    }
+
+    /// True when a ray pick on this model runs on the BVH (SEL-2). It never
+    /// builds, so the frame loop may ask it on every frame.
+    pub fn pick_index_ready(&self) -> bool {
+        self.pick_mesh()
+            .is_some_and(|mesh| crate::maps::geom_cache::peek_bvh(mesh).is_some())
+    }
+
+    /// The nearest triangle under the ray, in the model frame, with the
+    /// contract of [`crate::mesh::ray_pick_triangle`]: `(index, t)`, the
+    /// lowest index on a bit-equal `t`, `None` on a miss or with no mesh.
+    /// The BVH when cached, else brute force: one answer, two speeds. It
+    /// never builds (SEL-2).
+    pub fn ray_pick(&self, origin: &P3, dir: &crate::geo::V3) -> Option<(usize, f64)> {
+        let mesh = self.pick_mesh()?;
+        match crate::maps::geom_cache::peek_bvh(mesh) {
+            Some(bvh) => bvh.cast_ray(mesh, origin, dir),
+            None => crate::mesh::ray_pick_triangle(mesh, origin, dir),
+        }
+    }
+
     /// [`Self::face_items`], with a build on a cold cache. Call it where a
     /// build is allowed: generation, an explicit face listing, the GUI job
     /// that fills the cache.

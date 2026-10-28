@@ -183,8 +183,10 @@ impl<K: PartialEq, V, const CAPACITY: usize> MeshMemo<K, V, CAPACITY> {
     }
 
     /// Sweep entries whose mesh is gone, so a closed model's value is released
-    /// at the next insert rather than held for the life of the process.
-    fn sweep(&mut self) {
+    /// at the next insert rather than held for the life of the process. The
+    /// pick table of `geom_cache` also calls it on a peek miss, because that
+    /// table has no count cap.
+    pub(crate) fn sweep(&mut self) {
         self.entries.retain(|entry| entry.mesh.strong_count() > 0);
     }
 

@@ -22,3 +22,4 @@
 
 - `cargo test -p rs_cam_core -q --test bvh_pick_equals_brute_force_sel2 --test a_ray_on_a_shared_edge_takes_the_lower_index_sel2`
 - `cargo test -p rs_cam_core -q --lib mesh::bvh`
+- The cache and the session door (`maps::geom_cache` pick table, `LoadedModel::ray_pick`): `a_reimport_drops_the_pick_index_sel2` (`--features test-support`).

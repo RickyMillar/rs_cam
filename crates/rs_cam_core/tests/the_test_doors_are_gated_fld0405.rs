@@ -35,6 +35,9 @@
 //!   unit-test callers in this crate, so their gate is
 //!   `#[cfg(any(test, feature = "test-support"))]`. Arm 1 accepts both forms.
 //!
+//! SEL-2 C2 (2026-10-29) added three more: the pick-table doors
+//! `maps::geom_cache::{bvh_stats, bvh_cache_len, clear_bvh}`.
+//!
 //! No product path reads any of them. Each one is bound by an integration-test
 //! crate, so `#[cfg(test)]` cannot hide them: FLD-04 + FLD-05 puts them behind
 //! the `test-support` cargo feature and gives the eight binding harnesses a
@@ -54,7 +57,7 @@
 //!
 //! # The two arms
 //!
-//! 1. Every one of the forty-one declarations carries one of [`GATES`] in
+//! 1. Every one of the forty-four declarations carries one of [`GATES`] in
 //!    the attribute run directly above it. A declaration that loses the attribute puts the door back into the
 //!    default public API of the crate.
 //! 2. No `.rs` file under `crates/rs_cam_core/src`, outside the files that
@@ -303,6 +306,19 @@ const DOORS: &[Door] = &[
         file: "mesh.rs",
         declaration: "pub fn make_test_flat(size: f64) -> TriangleMesh {",
     },
+    // ── SEL-2 C2: the pick table of `geom_cache` ──
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn bvh_stats() -> (u64, u64) {",
+    },
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn bvh_cache_len() -> usize {",
+    },
+    Door {
+        file: "maps/geom_cache.rs",
+        declaration: "pub fn clear_bvh() {",
+    },
 ];
 
 /// The identifiers arm 2 looks for.
@@ -334,6 +350,10 @@ const NEEDLES: &[&str] = &[
     "d8_accumulation",
     "drop_call_count",
     "planned_tier_boundary_polys",
+    // SEL-2 C2.
+    "bvh_stats",
+    "bvh_cache_len",
+    "clear_bvh",
 ];
 
 /// The files that declare the doors. Arm 2 skips them and measures its own
@@ -375,8 +395,9 @@ const MIN_FILES_WALKED: usize = 250;
 /// cache-stats types are named again by the `stats()` return type, and
 /// `reset_stats` and `cache_len` are each declared four times, once per cache.
 /// F085 adds fourteen needles, and each one is named at least once by its own
-/// declaration: 20 + 14.
-const MIN_OWNER_HITS: usize = 34;
+/// declaration: 20 + 14. SEL-2 C2 adds three needles, each named by its
+/// declaration: 34 + 3.
+const MIN_OWNER_HITS: usize = 37;
 
 /// This crate's `src` directory.
 fn src_root() -> PathBuf {

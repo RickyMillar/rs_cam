@@ -12,7 +12,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 - `reach_map.rs` — the per-tool reach map. `rest_heatmap_mesh.rs` — a map to
   a mesh. `tool_shape_key.rs` — the bit-exact cutter shape identity.
 - `memo.rs`, `geom_cache.rs`, `tier_map_cache.rs`, `reach_map_cache.rs`,
-  `finish_surface_cache.rs` — the bounded, mesh-identity memos. P4.7: `cached_flat_regions` builds an STL's faces; `peek_flat_regions` never builds (frame loop).
+  `finish_surface_cache.rs` — the bounded, mesh-identity memos. P4.7: `cached_flat_regions` builds an STL's faces; `peek_flat_regions` never builds (frame loop). SEL-2: the pick table (own `MeshMemo`, no count cap, the dead-mesh sweep bounds it): `cached_bvh` builds, `peek_bvh` never builds and sweeps on a miss.
 
 ## Invariants
 
@@ -20,8 +20,8 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
   the discretisation floor is unresolved arithmetic, not proven geometry.
 - `stock_to_leave` is an intentional offset. It is never a reach tolerance.
 - A cache key holds the mesh identity and the tool shape key (GUI: `ReachRequestKey`).
-- `reach_map_for_mesh`, `stats`, `reset_stats`, `cache_len` and `clear` are
-  `test-support` doors, not product API.
+- `reach_map_for_mesh`, `stats`, `reset_stats`, `cache_len`, `clear`, `bvh_stats`,
+  `bvh_cache_len` and `clear_bvh` are `test-support` doors, not product API.
 - A map states its grid once, as `map.grid` (`ReachMap.grid` is flattened).
 - The flute-reach pass calls `stock::collision::body_segment_penetration_mm`.
   It reports; it never moves a cell out of a tier.
@@ -29,7 +29,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 ## Sentries
 
 - With `--features test-support`: `reach_map_p5`, `reach_map_residual_p5_1`,
-  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`.
+  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`, `a_reimport_drops_the_pick_index_sel2`.
 - Without it: `tier_islands_i1`, `tier_islands_speck_weld`,
   `tier_map_flute_reach`, `the_test_doors_are_gated_fld0405`.
 
