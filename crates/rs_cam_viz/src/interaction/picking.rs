@@ -301,6 +301,58 @@ fn pick_model_face(
     best
 }
 
+/// The nearest model surface point under the pointer of `ctx`, in the
+/// display frame (A C3a: the orbit pivot and the pan grab point).
+///
+/// It tests every model the viewport draws (`PickContext::visibility`):
+/// the enriched mesh of a STEP model, else the mesh. The ray moves into the
+/// model frame through the inverse of the display transform, as
+/// [`pick_model_face`] does; the transform is rigid, so the ray parameter
+/// gives the point in the display frame. Brute force over the triangles:
+/// it runs once per drag start, never per frame. `pick` does not call it.
+pub fn surface_hit(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    display_frame: Option<&SetupFrame>,
+) -> Option<P3> {
+    let (ray_origin, ray_dir) =
+        ctx.camera
+            .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
+    let origin = P3::new(
+        f64::from(ray_origin.x),
+        f64::from(ray_origin.y),
+        f64::from(ray_origin.z),
+    );
+    let dir = V3::new(
+        f64::from(ray_dir.x),
+        f64::from(ray_dir.y),
+        f64::from(ray_dir.z),
+    );
+    let stock = session.stock_config();
+    let (model_origin, model_dir) = match display_frame {
+        Some(frame) => {
+            let a = frame.inverse_transform_point(origin, stock);
+            let b = frame.inverse_transform_point(origin + dir, stock);
+            (a, b - a)
+        }
+        None => (origin, dir),
+    };
+    let best_t = session
+        .models()
+        .iter()
+        .filter(|m| ctx.shows(m.id))
+        .filter_map(|model| {
+            let mesh = match (&model.enriched_mesh, &model.mesh) {
+                (Some(enriched), _) => enriched.as_mesh(),
+                (None, Some(mesh)) => mesh.as_ref(),
+                (None, None) => return None,
+            };
+            ray_pick_triangle(mesh, &model_origin, &model_dir).map(|(_, t)| t)
+        })
+        .min_by(f64::total_cmp)?;
+    Some(origin + dir * best_t)
+}
+
 /// The pick of a viewport click or of the pointer while a pick mode is on
 /// (geometry selection P4.5). It wins over every other pick: the toolpath,
 /// the stock, the pins.

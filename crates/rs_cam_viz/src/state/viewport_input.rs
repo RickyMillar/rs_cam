@@ -9,12 +9,13 @@
 pub enum DragState {
     #[default]
     Idle,
-    /// The camera turns. `pivot` is the point under the pointer at the drag
-    /// start, or `None` (the target). C3a fills it; B2 always writes `None`.
-    Orbit {
-        pivot: Option<[f32; 3]>,
-    },
-    Pan,
+    /// The camera turns about `pivot`: the world point under the press
+    /// origin at the drag start (A C3a), or `None` (the target).
+    Orbit { pivot: Option<[f32; 3]> },
+    /// The camera pans. `grab_depth` is the camera depth of the world point
+    /// under the press origin at the drag start, or `None` (the target
+    /// depth). That point stays under the cursor.
+    Pan { grab_depth: Option<f32> },
     /// A rectangle in screen points. `anchor` is the press origin.
     BoxSelect {
         anchor: egui::Pos2,

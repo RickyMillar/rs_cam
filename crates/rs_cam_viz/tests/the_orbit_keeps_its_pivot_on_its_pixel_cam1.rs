@@ -94,3 +94,74 @@ fn an_orbit_about_the_target_is_the_old_step_cam1() {
         }
     }
 }
+
+/// A C3a: the same claim through the input state machine. The drag start
+/// records the anchor as the pivot; 20 `step` + `apply_camera` rounds turn
+/// the camera about it.
+#[test]
+fn a_drag_orbits_about_the_point_under_the_press_cam1() {
+    use rs_cam_viz::interaction::input::{
+        DragAnchor, InputEnv, InputSample, MouseScheme, apply_camera, step,
+    };
+    use rs_cam_viz::state::camera::CameraState;
+    use rs_cam_viz::state::viewport_input::DragState;
+
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(VW, VH));
+    for projection in [ProjectionMode::Perspective, ProjectionMode::Orthographic] {
+        let base = camera(projection);
+        let mut state = CameraState::default();
+        state.set_pose(base.pose());
+        state.set_projection(projection);
+        let pivot = Point3::new(30.0_f32, -10.0, 6.0);
+        let basis = state.pose().basis();
+        let env = InputEnv {
+            scheme: MouseScheme::LeftOrbit,
+            pick_mode_on: false,
+            press_on_tab: false,
+            drag_anchor: Some(DragAnchor {
+                point: [pivot.x, pivot.y, pivot.z],
+                depth: (pivot - basis.eye).dot(&basis.forward),
+            }),
+        };
+        let start = pixel(state.pose(), pivot);
+        let mut drag = DragState::Idle;
+        for round in 0..20 {
+            let (dx, dy) = if round < 10 {
+                (14.0, 40.0)
+            } else {
+                (-9.0, -25.0)
+            };
+            let sample = InputSample {
+                started: (round == 0).then_some(egui::PointerButton::Primary),
+                dragging: Some(egui::PointerButton::Primary),
+                stopped: false,
+                delta: egui::vec2(dx, dy),
+                press_origin: Some(egui::pos2(start[0], start[1])),
+                pointer: Some(egui::pos2(start[0], start[1])),
+                hover_pos: None,
+                modifiers: egui::Modifiers::NONE,
+                clicked: false,
+                secondary_clicked: false,
+                hovered: false,
+                zoom_delta: 1.0,
+                scroll: egui::Vec2::ZERO,
+            };
+            let actions = step(&mut drag, &sample, &env);
+            apply_camera(&actions, &mut state, rect);
+            let now = pixel(state.pose(), pivot);
+            let moved = (now[0] - start[0]).hypot(now[1] - start[1]);
+            assert!(
+                moved < TOL_PX,
+                "{projection:?} round {round}: the pivot moved {moved} px"
+            );
+            assert!(
+                (state.pose().distance - base.distance).abs() < 1e-3,
+                "{projection:?} round {round}: the distance changed"
+            );
+        }
+        assert!(
+            matches!(drag, DragState::Orbit { pivot: Some(_) }),
+            "{projection:?}: the drag did not hold its pivot: {drag:?}"
+        );
+    }
+}

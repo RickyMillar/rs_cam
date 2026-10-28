@@ -270,14 +270,43 @@ impl RsCamApp {
                 .active_tab_edit()
                 .zip(sample.press_origin)
                 .is_some_and(|(id, origin)| self.tab_under(id, origin).is_some());
+        // A C3a: the point under the press origin, only on a drag start.
+        let drag_anchor = sample
+            .started
+            .and(sample.press_origin)
+            .and_then(|origin| self.drag_anchor(origin));
         let env = InputEnv {
             // B3: the setting.
             scheme: MouseScheme::LeftOrbit,
             pick_mode_on: self.active_pick().is_some(),
             press_on_tab,
+            drag_anchor,
         };
         let drag = &mut self.controller.state_mut().gui.selection_ui.drag;
         step(drag, &sample, &env)
+    }
+
+    /// The world point under the screen point `pos` and its camera depth
+    /// (A C3a): the nearest model surface hit, else the point at the target
+    /// depth. `None` when the ray finds neither; the camera then uses the
+    /// target. One brute-force model pick per drag start (design A Q8).
+    fn drag_anchor(&self, pos: egui::Pos2) -> Option<crate::interaction::input::DragAnchor> {
+        let state = self.controller.state();
+        let camera = state.camera.pose();
+        let ctx = self.pick_context(pos);
+        let display = crate::state::pin_view::active_display_setup(state.session(), state.focus());
+        let point = crate::interaction::picking::surface_hit(
+            &ctx,
+            state.session(),
+            display.as_ref().map(|(frame, _)| frame),
+        )
+        .map(|p| nalgebra::Point3::new(p.x as f32, p.y as f32, p.z as f32))
+        .or_else(|| camera.point_at_target_depth(ctx.screen_x, ctx.screen_y, ctx.vw, ctx.vh))?;
+        let basis = camera.basis();
+        Some(crate::interaction::input::DragAnchor {
+            point: [point.x, point.y, point.z],
+            depth: (point - basis.eye).dot(&basis.forward),
+        })
     }
 
     /// The tab mark under the screen point `pos`, in the tab editor of

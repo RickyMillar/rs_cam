@@ -99,10 +99,20 @@ impl InputSample {
 /// What the frame does after the transition.
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputAction {
-    /// Turn the camera by a drag of `(dx, dy)` points.
-    Orbit { dx: f32, dy: f32 },
-    /// Pan the camera by a drag of `(dx, dy)` points.
-    Pan { dx: f32, dy: f32 },
+    /// Turn the camera by a drag of `(dx, dy)` points about `pivot`, or
+    /// about the target when `pivot` is `None`.
+    Orbit {
+        dx: f32,
+        dy: f32,
+        pivot: Option<[f32; 3]>,
+    },
+    /// Pan the camera by a drag of `(dx, dy)` points. A point at the camera
+    /// depth `grab_depth` (default: the target depth) stays under the cursor.
+    Pan {
+        dx: f32,
+        dy: f32,
+        grab_depth: Option<f32>,
+    },
     /// Zoom by the distance ratio `factor` toward the point under `at`
     /// (screen points), or toward the target when `at` is `None`.
     Zoom { factor: f32, at: Option<egui::Pos2> },
@@ -120,28 +130,32 @@ pub enum InputAction {
     TabDrag,
 }
 
+/// The world point under the press origin at a drag start (A C3a), and its
+/// camera depth `(point - eye) · forward`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DragAnchor {
+    pub point: [f32; 3],
+    pub depth: f32,
+}
+
 /// The facts the transition needs and cannot read from the sample.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InputEnv {
     pub scheme: MouseScheme,
     pub pick_mode_on: bool,
     /// The tab editor is on and the press origin is on a tab mark.
     pub press_on_tab: bool,
+    /// The point under the press origin. The frame computes it only on the
+    /// frame a drag starts; `None` on every other frame, and when the
+    /// pointer ray finds no point (the camera then uses the target).
+    pub drag_anchor: Option<DragAnchor>,
 }
 
 /// THE transition. The order in one frame is: drag start, drag, release,
 /// click, wheel.
 pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<InputAction> {
     let mut actions = Vec::new();
-    let delta = |actions: &mut Vec<InputAction>, orbit: bool| {
-        let (dx, dy) = (s.delta.x, s.delta.y);
-        actions.push(if orbit {
-            InputAction::Orbit { dx, dy }
-        } else {
-            InputAction::Pan { dx, dy }
-        });
-    };
-
+    let (dx, dy) = (s.delta.x, s.delta.y);
     if let Some(button) = s.started {
         // A start begins a new gesture. A gesture whose release the frame
         // did not see does not hold the new one back.
@@ -152,12 +166,14 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
         } else {
             match classify(env.scheme, button, s.modifiers) {
                 Intent::Orbit => {
-                    *state = DragState::Orbit { pivot: None };
-                    delta(&mut actions, true);
+                    let pivot = env.drag_anchor.map(|a| a.point);
+                    *state = DragState::Orbit { pivot };
+                    actions.push(InputAction::Orbit { dx, dy, pivot });
                 }
                 Intent::Pan => {
-                    *state = DragState::Pan;
-                    delta(&mut actions, false);
+                    let grab_depth = env.drag_anchor.map(|a| a.depth);
+                    *state = DragState::Pan { grab_depth };
+                    actions.push(InputAction::Pan { dx, dy, grab_depth });
                 }
                 Intent::Select if env.pick_mode_on => {
                     if let Some(anchor) = s.press_origin {
@@ -178,8 +194,16 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
         }
     } else if s.dragging.is_some() {
         match state {
-            DragState::Orbit { .. } => delta(&mut actions, true),
-            DragState::Pan => delta(&mut actions, false),
+            DragState::Orbit { pivot } => actions.push(InputAction::Orbit {
+                dx,
+                dy,
+                pivot: *pivot,
+            }),
+            DragState::Pan { grab_depth } => actions.push(InputAction::Pan {
+                dx,
+                dy,
+                grab_depth: *grab_depth,
+            }),
             DragState::BoxSelect { to, .. } => {
                 if let Some(p) = s.pointer {
                     *to = p;
@@ -201,7 +225,10 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
                 op,
             }),
             DragState::Tab => actions.push(InputAction::TabDrag),
-            DragState::Idle | DragState::Orbit { .. } | DragState::Pan | DragState::Cancelled => {}
+            DragState::Idle
+            | DragState::Orbit { .. }
+            | DragState::Pan { .. }
+            | DragState::Cancelled => {}
         }
     }
 
@@ -247,16 +274,18 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
 pub fn apply_camera(actions: &[InputAction], camera: &mut CameraState, rect: egui::Rect) {
     for action in actions {
         match *action {
-            InputAction::Orbit { dx, dy } => {
-                // C1: the pivot is the target. The pivot under the cursor
-                // is C3a.
-                let pivot = camera.pose().target;
+            InputAction::Orbit { dx, dy, pivot } => {
+                // A C3a: the pivot is the point under the press origin;
+                // without one, the target.
+                let pivot = pivot.map_or(camera.pose().target, |[x, y, z]| {
+                    nalgebra::Point3::new(x, y, z)
+                });
                 camera.orbit_about(pivot, dx, dy);
             }
-            InputAction::Pan { dx, dy } => {
-                // The pan step follows the viewport height, so a point at
-                // the target depth stays under the cursor.
-                camera.pan_pixels(dx, dy, rect.height(), None);
+            InputAction::Pan { dx, dy, grab_depth } => {
+                // The pan step follows the viewport height and the grab
+                // depth, so the grabbed point stays under the cursor.
+                camera.pan_pixels(dx, dy, rect.height(), grab_depth);
             }
             InputAction::Zoom { factor, at } => {
                 // Toward the point under the cursor at the target depth;
@@ -499,6 +528,7 @@ mod tests {
         scheme: MouseScheme::LeftOrbit,
         pick_mode_on: false,
         press_on_tab: false,
+        drag_anchor: None,
     };
 
     fn sample() -> InputSample {
@@ -547,7 +577,14 @@ mod tests {
         let mut state = DragState::Idle;
         let actions = step(&mut state, &drag(PointerButton::Primary, true), &ENV);
         assert_eq!(state, DragState::Orbit { pivot: None });
-        assert_eq!(actions, vec![InputAction::Orbit { dx: 3.0, dy: -2.0 }]);
+        assert_eq!(
+            actions,
+            vec![InputAction::Orbit {
+                dx: 3.0,
+                dy: -2.0,
+                pivot: None
+            }]
+        );
     }
 
     #[test]
@@ -555,8 +592,15 @@ mod tests {
         for button in [PointerButton::Secondary, PointerButton::Middle] {
             let mut state = DragState::Idle;
             let actions = step(&mut state, &drag(button, true), &ENV);
-            assert_eq!(state, DragState::Pan);
-            assert_eq!(actions, vec![InputAction::Pan { dx: 3.0, dy: -2.0 }]);
+            assert_eq!(state, DragState::Pan { grab_depth: None });
+            assert_eq!(
+                actions,
+                vec![InputAction::Pan {
+                    dx: 3.0,
+                    dy: -2.0,
+                    grab_depth: None
+                }]
+            );
         }
     }
 
@@ -567,6 +611,7 @@ mod tests {
             scheme: MouseScheme::WebCad,
             pick_mode_on: true,
             press_on_tab: false,
+            drag_anchor: None,
         };
         let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
         assert_eq!(
@@ -686,13 +731,35 @@ mod tests {
 
     #[test]
     fn step_an_orbit_or_a_pan_drag_sends_the_delta() {
-        let mut state = DragState::Orbit { pivot: None };
+        let pivot = Some([1.0, 2.0, 3.0]);
+        let mut state = DragState::Orbit { pivot };
         let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
-        assert_eq!(actions, vec![InputAction::Orbit { dx: 3.0, dy: -2.0 }]);
-        let mut state = DragState::Pan;
+        assert_eq!(
+            actions,
+            vec![InputAction::Orbit {
+                dx: 3.0,
+                dy: -2.0,
+                pivot
+            }]
+        );
+        let mut state = DragState::Pan {
+            grab_depth: Some(80.0),
+        };
         let actions = step(&mut state, &drag(PointerButton::Secondary, false), &ENV);
-        assert_eq!(actions, vec![InputAction::Pan { dx: 3.0, dy: -2.0 }]);
-        assert_eq!(state, DragState::Pan);
+        assert_eq!(
+            actions,
+            vec![InputAction::Pan {
+                dx: 3.0,
+                dy: -2.0,
+                grab_depth: Some(80.0)
+            }]
+        );
+        assert_eq!(
+            state,
+            DragState::Pan {
+                grab_depth: Some(80.0)
+            }
+        );
     }
 
     #[test]
@@ -779,10 +846,81 @@ mod tests {
 
     #[test]
     fn step_a_lost_release_goes_back_to_idle() {
-        let mut state = DragState::Pan;
+        let mut state = DragState::Pan { grab_depth: None };
         let actions = step(&mut state, &sample(), &ENV);
         assert!(actions.is_empty(), "{actions:?}");
         assert_eq!(state, DragState::Idle);
+    }
+
+    #[test]
+    fn step_an_orbit_start_records_the_anchor_as_its_pivot() {
+        let anchor = DragAnchor {
+            point: [4.0, -5.0, 6.0],
+            depth: 120.0,
+        };
+        let env = InputEnv {
+            drag_anchor: Some(anchor),
+            ..ENV
+        };
+        let mut state = DragState::Idle;
+        let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
+        let pivot = Some(anchor.point);
+        assert_eq!(state, DragState::Orbit { pivot });
+        assert_eq!(
+            actions,
+            vec![InputAction::Orbit {
+                dx: 3.0,
+                dy: -2.0,
+                pivot
+            }]
+        );
+        // The later frames keep the pivot of the start, whatever the env.
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        assert_eq!(
+            actions,
+            vec![InputAction::Orbit {
+                dx: 3.0,
+                dy: -2.0,
+                pivot
+            }]
+        );
+    }
+
+    #[test]
+    fn step_a_pan_start_records_the_grab_depth() {
+        let anchor = DragAnchor {
+            point: [4.0, -5.0, 6.0],
+            depth: 120.0,
+        };
+        let env = InputEnv {
+            drag_anchor: Some(anchor),
+            ..ENV
+        };
+        let mut state = DragState::Idle;
+        let actions = step(&mut state, &drag(PointerButton::Middle, true), &env);
+        assert_eq!(
+            state,
+            DragState::Pan {
+                grab_depth: Some(120.0)
+            }
+        );
+        assert_eq!(
+            actions,
+            vec![InputAction::Pan {
+                dx: 3.0,
+                dy: -2.0,
+                grab_depth: Some(120.0)
+            }]
+        );
+        let actions = step(&mut state, &drag(PointerButton::Middle, false), &ENV);
+        assert_eq!(
+            actions,
+            vec![InputAction::Pan {
+                dx: 3.0,
+                dy: -2.0,
+                grab_depth: Some(120.0)
+            }]
+        );
     }
 
     #[test]
@@ -792,8 +930,16 @@ mod tests {
         let mut want = *camera.pose();
         apply_camera(
             &[
-                InputAction::Orbit { dx: 4.0, dy: 2.0 },
-                InputAction::Pan { dx: 3.0, dy: 1.0 },
+                InputAction::Orbit {
+                    dx: 4.0,
+                    dy: 2.0,
+                    pivot: None,
+                },
+                InputAction::Pan {
+                    dx: 3.0,
+                    dy: 1.0,
+                    grab_depth: None,
+                },
                 InputAction::Zoom {
                     factor: 0.9,
                     at: None,
@@ -810,6 +956,39 @@ mod tests {
         if *camera.pose() != want {
             panic!(
                 "apply_camera added arithmetic: {:?} != {want:?}",
+                camera.pose()
+            );
+        }
+
+        // A pivot off the target and a grab depth off the target depth.
+        let pivot = [30.0_f32, -12.0, 5.0];
+        let mut camera = CameraState::default();
+        let mut want = *camera.pose();
+        apply_camera(
+            &[
+                InputAction::Orbit {
+                    dx: -7.0,
+                    dy: 3.0,
+                    pivot: Some(pivot),
+                },
+                InputAction::Pan {
+                    dx: 5.0,
+                    dy: -4.0,
+                    grab_depth: Some(150.0),
+                },
+            ],
+            &mut camera,
+            rect,
+        );
+        want.orbit_about(
+            nalgebra::Point3::new(pivot[0], pivot[1], pivot[2]),
+            -7.0,
+            3.0,
+        );
+        want.pan_pixels(5.0, -4.0, 600.0, Some(150.0));
+        if *camera.pose() != want {
+            panic!(
+                "apply_camera added arithmetic to the pivot orbit: {:?} != {want:?}",
                 camera.pose()
             );
         }
