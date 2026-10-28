@@ -19,23 +19,37 @@ impl RsCamApp {
             match event {
                 AppEvent::FileDialog(event) => self.handle_file_dialog_event(ctx, event),
                 AppEvent::ImportStl(path) => match self.controller.import_stl_path(&path) {
-                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                    Ok(Some(bbox)) => {
+                        let (min, max) = crate::state::camera::bbox_corners(&bbox);
+                        self.controller.state_mut().camera.fit(min, max);
+                    }
                     Ok(None) => {}
                     Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportDialogConfirm => match self.controller.confirm_import_dialog() {
-                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
-                    Ok(None) => self.fit_camera_to_first_model(),
+                    Ok(Some(bbox)) => {
+                        let (min, max) = crate::state::camera::bbox_corners(&bbox);
+                        self.controller.state_mut().camera.fit(min, max);
+                    }
+                    Ok(None) => {
+                        crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                    }
                     Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::ImportStep(path) => match self.controller.import_step_path(&path) {
-                    Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                    Ok(Some(bbox)) => {
+                        let (min, max) = crate::state::camera::bbox_corners(&bbox);
+                        self.controller.state_mut().camera.fit(min, max);
+                    }
                     Ok(None) => {}
                     Err(error) => self.controller.push_error(&error),
                 },
                 AppEvent::RescaleModel(model_id, new_units) => {
                     match self.controller.rescale_model(model_id, new_units) {
-                        Ok(Some(bbox)) => self.fit_camera_to_bbox(&bbox),
+                        Ok(Some(bbox)) => {
+                            let (min, max) = crate::state::camera::bbox_corners(&bbox);
+                            self.controller.state_mut().camera.fit(min, max);
+                        }
                         Ok(None) => {}
                         Err(error) => self.controller.push_error(&error),
                     }
@@ -267,42 +281,37 @@ impl RsCamApp {
                 // --- View commands (WP13) ---
                 //
                 // These arms run in the application and not in the
-                // controller, because each one writes the camera, the
-                // window or a file dialog. Every other view command
-                // falls through to the controller's own `Ui` arm.
+                // controller. The camera arms keep the app clock for the
+                // eased move (design A, Q2); the others write the window or
+                // a file dialog. Every other view command falls through to
+                // the controller's own `Ui` arm.
                 AppEvent::Ui(cmd) => match cmd {
                     UiCommand::SetViewPreset(preset) => {
-                        self.camera.set_pose(self.camera.preset_pose(preset));
+                        self.controller.state_mut().camera.preset(preset);
                     }
-                    UiCommand::ToggleProjection(NoArgs) => self.camera.toggle_projection(),
+                    UiCommand::ToggleProjection(NoArgs) => {
+                        self.controller.state_mut().camera.toggle_projection();
+                    }
                     UiCommand::PreviewOrientation(face_up) => {
+                        use crate::render::camera::PITCH_LIMIT;
                         use crate::state::job::FaceUp;
-                        match face_up {
-                            FaceUp::Top => {
-                                self.camera.pitch = crate::render::camera::PITCH_LIMIT;
-                            }
-                            FaceUp::Bottom => {
-                                self.camera.pitch = -crate::render::camera::PITCH_LIMIT;
-                            }
-                            FaceUp::Front => {
-                                self.camera.yaw = 0.0;
-                                self.camera.pitch = 0.0;
-                            }
-                            FaceUp::Back => {
-                                self.camera.yaw = std::f32::consts::PI;
-                                self.camera.pitch = 0.0;
-                            }
-                            FaceUp::Left => {
-                                self.camera.yaw = std::f32::consts::FRAC_PI_2;
-                                self.camera.pitch = 0.0;
-                            }
-                            FaceUp::Right => {
-                                self.camera.yaw = -std::f32::consts::FRAC_PI_2;
-                                self.camera.pitch = 0.0;
-                            }
-                        }
+                        use std::f32::consts::{FRAC_PI_2, PI};
+                        let camera = &mut self.controller.state_mut().camera;
+                        // Top and Bottom keep the yaw; the side views set it.
+                        let yaw = camera.pose().yaw;
+                        let (yaw, pitch) = match face_up {
+                            FaceUp::Top => (yaw, PITCH_LIMIT),
+                            FaceUp::Bottom => (yaw, -PITCH_LIMIT),
+                            FaceUp::Front => (0.0, 0.0),
+                            FaceUp::Back => (PI, 0.0),
+                            FaceUp::Left => (FRAC_PI_2, 0.0),
+                            FaceUp::Right => (-FRAC_PI_2, 0.0),
+                        };
+                        camera.orientation(yaw, pitch);
                     }
-                    UiCommand::ResetView(NoArgs) => self.fit_camera_to_first_model(),
+                    UiCommand::ResetView(NoArgs) => {
+                        crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                    }
                     // Workspace transitions (need camera/viewport changes in app)
                     UiCommand::SwitchWorkspace(target) => {
                         crate::ui::overlays::registry::switch_workspace(
@@ -721,7 +730,7 @@ impl RsCamApp {
                 // project's scale was. Same routine as Reset View, not a
                 // second fit. It runs only on `Ok`, and only after the
                 // unsaved guard has been answered.
-                self.fit_camera_to_first_model();
+                crate::state::camera::fit_to_first_model(self.controller.state_mut());
                 tracing::info!("Loaded job from {}", path.display());
             }
             // G-D (§4): a load refusal opens the "Project not opened"

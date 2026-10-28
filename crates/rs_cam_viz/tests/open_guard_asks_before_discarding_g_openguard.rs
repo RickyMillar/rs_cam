@@ -83,7 +83,7 @@ fn the_open_job_arm_holds_no_picker_load_or_camera_fit_of_its_own() {
     for forbidden in [
         "rfd::FileDialog",
         "open_job_from_path",
-        "fit_camera_to_first_model",
+        "fit_to_first_model",
     ] {
         assert!(
             !arm.contains(forbidden),

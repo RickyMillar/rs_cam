@@ -260,7 +260,7 @@ fn getting_started_reviews_before_it_exports() {
 /// fitted (`AppEvent::ImportStl` and friends in `app/input.rs`); all three
 /// load routes — File > Open, the `RS_CAM_JOB` startup path and MCP
 /// `load_project` — did not, so a loaded job kept the previous project's
-/// framing. This asserts each site calls `fit_camera_to_first_model`, the
+/// framing. This asserts each site calls `state::camera::fit_to_first_model`, the
 /// same routine `UiCommand::ResetView` uses, rather than inventing a second
 /// fit. `RsCamApp` needs an `eframe::CreationContext`, so this is read from
 /// the source.
@@ -277,22 +277,21 @@ fn every_project_load_route_fits_the_camera() {
             .unwrap_or_else(|| panic!("{label}: no open_job_from_path call found"));
         let tail = &src[at..src.len().min(at + 800)];
         assert!(
-            tail.contains("fit_camera_to_first_model()"),
+            tail.contains("fit_to_first_model("),
             "{label}: a project load must fit the camera, as import does"
         );
     }
 
-    // The startup route cannot fit at the call: `RsCamApp` — and with it the
-    // camera — does not exist yet while `RS_CAM_JOB` is loading. It records
-    // that a job loaded and fits once the app is built, so the assertion is
-    // on that pair rather than on a window of source after the call.
+    // The startup route does not fit at the call: it records that a job
+    // loaded and fits once the app is built, so the assertion is on that
+    // pair rather than on a window of source after the call.
     assert!(
         APP_SRC.contains("loaded_a_job = true"),
         "app.rs must record that RS_CAM_JOB loaded something"
     );
     assert!(
         APP_SRC.contains("if loaded_a_job {")
-            && APP_SRC.contains("app.fit_camera_to_first_model()"),
+            && APP_SRC.contains("fit_to_first_model(app.controller.state_mut())"),
         "app.rs must fit the camera once the app exists, for a job loaded at startup"
     );
 }
@@ -301,8 +300,12 @@ fn every_project_load_route_fits_the_camera() {
 /// a deliberate change, and this is where it gets noticed.
 #[test]
 fn the_load_routes_reuse_the_reset_view_fit() {
+    let at = INPUT_SRC
+        .find("UiCommand::ResetView(NoArgs)")
+        .expect("the Reset View arm is in app/input.rs");
+    let arm = &INPUT_SRC[at..INPUT_SRC.len().min(at + 160)];
     assert!(
-        INPUT_SRC.contains("UiCommand::ResetView(NoArgs) => self.fit_camera_to_first_model()"),
+        arm.contains("crate::state::camera::fit_to_first_model("),
         "Reset View is the routine the load routes borrow; if it moved, say so"
     );
 }

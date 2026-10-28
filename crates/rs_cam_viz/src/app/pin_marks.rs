@@ -130,7 +130,11 @@ impl super::RsCamApp {
             let c = pin_display_point(&frame, stock, pin.at.x(), pin.at.y());
             let r = pin.diameter * 0.5;
             let anchor = [(c.x + r) as f32, (c.y + r) as f32, c.z as f32];
-            let Some(p) = self.camera.project_to_screen(anchor, aspect, width, height) else {
+            let Some(p) = state
+                .camera
+                .pose()
+                .project_to_screen(anchor, aspect, width, height)
+            else {
                 continue;
             };
             let at = egui::pos2(viewport_rect.min.x + p[0], viewport_rect.min.y + p[1]);

@@ -1,4 +1,5 @@
 pub mod app_settings;
+pub mod camera;
 pub mod freshness;
 pub mod history;
 pub mod job;
@@ -153,6 +154,9 @@ pub struct AppState {
     /// so the caller can raise the upload flag.
     selection: Selection,
     pub viewport: ViewportState,
+    /// The viewport camera (design A, C2). View state: not a `Command`, not
+    /// saved. The pose is private to `CameraState`; its methods write it.
+    pub camera: camera::CameraState,
     /// The viewport Overlays panel's own state (P6). The overlay FLAGS live
     /// on [`ViewportState`]; this is only the panel's shape plus the
     /// per-workspace default bookkeeping.
@@ -494,6 +498,8 @@ impl AppState {
             gui,
             selection,
             viewport,
+            // No draw site needs the camera beside the session yet.
+            camera: _,
             overlays,
             simulation,
             history,
@@ -566,6 +572,7 @@ impl AppState {
             gui: GuiState::new(),
             selection: Selection::None,
             viewport: ViewportState::new(),
+            camera: camera::CameraState::default(),
             overlays: OverlayPanelState::new(),
             simulation: SimulationState::new(),
             history: UndoHistory::new(),

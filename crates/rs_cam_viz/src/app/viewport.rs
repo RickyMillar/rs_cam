@@ -27,7 +27,7 @@ impl RsCamApp {
     fn pick_context(&self, pos: egui::Pos2) -> crate::interaction::picking::PickContext<'_> {
         let rect = self.viewport_rect;
         crate::interaction::picking::PickContext {
-            camera: &self.camera,
+            camera: self.controller.state().camera.pose(),
             screen_x: pos.x - rect.min.x,
             screen_y: pos.y - rect.min.y,
             aspect: if rect.height() > 0.0 {
@@ -432,7 +432,7 @@ impl RsCamApp {
         }
 
         let ctx = crate::interaction::picking::PickContext {
-            camera: &self.camera,
+            camera: self.controller.state().camera.pose(),
             screen_x: click_pos.x - rect.min.x,
             screen_y: click_pos.y - rect.min.y,
             aspect: rect.width() / rect.height(),
@@ -497,7 +497,7 @@ impl RsCamApp {
         }
 
         let rect = self.viewport_rect;
-        let Some((ray_origin, ray_dir)) = self.camera.unproject_ray(
+        let Some((ray_origin, ray_dir)) = self.controller.state().camera.pose().unproject_ray(
             click_pos.x - rect.min.x,
             click_pos.y - rect.min.y,
             rect.width() / rect.height(),
@@ -665,7 +665,7 @@ impl RsCamApp {
     pub(super) fn draw_viewport(&mut self, ui: &mut egui::Ui) {
         let lane_snapshots = self.controller.lane_snapshots();
         let workspace = self.controller.state().workspace;
-        let projection = self.camera.projection;
+        let projection = self.controller.state().camera.pose().projection;
         // Rest-depth heatmap legend info (threshold, peak rest mm) for the
         // currently selected toolpath, if it carries a `rest_grid`. **Any**
         // operation attaches one when its `rest_analysis.enabled` is set and
@@ -835,8 +835,9 @@ impl RsCamApp {
         if !tab_drag && response.dragged_by(egui::PointerButton::Primary) {
             let delta = response.drag_delta();
             // C1: the pivot is the target. The pivot under the cursor is C3a.
-            let pivot = self.camera.target;
-            self.camera.orbit_about(pivot, delta.x, delta.y);
+            let camera = &mut self.controller.state_mut().camera;
+            let pivot = camera.pose().target;
+            camera.orbit_about(pivot, delta.x, delta.y);
         }
         if response.dragged_by(egui::PointerButton::Secondary)
             || response.dragged_by(egui::PointerButton::Middle)
@@ -844,7 +845,9 @@ impl RsCamApp {
             let delta = response.drag_delta();
             // The pan step follows the viewport height, so a point at the
             // target depth stays under the cursor.
-            self.camera
+            self.controller
+                .state_mut()
+                .camera
                 .pan_pixels(delta.x, delta.y, rect.height(), None);
         }
 
@@ -873,18 +876,19 @@ impl RsCamApp {
             // The wheel zooms toward the point under the cursor at the target
             // depth. Without a pointer position it zooms toward the target.
             let k = (-scroll * crate::render::camera::ZOOM_PER_WHEEL).exp();
-            let point = ui
-                .input(|i| i.pointer.hover_pos())
+            let pointer = ui.input(|i| i.pointer.hover_pos());
+            let camera = &mut self.controller.state_mut().camera;
+            let point = pointer
                 .and_then(|pos| {
-                    self.camera.point_at_target_depth(
+                    camera.pose().point_at_target_depth(
                         pos.x - rect.min.x,
                         pos.y - rect.min.y,
                         rect.width(),
                         rect.height(),
                     )
                 })
-                .unwrap_or(self.camera.target);
-            self.camera.zoom_toward(point, k);
+                .unwrap_or(camera.pose().target);
+            camera.zoom_toward(point, k);
         }
 
         let aspect = if rect.height() > 0.0 {
@@ -892,8 +896,8 @@ impl RsCamApp {
         } else {
             1.0
         };
-        let view_proj = self.camera.view_proj(aspect);
-        let eye = self.camera.eye();
+        let view_proj = self.controller.state().camera.pose().view_proj(aspect);
+        let eye = self.controller.state().camera.pose().eye();
         let ppp = ui.ctx().pixels_per_point();
         let state = self.controller.state();
 
@@ -1265,7 +1269,7 @@ impl RsCamApp {
         );
         let axis_len = 20.0;
 
-        let view = self.camera.view_matrix();
+        let view = self.controller.state().camera.pose().view_matrix();
         let painter = ui.painter();
 
         // Background circle for readability
@@ -1359,7 +1363,10 @@ impl RsCamApp {
         let z = (map.top_z + shift.z) as f32
             + rs_cam_core::maps::rest_heatmap_mesh::AREA_REGION_LIFT_MM;
         let project = |x: f64, y: f64| -> Option<egui::Pos2> {
-            self.camera
+            self.controller
+                .state()
+                .camera
+                .pose()
                 .project_to_screen(
                     [(x + shift.x) as f32, (y + shift.y) as f32, z],
                     aspect,
@@ -1436,7 +1443,10 @@ impl RsCamApp {
         let projected: Vec<_> = corners
             .iter()
             .map(|corner| {
-                self.camera
+                self.controller
+                    .state()
+                    .camera
+                    .pose()
                     .project_to_screen(*corner, aspect, width, height)
                     .map(|point| {
                         egui::pos2(

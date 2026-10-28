@@ -17,7 +17,6 @@ mod viewport;
 
 use crate::controller::AppController;
 use crate::render::RenderResources;
-use crate::render::camera::OrbitCamera;
 use crate::state::Workspace;
 
 /// What the unsaved-changes dialog is guarding — the action that runs once
@@ -67,7 +66,6 @@ pub struct RsCamApp {
     /// arm alone, so a build without the `mcp` feature never reads it.
     #[cfg(feature = "mcp")]
     egui_ctx: egui::Context,
-    camera: OrbitCamera,
     /// Cached viewport rect for click detection.
     viewport_rect: egui::Rect,
     /// Flag: need to load checkpoint mesh for backward scrubbing on next frame.
@@ -404,7 +402,6 @@ impl RsCamApp {
             controller,
             #[cfg(feature = "mcp")]
             egui_ctx: cc.egui_ctx.clone(),
-            camera: OrbitCamera::new(),
             viewport_rect: egui::Rect::NOTHING,
             pending_checkpoint_load: false,
             auto_screenshot_frame,
@@ -427,21 +424,13 @@ impl RsCamApp {
         };
 
         // G-WSMENU (2026-09-10): the third `open_job_from_path` route. The
-        // camera does not exist while the job is loading above, so the fit
-        // happens here instead — the alternative is an auto-screenshot run
-        // framed on an empty default scene. Same routine as the other two
-        // routes and as Reset View.
+        // fit runs here, once, after the load above — the alternative is an
+        // auto-screenshot run framed on an empty default scene. Same routine
+        // as the other two routes and as Reset View.
         if loaded_a_job {
-            app.fit_camera_to_first_model();
+            crate::state::camera::fit_to_first_model(app.controller.state_mut());
         }
         app
-    }
-
-    fn fit_camera_to_bbox(&mut self, bbox: &rs_cam_core::geo::BoundingBox3) {
-        self.camera.set_pose(self.camera.fit_pose(
-            [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
-            [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
-        ));
     }
 
     /// "Show me" (geometry selection P4.4): fit the camera to the items
@@ -462,7 +451,8 @@ impl RsCamApp {
             id,
             &keys,
         )?;
-        self.fit_camera_to_bbox(&bbox);
+        let (min, max) = crate::state::camera::bbox_corners(&bbox);
+        self.controller.state_mut().camera.fit(min, max);
         self.controller.state_mut().viewport.selection_flash =
             Some(crate::state::viewport::SelectionFlash {
                 toolpath: id,
@@ -486,23 +476,9 @@ impl RsCamApp {
             model_id,
             keys,
         )?;
-        self.fit_camera_to_bbox(&bbox);
+        let (min, max) = crate::state::camera::bbox_corners(&bbox);
+        self.controller.state_mut().camera.fit(min, max);
         Some(bbox)
-    }
-
-    fn fit_camera_to_first_model(&mut self) {
-        if let Some(bbox) = self
-            .controller
-            .state()
-            .session()
-            .models()
-            .iter()
-            .find_map(rs_cam_core::session::LoadedModel::bbox)
-        {
-            self.fit_camera_to_bbox(&bbox);
-        } else {
-            self.camera = OrbitCamera::new();
-        }
     }
 
     // --- Layout methods ---
@@ -836,8 +812,9 @@ impl RsCamApp {
     /// A field census of the whole 6,146-line `app/mcp.rs` is the reason this
     /// is a short function rather than a rewrite: MCP handlers touch
     /// `self.controller` (169 sites), `mcp_reads`, `mcp_receiver` and
-    /// `mcp_reads_published_at`, and **nothing else** — not `camera`, not
-    /// `viewport_rect`, not `pending_checkpoint_load`. `egui::Context` reaches
+    /// `mcp_reads_published_at`, and **nothing else** — not
+    /// `viewport_rect`, not `pending_checkpoint_load` (the camera is on
+    /// `AppState` since design A C2). `egui::Context` reaches
     /// exactly one handler (`ScreenshotGui`) and is `Clone + Send + Sync`. So
     /// no handler had to move and no `McpRequestKind` arm had to change.
     ///
