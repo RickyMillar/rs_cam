@@ -72,10 +72,103 @@ pub struct LineUniforms {
     /// [`MOVE_DIM_UNDER_REACH`] and the toolpath move draws switch to it
     /// while the reach overlay is on — see the constant.
     pub dim: f32,
-    /// `dim` is one f32 in a uniform block, which WGSL rounds up to a
-    /// 16-byte stride; the padding is explicit so the Rust and WGSL layouts
-    /// cannot silently disagree.
-    pub _pad: [f32; 3],
+    /// The minimum edge offset toward the eye, in mm (D4). It is 0 for every
+    /// line except the model edges, and 0 turns the offset off.
+    pub edge_tol: f32,
+    /// The offset per mm² of eye distance (D4): see [`EdgeOffset`].
+    pub edge_k: f32,
+    /// The block ends on a 16-byte stride; the padding is explicit so the
+    /// Rust and WGSL layouts cannot silently disagree.
+    pub _pad: f32,
+    /// xyz = the eye position with w = 1 (perspective), or the unit
+    /// direction to the eye with w = 0 (orthographic).
+    pub eye: [f32; 4],
+}
+
+impl LineUniforms {
+    /// The uniforms of one frame, with no edge offset.
+    pub fn new(view_proj: [[f32; 4]; 4], eye: [f32; 4]) -> Self {
+        Self {
+            view_proj,
+            dim: 1.0,
+            edge_tol: 0.0,
+            edge_k: 0.0,
+            _pad: 0.0,
+            eye,
+        }
+    }
+
+    /// The three line uniforms that `prepare` writes each frame: the plain
+    /// group, the dimmed group and the model edge group. Only the edge
+    /// group carries the offset, so no other line moves.
+    pub fn frame_set(self, edges: EdgeOffset) -> [Self; 3] {
+        let plain = Self {
+            dim: 1.0,
+            edge_tol: 0.0,
+            edge_k: 0.0,
+            ..self
+        };
+        let dimmed = Self {
+            dim: MOVE_DIM_UNDER_REACH,
+            ..plain
+        };
+        let edge = Self {
+            edge_tol: edges.tol,
+            edge_k: edges.k,
+            ..plain
+        };
+        [plain, dimmed, edge]
+    }
+}
+
+/// The move of a model edge vertex toward the eye (D4), so that the edge
+/// wins the depth test against its own face. wgpu refuses a depth bias on
+/// a line topology, so the vertex shader moves the vertex instead. A move
+/// along the eye ray does not change the screen position in perspective.
+///
+/// The offset at eye distance `z` is `max(tol, k · z²)`:
+///
+/// - Perspective depth is `d ≈ 1 − n / z`, so `∂d/∂z = n / z²`. One
+///   `Depth32Float` step near `d = 1` is `2^-24`, so it spans
+///   `2^-24 z² / n`. Four steps: `2^-22 z² / n`, so `k = 2^-22 / n`.
+/// - Orthographic depth is linear over `2 far`. Four steps span
+///   `4 · 2^-24 · 2 far`; `k = 0`, and `tol` holds the max.
+/// - The edge polyline can sit off the facets by the STEP chord tolerance,
+///   so `tol` is at least that chord.
+///
+/// nalgebra builds GL-convention matrices (clip z in `[-w, w]`) and wgpu
+/// keeps only `[0, w]` with no remap, so the real depth slope is twice the
+/// one above: the margin is eight depth steps, not four.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct EdgeOffset {
+    /// The minimum offset, in mm. A value above 0 turns the offset on.
+    pub tol: f32,
+    /// The offset per mm² of eye distance.
+    pub k: f32,
+}
+
+impl EdgeOffset {
+    /// Perspective with near plane `near`, chord tolerance `chord` (mm).
+    pub fn perspective(near: f32, chord: f32) -> Self {
+        Self {
+            tol: chord.max(f32::MIN_POSITIVE),
+            k: 2f32.powi(-22) / near,
+        }
+    }
+
+    /// Orthographic with depth range `-far..far`, chord tolerance `chord`.
+    pub fn orthographic(far: f32, chord: f32) -> Self {
+        Self {
+            tol: chord.max(4.0 * 2f32.powi(-24) * 2.0 * far),
+            k: 0.0,
+        }
+    }
+
+    /// The offset at eye distance `dist`: the Rust mirror of the line
+    /// vertex shader.
+    pub fn at(&self, dist: f32) -> f32 {
+        self.tol.max(self.k * dist * dist)
+    }
 }
 
 /// Colour multiplier for toolpath moves while the reach overlay is drawing
@@ -231,6 +324,10 @@ pub struct RenderResources {
     /// buffers need no alignment arithmetic to get wrong.
     line_dim_uniform_buffer: wgpu::Buffer,
     line_dim_bind_group: wgpu::BindGroup,
+    /// Third uniform + bind group: the same camera with the edge offset
+    /// set (D4). Only the model edges draw with it.
+    line_edge_uniform_buffer: wgpu::Buffer,
+    line_edge_bind_group: wgpu::BindGroup,
     /// Dedicated uniform buffer + bind group for the rest-depth heatmap
     /// overlay, carrying its own fixed opacity independent of
     /// `sim_mesh_uniform_buffer`. That buffer is shared by sim mesh, solid
@@ -319,6 +416,11 @@ pub struct RenderResources {
     /// it uploads on a change of the layout or of the drag only
     /// (`state::tab_edit::TabMarksDetector`).
     pub tab_lines: Option<PolygonGpuData>,
+    /// D4: the boundary loops of every drawn STEP face, in `MODEL_EDGE`
+    /// (`app/gpu_upload/model_edges.rs`). It draws with the edge bind group.
+    pub model_edge_lines: Option<PolygonGpuData>,
+    /// Inputs `model_edge_lines` was last built from.
+    pub model_edges_key: Option<upload_cache::ModelEdgesKey>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
@@ -785,6 +887,22 @@ impl RenderResources {
             }],
         });
 
+        let line_edge_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("line_uniforms_edge"),
+            size: std::mem::size_of::<LineUniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let line_edge_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("line_bg_edge"),
+            layout: &line_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: line_edge_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("line_pl"),
             bind_group_layouts: &[Some(&line_bind_group_layout)],
@@ -929,6 +1047,8 @@ impl RenderResources {
             line_bind_group,
             line_dim_uniform_buffer,
             line_dim_bind_group,
+            line_edge_uniform_buffer,
+            line_edge_bind_group,
             rest_heatmap_uniform_buffer,
             rest_heatmap_bind_group,
             tier_preview_uniform_buffer,
@@ -950,6 +1070,8 @@ impl RenderResources {
             polygon_data: Vec::new(),
             hover_lines: None,
             tab_lines: None,
+            model_edge_lines: None,
+            model_edges_key: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
@@ -986,7 +1108,8 @@ impl RenderResources {
     /// A pipeline and an attachment with different sample counts fail at
     /// pass time, not at pipeline creation. So the door runs
     /// `ensure_offscreen` and records the frame's own scene pass with an
-    /// empty callback that draws the grid and the face meshes. A second pass from the same
+    /// empty callback that draws the grid, the face meshes and the model
+    /// edges. A second pass from the same
     /// `begin_scene_pass` sets each scene pipeline once. The door then
     /// submits, so a validation error reaches the caller's error scope.
     #[doc(hidden)]
@@ -1001,11 +1124,12 @@ impl RenderResources {
         let Some(offscreen) = self.offscreen.as_ref() else {
             return;
         };
-        // The model arm draws `face_mesh_data_list`, so a caller that
-        // pushes a face mesh first gets a face pipeline draw too.
+        // The model arm draws `face_mesh_data_list` and `model_edge_lines`,
+        // so a caller that fills them first gets those draws too.
         let callback = ViewportCallback {
             show_grid: true,
             show_model: true,
+            show_model_edges: true,
             ..ViewportCallback::empty(width, height)
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1134,6 +1258,10 @@ pub struct ViewportCallback {
     /// nothing at all to a STEP one — one control, two behaviours, neither of
     /// them a wireframe (audit §3.1, fix §6.2).
     pub show_model: bool,
+    /// D4: the face edges of the STEP models. Gated with `show_model`.
+    pub show_model_edges: bool,
+    /// D4: the move of the model edges toward the eye.
+    pub edge_offset: EdgeOffset,
     pub show_grid: bool,
     pub show_stock: bool,
     /// The one line buffer that carries the obstacles, the alignment pins,
@@ -1215,6 +1343,8 @@ impl ViewportCallback {
             line_uniforms: bytemuck::Zeroable::zeroed(),
             has_mesh: false,
             show_model: false,
+            show_model_edges: false,
+            edge_offset: EdgeOffset::default(),
             show_grid: false,
             show_stock: false,
             show_line_marks: false,
@@ -1413,6 +1543,19 @@ impl ViewportCallback {
                 pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..chunk.index_count, 0, 0..1);
             }
+        }
+
+        // D4: the face edges, after every model draw (the reach overlay
+        // too: the edges are geometry, not a colour field). The edge group
+        // moves them toward the eye, so they win the depth test.
+        if self.show_model
+            && self.show_model_edges
+            && let Some(edges) = &resources.model_edge_lines
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
+            pass.set_vertex_buffer(0, edges.vertex_buffer.slice(..));
+            pass.draw(0..edges.vertex_count, 0..1);
         }
 
         // Draw polygon/DXF/SVG lines
@@ -1651,20 +1794,23 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 bytemuck::bytes_of(&area_uniforms),
             );
         }
+        // Plain, dimmed and edge: one camera, written every frame together
+        // so the three can never hold different view matrices.
+        let [plain_lines, dim_lines, edge_lines] = self.line_uniforms.frame_set(self.edge_offset);
         queue.write_buffer(
             &resources.line_uniform_buffer,
             0,
-            bytemuck::bytes_of(&self.line_uniforms),
+            bytemuck::bytes_of(&plain_lines),
         );
-        // Same camera, dimmed colours. Written every frame beside the plain
-        // one so the two can never hold different view matrices.
         queue.write_buffer(
             &resources.line_dim_uniform_buffer,
             0,
-            bytemuck::bytes_of(&LineUniforms {
-                dim: MOVE_DIM_UNDER_REACH,
-                ..self.line_uniforms
-            }),
+            bytemuck::bytes_of(&dim_lines),
+        );
+        queue.write_buffer(
+            &resources.line_edge_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&edge_lines),
         );
 
         // Render 3D scene to offscreen texture with depth buffer.
@@ -1904,6 +2050,10 @@ const LINE_SHADER_SRC: &str = r#"
 struct Uniforms {
     view_proj: mat4x4<f32>,
     dim: f32,
+    edge_tol: f32,
+    edge_k: f32,
+    _pad: f32,
+    eye: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -1920,8 +2070,17 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
+    // D4: the model edges move toward the eye by max(edge_tol, edge_k * dist^2)
+    // (`EdgeOffset`). edge_tol = 0 for every other line.
+    var p = in.position;
+    if (uniforms.edge_tol > 0.0) {
+        let to_eye = uniforms.eye.xyz - p * uniforms.eye.w;
+        let dist = length(to_eye);
+        let off = max(uniforms.edge_tol, uniforms.edge_k * dist * dist);
+        p = p + to_eye / max(dist, 1e-6) * off;
+    }
     var out: VertexOutput;
-    out.clip_position = uniforms.view_proj * vec4<f32>(in.position, 1.0);
+    out.clip_position = uniforms.view_proj * vec4<f32>(p, 1.0);
     out.color = in.color;
     return out;
 }
@@ -1961,6 +2120,75 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The line uniform block is 96 B in Rust; the WGSL struct holds the
+    /// same fields in the same order.
+    #[test]
+    fn line_uniforms_are_96_bytes() {
+        assert_eq!(std::mem::size_of::<LineUniforms>(), 96);
+        for field in [
+            "dim: f32,",
+            "edge_tol: f32,",
+            "edge_k: f32,",
+            "_pad: f32,",
+            "eye: vec4<f32>,",
+        ] {
+            assert!(
+                LINE_SHADER_SRC.contains(field),
+                "the WGSL Uniforms lacks `{field}`"
+            );
+        }
+    }
+
+    /// Only the edge group carries the offset: the plain and the dimmed
+    /// groups write edge_tol = 0, so no other line moves.
+    #[test]
+    fn only_the_edge_group_moves() {
+        let base = LineUniforms {
+            edge_tol: 5.0,
+            edge_k: 5.0,
+            ..LineUniforms::new([[0.0; 4]; 4], [1.0, 2.0, 3.0, 1.0])
+        };
+        let edges = EdgeOffset::perspective(0.1, 0.1);
+        let [plain, dimmed, edge] = base.frame_set(edges);
+        assert_eq!((plain.edge_tol, plain.edge_k, plain.dim), (0.0, 0.0, 1.0));
+        assert_eq!(
+            (dimmed.edge_tol, dimmed.edge_k, dimmed.dim),
+            (0.0, 0.0, MOVE_DIM_UNDER_REACH)
+        );
+        assert_eq!(
+            (edge.edge_tol, edge.edge_k, edge.dim),
+            (edges.tol, edges.k, 1.0)
+        );
+        assert_eq!(edge.eye, base.eye);
+        assert_eq!(edge.view_proj, base.view_proj);
+    }
+
+    /// The offset follows the derivation on `EdgeOffset`.
+    #[test]
+    fn the_edge_offset_follows_the_depth_step_derivation() {
+        let camera = camera::OrbitCamera::new();
+        let chord = rs_cam_core::io::STEP_CHORD_TOLERANCE as f32;
+        let z = 300.0_f32;
+        let near = camera.near;
+        let p = EdgeOffset::perspective(near, chord);
+        let four_steps = 2f32.powi(-22) * z * z / near;
+        assert!(
+            (p.at(z) - four_steps.max(chord)).abs() <= 1e-6 * four_steps,
+            "perspective: max(chord, 2^-22 z^2 / near)"
+        );
+        // Close to the eye the chord tolerance is the floor.
+        assert_eq!(p.at(1.0), chord);
+        let o = EdgeOffset::orthographic(camera.far, chord);
+        assert_eq!(o.k, 0.0);
+        assert_eq!(
+            o.at(z),
+            chord.max(4.0 * 2f32.powi(-24) * 2.0 * camera.far),
+            "orthographic: max(chord, 4 depth steps over 2 far)"
+        );
+        // A zero chord still turns the perspective offset on.
+        assert!(EdgeOffset::perspective(near, 0.0).tol > 0.0);
+    }
 
     /// The WGSL literals of the face shader are the `colors::FACE_SLOT_*`
     /// slots and the palette length, so the shader and the palette cannot

@@ -13,6 +13,7 @@ use super::RsCamApp;
 mod drawing;
 mod face_state;
 mod meshes;
+mod model_edges;
 mod overlays;
 mod reference;
 mod sim;
@@ -275,8 +276,9 @@ impl RsCamApp {
         let state = self.controller.state();
         let pass = PassFrame::of(state);
 
-        let (plain, enriched) = meshes::inputs(state, &pass);
+        let (plain, enriched, edges) = meshes::inputs(state, &pass);
         meshes::upload(plain, &enriched, &gpu, resources);
+        model_edges::upload(edges, &gpu, resources);
         // D3: after the meshes, so a rebuilt mesh gets its words this pass.
         face_state::upload(
             face_state::FaceStateInputs {

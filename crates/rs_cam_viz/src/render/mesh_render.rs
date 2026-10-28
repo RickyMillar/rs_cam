@@ -343,6 +343,41 @@ pub fn face_mesh_vertices(
     (vertices, indices)
 }
 
+/// The face edges of `enriched` as `LineList` vertices in
+/// [`MODEL_EDGE`](super::colors::MODEL_EDGE) (D4).
+///
+/// Each boundary loop of each face gives its closed polyline: the pairs
+/// `(p[i], p[i+1])` and the closing pair `(p[last], p[0])`. A loop of `n`
+/// points gives `2n` vertices. An edge that two faces share is in both
+/// faces' loops, so it draws twice at one depth: the colour is the same and
+/// the blend is REPLACE, so no dedupe runs. The transform is the one the
+/// face mesh takes, so the edges sit on the drawn faces.
+pub fn face_edge_vertices(
+    enriched: &EnrichedMesh,
+    transform: &VertexTransform<'_>,
+) -> Vec<super::LineVertex> {
+    let color = super::colors::MODEL_EDGE;
+    let point = |p: rs_cam_core::geo::P3| {
+        let p = if let Some(xf) = transform { xf(p) } else { p };
+        super::LineVertex {
+            position: [p.x as f32, p.y as f32, p.z as f32],
+            color,
+        }
+    };
+    let mut vertices = Vec::new();
+    for ring in enriched.face_groups.iter().flat_map(|f| &f.boundary_loops) {
+        if ring.len() < 2 {
+            continue;
+        }
+        let next = ring.iter().cycle().skip(1);
+        for (&a, &b) in ring.iter().zip(next) {
+            vertices.push(point(a));
+            vertices.push(point(b));
+        }
+    }
+    vertices
+}
+
 /// Build the face-pipeline GPU data of one STEP model: the geometry and a
 /// zeroed state buffer. It takes no selection and no hover input.
 ///
@@ -428,6 +463,75 @@ mod tests {
         assert_eq!(std::mem::size_of::<FaceMeshVertex>(), 28);
         assert_eq!(FaceMeshVertex::layout().array_stride, 28);
         assert_eq!(std::mem::size_of::<[u32; 3]>(), 12);
+    }
+
+    /// Two square faces share the edge (0,0,0)-(0,1,0). Each loop closes,
+    /// and the shared edge is in the buffer twice: no dedupe.
+    #[test]
+    fn every_loop_closes_and_a_shared_edge_draws_twice() {
+        use rs_cam_core::geo::P3;
+        use rs_cam_core::geometry::enriched_mesh::{
+            FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+        };
+        let p = |x: f64, y: f64, z: f64| P3::new(x, y, z);
+        let face = |ring: Vec<P3>| FaceTessellation {
+            vertices: ring.clone(),
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+            surface_type: SurfaceType::Unknown,
+            surface_params: SurfaceParams::Unknown,
+            boundary_loops: vec![ring],
+        };
+        let floor = vec![
+            p(0.0, 0.0, 0.0),
+            p(1.0, 0.0, 0.0),
+            p(1.0, 1.0, 0.0),
+            p(0.0, 1.0, 0.0),
+        ];
+        let wall = vec![
+            p(0.0, 0.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.0, 1.0, 1.0),
+            p(0.0, 0.0, 1.0),
+        ];
+        let built = build_enriched_mesh(
+            vec![face(floor.clone()), face(wall.clone())],
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(built.is_ok(), "two faces build");
+        let Ok(enriched) = built else { return };
+        let vertices = face_edge_vertices(&enriched, &None);
+        // Two loops of 4 points: 4 pairs each, the closing pair included.
+        assert_eq!(vertices.len(), 2 * (2 * 4));
+        let f = |q: P3| [q.x as f32, q.y as f32, q.z as f32];
+        let pairs: Vec<([f32; 3], [f32; 3])> = vertices
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|[a, b]| (a.position, b.position))
+            .collect();
+        // The closing pair of each loop: last point back to the first.
+        for ring in [&floor, &wall] {
+            let (Some(&first), Some(&last)) = (ring.first(), ring.last()) else {
+                continue;
+            };
+            assert!(
+                pairs.contains(&(f(last), f(first))),
+                "a loop does not close"
+            );
+        }
+        // The shared edge, in either direction, is in the buffer twice.
+        let (a, b) = (f(p(0.0, 0.0, 0.0)), f(p(0.0, 1.0, 0.0)));
+        let shared = pairs
+            .iter()
+            .filter(|&&(u, v)| (u, v) == (a, b) || (u, v) == (b, a))
+            .count();
+        assert_eq!(shared, 2);
+        assert!(
+            vertices
+                .iter()
+                .all(|v| v.color == crate::render::colors::MODEL_EDGE)
+        );
     }
 
     /// Two faces meet at a right-angle crease. Each vertex takes the id of

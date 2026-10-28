@@ -29,6 +29,7 @@ use crate::render::upload_cache::{self, Refresh, SlotInputs};
 use crate::state::AppState;
 use crate::state::job::transform_mesh;
 
+use super::model_edges::ModelEdgeInputs;
 use super::{Gpu, PassFrame};
 
 /// Everything `mesh_data_list` is built from.
@@ -88,11 +89,13 @@ impl SlotInputs for EnrichedInputs<'_> {
 /// Its id leaves the mesh keys, so the hide is a key change.
 ///
 /// A model with an enriched mesh (STEP) takes the face pipeline; any other
-/// model with a mesh takes the plain path.
+/// model with a mesh takes the plain path. D4: the face edges take the same
+/// STEP models from this walk, so they draw for exactly the models that
+/// draw a face mesh.
 pub(super) fn inputs<'a>(
     state: &'a AppState,
     frame: &'a PassFrame,
-) -> (MeshInputs<'a>, EnrichedInputs<'a>) {
+) -> (MeshInputs<'a>, EnrichedInputs<'a>, ModelEdgeInputs<'a>) {
     let obstacle_model_ids: Vec<rs_cam_core::ids::ModelId> = frame
         .setup_id()
         .and_then(|sid| {
@@ -130,6 +133,10 @@ pub(super) fn inputs<'a>(
         },
         EnrichedInputs {
             frame,
+            meshes: enriched.clone(),
+        },
+        ModelEdgeInputs {
+            frame,
             meshes: enriched,
         },
     )
@@ -165,12 +172,7 @@ pub(super) fn upload(
 fn build_enriched(inputs: &EnrichedInputs<'_>, gpu: &Gpu<'_>, resources: &mut RenderResources) {
     let EnrichedInputs { frame, meshes } = inputs;
     for &(model_id, enriched) in meshes {
-        let transform: crate::render::mesh_render::VertexTransform<'_> =
-            frame.frame().map(|setup| {
-                let stock = frame.stock();
-                Box::new(move |p| setup.transform_point(p, stock))
-                    as Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + '_>
-            });
+        let transform = display_transform(frame);
         if let Some(gpu_data) = crate::render::mesh_render::face_mesh_gpu_data(
             gpu.device,
             &resources.gpu_limits,
@@ -199,4 +201,17 @@ fn build_plain(inputs: MeshInputs<'_>, gpu: &Gpu<'_>, resources: &mut RenderReso
             resources.mesh_data_list.push(gpu_data);
         }
     }
+}
+
+/// The transform from the model frame to the display frame of this pass.
+/// The face meshes and the face edges take the same one, so an edge sits on
+/// its face.
+pub(super) fn display_transform(
+    frame: &PassFrame,
+) -> crate::render::mesh_render::VertexTransform<'_> {
+    frame.frame().map(|setup| {
+        let stock = frame.stock();
+        Box::new(move |p| setup.transform_point(p, stock))
+            as Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + '_>
+    })
 }

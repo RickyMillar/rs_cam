@@ -178,6 +178,18 @@ pub struct EnrichedUploadKey {
     )>,
 }
 
+/// Key for `RenderResources::model_edge_lines` — the face edges of the
+/// drawn STEP models (D4). The same models and frame as the face meshes;
+/// the edges hold no hover and no selection input.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelEdgesKey {
+    pub frame: FrameKey,
+    pub meshes: Vec<(
+        rs_cam_core::ids::ModelId,
+        ArcId<rs_cam_core::geometry::enriched_mesh::EnrichedMesh>,
+    )>,
+}
+
 /// Key for the per-face state words of the face pipeline (D3).
 ///
 /// A hover or a selection change moves this key and not

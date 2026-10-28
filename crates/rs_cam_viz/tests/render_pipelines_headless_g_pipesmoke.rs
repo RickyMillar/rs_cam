@@ -72,11 +72,13 @@ use std::sync::{Arc, Mutex};
 use egui_wgpu::wgpu;
 use gpu::{adapter_line, block_on, headless_device};
 use rs_cam_core::geo::P3;
-use rs_cam_core::geometry::enriched_mesh::EnrichedMesh;
+use rs_cam_core::geometry::enriched_mesh::{
+    EnrichedMesh, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
+};
 use rs_cam_core::ids::ModelId;
-use rs_cam_core::mesh::TriangleMesh;
-use rs_cam_viz::render::mesh_render::face_mesh_gpu_data;
-use rs_cam_viz::render::{MSAA_SAMPLES, RenderResources, scene_sample_count};
+use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
+use rs_cam_viz::render::{MSAA_SAMPLES, PolygonGpuData, RenderResources, scene_sample_count};
+use wgpu::util::DeviceExt;
 
 /// The surface formats the app can be handed, in `egui_wgpu`'s own priority
 /// order. See the module doc.
@@ -92,17 +94,19 @@ const APP_TARGET_FORMATS: &[wgpu::TextureFormat] = &[
 const FRAME_WIDTH: u32 = 64;
 const FRAME_HEIGHT: u32 = 48;
 
-/// A one-triangle STEP mesh with one face.
+/// A one-triangle STEP mesh with one face and its boundary loop.
 fn one_face_mesh() -> EnrichedMesh {
     let p = |x: f64, y: f64| P3::new(x, y, 0.0);
-    let mesh = TriangleMesh::from_raw(vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)], vec![[0, 1, 2]]);
-    EnrichedMesh {
-        mesh: std::sync::Arc::new(mesh),
-        face_groups: Vec::new(),
-        triangle_to_face: vec![0],
-        adjacency: Vec::new(),
-        edges: Vec::new(),
-    }
+    let ring = vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)];
+    let face = FaceTessellation {
+        vertices: ring.clone(),
+        triangles: vec![[0, 1, 2]],
+        surface_type: SurfaceType::Unknown,
+        surface_params: SurfaceParams::Unknown,
+        boundary_loops: vec![ring],
+    };
+    build_enriched_mesh(vec![face], Vec::new(), Vec::new())
+        .unwrap_or_else(|e| panic!("the one-face mesh builds: {e}"))
 }
 
 /// Collects the errors that no error scope filters. Install it before the
@@ -197,18 +201,32 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
             let mut resources = RenderResources::new(&gpu.device, format, count);
             assert_eq!(resources.sample_count(), count);
             // One face mesh, so the frame draws the face pipeline with its
-            // state bind group (D2).
+            // state bind group (D2), and its loop, so the frame draws the
+            // model edges with the edge bind group (D4).
+            let enriched = one_face_mesh();
             let face_mesh = face_mesh_gpu_data(
                 &gpu.device,
                 &resources.gpu_limits,
                 &resources.face_state_bgl,
                 &resources.face_palette_buffer,
                 ModelId::from_wire(1),
-                &one_face_mesh(),
+                &enriched,
                 &None,
             )
             .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
             resources.face_mesh_data_list.push(face_mesh);
+            let edges = face_edge_vertices(&enriched, &None);
+            assert_eq!(edges.len(), 6, "a 3-point loop gives 3 closed pairs");
+            resources.model_edge_lines = Some(PolygonGpuData {
+                vertex_buffer: gpu
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("g_pipesmoke_edges"),
+                        contents: bytemuck::cast_slice(&edges),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                vertex_count: edges.len() as u32,
+            });
             resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
             let error = block_on(scope.pop());
             assert!(

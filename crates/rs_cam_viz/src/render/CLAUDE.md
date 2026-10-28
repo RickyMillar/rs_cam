@@ -24,8 +24,8 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - Every upload goes through `upload_cache.rs`. `refresh` is the one compare-then-rebuild guard; it takes a `SlotInputs` value (F132).
 - Check a buffer against the device limit before you create it.
 - MSAA (D1): one `sample_count` field feeds every scene pipeline and target; the blit stays single-sample. A mismatch fails at pass time; the G-PIPESMOKE frame arm (`render_headless_frame`) covers it.
-- The face pipeline needs a storage buffer in the fragment stage: Vulkan, Metal or DX12 (no GL, D-Q5).
-  Only `app/gpu_upload/face_state.rs` writes the face state words (D3).
+- The face pipeline needs a fragment storage buffer: Vulkan, Metal or DX12 (no GL, D-Q5). Only `app/gpu_upload/face_state.rs` writes its words.
+- `LineUniforms` is 96 B. Only `line_edge_bind_group` sets `edge_tol` > 0 (`frame_set`): the model edges move toward the eye by `EdgeOffset` (D4).
 - A move draws and picks through `toolpath_render::move_draw_points_into`: an arc walks core `linearize_arc_into` (R-ARC).
 
 ## Sentries

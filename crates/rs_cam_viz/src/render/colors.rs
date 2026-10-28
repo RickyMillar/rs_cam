@@ -348,6 +348,10 @@ pub const FACE_SELECTED: Rgb = Rgb::new(0.3, 0.5, 1.0);
 /// The hovered face group (soft cyan).
 pub const FACE_HOVER: Rgb = Rgb::new(0.4, 0.7, 0.85);
 
+/// The face edges of a STEP model (D4): the ink token, one step with the
+/// palette ink slot (`FACE_SLOT_INK`).
+pub const MODEL_EDGE: [f32; 3] = token_rgb(tokens::INK_65);
+
 /// The pastel palette a face group takes by its id.
 const FACE_GROUP_PALETTE: [Rgb; 10] = [
     Rgb::new(0.75, 0.85, 0.90), // light blue
@@ -434,7 +438,7 @@ pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
     ] {
         put(face_state_slot(state), selection_state_color(state));
     }
-    put(FACE_SLOT_INK, token_rgb(tokens::INK_65));
+    put(FACE_SLOT_INK, MODEL_EDGE);
     put(FACE_SLOT_ACCENT, token_rgb(tokens::ACCENT));
     palette
 }

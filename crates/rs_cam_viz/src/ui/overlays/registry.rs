@@ -543,6 +543,36 @@ pub const ROWS: &[OverlayRow] = &[
         hover: "The imported STL / STEP surface. Applies to both draw loops.",
     },
     OverlayRow {
+        id: "model_edges",
+        group: OverlayGroup::Geometry,
+        label: "Face edges",
+        surface: OverlaySurface::None,
+        // The slot is keyed on geometry; the flag gates the draw.
+        mechanism: OverlayMechanism::DrawTime,
+        flag: Some("viewport.show_model_edges"),
+        radio: false,
+        get: |s| s.viewport.show_model_edges,
+        set: |s, on| s.viewport.show_model_edges = on,
+        precondition: |s| {
+            if in_simulation(s) {
+                Precondition::no("replaced by the simulated stock here")
+            } else if !s.viewport.show_model {
+                Precondition::no("the model is off")
+            } else if !s
+                .session()
+                .models()
+                .iter()
+                .any(|m| m.enriched_mesh.is_some())
+            {
+                Precondition::no("no STEP model: an STL has no face edges")
+            } else {
+                Precondition::Ready
+            }
+        },
+        default_for: geometry_default,
+        hover: "The boundary of each STEP face, drawn in ink over the part.",
+    },
+    OverlayRow {
         id: "stock_box",
         group: OverlayGroup::Geometry,
         label: "Stock \u{2014} box",
@@ -1710,6 +1740,7 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
 pub const PREFERENCE_OVERLAYS: &[&str] = &[
     "grid",
     "model",
+    "model_edges",
     "stock_box",
     "origin_axes",
     "datum",

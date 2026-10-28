@@ -103,8 +103,9 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     // Scene beside the pins and the flip axis; 14 since K2 (2026-10-16)
     // merged the Fixtures and Keep-out rows into one Obstacles row; 16
     // since geometry selection P4.4 (2026-10-20) added the Selection
-    // states and Open path ends rows.
-    assert_eq!(count(DockSection::Scene), 16, "Scene holds 16 rows");
+    // states and Open path ends rows; 17 since D4 (2026-10-29) added the
+    // Face edges row.
+    assert_eq!(count(DockSection::Scene), 17, "Scene holds 17 rows");
     assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
     // 12 since the By Area regions row (2026-09-24) joined Inspect.
     assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");
@@ -114,6 +115,7 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         ("boundary_outline", DockSection::Scene),
         ("selection_states", DockSection::Scene),
         ("open_path_ends", DockSection::Scene),
+        ("model_edges", DockSection::Scene),
         ("move_colour_engagement", DockSection::Paths),
         ("all_toolpaths", DockSection::Paths),
         ("reach_map", DockSection::Inspect),

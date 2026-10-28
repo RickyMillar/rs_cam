@@ -934,6 +934,35 @@ impl RsCamApp {
         // order labels.
         let area_regions_drawn = crate::ui::overlays::registry::area_regions_drawn(state);
 
+        // D4: the eye of the line uniforms and the edge offset. The offset
+        // floor is the STEP chord in model mm: the core constant times the
+        // declared scale, the max over the visible STEP models.
+        let camera = state.camera.pose();
+        let chord = state
+            .session()
+            .models()
+            .iter()
+            .filter(|m| m.enriched_mesh.is_some())
+            .filter(|m| state.overlays.model_visibility.is_visible(m.id))
+            .map(|m| {
+                rs_cam_core::io::STEP_CHORD_TOLERANCE
+                    * m.units.as_ref().map_or(1.0, |u| u.scale_factor())
+            })
+            .fold(0.0_f64, f64::max) as f32;
+        let (line_eye, edge_offset) = match camera.projection {
+            crate::render::camera::ProjectionMode::Perspective => (
+                [eye.x, eye.y, eye.z, 1.0],
+                crate::render::EdgeOffset::perspective(camera.near, chord),
+            ),
+            crate::render::camera::ProjectionMode::Orthographic => {
+                let dir = (camera.eye() - camera.target).normalize();
+                (
+                    [dir.x, dir.y, dir.z, 0.0],
+                    crate::render::EdgeOffset::orthographic(camera.far, chord),
+                )
+            }
+        };
+
         let callback = ViewportCallback {
             mesh_uniforms: MeshUniforms {
                 view_proj,
@@ -942,11 +971,7 @@ impl RsCamApp {
                 camera_pos: [eye.x, eye.y, eye.z],
                 _pad1: 0.0,
             },
-            line_uniforms: LineUniforms {
-                view_proj,
-                dim: 1.0,
-                _pad: [0.0; 3],
-            },
+            line_uniforms: LineUniforms::new(view_proj, line_eye),
             // P6 — `show_model` replaces `RenderMode::Wireframe`, which drew
             // NOTHING: the crate has no wireframe pipeline, so the mode hid
             // an STL model and left a STEP one untouched (audit §3.1). The
@@ -959,6 +984,8 @@ impl RsCamApp {
                 && state.viewport.show_model
                 && state.workspace != Workspace::Simulation,
             show_model: state.viewport.show_model && state.workspace != Workspace::Simulation,
+            show_model_edges: state.viewport.show_model_edges,
+            edge_offset,
             show_grid: state.viewport.show_grid,
             // P6 — the model clause is GONE from all three stock
             // consumers (audit §3.2, fix §6.3, first option). It used to

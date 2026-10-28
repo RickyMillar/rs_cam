@@ -64,6 +64,12 @@ pub(crate) fn file_size_over_limit(
     }
 }
 
+/// The chord tolerance that the STEP door tessellates at, in file units
+/// (`step_input::load_step`). The declared scale runs after the
+/// tessellation, so in model mm the chord is this value times
+/// `ModelUnits::scale_factor`. The viewport offsets the face edges by it.
+pub const STEP_CHORD_TOLERANCE: f64 = 0.1;
+
 /// Read the geometry of one model file, at one scale.
 ///
 /// **C13: one door.** There used to be two readers of a model file, and
@@ -122,7 +128,7 @@ pub(crate) fn load_geometry(
             // the declared units are the ONLY scale a STEP file gets.
             // `apply_uniform_scale` moves the BREP data as well as the
             // mesh, so face selection survives.
-            let mut enriched = crate::io::step_input::load_step(path, 0.1)
+            let mut enriched = crate::io::step_input::load_step(path, STEP_CHORD_TOLERANCE)
                 .map_err(|e| format!("STEP load failed: {e}"))?;
             if (scale - 1.0).abs() > 1e-9 {
                 enriched.apply_uniform_scale(scale);

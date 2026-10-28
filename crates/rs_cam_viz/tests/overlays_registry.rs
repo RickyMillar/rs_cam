@@ -396,6 +396,30 @@ fn switching_an_overlay_off_is_applied_even_when_it_cannot_draw() {
     assert!(!state.viewport.show_reach_map);
 }
 
+/// D4: the face edges row goes through `set_ui_view` by its id with no MCP
+/// change. "Off" is applied on any project; "on" is refused on a project
+/// with no STEP model, with the row's own reason.
+#[test]
+fn set_ui_view_switches_the_face_edges_row_d4() {
+    let mut state = AppState::new();
+    state.workspace = Workspace::Toolpaths;
+    assert!(state.viewport.show_model_edges, "the row is on by default");
+
+    let off = BTreeMap::from([("model_edges".to_owned(), false)]);
+    let report = registry::apply_overlays(&mut state, &off);
+    assert_eq!(report.applied.get("model_edges"), Some(&false));
+    assert!(!state.viewport.show_model_edges);
+
+    let panel_reason = (registry::row("model_edges").unwrap().precondition)(&state)
+        .reason()
+        .expect("an empty project holds no STEP model")
+        .to_owned();
+    let on = BTreeMap::from([("model_edges".to_owned(), true)]);
+    let report = registry::apply_overlays(&mut state, &on);
+    assert_eq!(report.refused.get("model_edges"), Some(&panel_reason));
+    assert!(!state.viewport.show_model_edges);
+}
+
 /// "Off" has no meaning for a member of a radio group, so it is refused
 /// rather than silently ignored — the agent asked for something the surface
 /// cannot express.
