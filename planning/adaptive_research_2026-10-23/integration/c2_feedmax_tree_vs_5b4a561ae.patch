@@ -1,0 +1,377 @@
+diff --git a/crates/rs_cam_core/src/compute/config.rs b/crates/rs_cam_core/src/compute/config.rs
+index c7e5735e0..83095d4a7 100644
+--- a/crates/rs_cam_core/src/compute/config.rs
++++ b/crates/rs_cam_core/src/compute/config.rs
+@@ -1173,9 +1173,13 @@ pub struct DressupConfig {
+     /// [`DressupFieldDef::owner`], so they stay settable and stored while
+     /// the dressup is off.
+     pub feed_optimization: bool,
+-    /// The upper feed (mm/min) the optimiser may command. `None` = the
+-    /// machine maximum feed (S11); with no machine envelope the pass does
+-    /// not run.
++    /// The upper cutting feed (mm/min) of this op. It caps every feed
++    /// stage: the feed optimiser, and the feed modulation after a
++    /// simulation (G-FEEDMAX, operator ruling 2026-10-28), where it is a
++    /// hard cap next to the machine cutting ceiling. It only lowers a
++    /// feed; a value above the machine ceiling changes nothing. `None` =
++    /// the machine maximum feed (S11); with no machine envelope the
++    /// optimiser does not run.
+     pub feed_max_rate: Option<f64>,
+     pub feed_ramp_rate: f64,
+     /// Rapid-order optimisation. A bool with no value field of its own, so
+@@ -1467,7 +1471,7 @@ impl DressupConfig {
+         },
+         DressupFieldDef {
+             name: "feed_max_rate",
+-            description: "upper feed the optimiser may command (mm/min); null = the machine maximum feed",
++            description: "upper cutting feed (mm/min); caps every feed stage (the optimiser and the feed modulation after a simulation); null = the machine maximum feed",
+             owner: None,
+         },
+         DressupFieldDef {
+diff --git a/crates/rs_cam_core/src/dressup/CLAUDE.md b/crates/rs_cam_core/src/dressup/CLAUDE.md
+index d93fcdd2b..d071d773f 100644
+--- a/crates/rs_cam_core/src/dressup/CLAUDE.md
++++ b/crates/rs_cam_core/src/dressup/CLAUDE.md
+@@ -21,7 +21,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
+ - G-RETRACTDIAL is closed (CUT-03): the retract COUNT is the lever. `filter_air_cuts` bridges an
+   air run only when `machine::kinematics::retract_saves_time` says the retract is faster (10-15).
+ - Every linking arm calls the shared `relink_fragments` kernel in `finish/surface_link.rs`. Do not add a second linking implementation.
+-- `ModulationContext::cutting_ceiling` is `CuttingCeilingMmMin`, made only by `MachineProfile::cutting_ceiling` (F002). F195: the folder denies `cast_possible_truncation` and `cast_sign_loss`; a count from a user length goes through `util::steps`, or its `#[expect]` reason names the bound.
++- `ModulationContext::cutting_ceiling` is `CuttingCeilingMmMin`, made only by `MachineProfile::cutting_ceiling` (F002). G-FEEDMAX: the session lowers it to the op's `feed_max_rate` (`capped_at`, only lowers), so the dial caps the modulator as it caps feedopt. F195: the folder denies `cast_possible_truncation` and `cast_sign_loss`; a count from a user length goes through `util::steps`, or its `#[expect]` reason names the bound.
+ - A helix or ramp starts `entry_clearance_mm` over the material and takes
+   the full depth at `ramp_feed_rate`; air is straight (rulings 09-24/25). A
+   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
+diff --git a/crates/rs_cam_core/src/dressup/feed_modulation.rs b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+index bb2f38a46..dbb8daa87 100644
+--- a/crates/rs_cam_core/src/dressup/feed_modulation.rs
++++ b/crates/rs_cam_core/src/dressup/feed_modulation.rs
+@@ -291,6 +291,9 @@ pub struct ModulationContext<'a> {
+     /// [`CuttingCeilingMmMin`] type, made only by
+     /// `MachineProfile::cutting_ceiling`, so the travel rate
+     /// (`MachineProfile::max_feed_mm_min`) cannot pose as the cap.
++    /// G-FEEDMAX: the session lowers it to the op's
++    /// `DressupConfig::feed_max_rate` ([`CuttingCeilingMmMin::capped_at`]),
++    /// so no modulated feed exceeds that dial.
+     pub cutting_ceiling: CuttingCeilingMmMin,
+     /// Rapid-move feed (mm/min) the machine emits for `G0`. Used only
+     /// to thread the kinematics integrator correctly; rapids
+@@ -973,9 +976,14 @@ pub fn adaptive_feed_modulate_with_materials(
+             (ModulationStrategy::ConstrainedMax, Some(band)) => {
+                 if engagement.radial_woc_fraction <= 1e-6 && engagement.axial_doc_fraction <= 1e-6 {
+                     // No engagement — leave the commanded feed
+-                    // alone. Record the per-move entry so the
+-                    // diagnostic surface can still see it.
+-                    (commanded, BindingConstraint::MachineMaxFeed)
++                    // alone, under the ceiling (G-FEEDMAX: the ceiling
++                    // holds the op's `feed_max_rate`, a hard cap of every
++                    // arm). Record the per-move entry so the diagnostic
++                    // surface can still see it.
++                    (
++                        commanded.min(ctx.cutting_ceiling.mm_min()),
++                        BindingConstraint::MachineMaxFeed,
++                    )
+                 } else {
+                     max_safe_feed_for_move(engagement, band, ctx, predicted_cap)
+                 }
+diff --git a/crates/rs_cam_core/src/machine/mod.rs b/crates/rs_cam_core/src/machine/mod.rs
+index 4d65820a8..6b79b382a 100644
+--- a/crates/rs_cam_core/src/machine/mod.rs
++++ b/crates/rs_cam_core/src/machine/mod.rs
+@@ -196,6 +196,7 @@ impl TravelRateMmMin {
+ /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`, never above the travel
+ /// rate. Only [`MachineProfile::cutting_ceiling`] makes one; the field is
+ /// private, so a travel rate cannot pose as a cutting cap.
++/// [`Self::capped_at`] can only lower it (G-FEEDMAX).
+ #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+ pub struct CuttingCeilingMmMin(f64);
+ 
+@@ -212,6 +213,18 @@ impl CuttingCeilingMmMin {
+     pub const fn at_least(self, floor_mm_min: f64) -> Self {
+         Self(self.0.max(floor_mm_min))
+     }
++
++    /// G-FEEDMAX: the ceiling, lowered to the op's own cut-feed cap
++    /// (`DressupConfig::feed_max_rate`) when that is set, finite and
++    /// above zero. It only lowers, so the result is still no faster than
++    /// the machine: a cap above the machine ceiling changes nothing.
++    #[must_use]
++    pub fn capped_at(self, cap_mm_min: Option<f64>) -> Self {
++        match cap_mm_min {
++            Some(cap) if cap.is_finite() && cap > 0.0 => Self(self.0.min(cap)),
++            _ => self,
++        }
++    }
+ }
+ 
+ /// Complete machine profile for feeds calculation.
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index bda97fa76..e9f80f64a 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -1525,6 +1525,9 @@ struct AdvisorContext {
+     /// The cutter the toolpath is bound to. `None` when the toolpath names
+     /// no tool in the project; the advisor then times the raw path.
+     stored_tool: Option<ToolConfig>,
++    /// G-FEEDMAX: the toolpath's `DressupConfig::feed_max_rate`, which caps
++    /// the modulated candidate as it caps the post-sim pass.
++    feed_max_rate: Option<f64>,
+     /// The world-frame stock bounding box.
+     stock_bbox: BoundingBox3,
+     /// Q1: the bbox of the model this toolpath machines, matched on
+@@ -1803,7 +1806,13 @@ fn optimized_candidate(
+     // the post-sim pass does. It read the travel rate here, so a candidate
+     // could be modulated to cut at the rapid rate. Rapids keep the travel
+     // rate, which `recommend_strategy` also times them at.
+-    let max_feed = context.machine.cutting_ceiling().at_least(1.0);
++    // G-FEEDMAX: the op's `feed_max_rate` caps the candidate too, so the
++    // advisor times the feeds the post-sim pass would give.
++    let max_feed = context
++        .machine
++        .cutting_ceiling()
++        .capped_at(context.feed_max_rate)
++        .at_least(1.0);
+     let rapid_feed = context.machine.travel_rate().mm_min().max(1.0);
+ 
+     let cut_trace =
+diff --git a/crates/rs_cam_core/src/session/compute/params.rs b/crates/rs_cam_core/src/session/compute/params.rs
+index 1a74fbeb2..12e66f0b1 100644
+--- a/crates/rs_cam_core/src/session/compute/params.rs
++++ b/crates/rs_cam_core/src/session/compute/params.rs
+@@ -687,6 +687,7 @@ impl ProjectSession {
+             toolpath_enabled: tc.enabled,
+             stored_operation: tc.operation.clone(),
+             stored_tool: self.toolpath_tool(tc).cloned(),
++            feed_max_rate: tc.dressups.feed_max_rate,
+             stock_bbox: self.stock_bbox(),
+             model_bbox: self.model_bbox_by_id(tc.model_id),
+             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),
+diff --git a/crates/rs_cam_core/src/session/compute/simulation.rs b/crates/rs_cam_core/src/session/compute/simulation.rs
+index bb893c731..66f013a4d 100644
+--- a/crates/rs_cam_core/src/session/compute/simulation.rs
++++ b/crates/rs_cam_core/src/session/compute/simulation.rs
+@@ -791,6 +791,9 @@ impl ProjectSession {
+             let Some(commanded_feed_for_summary) = tc.operation.feed_rate() else {
+                 continue;
+             };
++            // G-FEEDMAX: the op's `feed_max_rate` caps every feed stage,
++            // so it caps the modulator next to the machine ceiling.
++            let max_feed = max_feed.capped_at(tc.dressups.feed_max_rate);
+             // F-039 core (shared with the strategy advisor): aggregate
+             // engagement + build the deflection / power / chipload context
+             // and modulate this toolpath's per-move feeds in one place.
+diff --git a/crates/rs_cam_core/tests/no_modulated_feed_exceeds_feed_max_rate_g_feedmax.rs b/crates/rs_cam_core/tests/no_modulated_feed_exceeds_feed_max_rate_g_feedmax.rs
+new file mode 100644
+index 000000000..166792a77
+--- /dev/null
++++ b/crates/rs_cam_core/tests/no_modulated_feed_exceeds_feed_max_rate_g_feedmax.rs
+@@ -0,0 +1,210 @@
++//! G-FEEDMAX (operator ruling 2026-10-28;
++//! `planning/adaptive_research_2026-10-23/P15_D_verify.md` "## D59"): the
++//! feed modulator obeys `DressupConfig::feed_max_rate`.
++//!
++//! Before the ruling only the feed optimiser read the dial. The modulator
++//! raised a cutting move up to the machine cutting ceiling, so a job with
++//! `feed_max_rate = 3000` cut at F4000 (Corne) and F5245 (wanaka).
++//!
++//! The fixture is the F115 pocket (the AS001 pocket of F-036b on the
++//! Shapeoko XXL kinematics), whose ConstrainedMax modulation lifts its
++//! 770 mm/min cut feed above 3000. Three claims:
++//!
++//! 1. With `feed_max_rate = 3000` no fed move of the modulated result is
++//!    above 3000, and the modulation still lifts some feed above the
++//!    commanded 770.
++//! 2. Non-vacuity: with no `feed_max_rate` (the machine ceiling) the same
++//!    run lifts a feed above 3000.
++//! 3. The cap only lowers: a `feed_max_rate` above the machine cutting
++//!    ceiling gives the same moves as no `feed_max_rate`.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++
++use std::f64::consts::TAU;
++use std::sync::atomic::AtomicBool;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::operation_configs::{PocketConfig, PocketPattern};
++use rs_cam_core::compute::stock_config::StockConfig;
++use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
++use rs_cam_core::dressup::feed_modulation::ModulationStrategy;
++use rs_cam_core::geo::P2;
++use rs_cam_core::machine::kinematics::MachineKinematics;
++use rs_cam_core::material::{Material, WoodSpecies};
++use rs_cam_core::polygon::Polygon2;
++use rs_cam_core::session::{
++    Command, ProjectSession, ProjectSessionBuilder, SetMachineArgs, SimulationOptions,
++};
++
++/// The value `compute::fixture_values` gives every fixture op.
++const RATE: f64 = rs_cam_core::compute::fixture_values::FIXTURE_FEED_MAX_RATE;
++const COMMANDED_FEED: f64 = 770.0;
++
++fn end_mill_6mm() -> ToolConfig {
++    let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
++    tool.diameter = 6.0;
++    tool.cutting_length = 25.0;
++    tool.shank_diameter = 6.35;
++    tool.stickout = 45.0;
++    tool.flute_count = 2;
++    tool.name = "End Mill 6mm (G-FEEDMAX)".to_owned();
++    tool
++}
++
++fn rect_with_island() -> Polygon2 {
++    let exterior = vec![
++        P2::new(5.0, 5.0),
++        P2::new(75.0, 5.0),
++        P2::new(75.0, 55.0),
++        P2::new(5.0, 55.0),
++    ];
++    let n = 64;
++    let hole = (0..n)
++        .map(|i| {
++            let t = f64::from(i) * TAU / f64::from(n);
++            P2::new(40.0 + 10.0 * (-t).cos(), 30.0 + 10.0 * (-t).sin())
++        })
++        .collect();
++    Polygon2::with_holes(exterior, vec![hole])
++}
++
++/// The F115 pocket with `feed_max_rate`, generated and simulated with
++/// ConstrainedMax modulation.
++fn modulated_pocket(feed_max_rate: Option<f64>) -> ProjectSession {
++    let mut builder = ProjectSessionBuilder::new();
++    builder = builder.stock(StockConfig {
++        x: 100.0,
++        y: 100.0,
++        z: Some(12.0),
++        origin_x: -10.0,
++        origin_y: -10.0,
++        origin_z: -12.0,
++        auto_from_model: false,
++        material: Material::SolidWood {
++            species: WoodSpecies::GenericHardwood,
++        },
++        ..StockConfig::default()
++    });
++    let tool_idx = builder.add_tool(end_mill_6mm());
++    let tool_id = builder.tools()[tool_idx].id.raw();
++    let model_id = builder.add_model(common::session::polygon_model(
++        vec![rect_with_island()],
++        "as001_pocket",
++    ));
++    let pocket = PocketConfig {
++        stepover: 2.0,
++        floor: rs_cam_core::compute::floor::Floor::top(6.0),
++        depth_per_pass: 2.0,
++        feed_rate: Some(COMMANDED_FEED),
++        plunge_rate: Some(385.0),
++        climb: true,
++        pattern: PocketPattern::Contour,
++        spindle_rpm: Some(18_000),
++        selection: rs_cam_core::selection::Selection::drawing(),
++        ..PocketConfig::default()
++    };
++    let mut tc = common::session::toolpath_config(
++        "Pocket",
++        OperationConfig::Pocket(pocket),
++        rs_cam_core::ids::ToolId::from_raw(tool_id),
++        model_id,
++    );
++    tc.dressups.feed_max_rate = feed_max_rate;
++    let _ = builder.add_toolpath(0, tc).expect("add the pocket");
++    let mut session = builder.build();
++    let mut machine = session.machine().clone();
++    machine.kinematics = Some(MachineKinematics::shapeoko_xxl_stock());
++    let _ = session
++        .apply(Command::SetMachine(SetMachineArgs {
++            machine: Box::new(machine),
++        }))
++        .expect("the machine row refuses nothing");
++    let _ = session
++        .generate_toolpath(0, &AtomicBool::new(false))
++        .expect("generate the pocket");
++    let opts = SimulationOptions {
++        resolution: rs_cam_core::session::SimulationResolution::Fixed(1.0),
++        adaptive_feed_modulation: true,
++        modulation_strategy: ModulationStrategy::ConstrainedMax,
++        modulation_feed_scale: 1.0,
++        ..SimulationOptions::default()
++    };
++    let _ = session
++        .run_simulation(&opts, &AtomicBool::new(false))
++        .expect("the simulation completes");
++    session
++}
++
++fn fed_feeds(session: &ProjectSession) -> Vec<f64> {
++    session
++        .result_at(0)
++        .expect("generated")
++        .toolpath()
++        .moves
++        .iter()
++        .filter_map(|m| m.move_type.feed_rate())
++        .collect()
++}
++
++fn max_of(feeds: &[f64]) -> f64 {
++    feeds.iter().copied().fold(0.0, f64::max)
++}
++
++#[test]
++fn no_modulated_feed_exceeds_feed_max_rate() {
++    // 2. Non-vacuity first: with the machine ceiling only, the modulation
++    // lifts a feed above the rate.
++    let uncapped = fed_feeds(&modulated_pocket(None));
++    assert!(
++        max_of(&uncapped) > RATE,
++        "the fixture must lift a feed above {RATE} without the cap, or the \
++         claim is vacuous: max {}",
++        max_of(&uncapped)
++    );
++
++    // 1. With the rate, no fed move is above it, and the modulation still
++    // lifts feeds above the commanded feed.
++    let capped = fed_feeds(&modulated_pocket(Some(RATE)));
++    let over: Vec<f64> = capped
++        .iter()
++        .copied()
++        .filter(|f| *f > RATE + 1e-6)
++        .collect();
++    assert!(
++        over.is_empty(),
++        "{} fed moves above feed_max_rate {RATE}: max {}",
++        over.len(),
++        max_of(&over)
++    );
++    assert!(
++        capped.iter().any(|f| *f > COMMANDED_FEED + 1e-6),
++        "the capped run must still modulate a feed above the commanded {COMMANDED_FEED}"
++    );
++}
++
++#[test]
++fn a_rate_above_the_machine_ceiling_changes_nothing() {
++    let session = modulated_pocket(None);
++    let ceiling = session.machine().cutting_ceiling().mm_min();
++    let above = fed_feeds(&modulated_pocket(Some(2.0 * ceiling)));
++    assert_eq!(
++        fed_feeds(&session),
++        above,
++        "a feed_max_rate above the machine ceiling ({ceiling}) must only lower, \
++         never raise or move a feed"
++    );
++
++    // The typed cap only lowers, and ignores a value it cannot read.
++    let typed = session.machine().cutting_ceiling();
++    assert_eq!(typed.capped_at(Some(2.0 * ceiling)), typed);
++    assert_eq!(typed.capped_at(None), typed);
++    assert_eq!(typed.capped_at(Some(f64::NAN)), typed);
++    assert_eq!(typed.capped_at(Some(0.0)), typed);
++    assert_eq!(typed.capped_at(Some(RATE)).mm_min(), RATE.min(ceiling));
++}
