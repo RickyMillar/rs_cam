@@ -336,6 +336,42 @@ fn draw_status_header(ui: &mut egui::Ui, sim: &mut SimulationState, session: &Pr
     ui.separator();
 }
 
+/// W3 (G-WLAIRLABEL, D69 §3): the value of the air-cut row. `air_pct` is
+/// the air-cut share of the total runtime, and `skin_share` the share of
+/// that air time that removes material (core
+/// `SimulationCutTrace::air_cut_removing_share`). With no skin the row
+/// reads as before; with a skin it gives the TRUE air and the skin, on the
+/// same row: `14% (+71% skin)`, and [`air_skin_note`] is on the hover. The
+/// long form `14% (+71% skin cut under 2% WOC)` elides in the value column
+/// of the 304-point inspector (measured), so the WOC words go to the hover.
+/// The air-cut figures and the gates do not change.
+pub(crate) fn air_cut_value(air_pct: f64, skin_share: f64) -> String {
+    if skin_share > 0.0 {
+        format!(
+            "{:.0}% (+{:.0}% skin)",
+            air_pct * (1.0 - skin_share),
+            air_pct * skin_share,
+        )
+    } else {
+        format!("{air_pct:.0}% of total runtime")
+    }
+}
+
+/// W3: the hover line of the skin, or an empty string with no skin.
+pub(crate) fn air_skin_note(air_pct: f64, skin_share: f64) -> String {
+    if skin_share > 0.0 {
+        format!(
+            "\nSkin: {:.0}% of the total runtime is flagged air but removes material, \
+             cut under {:.0}% WOC by the flank above the tip. The first figure is the \
+             air that removes nothing.",
+            air_pct * skin_share,
+            rs_cam_core::stock::simulation_cut::AIR_CUT_RADIAL_WOC_FRACTION * 100.0
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// The project verdict caption, on the page (F113).
 ///
 /// # Why the high-air-cutting caution is here
@@ -742,9 +778,13 @@ fn draw_warnings_tab(
                 s.air_cut_pct_of_total_runtime(),
                 low_engagement_pct_of_total,
                 s.air_cut_pct_of_cutting_time(),
+                // W3 (G-WLAIRLABEL): the share of the air time that removes
+                // material, a skin the flank cuts above the tip. The
+                // summary is the whole run, so the share is too (`None`).
+                trace.air_cut_removing_share(None),
             )
         });
-    if let Some((air_pct, low_eng_pct, air_pct_of_cutting)) = time_pcts {
+    if let Some((air_pct, low_eng_pct, air_pct_of_cutting, skin_share)) = time_pcts {
         SectionHeader::new("Informational").show(ui);
         let count_for = |kind: SimulationIssueKind| {
             informational
@@ -757,7 +797,8 @@ fn draw_warnings_tab(
             "\nDenominator: TOTAL runtime (cutting + rapids) - the measure \
                          the banner and the per-operation thresholds use. Over CUTTING \
                          time alone the same seconds read {air_pct_of_cutting:.0}%, \
-                         which is what the MCP narration reports."
+                         which is what the MCP narration reports.{}",
+            air_skin_note(air_pct, skin_share)
         );
         let rows = [
             (
@@ -782,11 +823,12 @@ fn draw_warnings_tab(
         ];
         DataTable::new("cut_overview_informational")
             .rows(rows.into_iter().map(|(kind, pct, what, denominator_note)| {
-                DataRow::value(
-                    issue_kind_label(kind),
-                    format!("{pct:.0}% of total runtime"),
-                )
-                .hover(format!(
+                let value = if kind == SimulationIssueKind::AirCut {
+                    air_cut_value(pct, skin_share)
+                } else {
+                    format!("{pct:.0}% of total runtime")
+                };
+                DataRow::value(issue_kind_label(kind), value).hover(format!(
                     "{what}\n{} flagged SAMPLES — a per-sample emission \
                                  tally, not a defect count, and not the same \
                                  population as the coalesced issue RUNS the MCP and \
@@ -2749,6 +2791,54 @@ fn draw_generation_trace_disclosure(ui: &mut egui::Ui, sim: &mut SimulationState
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W3 (G-WLAIRLABEL): the air-cut row names the skin on its own row,
+    /// with the WOC words on the hover.
+    /// The D69 Corne Waterline split of the W3 core test: 84.8 % air, of
+    /// which 83.15 % removes material (279.3 s of 335.9 s). With no skin
+    /// the row reads as before. The row fits the 304-point Simulation
+    /// inspector (288 points inside) with the label, and does not elide.
+    #[test]
+    fn the_air_row_names_the_skin_w3() {
+        let share = 279.3 / 335.9;
+        let value = air_cut_value(84.8, share);
+        assert_eq!(value, "14% (+71% skin)");
+        assert!(air_skin_note(84.8, share).contains("71% of the total runtime"));
+        assert!(air_skin_note(84.8, share).contains("under 2% WOC"));
+        assert_eq!(air_cut_value(12.4, 0.0), "12% of total runtime");
+        assert_eq!(air_skin_note(12.4, 0.0), "");
+
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut texts: Vec<(String, bool, usize)> = Vec::new();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(288.0);
+                DataTable::new("air_row_fit")
+                    .rows([DataRow::value("Air cut", value.clone())])
+                    .show(ui);
+            });
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::epaint::Shape::Text(t) => Some((
+                        t.galley.job.text.clone(),
+                        t.galley.elided,
+                        t.galley.rows.len(),
+                    )),
+                    _ => None,
+                })
+                .collect();
+            out.textures_delta.clear();
+        }
+        let row = texts.iter().find(|(t, _, _)| *t == value);
+        assert!(
+            row.is_some_and(|(_, elided, rows)| !elided && *rows == 1),
+            "the value paints on one row, not elided: {texts:?}"
+        );
+    }
 
     #[test]
     fn arc_engagement_unmodeled_tooltip_says_re_run() {

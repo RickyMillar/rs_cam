@@ -15,7 +15,10 @@
 //! it asserts two rules:
 //!
 //! 1. No galley wraps to more than one row, except a refusal or an error
-//!    that blocks work (`ALLOWED_MULTI_LINE`).
+//!    that blocks work (`may_wrap`). G-E (2026-10-28): in the toolpath
+//!    panel no text wraps at all, a refusal included: a refusal is one
+//!    word or one line, with its text on hover
+//!    (`a_generate_refusal_takes_one_line_g_e`).
 //! 2. The number of visible text rows on each surface stays under a cap.
 //!    The caps come from the after-state with a small margin.
 //!
@@ -434,8 +437,10 @@ fn the_inspector_text_is_bounded_ic1() {
                 p.text.replace('\n', " / ")
             );
         }
+        // G-E: in the toolpath panel ("<op> / <tab>") no text wraps.
+        let toolpath_tab = name.contains(" / ");
         for p in multi {
-            if !may_wrap(p) {
+            if toolpath_tab || !may_wrap(p) {
                 failures.push(format!("{name}: a {}-row text block: {:?}", p.rows, p.text));
             }
         }
@@ -514,4 +519,212 @@ fn the_measures_see_a_paragraph_ic1() {
         visible_lines(&painted)
     );
     assert!(painted.iter().all(|p| p.text == SENTENCE));
+}
+
+/// G-E sub-step 1: a refusal from the last generate takes ONE word in the
+/// Generate row and ONE face line under it, and no text wraps. Before G-E
+/// the D53 refusal printed in full beside Generate: 15 rows, and the tab
+/// strip moved down 257 points.
+#[test]
+fn a_generate_refusal_takes_one_line_g_e() {
+    // The D53 refusal text (`session/compute/generation.rs`), the longest
+    // generate refusal the panel can show.
+    const REFUSAL: &str = "'Edges' takes its boundary from the rest regions of 'Body rough' \
+        with Center containment, but its tool radius 5.000 mm is larger than the tool \
+        radius of 'Body rough', 3.000 mm. The regions are tool-centre positions of that \
+        tool, so this tool could cut up to 2.000 mm past the machining boundary of 'Body \
+        rough'. Set the boundary containment to Inside, or use a tool no larger than the \
+        tool of 'Body rough'.";
+    let mut state = fixture();
+    let id = state
+        .session()
+        .toolpath_configs()
+        .iter()
+        .find(|c| c.name == "3D Rough")
+        .map(|c| c.id)
+        .expect("fixture toolpath");
+    let tab_top = |painted: &[Painted]| {
+        painted
+            .iter()
+            .find(|p| p.text == "Geometry")
+            .and_then(|p| p.bands.first().map(|b| b.0))
+            .expect("the tab strip paints")
+    };
+    let clean = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    state
+        .gui
+        .toolpath_rt
+        .get_mut(&id)
+        .expect("fixture runtime")
+        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(REFUSAL.to_owned());
+    let refused = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    assert!(
+        refused.painted.iter().any(|p| p.text == "Refused"),
+        "the state word: {:?}",
+        refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
+    );
+    assert!(
+        refused
+            .painted
+            .iter()
+            .any(|p| p.text == REFUSAL && p.rows == 1),
+        "the face line holds the full text on one row"
+    );
+    let wrapped: Vec<&String> = refused
+        .painted
+        .iter()
+        .filter(|p| p.rows > 1)
+        .map(|p| &p.text)
+        .collect();
+    assert!(wrapped.is_empty(), "no text wraps: {wrapped:?}");
+    assert_eq!(
+        visible_lines(&refused.painted),
+        visible_lines(&clean.painted) + 1,
+        "the refusal adds one line"
+    );
+    let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
+    assert!(
+        (0.0..30.0).contains(&moved),
+        "the tab strip moves down one line at most, not {moved:.1} points"
+    );
+    assert!(
+        refused.excess_width <= 0.5,
+        "no row is wider than the panel"
+    );
+}
+
+/// G-E sub-step 3: a rest-boundary refusal from the last generate has a
+/// short face and the `⟳` action that generates its source. Here the 3D
+/// Finish takes its boundary from the rest regions of the 3D Rough, which
+/// has no result: the face is `✕ Generate '3D Rough' first`, on one row
+/// with the action, and the full refusal stays on the hover.
+#[test]
+fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundarySource};
+    use rs_cam_core::session::{Command, RestBoundaryRefusal, SetBoundaryConfigArgs};
+    let mut state = fixture();
+    let configs = state.session().toolpath_configs();
+    let index = |name: &str| {
+        configs
+            .iter()
+            .position(|c| c.name == name)
+            .expect("fixture toolpath")
+    };
+    let (rough, finish) = (index("3D Rough"), index("3D Finish"));
+    let rough_id = configs[rough].id;
+    let finish_id = configs[finish].id;
+    let mut boundary: BoundaryConfig = configs[finish].boundary.clone();
+    boundary.enabled = true;
+    boundary.source = BoundarySource::DerivedRestRegions {
+        source_toolpath_id: rough_id,
+    };
+    let _ = state
+        .apply(Command::SetBoundaryConfig(SetBoundaryConfigArgs {
+            index: finish,
+            boundary,
+        }))
+        .expect("the boundary edit applies");
+    let refusal = state
+        .session()
+        .rest_boundary_refusal(finish)
+        .expect("the source has no result");
+    assert!(matches!(refusal, RestBoundaryRefusal::NotGenerated { .. }));
+    state
+        .gui
+        .toolpath_rt
+        .get_mut(&finish_id)
+        .expect("fixture runtime")
+        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(refusal.to_string());
+
+    let frame = surface(
+        &mut state,
+        Selection::Toolpath(finish_id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    let face = frame
+        .painted
+        .iter()
+        .find(|p| p.text == format!("{} Generate '3D Rough' first", tokens::GLYPH_DANGER))
+        .expect("the short face");
+    let action = frame
+        .painted
+        .iter()
+        .find(|p| p.text == "\u{27F3}")
+        .expect("the generate action");
+    assert_eq!(face.rows, 1);
+    assert!(
+        (face.bands[0].0 - action.bands[0].0).abs() < 8.0,
+        "the face and its action share one row"
+    );
+    assert!(
+        !frame.painted.iter().any(|p| p.text == refusal.to_string()),
+        "the full refusal is on the hover, not the face"
+    );
+    assert!(frame.painted.iter().all(|p| p.rows == 1), "no text wraps");
+    assert!(frame.excess_width <= 0.5, "the row fits the panel");
+}
+
+/// G-E sub-step 4: a header validation error is one line: no wrap, one
+/// line more than the clean panel, the tab strip down by one line at most.
+/// The 3D Rough is bound to the 2D model, so it has no 3D mesh.
+#[test]
+fn a_validation_error_takes_one_line_g_e() {
+    use rs_cam_core::session::{Command, SetToolpathModelArgs};
+    let mut state = fixture();
+    let configs = state.session().toolpath_configs();
+    let index = configs
+        .iter()
+        .position(|c| c.name == "3D Rough")
+        .expect("fixture toolpath");
+    let id = configs[index].id;
+    let tab_top = |painted: &[Painted]| {
+        painted
+            .iter()
+            .find(|p| p.text == "Geometry")
+            .and_then(|p| p.bands.first().map(|b| b.0))
+            .expect("the tab strip paints")
+    };
+    let clean = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    let _ = state
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index,
+            model_id: ModelId::from_raw(MODEL_2D),
+        }))
+        .expect("the model edit applies");
+    let refused = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    assert!(
+        refused
+            .painted
+            .iter()
+            .any(|p| p.text.starts_with("Selected model")),
+        "non-vacuity: the validation error paints: {:?}",
+        refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
+    );
+    assert!(refused.painted.iter().all(|p| p.rows == 1), "no text wraps");
+    let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
+    assert!(
+        (0.0..30.0).contains(&moved),
+        "the tab strip moves down one line at most, not {moved:.1} points"
+    );
 }

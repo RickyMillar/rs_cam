@@ -19,6 +19,10 @@ pub struct ToolpathValidationContext {
     /// R2: the no-tool state of each op with no tool
     /// (`ProjectSession::no_tool_state`), with the fix.
     no_tool_states: Vec<(rs_cam_core::ids::ToolpathId, String)>,
+    /// G-C (§2 d): the D53 refusal of each rest-regions consumer whose
+    /// tool is larger than its source's, under its stored containment
+    /// (`ProjectSession::larger_rest_consumer_refusal`).
+    rest_consumer_refusals: Vec<(rs_cam_core::ids::ToolpathId, String)>,
 }
 
 pub(in crate::ui::properties) struct ValidationTool {
@@ -75,6 +79,14 @@ impl ToolpathValidationContext {
                 .filter_map(|tc| {
                     let refusal = session.hole_selection(tc)?.refusal?;
                     Some((tc.id, refusal))
+                })
+                .collect(),
+            rest_consumer_refusals: session
+                .toolpath_configs()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, tc)| {
+                    Some((tc.id, session.larger_rest_consumer_refusal(index)?))
                 })
                 .collect(),
         }
@@ -175,6 +187,29 @@ pub(in crate::ui::properties) fn hole_refusal(
         .map(|(_, refusal)| refusal.as_str())
 }
 
+/// G-C (§2 d): the D53 refusal of rest-regions consumer `toolpath_id`
+/// (the core sentence), so Generate is off and the header names the Cut
+/// tab. The text is the stored containment's; the draft's `Inside` drops it.
+pub(in crate::ui::properties) fn rest_consumer_refusal<'a>(
+    ctx: &'a ToolpathValidationContext,
+    entry: &ToolpathEntry,
+) -> Option<&'a str> {
+    use rs_cam_core::compute::config::{BoundaryContainment, BoundarySource};
+    if !entry.boundary.enabled
+        || entry.boundary.containment == BoundaryContainment::Inside
+        || !matches!(
+            entry.boundary.source,
+            BoundarySource::DerivedRestRegions { .. }
+        )
+    {
+        return None;
+    }
+    ctx.rest_consumer_refusals
+        .iter()
+        .find(|(id, _)| *id == entry.id)
+        .map(|(_, refusal)| refusal.as_str())
+}
+
 pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext) -> Vec<String> {
     let mut errs = Vec::new();
 
@@ -184,6 +219,9 @@ pub fn validate_toolpath(entry: &ToolpathEntry, ctx: &ToolpathValidationContext)
     };
 
     validate_geometry_selection(entry, ctx, &mut errs);
+    if let Some(refusal) = rest_consumer_refusal(ctx, entry) {
+        errs.push(refusal.to_owned());
+    }
 
     super::registry::op_errors(
         &entry.operation,

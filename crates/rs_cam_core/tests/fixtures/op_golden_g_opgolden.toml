@@ -61,17 +61,17 @@ spans_hash = "7cf02096aabac105"
 
 ["adaptive3d/fresh"]
 outcome = "ok"
-move_count = 379
-rapid_count = 18
-linear_count = 361
+move_count = 368
+rapid_count = 12
+linear_count = 356
 arc_count = 0
-cutting_length_mm = 1958.852
-rapid_length_mm = 105.62
+cutting_length_mm = 1955.852
+rapid_length_mm = 102.62
 bbox_min = [-15.7938, -15.5292, 0.5]
 bbox_max = [15.9563, 15.9563, 13.0]
-moves_hash = "fc7bd966aaee3c06"
-span_count = 86
-spans_hash = "afdac8b3c21199c4"
+moves_hash = "ec929dc206dee4db"
+span_count = 80
+spans_hash = "4e43789fa0f1e0cc"
 
 ["adaptive3d/ramp_geodesic"]
 outcome = "ok"
@@ -1205,31 +1205,31 @@ spans_hash = "9b3b6ef7f7cddc3d"
 
 ["waterline/fresh"]
 outcome = "ok"
-move_count = 65
-rapid_count = 18
-linear_count = 8
-arc_count = 39
-cutting_length_mm = 282.428
-rapid_length_mm = 86.835
-bbox_min = [-11.5715, -11.718, 1.0]
+move_count = 75
+rapid_count = 3
+linear_count = 11
+arc_count = 61
+cutting_length_mm = 338.062
+rapid_length_mm = 15.0
+bbox_min = [-11.5715, -11.636, 1.0]
 bbox_max = [11.5827, 11.5827, 13.0]
-moves_hash = "980ff223a423a338"
-span_count = 70
-spans_hash = "d0993fa06cd67e35"
+moves_hash = "c34f320117dbfeea"
+span_count = 69
+spans_hash = "1e7ebaf8dbe19d60"
 
 ["waterline/rest"]
 outcome = "ok"
-move_count = 191
-rapid_count = 18
-linear_count = 134
-arc_count = 39
-cutting_length_mm = 317.68
-rapid_length_mm = 104.827
-bbox_min = [-11.5715, -11.718, 1.0]
+move_count = 75
+rapid_count = 3
+linear_count = 11
+arc_count = 61
+cutting_length_mm = 336.562
+rapid_length_mm = 16.5
+bbox_min = [-11.5715, -11.636, 1.0]
 bbox_max = [11.5827, 11.5827, 13.0]
-moves_hash = "883cefbeb4fcd637"
-span_count = 70
-spans_hash = "62affc15890889e2"
+moves_hash = "2c201c4cca3a33c6"
+span_count = 69
+spans_hash = "1e7ebaf8dbe19d60"
 
 ["zigzag/each_face"]
 outcome = "ok"

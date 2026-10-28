@@ -13,7 +13,6 @@
 )]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
-use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{BoundingBox3, P3};
 use rs_cam_core::session::ProjectSession;
 use rs_cam_core::toolpath::Toolpath;
@@ -67,7 +66,6 @@ fn boundary_clip_preserves_spans_when_all_moves_inside() {
         None,
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
-        &mut GenerationFindings::default(),
     )
     .expect("apply_boundary_clip must succeed on a fully-inside toolpath");
 
@@ -121,7 +119,6 @@ fn boundary_clip_with_no_input_spans_emits_no_spans() {
         None,
         &semantic_ctx,
         &mut ReconcileSet::new(Some(&recorder), None),
-        &mut GenerationFindings::default(),
     )
     .expect("apply_boundary_clip must succeed with no input spans");
 

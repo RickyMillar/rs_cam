@@ -230,6 +230,7 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -240,7 +241,6 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         initial_stock: None,
         // Removal step R4: Geodesic Adaptive (AgentSearch until then).
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
-        z_blend: false,
     };
 
     let _ = stock_bottom_z;

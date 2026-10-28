@@ -176,10 +176,12 @@ pub fn clip_toolpath_to_boundary(tp: &Toolpath, boundary: &Polygon2, safe_z: f64
 /// remap-then-poke-the-trace sequence; a fourth would have forgotten it.
 ///
 /// An EMPTY `boundaries` slice means the boundary collapsed (tool larger
-/// than the stock, every rest region eaten by the inset). That is not an
-/// error and not a clip: the toolpath passes through with an identity
+/// than the stock, every rest region eaten by the inset). This function
+/// does not clip then: the toolpath passes through with an identity
 /// mapping, which still has to be reconciled — so the collapsed path and
-/// the clipped path leave the channels in provably the same state.
+/// the clipped path leave the channels in provably the same state. The
+/// session never passes an empty set: it refuses a collapse
+/// (G-BOUNDCOLLAPSE, `ProjectSession::boundary_collapse`).
 ///
 /// `plunge_rate_mm_min` is the operation's own plunge rate, handed straight
 /// to the walk for the re-entry descent (G-BOUNDARYPLUNGE). See

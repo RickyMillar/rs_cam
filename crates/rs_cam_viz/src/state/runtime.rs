@@ -108,9 +108,24 @@ pub struct ToolpathRuntime {
     pub debug_trace: Option<Arc<rs_cam_core::trace::debug_trace::ToolpathDebugTrace>>,
     pub semantic_trace: Option<Arc<rs_cam_core::trace::semantic_trace::ToolpathSemanticTrace>>,
     pub debug_trace_path: Option<PathBuf>,
+    /// G-B2: the feed caps of the stored result, counted once per result.
+    /// Read it through [`Self::caps`].
+    pub cap_memo: CapMemo,
+    /// G-C: whether `Inside` containment would collapse this toolpath's
+    /// rest-regions boundary, asked once per revision and source result.
+    /// Read it through [`InsideMemo::answer`].
+    pub inside_memo: InsideMemo,
 }
 
 impl ToolpathRuntime {
+    /// G-B2: the feed caps of the stored result, or `None` when no result
+    /// or no capped move. The moves are counted once per result: the
+    /// memo keys on the result's toolpath allocation.
+    #[must_use]
+    pub fn caps(&self) -> Option<CapFigures> {
+        self.cap_memo.caps(self.run.result())
+    }
+
     /// Create runtime state for a new toolpath with sensible defaults.
     pub fn new(auto_regen: bool) -> Self {
         Self {
@@ -124,7 +139,149 @@ impl ToolpathRuntime {
             debug_trace: None,
             semantic_trace: None,
             debug_trace_path: None,
+            cap_memo: CapMemo::default(),
+            inside_memo: InsideMemo::default(),
         }
+    }
+}
+
+// ── Would Inside collapse? (G-C) ──────────────────────────────────────
+
+/// G-C: the answer of core `ProjectSession::boundary_collapse_with` for a
+/// rest-regions boundary switched to `Inside`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsideAnswer {
+    /// `Inside` keeps area for the tool: the `[Use Inside]` act and the
+    /// D-2 pick may write it.
+    Keeps,
+    /// `Inside` leaves no area (G-BOUNDCOLLAPSE): the refusal sentence.
+    Collapses(String),
+    /// The inputs do not resolve (for example the source has no result):
+    /// the answer is not known, so nothing writes `Inside`.
+    Unknown(String),
+}
+
+/// The key of an [`InsideAnswer`]: the consumer's revision, the source,
+/// and the source's result (a `Weak`, so a regenerated source asks again).
+#[derive(Debug)]
+struct InsideKey {
+    revision: u64,
+    source: ToolpathId,
+    source_result: Option<std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
+}
+
+impl InsideKey {
+    fn matches(&self, other: &Self) -> bool {
+        self.revision == other.revision
+            && self.source == other.source
+            && match (&self.source_result, &other.source_result) {
+                (Some(a), Some(b)) => std::sync::Weak::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+}
+
+/// The last [`InsideAnswer`] of one toolpath. The answer costs one input
+/// resolution, so the panel asks it once per key, not once per frame. A
+/// frame reads through `&GuiState`, so the memo writes through a lock.
+#[derive(Debug, Default)]
+pub struct InsideMemo(std::sync::Mutex<Option<(InsideKey, InsideAnswer)>>);
+
+impl InsideMemo {
+    /// The answer for the consumer at `revision` and the source `source`
+    /// with its result `source_result`; `ask` runs only on a new key.
+    pub fn answer(
+        &self,
+        revision: u64,
+        source: ToolpathId,
+        source_result: Option<&Arc<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>>,
+        ask: impl FnOnce() -> InsideAnswer,
+    ) -> InsideAnswer {
+        let key = InsideKey {
+            revision,
+            source,
+            source_result: source_result.map(Arc::downgrade),
+        };
+        let Ok(mut slot) = self.0.lock() else {
+            return ask();
+        };
+        if let Some((stored, answer)) = slot.as_ref()
+            && stored.matches(&key)
+        {
+            return answer.clone();
+        }
+        let answer = ask();
+        *slot = Some((key, answer.clone()));
+        answer
+    }
+}
+
+// ── The feed caps of a stored result (G-B, G-B2) ──────────────────────
+
+/// The feed caps of a stored toolpath (`Move::feed_cap`): the planned
+/// moves, not the emitted ones, so a surface that prints them says
+/// "planned".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CapFigures {
+    pub count: usize,
+    pub min_feed_mm_min: f64,
+}
+
+impl CapFigures {
+    /// `None` when no move of `tp` carries a cap.
+    #[must_use]
+    pub fn of(tp: &rs_cam_core::toolpath::Toolpath) -> Option<Self> {
+        let mut caps = tp.moves.iter().filter_map(|m| m.feed_cap);
+        let first = caps.next()?;
+        let (count, min_feed_mm_min) = caps.fold((1, first), |(n, low), cap| (n + 1, low.min(cap)));
+        Some(Self {
+            count,
+            min_feed_mm_min,
+        })
+    }
+
+    /// The one hover line of the Generate row's figures.
+    #[must_use]
+    pub fn line(self) -> String {
+        format!(
+            "{} moves at a load cap (planned), lowest {:.0} mm/min",
+            self.count, self.min_feed_mm_min
+        )
+    }
+}
+
+/// The [`CapFigures`] of the last result that [`ToolpathRuntime::caps`]
+/// read. A frame reads the caps from `&AppState` (the legend, the panel
+/// inputs), so the memo writes through a lock. The key is a `Weak` of the
+/// result's toolpath: a new result has a new allocation, and a `Weak`
+/// keeps the old allocation alive, so its address is not reused.
+#[derive(Debug, Default)]
+pub struct CapMemo(std::sync::Mutex<Option<CapMemoEntry>>);
+
+#[derive(Debug)]
+struct CapMemoEntry {
+    key: std::sync::Weak<rs_cam_core::trace::toolpath_spans::AnnotatedToolpath>,
+    caps: Option<CapFigures>,
+}
+
+impl CapMemo {
+    fn caps(&self, result: Option<&super::toolpath::ToolpathResult>) -> Option<CapFigures> {
+        let result = result?;
+        let Ok(mut slot) = self.0.lock() else {
+            return CapFigures::of(result.toolpath());
+        };
+        if let Some(entry) = slot.as_ref()
+            && std::sync::Weak::ptr_eq(&entry.key, &Arc::downgrade(&result.annotated))
+        {
+            return entry.caps;
+        }
+        let caps = CapFigures::of(result.toolpath());
+        *slot = Some(CapMemoEntry {
+            key: Arc::downgrade(&result.annotated),
+            caps,
+        });
+        caps
     }
 }
 

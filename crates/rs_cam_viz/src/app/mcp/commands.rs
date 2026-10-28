@@ -571,6 +571,7 @@ impl RsCamApp {
                 )
             }
             CoreRequest::AddToolpath(p) => self.core_add_toolpath(p, before),
+            CoreRequest::AddGeodesicBodyAndEdges(p) => self.core_add_geodesic_pair(&p, before),
             CoreRequest::AddBoreFromDrill(p) => {
                 // The id pairs with the index (W13b): the core row refuses
                 // an index that names another toolpath.
@@ -852,6 +853,82 @@ impl RsCamApp {
             Command::AddToolpath(AddToolpathArgs {
                 setup_index: p.setup_index,
                 config: Box::new(config),
+            }),
+            Box::new(before),
+        )
+    }
+
+    /// Step 7.8: build the `add_geodesic_body_and_edges` command from THE
+    /// core draft of the pair (`draft_geodesic_pair`), as the GUI action
+    /// does. The tool and model arguments mean what they mean on
+    /// `add_toolpath`.
+    fn core_add_geodesic_pair(
+        &mut self,
+        p: &rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam,
+        mut before: CoreBefore,
+    ) -> CorePlan {
+        let session = self.controller.state().session();
+        let tools = session.list_tools();
+        let tool_at = |index: usize| tools.get(index).map(|info| info.id);
+        let tool = match p.tool_index {
+            None => rs_cam_core::session::ToolChoice::FirstFitting,
+            Some(i) => match tool_at(i) {
+                Some(id) => rs_cam_core::session::ToolChoice::Exact(id),
+                None => {
+                    return CorePlan::Answered(CoreReply::refused(
+                        &format!("Error: Tool index {i} not found"),
+                        Some("tool_index"),
+                    ));
+                }
+            },
+        };
+        let edge_tool = match p.edge_tool_index {
+            None => None,
+            Some(i) => match tool_at(i) {
+                Some(id) => Some(id),
+                None => {
+                    return CorePlan::Answered(CoreReply::refused(
+                        &format!("Error: Tool index {i} not found"),
+                        Some("edge_tool_index"),
+                    ));
+                }
+            },
+        };
+        let model = match p.model_id {
+            Some(id) => {
+                rs_cam_core::session::ModelChoice::Exact(rs_cam_core::ids::ModelId::from_wire(id))
+            }
+            None => rs_cam_core::session::ModelChoice::Rule { selected: None },
+        };
+        let request = rs_cam_core::session::GeodesicPairRequest {
+            setup_index: p.setup_index,
+            tool,
+            model,
+            edges: p.edges.unwrap_or(true),
+            edge_tool,
+        };
+        let draft = match session.draft_geodesic_pair(request) {
+            Ok(draft) => draft,
+            Err(e) => {
+                return CorePlan::Answered(CoreReply::refused(
+                    &format!("Cannot add toolpath: {e}"),
+                    None,
+                ));
+            }
+        };
+        let drafts: Vec<&rs_cam_core::session::ToolpathDraft> = std::iter::once(&draft.body)
+            .chain(draft.edges.as_ref())
+            .collect();
+        before.extra = serde_json::json!({
+            "edges": draft.edges.is_some(),
+            "no_tool": drafts.iter().find_map(|d| d.no_tool.clone()),
+            "feeds_refusal": drafts.iter().find_map(|d| d.feeds_refusal.clone()),
+        });
+        CorePlan::Apply(
+            Command::AddGeodesicBodyAndEdges(rs_cam_core::session::AddGeodesicBodyAndEdgesArgs {
+                setup_index: p.setup_index,
+                body: Box::new(draft.body.config),
+                edges: draft.edges.map(|edge| Box::new(edge.config)),
             }),
             Box::new(before),
         )
@@ -1627,6 +1704,9 @@ impl RsCamApp {
                 let tp_name = self.mcp_toolpath_name(p.index);
                 Some(format!("MCP: Added a Bore for '{tp_name}'"))
             }
+            CoreRequest::AddGeodesicBodyAndEdges(_) => {
+                Some("MCP: Added 'Geodesic body + edges'".to_owned())
+            }
             CoreRequest::RemoveToolpath(p) => {
                 let index = p.index;
                 Some(format!("MCP: Removed toolpath {index}"))
@@ -1769,6 +1849,7 @@ impl RsCamApp {
             | CommandId::SetToolpathDebugOptions
             | CommandId::AddToolpath
             | CommandId::AddBoreFromDrill
+            | CommandId::AddGeodesicBodyAndEdges
             | CommandId::RemoveToolpath
             | CommandId::AddTool
             | CommandId::AddToolFromLibrary
@@ -2300,6 +2381,55 @@ impl RsCamApp {
                         "feeds_refusal": before.extra("feeds_refusal"),
                     }),
                     vec![index],
+                    &before.diagnostics,
+                );
+                CoreReply::succeeded(reply)
+            }
+            CommandId::AddGeodesicBodyAndEdges => {
+                let body_index = effects.created.unwrap_or_default();
+                let edges = before.extra.get("edges").and_then(serde_json::Value::as_bool)
+                    == Some(true);
+                let edges_index = edges.then_some(body_index + 1);
+                // The GUI runtime entries, as `AddToolpath` makes them.
+                let infos: Vec<(rs_cam_core::ToolpathId, bool)> =
+                    std::iter::once(body_index)
+                        .chain(edges_index)
+                        .filter_map(|i| {
+                            self.controller
+                                .state()
+                                .session()
+                                .toolpath_configs()
+                                .get(i)
+                                .map(|tc| (tc.id, tc.operation.default_auto_regen()))
+                        })
+                        .collect();
+                for &(id, auto_regen) in &infos {
+                    self.controller
+                        .state_mut()
+                        .gui
+                        .toolpath_rt
+                        .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
+                }
+                if let Some(&(id, _)) = infos.first() {
+                    self.controller.state_mut().selection = Selection::Toolpath(id);
+                }
+                self.controller.state_mut().gui.mark_edited();
+                let message = match edges_index {
+                    Some(e) => format!(
+                        "Added toolpath {body_index} (Geodesic body) and toolpath {e} \
+                         (Geodesic edges)."
+                    ),
+                    None => format!("Added toolpath {body_index} (Geodesic body)."),
+                };
+                let reply = self.mcp_mutation_result(
+                    message,
+                    serde_json::json!({
+                        "body_index": body_index,
+                        "edges_index": edges_index,
+                        "no_tool": before.extra.get("no_tool"),
+                        "feeds_refusal": before.extra.get("feeds_refusal"),
+                    }),
+                    std::iter::once(body_index).chain(edges_index).collect(),
                     &before.diagnostics,
                 );
                 CoreReply::succeeded(reply)

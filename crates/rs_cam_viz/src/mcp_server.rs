@@ -562,7 +562,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "get_cut_trace",
-        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
+        description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. capped_move_count and capped_min_feed_mm_min count the moves with a feed cap (a load rule lowered the feed); capped_moves lists them (default 50), omitted when there are none. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
     )]
     async fn get_cut_trace(
         &self,
@@ -579,6 +579,7 @@ impl EmbeddedCamServer {
             max_toolpath_summaries,
             max_drill_summaries,
             max_drill_samples,
+            max_capped_moves,
             max_response_bytes,
         }): Parameters<CutTraceParam>,
     ) -> String {
@@ -598,6 +599,7 @@ impl EmbeddedCamServer {
                         max_toolpath_summaries,
                         max_drill_summaries,
                         max_drill_samples,
+                        max_capped_moves,
                         max_response_bytes,
                     ),
                 },
@@ -1125,7 +1127,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_toolpath_param",
-        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Geometry selection P6: Profile `side` takes `\"on\"` (the tool centre on the line); Pocket `open_paths` takes `\"skip\"`, `\"extend_left\"` or `\"extend_right\"` (extend each open path to the stock, on that side of the drawn direction). Pocket `cut_past_open_sides` takes `true` or `false` (default false): on a model face or ring, clear the stock beyond the edges of the face that have no wall, out to the stock edge. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. This writes the OPERATION's own params only: it cannot change which cutter or which input model the toolpath is bound to, and refuses those keys — use `set_toolpath_tool` / `set_toolpath_model`. Marks the toolpath as stale — regenerate to apply."
+        description = "Set a toolpath parameter. Common params: feed_rate, plunge_rate, stepover, depth_per_pass. Config-specific params vary by operation type — call `get_operation_schema` for the full typed list. `value` accepts ANY JSON type: numbers, strings (enum-valued params), booleans, and ARRAYS/OBJECTS for list-valued params — e.g. a drill op's hole list `[[2.5, 2.5], [237.5, 247.5]]`. Geometry selection P6: Profile `side` takes `\"on\"` (the tool centre on the line); Pocket `open_paths` takes `\"skip\"`, `\"extend_left\"` or `\"extend_right\"` (extend each open path to the stock, on that side of the drawn direction). Pocket `cut_past_open_sides` takes `true` or `false` (default false): on a model face or ring, clear the stock beyond the edges of the face that have no wall, out to the stock edge. Waterline `helical` takes `true` (default: each stack of matching rings cuts with one entry) or `false` (one entry per ring and level); the old name `continuous` is accepted as an alias for one release. Pass the array itself, not a string containing one; a stringified container is unwrapped server-side as a fallback. Writes the raw value with no validation and no clamps — use `apply_feeds` when you want the engine's guarantees. This writes the OPERATION's own params only: it cannot change which cutter or which input model the toolpath is bound to, and refuses those keys — use `set_toolpath_tool` / `set_toolpath_model`. Marks the toolpath as stale — regenerate to apply."
     )]
     async fn set_toolpath_param(
         &self,
@@ -1274,6 +1276,22 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "add_geodesic_body_and_edges",
+        description = "Step 7.8: the GUI add menu's template \"Geodesic body + edges\". It adds TWO 3D Rough toolpaths to `setup_index` in one command: \"Geodesic body\" (clearing_strategy geodesic_adaptive, its rest analysis on) and, after it, \"Geodesic edges\" (clearing_strategy contour_parallel, rest machining from previous ops, machining boundary derived_rest_regions of the body with center containment and offset 0). Each op is drafted as `add_toolpath` drafts it (Suggest, the model rule, the first fitting tool). The edge op takes the body's tool unless `edge_tool_index` states one; a tool larger than the body's is refused with the D53 text and nothing is added. `edges: false` adds the body alone (its rest analysis stays off). Returns `body_index` and `edges_index` (null without the edge op); the edge op is the next index."
+    )]
+    async fn add_geodesic_body_and_edges(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddGeodesicBodyAndEdges(
+                param,
+            )))
+            .await,
+        )
+    }
+
+    #[tool(
         name = "remove_toolpath",
         description = "Remove a toolpath by index. Updates setup indices automatically."
     )]
@@ -1358,7 +1376,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_boundary_config",
-        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'selection' (requires selection — the rules and picks whose closed regions bound the toolpath, holes kept, as the project file holds them; the closed shapes of model 3 are {\"rules\": [{\"source\": {\"model\": 3}, \"filter\": {\"kinds\": {\"only\": [\"loop\", \"circle\"]}}}]}; a rule can read a model other than the toolpath's own; holes=true inverts it: the toolpath cuts inside the holes of the regions, for example the area inside an edge band, and stays off the regions, and generation refuses when the regions have no hole; a selection that resolves to no closed region refuses), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose REST ANALYSIS supplies the regions; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'selection' (requires selection — the rules and picks whose closed regions bound the toolpath, holes kept, as the project file holds them; the closed shapes of model 3 are {\"rules\": [{\"source\": {\"model\": 3}, \"filter\": {\"kinds\": {\"only\": [\"loop\", \"circle\"]}}}]}; a rule can read a model other than the toolpath's own; holes=true inverts it: the toolpath cuts inside the holes of the regions, for example the area inside an edge band, and stays off the regions, and generation refuses when the regions have no hole; a selection that resolves to no closed region refuses), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose regions supply the boundary: its rest analysis, or the pieces a Geodesic Adaptive rough left; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
     )]
     async fn set_boundary_config(
         &self,
@@ -1372,7 +1390,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_rest_analysis_config",
-        description = "Run the rest-depth detector on this toolpath after it generates. It attaches a heatmap grid and the machining regions another toolpath can use as a `derived_rest_regions` boundary. It emits no pencil centerline toolpath. `reference_tool_id` names a library tool as the reference; unset prefers the machined stock. `cell_mm`, `min_valley_depth` and `region_margin_mm` default to 0.5, 0.05 and 0.5 mm. `offset_stepover_mm` and `num_offset_passes` tune the fan the ROUTING criterion assumes; leave both unset for the canonical reach policy. The call invalidates the cached result."
+        description = "Run the rest-depth detector on this toolpath after it generates. It attaches a heatmap grid and the machining regions another toolpath can use as a `derived_rest_regions` boundary. On a Geodesic Adaptive rough the regions are the pieces it left. It emits no pencil centerline toolpath. `reference_tool_id` names a library tool as the reference; unset prefers the machined stock. `cell_mm`, `min_valley_depth` and `region_margin_mm` default to 0.5, 0.05 and 0.5 mm. `offset_stepover_mm` and `num_offset_passes` tune the fan the ROUTING criterion assumes; leave both unset for the canonical reach policy. The call invalidates the cached result."
     )]
     async fn set_rest_analysis_config(
         &self,
@@ -1899,7 +1917,7 @@ impl EmbeddedCamServer {
 
     #[tool(
         name = "set_machine_kinematics",
-        description = "Set the live machine profile's kinematics directly, without a GRBL dump: per-axis acceleration (acceleration_x/y/z_mm_s2, GRBL $120/$121/$122), per-axis maximum rate (max_rate_x/y/z_mm_min, GRBL $110/$111/$112), junction_deviation_mm ($11), and optionally the isotropic fallback acceleration_mm_s2, max_junction_velocity_mm_min and jerk_mm_s3. Every field is optional and omitted fields keep their current value; when all three axis accelerations are given, the isotropic scalar follows their mean unless you pass one. Pass the acceleration triple and the rate triple whole, or patch one axis of a triple the machine already carries. Neither is cosmetic — acceleration drives the cycle-time integrator and the parallel-vs-spiral verdict from `recommend_clearing_strategy`, and the max rates cap every move's cruise velocity, so a Z-dominant move runs at $112 (typically 1000 mm/min) instead of the X/Y travel rate. Breaks any machine-library link (the values become inline). For a raw `$$` dump use `import_machine_settings` instead. Verify with inspect_machine."
+        description = "Set the live machine profile's kinematics directly, without a GRBL dump: per-axis acceleration (acceleration_x/y/z_mm_s2, GRBL $120/$121/$122), per-axis maximum rate (max_rate_x/y/z_mm_min, GRBL $110/$111/$112), junction_deviation_mm ($11), and optionally the isotropic fallback acceleration_mm_s2, max_junction_velocity_mm_min and jerk_mm_s3. Every field is optional and omitted fields keep their current value; when all three axis accelerations are given, the isotropic scalar follows their mean unless you pass one. Pass the acceleration triple and the rate triple whole, or patch one axis of a triple the machine already carries. Neither is cosmetic — acceleration drives the cycle-time integrator and the strategy ranking from `recommend_clearing_strategy`, and the max rates cap every move's cruise velocity, so a Z-dominant move runs at $112 (typically 1000 mm/min) instead of the X/Y travel rate. Breaks any machine-library link (the values become inline). For a raw `$$` dump use `import_machine_settings` instead. Verify with inspect_machine."
     )]
     async fn set_machine_kinematics(
         &self,

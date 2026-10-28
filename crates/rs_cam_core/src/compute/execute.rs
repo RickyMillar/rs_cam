@@ -502,6 +502,21 @@ pub struct ExecutionContext<'a> {
     /// planner that owns its level plan reads it (the 3D Rough). `None`:
     /// no such boundary, or the source stated no top.
     pub rest_top_z: Option<f64>,
+    /// W2 (D69 §3): the workpiece material, for a generator that runs the
+    /// shared deflection model (`feeds::predict::tip_deflection_from_engagement`).
+    /// Today only the helical Waterline reads it. `None`: no material.
+    pub material: Option<&'a crate::material::Material>,
+    /// W2 (D69 §3): on an op that cuts the remaining stock, the smallest
+    /// axial step (`OperationConfig::depth_per_pass`) of the earlier
+    /// enabled ops of the setup: the depth at which the rough cut the
+    /// walls. The helical Waterline widens its step on a vertical wall up
+    /// to it. `None`: a fresh op, or no earlier op states a step.
+    pub rest_axial_step_mm: Option<f64>,
+    /// W4 (D69 §4): for a Waterline, what the job holds the part with at
+    /// the end of a through cut (the session derives it from the later and
+    /// the earlier ops of the setup). `None`: not derived (another op, or a
+    /// caller with no session).
+    pub through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -584,6 +599,9 @@ impl<'a> ExecutionContext<'a> {
             entry_helix_radius: None,
             obstacles: None,
             rest_top_z: None,
+            material: None,
+            rest_axial_step_mm: None,
+            through_cut_hold: None,
         }
     }
 }

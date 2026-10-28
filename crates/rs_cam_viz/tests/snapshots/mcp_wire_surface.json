@@ -56,6 +56,61 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
+      "description": "Step 7.8: `add_geodesic_body_and_edges`, the add menu's template\n\"Geodesic body + edges\".",
+      "properties": {
+        "edge_tool_index": {
+          "description": "Tool index (0-based) for the edge op. Omit it to take the body's\ntool. A tool larger than the body's is refused (D53) and nothing is\nadded.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "edges": {
+          "description": "Add the edge op (default true). False adds the body rough alone.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "model_id": {
+          "description": "Model ID (the `id` from `inspect_model`, not an index). Omit it to\ntake the model of the core rule (as `add_toolpath`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "setup_index": {
+          "description": "Setup index (0-based) that both toolpaths join.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tool_index": {
+          "description": "Tool index (0-based) from list_tools for the body rough. Omit it to\ntake the first project tool that a 3D Rough accepts (as\n`add_toolpath`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "setup_index"
+      ],
+      "title": "AddGeodesicBodyAndEdgesParam",
+      "type": "object"
+    },
+    "name": "add_geodesic_body_and_edges"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
       "description": "`add_obstacle` (K1): add an obstacle to the END of a setup's list. An\nobstacle is a fixture or a keep-out zone (one concept): every operation\nof the setup keeps the tool (cutter, shank and holder) out of it, the\nrapids cross above it, and the simulation counts a hit as a collision.\n\nEvery value is in the SETUP frame: the frame the setup's toolpaths use,\nwith the setup's +Z up.",
       "properties": {
         "clearance": {
@@ -3362,6 +3417,15 @@
             "null"
           ]
         },
+        "max_capped_moves": {
+          "description": "Maximum `capped_moves` entries to return (default: 50). The rows are\nthe moves with a feed cap, in toolpath and move order.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "max_drill_samples": {
           "description": "Maximum `drill_samples` entries to return when `include_drill_samples`\nis true (default: 500).",
           "format": "uint",
@@ -5621,7 +5685,7 @@
           "description": "The boundary source. Omit for `stock`."
         },
         "source_toolpath_id": {
-          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose pencil rest-depth result supplies the boundary.",
+          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose rest regions supply the boundary (its rest analysis,\nor the pieces a Geodesic Adaptive rough left).",
           "format": "uint",
           "minimum": 0,
           "type": [
@@ -5883,7 +5947,7 @@
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
+      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nstrategy advisor's ranking.",
       "properties": {
         "acceleration_mm_s2": {
           "description": "Isotropic fallback acceleration in mm/s^2. Only used when the\nper-axis triple is absent; when all three axes are given this is\nset to their mean unless explicitly passed.",

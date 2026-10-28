@@ -214,6 +214,60 @@ fn bind_span_scope(
 
 // ── Adaptive 3D ─────────────────────────────────────────────────────
 
+/// G-WLCLEANSPAN: the structural span (`compute::spans`) that the 3D Rough
+/// structure event `events[i]` covers, or `None` when it covers no move.
+///
+/// A Region, DepthLevel or Cleanup item covers the moves of its span: from
+/// its event to the next event of the same family (a level or a cleanup; a
+/// region start), as `spans::push_adaptive3d_spans` builds the spans. The
+/// item used to end at the next annotation of ANY kind; the first entry of a
+/// level or cleanup is at the same move, so the range was empty and the item
+/// was never bound.
+///
+/// The match is by kind, start AND end, not by order: an empty event (a
+/// level with no move) has no span, so an ordinal pairing would bind every
+/// later item to the wrong moves. A non-empty event whose span is missing
+/// is a defect of the two builders disagreeing: the item stays unbound and
+/// a debug build stops.
+fn adaptive3d_structure_span<'a>(
+    spans: &'a [Span],
+    events: &[crate::adaptive3d::Adaptive3dRuntimeAnnotation],
+    i: usize,
+    toolpath_len: usize,
+) -> Option<&'a Span> {
+    use crate::adaptive3d::Adaptive3dRuntimeEvent as E;
+    let ann = events.get(i)?;
+    let level_family = |e: &E| {
+        matches!(
+            e,
+            E::RegionZLevel { .. } | E::GlobalZLevel { .. } | E::WaterlineCleanup
+        )
+    };
+    let (kind, same_family): (SpanKind, fn(&E) -> bool) = match &ann.event {
+        E::RegionZLevel { .. } | E::GlobalZLevel { .. } => (SpanKind::DepthPass, level_family),
+        E::WaterlineCleanup => (SpanKind::WaterlineCleanup, level_family),
+        E::RegionStart { .. } => (SpanKind::Region, |e: &E| matches!(e, E::RegionStart { .. })),
+        _ => return None,
+    };
+    let start = ann.move_index;
+    let end = events
+        .iter()
+        .skip(i + 1)
+        .find(|a| same_family(&a.event))
+        .map_or(toolpath_len, |a| a.move_index);
+    if end <= start {
+        return None;
+    }
+    let span = spans
+        .iter()
+        .find(|s| s.kind == kind && s.start_move == start && s.end_move == end);
+    debug_assert!(
+        span.is_some(),
+        "G-WLCLEANSPAN: no {kind:?} span [{start}, {end}) for a 3D Rough structure event"
+    );
+    span
+}
+
 pub(super) fn annotate_adaptive3d(
     events: &[crate::adaptive3d::Adaptive3dRuntimeAnnotation],
     toolpath: &Toolpath,
@@ -227,6 +281,14 @@ pub(super) fn annotate_adaptive3d(
 
     let move_indices: Vec<usize> = events.iter().map(|a| a.move_index).collect();
     let tp_len = toolpath.moves.len();
+    // G-WLCLEANSPAN: the structural spans of the same events; a Region,
+    // DepthLevel or Cleanup item binds to its span.
+    let structure_spans = crate::compute::spans::spans_from_adaptive3d_annotations(events, tp_len);
+    let bind_structure = |scope: &crate::trace::semantic_trace::ToolpathSemanticScope, i: usize| {
+        if let Some(span) = adaptive3d_structure_span(&structure_spans, events, i, tp_len) {
+            bind_span_scope(scope, toolpath, span);
+        }
+    };
 
     // We track open scopes so we can bind them when the next event arrives.
     let mut region_scope: Option<crate::trace::semantic_trace::ToolpathSemanticScope> = None;
@@ -259,6 +321,7 @@ pub(super) fn annotate_adaptive3d(
                 scope.set_param(SemanticKey::RegionIndex, *region_index);
                 scope.set_param(SemanticKey::RegionTotal, *region_total);
                 scope.set_param(SemanticKey::CellCount, *cell_count);
+                bind_structure(&scope, i);
                 let ctx = scope.context();
                 region_ctx = Some(ctx);
                 region_scope = Some(scope);
@@ -280,7 +343,7 @@ pub(super) fn annotate_adaptive3d(
                 scope.set_param(SemanticKey::LevelIndex, *level_index);
                 scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
-                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                bind_structure(&scope, i);
                 let ctx = scope.context();
                 level_ctx = Some(ctx);
                 level_scope = Some(scope);
@@ -308,7 +371,7 @@ pub(super) fn annotate_adaptive3d(
                 scope.set_param(SemanticKey::LevelIndex, *level_index);
                 scope.set_param(SemanticKey::LevelTotal, *level_total);
                 set_z_level_plan_metrics(&scope, metrics);
-                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                bind_structure(&scope, i);
                 let ctx = scope.context();
                 level_ctx = Some(ctx);
                 level_scope = Some(scope);
@@ -319,7 +382,7 @@ pub(super) fn annotate_adaptive3d(
                     ToolpathSemanticKind::Cleanup,
                     "Waterline cleanup".to_owned(),
                 );
-                scope.bind_to_toolpath(toolpath, ann.move_index, end);
+                bind_structure(&scope, i);
                 scope.finish();
             }
             Adaptive3dRuntimeEvent::PassEntry {
@@ -926,5 +989,82 @@ pub(super) fn annotate_pencil(
         scope.set_param(SemanticKey::IsCenterline, *is_centerline);
         scope.bind_to_toolpath(toolpath, ann.move_index, end);
         scope.finish();
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::annotate_adaptive3d;
+    use crate::adaptive3d::{
+        Adaptive3dRuntimeAnnotation, Adaptive3dRuntimeEvent, ZLevelPlanMetrics,
+    };
+    use crate::geo::P3;
+    use crate::toolpath::Toolpath;
+    use crate::trace::semantic_trace::ToolpathSemanticRecorder;
+
+    fn level(move_index: usize, z_level: f64, level_index: usize) -> Adaptive3dRuntimeAnnotation {
+        Adaptive3dRuntimeAnnotation {
+            move_index,
+            event: Adaptive3dRuntimeEvent::GlobalZLevel {
+                z_level,
+                level_index,
+                level_total: 2,
+                metrics: ZLevelPlanMetrics::default(),
+            },
+        }
+    }
+
+    fn entry(move_index: usize, end: usize) -> Adaptive3dRuntimeAnnotation {
+        Adaptive3dRuntimeAnnotation {
+            move_index,
+            event: Adaptive3dRuntimeEvent::PassEntry {
+                pass_index: 0,
+                entry_x: 0.0,
+                entry_y: 0.0,
+                entry_z: 0.0,
+                entry_end_move_idx: end,
+                style_label: "plunge",
+            },
+        }
+    }
+
+    /// G-WLCLEANSPAN: an EMPTY level (no move) stays unbound, and the level
+    /// and the cleanup after it bind to their own moves, each from its
+    /// event to the next level or cleanup. The entry at the level's first
+    /// move (the case that left every item unbound) does not end it.
+    #[test]
+    fn an_empty_level_leaves_the_next_items_on_their_moves_g_wlcleanspan() {
+        let mut toolpath = Toolpath::new();
+        for i in 0..10 {
+            toolpath.feed_to(P3::new(f64::from(i), 0.0, 0.0), 1000.0);
+        }
+        let events = vec![
+            level(0, 7.0, 0),
+            level(0, 4.0, 1),
+            entry(0, 2),
+            Adaptive3dRuntimeAnnotation {
+                move_index: 6,
+                event: Adaptive3dRuntimeEvent::WaterlineCleanup,
+            },
+            entry(6, 7),
+        ];
+        let recorder = ToolpathSemanticRecorder::new("t", "3D Rough");
+        annotate_adaptive3d(&events, &toolpath, &recorder.root_context());
+        let trace = recorder.finish();
+        let range = |label: &str| {
+            let item = trace
+                .items
+                .iter()
+                .find(|i| i.label == label)
+                .unwrap_or_else(|| panic!("no item {label}"));
+            (item.move_start, item.move_end)
+        };
+        assert_eq!(range("Global Z 7.00"), (None, None), "the empty level");
+        assert_eq!(range("Global Z 4.00"), (Some(0), Some(5)));
+        assert_eq!(range("Waterline cleanup"), (Some(6), Some(9)));
     }
 }

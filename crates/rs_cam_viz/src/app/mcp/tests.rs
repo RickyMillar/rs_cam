@@ -386,6 +386,58 @@ fn a_byte_starved_response_names_what_it_could_not_serve() {
     assert_eq!(out["span_summaries_truncated"], serde_json::json!(true));
 }
 
+/// G-B: `get_cut_trace` carries the feed caps of the trace. With caps it
+/// gives the count, the lowest cap and the bounded rows; with none it
+/// gives a zero count, a null lowest cap and no `capped_moves` key.
+#[test]
+fn the_cut_trace_reports_the_capped_moves_g_b() {
+    use rs_cam_core::stock::simulation_cut::CappedMove;
+    let (state, ids, plain) = cut_trace_fixture(2, 3);
+    let none = build_cut_trace_response(&state, &plain, &request(None, Default::default()))
+        .expect("no filter, nothing to refuse");
+    assert_eq!(none["capped_move_count"], serde_json::json!(0));
+    assert_eq!(none["capped_min_feed_mm_min"], serde_json::Value::Null);
+    assert!(
+        none.get("capped_moves").is_none(),
+        "no cap, no rows: {none}"
+    );
+
+    let cap = |id, move_index, feed_cap_mm_min| CappedMove {
+        toolpath_id: id,
+        move_index,
+        feed_cap_mm_min,
+    };
+    let trace = rs_cam_core::stock::simulation_cut::SimulationCutTrace {
+        capped_moves: vec![
+            cap(ids[0], 4, 900.0),
+            cap(ids[0], 5, 600.0),
+            cap(ids[0], 9, 750.0),
+            cap(ids[1], 2, 300.0),
+        ],
+        ..plain
+    };
+    let caps = rs_cam_mcp::response::CutTraceCaps {
+        capped_moves: 2,
+        ..Default::default()
+    };
+    let all = build_cut_trace_response(&state, &trace, &request(None, caps)).unwrap();
+    assert_eq!(all["capped_move_count"], serde_json::json!(4));
+    assert_eq!(all["capped_min_feed_mm_min"], serde_json::json!(300.0));
+    let rows = all["capped_moves"].as_array().expect("the rows");
+    assert_eq!(rows.len(), 2, "the cap binds: {all}");
+    assert_eq!(rows[1]["move_index"], serde_json::json!(5));
+    assert_eq!(all["capped_moves_truncated"], serde_json::json!(true));
+
+    let one = build_cut_trace_response(
+        &state,
+        &trace,
+        &request(Some(ids[0].raw()), Default::default()),
+    )
+    .unwrap();
+    assert_eq!(one["capped_move_count"], serde_json::json!(3));
+    assert_eq!(one["capped_min_feed_mm_min"], serde_json::json!(600.0));
+}
+
 /// Ordering is a documented contract, so a cap is reproducible: the same
 /// request twice gives the same rows, and they are the leading ones.
 #[test]

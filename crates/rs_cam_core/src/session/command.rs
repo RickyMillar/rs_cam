@@ -383,6 +383,17 @@ macro_rules! for_each_command {
                      "a job file states a bore operation with type = \"bore\"",
                  ),
              }),
+            // Step 7.8 (operator ruling 2026-10-28): the template "Geodesic
+            // body + edges" of the add menu, and the MCP tool of that name.
+            (Command, AddGeodesicBodyAndEdges, "add_geodesic_body_and_edges",
+             AddGeodesicBodyAndEdgesArgs, Effects,
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "a job file has no rest-regions boundary to state the edge op",
+                 ),
+             }),
             (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
              Surfaces {
                  gui: Reach::Reached,
@@ -1719,6 +1730,26 @@ pub struct AddBoreFromDrillArgs {
     pub drill_id: crate::ids::ToolpathId,
 }
 
+/// The arguments of the `add_geodesic_body_and_edges` command (step 7.8):
+/// the two drafts of [`ProjectSession::draft_geodesic_pair`].
+///
+/// The command adds `body`, then `edges` directly after it in the same
+/// setup, in ONE effects window (one undo step). It writes op 1's new id as
+/// the source of the edge op's rest-regions boundary, and keeps op 1's
+/// rest analysis on only when the edge op exists. It refuses, and adds
+/// nothing, when the edge tool is larger than op 1's (D53, with the
+/// `Center` sentence). [`Effects::created`] is op 1's index; the edge op is
+/// the next index.
+#[derive(Debug, Clone)]
+pub struct AddGeodesicBodyAndEdgesArgs {
+    /// The setup that both ops join.
+    pub setup_index: usize,
+    /// Op 1, "Geodesic body".
+    pub body: Box<ToolpathConfig>,
+    /// Op 2, "Geodesic edges", or `None`.
+    pub edges: Option<Box<ToolpathConfig>>,
+}
+
 /// The arguments of the `remove_toolpath` command.
 #[derive(Debug, Clone)]
 pub struct RemoveToolpathArgs {
@@ -2808,6 +2839,11 @@ impl ProjectSession {
             }
             Command::AddToolpath(args) => self.add_toolpath(args.setup_index, *args.config),
             Command::AddBoreFromDrill(args) => self.add_bore_from_drill(args.index, args.drill_id),
+            Command::AddGeodesicBodyAndEdges(args) => self.add_geodesic_body_and_edges(
+                args.setup_index,
+                *args.body,
+                args.edges.map(|e| *e),
+            ),
             Command::RemoveToolpath(args) => self.remove_toolpath(args.index),
             Command::AddTool(args) => self.add_tool(*args.tool),
             Command::AddToolFromLibrary(args) => self.add_tool(*args.tool),

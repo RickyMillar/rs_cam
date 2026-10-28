@@ -1216,9 +1216,9 @@ pub struct InlayConfig {
                 boundary of the closed shapes of this design, containment Inside, offset minus \
                 pocket_depth x \
                 tan(half the V angle) (3 mm for a 90 deg bit at 3 mm depth). Cut the Pocket first. \
-                CAUTION: where the floor is narrower than the end mill plus that inset, the Inside \
-                clip collapses and the Pocket cuts the whole design and the V walls; read \
-                boundary_clip_dropped. Use the same pocket_depth on the Inlay Plug op.",
+                Where the floor is narrower than the end mill plus that inset, the Inside \
+                clip collapses and the Pocket refuses to generate; use a smaller end mill. Use \
+                the same pocket_depth on the Inlay Plug op.",
         range = 0.1..=50.0,
     )]
     pub pocket_depth: Option<f64>,
@@ -1689,8 +1689,6 @@ pub struct Adaptive3dConfig {
     #[param(help = "Not read by 3D Rough: the strategy that read it is removed. \
                 Kept so saved projects load unchanged.")]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
-    #[serde(default)]
-    pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
@@ -1718,7 +1716,21 @@ pub struct Adaptive3dConfig {
     #[serde(default = "default_stay_down_clearance_mm")]
     #[param(min = 0.0)]
     pub stay_down_clearance_mm: f64,
+    /// C4 (G-RESTDOC, operator ruling D69 2026-10-28): after each level,
+    /// contour the edge of the machining boundary where stock the tool can
+    /// reach still stands, so no later level cuts deeper than Depth/Pass
+    /// there. Off by default; with it off the output is today's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[param(help = HELP_CONTOUR_EACH_LEVEL)]
+    pub contour_each_level: bool,
 }
+
+/// The help of [`Adaptive3dConfig::contour_each_level`].
+const HELP_CONTOUR_EACH_LEVEL: &str = "After each level, contour the edge of the machining \
+    boundary where stock the tool can reach still stands above the level, so no later level \
+    cuts deeper than Depth/Pass there. Acts on a rest rough (remaining stock) with a machining \
+    boundary. With By Area ordering, fresh or rest, it also cuts the walls of each region at \
+    each level. Off by default. Costs time where stock stands beyond the boundary.";
 
 fn default_stay_down_clearance_mm() -> f64 {
     // F-038b: matches dexel cell-height resolution at standard sim
@@ -1760,7 +1772,6 @@ impl Default for Adaptive3dConfig {
             clearing_strategy: ClearingStrategy::ContourParallel,
             trochoid_cap_mult: default_trochoid_cap_mult(),
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
-            z_blend: false,
             spindle_rpm: None,
             min_region_cut_length_mm: default_min_region_cut_length_mm(),
             // F-038b: leave the planner to pick 8×diameter at toolpath
@@ -1768,6 +1779,7 @@ impl Default for Adaptive3dConfig {
             // it through the per-op config / CLI flag.
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
+            contour_each_level: false,
         }
     }
 }
@@ -1828,6 +1840,16 @@ impl Adaptive3dConfig {
     }
 }
 
+/// The help of `WaterlineConfig::helical` (D69 §2).
+const HELP_WATERLINE_HELICAL: &str = "Cut each stack of matching rings (a hole, a wall) with one entry: the tool \
+     descends along the lower ring from level to level. Off: one entry per ring and level.";
+
+/// The helical waterline is on by default (D69, operator ruling
+/// 2026-10-28), also for a file with no `helical` key (W1b).
+fn default_waterline_helical() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, OpParams)]
 pub struct WaterlineConfig {
     #[param(help = HELP_Z_STEP, range = 0.05..=20.0)]
@@ -1850,7 +1872,26 @@ pub struct WaterlineConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(help = RAMP_FEED_RATE_HELP, gt = 0.0)]
     pub ramp_feed_rate: Option<f64>,
-    pub continuous: bool,
+    /// D69 §2 (G-WLCONTINUOUS): the helical waterline. `true`: each chain
+    /// of whole rings over consecutive levels (one ring inside the other,
+    /// no ring between them, one to one) is ONE entry; the tool descends
+    /// along the lower ring (`ops::waterline::helical_waterline`).
+    /// `false`: one entry per ring and level.
+    ///
+    /// W1b (operator ruling 2026-10-28): the key was `continuous`, a dial
+    /// no generator read. A file with no `helical` key loads `true`; the
+    /// loader reads an old `continuous` key as the old default and says so
+    /// (`ProjectLoadWarning::WaterlineHelical`).
+    #[serde(default = "default_waterline_helical")]
+    #[param(help = HELP_WATERLINE_HELICAL)]
+    pub helical: bool,
+    /// W1b: the old key `continuous`, as a file before W1b stored it. The
+    /// loader reads it ONLY to name the migration: it sets `helical` and
+    /// pushes `ProjectLoadWarning::WaterlineHelical`, then clears this
+    /// field (`session::project_file`). Never written.
+    #[serde(default, rename = "continuous", skip_serializing)]
+    #[param(skip = "W1b: the retired key `continuous`, read only by the loader's migration")]
+    pub legacy_continuous: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
@@ -1877,7 +1918,9 @@ impl Default for WaterlineConfig {
             feed_rate: None,
             plunge_rate: None,
             ramp_feed_rate: None,
-            continuous: false,
+            // D69: on by default (operator ruling 2026-10-28).
+            helical: default_waterline_helical(),
+            legacy_continuous: None,
             spindle_rpm: None,
             // OFF. See the field doc.
             hookup_mm: 0.0,

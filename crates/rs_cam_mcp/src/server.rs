@@ -1397,6 +1397,9 @@ pub struct CutTraceParam {
     /// Maximum `drill_samples` entries to return when `include_drill_samples`
     /// is true (default: 500).
     pub max_drill_samples: Option<usize>,
+    /// Maximum `capped_moves` entries to return (default: 50). The rows are
+    /// the moves with a feed cap, in toolpath and move order.
+    pub max_capped_moves: Option<usize>,
     /// Optional: override the global response byte backstop (default:
     /// 8388608 = 8 MiB). Sections that do not fit are OMITTED and named in
     /// `sections_not_computed`, and `complete` becomes false — a section
@@ -1485,6 +1488,28 @@ pub struct AddToolpathParam {
     pub model_id: Option<usize>,
     /// Optional name for the toolpath
     pub name: Option<String>,
+}
+
+/// Step 7.8: `add_geodesic_body_and_edges`, the add menu's template
+/// "Geodesic body + edges".
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AddGeodesicBodyAndEdgesParam {
+    /// Setup index (0-based) that both toolpaths join.
+    pub setup_index: usize,
+    /// Tool index (0-based) from list_tools for the body rough. Omit it to
+    /// take the first project tool that a 3D Rough accepts (as
+    /// `add_toolpath`).
+    pub tool_index: Option<usize>,
+    /// Model ID (the `id` from `inspect_model`, not an index). Omit it to
+    /// take the model of the core rule (as `add_toolpath`).
+    pub model_id: Option<usize>,
+    /// Add the edge op (default true). False adds the body rough alone.
+    pub edges: Option<bool>,
+    /// Tool index (0-based) for the edge op. Omit it to take the body's
+    /// tool. A tool larger than the body's is refused (D53) and nothing is
+    /// added.
+    pub edge_tool_index: Option<usize>,
 }
 
 /// Geometry selection P6.7: `add_bore_from_drill`, the "Add a Bore for
@@ -1677,7 +1702,7 @@ impl TryFrom<SetStockConfigParam> for rs_cam_core::compute::stock_config::StockC
 
 /// `set_machine_kinematics` — typed write path for the accel /
 /// junction-deviation numbers that decide cycle time and the
-/// parallel-vs-spiral strategy verdict.
+/// strategy advisor's ranking.
 #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct SetMachineKinematicsParam {
@@ -1722,7 +1747,8 @@ pub struct SetBoundaryConfigParam {
     pub offset: Option<f64>,
     /// Required when `source` is "derived_rest_regions": the stable id
     /// (from `get_toolpath_params`'s `id` field, not an index) of the
-    /// toolpath whose pencil rest-depth result supplies the boundary.
+    /// toolpath whose rest regions supply the boundary (its rest analysis,
+    /// or the pieces a Geodesic Adaptive rough left).
     pub source_toolpath_id: Option<usize>,
     /// Required when `source` is "selection": the selection whose closed
     /// regions bound the toolpath, as the project file holds it. The closed
@@ -3600,6 +3626,14 @@ pub fn build_info() -> serde_json::Value {
             // carries `extended` (the areas of a Pocket Extend to stock).
             "add_bore_from_drill",
             "selection_hole_fit",
+            // G-B (2026-10-28): `get_cut_trace` carries `capped_move_count`,
+            // `capped_min_feed_mm_min` and the bounded `capped_moves` rows
+            // (the moves with a feed cap); `max_capped_moves` caps them.
+            "cut_trace_capped_moves",
+            // Step 7.8 (2026-10-28): `add_geodesic_body_and_edges` adds the
+            // template "Geodesic body + edges" (a Geodesic Adaptive rough
+            // and an optional Contour Parallel rest op on its regions).
+            "geodesic_body_and_edges",
         ],
     })
 }

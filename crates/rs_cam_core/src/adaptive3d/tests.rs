@@ -145,6 +145,7 @@ fn default_params() -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,
@@ -157,7 +158,6 @@ fn default_params() -> Adaptive3dParams {
         // in production. Tests that specifically validate GeodesicAdaptive
         // override this field explicitly.
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 

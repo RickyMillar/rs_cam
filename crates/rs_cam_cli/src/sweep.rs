@@ -608,7 +608,6 @@ plunge_rate = 500.0
 spindle_rpm = 17000
 tolerance = 0.05
 min_cutting_radius = 1.2
-z_blend = true
 stock_to_leave_axial = 0.3
 entry_style = "helix"
 detect_flat_areas = true
@@ -653,7 +652,7 @@ dogbone = true
         assert_eq!(op.scale, Some(2.0));
         assert_eq!(op.stock_top_z, Some(1.0));
         assert_eq!(op.params, first.params, "every parameter survives");
-        assert_eq!(op.params.len(), 16);
+        assert_eq!(op.params.len(), 15);
         assert_eq!(op.dressups, first.dressups, "every dressup field survives");
         assert_eq!(op.dressups.len(), 2);
         // The emitted job passes the parser's own check.

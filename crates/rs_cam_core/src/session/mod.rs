@@ -28,7 +28,8 @@ pub mod multitool;
 mod mutation;
 mod op_draft;
 pub use op_draft::{
-    DraftRefusal, DraftRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
+    DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME, GeodesicPairDraft,
+    GeodesicPairRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
 };
 mod pin_report;
 mod pins;
@@ -50,12 +51,12 @@ pub use auto_stock::auto_stock_bbox;
 pub(crate) use auto_stock::fit_auto_stock;
 pub use builder::ProjectSessionBuilder;
 pub use command::{
-    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs,
-    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs,
-    AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs,
-    AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId, CommandKind,
-    EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation, ForgetResultArgs,
-    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddGeodesicBodyAndEdgesArgs, AddModelArgs,
+    AddObstacleArgs, AddSetupArgs, AddStockChangeArgs, AddToolArgs, AddToolpathArgs,
+    AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs,
+    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId,
+    CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation,
+    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
     ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
     ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
@@ -76,9 +77,9 @@ pub use command::{
     UpdateStockFromBboxArgs,
 };
 pub use compute::{
-    GenContext, GenObserver, GenerateToolpathHandle, RecommendClearingStrategyHandle,
-    ResolvedGenInputs, TriageSessionKey, execute_generation, execute_job,
-    execute_recommend_clearing_strategy,
+    BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle, LargerRestConsumer,
+    RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,
+    execute_generation, execute_job, execute_recommend_clearing_strategy,
 };
 pub use cycle_time::{
     CycleTime, CycleTimeBasis, CycleTimeEvidence, MissingInput, MissingInputs,

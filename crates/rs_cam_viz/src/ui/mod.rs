@@ -6,6 +6,7 @@ pub mod export_wizard;
 pub mod feeds;
 pub mod generation_resolution_modal;
 pub mod import_modal;
+pub mod load_refusal_modal;
 pub mod machine_library_modal;
 pub mod menu_bar;
 pub mod multitool_planner;
@@ -211,6 +212,9 @@ pub enum AppEvent {
     /// Geometry selection P6.7: "Add a Bore for these" on a Drill hole row.
     /// One `AddBoreFromDrill` command and one undo step.
     AddBoreFromDrill(ToolpathId),
+    /// Step 7.8: the add menu's "Geodesic body + edges": one
+    /// `AddGeodesicBodyAndEdges` command.
+    AddGeodesicPair,
     RemoveToolpath(ToolpathId),
     MoveToolpathUp(ToolpathId),
     MoveToolpathDown(ToolpathId),

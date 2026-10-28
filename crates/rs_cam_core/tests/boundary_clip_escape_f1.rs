@@ -34,7 +34,7 @@
 //! | `the_pre_fix_shape_emits_an_unclipped_path_on_a_failed_containment` | **the red.** The two lines the old code ran, on a boundary whose offset FAILS: the out-of-bounds cut survives untouched |
 //! | `a_failed_containment_now_refuses_the_generate` | the fix, at the decision point, through the public API |
 //! | `a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi` | the fix through the whole shipped clip, with the failing geometry injected the way a caller really supplies it |
-//! | `a_genuine_collapse_still_passes_through_and_now_says_so` | the case the contract was written for is **preserved** — `boundary.rs`'s tool-larger-than-stock pass-through still works, and is no longer silent |
+//! | `a_genuine_collapse_refuses_g_boundcollapse` | the case the contract was written for: a genuine collapse is not a failure, and the session clip refuses it too (G-BOUNDCOLLAPSE, operator ruling 2026-10-28; until then it passed through with a report-only finding) |
 //!
 //! # Why the failing fixture is a `NaN` vertex
 //!
@@ -61,7 +61,6 @@
 )]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
-use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::geometry::boundary::{
     ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
@@ -216,15 +215,12 @@ fn a_failed_containment_now_refuses_the_generate() {
         effective_boundary_reported(&non_finite_square(60.0), ToolContainment::Inside, 3.0);
     let cause = cause.expect("debug build: the NaN vertex trips the index assertion");
 
-    let mut findings = GenerationFindings::default();
-    let err = ProjectSession::resolve_collapsed_containment(
+    let err = ProjectSession::collapsed_containment_refusal(
         Some(cause),
         BoundaryContainment::Inside,
         6.0,
         1,
-        &mut findings,
-    )
-    .expect_err("a containment that FAILED must refuse, not pass through");
+    );
 
     let msg = err.to_string();
     assert!(
@@ -234,11 +230,6 @@ fn a_failed_containment_now_refuses_the_generate() {
     assert!(
         msg.to_ascii_lowercase().contains("unclipped"),
         "the refusal must say WHY refusing is safer than continuing: {msg}"
-    );
-    assert!(
-        findings.boundary_clip_dropped.is_none(),
-        "a refusal is not a finding — nothing was emitted for a finding to \
-         describe"
     );
 }
 
@@ -258,7 +249,6 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
     let recorder =
         rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
-    let mut findings = GenerationFindings::default();
 
     let result = ProjectSession::apply_boundary_clip_multi(
         annotated,
@@ -272,7 +262,6 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
         None,
         &semantic_ctx,
         &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut findings,
     );
 
     let err = result.expect_err(
@@ -280,32 +269,27 @@ fn a_failed_region_refuses_end_to_end_through_apply_boundary_clip_multi() {
          passing the path through unclipped is exactly F-1",
     );
     println!("refusal: {err}");
-    assert!(
-        findings.boundary_clip_dropped.is_none(),
-        "a refusal must not also record a dropped-containment finding: the \
-         two are alternatives, not a pair"
-    );
 }
 
 // ---------------------------------------------------------------------------
-// 3. The case the contract was written for — preserved
+// 3. The case the contract was written for — now a refusal
 // ---------------------------------------------------------------------------
 
-/// **The legitimate pass-through still works.** `boundary.rs`'s contract
-/// names a real case — the tool is larger than the region, nothing there is
-/// machinable, and emitting the unclipped path is better than silently
-/// deleting it — and option (c) ("clip everything away") was declined
-/// precisely because it would break this.
+/// **A genuine collapse refuses** (G-BOUNDCOLLAPSE, operator ruling
+/// 2026-10-28). `boundary.rs`'s contract names a real case: the tool is
+/// larger than the region. Checkpoint C kept a pass-through for it with a
+/// report-only finding. The operator ruled that a collapse refuses, because
+/// the unclipped path can cut outside a declared boundary (a frame or a
+/// clamp zone).
 ///
-/// What changed is that it is no longer silent. Before Checkpoint C the only
-/// trace was a `tracing::warn!` in a process that usually installs no
-/// subscriber; now a typed finding names the containment that was dropped,
-/// how many source regions collapsed, and the tool it collapsed under.
+/// The collapse is still NOT a failure (the cause is `None`): the refusal
+/// text names the fix (smaller tool, less offset, another containment), not
+/// a geometry repair.
 ///
 /// No `debug_assertions` caveat: a 2 mm region inset by a 6 mm tool collapses
 /// by arithmetic, in every build.
 #[test]
-fn a_genuine_collapse_still_passes_through_and_now_says_so() {
+fn a_genuine_collapse_refuses_g_boundcollapse() {
     let regions = vec![Polygon2::rectangle(0.0, 0.0, 2.0, 2.0)];
     let tool_diameter = 6.0;
 
@@ -315,18 +299,16 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
     assert!(boundaries.is_empty(), "a 2 mm square inset by 3 mm is gone");
     assert_eq!(
         cause, None,
-        "a genuine geometric collapse is not a failure — if this becomes \
-         `Some`, the pass-through case has been reclassified as a refusal \
-         and every tool-larger-than-stock job stops generating"
+        "a genuine geometric collapse is not a failure; the refusal must \
+         name the collapse fix, not a geometry repair"
     );
 
-    let (annotated, move_count) = path_with_an_out_of_bounds_cut();
+    let (annotated, _) = path_with_an_out_of_bounds_cut();
     let recorder =
         rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f1-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
-    let mut findings = GenerationFindings::default();
 
-    let clipped = ProjectSession::apply_boundary_clip_multi(
+    let err = ProjectSession::apply_boundary_clip_multi(
         annotated,
         &inside_boundary_config(),
         &regions,
@@ -338,39 +320,12 @@ fn a_genuine_collapse_still_passes_through_and_now_says_so() {
         None,
         &semantic_ctx,
         &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut findings,
     )
-    .expect(
-        "a GENUINE collapse must still pass through — this is the case \
-             `boundary.rs:79-83` documents and option (c) was declined over",
-    );
-
-    assert_eq!(
-        clipped.toolpath.moves.len(),
-        move_count,
-        "the collapsed-boundary pass-through is unchanged behaviour"
-    );
-
-    let dropped = findings
-        .boundary_clip_dropped
-        .expect("the pass-through must now be reported, not silent");
-    assert_eq!(dropped.containment, BoundaryContainment::Inside);
-    assert_eq!(dropped.source_region_count, 1);
-    assert!((dropped.tool_diameter_mm - tool_diameter).abs() < 1e-9);
-
-    // And it reaches the operator surface, not just the struct.
-    let stats = rs_cam_core::compute::toolpath_stats::ToolpathStats {
-        boundary_clip_dropped: findings.boundary_clip_dropped,
-        ..Default::default()
-    };
-    let diags = rs_cam_core::diagnostics::adapters::from_generation::diagnostics_from_generation(
-        rs_cam_core::ids::ToolpathId::from_raw(1),
-        &stats,
-    );
+    .expect_err("a GENUINE collapse refuses: the unclipped path could cut outside the boundary");
+    let msg = err.to_string();
+    println!("refusal: {msg}");
     assert!(
-        diags
-            .iter()
-            .any(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::GEOM_BOUNDARY_CLIP_DROPPED),
-        "a warning nobody sees is not a warning (programme rule 4): {diags:?}"
+        msg.contains("Inside") && msg.contains("collapsed") && msg.contains("smaller tool"),
+        "the refusal names the containment, the collapse and the fix: {msg}"
     );
 }

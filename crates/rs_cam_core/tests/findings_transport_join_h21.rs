@@ -229,6 +229,13 @@ fn every_finding_recorded() -> GenerationFindings {
             nudged_levels: 2,
             dropped_below_stock: 1,
             delivered_levels: 23,
+            // W4: the through-cut web and its counts travel with it.
+            web: Some(rs_cam_core::compute::toolpath_stats::WaterlineWeb {
+                z_mm: 0.5,
+                source: rs_cam_core::compute::toolpath_stats::WebSource::EarlierFloor,
+            }),
+            outer_rings_skipped: 3,
+            part_unheld: true,
         }),
         // F4. Recorded from the operation's CONFIG rather than from anything
         // measured, and the join must carry it like any other finding.

@@ -294,7 +294,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
     );
 }
 /// D7 (reference audit 2026-10-23, operator approved): the tab strip
-/// draws Geometry, Cut, Heights, Feeds & Speeds, Linking, Dressup, from
+/// draws Geometry, Cut, Heights, Feeds, Linking, Dressup, from
 /// left to right. The test renders the strip and reads the x of each
 /// label, so a change of `ALL` or of the strip order turns it red.
 ///
@@ -302,14 +302,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
 /// was Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup.
 #[test]
 fn the_tab_strip_puts_heights_after_cut_d7() {
-    const WANT: [&str; 6] = [
-        "Geometry",
-        "Cut",
-        "Heights",
-        "Feeds & Speeds",
-        "Linking",
-        "Dressup",
-    ];
+    const WANT: [&str; 6] = ["Geometry", "Cut", "Heights", "Feeds", "Linking", "Dressup"];
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);
@@ -443,7 +436,9 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
                 &mut entry,
                 &inputs,
                 None,
+                None,
                 &mut crate::state::pick::SelectionUi::default(),
+                &mut crate::state::panels::ContainmentAutoCorrect::default(),
                 &mut events,
             );
         });
@@ -527,7 +522,9 @@ fn tab_texts(
             &mut entry,
             &inputs,
             None,
+            None,
             &mut crate::state::pick::SelectionUi::default(),
+            &mut crate::state::panels::ContainmentAutoCorrect::default(),
             &mut events,
         ),
         _ => super::geometry_tab::draw_geometry_tab(
@@ -1202,6 +1199,7 @@ fn the_blocked_state_word_fits_its_slot_f22() {
             simulation_run: 3,
             current_run: Some(4),
         }),
+        caps: None,
     };
     // (text, right edge, elided) of each painted text at `width`.
     let paint = |width: f32| -> Vec<(String, f32, bool)> {
@@ -1248,6 +1246,51 @@ fn the_blocked_state_word_fits_its_slot_f22() {
             );
         }
     }
+}
+
+/// G-B: the Generate row's figures hover names the feed caps of the
+/// stored result: the count and the lowest cap, as planned moves.
+#[test]
+fn the_figures_hover_names_the_feed_caps_g_b() {
+    use crate::state::runtime::CapFigures;
+    use rs_cam_core::geo::P3;
+    use rs_cam_core::toolpath::{Move, MoveIntent, MoveType, Toolpath};
+    let mut tp = Toolpath::new();
+    assert_eq!(CapFigures::of(&tp), None, "no move, no caps");
+    for (x, cap) in [(1.0, None), (2.0, Some(1500.0)), (3.0, Some(1200.0))] {
+        tp.moves.push(Move {
+            target: P3::new(x, 0.0, 0.0),
+            move_type: MoveType::Linear { feed_rate: 2000.0 },
+            intent: MoveIntent::Unknown,
+            feed_cap: cap,
+        });
+    }
+    let caps = CapFigures::of(&tp).expect("two capped moves");
+    assert_eq!(
+        caps.line(),
+        "2 moves at a load cap (planned), lowest 1200 mm/min"
+    );
+
+    // G-B2: the runtime memo counts once per result and follows a new one.
+    let result = |tp: Toolpath| {
+        crate::state::runtime::ToolpathRun::Done(crate::state::toolpath::ToolpathResult {
+            annotated: std::sync::Arc::new(
+                rs_cam_core::trace::toolpath_spans::AnnotatedToolpath::new(tp),
+            ),
+            stats: Default::default(),
+            debug_trace: None,
+            semantic_trace: None,
+            debug_trace_path: None,
+            drill_op: None,
+        })
+    };
+    let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
+    assert_eq!(rt.caps(), None, "no result, no caps");
+    rt.run = result(tp.clone());
+    assert_eq!(rt.caps(), Some(caps));
+    assert_eq!(rt.caps(), Some(caps), "the memo answers the second read");
+    rt.run = result(Toolpath::new());
+    assert_eq!(rt.caps(), None, "a new result with no cap clears the memo");
 }
 
 /// R-E (operator ruling 2026-10-23): one hole is ONE row, with one text,
@@ -1588,7 +1631,9 @@ fn the_tool_picker_greys_refused_tools_r2() {
             &mut entry,
             &inputs,
             None,
+            None,
             &mut crate::state::pick::SelectionUi::default(),
+            &mut crate::state::panels::ContainmentAutoCorrect::default(),
             &mut events,
         );
     });
@@ -1609,5 +1654,582 @@ fn the_tool_picker_greys_refused_tools_r2() {
             .iter()
             .any(|t| t == rs_cam_core::session::NO_TOOL_NAME),
         "the Tool combo reads `No tool`; it rendered {texts:?}"
+    );
+}
+
+/// G-D (§3): the Suggest advice to use Geodesic Adaptive is one ⚡ chip in
+/// the Strategy row, not a text row. A click writes the strategy to the
+/// draft (the panel commits it as one `ReplaceToolpathConfig`). With no
+/// advice, or when the draft already holds it, there is no chip.
+#[test]
+fn the_strategy_row_carries_the_suggest_chip_g_d() {
+    use crate::state::toolpath::{Adaptive3dConfig, ClearingStrategy};
+    use rs_cam_core::feeds::suggest::SuggestWarning;
+    let warning = SuggestWarning::StrategyRecommendedNotApplied {
+        param: "clearing_strategy",
+        current: "contour_parallel".to_owned(),
+        recommended: "geodesic_adaptive".to_owned(),
+        reason: "mixed_terrain_classifier",
+    };
+    let suggestion = super::toolpath_panel::strategy_suggestion(Some(&[warning]));
+    assert_eq!(suggestion, Some(ClearingStrategy::GeodesicAdaptive));
+    assert_eq!(super::toolpath_panel::strategy_suggestion(Some(&[])), None);
+
+    // (the chips painted, the strategy after the frames) for one run.
+    let run = |strategy: ClearingStrategy, suggestion, click: bool| {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut cfg = Adaptive3dConfig {
+            clearing_strategy: strategy,
+            ..Adaptive3dConfig::default()
+        };
+        let mut chip_at: Option<egui::Pos2> = None;
+        let mut chips = 0;
+        for pass in 0..5 {
+            let mut input = egui::RawInput::default();
+            if click && let Some(pos) = chip_at {
+                match pass {
+                    3 => input.events.push(egui::Event::PointerMoved(pos)),
+                    4 => {
+                        for pressed in [true, false] {
+                            input.events.push(egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: egui::Modifiers::NONE,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut out = ctx.run_ui(input, |ui| {
+                ui.set_max_width(264.0);
+                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion, false);
+            });
+            if pass == 2 {
+                for clipped in &out.shapes {
+                    if let egui::epaint::Shape::Text(text) = &clipped.shape
+                        && text.galley.job.text == "\u{26A1}"
+                    {
+                        chips += 1;
+                        chip_at = Some(clipped.shape.visual_bounding_rect().center());
+                    }
+                }
+            }
+            out.textures_delta.clear();
+        }
+        (chips, cfg.clearing_strategy)
+    };
+    let cp = ClearingStrategy::ContourParallel;
+    let ga = ClearingStrategy::GeodesicAdaptive;
+    // The two ⚡ pills of Stepover and Depth/Pass need pill data; with
+    // `pills: None` the only ⚡ is the Strategy chip.
+    assert_eq!(run(cp, None, false), (0, cp), "no advice, no chip");
+    assert_eq!(
+        run(ga, Some(ga), false),
+        (0, ga),
+        "the draft holds it: no chip"
+    );
+    assert_eq!(run(cp, Some(ga), false), (1, cp), "one chip, no write");
+    assert_eq!(run(cp, Some(ga), true), (1, ga), "a click writes the draft");
+}
+
+/// G-D (ruling D-1): with the boundary on, the Cut tab draws the `Source:`
+/// combo and no `Boundary: …` row above it; the row's text is the combo's
+/// hover. The row repeated the combo one line above.
+#[test]
+fn the_boundary_summary_is_the_source_hover_d1() {
+    use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Cut),
+        false,
+    );
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id.expect("the case tool"),
+        tc.model_id,
+        OperationType::Pocket,
+    );
+    entry.boundary.enabled = true;
+    entry.boundary.source = BoundarySource::Stock;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut texts = Vec::new();
+    for _ in 0..2 {
+        let mut events = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            super::toolpath_panel::draw_cut_tab(
+                ui,
+                &mut entry,
+                &inputs,
+                None,
+                None,
+                &mut crate::state::pick::SelectionUi::default(),
+                &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                &mut events,
+            );
+        });
+        texts = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        out.textures_delta.clear();
+    }
+    assert!(
+        texts.iter().any(|t| t == "Source:"),
+        "non-vacuity: the boundary controls draw: {texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.starts_with("Boundary:")),
+        "the summary row is back: {texts:?}"
+    );
+}
+
+/// G-E (2): the footer findings are bounded. Five caution rows show three
+/// and the remainder line "Showing 3 of 5 · Show all"; expanded, all five.
+/// A blocking row past the cap still shows (the safety rule).
+#[test]
+fn the_footer_findings_are_bounded_g_e() {
+    use super::toolpath_panel::{FOOTER_FINDINGS_CAP, bounded_findings};
+    use rs_cam_core::diagnostics::Severity;
+    let five = [Severity::Caution; 5];
+    assert_eq!(FOOTER_FINDINGS_CAP, 3);
+    assert_eq!(bounded_findings(&five, false), vec![0, 1, 2]);
+    assert_eq!(bounded_findings(&five, true), vec![0, 1, 2, 3, 4]);
+    assert_eq!(
+        crate::ui::components::notice::overflow_line(3, 5),
+        "Showing 3 of 5 \u{00B7} Show all"
+    );
+    let mut late_block = five;
+    late_block[4] = Severity::Blocking;
+    assert_eq!(bounded_findings(&late_block, false), vec![0, 1, 2, 4]);
+    assert_eq!(
+        bounded_findings(&five[..2], false),
+        vec![0, 1],
+        "under the cap"
+    );
+}
+
+/// G-FEEDMAX (C2): the Max Rate row caps every feed stage, so the Linking
+/// tab's Advanced section draws it with "Feed rate optimization" off. The
+/// Ramp Rate row belongs to the optimiser and stays hidden.
+#[test]
+fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
+    use crate::state::toolpath::{OperationType, ToolpathEntry};
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id.expect("the case tool"),
+        tc.model_id,
+        OperationType::Pocket,
+    );
+    entry.dressups.feed_optimization = false;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut advanced_at: Option<egui::Pos2> = None;
+    let mut texts: Vec<String> = Vec::new();
+    for pass in 0..6 {
+        let mut input = egui::RawInput::default();
+        if pass == 2
+            && let Some(pos) = advanced_at
+        {
+            input.events.push(egui::Event::PointerMoved(pos));
+            for pressed in [true, false] {
+                input.events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
+        let mut out = ctx.run_ui(input, |ui| {
+            super::linking_dressup::draw_linking_params(ui, &mut entry, None, None);
+        });
+        texts = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => {
+                    if t.galley.job.text == "Advanced" {
+                        advanced_at = Some(c.shape.visual_bounding_rect().center());
+                    }
+                    Some(t.galley.job.text.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        out.textures_delta.clear();
+    }
+    assert!(
+        texts.iter().any(|t| t == "Feed rate optimization"),
+        "non-vacuity: the Advanced section is open: {texts:?}"
+    );
+    assert!(texts.iter().any(|t| t == "Max Rate:"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("Ramp Rate")), "{texts:?}");
+}
+
+/// G-E (3): the face of each rest-boundary refusal, and the `⟳` action
+/// glyph is in the app fonts (a missing glyph paints a box).
+#[test]
+fn the_rest_refusal_faces_are_short_g_e() {
+    use super::toolpath_panel::{GENERATE_SOURCE_GLYPH, rest_refusal_face};
+    use rs_cam_core::session::RestBoundaryRefusal;
+    let source = rs_cam_core::ToolpathId::from_raw(7);
+    let name = "Body rough".to_owned();
+    let not_generated = rest_refusal_face(&RestBoundaryRefusal::NotGenerated {
+        source_toolpath_id: source,
+        source_name: name.clone(),
+    })
+    .expect("a face");
+    assert_eq!(not_generated.text, "\u{2715} Generate 'Body rough' first");
+    assert_eq!(not_generated.generate, Some((source, name.clone())));
+    let no_regions = rest_refusal_face(&RestBoundaryRefusal::NoRegions {
+        source_toolpath_id: source,
+        source_name: name,
+    })
+    .expect("a face");
+    assert_eq!(no_regions.text, "\u{2715} 'Body rough' left no regions");
+    let own = rest_refusal_face(&RestBoundaryRefusal::OwnRegions).expect("a face");
+    assert_eq!(own.text, "Refused \u{00B7} source is this op");
+    assert_eq!(own.generate, None);
+    assert_eq!(
+        rest_refusal_face(&RestBoundaryRefusal::SourceMissing {
+            source_toolpath_id: source
+        }),
+        None
+    );
+
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+    out.textures_delta.clear();
+    let glyph = GENERATE_SOURCE_GLYPH.chars().next().expect("one char");
+    assert!(
+        ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), glyph)),
+        "the app fonts have no {GENERATE_SOURCE_GLYPH}"
+    );
+}
+
+/// A larger consumer of `source` (Ø10 against Ø6) with an `Inside` answer.
+fn larger_consumer(
+    source: rs_cam_core::ToolpathId,
+    inside: crate::state::runtime::InsideAnswer,
+) -> super::RestContainment {
+    super::RestContainment {
+        larger: rs_cam_core::session::LargerRestConsumer {
+            op_name: "Edges".to_owned(),
+            source_toolpath_id: source,
+            source_name: "Body rough".to_owned(),
+            tool_radius_mm: 5.0,
+            source_tool_radius_mm: 3.0,
+        },
+        inside,
+    }
+}
+
+/// G-C (D-2): the `Rest Regions` pick writes `Inside` with the `⟲` badge
+/// when the tool is larger and `Inside` keeps area. It writes nothing when
+/// `Inside` would collapse, when the answer is unknown, for another source,
+/// or when the containment is `Inside` already. An edit clears the badge;
+/// another toolpath drops it.
+#[test]
+fn the_rest_pick_sets_inside_with_a_badge_d2() {
+    use super::toolpath_panel::pick_sets_inside;
+    use crate::state::runtime::InsideAnswer;
+    use crate::state::toolpath::BoundaryContainment;
+    let source = rs_cam_core::ToolpathId::from_raw(3);
+    let other = rs_cam_core::ToolpathId::from_raw(4);
+    let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
+    badge.scope(rs_cam_core::ToolpathId::from_raw(9));
+
+    let keeps = larger_consumer(source, InsideAnswer::Keeps);
+    let mut containment = BoundaryContainment::Center;
+    assert!(pick_sets_inside(
+        &mut containment,
+        Some(&keeps),
+        source,
+        &mut badge
+    ));
+    assert_eq!(containment, BoundaryContainment::Inside);
+    assert_eq!(
+        badge.hover(),
+        Some(
+            "Set to Inside: this tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00)."
+        )
+    );
+    badge.clear();
+    assert_eq!(badge.hover(), None, "an edit clears the badge");
+
+    for (pick, to) in [
+        (
+            larger_consumer(source, InsideAnswer::Collapses("x".to_owned())),
+            source,
+        ),
+        (
+            larger_consumer(source, InsideAnswer::Unknown("y".to_owned())),
+            source,
+        ),
+        (keeps.clone(), other),
+    ] {
+        let mut containment = BoundaryContainment::Outside;
+        assert!(!pick_sets_inside(
+            &mut containment,
+            Some(&pick),
+            to,
+            &mut badge
+        ));
+        assert_eq!(containment, BoundaryContainment::Outside);
+    }
+    let mut containment = BoundaryContainment::Center;
+    assert!(!pick_sets_inside(
+        &mut containment,
+        None,
+        source,
+        &mut badge
+    ));
+
+    badge.set("h".to_owned());
+    badge.scope(rs_cam_core::ToolpathId::from_raw(10));
+    assert_eq!(badge.hover(), None, "another toolpath drops the badge");
+}
+
+/// G-C (§2 c, d): the refused-option hover names the sizes, the overrun
+/// and the fix; under a collapse the fix is the smaller tool. The region
+/// count reads `· N regions` (one phrase, §6).
+#[test]
+fn the_containment_hover_and_the_region_count_g_c() {
+    use super::toolpath_panel::{regions_phrase, rest_source_label};
+    use crate::state::runtime::InsideAnswer;
+    let source = rs_cam_core::ToolpathId::from_raw(3);
+    assert_eq!(
+        larger_consumer(source, InsideAnswer::Keeps).hover(),
+        "This tool (\u{00D8}10.00) is larger than the tool of 'Body rough' (\u{00D8}6.00). \
+         It could cut 2.00 mm past that op's boundary. Use Inside."
+    );
+    assert!(
+        larger_consumer(source, InsideAnswer::Collapses("c".to_owned()))
+            .hover()
+            .ends_with(
+                "Inside leaves no area for this tool here: use a tool no larger than \u{00D8}6.00."
+            )
+    );
+    let square = rs_cam_core::polygon::Polygon2::rectangle(0.0, 0.0, 1.0, 1.0);
+    assert_eq!(
+        rest_source_label("Body rough", Some(&vec![square.clone(); 14])),
+        "Body rough \u{00B7} 14 regions"
+    );
+    assert_eq!(
+        rest_source_label("Body rough", Some(&vec![square])),
+        "Body rough \u{00B7} 1 region"
+    );
+    assert_eq!(
+        rest_source_label("Body rough", Some(&Vec::new())),
+        "Body rough"
+    );
+    assert_eq!(rest_source_label("Body rough", None), "Body rough");
+    assert_eq!(regions_phrase(2), "2 regions");
+}
+
+/// G-C (§2 c, d): with a larger consumer on a `Center` containment, the
+/// Containment row draws `Use Inside`, and a click writes `Inside` to the
+/// draft. When `Inside` would collapse, the act is off and the click
+/// writes nothing. The two options `Center` and `Outside` are refused in
+/// the combo (their hover is the sizes).
+#[test]
+fn use_inside_sits_on_the_containment_row_g_c() {
+    use crate::state::runtime::InsideAnswer;
+    use crate::state::toolpath::{
+        BoundaryContainment, BoundarySource, OperationType, ToolpathEntry,
+    };
+    let source = rs_cam_core::ToolpathId::from_raw(42);
+    let run = |inside: InsideAnswer| {
+        let (session, _mesh) = one_pocket_session();
+        let tc = &session.toolpath_configs()[0];
+        let mut inputs = super::toolpath_panel_inputs(
+            tc.id,
+            &session,
+            &crate::state::runtime::GuiState::default(),
+            None,
+            Some(ToolpathTab::Cut),
+            false,
+        );
+        inputs.rest_containment = Some(larger_consumer(source, inside));
+        inputs.boundary_source_candidates =
+            vec![(source, "Body rough".to_owned(), false, None, None, None)];
+        let mut entry = ToolpathEntry::for_operation(
+            tc.id,
+            "Edges".to_owned(),
+            tc.tool_id.expect("the case tool"),
+            tc.model_id,
+            OperationType::Pocket,
+        );
+        entry.boundary.enabled = true;
+        entry.boundary.source = BoundarySource::DerivedRestRegions {
+            source_toolpath_id: source,
+        };
+        entry.boundary.containment = BoundaryContainment::Center;
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut badge = crate::state::panels::ContainmentAutoCorrect::default();
+        let mut act_at: Option<egui::Pos2> = None;
+        let mut painted = false;
+        for pass in 0..5 {
+            let mut input = egui::RawInput::default();
+            if pass == 3
+                && let Some(pos) = act_at
+            {
+                input.events.push(egui::Event::PointerMoved(pos));
+                for pressed in [true, false] {
+                    input.events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+            let mut events = Vec::new();
+            let mut out = ctx.run_ui(input, |ui| {
+                super::toolpath_panel::draw_cut_tab(
+                    ui,
+                    &mut entry,
+                    &inputs,
+                    None,
+                    None,
+                    &mut crate::state::pick::SelectionUi::default(),
+                    &mut badge,
+                    &mut events,
+                );
+            });
+            for clipped in &out.shapes {
+                if let egui::epaint::Shape::Text(text) = &clipped.shape
+                    && text.galley.job.text == super::toolpath_panel::USE_INSIDE
+                {
+                    painted = true;
+                    act_at = Some(clipped.shape.visual_bounding_rect().center());
+                }
+            }
+            out.textures_delta.clear();
+        }
+        (painted, entry.boundary.containment)
+    };
+    assert_eq!(
+        run(InsideAnswer::Keeps),
+        (true, BoundaryContainment::Inside),
+        "the act writes Inside"
+    );
+    assert_eq!(
+        run(InsideAnswer::Collapses("c".to_owned())),
+        (true, BoundaryContainment::Center),
+        "the act is off when Inside collapses"
+    );
+}
+
+/// W1b follow-up: the Waterline row names its field, `helical`.
+#[test]
+fn the_waterline_row_reads_helical_w1b() {
+    let mut cfg = crate::state::toolpath::WaterlineConfig::default();
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        super::operations::draw_waterline_params(ui, &mut cfg, None);
+    });
+    let texts: Vec<String> = out
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    out.textures_delta.clear();
+    assert!(texts.iter().any(|t| t == "Helical:"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t == "Continuous:"), "{texts:?}");
+    assert!(
+        super::help_for(crate::state::toolpath::OperationType::Waterline, "helical").is_some(),
+        "the row's hover is the registry help"
+    );
+}
+
+/// C4: the 3D Rough row "Contour each level" shows where it acts: a rest
+/// rough with a machining boundary (`offered`), a By Area rough (C4b), or
+/// while it is on. A Global body rough (fresh stock) draws no row. The
+/// hover is the registry help.
+#[test]
+fn contour_each_level_shows_where_it_acts_c4() {
+    use crate::state::toolpath::Adaptive3dConfig;
+    use crate::state::toolpath::RegionOrdering;
+    let rows = |offered: bool, on: bool, ordering: RegionOrdering| {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut cfg = Adaptive3dConfig {
+            contour_each_level: on,
+            region_ordering: ordering,
+            ..Adaptive3dConfig::default()
+        };
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            super::operations::draw_adaptive3d_params(ui, &mut cfg, None, None, offered);
+        });
+        let n = out
+            .shapes
+            .iter()
+            .filter(|c| {
+                matches!(&c.shape, egui::epaint::Shape::Text(t)
+                    if t.galley.job.text == "Contour each level:")
+            })
+            .count();
+        out.textures_delta.clear();
+        n
+    };
+    let global = RegionOrdering::Global;
+    assert_eq!(
+        rows(false, false, global),
+        0,
+        "a Global body rough draws no row"
+    );
+    assert_eq!(
+        rows(true, false, global),
+        1,
+        "a rest rough with a boundary draws it"
+    );
+    assert_eq!(
+        rows(false, true, global),
+        1,
+        "an op with the option on keeps the row"
+    );
+    assert_eq!(
+        rows(false, false, RegionOrdering::ByArea),
+        1,
+        "C4b: a By Area rough, fresh or rest, draws it"
+    );
+    assert!(
+        super::help_for(
+            crate::state::toolpath::OperationType::Adaptive3d,
+            "contour_each_level"
+        )
+        .is_some_and(|h| h.contains("Depth/Pass") && h.contains("By Area")),
+        "the hover is the registry help"
     );
 }

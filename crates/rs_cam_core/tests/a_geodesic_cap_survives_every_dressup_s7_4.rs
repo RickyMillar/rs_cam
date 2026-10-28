@@ -114,6 +114,7 @@ fn params() -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: Some(StepSplit::StockDepth),
             keep_down_route: Some(KeepDownRoute::CutFeed),
+            level_contour: None,
         },
         feed_rate: FEED,
         plunge_rate: PLUNGE,
@@ -123,7 +124,6 @@ fn params() -> Adaptive3dParams {
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        z_blend: false,
     }
 }
 

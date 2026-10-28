@@ -8,7 +8,7 @@ use crate::state::toolpath::{
 };
 
 use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
-use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
+use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton, UiExt as _};
 use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
@@ -56,6 +56,8 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     ui: &mut egui::Ui,
     cfg: &mut Adaptive3dConfig,
     pills: Option<&PillSuggestions>,
+    strategy_suggestion: Option<ClearingStrategy>,
+    contour_each_level_offered: bool,
 ) {
     // Spec: pill stepover + depth_per_pass. Removal step R2: the
     // ContourSpiral "Optimal load" slider left with its strategy.
@@ -159,31 +161,58 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
             }
         }
         ui.label("Strategy:");
-        egui::ComboBox::from_id_salt("a3d_strat")
-            .truncate()
-            .selected_text(match cfg.clearing_strategy {
-                ClearingStrategy::ContourParallel => "Contour Parallel",
-                ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut cfg.clearing_strategy,
-                    ClearingStrategy::ContourParallel,
-                    "Contour Parallel",
-                );
-                ui.selectable_value(
-                    &mut cfg.clearing_strategy,
-                    ClearingStrategy::GeodesicAdaptive,
-                    "Geodesic Adaptive",
-                )
-                .on_hover_text(
-                    "Geodesic-wavefront roughing per slice: spiral wraps that hold \
+        // G-D (§3): the Suggest advice is a ⚡ chip in the combo's cell, not
+        // a row. It goes when the draft already holds the recommendation.
+        let suggestion = strategy_suggestion.filter(|s| *s != cfg.clearing_strategy);
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("a3d_strat")
+                .truncate()
+                .selected_text(strategy_label(cfg.clearing_strategy))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::ContourParallel,
+                        "Contour Parallel",
+                    );
+                    ui.selectable_value(
+                        &mut cfg.clearing_strategy,
+                        ClearingStrategy::GeodesicAdaptive,
+                        "Geodesic Adaptive",
+                    )
+                    .on_hover_text(
+                        "Geodesic-wavefront roughing per slice: spiral wraps that hold \
                          the pass load, with each tight turn fed down to that load. It \
                          clears the body only; follow it with a Contour Parallel rest \
                          op for the edges. New, not yet machine-tested.",
-                );
-            });
+                    );
+                });
+            if let Some(recommended) = suggestion {
+                let chip = SuggestButton::field(ProvKind::RepoRule).hover(format!(
+                    "Suggest: {} for this terrain (mixed-terrain classifier). Click to switch.",
+                    strategy_label(recommended)
+                ));
+                if ui.add(chip).clicked() {
+                    cfg.clearing_strategy = recommended;
+                }
+            }
+        });
         ui.end_row();
+        // C4 (operator ruling D69): one visible row, shown where it acts: a
+        // rest rough (remaining stock) with a machining boundary, any rough
+        // in By Area order (C4b: the walls of each region at each level),
+        // or while it is on (the Pocket "Cut past open sides" rule). The
+        // hover is the registry help (UI-04: keyed on the parameter name).
+        if contour_each_level_offered
+            || cfg.contour_each_level
+            || cfg.region_ordering == RegionOrdering::ByArea
+        {
+            let help = super::super::help_for(OperationType::Adaptive3d, "contour_each_level")
+                .unwrap_or_default();
+            ui.label("Contour each level:").on_hover_text(help);
+            ui.checkbox(&mut cfg.contour_each_level, "")
+                .on_hover_text(help);
+            ui.end_row();
+        }
     });
     advanced(ui, "a3d_adv", |ui| {
         dv(
@@ -219,10 +248,15 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
             });
         ui.end_row();
-        ui.label("Z Blend:");
-        ui.checkbox(&mut cfg.z_blend, "");
-        ui.end_row();
     });
+}
+
+/// The label of a clearing strategy in the Strategy combo and its ⚡ hover.
+fn strategy_label(strategy: ClearingStrategy) -> &'static str {
+    match strategy {
+        ClearingStrategy::ContourParallel => "Contour Parallel",
+        ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
+    }
 }
 
 pub(in crate::ui::properties) fn draw_waterline_params(
@@ -241,8 +275,11 @@ pub(in crate::ui::properties) fn draw_waterline_params(
             " mm",
             0.1,
         );
-        ui.label("Continuous:");
-        ui.checkbox(&mut cfg.continuous, "");
+        // W1b: the field is `helical`; the label names it, and the hover is
+        // its registry help (UI-04: keyed on the parameter name).
+        let help = super::super::help_for(OperationType::Waterline, "helical").unwrap_or_default();
+        ui.label("Helical:").on_hover_text(help);
+        ui.checkbox(&mut cfg.helical, "").on_hover_text(help);
         ui.end_row();
         // Z range now comes from the Heights tab (top_z / bottom_z)
     });

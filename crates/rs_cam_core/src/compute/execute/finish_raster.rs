@@ -325,7 +325,16 @@ pub(crate) fn generate_waterline(
         cfg.z_step,
         ctx.stock_bbox.min.z,
     );
-    ctx.record(&crate::compute::toolpath_stats::WaterlineLadderFinding {
+    // W4 (D69 §4, operator ruling 2026-10-28): on a through part (the
+    // model bottom at the stock bottom, to within the ladder's own "on a
+    // face" tolerance) the Waterline cuts no outer ring at or below the web
+    // the job holds (`ExecutionContext::through_cut_hold`, from the
+    // session). A model that stands on stock keeps every ring.
+    let through_part =
+        surface.mesh.bbox.min.z <= ctx.stock_bbox.min.z + crate::ops::waterline::FLAT_FACE_SNAP_MM;
+    let hold = ctx.through_cut_hold.filter(|_| through_part);
+    let web = hold.and_then(|h| h.web);
+    let mut finding = crate::compute::toolpath_stats::WaterlineLadderFinding {
         requested_top_z_mm: ctx.heights.top_z,
         requested_bottom_z_mm: ctx.heights.bottom_z,
         stock_bottom_z_mm: ctx.stock_bbox.min.z,
@@ -334,18 +343,119 @@ pub(crate) fn generate_waterline(
         nudged_levels: ladder.nudged_levels,
         dropped_below_stock: ladder.dropped_below_stock,
         delivered_levels: ladder.levels.len(),
-    });
+        web,
+        outer_rings_skipped: 0,
+        part_unheld: hold.is_some_and(|h| !h.tabbed_profile_follows),
+    };
+    ctx.record(&finding);
+    // D69 §2: the helical waterline judges each link between two chained
+    // rings with the model gouge guard's reduced tool. A tool that cannot
+    // shrink (no cutter) joins no level: the op cuts the stacked form.
+    let link_probe = if cfg.helical {
+        crate::compute::cutter::build_cutter(&crate::compute::model_gouge::reduced_tool_config(
+            ctx.tool_cfg,
+            crate::compute::model_gouge::MODEL_GOUGE_TOL_MM,
+        ))
+        .ok()
+    } else {
+        None
+    };
+    // W2 (D69 §3): the inputs of the wall step. All four must be known;
+    // else the helix keeps every ring (the W1 ladder).
+    let wall = match (ctx.material, ctx.rest_axial_step_mm, cfg.spindle_rpm) {
+        (Some(material), Some(max_step_mm), Some(rpm))
+            if rpm > 0 && ctx.tool_cfg.flute_count > 0 =>
+        {
+            Some(WallInputs {
+                material,
+                max_step_mm,
+                // The feed per tooth: feed / (rpm x flutes).
+                fz_mm: params.feed_rate / (f64::from(rpm) * f64::from(ctx.tool_cfg.flute_count)),
+            })
+        }
+        _ => None,
+    };
     let pass = WaterlinePass {
         surface,
         cutter: ctx.tool_def,
         params,
+        link_probe,
+        wall,
+        outer_floor_z: web.map(|w| w.z_mm),
+        outer_rings_skipped: std::cell::Cell::new(0),
         levels: ladder.levels,
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
         boundary_regions: prepared.territory().regions(),
     };
-    run_layered(&pass, ctx, prepared)
+    let generated = run_layered(&pass, ctx, prepared)?;
+    // W4: the count is known only after the levels are cut.
+    finding.outer_rings_skipped = pass.outer_rings_skipped.get();
+    ctx.record(&finding);
+    Ok(generated)
+}
+
+/// W2 (D69 §3): what the wall step of the helical Waterline reads.
+struct WallInputs<'a> {
+    material: &'a crate::material::Material,
+    /// The rough's axial step (`ExecutionContext::rest_axial_step_mm`).
+    max_step_mm: f64,
+    /// The feed per tooth of the op (mm).
+    fz_mm: f64,
+}
+
+/// W2 (D69 §3): the deflection check of a wall step. The tool `tool` cuts
+/// a wall at axial depth `ap` (mm) with radial skin `skin` (mm) at feed per
+/// tooth `fz` (mm). It passes when the shared force and cantilever model of
+/// the deflection gate (`feeds::predict::tip_deflection_from_engagement`,
+/// which `tool_load::deflection::sample_tip_deflection_mm` also reads; the
+/// cantilever is `ToolDefinition::tip_deflection_mm`) predicts at most
+/// `tool_load::deflection::WITHIN_BOUND_MM` (the gate's "Within, Validated"
+/// bound; lead ruling 2026-10-28). No skin: no load, so it passes. A model
+/// refusal (no force line, no stickout) fails.
+fn wall_step_admits(
+    tool: &ToolDefinition,
+    material: &crate::material::Material,
+    skin: f64,
+    ap: f64,
+    fz: f64,
+) -> bool {
+    if skin <= 0.0 {
+        return true;
+    }
+    let radius = crate::tool::MillingCutter::radius(tool);
+    crate::feeds::predict::tip_deflection_from_engagement(
+        tool,
+        material,
+        ap,
+        crate::feeds::force::immersion_angle(skin, radius),
+        fz,
+    )
+    .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
+}
+
+impl WaterlinePass<'_> {
+    /// W2 (D69 §3): [`wall_step_admits`] along `ring`, with the widest
+    /// radial skin that the remaining stock shows there
+    /// (`StandingNear::radial_skin_mm`). No rest rule (fresh stock): fails.
+    fn wall_admits(
+        &self,
+        wall: &WallInputs<'_>,
+        standing: Option<&crate::compute::execute::standing_material::StandingNear<'_>>,
+        ring: &[crate::geo::P3],
+        ap: f64,
+    ) -> bool {
+        let Some(standing) = standing else {
+            return false;
+        };
+        let radius = crate::tool::MillingCutter::radius(self.cutter);
+        let skin = ring
+            .iter()
+            .map(|p| standing.radial_skin_mm(P2::new(p.x, p.y), radius))
+            .fold(0.0_f64, f64::max);
+        wall_step_admits(self.cutter, wall.material, skin, ap, wall.fz_mm)
+    }
 }
 
 /// The Waterline op: the push-cutter contours of the surface at each level
@@ -355,6 +465,18 @@ struct WaterlinePass<'a> {
     surface: MeshInput<'a>,
     cutter: &'a ToolDefinition,
     params: crate::ops::waterline::WaterlineParams,
+    /// D69 §2 (`WaterlineConfig::helical`): the reduced tool that
+    /// judges a chain link. `Some`: the op cuts the helical waterline;
+    /// `None`: the stacked form, one entry per ring and level.
+    link_probe: Option<ToolDefinition>,
+    /// W2 (D69 §3): the inputs of the wall step, or `None` (no material, no
+    /// rough step or no spindle speed): the helix keeps every ring.
+    wall: Option<WallInputs<'a>>,
+    /// W4 (D69 §4): the web Z of a through cut (`RunFilter::outer_floor_z`),
+    /// or `None`.
+    outer_floor_z: Option<f64>,
+    /// W4: the outer rings the web kept from the cut, over every level.
+    outer_rings_skipped: std::cell::Cell<usize>,
     /// The ladder of `waterline_ladder`: nudged off the flat facets and
     /// floored at the stock bottom.
     levels: Vec<f64>,
@@ -426,6 +548,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             boundary_regions: self.boundary_regions,
             keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
             split_timing: rest.split_timing,
+            outer_floor_z: self.outer_floor_z,
         };
         let mut tp = Toolpath::new();
         let (mut kept, mut dropped) = (false, false);
@@ -441,12 +564,111 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             )?;
             kept |= piece.rest_kept;
             dropped |= piece.rest_dropped;
+            self.outer_rings_skipped
+                .set(self.outer_rings_skipped.get() + piece.outer_rings_skipped);
             tp.moves.extend(piece.toolpath.moves);
         }
         rest.tally(kept, dropped);
         // P6.0c: a surface op states no material side (the lead dressup's
         // surface probe holds the lead).
         Ok(SidedToolpath::without_closed_passes(tp))
+    }
+
+    /// D69 §2: the helical waterline. The rings of every level, with the
+    /// rest rule and its tally of [`Self::emit_level`], then each chain of
+    /// whole rings over consecutive levels as one entry
+    /// (`ops::waterline::helical_waterline`). `None` when the dial is off.
+    fn emit_ladder<'r>(
+        &self,
+        geometry: &Self::Geometry,
+        levels: &[f64],
+        rest: &dyn Fn(f64) -> LevelRest<'r>,
+        cancel: &dyn CancelCheck,
+    ) -> Option<Result<SidedToolpath, OperationError>> {
+        let reduced_tool = self.link_probe.as_ref()?;
+        let probe = crate::ops::waterline::ChainLinkProbe {
+            mesh: self.surface.mesh,
+            index: self.surface.index,
+            reduced_tool,
+        };
+        let run = || -> Result<SidedToolpath, OperationError> {
+            let mut rings = Vec::with_capacity(levels.len());
+            for &z in levels {
+                crate::interrupt::check_cancel(cancel)?;
+                let rest = rest(z);
+                let standing = rest.standing.as_ref();
+                let keep = |p: P2| standing.is_none_or(|s| s.keeps(p));
+                let filter = crate::ops::waterline::RunFilter {
+                    boundary_regions: self.boundary_regions,
+                    keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
+                    split_timing: rest.split_timing,
+                    outer_floor_z: self.outer_floor_z,
+                };
+                let mut level = crate::ops::waterline::LevelRings {
+                    contours: Vec::new(),
+                    runs: Vec::new(),
+                    rest_kept: false,
+                    rest_dropped: false,
+                    outer_rings_skipped: 0,
+                };
+                for surface in geometry {
+                    let piece = crate::ops::waterline::waterline_level_rings(
+                        surface.mesh,
+                        surface.index,
+                        self.cutter,
+                        z,
+                        &self.params,
+                        &filter,
+                        cancel,
+                    )?;
+                    let offset = level.contours.len();
+                    level.contours.extend(piece.contours);
+                    level.runs.extend(piece.runs.into_iter().map(|mut run| {
+                        run.contour += offset;
+                        run
+                    }));
+                    level.rest_kept |= piece.rest_kept;
+                    level.rest_dropped |= piece.rest_dropped;
+                    level.outer_rings_skipped += piece.outer_rings_skipped;
+                }
+                rest.tally(level.rest_kept, level.rest_dropped);
+                self.outer_rings_skipped
+                    .set(self.outer_rings_skipped.get() + level.outer_rings_skipped);
+                rings.push(level);
+            }
+            let admits = |k: usize, ring: &[crate::geo::P3], ap: f64| {
+                let Some((wall, &z)) = self.wall.as_ref().zip(levels.get(k)) else {
+                    return false;
+                };
+                let rest = rest(z);
+                self.wall_admits(wall, rest.standing.as_ref(), ring, ap)
+            };
+            let wall_step = self
+                .wall
+                .as_ref()
+                .map(|wall| crate::ops::waterline::WallStep {
+                    max_step_mm: wall.max_step_mm,
+                    admits: &admits,
+                });
+            let tp = crate::ops::waterline::helical_waterline(
+                &rings,
+                &self.params,
+                &probe,
+                wall_step.as_ref(),
+                cancel,
+            )?;
+            // P6.0c: a surface op states no material side.
+            Ok(SidedToolpath::without_closed_passes(tp))
+        };
+        Some(run())
+    }
+
+    /// The depth-run spans, and (D69 §2) a barrier round each helical
+    /// chain, so the rapid-order pass keeps the chain in its place.
+    fn spans(&self, toolpath: Toolpath, levels: &[f64]) -> GeneratedToolpath {
+        let mut spans = crate::compute::spans::spans_from_depth_runs(&toolpath, levels);
+        spans.extend(crate::compute::spans::chain_barriers(&toolpath, levels));
+        super::shared::generated_with_spans(toolpath, spans)
     }
 
     /// G-LINKSTAGE, OFF by default (`hookup_mm` ships at `0.0`), so this
@@ -476,5 +698,41 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             surface: self.surface,
             cutter: self.cutter,
         })
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::wall_step_admits;
+    use crate::compute::tool_config::{ToolConfig, ToolType};
+    use crate::ids::ToolId;
+    use crate::material::{Material, WoodSpecies};
+
+    fn endmill(diameter: f64, stickout: f64) -> crate::tool::ToolDefinition {
+        let mut cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        cfg.diameter = diameter;
+        cfg.shank_diameter = diameter;
+        cfg.stickout = stickout;
+        crate::compute::cutter::build_cutter(&cfg).expect("a valid end mill")
+    }
+
+    /// W2: the wall step passes the deflection check for a stiff tool and
+    /// a thin skin, and fails for a long thin tool at the same cut. No skin
+    /// always passes.
+    #[test]
+    fn the_wall_step_reads_the_deflection_model_w2() {
+        let maple = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let (skin, ap, fz) = (0.5, 6.0, 0.05);
+        let stiff = endmill(6.0, 20.0);
+        let thin = endmill(2.0, 40.0);
+        assert!(wall_step_admits(&stiff, &maple, skin, ap, fz));
+        assert!(!wall_step_admits(&thin, &maple, skin, ap, fz));
+        assert!(wall_step_admits(&thin, &maple, 0.0, ap, fz));
     }
 }

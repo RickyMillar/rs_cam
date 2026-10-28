@@ -1,4 +1,4 @@
-//! The Feeds & Speeds tab: the LUT calculator card, the manual speed
+//! The Feeds tab: the LUT calculator card, the manual speed
 //! controls, the operating-point and advance-per-tooth readings, the vendor
 //! LUT viewer and the entry-style preview diagram.
 
@@ -68,7 +68,11 @@ pub(super) fn calculate_and_apply_feeds(
         }
         (false, Some(e)) => {
             ui.add_space(8.0);
-            ui.colored_label(crate::ui::tokens::DANGER, format!("Feeds unavailable: {e}"));
+            // G-E (4): one line that truncates; its hover is the full text.
+            ui.add(
+                crate::ui::components::OneLine::new(format!("Feeds unavailable: {e}"))
+                    .color(crate::ui::tokens::DANGER),
+            );
         }
         // Not reached: a refresh leaves a result or a refusal.
         (false, None) => {}

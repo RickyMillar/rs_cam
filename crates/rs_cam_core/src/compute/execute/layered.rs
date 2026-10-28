@@ -305,6 +305,23 @@ pub(crate) trait LayeredOp {
         cancel: &dyn CancelCheck,
     ) -> Result<SidedToolpath, OperationError>;
 
+    /// D69 §2: the cut of one outline over its WHOLE ladder, for an op that
+    /// joins consecutive levels (the helical Waterline). `rest` gives the
+    /// runner's rest rule at a level's Z, as [`Self::emit_level`] gets it.
+    /// `None` (the default): the runner emits the outline level by level
+    /// through [`Self::emit_level`]. The runner asks only under
+    /// [`RegionOrdering::ByArea`] and only when every level cuts the whole
+    /// outline.
+    fn emit_ladder<'r>(
+        &self,
+        _geometry: &Self::Geometry,
+        _levels: &[f64],
+        _rest: &dyn Fn(f64) -> LevelRest<'r>,
+        _cancel: &dyn CancelCheck,
+    ) -> Option<Result<SidedToolpath, OperationError>> {
+        None
+    }
+
     /// The outlines the runner steps, one region each. The default is the
     /// closed areas of the op's selection (`Prepared::regions`, P2.3a).
     /// Face overrides it: its one outline is the facing rectangle of the
@@ -586,6 +603,12 @@ pub(crate) fn run_layered<O: LayeredOp>(
                 let levels = ladders.ladder(l);
                 let layers =
                     prepare_outline(op, ctx, unguarded, tool_radius, &cancel_fn, outline, levels)?;
+                if let Some(joined) = emit_joined(op, &layers, levels, &rules, &cancel_fn) {
+                    let piece = joined?;
+                    combined.moves.extend(piece.toolpath.moves);
+                    closed_passes.extend(piece.closed_passes);
+                    continue;
+                }
                 let mut emitted = false;
                 for i in 0..levels.len() {
                     check_cancel(&cancel_fn)?;
@@ -778,6 +801,30 @@ fn emit_at<O: LayeredOp>(
         cancel,
     )?;
     Ok((!piece.toolpath.moves.is_empty()).then_some(piece))
+}
+
+/// The cut of one outline over its whole ladder when the op joins its
+/// levels ([`LayeredOp::emit_ladder`]), or `None`: the op does not, or a
+/// level does not cut the whole outline.
+fn emit_joined<O: LayeredOp>(
+    op: &O,
+    layers: &OutlineLayers<O::Geometry>,
+    levels: &[f64],
+    rules: &LevelRules<'_>,
+    cancel: &dyn CancelCheck,
+) -> Option<Result<SidedToolpath, OperationError>> {
+    let whole = (0..levels.len())
+        .all(|i| matches!(layers.plan.levels.get(i), None | Some(LevelRegion::Whole)));
+    if !whole {
+        return None;
+    }
+    let geometry = layers.whole.as_ref()?;
+    let rest = |z: f64| LevelRest {
+        standing: rules.contour.map(|rule| rule.at(z)),
+        split_timing: rules.contour.and_then(|rule| rule.split_timing()),
+        tally: rules.tally,
+    };
+    op.emit_ladder(geometry, levels, &rest, cancel)
 }
 
 /// The level plan of one outline and the geometry of each distinct region.

@@ -548,9 +548,12 @@ fn tridexel_simulation_two_toolpaths_carry_forward() {
 /// should run diagonally from below safe_z to a different XY.
 ///
 /// This test inspects every Rapid move in the generated toolpath
-/// for a z_blend=true adaptive3d run on terrain_small.stl and
+/// for a Contour Parallel adaptive3d run on terrain_small.stl and
 /// asserts: for every Rapid that changes XY, the preceding move
 /// must already have the tool at or above `safe_z`.
+///
+/// GUI fix G-A (2026-10-28): the run had Z Blend on; Z Blend left the
+/// format, so the guard reads the plain Contour Parallel run.
 #[test]
 fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     use rs_cam_core::adaptive3d::{
@@ -571,8 +574,8 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
     let tool = FlatEndmill::new(6.35, 25.0);
     let index = SpatialIndex::build(&mesh, tool.diameter() * 2.0);
 
-    // Match the Phase 2 probe: 6.35mm flat, stepover=2, z_blend=true,
-    // ContourParallel. Use stock_top_z just above the mesh top.
+    // Match the Phase 2 probe: 6.35mm flat, stepover=2, ContourParallel
+    // (Z Blend left the format in G-A). Use stock_top_z just above the mesh top.
     let params = Adaptive3dParams {
         entry_clearance_mm: 0.5,
         ramp_feed_rate: None,
@@ -602,6 +605,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -611,7 +615,6 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: true,
     };
 
     let tp = rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
@@ -674,7 +677,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
 
     assert!(
         xy_traverse_rapids > 0,
-        "expected at least one XY traverse rapid in a z_blend=true run"
+        "expected at least one XY traverse rapid in the Contour Parallel run"
     );
     assert_eq!(
         bad_traverse_rapids, 0,

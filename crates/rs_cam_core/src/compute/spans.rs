@@ -147,6 +147,33 @@ pub fn spans_from_depth_runs(toolpath: &Toolpath, levels: &[f64]) -> Vec<Span> {
     spans
 }
 
+/// D69 §2: a [`SpanKind::RapidOrderBarrier`] at the start and at the end
+/// of each cutting run that cuts at two or more levels of `levels` (a
+/// helical waterline chain). The rapid-order pass then moves no other run
+/// into the chain or across it, so the chain keeps its place in the depth
+/// order.
+pub fn chain_barriers(toolpath: &Toolpath, levels: &[f64]) -> Vec<Span> {
+    let mut spans = Vec::new();
+    for run in cutting_runs(toolpath) {
+        let mut cut_z = toolpath
+            .moves
+            .iter()
+            .skip(run.start_move)
+            .take(run.end_move.saturating_sub(run.start_move))
+            .filter(|mv| mv.move_type.is_cutting())
+            .map(|mv| mv.target.z);
+        let Some(first) = cut_z.next() else {
+            continue;
+        };
+        let level = nearest_level(first, levels);
+        if cut_z.any(|z| nearest_level(z, levels) != level) {
+            spans.push(Span::boundary(run.start_move, SpanKind::RapidOrderBarrier));
+            spans.push(Span::boundary(run.end_move, SpanKind::RapidOrderBarrier));
+        }
+    }
+    spans
+}
+
 /// Build structural spans for operations whose useful structure is just a set
 /// of contiguous cutting runs (rows, rays, contours, projected chains, etc.).
 ///

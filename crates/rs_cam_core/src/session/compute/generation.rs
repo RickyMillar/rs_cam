@@ -461,6 +461,23 @@ impl ProjectSession {
                 _ => None,
             };
 
+        // W2 (D69 §3): on an op that cuts the remaining stock, the smallest
+        // axial step of the earlier enabled roughing ops of the setup (the
+        // registry's `PassRole::Roughing`): the depth at which the rough cut
+        // the walls. A finishing step (a Waterline `z_step`) is not a rough.
+        let rest_axial_step_mm = (tc.stock_source
+            == crate::compute::config::StockSource::FromRemainingStock)
+            .then(|| self.earlier_rough_step(index))
+            .flatten();
+
+        // W4 (D69 §4): for a Waterline, what the job holds the part with
+        // at the end of a through cut.
+        let through_cut_hold = matches!(
+            tc.operation,
+            crate::compute::catalog::OperationConfig::Waterline(_)
+        )
+        .then(|| self.through_cut_hold(index));
+
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
             tool,
@@ -481,7 +498,132 @@ impl ProjectSession {
             pre_boundary,
             pre_boundary_regions,
             rest_top_z,
+            rest_axial_step_mm,
+            through_cut_hold,
         })
+    }
+
+    /// W4 (D69 §4, operator ruling 2026-10-28): what the job holds the part
+    /// with at the end of a through cut, for the Waterline at `index`.
+    /// Derived from the project (the ops' configs and their resolved
+    /// heights), never from a generated result, so a stale or missing
+    /// result cannot change the Waterline. The first rule that applies:
+    ///
+    /// 1. A later enabled Profile of the setup with tabs (`tab_count > 0`
+    ///    or hand tabs) whose floor reaches the stock bottom (to within
+    ///    `FLAT_FACE_SNAP_MM`): the web is its tab top, floor plus
+    ///    `tab_height` (the highest of several). The Waterline then never
+    ///    cuts below a tab.
+    /// 2. The lowest floor that an earlier enabled roughing op
+    ///    (`PassRole::Roughing`) of the setup leaves on the outline: an op
+    ///    whose resolved bottom is the model bottom (to within
+    ///    `FLAT_FACE_SNAP_MM`; it cuts down to the part bottom), at its
+    ///    bottom plus its axial stock to leave
+    ///    (`OperationConfig::model_gouge_allowance`), when that floor stands
+    ///    above the stock bottom (an earlier op that cut through holds no
+    ///    web). A pocket that stops above the model bottom leaves a floor,
+    ///    not a web, and is not read.
+    /// 3. No web.
+    ///
+    /// An op whose heights do not resolve is not read.
+    fn through_cut_hold(&self, index: usize) -> crate::compute::toolpath_stats::ThroughCutHold {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::toolpath_stats::{ThroughCutHold, WaterlineWeb, WebSource};
+        let no_hold = ThroughCutHold {
+            web: None,
+            tabbed_profile_follows: false,
+        };
+        let Some(setup) = self.find_setup_for_toolpath_index(index) else {
+            return no_hold;
+        };
+        let order = setup.toolpath_indices();
+        let Some(at) = order.iter().position(|&i| i == index) else {
+            return no_hold;
+        };
+        let enabled = |i: &usize| self.toolpath_configs.get(*i).filter(|tc| tc.enabled);
+        let tab_top = order
+            .iter()
+            .skip(at + 1)
+            .filter_map(enabled)
+            .filter_map(|tc| {
+                let OperationConfig::Profile(profile) = &tc.operation else {
+                    return None;
+                };
+                if profile.tab_count == 0 && profile.tab_points.is_empty() {
+                    return None;
+                }
+                let h = self.toolpath_heights(tc).ok()?;
+                (h.heights.bottom_z
+                    <= h.context.stock_bottom_z + crate::ops::waterline::FLAT_FACE_SNAP_MM)
+                    .then_some(h.heights.bottom_z + profile.tab_height)
+            })
+            .max_by(f64::total_cmp);
+        if let Some(z_mm) = tab_top {
+            return ThroughCutHold {
+                web: Some(WaterlineWeb {
+                    z_mm,
+                    source: WebSource::TabbedProfile,
+                }),
+                tabbed_profile_follows: true,
+            };
+        }
+        let earlier_floor = order
+            .get(..at)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(enabled)
+            .filter(|tc| {
+                tc.operation.op_type().spec().feeds_pass_role == crate::feeds::PassRole::Roughing
+            })
+            .filter_map(|tc| {
+                let h = self.toolpath_heights(tc).ok()?;
+                // Only a rough that cuts down to the part bottom leaves a web
+                // on the outline. A pocket that stops above the model bottom
+                // leaves a floor, not a web.
+                let to_part_bottom = h.context.model_bottom_z.is_some_and(|model_bottom| {
+                    h.heights.bottom_z <= model_bottom + crate::ops::waterline::FLAT_FACE_SNAP_MM
+                });
+                if !to_part_bottom {
+                    return None;
+                }
+                let leave = tc
+                    .operation
+                    .model_gouge_allowance(None)
+                    .map_or(0.0, |a| a.leave_mm);
+                Some((h.heights.bottom_z + leave, h.context.stock_bottom_z))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        ThroughCutHold {
+            web: earlier_floor
+                .filter(|&(floor, bottom)| {
+                    floor > bottom + crate::ops::waterline::STOCK_BOTTOM_FLOOR_EPS_MM
+                })
+                .map(|(z_mm, _)| WaterlineWeb {
+                    z_mm,
+                    source: WebSource::EarlierFloor,
+                }),
+            tabbed_profile_follows: false,
+        }
+    }
+
+    /// W2 (D69 §3): the smallest `OperationConfig::depth_per_pass` of the
+    /// enabled roughing ops (`PassRole::Roughing`) before toolpath `index`
+    /// in its setup, or `None` when no such op states one.
+    fn earlier_rough_step(&self, index: usize) -> Option<f64> {
+        let setup = self.find_setup_for_toolpath_index(index)?;
+        setup
+            .toolpath_indices()
+            .iter()
+            .take_while(|&&i| i != index)
+            .filter_map(|&i| self.toolpath_configs.get(i))
+            .filter(|tc| {
+                tc.enabled
+                    && tc.operation.op_type().spec().feeds_pass_role
+                        == crate::feeds::PassRole::Roughing
+            })
+            .filter_map(|tc| tc.operation.depth_per_pass())
+            .filter(|step| step.is_finite() && *step > 0.0)
+            .min_by(f64::total_cmp)
     }
 
     /// D50: the top Z of the stock that the toolpath `source_toolpath_id`
@@ -524,48 +666,79 @@ impl ProjectSession {
         index: usize,
         source_toolpath_id: crate::ids::ToolpathId,
     ) -> Result<(), SessionError> {
-        use crate::compute::config::BoundaryContainment;
-        use crate::tool::MillingCutter as _;
-        let Some(tc) = self.toolpath_configs.get(index) else {
+        if self.toolpath_configs.get(index).is_none() {
             return Err(SessionError::ToolpathNotFound(index));
+        }
+        match self.larger_rest_consumer_text(index, source_toolpath_id) {
+            Some(text) => Err(SessionError::OperationFailed(text)),
+            None => Ok(()),
+        }
+    }
+
+    /// G-C (§2 a): the D53 read door. `Some` when the tool of the toolpath
+    /// at `index` is larger than the tool of `source_toolpath_id`, whatever
+    /// the containment; the refusal of [`Self::refuse_larger_rest_consumer`]
+    /// adds the containment. The radii are the radii the containment uses
+    /// (the built cutter's diameter over two). A tool or a source that does
+    /// not resolve gives `None`: it is left to its own refusal.
+    #[must_use]
+    pub fn larger_rest_consumer(
+        &self,
+        index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Option<LargerRestConsumer> {
+        let tc = self.toolpath_configs.get(index)?;
+        let source = self
+            .toolpath_configs
+            .iter()
+            .find(|s| s.id == source_toolpath_id)?;
+        // The one radius rule of the containment, shared with the step 7.8
+        // door (`add_geodesic_body_and_edges`).
+        let own = self.built_tool_radius_mm(tc.tool_id)?;
+        let theirs = self.built_tool_radius_mm(source.tool_id)?;
+        (own > theirs).then(|| LargerRestConsumer {
+            op_name: tc.name.clone(),
+            source_toolpath_id,
+            source_name: source.name.clone(),
+            tool_radius_mm: own,
+            source_tool_radius_mm: theirs,
+        })
+    }
+
+    /// G-C: the D53 refusal text of the toolpath at `index` as it stands:
+    /// its `DerivedRestRegions` source, its containment and its tool.
+    /// `None` when the boundary is off, is not `DerivedRestRegions`, keeps
+    /// the tool inside (`Inside`), or the tool is not larger.
+    #[must_use]
+    pub fn larger_rest_consumer_refusal(&self, index: usize) -> Option<String> {
+        let tc = self.toolpath_configs.get(index)?;
+        if !tc.boundary.enabled {
+            return None;
+        }
+        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+            tc.boundary.source
+        else {
+            return None;
         };
+        self.larger_rest_consumer_text(index, source_toolpath_id)
+    }
+
+    /// The D53 refusal text for the containment of the toolpath at
+    /// `index`, or `None` when it does not refuse.
+    fn larger_rest_consumer_text(
+        &self,
+        index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Option<String> {
+        use crate::compute::config::BoundaryContainment;
+        let tc = self.toolpath_configs.get(index)?;
         let containment = match tc.boundary.containment {
-            BoundaryContainment::Inside => return Ok(()),
+            BoundaryContainment::Inside => return None,
             BoundaryContainment::Center => "Center",
             BoundaryContainment::Outside => "Outside",
         };
-        let Some(source) = self
-            .toolpath_configs
-            .iter()
-            .find(|s| s.id == source_toolpath_id)
-        else {
-            return Ok(());
-        };
-        let radius = |tool_id: Option<crate::ids::ToolId>| {
-            tool_id
-                .and_then(|id| self.tool_by_id(id))
-                .and_then(|tool| crate::session::session_cutter(tool).ok())
-                .map(|def| def.diameter() / 2.0)
-        };
-        let (Some(own), Some(theirs)) = (radius(tc.tool_id), radius(source.tool_id)) else {
-            return Ok(());
-        };
-        if own <= theirs {
-            return Ok(());
-        }
-        Err(SessionError::OperationFailed(format!(
-            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
-             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
-             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
-             tool could cut up to {:.3} mm past the machining boundary of '{}'. Set the \
-             boundary containment to Inside, or use a tool no larger than the tool of '{}'.",
-            tc.name,
-            source.name,
-            source.name,
-            own - theirs,
-            source.name,
-            source.name,
-        )))
+        let larger = self.larger_rest_consumer(index, source_toolpath_id)?;
+        Some(larger.refusal(containment))
     }
 
     /// Resolve the polygon set for `BoundarySource::DerivedRestRegions`,
@@ -585,48 +758,76 @@ impl ProjectSession {
         this_index: usize,
         source_toolpath_id: crate::ids::ToolpathId,
     ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, SessionError> {
+        self.derived_rest_regions(this_index, source_toolpath_id)
+            .map_err(|refusal| match refusal {
+                RestRegionsLookup::Refused(refusal) => {
+                    SessionError::OperationFailed(refusal.to_string())
+                }
+                RestRegionsLookup::NotFound(index) => SessionError::ToolpathNotFound(index),
+            })
+    }
+
+    /// G-E (3): why the `DerivedRestRegions` boundary of the toolpath at
+    /// `index` refuses generation, or `None` when it resolves (or the
+    /// toolpath has no such boundary on). The same rule as
+    /// [`Self::resolve_derived_rest_region_polys`]: its `Display` is the
+    /// text generation refuses with, so a surface can match the two.
+    #[must_use]
+    pub fn rest_boundary_refusal(&self, index: usize) -> Option<RestBoundaryRefusal> {
+        let tc = self.toolpath_configs.get(index)?;
+        if !tc.boundary.enabled {
+            return None;
+        }
+        let crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } =
+            tc.boundary.source
+        else {
+            return None;
+        };
+        match self.derived_rest_regions(index, source_toolpath_id) {
+            Err(RestRegionsLookup::Refused(refusal)) => Some(refusal),
+            Ok(_) | Err(RestRegionsLookup::NotFound(_)) => None,
+        }
+    }
+
+    /// The one rule of the derived regions: the regions, or the typed
+    /// refusal ([`RestBoundaryRefusal`]).
+    fn derived_rest_regions(
+        &self,
+        this_index: usize,
+        source_toolpath_id: crate::ids::ToolpathId,
+    ) -> Result<Arc<Vec<crate::polygon::Polygon2>>, RestRegionsLookup> {
         let Some(source_index) = self
             .toolpath_configs
             .iter()
             .position(|tc| tc.id == source_toolpath_id)
         else {
-            return Err(SessionError::OperationFailed(format!(
-                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
-                 but no toolpath with that id exists anymore. Pick a different source toolpath \
-                 for the boundary, or disable the boundary.",
-            )));
-        };
-
-        if source_index == this_index {
-            return Err(SessionError::OperationFailed(
-                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
-                 itself as the source for a derived-rest-regions boundary. Pick a different \
-                 source toolpath."
-                    .to_owned(),
+            return Err(RestRegionsLookup::Refused(
+                RestBoundaryRefusal::SourceMissing { source_toolpath_id },
             ));
+        };
+        if source_index == this_index {
+            return Err(RestRegionsLookup::Refused(RestBoundaryRefusal::OwnRegions));
         }
-
         let Some(source_tc) = self.toolpath_configs.get(source_index) else {
             // Unreachable in practice: `source_index` came from `position()`
             // on this same Vec a few lines above.
-            return Err(SessionError::ToolpathNotFound(source_index));
+            return Err(RestRegionsLookup::NotFound(source_index));
         };
-        let source_name = &source_tc.name;
-
+        let source_name = source_tc.name.clone();
         let Some(result) = self.results.get(&source_index) else {
-            return Err(SessionError::OperationFailed(format!(
-                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
-                 its rest analysis produces the regions this boundary needs.",
-            )));
+            return Err(RestRegionsLookup::Refused(
+                RestBoundaryRefusal::NotGenerated {
+                    source_toolpath_id,
+                    source_name,
+                },
+            ));
         };
-
         match result.annotated().produced.rest_regions.as_ref() {
             Some(regions) if !regions.is_empty() => Ok(Arc::clone(regions)),
-            _ => Err(SessionError::OperationFailed(format!(
-                "'{source_name}' produced no rest regions. Its rest analysis found no material \
-                 above the threshold, or it is switched off. Check the rest analysis settings \
-                 on '{source_name}' and regenerate it.",
-            ))),
+            _ => Err(RestRegionsLookup::Refused(RestBoundaryRefusal::NoRegions {
+                source_toolpath_id,
+                source_name,
+            })),
         }
     }
 
@@ -957,73 +1158,34 @@ impl ProjectSession {
         plunge_rate_mm_min: Option<f64>,
         semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-        findings: &mut crate::compute::execute::GenerationFindings,
     ) -> Result<
         crate::trace::toolpath_spans::AnnotatedToolpath,
         crate::compute::execute::OperationError,
     > {
-        use crate::geometry::boundary::{
-            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
-        };
+        use crate::geometry::boundary::clip_annotated_to_boundary_set;
 
-        // Resolve the source polygon for the boundary (ModelSilhouette
-        // falls back to the stock rectangle when the model has no mesh), subtract keep-outs, and apply the
-        // user-configured offset. Shared with the adaptive3d pre-clip path
-        // in `resolve_generation_inputs` — see that function's doc comment
-        // for why the two must agree on the source polygon. `stock_bbox` is
-        // always provided here, so the rectangle fallback inside
-        // `resolve_containment_polygon` is unreachable in practice; kept for
-        // parity with that function's `Option` signature.
-        // Checkpoint C, D-3b: `None` now means the user offset COLLAPSED the
-        // containment, and the old `.unwrap_or_else(|| stock rectangle)`
-        // would have resurrected the very un-offset boundary the collapse
-        // says is wrong. A collapsed containment is a collapsed containment
-        // wherever it happens, so it takes the same ruled decision as an
-        // empty `effective_boundary`.
-        let Some(stock_poly) = Self::resolve_containment_polygon(
+        // The source polygon (ModelSilhouette falls back to the stock
+        // rectangle when the model has no mesh), less the keep-outs, with
+        // the user offset and the containment offset. Shared with the
+        // adaptive3d pre-clip path in `resolve_generation_inputs` and the
+        // G-BOUNDCOLLAPSE precondition (`clip_containment`).
+        let set = Self::clip_containment(
             boundary_config,
-            stock_bbox,
-            mesh,
+            ContainmentSource::Single { stock_bbox, mesh },
             keep_out_footprints,
-        )?
-        else {
-            Self::resolve_collapsed_containment(
-                None,
+            tool_diameter,
+        )?;
+        // Checkpoint C, Q2 (F-1) and G-BOUNDCOLLAPSE. The set clipper passes
+        // an EMPTY set through with an identity mapping, so the containment
+        // the operator asked for would not apply. A failed offset and a
+        // genuine collapse both refuse.
+        if set.boundaries.is_empty() {
+            return Err(Self::collapsed_containment_refusal(
+                set.offset_failure,
                 boundary_config.containment,
                 tool_diameter,
-                1,
-                findings,
-            )?;
-            return Ok(
-                clip_annotated_to_boundary_set(annotated, &[], safe_z, plunge_rate_mm_min)
-                    .reconcile(channels)
-                    .into_inner(),
-            );
-        };
-
-        // Map BoundaryContainment -> ToolContainment.
-        let containment = match boundary_config.containment {
-            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
-            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
-            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
-        };
-
-        let tool_radius = tool_diameter / 2.0;
-        let (boundaries, offset_failure) =
-            effective_boundary_reported(&stock_poly, containment, tool_radius);
-        // Checkpoint C, Q2 (F-1). An empty `boundaries` means the set clipper
-        // passes the toolpath through with an identity mapping — i.e. the
-        // containment the operator asked for is NOT APPLIED. That is correct
-        // for one cause and an unbounded over-cut for the other, and until
-        // Checkpoint C nothing here could tell them apart.
-        if boundaries.is_empty() {
-            Self::resolve_collapsed_containment(
-                offset_failure,
-                boundary_config.containment,
-                tool_diameter,
-                1,
-                findings,
-            )?;
+                set.source_region_count,
+            ));
         }
         // Checkpoint C, D-3c: the WHOLE set, not `boundaries.first()`. A
         // containment offset that splits its source into several polygons
@@ -1033,86 +1195,335 @@ impl ProjectSession {
         // The multi-region semantics win: membership downstream is "inside
         // ANY", which is what a split containment means.
         let clipped =
-            clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_rate_mm_min)
+            clip_annotated_to_boundary_set(annotated, &set.boundaries, safe_z, plunge_rate_mm_min)
                 .reconcile(channels)
                 .into_inner();
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
-        if !boundaries.is_empty() {
-            let clip_scope =
-                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-            clip_scope.set_param(
-                SemanticKey::Containment,
-                match boundary_config.containment {
-                    crate::compute::config::BoundaryContainment::Center => "center",
-                    crate::compute::config::BoundaryContainment::Inside => "inside",
-                    crate::compute::config::BoundaryContainment::Outside => "outside",
-                },
-            );
-            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
-            if !clipped.toolpath.moves.is_empty() {
-                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
-            }
+        let clip_scope =
+            semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+        clip_scope.set_param(
+            SemanticKey::Containment,
+            match boundary_config.containment {
+                crate::compute::config::BoundaryContainment::Center => "center",
+                crate::compute::config::BoundaryContainment::Inside => "inside",
+                crate::compute::config::BoundaryContainment::Outside => "outside",
+            },
+        );
+        clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
+        if !clipped.toolpath.moves.is_empty() {
+            clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
         }
 
         Ok(clipped)
     }
 
-    /// The Checkpoint C (Q2) decision, in one place because both boundary
-    /// clip paths must make it identically.
+    /// G-BOUNDCOLLAPSE: the containment set that the post-generation clip
+    /// clips to, from the same steps that the clip runs.
     ///
-    /// An empty effective boundary is either a **genuine collapse** — the
-    /// pass-through case `boundary::clip_annotated_to_boundary_set`'s
-    /// contract was written for, where the tool is larger than the region and
-    /// nothing there is machinable — or the residue of an offset that
-    /// **failed**. Option (b) of D-3a: pass through on the first WITH a typed
-    /// finding naming the containment that was dropped, refuse on the second.
+    /// - `Single`: [`Self::resolve_containment_polygon`] (keep-outs, user
+    ///   offset), then the containment offset. A user offset that collapses
+    ///   the polygon gives an empty set.
+    /// - `Regions`: [`crate::geometry::region_set::RegionSet::processed`]
+    ///   (keep-outs, user offset; a region that collapses drops), then the
+    ///   containment offset per region. The set is flat: membership
+    ///   downstream is "inside ANY".
     ///
-    /// `Ok(())` means "pass through; the finding is recorded". `Err` stops the
-    /// generate. Deliberately not a `bool`: the refusal has to be
-    /// unignorable at the call site.
-    pub fn resolve_collapsed_containment(
+    /// The clip and the generation precondition
+    /// ([`Self::boundary_collapse_refusal`]) both read this, so the two
+    /// agree on what a collapse is.
+    pub(crate) fn clip_containment(
+        boundary_config: &crate::compute::config::BoundaryConfig,
+        source: ContainmentSource<'_>,
+        keep_out_footprints: &[crate::polygon::Polygon2],
+        tool_diameter: f64,
+    ) -> Result<ClipContainment, crate::compute::execute::OperationError> {
+        use crate::geometry::boundary::{ToolContainment, effective_boundary_reported};
+
+        let containment = match boundary_config.containment {
+            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
+            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
+            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
+        };
+        let tool_radius = tool_diameter / 2.0;
+        match source {
+            ContainmentSource::Single { stock_bbox, mesh } => {
+                // Checkpoint C, D-3b: `None` means the user offset COLLAPSED
+                // the containment. The old `.unwrap_or_else(|| stock
+                // rectangle)` would have resurrected the very un-offset
+                // boundary the collapse says is wrong.
+                let Some(stock_poly) = Self::resolve_containment_polygon(
+                    boundary_config,
+                    stock_bbox,
+                    mesh,
+                    keep_out_footprints,
+                )?
+                else {
+                    return Ok(ClipContainment {
+                        boundaries: Vec::new(),
+                        offset_failure: None,
+                        source_region_count: 1,
+                    });
+                };
+                let (boundaries, offset_failure) =
+                    effective_boundary_reported(&stock_poly, containment, tool_radius);
+                Ok(ClipContainment {
+                    boundaries,
+                    offset_failure,
+                    source_region_count: 1,
+                })
+            }
+            ContainmentSource::Regions(regions) => {
+                let processed = crate::geometry::region_set::RegionSet::from_slice(regions)
+                    .processed(keep_out_footprints, boundary_config.offset);
+                let mut boundaries: Vec<crate::polygon::Polygon2> = Vec::new();
+                // Checkpoint C, Q2: the failure channel is aggregated across
+                // regions the same way `offset_polygon_reported` aggregates
+                // across repaired pieces — a library failure outranks a
+                // rejected input — so one bad region cannot be hidden by a
+                // dozen clean ones.
+                let mut offset_failure: Option<crate::polygon::OffsetFailure> = None;
+                for region in processed.as_slice() {
+                    let (out, failure) =
+                        effective_boundary_reported(region, containment, tool_radius);
+                    boundaries.extend(out);
+                    if failure.is_some()
+                        && (offset_failure.is_none()
+                            || failure
+                                .as_ref()
+                                .is_some_and(crate::polygon::OffsetFailure::is_library_failure))
+                    {
+                        offset_failure = failure;
+                    }
+                }
+                Ok(ClipContainment {
+                    boundaries,
+                    offset_failure,
+                    source_region_count: regions.len(),
+                })
+            }
+        }
+    }
+
+    /// The refusal for an EMPTY containment set, in one place because both
+    /// boundary clip paths must make it identically.
+    ///
+    /// An empty set is either the residue of an offset that **failed**
+    /// (Checkpoint C, Q2) or a **genuine collapse**: the tool, the user
+    /// offset or the keep-outs leave no area. Both refuse. Before
+    /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28) a genuine collapse
+    /// passed the toolpath through UNCLIPPED with a report-only finding,
+    /// so cuts outside a declared boundary (a frame or a clamp zone) could
+    /// reach the program.
+    ///
+    /// The session refuses a genuine collapse before generation, with the
+    /// op named ([`Self::boundary_collapse_refusal`]). This refusal is the
+    /// backstop of the clip itself.
+    pub fn collapsed_containment_refusal(
         offset_failure: Option<crate::polygon::OffsetFailure>,
         containment: crate::compute::config::BoundaryContainment,
         tool_diameter: f64,
         source_region_count: usize,
-        findings: &mut crate::compute::execute::GenerationFindings,
-    ) -> Result<(), crate::compute::execute::OperationError> {
+    ) -> crate::compute::execute::OperationError {
         if let Some(failure) = offset_failure {
-            // NOT a pass-through. The safety argument for emitting an
-            // unclipped path — "nothing here is machinable anyway" — rests
-            // entirely on the boundary having genuinely run out of geometry,
-            // and a failure establishes exactly nothing about that.
-            return Err(crate::compute::execute::OperationError::MissingGeometry(
-                format!(
-                    "boundary containment `{containment:?}` could not be \
-                     computed: {reason}. Refusing to emit this toolpath: an \
-                     empty containment is passed through UNCLIPPED, which is \
-                     safe only when the boundary genuinely collapsed (tool \
-                     larger than the region), and this one did not — it \
-                     failed. Repair the boundary geometry (self-intersecting \
-                     or pinched rings, repeated vertices, non-finite \
-                     coordinates) or set the containment to `Center`.",
-                    reason = failure.describe(),
-                ),
+            return crate::compute::execute::OperationError::MissingGeometry(format!(
+                "boundary containment `{containment:?}` could not be \
+                 computed: {reason}. Refusing to emit this toolpath: an \
+                 empty containment would leave it UNCLIPPED. Repair the \
+                 boundary geometry (self-intersecting or pinched rings, \
+                 repeated vertices, non-finite coordinates) or set the \
+                 containment to `Center`.",
+                reason = failure.describe(),
             ));
         }
-        findings.record(
-            &crate::compute::toolpath_stats::BoundaryClipDroppedFinding {
-                containment,
-                tool_diameter_mm: tool_diameter,
-                source_region_count,
+        crate::compute::execute::OperationError::MissingGeometry(format!(
+            "the machining boundary collapsed: with `{containment:?}` \
+             containment and a {tool_diameter:.3} mm tool, no area of its \
+             {source_region_count} region(s) is left. Refusing to emit this \
+             toolpath: a collapsed boundary would leave it UNCLIPPED. Use a \
+             smaller tool, less boundary offset, or another containment.",
+        ))
+    }
+
+    /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): the machining boundary
+    /// of the toolpath at `index` collapses, or `None`.
+    ///
+    /// The read door of the generation refusal. The GUI can show the
+    /// collapse before a generate; generation refuses on the same answer
+    /// ([`Self::capture_generate_handle`]). It resolves the generation
+    /// inputs, so a toolpath that refuses for another cause gives that
+    /// `Err`. A FAILED offset gives `None`: the clip refuses with the
+    /// failure.
+    pub fn boundary_collapse(
+        &self,
+        index: usize,
+    ) -> Result<Option<BoundaryCollapse>, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if !tc.boundary.enabled
+            || !tc
+                .operation
+                .capabilities()
+                .territory_xy
+                .session_clip_applies()
+        {
+            return Ok(None);
+        }
+        let cancel = AtomicBool::new(false);
+        let inputs = self.resolve_generation_inputs(index, &cancel)?;
+        let regions = self.post_clip_regions(&tc.name, index, &inputs, &cancel)?;
+        Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
+    }
+
+    /// G-C: [`Self::boundary_collapse`] for the toolpath at `index` with
+    /// `boundary` in place of its stored boundary: "would this boundary
+    /// collapse?". The GUI asks it before it writes `Inside` (the
+    /// `[Use Inside]` act and the D-2 pick), so it never switches to a
+    /// boundary that refuses. The inputs resolve from the stored config;
+    /// only the boundary of the collapse test is the candidate.
+    pub fn boundary_collapse_with(
+        &self,
+        index: usize,
+        boundary: &crate::compute::config::BoundaryConfig,
+    ) -> Result<Option<BoundaryCollapse>, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        if !boundary.enabled
+            || !tc
+                .operation
+                .capabilities()
+                .territory_xy
+                .session_clip_applies()
+        {
+            return Ok(None);
+        }
+        let cancel = AtomicBool::new(false);
+        let mut inputs = self.resolve_generation_inputs(index, &cancel)?;
+        inputs.boundary_config = boundary.clone();
+        let regions = self.post_clip_regions(&tc.name, index, &inputs, &cancel)?;
+        Self::boundary_collapse_of(&tc.name, &inputs, regions.as_deref().map(Vec::as_slice))
+    }
+
+    /// The collapse test of [`Self::boundary_collapse`] on resolved inputs.
+    ///
+    /// It reads the containment set of the post-generation clip
+    /// ([`Self::clip_containment`]) from the same inputs as the clip, so it
+    /// finds a collapse exactly when the clip would get an empty set.
+    pub(crate) fn boundary_collapse_of(
+        op_name: &str,
+        inputs: &ResolvedGenInputs,
+        post_clip_regions: Option<&[crate::polygon::Polygon2]>,
+    ) -> Result<Option<BoundaryCollapse>, SessionError> {
+        use crate::tool::MillingCutter as _;
+        let boundary_config = &inputs.boundary_config;
+        if !boundary_config.enabled {
+            return Ok(None);
+        }
+        let source = match post_clip_regions {
+            Some(regions) => ContainmentSource::Regions(regions),
+            None => ContainmentSource::Single {
+                stock_bbox: &inputs.emission_stock_bbox,
+                mesh: inputs.mesh.as_ref(),
             },
-        );
-        tracing::warn!(
-            ?containment,
+        };
+        let tool_diameter = inputs.tool_def.diameter();
+        let set = Self::clip_containment(
+            boundary_config,
+            source,
+            &inputs.keep_out_footprints,
             tool_diameter,
-            source_region_count,
-            "boundary containment collapsed — toolpath emitted with NO \
-             boundary clip (genuine collapse, recorded as a finding)"
-        );
-        Ok(())
+        )?;
+        if !set.boundaries.is_empty() || set.offset_failure.is_some() {
+            return Ok(None);
+        }
+        Ok(Some(BoundaryCollapse {
+            op_name: op_name.to_owned(),
+            source_label: boundary_config.source.label(),
+            containment: boundary_config.containment,
+            tool_diameter_mm: tool_diameter,
+            offset_mm: boundary_config.offset,
+        }))
+    }
+
+    /// The region set of the POST-generation clip, for the three sources
+    /// that resolve to a set of disjoint regions; `None` for every other
+    /// source, or with the boundary off.
+    ///
+    /// Re-resolved, never carried over from the pre-clip: the tier map
+    /// is memoised on (mesh identity, ladder, params), so this is a
+    /// cache hit on the exact map that produced the pre-decompose
+    /// boundary. Agreement between the two clips is therefore
+    /// structural — the P2.3 rule that made `DerivedRestRegions` safe.
+    /// It is also the RAW set. `inputs.pre_boundary_regions` is the
+    /// PROCESSED set, and the clip processes the raw set itself.
+    pub(crate) fn post_clip_regions(
+        &self,
+        op_name: &str,
+        index: usize,
+        inputs: &ResolvedGenInputs,
+        cancel: &AtomicBool,
+    ) -> Result<Option<Arc<Vec<crate::polygon::Polygon2>>>, SessionError> {
+        if !inputs.boundary_config.enabled {
+            return Ok(None);
+        }
+        match &inputs.boundary_config.source {
+            crate::compute::config::BoundarySource::PlannedTierRegions {
+                tool_ids,
+                tier,
+                cell_mm,
+                tolerance_mm,
+                margin_mm,
+                treatment,
+                islands,
+            } => {
+                // The tier map reads a BUILT index; force the lazy one
+                // here, as the resolver's own tier arm does.
+                let tier_index = inputs
+                    .spatial_index
+                    .as_ref()
+                    .map(|lazy| Arc::clone(lazy.force()));
+                let regions = self.resolve_planned_tier_region_polys(
+                    op_name,
+                    inputs.mesh.as_ref(),
+                    tier_index.as_ref(),
+                    &super::multitool::PlannedTierRecipe {
+                        tool_ids,
+                        tier: *tier,
+                        cell_mm: *cell_mm,
+                        tolerance_mm: *tolerance_mm,
+                        margin_mm: *margin_mm,
+                        treatment: *treatment,
+                        islands: *islands,
+                    },
+                    cancel,
+                )?;
+                Ok(Some(Arc::new(regions)))
+            }
+            crate::compute::config::BoundarySource::DerivedRestRegions { source_toolpath_id } => {
+                // The precondition already validated this — it can only
+                // fail here if the source toolpath's result was
+                // invalidated in between, which cannot happen under
+                // `&self`. Propagate defensively.
+                Ok(Some(self.resolve_derived_rest_region_polys(
+                    index,
+                    *source_toolpath_id,
+                )?))
+            }
+            crate::compute::config::BoundarySource::Selection { selection, holes } => {
+                // The same resolution as the pre-boundary, so the two
+                // clips bound the same set.
+                Ok(Some(self.resolve_boundary_selection_polys(
+                    index, selection, *holes,
+                )?))
+            }
+            crate::compute::config::BoundarySource::Stock
+            | crate::compute::config::BoundarySource::ModelSilhouette => Ok(None),
+        }
     }
 
     /// Multi-region variant of [`Self::apply_boundary_clip`] for
@@ -1126,9 +1537,8 @@ impl ProjectSession {
     /// through `effective_boundary` independently for the containment /
     /// tool-radius handling — a region that collapses under the inset is
     /// dropped from the set. If EVERY region collapses the boundary is
-    /// treated as collapsed, same as the single-polygon path's empty
-    /// `effective_boundary` case: the original toolpath is returned
-    /// unchanged (identity span mapping) with a `tracing::warn!`.
+    /// collapsed, as in the single-polygon path: the clip refuses
+    /// (G-BOUNDCOLLAPSE, [`Self::collapsed_containment_refusal`]).
     ///
     /// Span remapping contract is identical to [`Self::apply_boundary_clip`]
     /// — the set clipper never drops input moves, so `spans_valid` stays
@@ -1151,64 +1561,31 @@ impl ProjectSession {
         plunge_rate_mm_min: Option<f64>,
         semantic_ctx: &crate::trace::semantic_trace::ToolpathSemanticContext,
         channels: &mut crate::trace::transform_provenance::ReconcileSet<'_>,
-        findings: &mut crate::compute::execute::GenerationFindings,
     ) -> Result<
         crate::trace::toolpath_spans::AnnotatedToolpath,
         crate::compute::execute::OperationError,
     > {
-        use crate::geometry::boundary::{
-            ToolContainment, clip_annotated_to_boundary_set, effective_boundary_reported,
-        };
+        use crate::geometry::boundary::clip_annotated_to_boundary_set;
 
-        // Per-region keep-out subtraction + user offset (regions that
-        // collapse under the offset are dropped), mirroring what
-        // `resolve_containment_polygon` does to its single polygon.
-        let processed = crate::geometry::region_set::RegionSet::from_slice(regions)
-            .processed(keep_out_footprints, boundary_config.offset);
-
-        // Map BoundaryContainment -> ToolContainment.
-        let containment = match boundary_config.containment {
-            crate::compute::config::BoundaryContainment::Center => ToolContainment::Center,
-            crate::compute::config::BoundaryContainment::Inside => ToolContainment::Inside,
-            crate::compute::config::BoundaryContainment::Outside => ToolContainment::Outside,
-        };
-
-        // Containment / tool-radius handling per region. `effective_boundary`
-        // may split one region into several (or collapse it to none) — flatten
-        // everything into one set; membership downstream is "inside ANY".
-        let tool_radius = tool_diameter / 2.0;
-        let mut boundaries: Vec<crate::polygon::Polygon2> = Vec::new();
-        // Checkpoint C, Q2: the failure channel is aggregated across regions
-        // the same way `offset_polygon_reported` aggregates across repaired
-        // pieces — a library failure outranks a rejected input — so one bad
-        // region cannot be hidden by a dozen clean ones.
-        let mut offset_failure: Option<crate::polygon::OffsetFailure> = None;
-        for region in processed.as_slice() {
-            let (out, failure) = effective_boundary_reported(region, containment, tool_radius);
-            boundaries.extend(out);
-            if failure.is_some()
-                && (offset_failure.is_none()
-                    || failure
-                        .as_ref()
-                        .is_some_and(crate::polygon::OffsetFailure::is_library_failure))
-            {
-                offset_failure = failure;
-            }
-        }
-
-        if boundaries.is_empty() {
-            // Every region collapsed (offset/inset ate them all) — same
-            // "boundary collapsed" semantics as the single-polygon path, and
-            // now the same Checkpoint C decision: pass through with a typed
-            // finding on a genuine collapse, refuse when an offset failed.
-            Self::resolve_collapsed_containment(
-                offset_failure,
+        // Per-region keep-out subtraction, user offset and containment
+        // offset (`clip_containment`). A region that collapses drops.
+        let set = Self::clip_containment(
+            boundary_config,
+            ContainmentSource::Regions(regions),
+            keep_out_footprints,
+            tool_diameter,
+        )?;
+        if set.boundaries.is_empty() {
+            // Every region collapsed (offset/inset ate them all), or an
+            // offset failed: the same refusal as the single-polygon path.
+            return Err(Self::collapsed_containment_refusal(
+                set.offset_failure,
                 boundary_config.containment,
                 tool_diameter,
-                regions.len(),
-                findings,
-            )?;
+                set.source_region_count,
+            ));
         }
+        let boundaries = set.boundaries;
 
         let clipped =
             clip_annotated_to_boundary_set(annotated, &boundaries, safe_z, plunge_rate_mm_min)
@@ -1217,24 +1594,194 @@ impl ProjectSession {
 
         // Recorded AFTER the reconcile so this item's own link is bound to
         // post-clip indices and is not then remapped a second time.
-        if !boundaries.is_empty() {
-            let clip_scope =
-                semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
-            clip_scope.set_param(
-                SemanticKey::Containment,
-                match boundary_config.containment {
-                    crate::compute::config::BoundaryContainment::Center => "center",
-                    crate::compute::config::BoundaryContainment::Inside => "inside",
-                    crate::compute::config::BoundaryContainment::Outside => "outside",
-                },
-            );
-            clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
-            clip_scope.set_param(SemanticKey::RegionCount, boundaries.len());
-            if !clipped.toolpath.moves.is_empty() {
-                clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
-            }
+        let clip_scope =
+            semantic_ctx.start_item(ToolpathSemanticKind::BoundaryClip, "Boundary clip");
+        clip_scope.set_param(
+            SemanticKey::Containment,
+            match boundary_config.containment {
+                crate::compute::config::BoundaryContainment::Center => "center",
+                crate::compute::config::BoundaryContainment::Inside => "inside",
+                crate::compute::config::BoundaryContainment::Outside => "outside",
+            },
+        );
+        clip_scope.set_param(SemanticKey::KeepOutCount, keep_out_footprints.len());
+        clip_scope.set_param(SemanticKey::RegionCount, boundaries.len());
+        if !clipped.toolpath.moves.is_empty() {
+            clip_scope.bind_to_toolpath(&clipped.toolpath, 0, clipped.toolpath.moves.len());
         }
 
         Ok(clipped)
+    }
+}
+
+/// G-BOUNDCOLLAPSE: where [`ProjectSession::clip_containment`] reads its
+/// source polygons.
+#[derive(Clone, Copy)]
+pub(crate) enum ContainmentSource<'a> {
+    /// One containment polygon: the stock rectangle or the model
+    /// silhouette ([`ProjectSession::resolve_containment_polygon`]).
+    Single {
+        stock_bbox: &'a BoundingBox3,
+        mesh: Option<&'a Arc<crate::mesh::TriangleMesh>>,
+    },
+    /// The RAW region set of a `PlannedTierRegions`, `DerivedRestRegions`
+    /// or `Selection` boundary.
+    Regions(&'a [crate::polygon::Polygon2]),
+}
+
+/// G-BOUNDCOLLAPSE: the containment set the post-generation clip clips to.
+pub(crate) struct ClipContainment {
+    /// The polygons after every offset. Empty: the boundary collapsed, or
+    /// an offset failed.
+    pub(crate) boundaries: Vec<crate::polygon::Polygon2>,
+    /// The offset failure, when an offset failed.
+    pub(crate) offset_failure: Option<crate::polygon::OffsetFailure>,
+    /// The number of source regions (1 for `Single`).
+    pub(crate) source_region_count: usize,
+}
+
+/// G-C (§2 a): a `DerivedRestRegions` consumer whose tool is larger than
+/// the tool of its source ([`ProjectSession::larger_rest_consumer`]). The
+/// source's regions are tool-centre positions of its smaller tool, so with
+/// `Center` or `Outside` containment this tool can cut past the source's
+/// machining boundary by the difference of the radii (D53).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LargerRestConsumer {
+    /// The name of the consumer.
+    pub op_name: String,
+    pub source_toolpath_id: crate::ids::ToolpathId,
+    pub source_name: String,
+    /// The radius of the consumer's built cutter, mm.
+    pub tool_radius_mm: f64,
+    /// The radius of the source's built cutter, mm.
+    pub source_tool_radius_mm: f64,
+}
+
+impl LargerRestConsumer {
+    /// How far past the source's boundary the tool can cut, mm.
+    #[must_use]
+    pub fn overrun_mm(&self) -> f64 {
+        self.tool_radius_mm - self.source_tool_radius_mm
+    }
+
+    /// The D53 refusal sentence for `containment` (the word the panel and
+    /// the project file use: `Center` or `Outside`).
+    #[must_use]
+    pub fn refusal(&self, containment: &str) -> String {
+        let (own, theirs) = (self.tool_radius_mm, self.source_tool_radius_mm);
+        // C1 ruling (2026-10-28): the tool fix comes first. `Inside` can
+        // collapse narrow regions, and a collapse refuses (G-BOUNDCOLLAPSE).
+        format!(
+            "'{}' takes its boundary from the rest regions of '{}' with {containment} \
+             containment, but its tool radius {own:.3} mm is larger than the tool radius of \
+             '{}', {theirs:.3} mm. The regions are tool-centre positions of that tool, so this \
+             tool could cut up to {:.3} mm past the machining boundary of '{}'. Use a tool no \
+             larger than the tool of '{}' (Ø{:.3}), or Inside containment if the regions are \
+             wider than this tool (Ø{:.3}).",
+            self.op_name,
+            self.source_name,
+            self.source_name,
+            self.overrun_mm(),
+            self.source_name,
+            self.source_name,
+            2.0 * theirs,
+            2.0 * own,
+        )
+    }
+}
+
+/// G-E (3): why a `DerivedRestRegions` boundary refuses generation. Its
+/// `Display` is the refusal text generation gives (unchanged by G-E), so
+/// the wire and MCP text do not move; a surface reads the variant to draw
+/// a short face and its action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RestBoundaryRefusal {
+    /// No toolpath has the source id any more.
+    SourceMissing {
+        source_toolpath_id: crate::ids::ToolpathId,
+    },
+    /// The boundary names the toolpath's own regions.
+    OwnRegions,
+    /// The source has no generated result.
+    NotGenerated {
+        source_toolpath_id: crate::ids::ToolpathId,
+        source_name: String,
+    },
+    /// The source's result has no rest regions.
+    NoRegions {
+        source_toolpath_id: crate::ids::ToolpathId,
+        source_name: String,
+    },
+}
+
+impl std::fmt::Display for RestBoundaryRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SourceMissing { source_toolpath_id } => write!(
+                f,
+                "Boundary references toolpath id {source_toolpath_id} for its rest regions, \
+                 but no toolpath with that id exists anymore. Pick a different source toolpath \
+                 for the boundary, or disable the boundary.",
+            ),
+            Self::OwnRegions => f.write_str(
+                "Boundary references this toolpath's own rest regions — a toolpath cannot use \
+                 itself as the source for a derived-rest-regions boundary. Pick a different \
+                 source toolpath.",
+            ),
+            Self::NotGenerated { source_name, .. } => write!(
+                f,
+                "'{source_name}' has no generated result yet — generate '{source_name}' first; \
+                 its rest analysis produces the regions this boundary needs.",
+            ),
+            Self::NoRegions { source_name, .. } => write!(
+                f,
+                "'{source_name}' produced no rest regions. Its rest analysis found no material \
+                 above the threshold, or it is switched off. Check the rest analysis settings \
+                 on '{source_name}' and regenerate it.",
+            ),
+        }
+    }
+}
+
+/// The failure of [`ProjectSession::derived_rest_regions`]: a typed
+/// refusal, or an index that does not resolve.
+enum RestRegionsLookup {
+    Refused(RestBoundaryRefusal),
+    NotFound(usize),
+}
+/// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): a machining boundary that
+/// leaves no area for the tool. [`ProjectSession::boundary_collapse`] reads
+/// it; generation refuses with [`Self::message`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoundaryCollapse {
+    /// The name of the toolpath.
+    pub op_name: String,
+    /// The label of the boundary source ([`crate::compute::config::BoundarySource::label`]).
+    pub source_label: &'static str,
+    /// The containment of the boundary.
+    pub containment: crate::compute::config::BoundaryContainment,
+    /// The diameter of the built cutter, the diameter the containment uses.
+    pub tool_diameter_mm: f64,
+    /// The user offset of the boundary.
+    pub offset_mm: f64,
+}
+
+impl BoundaryCollapse {
+    /// The refusal sentence: the op, the boundary and the fix.
+    pub fn message(&self) -> String {
+        format!(
+            "'{op}' cannot keep to its {source} machining boundary: with \
+             {containment:?} containment, a {tool:.3} mm tool and a \
+             {offset:+.3} mm boundary offset, no area of the boundary is left. \
+             Refusing generation: with a collapsed boundary the toolpath would \
+             have no boundary at all, and it could cut outside it (a frame or \
+             a clamp zone). Use a smaller tool, less boundary offset, or \
+             another containment.",
+            op = self.op_name,
+            source = self.source_label,
+            containment = self.containment,
+            tool = self.tool_diameter_mm,
+            offset = self.offset_mm,
+        )
     }
 }

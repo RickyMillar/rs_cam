@@ -1173,9 +1173,13 @@ pub struct DressupConfig {
     /// [`DressupFieldDef::owner`], so they stay settable and stored while
     /// the dressup is off.
     pub feed_optimization: bool,
-    /// The upper feed (mm/min) the optimiser may command. `None` = the
-    /// machine maximum feed (S11); with no machine envelope the pass does
-    /// not run.
+    /// The upper cutting feed (mm/min) of this op. It caps every feed
+    /// stage: the feed optimiser, and the feed modulation after a
+    /// simulation (G-FEEDMAX, operator ruling 2026-10-28), where it is a
+    /// hard cap next to the machine cutting ceiling. It only lowers a
+    /// feed; a value above the machine ceiling changes nothing. `None` =
+    /// the machine maximum feed (S11); with no machine envelope the
+    /// optimiser does not run.
     pub feed_max_rate: Option<f64>,
     pub feed_ramp_rate: f64,
     /// Rapid-order optimisation. A bool with no value field of its own, so
@@ -1467,7 +1471,7 @@ impl DressupConfig {
         },
         DressupFieldDef {
             name: "feed_max_rate",
-            description: "upper feed the optimiser may command (mm/min); null = the machine maximum feed",
+            description: "upper cutting feed (mm/min); caps every feed stage (the optimiser and the feed modulation after a simulation); null = the machine maximum feed",
             owner: None,
         },
         DressupFieldDef {

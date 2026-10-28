@@ -306,6 +306,11 @@ pub struct ToolpathStats {
     ///
     /// Report-only: no gate consumes it. The toolpath is real and runnable;
     /// what it is not is contained.
+    ///
+    /// G-BOUNDCOLLAPSE (operator ruling 2026-10-28): the session clip no
+    /// longer records it. A collapse now refuses the generation
+    /// (`ProjectSession::boundary_collapse`), so this slot stays `None` on
+    /// every shipped path.
     pub boundary_clip_dropped: Option<BoundaryClipDroppedFinding>,
     /// R3 / R4 (Corne case, 2026-09-18): what the standalone waterline's Z
     /// ladder builder did to the requested ladder. See
@@ -650,6 +655,11 @@ impl StockSnapshotStamp {
 /// is real: when the tool is larger than the stock nothing is machinable
 /// anyway, and emitting the unclipped path is better than silently deleting
 /// it. What was missing is the operator being told. That is this finding.
+///
+/// G-BOUNDCOLLAPSE (operator ruling 2026-10-28) reversed that: a collapse
+/// refuses the generation, because the unclipped path can cut outside a
+/// declared boundary (a frame or a clamp zone). The session clip no longer
+/// records this finding.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundaryClipDroppedFinding {
     /// The containment mode that was requested and not applied. `Center`
@@ -761,6 +771,48 @@ impl RestLevelsFinding {
     }
 }
 
+/// W4 (D69 §4): where the web Z of a through cut comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebSource {
+    /// The tab top of a later tabbed Profile that cuts to the stock bottom:
+    /// its final floor plus its `tab_height`.
+    TabbedProfile,
+    /// The lowest floor that an earlier roughing op of the setup leaves (its
+    /// resolved floor plus its axial stock to leave).
+    EarlierFloor,
+}
+
+impl WebSource {
+    fn phrase(self) -> &'static str {
+        match self {
+            Self::TabbedProfile => "the tab top of a later tabbed Profile",
+            Self::EarlierFloor => "the floor an earlier op leaves",
+        }
+    }
+}
+
+/// W4 (D69 §4): the web a through cut holds. The Waterline cuts no outer
+/// ring at or below `z_mm` (`ops::waterline::RunFilter::outer_floor_z`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterlineWeb {
+    /// The web Z (mm), in the setup frame.
+    pub z_mm: f64,
+    pub source: WebSource,
+}
+
+/// W4 (D69 §4): what the job holds the part with at the end of a through
+/// cut, as the session derives it for a Waterline
+/// (`ExecutionContext::through_cut_hold`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThroughCutHold {
+    /// The web, or `None` (no later tabbed Profile and no earlier floor
+    /// above the stock bottom).
+    pub web: Option<WaterlineWeb>,
+    /// True when a later enabled tabbed Profile of the setup cuts to the
+    /// stock bottom.
+    pub tabbed_profile_follows: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterlineLadderFinding {
     /// The resolved `top_z` (mm) the ladder started from.
@@ -779,6 +831,13 @@ pub struct WaterlineLadderFinding {
     pub dropped_below_stock: usize,
     /// Levels that were cut.
     pub delivered_levels: usize,
+    /// W4: on a through part, the web the Waterline stops at, or `None`
+    /// (not a through part, or no web).
+    pub web: Option<WaterlineWeb>,
+    /// W4: the outer rings that [`Self::web`] kept from being cut.
+    pub outer_rings_skipped: usize,
+    /// W4: a through part, and no tabbed Profile follows the Waterline.
+    pub part_unheld: bool,
 }
 
 impl WaterlineLadderFinding {
@@ -829,8 +888,24 @@ impl WaterlineLadderFinding {
                  against the model",
             );
         }
+        if let Some(web) = self.web.filter(|_| self.outer_rings_skipped > 0) {
+            s.push_str(&format!(
+                "; stops at the web Z {:.3} ({}): {} outer ring(s) not cut",
+                web.z_mm,
+                web.source.phrase(),
+                self.outer_rings_skipped
+            ));
+        }
         s.push_str(". [Generation stage; report-only — no gate consumes this.]");
         s
+    }
+
+    /// W4: the one-line text of the `geom.waterline_part_unheld` Caution.
+    #[must_use]
+    pub fn part_unheld_message(&self) -> String {
+        "Through cut: no tabbed Profile follows this Waterline, so the job does not hold the \
+         part at the end. Add a tabbed Profile on the outline."
+            .to_owned()
     }
 }
 

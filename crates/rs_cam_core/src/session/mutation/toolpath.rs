@@ -205,6 +205,69 @@ impl ProjectSession {
         Ok(effects)
     }
 
+    /// Step 7.8: add the pair of the template "Geodesic body + edges". The
+    /// door of
+    /// [`Command::AddGeodesicBodyAndEdges`](crate::session::Command::AddGeodesicBodyAndEdges):
+    /// each op goes through [`Self::add_toolpath_impl`], the function of
+    /// the `AddToolpath` row, after the same checks, in one effects window.
+    ///
+    /// The pair rule lives here, so every surface gets it: op 1 keeps its
+    /// rest analysis on exactly when the edge op exists (D44), the edge op
+    /// takes op 1's new id as its `DerivedRestRegions` source, and an edge
+    /// tool larger than op 1's refuses before anything is added (D53).
+    pub(crate) fn add_geodesic_body_and_edges(
+        &mut self,
+        setup_index: usize,
+        mut body: ToolpathConfig,
+        edges: Option<ToolpathConfig>,
+    ) -> Result<Effects, SessionError> {
+        use crate::compute::config::BoundarySource;
+        if self.setups.get(setup_index).is_none() {
+            return Err(SessionError::SetupNotFound(setup_index));
+        }
+        body.rest_analysis.enabled = edges.is_some();
+        for config in std::iter::once(&body).chain(edges.as_ref()) {
+            config.floor_conflict()?;
+            crate::compute::domain::validate_toolpath(config)?;
+        }
+        if let Some(edge) = edges.as_ref()
+            && let (Some(own), Some(theirs)) = (
+                self.built_tool_radius_mm(edge.tool_id),
+                self.built_tool_radius_mm(body.tool_id),
+            )
+            && own > theirs
+        {
+            let larger = crate::session::LargerRestConsumer {
+                op_name: edge.name.clone(),
+                source_toolpath_id: crate::ids::ToolpathId::placeholder(),
+                source_name: body.name.clone(),
+                tool_radius_mm: own,
+                source_tool_radius_mm: theirs,
+            };
+            return Err(SessionError::OperationFailed(larger.refusal("Center")));
+        }
+        let mut created = None;
+        let mut effects = self.try_with_effects(None, |session| {
+            let body_index = session.add_toolpath_impl(setup_index, body)?;
+            created = Some(body_index);
+            if let Some(mut edge) = edges {
+                let body_id = session
+                    .toolpath_configs
+                    .get(body_index)
+                    .map(|tc| tc.id)
+                    .ok_or(SessionError::ToolpathNotFound(body_index))?;
+                edge.boundary.enabled = true;
+                edge.boundary.source = BoundarySource::DerivedRestRegions {
+                    source_toolpath_id: body_id,
+                };
+                let _ = session.add_toolpath_impl(setup_index, edge)?;
+            }
+            Ok::<(), SessionError>(())
+        })?;
+        effects.created = created;
+        Ok(effects)
+    }
+
     /// Remove a toolpath by its index in `toolpath_configs`.
     ///
     /// Updates all setup `toolpath_indices` so that indices above the

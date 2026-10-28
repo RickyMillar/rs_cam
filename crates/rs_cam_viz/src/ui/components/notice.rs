@@ -46,6 +46,9 @@ pub struct Notice {
     pub text: String,
     /// Optional grouping key. Notices sharing a group draw under one header.
     pub group: Option<String>,
+    /// Optional hover text of the row: the fix or the cause, so the row
+    /// stays one short line (G-D).
+    pub detail: Option<String>,
 }
 
 impl Notice {
@@ -54,7 +57,15 @@ impl Notice {
             role,
             text: text.into(),
             group: None,
+            detail: None,
         }
+    }
+
+    /// The hover text of the row.
+    #[must_use]
+    pub fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 
     #[must_use]
@@ -96,15 +107,24 @@ impl Resolved {
     /// `Showing 4 of 293 · Show all`. Never a remainder.
     #[must_use]
     pub fn overflow_text(&self) -> Option<String> {
-        if !self.truncated {
-            return None;
-        }
-        Some(format!(
-            "Showing {} of {} \u{00B7} Show all",
-            self.rows.len(),
-            self.total
-        ))
+        self.truncated
+            .then(|| overflow_line(self.rows.len(), self.total))
     }
+}
+
+/// The remainder line of a bounded list (ruling R1): `Showing 4 of 293 ·
+/// Show all`. Never a remainder. A list that is not a `NoticeStack` (the
+/// toolpath footer findings, G-E) takes the same words from here.
+#[must_use]
+pub fn overflow_line(shown: usize, total: usize) -> String {
+    format!("Showing {shown} of {total} \u{00B7} Show all")
+}
+
+/// Draw the remainder line. True when it was clicked (the reader asked to
+/// see every row).
+pub fn overflow_row(ui: &mut egui::Ui, shown: usize, total: usize) -> bool {
+    ui.add(egui::Label::new(text::caption(overflow_line(shown, total))).sense(egui::Sense::click()))
+        .clicked()
 }
 
 /// A bounded renderer for N notices of any kind.
@@ -219,12 +239,8 @@ impl NoticeStack {
             notice_row(ui, row);
         }
 
-        if let Some(overflow) = resolved.overflow_text() {
-            let response =
-                ui.add(egui::Label::new(text::caption(&overflow)).sense(egui::Sense::click()));
-            if response.clicked() {
-                expand_requested = true;
-            }
+        if resolved.truncated && overflow_row(ui, resolved.rows.len(), resolved.total) {
+            expand_requested = true;
         }
 
         expand_requested
@@ -234,7 +250,7 @@ impl NoticeStack {
 /// One notice row. Geometry is ruling R13.
 fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
     let role = row.notice.role;
-    egui::Frame::default()
+    let frame = egui::Frame::default()
         .fill(role.tint())
         .corner_radius(tokens::RADIUS_SM)
         .inner_margin(egui::Margin::symmetric(
@@ -255,6 +271,9 @@ fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
                 }
             });
         });
+    if let Some(detail) = row.notice.detail.as_deref() {
+        frame.response.on_hover_text(detail);
+    }
 }
 
 /// A full-width tinted strip carrying one sentence and at most one action.

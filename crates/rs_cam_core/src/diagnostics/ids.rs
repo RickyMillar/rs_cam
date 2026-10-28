@@ -345,6 +345,11 @@ diag_ids! {
     /// exemption there ("a model with no steep walls legitimately yields
     /// nothing"), so a one-level or empty ladder passed as a legitimate empty.
     pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty";
+    /// W4 (D69 §4, operator ruling 2026-10-28): the Waterline cuts a through
+    /// part (its model bottom is at the stock bottom), and no tabbed Profile
+    /// follows it in the setup, so the job does not hold the part at the
+    /// end. The fix is a tabbed Profile on the outline after the Waterline.
+    pub const GEOM_WATERLINE_PART_UNHELD: &str = "geom.waterline_part_unheld";
     /// F3 (2026-08-23): a rest-region extraction produced more islands than
     /// `region_mask::MAX_REST_REGIONS` and the list was TRUNCATED to the largest
     /// 64 by area. Every dropped island is territory a `DerivedRestRegions`

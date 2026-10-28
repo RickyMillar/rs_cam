@@ -174,6 +174,18 @@ impl ProjectSession {
             .toolpath_configs
             .get_mut(index)
             .ok_or(SessionError::ToolpathNotFound(index))?;
+        // W1b: `continuous` is the old name of the Waterline `helical` dial.
+        // An alias for one release, so an MCP client written before W1b
+        // still sets the dial (the `set_toolpath_param` tool doc says so).
+        let param = if param == "continuous"
+            && matches!(
+                tc.operation,
+                crate::compute::catalog::OperationConfig::Waterline(_)
+            ) {
+            "helical"
+        } else {
+            param
+        };
         // Removal step R2: a retired value refuses with the loader's text,
         // not with serde's "unknown variant".
         if let Some(replacement) = super::super::project_file::retired_param_value(param, &value) {
@@ -380,7 +392,7 @@ impl ProjectSession {
                 // Coerce 0/1 -> bool when the existing field is a boolean.
                 // Lets callers that can only produce JSON numbers (e.g. MCP
                 // clients that treat every value as numeric) drive boolean
-                // params like z_blend, detect_flat_areas, slot_clearing.
+                // params like detect_flat_areas, slot_clearing.
                 //
                 // Also coerce numeric strings ("7", "12.5") into JSON
                 // numbers when the existing field is numeric (or absent).
@@ -687,6 +699,7 @@ impl ProjectSession {
             toolpath_enabled: tc.enabled,
             stored_operation: tc.operation.clone(),
             stored_tool: self.toolpath_tool(tc).cloned(),
+            feed_max_rate: tc.dressups.feed_max_rate,
             stock_bbox: self.stock_bbox(),
             model_bbox: self.model_bbox_by_id(tc.model_id),
             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),

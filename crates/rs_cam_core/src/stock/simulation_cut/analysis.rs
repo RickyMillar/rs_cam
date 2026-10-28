@@ -44,6 +44,32 @@ fn new_open_segment(
 }
 
 impl SimulationCutTrace {
+    /// G-WLAIRLABEL (D69 §3): the share (0 to 1) of the air-cut time that
+    /// removes material ([`SimulationCutSample::removes_material`]): the
+    /// time of the cutting samples in [`RadialEngagementClass::Air`] that
+    /// remove material, over the time of all of them. Measured on the
+    /// samples' own clock (`segment_time_s`). Of `toolpath_id`, or of the
+    /// whole trace with `None`. `0.0` when no sample is air.
+    ///
+    /// The air-cut figures, the gates and the thresholds do not read it.
+    /// A label reads it to report the true air, `air × (1 − share)`, and
+    /// the skin, `air × share`.
+    #[must_use]
+    pub fn air_cut_removing_share(&self, toolpath_id: Option<crate::ids::ToolpathId>) -> f64 {
+        let (mut air_s, mut removing_s) = (0.0, 0.0);
+        for sample in self.samples.iter().filter(|s| {
+            s.is_cutting
+                && toolpath_id.is_none_or(|id| s.toolpath_id == id)
+                && s.radial_engagement_class() == RadialEngagementClass::Air
+        }) {
+            air_s += sample.segment_time_s;
+            if sample.removes_material() {
+                removing_s += sample.segment_time_s;
+            }
+        }
+        if air_s > 0.0 { removing_s / air_s } else { 0.0 }
+    }
+
     /// Neutral test fixture: an empty trace at the current
     /// [`SIMULATION_CUT_TRACE_SCHEMA_VERSION`] with no samples, summaries,
     /// issues, or drill data. Test code overrides the fields under test via

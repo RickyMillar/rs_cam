@@ -183,6 +183,7 @@ fn make_params(
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -192,7 +193,6 @@ fn make_params(
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
-        z_blend: false,
     }
 }
 

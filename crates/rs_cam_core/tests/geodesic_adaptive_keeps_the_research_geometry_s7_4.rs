@@ -121,6 +121,7 @@ fn params(depth_per_pass: f64) -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: Some(StepSplit::StockDepth),
             keep_down_route: Some(KeepDownRoute::CutFeed),
+            level_contour: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,
@@ -130,7 +131,6 @@ fn params(depth_per_pass: f64) -> Adaptive3dParams {
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        z_blend: false,
     }
 }
 
@@ -175,10 +175,13 @@ fn fixtures() -> Vec<(&'static str, TriangleMesh, f64)> {
 }
 
 /// The geometry of each fixture, in [`fixtures`] order: the research
-/// branch's, as D65 changed it (the capped steps; module doc).
+/// branch's, as D65 changed it (the capped steps; module doc). C3, the D55
+/// port (G-AIRPECK): "island pocket, two levels" 1976 → 1941 moves; 16
+/// `EntryPlunge` feeds and 19 `Retract` rapids go, every XY move is the
+/// same.
 const PINS: [(usize, u64); 4] = [
     (957, 5931675112365951456),
-    (1976, 17577482464951561279),
+    (1941, 14901688868866573348),
     (1008, 6172482053443525791),
     (0, 675868731199239589),
 ];

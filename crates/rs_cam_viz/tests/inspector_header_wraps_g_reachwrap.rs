@@ -341,22 +341,26 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
     );
 }
 
-/// The third sentence-bearing site in the header. The validator's messages
-/// are whole sentences too ("Rest machining requires an earlier enabled
-/// operation…"), so they get the same treatment while it is being applied.
+/// The third sentence-bearing site in the header: the validator's
+/// messages. They wrapped until G-E (2026-10-28). Now the header gives them
+/// ONE line (§7.2 rule 5): the Geometry refusal's short line, else the
+/// first sentence truncated, with every validation error on the hover. The
+/// behaviour is measured in `the_inspector_text_is_bounded_ic1`
+/// (`a_validation_error_takes_one_line_g_e`).
 #[test]
-fn the_validation_errors_are_constructed_wrapped() {
+fn the_validation_errors_are_one_line() {
     let src = properties_src();
-    // FR-2 F27: a selection refusal is ONE short line ("Refused · see
-    // Geometry") that the loop partitions out first. Every other validator
-    // sentence is in `other`, and it must wrap.
     let at = src
-        .find("for err in other {")
-        .expect("the validation-error loop moved");
-    let body = &src[at..(at + 500).min(src.len())];
+        .find("let face = if !owned.is_empty()")
+        .expect("the validation-error face moved");
+    let body = &src[at..(at + 400).min(src.len())];
     assert!(
-        body.contains("wrapped_small_label("),
-        "validator sentences wrap too:\n{body}"
+        body.contains("OneLine::new(face)") && body.contains(".detail(detail)"),
+        "the validation errors are one line with their text on hover:\n{body}"
+    );
+    assert!(
+        !src.contains("for err in other {"),
+        "a validator sentence is drawn on a row of its own again"
     );
 }
 
@@ -382,15 +386,23 @@ fn every_sentence_in_the_header_is_wrapped() {
     // `draw_header_state`, so the census reads that body too.
     let state = function_body(&src, "draw_header_state");
 
-    // Already wrapped before this commit: the two Generate-row statuses.
-    for existing in ["Waiting on upstream stock", "Error: {e}"] {
+    // The two Generate-row statuses with a long text. They wrapped until
+    // G-E (2026-10-28); now each is one truncating state word with the full
+    // text on hover (the IC1 remedy), and the last run's refusal is the
+    // word `Refused` (`REFUSED_STATE`).
+    for existing in ["Waiting on upstream stock", "REFUSED_STATE"] {
         let at = state
             .find(existing)
             .unwrap_or_else(|| panic!("{existing:?} left the header state"));
-        let after = &state[at..(at + 400).min(state.len())];
+        let before = &state[at.saturating_sub(120)..at];
+        let after = &state[at..(at + 200).min(state.len())];
         assert!(
-            after.contains(".wrap()"),
-            "{existing:?} used to wrap and must still:\n{after}"
+            before.contains("state_word(") && after.contains(".on_hover_text("),
+            "{existing:?} is one truncating word with its text on hover:\n{before}{after}"
+        );
+        assert!(
+            !after.contains(".wrap()"),
+            "{existing:?} wraps again:\n{after}"
         );
     }
 

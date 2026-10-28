@@ -590,7 +590,8 @@ fn fixture_session_3d() -> ProjectSession {
         sampling: 0.4,
         feed_rate: Some(1000.0),
         plunge_rate: Some(400.0),
-        continuous: false,
+        helical: false,
+        legacy_continuous: None,
         spindle_rpm: Some(18_000),
         hookup_mm: 0.0,
     });

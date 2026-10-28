@@ -11,7 +11,6 @@ use super::pills::PillSuggestions;
 use super::tab_badges::{
     RowTier, compute_tab_badges, draw_geometry_wiring, draw_start_from, draw_toolpath_tabs,
     merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_line,
-    wrapped_small_label,
 };
 use super::{
     ReachPanelSummary, ToolpathPanelInputs, ToolpathPanelSnapshot, ToolpathTab,
@@ -27,6 +26,21 @@ use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
 /// owns the text; the header names the tab, and the full text is the hover.
 pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
 
+/// G-E (§7.7): the state word of the Generate row when the last run
+/// refused. The full refusal is its hover.
+pub(crate) const REFUSED_STATE: &str = "Refused";
+
+/// G-C (§2 d, review): the header line of the D53 refusal. The Cut tab owns
+/// the fix (the Containment row); the full text is the hover.
+pub(crate) const REFUSED_SEE_CUT: &str = "Refused \u{00B7} see Cut";
+
+/// G-C (§2 d): the act on the Containment row that writes `Inside`.
+pub(crate) const USE_INSIDE: &str = "Use Inside";
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the snapshot, the inputs and the GUI state slots the panel edits in place (`state.panels`, `state.gui`), each threaded in alone"
+)]
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     // The panel's whole read side: the owned entry, both static
@@ -48,6 +62,9 @@ pub(super) fn draw_toolpath_panel(
     // F033 / UI-09: the last refused heights edit (`state.panels`), threaded
     // in as `selection_ui` is.
     heights_refusal: &mut crate::state::panels::HeightsRefusal,
+    // G-C (D-2): the `⟲` badge of an auto-set containment (`state.panels`),
+    // threaded in as `heights_refusal` is.
+    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
     events: &mut Vec<AppEvent>,
 ) {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
@@ -120,10 +137,34 @@ pub(super) fn draw_toolpath_panel(
         blocking: blocking.as_ref(),
         moves: entry.run.result().map(|result| result.stats.move_count),
         feed_stage: inputs.feed_stage,
+        caps: inputs.caps,
     };
     if draw_generate_row(ui, &header) {
         events.push(AppEvent::GenerateToolpath(entry.id));
     }
+    // G-E (§7.5, §7.7): the last run's refusal gets one face line under
+    // the row, which truncates; its hover holds the full text. A
+    // validation refusal answers the settings on screen, so when one
+    // stands it takes the line and the state word keeps the last run.
+    if let crate::state::freshness::FreshnessState::Error(e) = freshness
+        && validation_errors.is_empty()
+    {
+        // G-E (3): a rest-boundary refusal that is the last run's text
+        // gets its short face and its action; any other refusal shows its
+        // own text, truncated.
+        match inputs
+            .rest_boundary_refusal
+            .as_ref()
+            .and_then(|refusal| rest_refusal_face(refusal).filter(|_| refusal.to_string() == *e))
+        {
+            Some(face) => draw_refusal_face(ui, &face, e, events),
+            None => {
+                ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
+            }
+        }
+    }
+    // G-C (§2 d): the D53 refusal, owned by the Cut tab.
+    let cut_refusal = operations::rest_consumer_refusal(validation, entry).map(str::to_owned);
     if !validation_errors.is_empty() {
         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
         // the selection. A validation error that IS that refusal (the
@@ -143,25 +184,33 @@ pub(super) fn draw_toolpath_panel(
                 section_refusal.as_deref() == Some(err.as_str())
                     || hole_refusal == Some(err.as_str())
             });
-        if !owned.is_empty() {
-            let detail = owned
-                .iter()
-                .map(|err| err.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-            ui.add(
-                OneLine::new(REFUSED_SEE_GEOMETRY)
-                    .color(crate::ui::tokens::DANGER)
-                    .detail(detail),
-            );
-        }
-        for err in other {
-            // A sentence, so it wraps explicitly rather than inheriting a
-            // wrap mode from whatever layout encloses this panel
-            // (G-REACHWRAP). It blocks Generate, so it is the danger colour
-            // and it is the one header line that may wrap (IC1).
-            wrapped_small_label(ui, err.clone(), crate::ui::tokens::DANGER);
-        }
+        // G-C: the D53 refusal is the Cut tab's (the Containment row).
+        let cut_owned = other
+            .iter()
+            .any(|err| cut_refusal.as_deref() == Some(err.as_str()));
+        // G-E (4), §7.2 rule 5: above the tab strip at most ONE refusal
+        // line. The Geometry tab's refusal names its tab; else the first
+        // validator sentence is the face, truncated. The hover holds every
+        // validation error. Before G-E each sentence wrapped (up to 3 rows
+        // each), and the tabs moved down.
+        let detail = owned
+            .iter()
+            .chain(other.iter())
+            .map(|err| err.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let face = if !owned.is_empty() {
+            REFUSED_SEE_GEOMETRY
+        } else if cut_owned {
+            REFUSED_SEE_CUT
+        } else {
+            other.first().map_or("", |err| err.as_str())
+        };
+        ui.add(
+            OneLine::new(face)
+                .color(crate::ui::tokens::DANGER)
+                .detail(detail),
+        );
     }
 
     // Contextual diagnostics (non-blocking). Native `Diagnostic`
@@ -231,12 +280,17 @@ pub(super) fn draw_toolpath_panel(
         ui.memory(|mem| mem.data.get_temp(tab_id))
             .unwrap_or(ToolpathTab::Geometry)
     });
-    let tab_badges = compute_tab_badges(
+    let mut tab_badges = compute_tab_badges(
         entry,
         &diagnostics,
         toolpath_heights,
         shoe_finding.is_some(),
     );
+    // G-C (review §2 d): the D53 refusal puts a dot on the Cut tab, which
+    // holds its fix.
+    if cut_refusal.is_some() {
+        tab_badges.raise(ToolpathTab::Cut, crate::ui::tokens::DANGER);
+    }
     draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
@@ -249,7 +303,16 @@ pub(super) fn draw_toolpath_panel(
             super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
         }
         ToolpathTab::Cut => {
-            draw_cut_tab(ui, entry, inputs, model_bbox, selection_ui, events);
+            draw_cut_tab(
+                ui,
+                entry,
+                inputs,
+                model_bbox,
+                strategy_suggestion(suggest_warnings),
+                selection_ui,
+                containment_autocorrect,
+                events,
+            );
         }
 
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
@@ -378,15 +441,32 @@ pub(super) fn draw_toolpath_panel(
         table.show(ui);
     }
 
-    for d in &actionable {
-        render_diagnostic_row(ui, d, RowTier::Actionable, entry, stale_default_defects);
-    }
+    // G-E (2), §7.2 rule 4: the findings are a bounded list. At most
+    // `FOOTER_FINDINGS_CAP` rows, then the `NoticeStack` remainder line,
+    // which shows the rest. Every critical and blocking row shows whatever
+    // the cap (the `NoticeStack` safety rule).
     let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
-    for d in &merged_gate_rows {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    let rows: Vec<(&rs_cam_core::diagnostics::Diagnostic, RowTier)> = actionable
+        .iter()
+        .map(|d| (*d, RowTier::Actionable))
+        .chain(merged_gate_rows.iter().map(|d| (d, RowTier::Stateful)))
+        .chain(stateful_rest.iter().map(|d| (*d, RowTier::Stateful)))
+        .collect();
+    let expand_id = ui.id().with("tp_findings_all").with(entry.id.raw());
+    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
+    let shown = bounded_findings(
+        &rows.iter().map(|(d, _)| d.severity).collect::<Vec<_>>(),
+        expanded,
+    );
+    for &index in &shown {
+        if let Some((d, tier)) = rows.get(index) {
+            render_diagnostic_row(ui, d, *tier, entry, stale_default_defects);
+        }
     }
-    for d in &stateful_rest {
-        render_diagnostic_row(ui, d, RowTier::Stateful, entry, stale_default_defects);
+    if shown.len() < rows.len()
+        && crate::ui::components::notice::overflow_row(ui, shown.len(), rows.len())
+    {
+        ui.data_mut(|d| d.insert_temp(expand_id, true));
     }
 
     // DC5 (Pattern C): the hint list is a COUNT at the bottom of the panel,
@@ -423,14 +503,21 @@ pub(super) fn draw_toolpath_panel(
 /// tool, the input model, the start stock, the op parameters and the
 /// machining boundary source. The selection is in the Geometry tab.
 /// `properties::tests` renders it (D3).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the entry, its inputs, the Suggest advice and the GUI state slots the tab edits in place, each threaded in alone"
+)]
 pub(super) fn draw_cut_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
+    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
     events: &mut Vec<AppEvent>,
 ) {
+    containment_autocorrect.scope(entry.id);
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
     let tool_configs = inputs.tool_configs.as_slice();
@@ -544,6 +631,8 @@ pub(super) fn draw_cut_tab(
         selection_ui: &mut *selection_ui,
         model_areas: op_report(inputs)
             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
+        strategy_suggestion,
+        boundary_enabled: entry.boundary.enabled,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
@@ -577,15 +666,12 @@ pub(super) fn draw_cut_tab(
         if entry.boundary.enabled {
             // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
             // one generation uses (`session/compute.rs` clones
-            // `tc.boundary` unconditionally). Name it, then show the
-            // controls that drive it. The controller assigns the model
+            // `tc.boundary` unconditionally). G-D (ruling D-1): its name is
+            // the hover of the Source combo, not a row above it; the row
+            // repeated the combo. The controller assigns the model
             // silhouette on add for 3D ops on a mesh; that provenance is
-            // not stored, so the line never claims "(auto)".
-            ui.add(OneLine::new(boundary_summary_line(
-                &entry.boundary,
-                false,
-                models,
-            )));
+            // not stored, so the hover never claims "(auto)".
+            let source_summary = boundary_summary_line(&entry.boundary, false, models);
             // Source selector
             ui.horizontal(|ui| {
                 ui.label("Source:");
@@ -666,9 +752,9 @@ pub(super) fn draw_cut_tab(
                                 ),
                             )
                             .on_hover_text(if has_rest_candidates {
-                                "Boundary = rest regions computed by another \
-                                 toolpath's rest analysis. Pick the source \
-                                 toolpath below."
+                                "The regions another toolpath leaves: the pieces a \
+                                 Geodesic Adaptive rough did not cut, or another op's \
+                                 rest analysis. Pick the source below."
                             } else {
                                 "No other toolpaths in this project yet — add \
                                  one and generate it to use as the source. Picking it here \
@@ -678,13 +764,22 @@ pub(super) fn draw_cut_tab(
                         {
                             let default_source = boundary_source_candidates
                                 .first()
-                                .map(|(candidate_id, _, _, _, _)| *candidate_id)
+                                .map(|(candidate_id, _, _, _, _, _)| *candidate_id)
                                 .unwrap_or(entry.id);
                             entry.boundary.source = BoundarySource::DerivedRestRegions {
                                 source_toolpath_id: default_source,
                             };
+                            // G-C (D-2): the pick may set `Inside`.
+                            pick_sets_inside(
+                                &mut entry.boundary.containment,
+                                inputs.rest_pick.as_ref(),
+                                default_source,
+                                containment_autocorrect,
+                            );
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text(source_summary);
             });
 
             // GT-Q7: the Geometry tab draws the boundary selection, with the
@@ -706,7 +801,7 @@ pub(super) fn draw_cut_tab(
             // when `Source` above is set to `DerivedRestRegions`.
             // Candidates are every other toolpath in the session;
             // ones with a cached result whose rest regions are
-            // already non-empty are labelled "(regions ready)" and
+            // already non-empty are labelled "· N regions" (G-C) and
             // sorted first, but a not-yet-generated toolpath is
             // still selectable — generation fails hard with a clear
             // message if the source turns out unusable.
@@ -715,29 +810,32 @@ pub(super) fn draw_cut_tab(
             {
                 ui.horizontal(|ui| {
                     ui.label("Rest source:");
-                    let current_label = boundary_source_candidates
+                    let current = boundary_source_candidates
                         .iter()
-                        .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id)
-                        .map(|(_, name, ready, _, _)| {
-                            if *ready {
-                                format!("{name} (regions ready)")
-                            } else {
-                                name.clone()
-                            }
-                        })
-                        .unwrap_or_else(|| "(toolpath not found)".to_owned());
+                        .find(|(candidate_id, _, _, _, _, _)| candidate_id == source_toolpath_id);
+                    let current_label = current.map_or_else(
+                        || "(toolpath not found)".to_owned(),
+                        |(_, name, _, regions, _, _)| rest_source_label(name, regions.as_deref()),
+                    );
+                    // G-C (§6 b): the top of the regions first, then the
+                    // combo's own hover.
+                    let hover = match current.and_then(|(_, _, _, _, _, top_z)| *top_z) {
+                        Some(z) => format!(
+                            "Top of the regions: Z {z:.2}.\nThe toolpath whose regions bound \
+                             this one. Picking it switches its rest analysis on."
+                        ),
+                        None => "The toolpath whose regions bound this one. Picking it \
+                                 switches its rest analysis on."
+                            .to_owned(),
+                    };
                     let mut sorted = boundary_source_candidates.to_vec();
-                    sorted.sort_by_key(|(_, _, ready, _, _)| !*ready);
+                    sorted.sort_by_key(|(_, _, ready, _, _, _)| !*ready);
                     egui::ComboBox::from_id_salt("boundary_rest_source")
                         .truncate()
                         .selected_text(current_label)
                         .show_ui(ui, |ui| {
-                            for (candidate_id, name, ready, _, _) in &sorted {
-                                let label = if *ready {
-                                    format!("{name} (regions ready)")
-                                } else {
-                                    name.clone()
-                                };
+                            for (candidate_id, name, _, regions, _, _) in &sorted {
+                                let label = rest_source_label(name, regions.as_deref());
                                 let selected = *source_toolpath_id == *candidate_id;
                                 if ui.selectable_label(selected, label).clicked() {
                                     *source_toolpath_id = *candidate_id;
@@ -745,13 +843,7 @@ pub(super) fn draw_cut_tab(
                             }
                         })
                         .response
-                        .on_hover_text(
-                            "The toolpath whose rest analysis supplies the \
-                             rest regions. ANY operation produces them: picking it here \
-                             switches its analysis on, and the project needs a mesh. The \
-                             pencil rest-depth detector and the Unified Finish claims \
-                             pipeline attach their own.",
-                        );
+                        .on_hover_text(hover);
                 });
 
                 // Sliver-storm / giant-region caption (2026-07-06
@@ -768,12 +860,13 @@ pub(super) fn draw_cut_tab(
                 // regions), not this model's bounding rectangle.
                 let selected = boundary_source_candidates
                     .iter()
-                    .find(|(candidate_id, _, _, _, _)| candidate_id == source_toolpath_id);
-                let selected_regions = selected.and_then(|(_, _, _, regions, _)| regions.as_ref());
+                    .find(|(candidate_id, _, _, _, _, _)| candidate_id == source_toolpath_id);
+                let selected_regions =
+                    selected.and_then(|(_, _, _, regions, _, _)| regions.as_ref());
                 // `None` twice over: no candidate selected, or the
                 // selected one has no rest grid. Both are "not
                 // measured", and `classify_rest_regions` stays silent.
-                let source_footprint_area = selected.and_then(|(_, _, _, _, area)| *area);
+                let source_footprint_area = selected.and_then(|(_, _, _, _, area, _)| *area);
                 if let Some(regions) = selected_regions
                     && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
                         regions,
@@ -784,7 +877,23 @@ pub(super) fn draw_cut_tab(
                 }
             }
 
-            // Containment mode
+            // Containment mode. G-C (§2 c-e): for a rest-regions source
+            // whose tool is smaller than this one, `Center` and `Outside`
+            // are grey (they refuse, D53) with the sizes on hover; while the
+            // draft holds one of them, `[Use Inside]` sits at the right of
+            // the row, unless `Inside` would collapse the boundary. The `⟲`
+            // badge marks a containment the `Rest Regions` pick set (D-2).
+            let draft_source = match entry.boundary.source {
+                BoundarySource::DerivedRestRegions { source_toolpath_id } => {
+                    Some(source_toolpath_id)
+                }
+                _ => None,
+            };
+            let refused = inputs
+                .rest_containment
+                .as_ref()
+                .filter(|check| Some(check.larger.source_toolpath_id) == draft_source);
+            let before = entry.boundary.containment;
             ui.horizontal(|ui| {
                 ui.label("Containment:");
                 egui::ComboBox::from_id_salt("boundary_contain")
@@ -795,28 +904,75 @@ pub(super) fn draw_cut_tab(
                         BoundaryContainment::Outside => "Outside",
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut entry.boundary.containment,
+                        let mut option = |ui: &mut egui::Ui,
+                                          value: BoundaryContainment,
+                                          label: &str,
+                                          hover: &str| {
+                            let enabled = refused.is_none() || value == BoundaryContainment::Inside;
+                            let response = ui
+                                .add_enabled(
+                                    enabled,
+                                    egui::Button::selectable(
+                                        entry.boundary.containment == value,
+                                        label,
+                                    ),
+                                )
+                                .on_hover_text(hover);
+                            let response = match refused {
+                                Some(check) => response.on_disabled_hover_text(check.hover()),
+                                None => response,
+                            };
+                            if response.clicked() {
+                                entry.boundary.containment = value;
+                            }
+                        };
+                        option(
+                            ui,
                             BoundaryContainment::Center,
                             "Center",
-                        )
-                        .on_hover_text("Tool center stays inside boundary");
-                        ui.selectable_value(
-                            &mut entry.boundary.containment,
+                            "Tool center stays inside boundary",
+                        );
+                        option(
+                            ui,
                             BoundaryContainment::Inside,
                             "Inside",
-                        )
-                        .on_hover_text(
                             "Entire tool stays inside boundary (shrinks by tool radius)",
                         );
-                        ui.selectable_value(
-                            &mut entry.boundary.containment,
+                        option(
+                            ui,
                             BoundaryContainment::Outside,
                             "Outside",
-                        )
-                        .on_hover_text("Tool edge can extend outside boundary");
+                            "Tool edge can extend outside boundary",
+                        );
                     });
+                if let Some(hover) = containment_autocorrect.hover() {
+                    ui.add(
+                        crate::ui::components::ProvenanceBadge::new(
+                            crate::ui::components::ProvKind::AutoCorrect,
+                        )
+                        .compact(),
+                    )
+                    .on_hover_text(hover);
+                }
+                if let Some(check) = refused
+                    && entry.boundary.containment != BoundaryContainment::Inside
+                {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let keeps = check.inside == crate::state::runtime::InsideAnswer::Keeps;
+                        let response = ui
+                            .add_enabled(keeps, egui::Button::new(USE_INSIDE).small())
+                            .on_hover_text(check.hover())
+                            .on_disabled_hover_text(check.hover());
+                        if response.clicked() {
+                            entry.boundary.containment = BoundaryContainment::Inside;
+                        }
+                    });
+                }
             });
+            // The badge stands until the operator edits the containment.
+            if entry.boundary.containment != before {
+                containment_autocorrect.clear();
+            }
 
             // Offset
             ui.horizontal(|ui| {
@@ -857,7 +1013,22 @@ pub(super) fn draw_cut_tab(
         let title = if rest_region_consumers.is_empty() {
             "Rest heatmap overlay".to_owned()
         } else {
-            format!("Rest regions \u{2192} {}", rest_region_consumers.join(", "))
+            // G-C (§6 c): the count of this op's own regions, in the
+            // phrase of the consumer's source combo.
+            let count = entry
+                .run
+                .result()
+                .and_then(|result| result.annotated.produced.rest_regions.as_ref())
+                .map_or(0, |regions| regions.len());
+            let consumers = rest_region_consumers.join(", ");
+            if count > 0 {
+                format!(
+                    "Rest regions \u{2192} {consumers} \u{00B7} {}",
+                    regions_phrase(count)
+                )
+            } else {
+                format!("Rest regions \u{2192} {consumers}")
+            }
         };
         ui.add_space(8.0);
         ui.disclosure("rest_regions", &title, false, |ui| {
@@ -980,7 +1151,7 @@ pub(super) fn draw_cut_tab(
     }
 }
 
-/// The Feeds & Speeds tab: how fast.
+/// The Feeds tab: how fast.
 fn draw_feeds_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
@@ -1184,6 +1355,8 @@ pub(super) struct HeaderRow<'a> {
     /// The move count of the stored result.
     pub moves: Option<usize>,
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
+    /// G-B: the moves of the stored result that carry a feed cap.
+    pub caps: Option<crate::state::runtime::CapFigures>,
 }
 
 impl HeaderRow<'_> {
@@ -1264,12 +1437,184 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool 
     .inner
 }
 
+/// G-C (D-2, ruled yes): the `Rest Regions` pick of `source` writes
+/// `Inside` when this op's tool is larger than the source's (`pick`), the
+/// containment is not `Inside` yet, and `Inside` keeps area (the collapse
+/// check, G-BOUNDCOLLAPSE). The Containment combo then shows the `⟲` badge
+/// with the sizes on its hover. True when it wrote `Inside`.
+pub(super) fn pick_sets_inside(
+    containment: &mut BoundaryContainment,
+    pick: Option<&super::RestContainment>,
+    source: crate::state::toolpath::ToolpathId,
+    autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+) -> bool {
+    let Some(pick) = pick.filter(|pick| {
+        pick.larger.source_toolpath_id == source
+            && pick.inside == crate::state::runtime::InsideAnswer::Keeps
+    }) else {
+        return false;
+    };
+    if *containment == BoundaryContainment::Inside {
+        return false;
+    }
+    *containment = BoundaryContainment::Inside;
+    autocorrect.set(format!(
+        "Set to Inside: this tool (\u{00D8}{:.2}) is larger than the tool of '{}' \
+         (\u{00D8}{:.2}).",
+        2.0 * pick.larger.tool_radius_mm,
+        pick.larger.source_name,
+        2.0 * pick.larger.source_tool_radius_mm,
+    ));
+    true
+}
+
+/// G-C (§6, review): the item text of a rest source: `{name} · {N} regions`
+/// when its result has regions, else the plain name. One phrase for the
+/// count, as the source's own disclosure title.
+pub(super) fn rest_source_label(
+    name: &str,
+    regions: Option<&Vec<rs_cam_core::polygon::Polygon2>>,
+) -> String {
+    match regions.map(Vec::len) {
+        Some(n) if n > 0 => format!("{name} \u{00B7} {}", regions_phrase(n)),
+        _ => name.to_owned(),
+    }
+}
+
+/// `N regions` (`1 region`).
+pub(super) fn regions_phrase(n: usize) -> String {
+    if n == 1 {
+        "1 region".to_owned()
+    } else {
+        format!("{n} regions")
+    }
+}
+
+/// G-E (3): the one-line face of a rest-boundary refusal, and the
+/// toolpath its action generates.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct RefusalFace {
+    pub text: String,
+    /// The source toolpath that the `⟳` action generates, and its name.
+    pub generate: Option<(crate::state::toolpath::ToolpathId, String)>,
+}
+
+/// G-E (3), §7.7: the short face of a rest-boundary refusal. `None` for a
+/// refusal with no short face (a lost source id), which keeps its text.
+pub(super) fn rest_refusal_face(
+    refusal: &rs_cam_core::session::RestBoundaryRefusal,
+) -> Option<RefusalFace> {
+    use crate::ui::tokens::GLYPH_DANGER;
+    use rs_cam_core::session::RestBoundaryRefusal;
+    match refusal {
+        RestBoundaryRefusal::NotGenerated {
+            source_toolpath_id,
+            source_name,
+        } => Some(RefusalFace {
+            text: format!("{GLYPH_DANGER} Generate '{source_name}' first"),
+            generate: Some((*source_toolpath_id, source_name.clone())),
+        }),
+        RestBoundaryRefusal::NoRegions {
+            source_toolpath_id,
+            source_name,
+        } => Some(RefusalFace {
+            text: format!("{GLYPH_DANGER} '{source_name}' left no regions"),
+            generate: Some((*source_toolpath_id, source_name.clone())),
+        }),
+        RestBoundaryRefusal::OwnRegions => Some(RefusalFace {
+            text: "Refused \u{00B7} source is this op".to_owned(),
+            generate: None,
+        }),
+        RestBoundaryRefusal::SourceMissing { .. } => None,
+    }
+}
+
+/// The glyph of the action that generates a refusal's source.
+pub(super) const GENERATE_SOURCE_GLYPH: &str = "\u{27F3}";
+
+/// Draw one refusal face: the face truncates in the width the action
+/// leaves; `detail` (the full refusal) is its hover.
+fn draw_refusal_face(
+    ui: &mut egui::Ui,
+    face: &RefusalFace,
+    detail: &str,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some((source, name)) = &face.generate
+                && ui
+                    .small_button(GENERATE_SOURCE_GLYPH)
+                    .on_hover_text(format!("Generate '{name}'"))
+                    .clicked()
+            {
+                events.push(AppEvent::GenerateToolpath(*source));
+            }
+            let rest = ui.available_width().max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_max_width(rest);
+                    ui.add(
+                        OneLine::new(face.text.as_str())
+                            .color(crate::ui::tokens::DANGER)
+                            .detail(detail),
+                    );
+                },
+            );
+        });
+    });
+}
+
+/// G-E (2): the footer shows at most this many finding rows before the
+/// remainder line.
+pub(super) const FOOTER_FINDINGS_CAP: usize = 3;
+
+/// G-E (2): the indices of the footer finding rows to draw, in their
+/// order. All of them when `expanded`. Else the first
+/// [`FOOTER_FINDINGS_CAP`], and every critical or blocking row however far
+/// down it is (the `NoticeStack` safety rule: a cap never hides one).
+pub(super) fn bounded_findings(
+    severities: &[rs_cam_core::diagnostics::Severity],
+    expanded: bool,
+) -> Vec<usize> {
+    use rs_cam_core::diagnostics::Severity;
+    severities
+        .iter()
+        .enumerate()
+        .filter(|(index, severity)| {
+            expanded || *index < FOOTER_FINDINGS_CAP || severity.rank() >= Severity::Critical.rank()
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// G-D (§3): the clearing strategy that the Suggest run recommends and did
+/// not apply, from its records. The token is the serde spelling of
+/// `ClearingStrategy`, so serde reads it; there is no second token table.
+pub(super) fn strategy_suggestion(
+    warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
+) -> Option<crate::state::toolpath::ClearingStrategy> {
+    warnings?.iter().find_map(|warning| match warning {
+        rs_cam_core::feeds::suggest::SuggestWarning::StrategyRecommendedNotApplied {
+            param: "clearing_strategy",
+            recommended,
+            ..
+        } => serde_json::from_value(serde_json::Value::String(recommended.clone())).ok(),
+        _ => None,
+    })
+}
+
 /// The figures as one hover line, for a state word that may push them
 /// out of the row.
 fn figures_hover(row: &HeaderRow<'_>) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(text) = row.moves_text() {
         parts.push(text);
+    }
+    if let Some(caps) = row.caps {
+        parts.push(caps.line());
     }
     if let Some(stage) = row.feed_stage {
         parts.push(stage.statement());
@@ -1327,11 +1672,17 @@ fn draw_header_figures(ui: &mut egui::Ui, row: &HeaderRow<'_>, fit: bool) {
                 .small()
                 .color(crate::ui::tokens::TEXT_FAINT),
         )
-        .on_hover_text(if is_stale {
-            "This count is from the previous generation. Regenerate the \
-             operation to measure the settings shown here."
-        } else {
-            "The move count of the current generation."
+        .on_hover_text({
+            let count = if is_stale {
+                "This count is from the previous generation. Regenerate the \
+                 operation to measure the settings shown here."
+            } else {
+                "The move count of the current generation."
+            };
+            match row.caps {
+                Some(caps) => format!("{count}\n{}", caps.line()),
+                None => count.to_owned(),
+            }
         });
     }
 }
@@ -1421,12 +1772,10 @@ pub(super) fn draw_header_state(
         FreshnessState::WaitingOnUpstream(block) => {
             // Amber, not red: this operation is fine, it is waiting its
             // turn. The hover names the operation it is waiting for.
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new("Waiting on upstream stock")
-                        .color(crate::ui::tokens::CAUTION),
-                )
-                .wrap(),
+            // G-E: one row; it truncates, it does not wrap.
+            state_word(
+                ui,
+                egui::RichText::new("Waiting on upstream stock").color(crate::ui::tokens::CAUTION),
             )
             .on_hover_text(&block.message);
         }
@@ -1437,12 +1786,13 @@ pub(super) fn draw_header_state(
             )
             .on_hover_text("Disabled: this operation does not go to G-code.");
         }
+        // G-E (§7.7): the last run refused. One word in the row, the full
+        // text on its hover. The text printed in full here took 3 to 15
+        // rows and moved the tab strip down by up to 257 points.
         FreshnessState::Error(e) => {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
-                )
-                .wrap(),
+            state_word(
+                ui,
+                egui::RichText::new(REFUSED_STATE).color(crate::ui::tokens::DANGER),
             )
             .on_hover_text(e);
         }

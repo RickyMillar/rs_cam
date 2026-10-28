@@ -947,7 +947,15 @@ impl Key {
 /// The colour key of `line`, or `None` for a status line.
 fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
     match line {
-        RailLine::Scale(legend) => Some(scale_key(*legend)),
+        RailLine::Scale(legend) => {
+            let key = scale_key(*legend);
+            let moves = matches!(legend, Legend::Engagement | Legend::AdvancePerTooth);
+            Some(if moves && capped_moves_drawn(state) {
+                with_capped_move_entry(key)
+            } else {
+                key
+            })
+        }
         RailLine::Categories(kind) => Some(categories_key(state, *kind)),
         RailLine::Status(_) => None,
     }
@@ -957,6 +965,28 @@ fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
 /// line shows none.
 pub fn key_colours(state: &AppState, line: &RailLine) -> Vec<[f32; 3]> {
     line_key(state, line).map_or_else(Vec::new, |key| key.colours())
+}
+
+/// Every label the hover detail of `line` shows in its key, in key order:
+/// the lead, the gradient end labels, the tail, or each entry. A status
+/// line shows none.
+pub fn key_labels(state: &AppState, line: &RailLine) -> Vec<String> {
+    match line_key(state, line) {
+        Some(Key::Ramp {
+            lead,
+            left,
+            right,
+            tail,
+            ..
+        }) => lead
+            .into_iter()
+            .map(|(label, _)| label)
+            .chain([left, right])
+            .chain(tail.into_iter().map(|(label, _)| label))
+            .collect(),
+        Some(Key::Entries(entries)) => entries.into_iter().map(|(label, _)| label).collect(),
+        None => Vec::new(),
+    }
 }
 
 /// Every colour the chip swatch of `line` paints, in order.
@@ -1322,6 +1352,57 @@ fn legend_base_colour(state: &AppState) -> Option<[f32; 3]> {
 /// when a render colour source exists.
 pub type LegendEntry = (String, Option<[f32; 3]>);
 
+/// G-B: the legend text of a move with a feed cap. Every move colour mode
+/// draws such a move dashed (`toolpath_render::ToolpathLines::walk`).
+pub const CAPPED_MOVE_LABEL: &str = "dashed: fed at a load cap";
+
+/// The capped-move entry. It has no swatch: the dash is a line style in
+/// the mode's own colour, not a colour.
+fn capped_move_entry() -> LegendEntry {
+    (CAPPED_MOVE_LABEL.to_owned(), None)
+}
+
+/// True when a drawn toolpath holds a capped move (G-B2). The legend
+/// shows the capped-move entry only then. `ToolpathRuntime::caps` counts
+/// the moves once per result, so this does not scan the moves each frame.
+pub fn capped_moves_drawn(state: &AppState) -> bool {
+    registry::drawn_toolpaths(state).into_iter().any(|(_, id)| {
+        state
+            .gui
+            .toolpath_rt
+            .get(&id)
+            .and_then(crate::state::runtime::ToolpathRuntime::caps)
+            .is_some()
+    })
+}
+
+/// `key` with the capped-move entry at its end: the ramp's tail, or the
+/// last entry.
+fn with_capped_move_entry(key: Key) -> Key {
+    match key {
+        Key::Ramp {
+            lead,
+            left,
+            right,
+            colours,
+            mut tail,
+        } => {
+            tail.push(capped_move_entry());
+            Key::Ramp {
+                lead,
+                left,
+                right,
+                colours,
+                tail,
+            }
+        }
+        Key::Entries(mut entries) => {
+            entries.push(capped_move_entry());
+            Key::Entries(entries)
+        }
+    }
+}
+
 /// The entries of a categorical legend, in drawing order. For the
 /// collisions the two entries are the ends of the density ramp.
 pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> {
@@ -1368,6 +1449,9 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
             }
             if spans.show_dressup {
                 entries.push(("dressup".to_owned(), base.map(mirrored::dressup_rgb)));
+            }
+            if state.viewport.show_cutting && capped_moves_drawn(state) {
+                entries.push(capped_move_entry());
             }
             entries
         }

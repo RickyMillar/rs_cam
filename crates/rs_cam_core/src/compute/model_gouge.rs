@@ -165,6 +165,22 @@ pub fn probe_radial_tolerance_mm(
     }
 }
 
+/// The reduced tool of the guard: `tool` less `radial_tol_mm` on its
+/// radius ([`probe_radial_tolerance_mm`]). The corner radius of a bull nose
+/// (or of a flat end mill) can be the full radius, so it shrinks with it
+/// (the tool check holds a corner to half the diameter).
+#[must_use]
+pub fn reduced_tool_config(
+    tool: &crate::compute::tool_config::ToolConfig,
+    radial_tol_mm: f64,
+) -> crate::compute::tool_config::ToolConfig {
+    let mut reduced = tool.clone();
+    reduced.diameter -= 2.0 * radial_tol_mm;
+    reduced.corner_radius = reduced.corner_radius.min(reduced.diameter / 2.0);
+    reduced.corner_radius_mm = reduced.corner_radius_mm.min(reduced.diameter / 2.0);
+    reduced
+}
+
 /// Samples between two cancel polls.
 const CANCEL_POLL_SAMPLES: usize = 4096;
 

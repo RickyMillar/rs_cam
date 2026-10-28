@@ -291,7 +291,7 @@ fn a_positive_peck_still_has_no_descent_cap() {
 #[test]
 fn set_toolpath_param_coerces_integer_to_bool() {
     // MCP clients that can only produce JSON numbers should still be
-    // able to set boolean params like `climb`, `z_blend`, etc.
+    // able to set boolean params like `climb`, `detect_flat_areas`, etc.
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // Pocket default has climb=true; flip it via integer 0.
@@ -2061,11 +2061,11 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         detect_flat_areas: false,
         region_ordering: RegionOrdering::Global,
         clearing_strategy: strategy,
-        z_blend: false,
         spindle_rpm: Some(18_000),
         min_region_cut_length_mm: 0.0,
         max_stay_down_distance_mm: Some(0.0),
         stay_down_clearance_mm: 0.5,
+        contour_each_level: false,
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
@@ -2516,6 +2516,55 @@ fn derived_rest_regions_resolve_happy_path_returns_regions() {
     assert_eq!(resolved.len(), 2, "both disjoint regions come through");
 }
 
+/// G-E (3): the read door gives the typed refusal that generation refuses
+/// with, and its text is the refusal text. Not generated, no regions,
+/// regions: `NotGenerated`, `NoRegions`, `None`.
+#[test]
+fn the_rest_boundary_refusal_is_the_generation_refusal_g_e() {
+    use crate::session::RestBoundaryRefusal;
+    let mut s = make_session();
+    let mut source_tc = make_tc(s.tools()[0].id.raw());
+    source_tc.name = "Pencil Rest".to_owned();
+    let _ = s.add_toolpath(0, source_tc).unwrap(); // id 0, index 0
+    let mut tc = make_tc(s.tools()[0].id.raw());
+    tc.boundary = derived_boundary(0);
+    let _ = s.add_toolpath(0, tc).unwrap(); // id 1, index 1
+    let cancel = AtomicBool::new(false);
+    let source = ToolpathId::from_raw(0);
+
+    let refusal = s
+        .rest_boundary_refusal(1)
+        .expect("the source has no result");
+    assert_eq!(
+        refusal,
+        RestBoundaryRefusal::NotGenerated {
+            source_toolpath_id: source,
+            source_name: "Pencil Rest".to_owned(),
+        }
+    );
+    assert_eq!(
+        expect_operation_failed(s.generate_toolpath(1, &cancel)),
+        refusal.to_string()
+    );
+
+    s.results.insert(0, fake_result_with_regions(None));
+    let refusal = s.rest_boundary_refusal(1).expect("no regions");
+    assert!(matches!(refusal, RestBoundaryRefusal::NoRegions { .. }));
+    assert_eq!(
+        expect_operation_failed(s.generate_toolpath(1, &cancel)),
+        refusal.to_string()
+    );
+
+    s.results.insert(
+        0,
+        fake_result_with_regions(Some(vec![crate::polygon::Polygon2::rectangle(
+            0.0, 0.0, 10.0, 10.0,
+        )])),
+    );
+    assert_eq!(s.rest_boundary_refusal(1), None, "the regions resolve");
+    assert_eq!(s.rest_boundary_refusal(0), None, "no derived boundary");
+}
+
 #[test]
 fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
     use crate::trace::toolpath_spans::{AnnotatedToolpath, Span, SpanKind};
@@ -2553,7 +2602,6 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
         None,
         &semantic_ctx,
         &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut crate::compute::execute::GenerationFindings::default(),
     )
     .expect("a boundary that resolves cannot refuse");
 
@@ -2589,18 +2637,17 @@ fn apply_boundary_clip_multi_clips_to_disjoint_regions() {
 }
 
 #[test]
-fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
+fn apply_boundary_clip_multi_all_regions_collapsed_refuses() {
     use crate::trace::toolpath_spans::AnnotatedToolpath;
 
-    // A tiny region with a large negative user offset collapses; with
-    // every region gone the toolpath must pass through unchanged (the
-    // single-polygon path's "boundary collapsed" semantics).
+    // A tiny region with a large negative user offset collapses. With
+    // every region gone the clip refuses (G-BOUNDCOLLAPSE, operator ruling
+    // 2026-10-28). Before, the toolpath passed through UNCLIPPED.
     let regions = vec![crate::polygon::Polygon2::rectangle(0.0, 0.0, 2.0, 2.0)];
 
     let mut tp = crate::toolpath::Toolpath::new();
     tp.feed_to(P3::new(50.0, 50.0, -1.0), 1000.0);
     tp.feed_to(P3::new(60.0, 50.0, -1.0), 1000.0);
-    let move_count = tp.moves.len();
     let annotated = AnnotatedToolpath::new(tp);
 
     let mut boundary = derived_boundary(0);
@@ -2608,54 +2655,23 @@ fn apply_boundary_clip_multi_all_regions_collapsed_returns_original() {
 
     let recorder = ToolpathSemanticRecorder::new("test-tp", "Pocket");
     let semantic_ctx = recorder.root_context();
-    let mut findings = crate::compute::execute::GenerationFindings::default();
 
-    let clipped = ProjectSession::apply_boundary_clip_multi(
+    let err = ProjectSession::apply_boundary_clip_multi(
         annotated,
         &boundary,
         &regions,
         &[],
         2.0,
         20.0,
-        // No operation here — the re-entry keeps the crossing move's
-        // cut feed, which is what this test has always pinned.
         None,
         &semantic_ctx,
         &mut crate::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut findings,
     )
-    .expect(
-        "a GENUINE collapse still passes through — Checkpoint C only \
-             refuses when the offset FAILED",
-    );
-
-    assert_eq!(
-        clipped.toolpath.moves.len(),
-        move_count,
-        "collapsed boundary set must leave the toolpath unchanged"
-    );
+    .expect_err("a collapsed boundary set must refuse, not pass through");
+    let msg = err.to_string();
     assert!(
-        clipped
-            .toolpath
-            .moves
-            .iter()
-            .all(|m| m.move_type != crate::toolpath::MoveType::Rapid),
-        "no retracts inserted when the boundary collapses"
-    );
-    // Checkpoint C, Q2: the pass-through is kept, and it is no longer
-    // silent. Before this the operator got an unclipped path and a
-    // `tracing::warn!` in a process with no subscriber.
-    let dropped = findings
-        .boundary_clip_dropped
-        .expect("a dropped containment must be recorded as a finding");
-    assert_eq!(
-        dropped.containment,
-        crate::compute::config::BoundaryContainment::default(),
-        "the finding names the containment that was requested"
-    );
-    assert_eq!(
-        dropped.source_region_count, 1,
-        "the finding names how many source regions all collapsed"
+        msg.contains("collapsed") && msg.contains("1 region"),
+        "the refusal names the collapse and the region count: {msg}"
     );
 }
 

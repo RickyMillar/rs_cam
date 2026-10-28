@@ -1212,6 +1212,42 @@ fn add_menu_items(
     for &op in OperationType::ALL_3D {
         add_op_menu_item(ui, op, setup_id, state.session(), events);
     }
+    add_geodesic_pair_menu_item(ui, setup_id, state.session(), events);
+}
+
+/// Step 7.8: the label of the add menu's template item.
+pub const MENU_GEODESIC_PAIR: &str = "Geodesic body + edges";
+
+/// Step 7.8: the hover of the template item.
+pub const MENU_GEODESIC_PAIR_HOVER: &str = "A Geodesic Adaptive rough, then a Contour \
+     Parallel rest op on the regions it leaves, with the same tool. The edge op is an \
+     ordinary op: untick it in the queue to skip it.";
+
+/// Step 7.8 (operator ruling 2026-10-28): the template "Geodesic body +
+/// edges", one item after the 3D ops. It is offered under the 3D Rough's
+/// rule (a model with a mesh), and off with that rule's reason.
+fn add_geodesic_pair_menu_item(
+    ui: &mut egui::Ui,
+    setup_id: SetupId,
+    session: &rs_cam_core::session::ProjectSession,
+    events: &mut Vec<AppEvent>,
+) {
+    if add_menu_offers(session, OperationType::Adaptive3d) {
+        if ui
+            .button(MENU_GEODESIC_PAIR)
+            .on_hover_text(MENU_GEODESIC_PAIR_HOVER)
+            .clicked()
+        {
+            events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
+            events.push(AppEvent::AddGeodesicPair);
+            ui.close();
+        }
+    } else {
+        ui.add_enabled(false, egui::Button::new(MENU_GEODESIC_PAIR))
+            .on_disabled_hover_text(format!(
+                "{MENU_GEODESIC_PAIR_HOVER}\nRequires 3D mesh (STL/STEP)"
+            ));
+    }
 }
 
 /// True when the add menu offers `op` for the models of `session`.

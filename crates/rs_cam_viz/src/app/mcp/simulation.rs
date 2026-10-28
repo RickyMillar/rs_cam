@@ -708,6 +708,29 @@ pub(crate) fn build_cut_trace_response(
     );
     resp.insert_capped("issues", issues_arr);
 
+    // G-B: the moves with a feed cap (`SimulationCutTrace::capped_moves`).
+    // The count and the lowest cap always print; the rows print only when
+    // there is one, so a trace with no cap reads as before.
+    let capped: Vec<&_> = ct
+        .capped_moves
+        .iter()
+        .filter(|c| toolpath_id.is_none_or(|id| c.toolpath_id == id))
+        .collect();
+    resp.insert_always("capped_move_count", serde_json::json!(capped.len()));
+    resp.insert_always(
+        "capped_min_feed_mm_min",
+        serde_json::json!(capped.iter().map(|c| c.feed_cap_mm_min).reduce(f64::min)),
+    );
+    if !capped.is_empty() {
+        let capped_arr = cap_json_values(
+            capped.len(),
+            capped.iter().filter_map(|c| serde_json::to_value(c).ok()),
+            req.caps.capped_moves,
+            resp.budget_mut(),
+        );
+        resp.insert_capped("capped_moves", capped_arr);
+    }
+
     // §6.E / Step 3 PR2 — drill-native outputs. `drill_summaries` always
     // surfaces (per-toolpath summary block, compact). `drill_samples` is
     // gated by `include_drill_samples` because the per-peck stream can be
@@ -750,6 +773,10 @@ pub(crate) fn build_cut_trace_response(
                 // reports the cutting-time one.
                 "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
                 "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
+                // G-WLAIRLABEL: the share of the air time that removes
+                // material (a skin cut under the air WOC); true air is
+                // air x (1 - share).
+                "air_cut_removing_share": ct.air_cut_removing_share(Some(s.toolpath_id)),
                 "low_engagement_time_s": s.low_engagement_time_s,
                 "metrics_not_applicable": s.metrics_not_applicable,
                 "runtime_by_intent": s.runtime_by_intent,

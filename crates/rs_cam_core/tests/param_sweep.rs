@@ -1547,6 +1547,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -1556,7 +1557,6 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
         entry_style: rs_cam_core::adaptive3d::EntryStyle3d::Plunge,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 
@@ -1661,38 +1661,9 @@ fn sweep_adaptive3d_clearing_strategy() {
     }
 }
 
-#[test]
-#[ignore = "instrument: expensive parameter sweep; run with `cargo test --test param_sweep -- --ignored`"]
-fn sweep_adaptive3d_z_blend() {
-    let (mesh, index) = hemisphere_mesh();
-    let cutter = FlatEndmill::new(6.35, 25.0);
-    let result = run_sweep(
-        "adaptive3d",
-        "z_blend",
-        serde_json::json!(false),
-        &[serde_json::json!(true)],
-        |ov| {
-            let mut p = default_adaptive3d_params();
-            if let Some(v) = ov {
-                p.z_blend = v.as_bool().unwrap();
-            }
-            rs_cam_core::adaptive3d::adaptive_3d_toolpath_output_with_cancel(
-                &mesh,
-                &index,
-                &cutter,
-                &p,
-                &rs_cam_core::interrupt::NeverCancel,
-                None,
-            )
-            .expect("NeverCancel never cancels")
-            .toolpath
-        },
-    );
-    for v in &result.variants {
-        let ctx = format!("adaptive3d z_blend={}", v.value);
-        assert_any_change(&v.diff, &ctx);
-    }
-}
+// GUI fix G-A (2026-10-28): `sweep_adaptive3d_z_blend` swept the Z Blend
+// dial. The dial left the format (it cut deeper than one Depth/Pass), so the
+// sweep went with it.
 
 // Removal step R4 (2026-10-28): `sweep_adaptive3d_engagement_measure`
 // swept the measure of the AgentSearch 2D sub-pass. No 3D Rough strategy

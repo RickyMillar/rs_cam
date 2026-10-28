@@ -369,7 +369,6 @@ pub(super) struct ClearZLevelContext<'a> {
     /// Load-only: passed to the slice's 2D params, which do not read it
     /// (`KeepDownLinks::WithinPassLoad`, `adaptive::path::pass_load_for`).
     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
-    pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
     /// `stamp_emitted_segment` so the planner stamps the SAME path the
     /// simulator will replay (segments_to_toolpath blends Cut paths
@@ -407,6 +406,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// them), each with its Z level. The waterline cleanup of that level
     /// skips a contour inside one.
     pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
+    /// C4 (`Adaptive3dLinking::level_contour`): the reach band and its
+    /// contour on each level. `None`: the option is off, or the rough has
+    /// no band.
+    pub(super) band_edge: std::cell::RefCell<Option<super::level_contour::BandEdge>>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -608,6 +611,28 @@ pub(super) struct PlannerCursor {
 /// planner spent seven weeks believing it had removed material its own
 /// emitted toolpath leaves standing — see
 /// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
+/// The path the emitter ships for a cut `path`: `drape_path_to_leave`,
+/// then `simplify_path_3d` at `tolerance`, then `blend_corners_3d` at
+/// `min_cutting_radius` (the order of [`stamp_emitted_segment`]'s list).
+/// C4's band state is lowered along it, as the stamp is.
+pub(super) fn shipped_cut_path(
+    path: &[P3],
+    tolerance: f64,
+    min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
+) -> Vec<P3> {
+    let draped = drape_path_to_leave(
+        path,
+        drape.mesh,
+        drape.index,
+        drape.cutter,
+        drape.stock_to_leave,
+        drape.cutter.radius(),
+    );
+    let simplified = simplify_path_3d(&draped, tolerance);
+    blend_corners_3d(&simplified, min_cutting_radius)
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -637,16 +662,7 @@ fn stamp_emitted_segment(
             // the SAME tubes the simulator will stamp from the emitted
             // feeds. Order matters: the emitter drapes BEFORE
             // simplifying, so the RDP sees the densified, lifted path.
-            let draped = drape_path_to_leave(
-                path,
-                drape.mesh,
-                drape.index,
-                drape.cutter,
-                drape.stock_to_leave,
-                drape.cutter.radius(),
-            );
-            let simplified = simplify_path_3d(&draped, tolerance);
-            let blended = blend_corners_3d(&simplified, min_cutting_radius);
+            let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape);
             // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
             // from where the tool stands, not from `blended[0]`. Stamp the
             // same polyline: the tool position, then `blended[1..]`. With
@@ -972,6 +988,29 @@ pub(super) fn step_load(
     clearance: f64,
     cutter: &StepLoadCutter<'_>,
 ) -> f64 {
+    step_load_on(
+        stock,
+        &|row, col| super::stock_top_z_at(stock, row, col),
+        p,
+        q,
+        radius,
+        clearance,
+        cutter,
+    )
+}
+
+/// [`step_load`] with the column top of each cell read by `top_at` in place
+/// of the planner stock. C4's contour on each level reads the planner stock
+/// together with the reach band, which the boundary clear took out of it.
+pub(super) fn step_load_on(
+    stock: &TriDexelStock,
+    top_at: &dyn Fn(usize, usize) -> f64,
+    p: P3,
+    q: P3,
+    radius: f64,
+    clearance: f64,
+    cutter: &StepLoadCutter<'_>,
+) -> f64 {
     let grid = &stock.z_grid;
     let cs = grid.cell_size;
     let (dx, dy) = (q.x - p.x, q.y - p.y);
@@ -1008,7 +1047,7 @@ pub(super) fn step_load(
                 if d_sq > r_sq {
                     continue;
                 }
-                let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
+                let mut top = top_at(row as usize, col as usize);
                 for j in 0..k {
                     let tj = j as f64 / n as f64;
                     let (jx, jy) = (p.x + dx * tj, p.y + dy * tj);
@@ -1047,7 +1086,7 @@ pub(super) fn step_load(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
 )]
-fn push_segment_with_stamp(
+pub(super) fn push_segment_with_stamp(
     segments: &mut Vec<Adaptive3dSegment>,
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
@@ -1372,11 +1411,6 @@ pub(super) fn clear_z_level_contour_parallel(
         "Contour-parallel EDT: generating offset contours"
     );
 
-    // Z-blend: when enabled, outer contours stay flat at z_level and inner
-    // contours progressively descend toward the terrain surface.
-    let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
-
     // The starting threshold determines the outermost contour offset. For wide
     // material regions (max_dist >> tool_radius), start at tool_radius_cells so
     // the tool's outer edge just reaches the boundary. For narrower or annular
@@ -1388,14 +1422,6 @@ pub(super) fn clear_z_level_contour_parallel(
     while threshold < max_dist {
         check_cancel(cancel)?;
 
-        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
-        // Only active when z_blend is enabled; otherwise all passes cut at z_level.
-        let blend = if z_blend_enabled && offset_range > 1e-6 {
-            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
         // Threshold the EDT: cells with distance > threshold are "inside" the offset
         let mask: Vec<bool> = edt.iter().map(|&d| d > threshold).collect();
         let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
@@ -1405,10 +1431,10 @@ pub(super) fn clear_z_level_contour_parallel(
                 continue;
             }
 
-            // Z-blended surface drape: outer passes cut near z_level (flat),
-            // inner passes progressively descend toward the terrain surface.
-            // This spreads Z movement across all passes instead of a sudden
-            // plunge on the innermost pass.
+            // Each ring cuts at its level, or on the surface (plus the stock
+            // to leave) where the surface is above the level. G-A (operator
+            // ruling D-3, 2026-10-28): the Z Blend lerp toward the surface is
+            // gone; it cut inner rings deeper than one Depth/Pass.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
                 let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
@@ -1417,9 +1443,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 } else {
                     surf_z + ctx.stock_to_leave // actual terrain — may be below z_level
                 };
-                // Lerp: blend=0 → z_level (flat), blend=1 → target_z (terrain)
-                // Clamp so we never cut below the next Z level's floor.
-                let z = (z_level + blend * (target_z - z_level)).max(target_z);
+                let z = z_level.max(target_z);
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
@@ -1706,6 +1730,7 @@ pub(super) fn waterline_cleanup(
     min_cutting_radius: f64,
     stock_to_leave: f64,
     ctx: &ClearZLevelContext<'_>,
+    keep: Option<CleanupKeep<'_>>,
     segments: &mut Vec<Adaptive3dSegment>,
     cursor: &mut PlannerCursor,
     debug_ctx: Option<&ToolpathDebugContext>,
@@ -1788,19 +1813,6 @@ pub(super) fn waterline_cleanup(
             }
         }
 
-        push_segment_with_stamp(
-            segments,
-            material_stock,
-            lut,
-            tool_radius,
-            cursor,
-            Adaptive3dSegment::Rapid(contour[0]),
-            safe_z,
-            tolerance,
-            min_cutting_radius,
-            &drape,
-        );
-
         let mut cleanup_path = vec![contour[0]];
         for i in 0..contour.len() {
             let a = contour[i];
@@ -1818,18 +1830,50 @@ pub(super) fn waterline_cleanup(
             }
         }
         cleanup_path.push(contour[0]);
-        push_segment_with_stamp(
-            segments,
-            material_stock,
-            lut,
-            tool_radius,
-            cursor,
-            Adaptive3dSegment::Cut(cleanup_path),
-            safe_z,
-            tolerance,
-            min_cutting_radius,
-            &drape,
-        );
+        // C4b (By Area with "Contour each level"): only the points `keep`
+        // accepts, read once on the stock before this contour. No `keep`
+        // (Global, the By Area bottom run): the whole closed contour, as
+        // before.
+        let runs = match keep {
+            None => vec![cleanup_path],
+            Some(keep) => {
+                let flags: Vec<bool> = cleanup_path
+                    .iter()
+                    .map(|p| keep(material_stock, *p))
+                    .collect();
+                kept_runs(&cleanup_path, &flags)
+            }
+        };
+        if runs.is_empty() {
+            continue;
+        }
+        for run in runs {
+            let Some(&first) = run.first() else { continue };
+            push_segment_with_stamp(
+                segments,
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                Adaptive3dSegment::Rapid(first),
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                &drape,
+            );
+            push_segment_with_stamp(
+                segments,
+                material_stock,
+                lut,
+                tool_radius,
+                cursor,
+                Adaptive3dSegment::Cut(run),
+                safe_z,
+                tolerance,
+                min_cutting_radius,
+                &drape,
+            );
+        }
         traced += 1;
     }
     if !contours.is_empty() {
@@ -1859,6 +1903,40 @@ pub(super) fn waterline_cleanup(
 /// Centroid (vertex average) of a polygon's exterior, as an (x, y)
 /// anchor for region-ordering. Vertex-average, not the area-weighted
 /// centroid — cheaper and adequate as a travel-ordering proxy.
+/// C4b: which points of a wall-cleanup contour `waterline_cleanup` may cut,
+/// read on the planner stock (`level_contour::keeps_to_region`).
+pub(super) type CleanupKeep<'a> = &'a dyn Fn(&TriDexelStock, P3) -> bool;
+
+/// C4b: the runs of the closed path `path` (first point repeated last)
+/// whose `flags` are set, each of two points or more. All set: the path
+/// itself. A run that reaches the end continues into the run at the start,
+/// because the path is closed.
+fn kept_runs(path: &[P3], flags: &[bool]) -> Vec<Vec<P3>> {
+    if flags.iter().all(|&f| f) {
+        return vec![path.to_vec()];
+    }
+    let mut runs: Vec<Vec<P3>> = Vec::new();
+    let mut cur: Vec<P3> = Vec::new();
+    for (p, &f) in path.iter().zip(flags) {
+        if f {
+            cur.push(*p);
+        } else if !cur.is_empty() {
+            runs.push(std::mem::take(&mut cur));
+        }
+    }
+    // The closing point repeats the first: join the last run to the first.
+    let closes = flags.first().copied().unwrap_or(false) && flags.last().copied().unwrap_or(false);
+    if closes && !runs.is_empty() && !cur.is_empty() {
+        let head = runs.remove(0);
+        cur.extend(head.into_iter().skip(1));
+    }
+    if !cur.is_empty() {
+        runs.push(cur);
+    }
+    runs.retain(|r| r.len() >= 2);
+    runs
+}
+
 fn polygon_centroid_xy(poly: &crate::polygon::Polygon2) -> (f64, f64) {
     let n = poly.exterior.len().max(1) as f64;
     let (sx, sy) = poly
@@ -2814,7 +2892,7 @@ fn grown_outlines(
 }
 
 /// The rings of a polygon: its exterior, then its holes.
-fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
+pub(super) fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
     std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
 }
 

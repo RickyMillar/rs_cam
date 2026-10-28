@@ -1294,6 +1294,13 @@ impl RsCamApp {
             }
         }
 
+        // G-D (§4): a refused interactive open, in the same modal frame.
+        if let Some(refusal) = self.controller.load_refusal()
+            && crate::ui::load_refusal_modal::draw(ctx, refusal)
+        {
+            self.controller.clear_load_refusal();
+        }
+
         // Toast notifications (bottom-right corner)
         {
             self.controller.gc_notifications();

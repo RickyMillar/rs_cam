@@ -298,6 +298,13 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
     if f.degenerate() {
         out.push(make(ids::GEOM_WATERLINE_LADDER_EMPTY));
     }
+    // W4 (D69 §4): one line; the GUI shows the ladder finding on hover.
+    if f.part_unheld {
+        out.push(Diagnostic {
+            message: f.part_unheld_message(),
+            ..make(ids::GEOM_WATERLINE_PART_UNHELD)
+        });
+    }
     out
 }
 

@@ -1743,6 +1743,12 @@ fn waterline_after_pocket(source: StockSource, feed_rate: f64) -> WaterlineArm {
         "waterline",
         OperationConfig::Waterline(WaterlineConfig {
             feed_rate: Some(feed_rate),
+            // The claims read the cut points level by level. The helical
+            // waterline (D69 §2, on by default) cuts a chain on a descent
+            // between the levels, so this file pins the stacked form. The
+            // helix runs the same rest filter per level
+            // (`ops::waterline::waterline_level_rings`).
+            helical: false,
             ..WaterlineConfig::default()
         }),
         rs_cam_core::ids::ToolId::from_raw(tool_id),

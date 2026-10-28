@@ -22,7 +22,7 @@
 //! | `the_pre_fix_shape_keeps_the_un_offset_boundary` | **the red.** The exact expression the three sites ran, on a shrink that collapses: the un-offset polygon survives |
 //! | `a_collapsed_user_offset_now_drops_the_containment` | D-3b/D-3c: dropped, not un-offset — the multi-region path's semantics |
 //! | `a_failed_user_offset_refuses` | the failure arm, distinguished from the collapse |
-//! | `a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through` | end-to-end through `apply_boundary_clip`: no silent resurrection of the un-offset stock rectangle, and the operator is told |
+//! | `a_collapsed_user_offset_refuses_at_the_clip` | end-to-end through `apply_boundary_clip`: no silent resurrection of the un-offset stock rectangle; the clip refuses (G-BOUNDCOLLAPSE) |
 //!
 //! The failure arm is `debug_assertions`-gated for the reason recorded in
 //! `boundary_clip_escape_f1.rs`: the `NaN` class trips only `debug_assert!`s
@@ -37,7 +37,6 @@
 )]
 
 use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
-use rs_cam_core::compute::execute::GenerationFindings;
 use rs_cam_core::geo::{BoundingBox3, P2, P3};
 use rs_cam_core::geometry::boundary::{UserOffsetOutcome, apply_user_boundary_offset};
 use rs_cam_core::polygon::{Polygon2, offset_polygon};
@@ -164,11 +163,10 @@ fn a_failed_user_offset_refuses() {
 /// collapse that returned `None` would have been resurrected as exactly the
 /// un-offset rectangle the collapse says is wrong.
 #[test]
-fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
+fn a_collapsed_user_offset_refuses_at_the_clip() {
     let mut tp = Toolpath::new();
     tp.feed_to(P3::new(1.0, 1.0, -1.0), 1000.0);
     tp.feed_to(P3::new(500.0, 500.0, -1.0), 1000.0);
-    let move_count = tp.moves.len();
     let annotated = AnnotatedToolpath::new(tp);
 
     let boundary = BoundaryConfig {
@@ -182,9 +180,12 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
     let recorder =
         rs_cam_core::trace::semantic_trace::ToolpathSemanticRecorder::new("f8-sentry", "Pocket");
     let semantic_ctx = recorder.root_context();
-    let mut findings = GenerationFindings::default();
 
-    let clipped = ProjectSession::apply_boundary_clip(
+    // G-BOUNDCOLLAPSE (operator ruling 2026-10-28): a containment emptied
+    // by the USER offset refuses. Before Checkpoint C this path silently
+    // reused the un-offset stock rectangle; until 2026-10-28 it passed the
+    // path through unclipped with a report-only finding.
+    let err = ProjectSession::apply_boundary_clip(
         annotated,
         &boundary,
         &stock_bbox,
@@ -197,20 +198,11 @@ fn a_collapsed_user_offset_reaches_the_clip_as_a_reported_pass_through() {
         None,
         &semantic_ctx,
         &mut rs_cam_core::trace::transform_provenance::ReconcileSet::new(Some(&recorder), None),
-        &mut findings,
     )
-    .expect("a genuine collapse passes through — only a FAILURE refuses");
-
-    assert_eq!(
-        clipped.toolpath.moves.len(),
-        move_count,
-        "a collapsed containment passes the toolpath through, as ruled"
+    .expect_err("a collapsed containment refuses, as ruled");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("Center") && msg.contains("collapsed"),
+        "the refusal names the containment and the collapse: {msg}"
     );
-    let dropped = findings.boundary_clip_dropped.expect(
-        "a containment emptied by the USER offset must be reported too — \
-         before Checkpoint C this path silently reused the un-offset stock \
-         rectangle and said nothing",
-    );
-    assert_eq!(dropped.containment, BoundaryContainment::Center);
-    assert_eq!(dropped.source_region_count, 1);
 }

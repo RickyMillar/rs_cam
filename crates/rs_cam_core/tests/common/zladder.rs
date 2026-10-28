@@ -17,7 +17,7 @@
 //! # MEASURED on the AS013 fixture, 2026-08-21 — read this before building a per-pass ratio bar
 //!
 //! `ux_3d_terrain.toml` + adaptive3d `depth_per_pass = 3.0`,
-//! `stock_to_leave_axial = 0.5`, `fine_stepdown = 0.0`, `z_blend = false`,
+//! `stock_to_leave_axial = 0.5`, `fine_stepdown = 0.0`,
 //! `RegionOrdering::Global`. The ladder is **20 rungs from 20 DepthPass spans**
 //! (19 WaterlineCleanup spans excluded), and it is **not uniform**:
 //!

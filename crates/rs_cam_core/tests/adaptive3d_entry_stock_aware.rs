@@ -159,6 +159,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
@@ -168,7 +169,6 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
         entry_style: style,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 

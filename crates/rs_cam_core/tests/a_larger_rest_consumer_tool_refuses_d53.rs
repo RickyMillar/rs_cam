@@ -15,8 +15,12 @@
 //! consumer's tool and containment vary:
 //! 1. Ø8 with `Center` or `Outside`: refused, and the refusal names both
 //!    radii and both fixes;
-//! 2. Ø8 with `Inside`, Ø6 with `Center`, Ø4 with `Center`: not refused by
-//!    this rule, and the consumer generates.
+//! 2. Ø6 with `Center`, Ø4 with `Center`: not refused by this rule, and
+//!    the consumer generates;
+//! 3. Ø8 with `Inside`: not refused by this rule. On the narrow channel the
+//!    inset leaves no area, so G-BOUNDCOLLAPSE refuses it (operator ruling
+//!    2026-10-28). On a channel twice the Ø8 tool wide, the consumer
+//!    generates.
 
 #![expect(
     clippy::expect_used,
@@ -49,6 +53,10 @@ const MESH_HALF: f64 = 40.0;
 const MESH_STEP: f64 = 0.5;
 const CHANNEL_HALF_LENGTH: f64 = 30.0;
 const CHANNEL_HALF_WIDTH: f64 = 4.8;
+/// A channel `2 · LARGER_DIAMETER` = 16 mm wide. Its rest region keeps area
+/// under an `Inside` inset by the Ø8 radius (measured: one region of about
+/// 3339 mm², against about 249 mm² on the 4.8 mm half-width channel).
+const WIDE_CHANNEL_HALF_WIDTH: f64 = LARGER_DIAMETER;
 const WIDE_HALF_X: f64 = 34.0;
 const WIDE_HALF_Y: f64 = 24.0;
 const WIDE_FLOOR_Z: f64 = 7.0;
@@ -68,8 +76,17 @@ fn rough(strategy: ClearingStrategy) -> OperationConfig {
 /// Op 0 the Ø6 rough (rest analysis on), op 1 its consumer with a tool of
 /// `consumer_diameter` and `containment`. Op 0 is generated.
 fn session(consumer_diameter: f64, containment: BoundaryContainment) -> ProjectSession {
+    session_on(CHANNEL_HALF_WIDTH, consumer_diameter, containment)
+}
+
+/// [`session`] on a channel of half-width `channel_half_width`.
+fn session_on(
+    channel_half_width: f64,
+    consumer_diameter: f64,
+    containment: BoundaryContainment,
+) -> ProjectSession {
     let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
-        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH {
+        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= channel_half_width {
             FLOOR_Z
         } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
             WIDE_FLOOR_Z
@@ -143,6 +160,7 @@ fn a_larger_rest_consumer_tool_refuses() {
                     format!("{theirs:.3} mm"),
                     "Inside".to_owned(),
                     "no larger than".to_owned(),
+                    format!("Ø{SOURCE_DIAMETER:.3}"),
                 ] {
                     assert!(
                         text.contains(&needle),
@@ -158,10 +176,8 @@ fn a_larger_rest_consumer_tool_refuses() {
         }
     }
 
-    // 2. Inside with the larger tool, or a tool no larger than the
-    // source's: the consumer generates.
+    // 2. A tool no larger than the source's: the consumer generates.
     for (diameter, containment) in [
-        (LARGER_DIAMETER, BoundaryContainment::Inside),
         (SOURCE_DIAMETER, BoundaryContainment::Center),
         (SMALLER_DIAMETER, BoundaryContainment::Center),
     ] {
@@ -174,4 +190,99 @@ fn a_larger_rest_consumer_tool_refuses() {
             "Ø{diameter} with {containment:?}: no result"
         );
     }
+
+    // 3. Inside with the larger tool. D53 does not refuse it. On the narrow
+    // channel the inset leaves no area: G-BOUNDCOLLAPSE refuses, with the
+    // read door's sentence. On the wide channel the consumer generates.
+    let mut narrow = session(LARGER_DIAMETER, BoundaryContainment::Inside);
+    let collapse = narrow
+        .boundary_collapse(1)
+        .expect("the inputs resolve")
+        .expect("narrow channel: the Ø8 Inside inset leaves no area");
+    match generate_consumer(&mut narrow) {
+        Err(SessionError::OperationFailed(text)) => assert_eq!(
+            text,
+            collapse.message(),
+            "narrow channel: the refusal is the G-BOUNDCOLLAPSE sentence"
+        ),
+        other => panic!("narrow channel: Ø8 Inside was not refused: {other:?}"),
+    }
+    assert!(
+        narrow.result_at(1).is_none(),
+        "narrow channel: a refused consumer holds a result"
+    );
+
+    let mut wide = session_on(
+        WIDE_CHANNEL_HALF_WIDTH,
+        LARGER_DIAMETER,
+        BoundaryContainment::Inside,
+    );
+    assert_eq!(
+        wide.boundary_collapse(1).expect("the inputs resolve"),
+        None,
+        "wide channel: the Ø8 Inside inset keeps area"
+    );
+    if let Err(e) = generate_consumer(&mut wide) {
+        panic!("wide channel: Ø8 with Inside did not generate: {e}");
+    }
+    assert!(wide.result_at(1).is_some(), "wide channel: no result");
+}
+
+/// G-C (§2 a): the read doors of the GUI. `larger_rest_consumer` is `Some`
+/// for the larger tool whatever the containment, and `None` for an equal
+/// tool. `larger_rest_consumer_refusal` is the generation refusal word for
+/// word, and `None` under `Inside`. `boundary_collapse_with` answers "would
+/// Inside collapse?" before any write: yes on the narrow channel, no on the
+/// wide one.
+#[test]
+fn the_read_doors_answer_as_generation_does_g_c() {
+    let (own, theirs) = (LARGER_DIAMETER / 2.0, SOURCE_DIAMETER / 2.0);
+    for containment in [
+        BoundaryContainment::Center,
+        BoundaryContainment::Outside,
+        BoundaryContainment::Inside,
+    ] {
+        let s = session(LARGER_DIAMETER, containment);
+        let source = s.toolpath_configs()[0].id;
+        let larger = s
+            .larger_rest_consumer(1, source)
+            .expect("a larger tool, whatever the containment");
+        assert!((larger.tool_radius_mm - own).abs() < 1e-9);
+        assert!((larger.source_tool_radius_mm - theirs).abs() < 1e-9);
+        assert!((larger.overrun_mm() - (own - theirs)).abs() < 1e-9);
+    }
+    let mut center = session(LARGER_DIAMETER, BoundaryContainment::Center);
+    let refusal = center
+        .larger_rest_consumer_refusal(1)
+        .expect("Center refuses");
+    match generate_consumer(&mut center) {
+        Err(SessionError::OperationFailed(text)) => assert_eq!(text, refusal),
+        other => panic!("Center did not refuse: {other:?}"),
+    }
+    let inside = session(LARGER_DIAMETER, BoundaryContainment::Inside);
+    assert_eq!(inside.larger_rest_consumer_refusal(1), None);
+    let equal = session(SOURCE_DIAMETER, BoundaryContainment::Center);
+    let source = equal.toolpath_configs()[0].id;
+    assert_eq!(equal.larger_rest_consumer(1, source), None);
+
+    let to_inside = |s: &ProjectSession| {
+        let mut boundary = s.toolpath_configs()[1].boundary.clone();
+        boundary.containment = BoundaryContainment::Inside;
+        s.boundary_collapse_with(1, &boundary)
+            .expect("the inputs resolve")
+    };
+    assert!(
+        to_inside(&center).is_some(),
+        "Inside collapses on the narrow channel"
+    );
+    let wide = session_on(
+        WIDE_CHANNEL_HALF_WIDTH,
+        LARGER_DIAMETER,
+        BoundaryContainment::Center,
+    );
+    assert_eq!(
+        to_inside(&wide),
+        None,
+        "Inside keeps area on the wide channel"
+    );
 }
