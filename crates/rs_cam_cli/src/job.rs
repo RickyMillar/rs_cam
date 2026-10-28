@@ -241,6 +241,21 @@ pub struct OperationDef {
     /// no selection refuses it by name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<rs_cam_core::selection::Selection>,
+    /// The machining boundary of the op (F7): the `[operation.boundary]`
+    /// table in the shape of the project file's `boundary` block
+    /// (`enabled`, `source`, `containment`, `offset`). Empty: the draft
+    /// boundary. The `set_boundary_config` command applies it, before the
+    /// selections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<rs_cam_core::compute::config::BoundaryConfig>,
+    /// The boundary selection of the op (F7, the twin of `selection`): the
+    /// `[operation.boundary_selection]` table in the shape of the project
+    /// file's selection. The `edit_toolpath_selection` command applies it
+    /// with `target: boundary` after the boundary, so it composes with a
+    /// `boundary` whose `source` is `selection`. On a boundary whose source
+    /// is not a selection it refuses, as MCP does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_selection: Option<rs_cam_core::selection::Selection>,
     /// The floor of a Pocket, Profile, Zigzag or Adaptive 2D (geometry
     /// selection P3.3), in the project-file spelling:
     /// `floor = { from = "top", depth = 6.0 }`. Empty: the default of the
@@ -268,6 +283,8 @@ impl OperationDef {
         "stock_z",
         "dressups",
         "selection",
+        "boundary",
+        "boundary_selection",
         "floor",
     ];
 
@@ -1305,6 +1322,14 @@ fn job_op_session(
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("dressup '{}': {e}", def.name))?;
     }
+    if let Some(boundary) = &op.boundary {
+        let command = Command::SetBoundaryConfig(rs_cam_core::session::SetBoundaryConfigArgs {
+            index: tp_index,
+            boundary: boundary.clone(),
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("boundary: {e}"))?;
+    }
     if let Some(selection) = &op.selection {
         let command = Command::EditSelection(EditSelectionArgs {
             index: tp_index,
@@ -1313,6 +1338,15 @@ fn job_op_session(
         });
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("selection: {e}"))?;
+    }
+    if let Some(selection) = &op.boundary_selection {
+        let command = Command::EditSelection(EditSelectionArgs {
+            index: tp_index,
+            target: rs_cam_core::session::SelectionTarget::Boundary,
+            edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(selection.clone())),
+        });
+        let _ = crate::command::apply_command(&mut session, command)
+            .map_err(|e| anyhow::anyhow!("boundary_selection: {e}"))?;
     }
     if let Some(floor) = op.floor.clone() {
         let command = Command::SetToolpathFloor(SetToolpathFloorArgs {
@@ -1504,6 +1538,122 @@ mod tests {
             .expect("the status");
         assert_eq!(report.rows.len(), 1, "the outline only");
         assert!(report.rows[0].outline);
+    }
+
+    /// F7: the job key `boundary_selection` writes the boundary selection
+    /// through `EditSelection { target: Boundary }`, after the job key
+    /// `boundary`. The stored selection survives a save and a load, and
+    /// `selection_status(Boundary)` equals the core door that MCP
+    /// `edit_toolpath_selection target=boundary` drives (the same
+    /// `Command::EditSelection` on the job session with no
+    /// `boundary_selection` key).
+    #[test]
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn a_job_boundary_selection_replays_one_selection_f7() {
+        use rs_cam_core::selection::{Filter, Rule, Selection, SelectionEdit, SourceRef};
+        use rs_cam_core::session::{Command, EditSelectionArgs, ProjectSession, SelectionTarget};
+        let drawing = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf")
+            .canonicalize()
+            .expect("the fixture exists");
+        let dir = std::env::temp_dir().join(format!("rs_cam_f7_job_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let boundary = "[operation.boundary]\nenabled = true\ncontainment = \"center\"\n\
+                        offset = 0.0\nsource = { selection = { selection = {} } }\n";
+        let rule = "[[operation.boundary_selection.rules]]\nsource = \"toolpath_model\"\n\
+                    filter = { layers = [\"CUT\"] }\n";
+        let session_of = |tail: &str| {
+            let job_path = dir.join("job.toml");
+            std::fs::write(
+                &job_path,
+                format!(
+                    "[job]\noutput = \"out.nc\"\n\n[tools.flat_3mm]\ntype = \"end_mill\"\n\
+                     diameter = 3.0\n\n[[operation]]\ntype = \"pocket\"\ninput = \"{}\"\n\
+                     tool = \"flat_3mm\"\nstock_z = 12.0\n{tail}",
+                    drawing.display()
+                ),
+            )
+            .expect("write the job");
+            let job = parse_job_file(&job_path).expect("the job parses");
+            let op = &job.operation[0];
+            let tool_def = &job.tools[&op.tool];
+            job_op_session(&job, &dir, 0, op, tool_def, false)
+        };
+        let want = Selection::from_rules(vec![Rule {
+            source: SourceRef::ToolpathModel,
+            filter: Filter {
+                layers: vec!["CUT".to_owned()],
+                ..Filter::default()
+            },
+        }]);
+
+        // The job: boundary + boundary_selection.
+        let (job_session, index) =
+            session_of(&format!("{boundary}{rule}")).expect("the job session");
+        let tc = &job_session.toolpath_configs()[index];
+        assert_eq!(
+            tc.selection_of(SelectionTarget::Boundary).expect("a slot"),
+            Some(&want),
+            "the job wrote its boundary selection"
+        );
+
+        // Save and load: the stored boundary selection is the job's.
+        let path = dir.join("f7.toml");
+        job_session.save(&path).expect("save");
+        let loaded = ProjectSession::load(&path).expect("load");
+        let loaded_tc = &loaded.toolpath_configs()[index];
+        assert_eq!(
+            loaded_tc
+                .selection_of(SelectionTarget::Boundary)
+                .expect("a slot"),
+            Some(&want),
+            "the boundary selection survives a save and a load"
+        );
+
+        // The core door (MCP `edit_toolpath_selection target=boundary`).
+        let (mut twin, twin_index) = session_of(boundary).expect("the twin session");
+        let _ = twin
+            .apply(Command::EditSelection(EditSelectionArgs {
+                index: twin_index,
+                target: SelectionTarget::Boundary,
+                edit: SelectionEdit::Replace(Box::new(want.clone())),
+            }))
+            .expect("the boundary is a selection");
+        let twin_tc = twin.toolpath_configs()[twin_index].clone();
+        let job_report = job_session
+            .selection_status(tc, SelectionTarget::Boundary)
+            .expect("the job status");
+        let twin_report = twin
+            .selection_status(&twin_tc, SelectionTarget::Boundary)
+            .expect("the twin status");
+        assert_eq!(*job_report, *twin_report, "one selection_status, two doors");
+        assert!(
+            !job_report.selected.is_empty(),
+            "the rule selects the CUT square"
+        );
+
+        // A boundary that is not a selection refuses, with the core text.
+        let refused = session_of(rule)
+            .err()
+            .expect("boundary_selection on a stock boundary refuses");
+        let (mut plain, plain_index) = session_of("").expect("the plain session");
+        let core = plain
+            .apply(Command::EditSelection(EditSelectionArgs {
+                index: plain_index,
+                target: SelectionTarget::Boundary,
+                edit: SelectionEdit::Replace(Box::new(want)),
+            }))
+            .expect_err("the core door refuses too");
+        assert_eq!(
+            refused.to_string(),
+            format!("boundary_selection: {core}"),
+            "the job gives the core (MCP) text"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

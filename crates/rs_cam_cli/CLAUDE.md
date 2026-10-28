@@ -46,6 +46,9 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   `parse_job_file` refuses an unknown key. The job key `stock_z` (`run
   --stock-z`) states the thickness of a drawing stock. The job key
   `selection` (P2.7) has the project-file shape and goes through `EditSelection`;
+  F7: the job key `boundary` (the project-file boundary block, `SetBoundaryConfig`) and
+  `boundary_selection` (the selection shape, `EditSelection` with `target: Boundary`, after `boundary`;
+  a boundary that is not a selection refuses with the MCP text);
   the job key `floor` (P3.3) has the project-file shape and goes through `SetToolpathFloor`.
 
 ## Verification and sweeps

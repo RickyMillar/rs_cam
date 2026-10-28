@@ -492,9 +492,8 @@ macro_rules! for_each_command {
                  // selection writes the new boundary with this command.
                  gui: Reach::Reached,
                  mcp: Reach::Reached,
-                 cli: Reach::Skip(
-                     "the batch CLI exposes no such command",
-                 ),
+                 // F7: the job key `boundary`.
+                 cli: Reach::Reached,
              }),
             (Command, SetRestAnalysisConfig, "set_rest_analysis_config",
              SetRestAnalysisConfigArgs, Effects,
