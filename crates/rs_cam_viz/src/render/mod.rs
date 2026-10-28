@@ -105,13 +105,92 @@ pub struct LineVertex {
     pub color: [f32; 3],
 }
 
+/// The scene MSAA sample count. wgpu guarantees 4 samples for the app
+/// colour formats and `Depth32Float`; a higher count needs an adapter
+/// feature that egui does not request.
+pub const MSAA_SAMPLES: u32 = 4;
+
+/// The scene sample count that this adapter gives for `format`.
+///
+/// The value is [`MSAA_SAMPLES`] when the adapter supports that count for
+/// `format` and for `Depth32Float`. Otherwise the value is 1.
+pub fn scene_sample_count(adapter: &wgpu::Adapter, format: wgpu::TextureFormat) -> u32 {
+    let supported = |f: wgpu::TextureFormat| {
+        adapter
+            .get_texture_format_features(f)
+            .flags
+            .sample_count_supported(MSAA_SAMPLES)
+    };
+    if supported(format) && supported(wgpu::TextureFormat::Depth32Float) {
+        MSAA_SAMPLES
+    } else {
+        1
+    }
+}
+
 /// Offscreen render targets with depth buffer.
 struct OffscreenTargets {
+    /// The multisampled colour target. It is `None` when the sample count
+    /// is 1. The pass resolves it into `color_view`.
+    msaa_color_view: Option<wgpu::TextureView>,
+    /// The single-sample colour: the resolve target and the blit source.
     color_view: wgpu::TextureView,
+    /// The depth target at the scene sample count.
     depth_view: wgpu::TextureView,
     blit_bind_group: wgpu::BindGroup,
     width: u32,
     height: u32,
+}
+
+impl OffscreenTargets {
+    /// Begins the 3D scene pass on these targets. This is the one function
+    /// that builds the scene pass: the frame and the headless door both
+    /// call it.
+    ///
+    /// With MSAA the pass renders into `msaa_color_view` and resolves into
+    /// `color_view`. At sample count 1 it renders into `color_view`.
+    fn begin_scene_pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder) -> wgpu::RenderPass<'e> {
+        let (view, resolve_target, store) = match &self.msaa_color_view {
+            // The multisampled colour resolves into `color_view` at the end
+            // of the pass. Nothing reads the samples after the resolve.
+            Some(msaa) => (msaa, Some(&self.color_view), wgpu::StoreOp::Discard),
+            None => (&self.color_view, None, wgpu::StoreOp::Store),
+        };
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("3d_scene"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear({
+                        // UP3. This was (0.102, 0.102, 0.149) — the old
+                        // violet (26, 26, 38), the same literal the four
+                        // CentralPanel fills carried before UP1. The
+                        // panels moved onto the cold ramp and the
+                        // viewport did not, so the largest area on
+                        // screen fought everything around it.
+                        //
+                        // §2.3 names SURFACE_SUNKEN the viewport ground.
+                        let [r, g, b] =
+                            crate::ui::tokens::as_unit_rgb(crate::ui::tokens::SURFACE_SUNKEN);
+                        wgpu::Color { r, g, b, a: 1.0 }
+                    }),
+                    store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    // No reader follows the pass: the blit samples colour only.
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        })
+    }
 }
 
 /// GPU data for polygon/DXF/SVG line rendering.
@@ -176,6 +255,9 @@ pub struct RenderResources {
     // Offscreen render targets (resized per frame)
     offscreen: Option<OffscreenTargets>,
     target_format: wgpu::TextureFormat,
+    /// The scene sample count. `new` stores it once; every scene pipeline,
+    /// the multisampled colour and the depth target read it.
+    sample_count: u32,
 
     // Scene data
     pub mesh_data_list: Vec<MeshGpuData>,
@@ -270,7 +352,21 @@ pub struct RenderResources {
 }
 
 impl RenderResources {
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> Self {
+    /// Builds every viewport pipeline. `sample_count` is the scene sample
+    /// count from [`scene_sample_count`]. Every scene pipeline and the
+    /// offscreen colour and depth targets read this one value.
+    pub fn new(
+        device: &wgpu::Device,
+        target_format: wgpu::TextureFormat,
+        sample_count: u32,
+    ) -> Self {
+        // One sample count for every scene pipeline. A pipeline and an
+        // attachment with different counts fail at `begin_render_pass`.
+        let scene_multisample = wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        };
         // --- Mesh pipeline (renders to offscreen with depth) ---
         let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("mesh_shader"),
@@ -355,7 +451,7 @@ impl RenderResources {
                 ..Default::default()
             },
             depth_stencil: Some(depth_stencil.clone()),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: scene_multisample,
             multiview_mask: None,
             cache: None,
         });
@@ -468,7 +564,7 @@ impl RenderResources {
                 ..Default::default()
             },
             depth_stencil: Some(depth_stencil.clone()),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: scene_multisample,
             multiview_mask: None,
             cache: None,
         });
@@ -503,7 +599,7 @@ impl RenderResources {
                     ..Default::default()
                 },
                 depth_stencil: Some(depth_read_only),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: scene_multisample,
                 multiview_mask: None,
                 cache: None,
             });
@@ -538,7 +634,7 @@ impl RenderResources {
                     ..Default::default()
                 },
                 depth_stencil: Some(depth_stencil.clone()),
-                multisample: wgpu::MultisampleState::default(),
+                multisample: scene_multisample,
                 multiview_mask: None,
                 cache: None,
             });
@@ -647,7 +743,7 @@ impl RenderResources {
                 ..Default::default()
             },
             depth_stencil: Some(depth_stencil),
-            multisample: wgpu::MultisampleState::default(),
+            multisample: scene_multisample,
             multiview_mask: None,
             cache: None,
         });
@@ -711,6 +807,7 @@ impl RenderResources {
                 ..Default::default()
             },
             depth_stencil: None, // Blit into egui pass (no depth)
+            // egui's pass is single-sample, so the blit stays at count 1.
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
@@ -751,6 +848,7 @@ impl RenderResources {
             blit_sampler,
             offscreen: None,
             target_format,
+            sample_count,
             mesh_data_list: Vec::new(),
             enriched_mesh_data_list: Vec::new(),
             grid_data,
@@ -785,6 +883,54 @@ impl RenderResources {
         }
     }
 
+    /// The scene sample count that `new` stored.
+    pub fn sample_count(&self) -> u32 {
+        self.sample_count
+    }
+
+    /// Test door: renders one scene frame without egui (G-PIPESMOKE).
+    ///
+    /// A pipeline and an attachment with different sample counts fail at
+    /// pass time, not at pipeline creation. So the door runs
+    /// `ensure_offscreen` and records the frame's own scene pass with an
+    /// empty callback that draws the grid. A second pass from the same
+    /// `begin_scene_pass` sets each scene pipeline once. The door then
+    /// submits, so a validation error reaches the caller's error scope.
+    #[doc(hidden)]
+    pub fn render_headless_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+    ) {
+        self.ensure_offscreen(device, width, height);
+        let Some(offscreen) = self.offscreen.as_ref() else {
+            return;
+        };
+        let callback = ViewportCallback {
+            show_grid: true,
+            ..ViewportCallback::empty(width, height)
+        };
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("headless_frame"),
+        });
+        callback.record_scene_pass(self, offscreen, &mut encoder);
+        {
+            let mut pass = offscreen.begin_scene_pass(&mut encoder);
+            for pipeline in [
+                &self.mesh_pipeline,
+                &self.sim_mesh_pipeline,
+                &self.height_plane_pipeline,
+                &self.colored_opaque_pipeline,
+                &self.line_pipeline,
+            ] {
+                pass.set_pipeline(pipeline);
+            }
+        }
+        queue.submit(Some(encoder.finish()));
+    }
+
     /// Ensure offscreen render targets exist at the given size.
     fn ensure_offscreen(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         let max_tex = self.gpu_limits.max_texture_size;
@@ -804,6 +950,26 @@ impl RenderResources {
             depth_or_array_layers: 1,
         };
 
+        gpu_safety::log_offscreen_budget(width, height, self.sample_count, self.target_format);
+
+        // The multisampled colour. The pass only renders into it and
+        // resolves it, so it needs no TEXTURE_BINDING.
+        let msaa_color_view = (self.sample_count > 1).then(|| {
+            device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some("offscreen_color_msaa"),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: self.sample_count,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.target_format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+                .create_view(&Default::default())
+        });
+
+        // The single-sample colour: the resolve target and the blit source.
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen_color"),
             size,
@@ -819,7 +985,7 @@ impl RenderResources {
             label: Some("offscreen_depth"),
             size,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: self.sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -845,6 +1011,7 @@ impl RenderResources {
         });
 
         self.offscreen = Some(OffscreenTargets {
+            msaa_color_view,
             color_view,
             depth_view,
             blit_bind_group,
@@ -939,6 +1106,351 @@ pub struct ViewportCallback {
     pub show_origin_axes: bool,
     pub viewport_width: u32,
     pub viewport_height: u32,
+}
+
+impl ViewportCallback {
+    /// A callback that draws nothing. Every toggle is off and the uniforms
+    /// are zero. The headless frame door starts from it.
+    #[doc(hidden)]
+    pub fn empty(viewport_width: u32, viewport_height: u32) -> Self {
+        Self {
+            mesh_uniforms: bytemuck::Zeroable::zeroed(),
+            line_uniforms: bytemuck::Zeroable::zeroed(),
+            has_mesh: false,
+            show_model: false,
+            show_grid: false,
+            show_stock: false,
+            show_line_marks: false,
+            show_polygons: false,
+            show_solid_stock: false,
+            show_height_planes: false,
+            show_entry_markers: false,
+            show_rest_heatmap: false,
+            show_tier_preview: false,
+            show_area_regions: false,
+            show_reach_overlay: false,
+            show_sim_mesh: false,
+            sim_mesh_opacity: 0.0,
+            show_cutting: false,
+            show_rapids: false,
+            show_collisions: false,
+            toolpath_move_visibility: std::collections::HashMap::new(),
+            stale_toolpaths: std::collections::HashSet::new(),
+            show_tool_model: false,
+            toolpath_move_limits: None,
+            show_origin_axes: false,
+            viewport_width,
+            viewport_height,
+        }
+    }
+
+    /// Records the 3D scene pass into `encoder`: the pass from
+    /// [`OffscreenTargets::begin_scene_pass`] and every draw of this frame.
+    fn record_scene_pass(
+        &self,
+        resources: &RenderResources,
+        offscreen: &OffscreenTargets,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let mut pass = offscreen.begin_scene_pass(encoder);
+
+        pass.set_viewport(
+            0.0,
+            0.0,
+            self.viewport_width as f32,
+            self.viewport_height as f32,
+            0.0,
+            1.0,
+        );
+
+        // Draw grid
+        if self.show_grid {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, resources.grid_data.vertex_buffer.slice(..));
+            pass.draw(0..resources.grid_data.vertex_count, 0..1);
+        }
+
+        // Draw stock wireframe
+        if self.show_stock
+            && let Some(stock) = &resources.stock_data
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
+            pass.draw(0..stock.vertex_count, 0..1);
+        }
+
+        // (Height planes drawn after opaque geometry — see below)
+
+        // Draw origin axes at stock origin
+        if self.show_origin_axes
+            && let Some(axes) = &resources.origin_axes_data
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, axes.vertex_buffer.slice(..));
+            pass.draw(0..axes.vertex_count, 0..1);
+        }
+
+        // Draw the reference lines: obstacles, pins, flip axis, datum.
+        if self.show_line_marks
+            && let Some(fixture) = &resources.fixture_data
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, fixture.vertex_buffer.slice(..));
+            pass.draw(0..fixture.vertex_count, 0..1);
+        }
+
+        // Draw meshes (sim mesh replaces raw models when simulation is active)
+        if self.show_sim_mesh {
+            if let Some(sim) = &resources.sim_mesh_data {
+                pass.set_pipeline(&resources.sim_mesh_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                for chunk in &sim.chunks {
+                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+                }
+            }
+        } else if self.show_reach_overlay
+            && let Some(reach) = &resources.reach_overlay_data
+        {
+            // P5 — the reach overlay IS the model, re-coloured per
+            // vertex. It draws INSTEAD of the two model lists below, not
+            // over them: two copies of one surface at the same depth
+            // z-fight, and the reach answer is the one the operator asked
+            // for. Opaque pipeline, so it also writes depth exactly as
+            // the plain model does and the toolpath lines occlude the
+            // same way.
+            pass.set_pipeline(&resources.colored_opaque_pipeline);
+            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+            pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
+            pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..reach.index_count, 0, 0..1);
+        } else if self.show_model {
+            // Draw all enriched (STEP) models
+            for enriched in &resources.enriched_mesh_data_list {
+                pass.set_pipeline(&resources.colored_opaque_pipeline);
+                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
+                pass.set_index_buffer(enriched.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..enriched.index_count, 0, 0..1);
+            }
+            // Draw all plain (STL) models
+            if self.has_mesh {
+                for mesh in &resources.mesh_data_list {
+                    pass.set_pipeline(&resources.mesh_pipeline);
+                    pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+                }
+            }
+        }
+
+        // Draw solid stock (semi-transparent, after mesh so model renders first)
+        if self.show_solid_stock
+            && let Some(solid) = &resources.solid_stock_data
+        {
+            pass.set_pipeline(&resources.sim_mesh_pipeline);
+            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+            pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
+            pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..solid.index_count, 0, 0..1);
+        }
+
+        // Draw height plane overlays AFTER opaque geometry so they
+        // alpha-blend over the model instead of blocking it via depth writes.
+        if self.show_height_planes
+            && let Some(hp) = &resources.height_planes_data
+        {
+            pass.set_pipeline(&resources.height_plane_pipeline);
+            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+            pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
+            pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..hp.index_count, 0, 0..1);
+        }
+
+        // Draw rest-depth heatmap overlay (pencil detector #4) — same
+        // depth-read-only, alpha-blended treatment as height planes so it
+        // drapes over the model/stock without z-fighting or occluding it.
+        if self.show_rest_heatmap
+            && let Some(heatmap) = &resources.rest_heatmap_data
+        {
+            pass.set_pipeline(&resources.height_plane_pipeline);
+            pass.set_bind_group(0, &resources.rest_heatmap_bind_group, &[]);
+            for chunk in &heatmap.chunks {
+                pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+            }
+        }
+
+        // Draw the multi-tool tier preview — same treatment again, and
+        // drawn after the rest heatmap so that when both are up the plan
+        // preview is the one on top: it is the thing being decided on.
+        if self.show_tier_preview
+            && let Some(preview) = &resources.tier_preview_data
+        {
+            pass.set_pipeline(&resources.height_plane_pipeline);
+            pass.set_bind_group(0, &resources.tier_preview_bind_group, &[]);
+            for chunk in &preview.chunks {
+                pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+            }
+        }
+
+        // Draw the By Area regions overlay — the same treatment again.
+        if self.show_area_regions
+            && let Some(regions) = &resources.area_regions_data
+        {
+            pass.set_pipeline(&resources.height_plane_pipeline);
+            pass.set_bind_group(0, &resources.area_regions_bind_group, &[]);
+            for chunk in &regions.chunks {
+                pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
+                pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..chunk.index_count, 0, 0..1);
+            }
+        }
+
+        // Draw polygon/DXF/SVG lines
+        if self.show_polygons {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            for poly_gpu in &resources.polygon_data {
+                pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
+                pass.draw(0..poly_gpu.vertex_count, 0..1);
+            }
+            if let Some(hover) = &resources.hover_lines {
+                pass.set_vertex_buffer(0, hover.vertex_buffer.slice(..));
+                pass.draw(0..hover.vertex_count, 0..1);
+            }
+        }
+
+        // Geometry selection P4.6: the tab marks of the tab editor. The
+        // editor is on by an explicit act, so the marks draw with the
+        // curves overlay off too.
+        if let Some(tabs) = &resources.tab_lines {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, tabs.vertex_buffer.slice(..));
+            pass.draw(0..tabs.vertex_count, 0..1);
+        }
+
+        // Draw collision markers
+        if self.show_collisions
+            && resources.collision_vertex_count > 0
+            && let Some(buf) = &resources.collision_vertex_buffer
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, buf.slice(..));
+            pass.draw(0..resources.collision_vertex_count, 0..1);
+        }
+
+        // Draw tool model during simulation
+        if self.show_tool_model
+            && let Some(tool) = &resources.tool_model_data
+        {
+            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_vertex_buffer(0, tool.vertex_buffer.slice(..));
+            pass.draw(0..tool.vertex_count, 0..1);
+        }
+
+        // Draw toolpaths (with optional move limit for sim scrubbing)
+        for tp_gpu in &resources.toolpath_data {
+            let limit = self
+                .toolpath_move_limits
+                .as_ref()
+                .and_then(|limits| tp_gpu.toolpath_id.and_then(|id| limits.get(&id).copied()));
+            let (max_cut, max_rapid) = if let Some(limit) = limit {
+                tp_gpu.vertices_for_moves(limit)
+            } else {
+                (tp_gpu.cut_vertex_count, tp_gpu.rapid_vertex_count)
+            };
+
+            pass.set_pipeline(&resources.line_pipeline);
+            // P5.3 — while the reach overlay is painting the model, the
+            // moves are drawn DIMMED so the shading reads under them.
+            // The condition is the reach draw's own, not a second
+            // opinion about it: same flag, same buffer presence, so the
+            // dim cannot be on while the shading is absent. Cutting moves
+            // and rapids alike; no registry flag moves, so the Overlays
+            // panel still shows the row ON and the operator still owns
+            // the switch.
+            //
+            // F2.2 adds the second reason to take the same treatment: a
+            // toolpath whose result the core no longer holds is drawn
+            // from the GUI's retained copy, i.e. from the PREVIOUS
+            // generation's inputs. One dim factor serves both because
+            // the line pipeline carries exactly one dim uniform, and a
+            // second constant for a 0.05 difference nobody has ruled on
+            // would be a new tunable, not a clearer picture. Consequence
+            // to know: while the reach overlay is painting, every move is
+            // dimmed anyway, so the stale dim adds no signal there — the
+            // card chip and the inspector header are the ones that still
+            // say it.
+            let stale = tp_gpu
+                .toolpath_id
+                .is_some_and(|id| self.stale_toolpaths.contains(&id));
+            let moves_bind_group =
+                if stale || (self.show_reach_overlay && resources.reach_overlay_data.is_some()) {
+                    &resources.line_dim_bind_group
+                } else {
+                    &resources.line_bind_group
+                };
+            pass.set_bind_group(0, moves_bind_group, &[]);
+
+            let (tp_show_cut, tp_show_rapid) = tp_gpu
+                .toolpath_id
+                .and_then(|id| self.toolpath_move_visibility.get(&id).copied())
+                .unwrap_or((true, true));
+            if self.show_cutting && tp_show_cut && max_cut > 1 {
+                pass.set_vertex_buffer(0, tp_gpu.cut_vertex_buffer.slice(..));
+                pass.draw(0..max_cut, 0..1);
+            }
+            if self.show_rapids && tp_show_rapid && max_rapid > 1 {
+                pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
+                pass.draw(0..max_rapid, 0..1);
+            }
+
+            // P6 (audit §6.10) — the entry markers and the cutter ghost
+            // now respect the move gates. Before this they drew whenever
+            // the buffer existed: switching cutting moves off left the
+            // cyan markers floating on their own, and a sim scrub
+            // revealed the whole entry at move zero.
+            //
+            // Neither buffer carries a per-move index, so
+            // `vertices_for_moves` cannot trim them. The honest gate is
+            // therefore "not scrubbing": under a move limit they are
+            // hidden outright rather than shown untrimmed.
+            let overlays_allowed =
+                self.show_cutting && tp_show_cut && self.toolpath_move_limits.is_none();
+
+            // Draw entry path preview overlay (ramp/helix/lead-in indicator)
+            if overlays_allowed
+                && self.show_entry_markers
+                && let Some(ref buf) = tp_gpu.entry_preview_buffer
+                && tp_gpu.entry_preview_count > 1
+            {
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..tp_gpu.entry_preview_count, 0..1);
+            }
+
+            // Draw tool-profile preview overlay (cutter silhouette ghost)
+            if overlays_allowed
+                && let Some(ref buf) = tp_gpu.tool_profile_preview_buffer
+                && tp_gpu.tool_profile_preview_count > 1
+            {
+                pass.set_vertex_buffer(0, buf.slice(..));
+                pass.draw(0..tp_gpu.tool_profile_preview_count, 0..1);
+            }
+        }
+    }
 }
 
 impl egui_wgpu::CallbackTrait for ViewportCallback {
@@ -1072,348 +1584,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         )]
         let offscreen = resources.offscreen.as_ref().unwrap();
 
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("3d_scene"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &offscreen.color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear({
-                            // UP3. This was (0.102, 0.102, 0.149) — the old
-                            // violet (26, 26, 38), the same literal the four
-                            // CentralPanel fills carried before UP1. The
-                            // panels moved onto the cold ramp and the
-                            // viewport did not, so the largest area on
-                            // screen fought everything around it.
-                            //
-                            // §2.3 names SURFACE_SUNKEN the viewport ground.
-                            let [r, g, b] =
-                                crate::ui::tokens::as_unit_rgb(crate::ui::tokens::SURFACE_SUNKEN);
-                            wgpu::Color { r, g, b, a: 1.0 }
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &offscreen.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                ..Default::default()
-            });
-
-            pass.set_viewport(
-                0.0,
-                0.0,
-                self.viewport_width as f32,
-                self.viewport_height as f32,
-                0.0,
-                1.0,
-            );
-
-            // Draw grid
-            if self.show_grid {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, resources.grid_data.vertex_buffer.slice(..));
-                pass.draw(0..resources.grid_data.vertex_count, 0..1);
-            }
-
-            // Draw stock wireframe
-            if self.show_stock
-                && let Some(stock) = &resources.stock_data
-            {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, stock.vertex_buffer.slice(..));
-                pass.draw(0..stock.vertex_count, 0..1);
-            }
-
-            // (Height planes drawn after opaque geometry — see below)
-
-            // Draw origin axes at stock origin
-            if self.show_origin_axes
-                && let Some(axes) = &resources.origin_axes_data
-            {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, axes.vertex_buffer.slice(..));
-                pass.draw(0..axes.vertex_count, 0..1);
-            }
-
-            // Draw the reference lines: obstacles, pins, flip axis, datum.
-            if self.show_line_marks
-                && let Some(fixture) = &resources.fixture_data
-            {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, fixture.vertex_buffer.slice(..));
-                pass.draw(0..fixture.vertex_count, 0..1);
-            }
-
-            // Draw meshes (sim mesh replaces raw models when simulation is active)
-            if self.show_sim_mesh {
-                if let Some(sim) = &resources.sim_mesh_data {
-                    pass.set_pipeline(&resources.sim_mesh_pipeline);
-                    pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                    for chunk in &sim.chunks {
-                        pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
-                        pass.set_index_buffer(
-                            chunk.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                        pass.draw_indexed(0..chunk.index_count, 0, 0..1);
-                    }
-                }
-            } else if self.show_reach_overlay
-                && let Some(reach) = &resources.reach_overlay_data
-            {
-                // P5 — the reach overlay IS the model, re-coloured per
-                // vertex. It draws INSTEAD of the two model lists below, not
-                // over them: two copies of one surface at the same depth
-                // z-fight, and the reach answer is the one the operator asked
-                // for. Opaque pipeline, so it also writes depth exactly as
-                // the plain model does and the toolpath lines occlude the
-                // same way.
-                pass.set_pipeline(&resources.colored_opaque_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
-                pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..reach.index_count, 0, 0..1);
-            } else if self.show_model {
-                // Draw all enriched (STEP) models
-                for enriched in &resources.enriched_mesh_data_list {
-                    pass.set_pipeline(&resources.colored_opaque_pipeline);
-                    pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                    pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
-                    pass.set_index_buffer(
-                        enriched.index_buffer.slice(..),
-                        wgpu::IndexFormat::Uint32,
-                    );
-                    pass.draw_indexed(0..enriched.index_count, 0, 0..1);
-                }
-                // Draw all plain (STL) models
-                if self.has_mesh {
-                    for mesh in &resources.mesh_data_list {
-                        pass.set_pipeline(&resources.mesh_pipeline);
-                        pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
-                        pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                        pass.set_index_buffer(
-                            mesh.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-                        pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                    }
-                }
-            }
-
-            // Draw solid stock (semi-transparent, after mesh so model renders first)
-            if self.show_solid_stock
-                && let Some(solid) = &resources.solid_stock_data
-            {
-                pass.set_pipeline(&resources.sim_mesh_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
-                pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..solid.index_count, 0, 0..1);
-            }
-
-            // Draw height plane overlays AFTER opaque geometry so they
-            // alpha-blend over the model instead of blocking it via depth writes.
-            if self.show_height_planes
-                && let Some(hp) = &resources.height_planes_data
-            {
-                pass.set_pipeline(&resources.height_plane_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, hp.vertex_buffer.slice(..));
-                pass.set_index_buffer(hp.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..hp.index_count, 0, 0..1);
-            }
-
-            // Draw rest-depth heatmap overlay (pencil detector #4) — same
-            // depth-read-only, alpha-blended treatment as height planes so it
-            // drapes over the model/stock without z-fighting or occluding it.
-            if self.show_rest_heatmap
-                && let Some(heatmap) = &resources.rest_heatmap_data
-            {
-                pass.set_pipeline(&resources.height_plane_pipeline);
-                pass.set_bind_group(0, &resources.rest_heatmap_bind_group, &[]);
-                for chunk in &heatmap.chunks {
-                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
-                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
-                }
-            }
-
-            // Draw the multi-tool tier preview — same treatment again, and
-            // drawn after the rest heatmap so that when both are up the plan
-            // preview is the one on top: it is the thing being decided on.
-            if self.show_tier_preview
-                && let Some(preview) = &resources.tier_preview_data
-            {
-                pass.set_pipeline(&resources.height_plane_pipeline);
-                pass.set_bind_group(0, &resources.tier_preview_bind_group, &[]);
-                for chunk in &preview.chunks {
-                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
-                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
-                }
-            }
-
-            // Draw the By Area regions overlay — the same treatment again.
-            if self.show_area_regions
-                && let Some(regions) = &resources.area_regions_data
-            {
-                pass.set_pipeline(&resources.height_plane_pipeline);
-                pass.set_bind_group(0, &resources.area_regions_bind_group, &[]);
-                for chunk in &regions.chunks {
-                    pass.set_vertex_buffer(0, chunk.vertex_buffer.slice(..));
-                    pass.set_index_buffer(chunk.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..chunk.index_count, 0, 0..1);
-                }
-            }
-
-            // Draw polygon/DXF/SVG lines
-            if self.show_polygons {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                for poly_gpu in &resources.polygon_data {
-                    pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
-                    pass.draw(0..poly_gpu.vertex_count, 0..1);
-                }
-                if let Some(hover) = &resources.hover_lines {
-                    pass.set_vertex_buffer(0, hover.vertex_buffer.slice(..));
-                    pass.draw(0..hover.vertex_count, 0..1);
-                }
-            }
-
-            // Geometry selection P4.6: the tab marks of the tab editor. The
-            // editor is on by an explicit act, so the marks draw with the
-            // curves overlay off too.
-            if let Some(tabs) = &resources.tab_lines {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, tabs.vertex_buffer.slice(..));
-                pass.draw(0..tabs.vertex_count, 0..1);
-            }
-
-            // Draw collision markers
-            if self.show_collisions
-                && resources.collision_vertex_count > 0
-                && let Some(buf) = &resources.collision_vertex_buffer
-            {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, buf.slice(..));
-                pass.draw(0..resources.collision_vertex_count, 0..1);
-            }
-
-            // Draw tool model during simulation
-            if self.show_tool_model
-                && let Some(tool) = &resources.tool_model_data
-            {
-                pass.set_pipeline(&resources.line_pipeline);
-                pass.set_bind_group(0, &resources.line_bind_group, &[]);
-                pass.set_vertex_buffer(0, tool.vertex_buffer.slice(..));
-                pass.draw(0..tool.vertex_count, 0..1);
-            }
-
-            // Draw toolpaths (with optional move limit for sim scrubbing)
-            for tp_gpu in &resources.toolpath_data {
-                let limit = self
-                    .toolpath_move_limits
-                    .as_ref()
-                    .and_then(|limits| tp_gpu.toolpath_id.and_then(|id| limits.get(&id).copied()));
-                let (max_cut, max_rapid) = if let Some(limit) = limit {
-                    tp_gpu.vertices_for_moves(limit)
-                } else {
-                    (tp_gpu.cut_vertex_count, tp_gpu.rapid_vertex_count)
-                };
-
-                pass.set_pipeline(&resources.line_pipeline);
-                // P5.3 — while the reach overlay is painting the model, the
-                // moves are drawn DIMMED so the shading reads under them.
-                // The condition is the reach draw's own, not a second
-                // opinion about it: same flag, same buffer presence, so the
-                // dim cannot be on while the shading is absent. Cutting moves
-                // and rapids alike; no registry flag moves, so the Overlays
-                // panel still shows the row ON and the operator still owns
-                // the switch.
-                //
-                // F2.2 adds the second reason to take the same treatment: a
-                // toolpath whose result the core no longer holds is drawn
-                // from the GUI's retained copy, i.e. from the PREVIOUS
-                // generation's inputs. One dim factor serves both because
-                // the line pipeline carries exactly one dim uniform, and a
-                // second constant for a 0.05 difference nobody has ruled on
-                // would be a new tunable, not a clearer picture. Consequence
-                // to know: while the reach overlay is painting, every move is
-                // dimmed anyway, so the stale dim adds no signal there — the
-                // card chip and the inspector header are the ones that still
-                // say it.
-                let stale = tp_gpu
-                    .toolpath_id
-                    .is_some_and(|id| self.stale_toolpaths.contains(&id));
-                let moves_bind_group = if stale
-                    || (self.show_reach_overlay && resources.reach_overlay_data.is_some())
-                {
-                    &resources.line_dim_bind_group
-                } else {
-                    &resources.line_bind_group
-                };
-                pass.set_bind_group(0, moves_bind_group, &[]);
-
-                let (tp_show_cut, tp_show_rapid) = tp_gpu
-                    .toolpath_id
-                    .and_then(|id| self.toolpath_move_visibility.get(&id).copied())
-                    .unwrap_or((true, true));
-                if self.show_cutting && tp_show_cut && max_cut > 1 {
-                    pass.set_vertex_buffer(0, tp_gpu.cut_vertex_buffer.slice(..));
-                    pass.draw(0..max_cut, 0..1);
-                }
-                if self.show_rapids && tp_show_rapid && max_rapid > 1 {
-                    pass.set_vertex_buffer(0, tp_gpu.rapid_vertex_buffer.slice(..));
-                    pass.draw(0..max_rapid, 0..1);
-                }
-
-                // P6 (audit §6.10) — the entry markers and the cutter ghost
-                // now respect the move gates. Before this they drew whenever
-                // the buffer existed: switching cutting moves off left the
-                // cyan markers floating on their own, and a sim scrub
-                // revealed the whole entry at move zero.
-                //
-                // Neither buffer carries a per-move index, so
-                // `vertices_for_moves` cannot trim them. The honest gate is
-                // therefore "not scrubbing": under a move limit they are
-                // hidden outright rather than shown untrimmed.
-                let overlays_allowed =
-                    self.show_cutting && tp_show_cut && self.toolpath_move_limits.is_none();
-
-                // Draw entry path preview overlay (ramp/helix/lead-in indicator)
-                if overlays_allowed
-                    && self.show_entry_markers
-                    && let Some(ref buf) = tp_gpu.entry_preview_buffer
-                    && tp_gpu.entry_preview_count > 1
-                {
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..tp_gpu.entry_preview_count, 0..1);
-                }
-
-                // Draw tool-profile preview overlay (cutter silhouette ghost)
-                if overlays_allowed
-                    && let Some(ref buf) = tp_gpu.tool_profile_preview_buffer
-                    && tp_gpu.tool_profile_preview_count > 1
-                {
-                    pass.set_vertex_buffer(0, buf.slice(..));
-                    pass.draw(0..tp_gpu.tool_profile_preview_count, 0..1);
-                }
-            }
-        } // render pass ends
+        self.record_scene_pass(resources, offscreen, encoder);
 
         vec![]
     }

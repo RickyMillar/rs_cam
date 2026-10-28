@@ -16,7 +16,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe the tool
   ghost and the tool preview draw; a soft part draws lighter.
 - `upload_cache.rs` — the content-addressed keys for the GPU upload pass.
-- `gpu_safety.rs` — buffer size guards against a device-limit crash.
+- `gpu_safety.rs` — buffer size guards; `offscreen_bytes` + `log_offscreen_budget` (scene target bytes, a log, not a gate).
 
 ## Invariants
 
@@ -26,12 +26,12 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
   not re-uploaded each frame. `refresh` is the compare-then-rebuild guard; it
   takes a `SlotInputs` value, not a key (F132). Do not hand-roll a second one.
 - Check a buffer against the device limit before you create it.
+- MSAA (D1): one `sample_count` field feeds every scene pipeline and target; the blit stays single-sample. A mismatch fails at pass time; the G-PIPESMOKE frame arm (`render_headless_frame`) covers it.
 - A move draws and picks through `toolpath_render::move_draw_points_into`: an arc walks core `linearize_arc_into` (R-ARC).
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke`
-- `cargo test -p rs_cam_viz -q --test reach_overlay_p5`
+- `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke --test reach_overlay_p5`
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27 --test an_arc_move_draws_on_its_arc_r_arc`
 - `cargo test -p rs_cam_viz -q --test the_selection_colours_live_in_colors_p4_4 --test panels_read_the_token_module_up1` (arm 5: no literal colour)
 

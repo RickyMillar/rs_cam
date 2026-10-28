@@ -213,7 +213,15 @@ impl RsCamApp {
         configure_theme(&cc.egui_ctx);
 
         if let Some(render_state) = cc.wgpu_render_state.as_ref() {
-            let resources = RenderResources::new(&render_state.device, render_state.target_format);
+            let sample_count = crate::render::scene_sample_count(
+                &render_state.adapter,
+                render_state.target_format,
+            );
+            let resources = RenderResources::new(
+                &render_state.device,
+                render_state.target_format,
+                sample_count,
+            );
             render_state
                 .renderer
                 .write()
