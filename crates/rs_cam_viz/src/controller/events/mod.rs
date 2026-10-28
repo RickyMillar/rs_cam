@@ -919,6 +919,7 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::ToggleProjection(NoArgs) => {}
                 UiCommand::PreviewOrientation(_) => {}
                 UiCommand::ResetView(NoArgs) => {}
+                UiCommand::FitSelection(NoArgs) => {}
                 UiCommand::SwitchWorkspace(_) => {}
                 UiCommand::ShowShortcuts(NoArgs) => {}
                 UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs { .. }) => {}

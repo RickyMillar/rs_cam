@@ -34,6 +34,7 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
                     ("H", "Toggle visibility"),
                     ("Space", "Go to Simulation"),
                     ("1 / 2 / 3 / 4", "Top / Front / Right / Iso view"),
+                    ("F", "Fit the selection (else the model)"),
                 ],
             );
             ui.add_space(8.0);

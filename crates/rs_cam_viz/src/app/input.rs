@@ -325,6 +325,12 @@ impl RsCamApp {
                             eased_camera_write(ctx),
                         );
                     }
+                    UiCommand::FitSelection(NoArgs) => {
+                        crate::state::camera::fit_selection(
+                            self.controller.state_mut(),
+                            eased_camera_write(ctx),
+                        );
+                    }
                     // Workspace transitions (need camera/viewport changes in app)
                     UiCommand::SwitchWorkspace(target) => {
                         crate::ui::overlays::registry::switch_workspace(
@@ -533,6 +539,12 @@ impl RsCamApp {
                     .push(AppEvent::Ui(UiCommand::SetViewPreset(
                         crate::render::camera::ViewPreset::Isometric,
                     )));
+            }
+            // F: fit the selection (A C6, CAM-6).
+            if i.key_pressed(egui::Key::F) && !modifiers.any() {
+                self.controller
+                    .events_mut()
+                    .push(AppEvent::Ui(UiCommand::FitSelection(NoArgs)));
             }
             self.handle_overlay_shortcuts(i);
         });

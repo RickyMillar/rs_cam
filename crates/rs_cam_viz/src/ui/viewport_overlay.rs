@@ -654,6 +654,13 @@ pub(crate) fn draw_view_controls(
         if ui.add(components::Button::new("Reset view")).clicked() {
             events.push(AppEvent::Ui(UiCommand::ResetView(NoArgs)));
         }
+        if ui
+            .add(components::Button::new("Fit selection"))
+            .on_hover_text("Shortcut: F")
+            .clicked()
+        {
+            events.push(AppEvent::Ui(UiCommand::FitSelection(NoArgs)));
+        }
         if state.workspace == Workspace::Simulation
             && ui
                 .add(components::Button::new("Reset simulation"))

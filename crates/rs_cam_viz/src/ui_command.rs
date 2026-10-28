@@ -415,6 +415,12 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("set_ui_view camera.fit: model is the same fit"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
+            (UiCommand, FitSelection, "fit_selection", NoArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("set_ui_view camera.fit: selection writes the same fit"),
+                 cli: Reach::Skip("the batch CLI draws no viewport"),
+             }),
             (UiCommand, SwitchWorkspace, "switch_workspace", SwitchWorkspaceArgs, (),
              Surfaces {
                  gui: Reach::Reached,

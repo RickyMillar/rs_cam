@@ -247,6 +247,10 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                     ui.close();
                     events.push(AppEvent::Ui(UiCommand::ResetView(NoArgs)));
                 }
+                if ui.button("Fit Selection").clicked() {
+                    ui.close();
+                    events.push(AppEvent::Ui(UiCommand::FitSelection(NoArgs)));
+                }
                 ui.separator();
                 if ui.button("Top").clicked() {
                     ui.close();

@@ -12,10 +12,14 @@
 //!    crate, and the echo of a replayed echo equals the first echo within
 //!    1e-9 degrees. The first trip from a typed degree value is within
 //!    1e-4 degrees, because the crate holds the angle as an `f32`.
+//! 4. A C6: the F key (`fit_selection`, eased, run to its end) and MCP
+//!    `fit: selection` give a bitwise-equal view; with no selected
+//!    toolpath the key falls back to Reset View.
 
 #![cfg(feature = "mcp")]
 #![expect(
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -31,7 +35,8 @@ use rs_cam_mcp::server::{CameraParam, CameraPoseParam};
 use rs_cam_viz::render::camera::{ProjectionMode, ViewPreset};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::camera::{
-    CameraEcho, CameraRequest, CameraWrite, FitTarget, apply_camera_request, fit_to_first_model,
+    CameraEcho, CameraRequest, CameraWrite, FitTarget, apply_camera_request, fit_selection,
+    fit_to_first_model,
 };
 
 fn bits(m: [[f32; 4]; 4]) -> [[u32; 4]; 4] {
@@ -197,4 +202,103 @@ fn the_pose_echo_replays_cam9() {
             "the replayed echo moved: ({yaw1}, {pitch1}) -> ({yaw2}, {pitch2})"
         );
     }
+}
+
+/// A state with a drawing of two loops, one Pocket at its default
+/// selection, and that toolpath focused.
+fn state_with_a_selected_pocket() -> AppState {
+    use rs_cam_core::compute::catalog::OperationConfig;
+    use rs_cam_core::geo::P2;
+    use rs_cam_core::polygon::Polygon2;
+    use rs_cam_core::selection::{Item, Shape, SourceRef};
+    let square = |x: f64| {
+        Item::new(
+            SourceRef::ToolpathModel,
+            Some("CUT".into()),
+            Shape::Loop(Polygon2::new(vec![
+                P2::new(x, 0.0),
+                P2::new(x + 10.0, 0.0),
+                P2::new(x + 10.0, 10.0),
+                P2::new(x, 10.0),
+            ])),
+        )
+        .expect("a square loop")
+    };
+    let model = LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
+        name: "loops.dxf".to_owned(),
+        mesh: None,
+        items: Arc::new(ItemSet::new(vec![square(0.0), square(30.0)])),
+        path: PathBuf::from("loops.dxf"),
+        kind: Some(ModelKind::Dxf),
+        units: Some(ModelUnits::Millimeters),
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    };
+    let mut builder = ProjectSessionBuilder::new();
+    let model_id = builder.add_model(model);
+    let tc = rs_cam_core::session::ToolpathConfig {
+        shoe: Default::default(),
+        id: rs_cam_core::ToolpathId::from_raw(0),
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation: OperationConfig::Pocket(Default::default()),
+        dressups: Default::default(),
+        heights: Default::default(),
+        tool_id: None,
+        model_id,
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: Default::default(),
+        boundary_inherit: true,
+        stock_source: Default::default(),
+        coolant: Default::default(),
+        debug_options: Default::default(),
+        feeds_provenance: Default::default(),
+        rest_analysis: Default::default(),
+        planner_origin: None,
+    };
+    let _ = builder.add_toolpath(0, tc).expect("setup 0");
+    let mut state = AppState::new();
+    state.replace_session(builder.build());
+    let id = state.session().toolpath_configs()[0].id;
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(id));
+    state
+}
+
+/// A C6: the F key (`fit_selection`, eased, run to its end) gives the view
+/// of MCP `fit: selection`; with no selected toolpath it is Reset View.
+#[test]
+fn the_f_key_fits_the_selection_as_mcp_does_cam6() {
+    let duration = 0.24;
+    let mut by_key = state_with_a_selected_pocket();
+    fit_selection(&mut by_key, CameraWrite::Eased { now: 0.0, duration });
+    assert!(by_key.camera.is_moving(), "the key path eases");
+    assert!(!by_key.camera.advance(duration + 1.0), "the move ended");
+    let mut by_mcp = state_with_a_selected_pocket();
+    let echo = apply_camera_request(
+        &mut by_mcp,
+        &CameraRequest {
+            fit: Some(FitTarget::Selection),
+            ..CameraRequest::default()
+        },
+    )
+    .expect("the selected Pocket holds items");
+    assert!(echo.framed.is_some());
+    assert_eq!(
+        bits(by_key.camera.pose().view_proj(16.0 / 9.0)),
+        bits(by_mcp.camera.pose().view_proj(16.0 / 9.0)),
+        "the F key and MCP fit: selection give one view"
+    );
+
+    // The fallback: no selected toolpath, so the key path is Reset View.
+    let mut by_key = state_with_a_model();
+    fit_selection(&mut by_key, CameraWrite::Instant);
+    let mut reset = state_with_a_model();
+    fit_to_first_model(&mut reset, CameraWrite::Instant);
+    assert_eq!(by_key.camera.pose(), reset.camera.pose());
 }

@@ -291,6 +291,20 @@ pub fn fit_to_first_model(state: &mut AppState, how: CameraWrite) {
     state.camera.fit_or_reset(bounds, how);
 }
 
+/// The F key and the "Fit selection" button (A C6, CAM-6): frame the picked
+/// items of the selected toolpath ([`selection_fit_bounds`]); with no such
+/// items, the Reset View route ([`fit_to_first_model`]) (design A Q6). MCP
+/// `fit: selection` refuses instead.
+pub fn fit_selection(state: &mut AppState, how: CameraWrite) {
+    match selection_fit_bounds(state) {
+        Some(bbox) => {
+            let (min, max) = bbox_corners(&bbox);
+            state.camera.fit(min, max, how);
+        }
+        None => fit_to_first_model(state, how),
+    }
+}
+
 /// The corners of a core box as the `f32` arrays that the camera takes.
 pub fn bbox_corners(bbox: &rs_cam_core::geo::BoundingBox3) -> ([f32; 3], [f32; 3]) {
     (
