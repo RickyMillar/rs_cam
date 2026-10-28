@@ -400,7 +400,7 @@ fn classify_engagement(
         .iter()
         .filter(|s| s.toolpath_id == toolpath_id)
     {
-        if !s.is_cutting || s.removed_volume_est_mm3 <= 0.0 {
+        if !s.removes_material() {
             continue;
         }
         removing += 1;

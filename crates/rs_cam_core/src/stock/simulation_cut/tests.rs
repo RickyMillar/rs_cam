@@ -1308,3 +1308,45 @@ fn per_toolpath_peak_doc_respects_transit_flag() {
         tp.peak_axial_doc_mm
     );
 }
+
+/// G-WLAIRLABEL (D69 §3, W3): an air sample that removes material is a skin,
+/// not air. The share is the time of the air samples that remove material
+/// over the time of all air samples, on the sample clock; air less that share
+/// is the time of the air samples that remove nothing. A pass over cleared
+/// ground removes nothing: share 0. A rapid that reports a volume does not
+/// remove material.
+#[test]
+fn air_that_removes_material_is_a_skin_g_wlairlabel() {
+    let id = ToolpathId::from_raw(4);
+    let timed = |seconds: f64, woc: f64, removed: f64| SimulationCutSample {
+        toolpath_id: id,
+        is_cutting: true,
+        segment_time_s: seconds,
+        removed_volume_est_mm3: removed,
+        engagement: Engagement::with_radial_woc(woc),
+        ..SimulationCutSample::test_fixture()
+    };
+    let trace = SimulationCutTrace::from_samples(
+        1.0,
+        vec![
+            timed(279.3, 0.0, 4018.0),
+            timed(56.6, 0.0, 0.0),
+            timed(60.0, 0.5, 3508.0),
+        ],
+    );
+    let share = trace.air_cut_removing_share(Some(id));
+    assert!((share - 279.3 / 335.9).abs() < 1e-12, "{share}");
+    assert!((trace.air_cut_removing_share(None) - share).abs() < 1e-12);
+    let air = trace.toolpath_summaries[0].air_cut_time_s;
+    assert!((air * (1.0 - share) - 56.6).abs() < 1e-9, "true air {air}");
+
+    let cleared = SimulationCutTrace::from_samples(1.0, vec![timed(10.0, 0.0, 0.0)]);
+    assert_eq!(cleared.air_cut_removing_share(Some(id)), 0.0);
+
+    let rapid = SimulationCutSample {
+        is_cutting: false,
+        ..timed(1.0, 0.0, 5.0)
+    };
+    assert!(!rapid.removes_material());
+    assert!(timed(1.0, 0.0, 5.0).removes_material());
+}

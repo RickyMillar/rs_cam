@@ -2128,6 +2128,22 @@ fn append_air_cut_anomaly(
         .operation_kind
         .and_then(|kind| kind.capabilities().air_cut_high_threshold_pct)
         .unwrap_or(AIR_CUT_WARNING_FALLBACK_PERCENT);
+    // G-WLAIRLABEL (D69 §3, lead ruling 2026-10-28): an air sample that
+    // removes material is a skin the flank cuts above the tip. The line
+    // reports the TRUE air and names the skin, and the marker reads the
+    // true share. The air-cut figures and the gates do not change.
+    let removing = trace.air_cut_removing_share(context.toolpath_id);
+    let skin_pct_of_cutting = air_pct_of_cutting * removing;
+    let air_pct_of_cutting = air_pct_of_cutting - skin_pct_of_cutting;
+    let air_pct_of_total = air_pct_of_total * (1.0 - removing);
+    let skin = if removing > 0.0 {
+        format!(
+            " (+{skin_pct_of_cutting:.1}% skin cut under {:.0}% WOC)",
+            crate::stock::simulation_cut::AIR_CUT_RADIAL_WOC_FRACTION * 100.0
+        )
+    } else {
+        String::new()
+    };
     let marker = if air_pct_of_total > air_cut_bar {
         "⚠"
     } else {
@@ -2159,8 +2175,9 @@ fn append_air_cut_anomaly(
         }
     };
     anomalies.push(format!(
-        "{marker} {:.1}% of CUTTING time is air-cut ({:.1}% of TOTAL runtime, the measure \
-         the GUI banner and the per-operation thresholds use); average engagement {:.3}.{}",
+        "{marker} {:.1}% of CUTTING time is air-cut{skin} ({:.1}% of TOTAL runtime, the \
+         measure the GUI banner and the per-operation thresholds use); average engagement \
+         {:.3}.{}",
         air_pct_of_cutting, air_pct_of_total, average_engagement, hint
     ));
 }
@@ -2541,6 +2558,55 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// G-WLAIRLABEL (D69 §3, W3): the air line reports the TRUE air and the
+    /// marker reads the true share. The D69 Corne Waterline split (sample
+    /// clock, `passes_base_corne.json`): 279.3 s of air samples that remove
+    /// material, 56.6 s of air samples that remove nothing, 60.0 s
+    /// engaged. Old share 84.8 % of the runtime (over the 45 % Waterline
+    /// bar: ⚠); true share 14.3 % (under it: ℹ). The same op whose air
+    /// removes nothing keeps the ⚠ and the old line.
+    #[test]
+    fn the_air_line_reads_the_true_air_share_g_wlairlabel() {
+        let id = ToolpathId::from_raw(4);
+        let timed = |seconds: f64, woc: f64, removed: f64| SimulationCutSample {
+            segment_time_s: seconds,
+            removed_volume_est_mm3: removed,
+            ..sample(id, 1, 0.5, woc)
+        };
+        let context = ToolpathNarrationContext {
+            toolpath_id: Some(id),
+            operation_kind: Some(crate::compute::catalog::OperationType::Waterline),
+            ..ToolpathNarrationContext::default()
+        };
+        let line = |samples: Vec<SimulationCutSample>| {
+            let trace = SimulationCutTrace::from_samples(1.0, samples);
+            let mut anomalies = Vec::new();
+            append_air_cut_anomaly(&mut anomalies, &trace, &context);
+            assert_eq!(anomalies.len(), 1, "one air line: {anomalies:?}");
+            anomalies.remove(0)
+        };
+
+        let skin = line(vec![
+            timed(279.3, 0.0, 4018.0),
+            timed(56.6, 0.0, 0.0),
+            timed(60.0, 0.5, 3508.0),
+        ]);
+        assert!(
+            skin.starts_with("ℹ 14.3% of CUTTING time is air-cut"),
+            "{skin}"
+        );
+        assert!(skin.contains("(+70.5% skin cut under 2% WOC)"), "{skin}");
+        assert!(skin.contains("(14.3% of TOTAL runtime"), "{skin}");
+        assert!(!skin.contains('\n'), "one line: {skin}");
+
+        let air = line(vec![timed(335.9, 0.0, 0.0), timed(60.0, 0.5, 3508.0)]);
+        assert!(
+            air.starts_with("⚠ 84.8% of CUTTING time is air-cut ("),
+            "{air}"
+        );
+        assert!(!air.contains("skin cut"), "{air}");
     }
 
     fn sample(

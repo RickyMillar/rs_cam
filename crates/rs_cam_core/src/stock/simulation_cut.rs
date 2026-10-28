@@ -288,6 +288,17 @@ impl SimulationCutSample {
         }
     }
 
+    /// True when the sample removes material: a cutting sample with a
+    /// removed volume above zero. The one definition of "removing" (the
+    /// `sim_measurability` population, Checkpoint D Q2). G-WLAIRLABEL: an
+    /// [`RadialEngagementClass::Air`] sample that removes material is a
+    /// skin the flank cuts above the tip, not air
+    /// ([`SimulationCutTrace::air_cut_removing_share`]).
+    #[must_use]
+    pub fn removes_material(&self) -> bool {
+        self.is_cutting && self.removed_volume_est_mm3 > 0.0
+    }
+
     /// True when the sample removes no material: a rapid or a retract
     /// (`is_cutting == false`), or a fed move in air
     /// ([`RadialEngagementClass::Air`]). The chipload and power gates leave

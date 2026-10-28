@@ -773,6 +773,10 @@ pub(crate) fn build_cut_trace_response(
                 // reports the cutting-time one.
                 "air_cut_pct_of_total_runtime": s.air_cut_pct_of_total_runtime(),
                 "air_cut_pct_of_cutting_time": s.air_cut_pct_of_cutting_time(),
+                // G-WLAIRLABEL: the share of the air time that removes
+                // material (a skin cut under the air WOC); true air is
+                // air x (1 - share).
+                "air_cut_removing_share": ct.air_cut_removing_share(Some(s.toolpath_id)),
                 "low_engagement_time_s": s.low_engagement_time_s,
                 "metrics_not_applicable": s.metrics_not_applicable,
                 "runtime_by_intent": s.runtime_by_intent,
