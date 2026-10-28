@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viewport Parity Model</title>
+<meta name="description" content="rs_cam 3D viewport today beside the parity behaviour: orbit pivot, zoom target, pan scale, eased presets and the hover upload cost. Every claim on this page is checked by check_claims.mjs.">
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1f2328; --muted: #5b6470;
+    --line: #d9d6cf; --accent: #0b6e4f; --accent2: #b4532a; --grid: #cfcac0;
+    --now: #b4532a; --parity: #0b6e4f; --code: #eeece7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #15171a; --panel: #1e2126; --ink: #e8e6e1; --muted: #a3a9b1;
+      --line: #343941; --accent: #5fd3a8; --accent2: #f0956a; --grid: #3a3f47;
+      --now: #f0956a; --parity: #5fd3a8; --code: #272b31;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171a; --panel: #1e2126; --ink: #e8e6e1; --muted: #a3a9b1;
+    --line: #343941; --accent: #5fd3a8; --accent2: #f0956a; --grid: #3a3f47;
+    --now: #f0956a; --parity: #5fd3a8; --code: #272b31;
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 32px 0 8px; }
+  p.lede { color: var(--muted); margin: 0 0 16px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .card h3 { margin: 0 0 6px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 0.75rem; padding: 1px 8px; border-radius: 999px; color: #fff; }
+  .tag.now { background: var(--now); } .tag.parity { background: var(--parity); }
+  canvas { width: 100%; height: 300px; display: block; border-radius: 6px; background: var(--bg);
+    border: 1px solid var(--line); touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .readout { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem;
+    color: var(--muted); margin-top: 6px; white-space: pre; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; align-items: center; }
+  button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font: inherit; }
+  button:hover { border-color: var(--accent); }
+  label { color: var(--muted); font-size: 0.9rem; }
+  input[type=range] { width: 220px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  ul.claims li { margin: 4px 0; }
+  .num { font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Viewport parity model</h1>
+  <p class="lede">rs_cam today (left) beside the parity behaviour (right). The same mouse input drives both
+    views. Drag to orbit, wheel to zoom, shift-drag to pan. Research of 2026-10-28; see <code>REPORT.md</code>.</p>
+
+  <h2>1. Camera: pivot, zoom target, pan scale</h2>
+  <p class="hint">Put the pointer on the box corner, then wheel and drag. On the left the corner slides away; on the right it stays under the pointer.</p>
+  <div class="pair">
+    <div class="card">
+      <h3><span class="tag now">now</span> fixed target</h3>
+      <canvas id="cv-now" width="520" height="300"></canvas>
+      <div class="readout" id="ro-now"></div>
+    </div>
+    <div class="card">
+      <h3><span class="tag parity">parity</span> cursor pivot</h3>
+      <canvas id="cv-par" width="520" height="300"></canvas>
+      <div class="readout" id="ro-par"></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button data-preset="top">Top</button>
+    <button data-preset="front">Front</button>
+    <button data-preset="right">Right</button>
+    <button data-preset="iso">Iso</button>
+    <button id="fit">Fit</button>
+    <label><input type="checkbox" id="mark" checked> mark the point under the pointer</label>
+  </div>
+  <p class="hint">A preset jumps on the left and eases over 250 ms on the right (claim C4).</p>
+
+  <h2>2. Hover: what one pointer move costs</h2>
+  <div class="controls">
+    <label>triangles in the part <input type="range" id="tris" min="1000" max="1500000" step="1000" value="131962"></label>
+    <span class="num" id="tris-out"></span>
+  </div>
+  <table>
+    <thead><tr><th>Path</th><th>Bytes written per hovered-face change</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag now">now</span></td><td class="num" id="bytes-now"></td>
+        <td>The hover colour is a vertex attribute: 3 unindexed vertices of 36 bytes and 3 indices of 4 bytes per triangle are rebuilt and re-uploaded (<code>mesh_render.rs:276-321</code>).</td></tr>
+      <tr><td><span class="tag parity">parity</span></td><td class="num" id="bytes-par"></td>
+        <td>A per-face state buffer: the hover writes one 4-byte state word for the old face and one for the new face.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Pick: one CPU ray against every triangle, measured</h2>
+  <table id="probe-table">
+    <thead><tr><th>Mesh</th><th>Triangles</th><th>Brute force mean (ms)</th><th>BVH cast mean (ms)</th><th>BVH build (ms)</th></tr></thead>
+    <tbody>
+      <tr><td>terrain.stl (rivmap100)</td><td class="num">131962</td><td class="num">1.806</td><td class="num">0.0026</td><td class="num">62.4</td></tr>
+      <tr><td>hemisphere 70²</td><td class="num">9800</td><td class="num">0.045</td><td class="num">0.0008</td><td class="num">2.1</td></tr>
+      <tr><td>hemisphere 200²</td><td class="num">80000</td><td class="num">0.366</td><td class="num">0.0016</td><td class="num">24.2</td></tr>
+      <tr><td>hemisphere 500²</td><td class="num">500000</td><td class="num">2.388</td><td class="num">0.0022</td><td class="num">174.3</td></tr>
+      <tr><td>hemisphere 800²</td><td class="num">1280000</td><td class="num">5.317</td><td class="num">0.0026</td><td class="num">450.6</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">Source: <code>probe/run.log</code>. The hover path runs the pick twice per frame (<code>viewport.rs:727-766</code> and <code>:777-815</code>).</p>
+
+  <h2>4. Claims this page makes</h2>
+  <p class="hint"><code>node check_claims.mjs</code> runs the camera model below and checks each one.</p>
+  <ul class="claims">
+    <li><b>C1</b> Zoom to the cursor keeps the point under the pointer fixed on the screen; the centre zoom moves a point at the target depth by its distance from the centre times |1/k − 1|, where k is the distance factor.</li>
+    <li><b>C2</b> Orbit about the cursor pivot keeps the pivot fixed on the screen through the drag; the fixed-target orbit moves it.</li>
+    <li><b>C3</b> Moving the pivot alone changes no pose: the eye and the look direction are the same before the first drag step.</li>
+    <li><b>C4</b> The preset tween starts at the old pose, ends at the new pose, and moves monotonically between them.</li>
+    <li><b>C5</b> The hover rebuild writes 120 bytes per triangle (three 36-byte vertices and three 4-byte indices): 15 835 440 bytes for the 131 962-triangle terrain.</li>
+    <li><b>C6</b> The probe numbers in section 3 are the numbers in <code>probe/run.log</code>.</li>
+    <li><b>C7</b> Each cited <code>file:line</code> holds the named symbol at HEAD.</li>
+    <li><b>C8</b> The pan rule <code>distance × 0.001</code> per pixel equals the projection-derived rule only at one viewport height (828 px at a 45° field of view); at other heights the point under the pointer drifts.</li>
+  </ul>
+
+<script id="code-claims" type="application/json">
+[
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 103, "contains": "pub fn orbit("},
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 134, "contains": "pub fn zoom("},
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 112, "contains": "pub fn pan("},
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 113, "contains": "distance * 0.001"},
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 140, "contains": "pub fn fit_to_bounds("},
+  {"file": "crates/rs_cam_viz/src/render/camera.rs", "line": 217, "contains": "pub fn set_preset("},
+  {"file": "crates/rs_cam_viz/src/render/mesh_render.rs", "line": 258, "contains": "pub fn enriched_mesh_gpu_data("},
+  {"file": "crates/rs_cam_viz/src/render/mesh_render.rs", "line": 296, "contains": "ColoredMeshVertex {"},
+  {"file": "crates/rs_cam_core/src/mesh.rs", "line": 373, "contains": "pub fn ray_pick_triangle("},
+  {"file": "crates/rs_cam_viz/src/render/mod.rs", "line": 811, "contains": "sample_count: 1"},
+  {"file": "crates/rs_cam_viz/src/render/mod.rs", "line": 646, "contains": "PrimitiveTopology::LineList"},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 850, "contains": "self.camera.orbit("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 881, "contains": "self.camera.zoom("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 753, "contains": "crate::interaction::picking::pick("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 796, "contains": "crate::interaction::picking::pick("},
+  {"file": "crates/rs_cam_core/src/io/step_input.rs", "line": 468, "contains": "fn find_shared_edge_vertices("},
+  {"file": "crates/rs_cam_core/src/geometry/enriched_mesh.rs", "line": 78, "contains": "pub boundary_loops: Vec<Vec<P3>>"},
+  {"file": "crates/rs_cam_mcp/src/server.rs", "line": 934, "contains": "pub struct SetUiViewParam"}
+]
+</script>
+
+<script id="camera-model">
+// The camera model of this page. check_claims.mjs extracts and runs this
+// block, so the checked code is the drawn code. Right-handed, Z up, the
+// same turntable parameters as rs_cam's OrbitCamera (target, distance,
+// yaw, pitch, fov).
+const CamModel = (() => {
+  const v = (x, y, z) => [x, y, z];
+  const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return l > 0 ? mul(a, 1 / l) : a; };
+  const PITCH_LIM = Math.PI / 2 - 0.01;
+
+  function make(over) {
+    return Object.assign({ target: v(0, 0, 0), distance: 200, yaw: Math.PI / 4, pitch: Math.PI / 6,
+      fov: 45 * Math.PI / 180 }, over || {});
+  }
+  function clone(c) { return { ...c, target: c.target.slice() }; }
+  function eye(c) {
+    return add(c.target, v(c.distance * Math.cos(c.pitch) * Math.cos(c.yaw),
+      c.distance * Math.cos(c.pitch) * Math.sin(c.yaw), c.distance * Math.sin(c.pitch)));
+  }
+  // Camera basis: forward (eye -> target), right, up. World up is +Z.
+  function basis(c) {
+    const e = eye(c);
+    const f = norm(sub(c.target, e));
+    let r = norm(cross(f, v(0, 0, 1)));
+    if (Math.hypot(r[0], r[1], r[2]) < 1e-9) r = v(1, 0, 0);
+    const u = cross(r, f);
+    return { e, f, r, u };
+  }
+  // World point -> screen pixel (x right, y down). null when behind the eye.
+  function project(c, p, w, h) {
+    const { e, f, r, u } = basis(c);
+    const d = sub(p, e);
+    const z = dot(d, f);
+    if (z <= 1e-9) return null;
+    const t = Math.tan(c.fov / 2);
+    const aspect = w / h;
+    const nx = dot(d, r) / (z * t * aspect);
+    const ny = dot(d, u) / (z * t);
+    return [(nx + 1) * 0.5 * w, (1 - ny) * 0.5 * h];
+  }
+  // Screen pixel -> world ray {o, d}.
+  function ray(c, sx, sy, w, h) {
+    const { e, f, r, u } = basis(c);
+    const t = Math.tan(c.fov / 2);
+    const aspect = w / h;
+    const nx = (sx / w) * 2 - 1;
+    const ny = 1 - (sy / h) * 2;
+    return { o: e, d: norm(add(f, add(mul(r, nx * t * aspect), mul(u, ny * t)))) };
+  }
+  // The point on the ray in the plane through the target normal to forward.
+  function pointAtTargetDepth(c, sx, sy, w, h) {
+    const { f } = basis(c);
+    const R = ray(c, sx, sy, w, h);
+    const t = dot(sub(c.target, R.o), f) / dot(R.d, f);
+    return add(R.o, mul(R.d, t));
+  }
+  // Hit of the ray with the ground plane z = 0, or null.
+  function hitGround(c, sx, sy, w, h) {
+    const R = ray(c, sx, sy, w, h);
+    if (Math.abs(R.d[2]) < 1e-9) return null;
+    const t = -R.o[2] / R.d[2];
+    return t > 0 ? add(R.o, mul(R.d, t)) : null;
+  }
+
+  // --- today (camera.rs) ---
+  function orbitFixed(c, dx, dy) {
+    const n = clone(c);
+    n.yaw -= dx * 0.005;
+    n.pitch = Math.min(PITCH_LIM, Math.max(-PITCH_LIM, n.pitch + dy * 0.005));
+    return n;
+  }
+  function zoomCentre(c, k) { const n = clone(c); n.distance = Math.min(50000, Math.max(0.1, c.distance * k)); return n; }
+  function panNow(c, dx, dy) {
+    const n = clone(c);
+    const s = c.distance * 0.001;
+    const { r, u } = basis(c);
+    n.target = add(c.target, add(mul(r, -dx * s), mul(u, dy * s)));
+    return n;
+  }
+
+  // --- parity ---
+  // Zoom toward the point P under the pointer: the eye moves along the
+  // ray through P by the factor k, so P stays on the same pixel.
+  // Derivation: target' = target + (1 - k) (P - target).
+  function zoomToCursor(c, k, sx, sy, w, h) {
+    const P = pointAtTargetDepth(c, sx, sy, w, h);
+    const n = clone(c);
+    n.distance = Math.min(50000, Math.max(0.1, c.distance * k));
+    const kk = n.distance / c.distance;
+    n.target = add(c.target, mul(sub(P, c.target), 1 - kk));
+    return n;
+  }
+  // Orbit about the pivot Q (the hit under the pointer at drag start):
+  // the same yaw and pitch step as today, then the target is placed so that
+  // Q keeps its camera-space position, so Q keeps its pixel.
+  function orbitAboutPivot(c, Q, dx, dy) {
+    const b0 = basis(c);
+    const d0 = sub(Q, b0.e);
+    const q = [dot(d0, b0.r), dot(d0, b0.u), dot(d0, b0.f)];
+    const n = orbitFixed(c, dx, dy);
+    const b1 = basis(n);
+    const eyeNew = sub(Q, add(add(mul(b1.r, q[0]), mul(b1.u, q[1])), mul(b1.f, q[2])));
+    n.target = add(eyeNew, mul(b1.f, n.distance));
+    return n;
+  }
+  // Pan by the world size of one pixel at the target depth.
+  function panDerived(c, dx, dy, w, h) {
+    const n = clone(c);
+    const s = 2 * c.distance * Math.tan(c.fov / 2) / h;
+    const { r, u } = basis(c);
+    n.target = add(c.target, add(mul(r, -dx * s), mul(u, dy * s)));
+    return n;
+  }
+  // The viewport height at which the two pan rules agree.
+  function panAgreeHeight(c) { return 2 * Math.tan(c.fov / 2) / 0.001; }
+
+  // Eased tween between two poses; t in [0, 1]; yaw on the shortest arc.
+  function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function tween(a, b, t) {
+    const s = easeInOut(Math.min(1, Math.max(0, t)));
+    let dy = b.yaw - a.yaw;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    return make({ target: add(a.target, mul(sub(b.target, a.target), s)),
+      distance: a.distance + (b.distance - a.distance) * s, yaw: a.yaw + dy * s,
+      pitch: a.pitch + (b.pitch - a.pitch) * s, fov: a.fov });
+  }
+  const PRESETS = { top: { yaw: 0, pitch: PITCH_LIM }, front: { yaw: 0, pitch: 0 },
+    right: { yaw: Math.PI / 2, pitch: 0 }, iso: { yaw: Math.PI / 4, pitch: Math.PI / 6 } };
+  function preset(c, name) { return Object.assign(clone(c), PRESETS[name]); }
+  function fit(c, min, max) {
+    const n = clone(c);
+    n.target = v((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
+    n.distance = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]) * 1.8;
+    return n;
+  }
+
+  // Hover upload cost (bytes) per hovered-face change.
+  const VERTEX_BYTES = 36;             // position 12 + normal 12 + colour 12
+  const INDEX_BYTES = 4;               // one u32 per vertex (mesh_render.rs:302-304)
+  function hoverRebuildBytes(tris) { return tris * 3 * (VERTEX_BYTES + INDEX_BYTES); }
+  function hoverStateBytes() { return 2 * 4; }  // old face word + new face word
+
+  return { make, clone, eye, basis, project, ray, pointAtTargetDepth, hitGround, orbitFixed, zoomCentre,
+    panNow, zoomToCursor, orbitAboutPivot, panDerived, panAgreeHeight, tween, easeInOut, preset, fit,
+    hoverRebuildBytes, hoverStateBytes, PRESETS, PITCH_LIM };
+})();
+if (typeof module !== "undefined") module.exports = CamModel;
+</script>
+
+<script>
+(() => {
+  const M = CamModel;
+  // Scene: a grid on z = 0, a box 80 x 60 x 30 with a round hole, axes.
+  const segs = [];
+  for (let i = -100; i <= 100; i += 20) { segs.push([[i, -100, 0], [i, 100, 0], "grid"]); segs.push([[-100, i, 0], [100, i, 0], "grid"]); }
+  const bx = [-40, 40], by = [-30, 30], bz = [0, 30];
+  const corners = [];
+  for (const x of bx) for (const y of by) for (const z of bz) corners.push([x, y, z]);
+  for (let i = 0; i < 8; i++) for (let j = i + 1; j < 8; j++) {
+    const a = corners[i], b = corners[j];
+    const same = (a[0] === b[0]) + (a[1] === b[1]) + (a[2] === b[2]);
+    if (same === 2) segs.push([a, b, "box"]);
+  }
+  for (let k = 0; k < 24; k++) {
+    const a0 = k / 24 * 2 * Math.PI, a1 = (k + 1) / 24 * 2 * Math.PI;
+    segs.push([[10 + 12 * Math.cos(a0), 12 * Math.sin(a0), 30], [10 + 12 * Math.cos(a1), 12 * Math.sin(a1), 30], "box"]);
+  }
+  segs.push([[0, 0, 0], [30, 0, 0], "x"]); segs.push([[0, 0, 0], [0, 30, 0], "y"]); segs.push([[0, 0, 0], [0, 0, 30], "z"]);
+  const bounds = [[-40, -30, 0], [40, 30, 30]];
+
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function draw(cv, cam, mark) {
+    const ctx = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+    const col = { grid: css("--grid"), box: css("--ink"), x: "#c0392b", y: "#27ae60", z: "#2980b9" };
+    for (const [a, b, kind] of segs) {
+      const pa = M.project(cam, a, w, h), pb = M.project(cam, b, w, h);
+      if (!pa || !pb) continue;
+      ctx.strokeStyle = col[kind]; ctx.lineWidth = kind === "box" ? 1.6 : 1;
+      ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
+    }
+    if (mark) {
+      const p = M.project(cam, mark, w, h);
+      if (p) { ctx.strokeStyle = css("--accent2"); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], 7, 0, 2 * Math.PI); ctx.stroke(); }
+    }
+  }
+
+  const views = {
+    now: { cv: document.getElementById("cv-now"), ro: document.getElementById("ro-now"), cam: M.make(), mark: null },
+    par: { cv: document.getElementById("cv-par"), ro: document.getElementById("ro-par"), cam: M.make(), mark: null, tween: null },
+  };
+  const markOn = document.getElementById("mark");
+  function readout(vw) {
+    const c = vw.cam;
+    vw.ro.textContent = `target (${c.target.map(n => n.toFixed(1)).join(", ")})  distance ${c.distance.toFixed(1)}  yaw ${(c.yaw * 180 / Math.PI).toFixed(0)}°  pitch ${(c.pitch * 180 / Math.PI).toFixed(0)}°`;
+  }
+  function render() {
+    for (const k of ["now", "par"]) { draw(views[k].cv, views[k].cam, markOn.checked ? views[k].mark : null); readout(views[k]); }
+  }
+
+  // One input drives both views.
+  let drag = null;
+  const pos = (ev, cv) => { const r = cv.getBoundingClientRect(); return [(ev.clientX - r.left) * cv.width / r.width, (ev.clientY - r.top) * cv.height / r.height]; };
+  for (const k of ["now", "par"]) {
+    const cv = views[k].cv;
+    cv.addEventListener("pointerdown", (ev) => {
+      const [sx, sy] = pos(ev, cv);
+      const w = cv.width, h = cv.height;
+      const hit = M.hitGround(views.par.cam, sx, sy, w, h) || M.pointAtTargetDepth(views.par.cam, sx, sy, w, h);
+      drag = { last: [ev.clientX, ev.clientY], pan: ev.shiftKey, pivot: hit };
+      views.now.mark = M.hitGround(views.now.cam, sx, sy, w, h); views.par.mark = hit;
+      views.par.tween = null;
+      cv.setPointerCapture(ev.pointerId);
+    });
+    cv.addEventListener("pointermove", (ev) => {
+      const [sx, sy] = pos(ev, cv);
+      const w = cv.width, h = cv.height;
+      if (!drag) {
+        views.now.mark = M.hitGround(views.now.cam, sx, sy, w, h);
+        views.par.mark = M.hitGround(views.par.cam, sx, sy, w, h);
+        render(); return;
+      }
+      const dx = ev.clientX - drag.last[0], dy = ev.clientY - drag.last[1];
+      drag.last = [ev.clientX, ev.clientY];
+      if (drag.pan) { views.now.cam = M.panNow(views.now.cam, dx, dy); views.par.cam = M.panDerived(views.par.cam, dx, dy, w, h); }
+      else { views.now.cam = M.orbitFixed(views.now.cam, dx, dy); views.par.cam = M.orbitAboutPivot(views.par.cam, drag.pivot, dx, dy); }
+      render();
+    });
+    cv.addEventListener("pointerup", () => { drag = null; });
+    cv.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      const [sx, sy] = pos(ev, cv);
+      const w = cv.width, h = cv.height;
+      const k = Math.exp(Math.sign(ev.deltaY) * Math.min(120, Math.abs(ev.deltaY)) * 0.001);
+      views.now.cam = M.zoomCentre(views.now.cam, k);
+      views.par.cam = M.zoomToCursor(views.par.cam, k, sx, sy, w, h);
+      views.par.tween = null;
+      render();
+    }, { passive: false });
+  }
+
+  function animate() {
+    const tw = views.par.tween;
+    if (tw) {
+      const t = (performance.now() - tw.t0) / 250;
+      views.par.cam = M.tween(tw.from, tw.to, t);
+      if (t >= 1) views.par.tween = null;
+      render();
+      requestAnimationFrame(animate);
+    }
+  }
+  function goTo(nowCam, parCam) {
+    views.now.cam = nowCam;
+    views.par.tween = { from: M.clone(views.par.cam), to: parCam, t0: performance.now() };
+    render(); requestAnimationFrame(animate);
+  }
+  for (const b of document.querySelectorAll("button[data-preset]")) {
+    b.addEventListener("click", () => goTo(M.preset(views.now.cam, b.dataset.preset), M.preset(views.par.cam, b.dataset.preset)));
+  }
+  document.getElementById("fit").addEventListener("click", () => goTo(M.fit(views.now.cam, ...bounds), M.fit(views.par.cam, ...bounds)));
+  markOn.addEventListener("change", render);
+
+  // Hover cost.
+  const tris = document.getElementById("tris");
+  function hover() {
+    const n = Number(tris.value);
+    document.getElementById("tris-out").textContent = n.toLocaleString("en") + " triangles";
+    const b = M.hoverRebuildBytes(n);
+    document.getElementById("bytes-now").textContent = b.toLocaleString("en") + " B (" + (b / 1e6).toFixed(1) + " MB), plus a CPU walk of every triangle";
+    document.getElementById("bytes-par").textContent = M.hoverStateBytes() + " B";
+  }
+  tris.addEventListener("input", hover);
+  hover(); render();
+})();
+</script>
+</main>
+</body>
+</html>

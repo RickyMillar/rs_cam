@@ -1,0 +1,4 @@
+name = "nalgebra"	version = "0.33.3"	--
+name = "nalgebra"	version = "0.34.2"	--
+name = "parry3d-f64"	version = "0.24.0"	--
+name = "rs_cam_core"	version = "0.1.0"	

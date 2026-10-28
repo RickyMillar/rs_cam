@@ -1,0 +1,28 @@
+planning/fixtures/rivmap100/rivmap_export/terrain.stl: 131962 triangles, 400 rays (361 hit)
+  brute force ray_pick_triangle: mean 1.806 ms, median 1.793 ms, max 2.064 ms
+  parry3d TriMesh BVH build: 62.4 ms; cast: mean 0.0026 ms, median 0.0024 ms, max 0.0097 ms
+  same nearest hit (t within 1e-6 rel): 400/400
+  DISAGREE ray 152: brute Some((5658, 404.57163751219105)) (tri, t); parry t None feature None
+  DISAGREE brute ties at t: [5658, 5659] (best 5658)
+  DISAGREE ray 209: brute Some((6624, 391.85641286897277)) (tri, t); parry t None feature None
+  DISAGREE brute ties at t: [6624, 6625] (best 6624)
+  DISAGREE ray 304: brute Some((7729, 390.3056795219049)) (tri, t); parry t None feature None
+  DISAGREE brute ties at t: [7728, 7729] (best 7729)
+hemisphere div=70: 9800 triangles, 400 rays (313 hit)
+  brute force ray_pick_triangle: mean 0.045 ms, median 0.044 ms, max 0.055 ms
+  parry3d TriMesh BVH build: 2.1 ms; cast: mean 0.0008 ms, median 0.0007 ms, max 0.0041 ms
+  same nearest hit (t within 1e-6 rel): 397/400
+hemisphere div=200: 80000 triangles, 400 rays (313 hit)
+  brute force ray_pick_triangle: mean 0.366 ms, median 0.350 ms, max 0.989 ms
+  parry3d TriMesh BVH build: 24.2 ms; cast: mean 0.0016 ms, median 0.0014 ms, max 0.0098 ms
+  same nearest hit (t within 1e-6 rel): 400/400
+hemisphere div=500: 500000 triangles, 400 rays (313 hit)
+  brute force ray_pick_triangle: mean 2.388 ms, median 2.403 ms, max 4.602 ms
+  parry3d TriMesh BVH build: 174.3 ms; cast: mean 0.0022 ms, median 0.0020 ms, max 0.0088 ms
+  same nearest hit (t within 1e-6 rel): 400/400
+  DISAGREE ray 133: brute Some((703120, 410.93128090496555)) (tri, t); parry t Some(554.1044615360208) feature Some("Face(191760)")
+  DISAGREE brute ties at t: [703120, 703121] (best 703120)
+hemisphere div=800: 1280000 triangles, 400 rays (313 hit)
+  brute force ray_pick_triangle: mean 5.317 ms, median 5.252 ms, max 6.866 ms
+  parry3d TriMesh BVH build: 450.6 ms; cast: mean 0.0026 ms, median 0.0024 ms, max 0.0102 ms
+  same nearest hit (t within 1e-6 rel): 399/400

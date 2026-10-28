@@ -1,0 +1,27 @@
+diff --git a/crates/rs_cam_core/tests/machine_kinematics_cycle_time_f034.rs b/crates/rs_cam_core/tests/machine_kinematics_cycle_time_f034.rs
+index c4b031807..ea4b86fc4 100644
+--- a/crates/rs_cam_core/tests/machine_kinematics_cycle_time_f034.rs
++++ b/crates/rs_cam_core/tests/machine_kinematics_cycle_time_f034.rs
+@@ -404,12 +404,20 @@ fn cycle_time_calibrated_against_shapeoko_reference() {
+     // 1053.0 -> 1272.6 s (+21 %). The 827 s bench still describes the
+     // ContourSpiral path that was machined; the new prediction (ratio
+     // 1.539) stays inside the unchanged anchor band.
+-    const P1_RECORDED_PREDICTION_S: f64 = 1272.6;
++    //
++    // Re-recorded 2026-10-29 (C3, the D55 port `d303f4103`): a plunge
++    // entry pecks from the contact read, so the plunge feeds through air
++    // above it and their retracts go; every XY move is identical. Measured
++    // at that commit's parent and at the commit itself: 1273 s -> 1207.0 s
++    // (−65.6 s); 1207.0 s is also the prediction at `aa25d8eb1`. The new
++    // ratio is 1.459, inside the unchanged [0.30, 1.6] band; the ±25 s
++    // tolerance is unchanged.
++    const P1_RECORDED_PREDICTION_S: f64 = 1207.0;
+     const P1_TOLERANCE_S: f64 = 25.0;
+     let delta_s = model_predicted_s - P1_RECORDED_PREDICTION_S;
+     assert!(
+         delta_s.abs() <= P1_TOLERANCE_S,
+-        "P1 sentry (e): model predicted {model_predicted_s:.1}s, recorded 2026-09-07 value is \
++        "P1 sentry (e): model predicted {model_predicted_s:.1}s, the value recorded 2026-10-29 is \
+          {P1_RECORDED_PREDICTION_S:.1}s (delta {delta_s:+.1}s, tolerance ±{P1_TOLERANCE_S:.0}s). \
+          The per-axis max-rate cap ($110/$111/$112) or the generator moved. If the generator \
+          moved, re-record; if the cap moved, that is the regression."
