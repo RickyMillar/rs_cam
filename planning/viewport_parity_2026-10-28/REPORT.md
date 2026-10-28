@@ -1,5 +1,7 @@
 # 3D viewport and selection parity: research report (2026-10-28)
 
+> Implementation status (2026-10-29): phases 0-3 of `design/DESIGN.md` landed on master; see its "Landed" table and `FOLLOW_UPS.md`. The gap matrix below is the 2026-10-28 reading and is not updated row by row.
+
 Research only. No product code changed. Nothing committed. Brief:
 `BRIEF.md`. Sources: `SOURCES.md`. Code read at HEAD b5aa2a45
 (2026-10-28). The earlier selection programme
