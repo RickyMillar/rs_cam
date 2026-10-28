@@ -1,0 +1,214 @@
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 23313d18e..07e8a812c 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -27,6 +27,10 @@ use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
+ /// owns the text; the header names the tab, and the full text is the hover.
+ pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
+ 
++/// G-E (§7.7): the state word of the Generate row when the last run
++/// refused. The full refusal is its hover.
++pub(crate) const REFUSED_STATE: &str = "Refused";
++
+ pub(super) fn draw_toolpath_panel(
+     ui: &mut egui::Ui,
+     // The panel's whole read side: the owned entry, both static
+@@ -125,6 +129,15 @@ pub(super) fn draw_toolpath_panel(
+     if draw_generate_row(ui, &header) {
+         events.push(AppEvent::GenerateToolpath(entry.id));
+     }
++    // G-E (§7.5, §7.7): the last run's refusal gets one face line under
++    // the row, which truncates; its hover holds the full text. A
++    // validation refusal answers the settings on screen, so when one
++    // stands it takes the line and the state word keeps the last run.
++    if let crate::state::freshness::FreshnessState::Error(e) = freshness
++        && validation_errors.is_empty()
++    {
++        ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
++    }
+     if !validation_errors.is_empty() {
+         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
+         // the selection. A validation error that IS that refusal (the
+@@ -1455,12 +1468,10 @@ pub(super) fn draw_header_state(
+         FreshnessState::WaitingOnUpstream(block) => {
+             // Amber, not red: this operation is fine, it is waiting its
+             // turn. The hover names the operation it is waiting for.
+-            ui.add(
+-                egui::Label::new(
+-                    egui::RichText::new("Waiting on upstream stock")
+-                        .color(crate::ui::tokens::CAUTION),
+-                )
+-                .wrap(),
++            // G-E: one row; it truncates, it does not wrap.
++            state_word(
++                ui,
++                egui::RichText::new("Waiting on upstream stock").color(crate::ui::tokens::CAUTION),
+             )
+             .on_hover_text(&block.message);
+         }
+@@ -1471,12 +1482,13 @@ pub(super) fn draw_header_state(
+             )
+             .on_hover_text("Disabled: this operation does not go to G-code.");
+         }
++        // G-E (§7.7): the last run refused. One word in the row, the full
++        // text on its hover. The text printed in full here took 3 to 15
++        // rows and moved the tab strip down by up to 257 points.
+         FreshnessState::Error(e) => {
+-            ui.add(
+-                egui::Label::new(
+-                    egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
+-                )
+-                .wrap(),
++            state_word(
++                ui,
++                egui::RichText::new(REFUSED_STATE).color(crate::ui::tokens::DANGER),
+             )
+             .on_hover_text(e);
+         }
+diff --git a/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs b/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
+index f808e9480..5ecabb350 100644
+--- a/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
++++ b/crates/rs_cam_viz/tests/inspector_header_wraps_g_reachwrap.rs
+@@ -382,15 +382,23 @@ fn every_sentence_in_the_header_is_wrapped() {
+     // `draw_header_state`, so the census reads that body too.
+     let state = function_body(&src, "draw_header_state");
+ 
+-    // Already wrapped before this commit: the two Generate-row statuses.
+-    for existing in ["Waiting on upstream stock", "Error: {e}"] {
++    // The two Generate-row statuses with a long text. They wrapped until
++    // G-E (2026-10-28); now each is one truncating state word with the full
++    // text on hover (the IC1 remedy), and the last run's refusal is the
++    // word `Refused` (`REFUSED_STATE`).
++    for existing in ["Waiting on upstream stock", "REFUSED_STATE"] {
+         let at = state
+             .find(existing)
+             .unwrap_or_else(|| panic!("{existing:?} left the header state"));
+-        let after = &state[at..(at + 400).min(state.len())];
++        let before = &state[at.saturating_sub(120)..at];
++        let after = &state[at..(at + 200).min(state.len())];
+         assert!(
+-            after.contains(".wrap()"),
+-            "{existing:?} used to wrap and must still:\n{after}"
++            before.contains("state_word(") && after.contains(".on_hover_text("),
++            "{existing:?} is one truncating word with its text on hover:\n{before}{after}"
++        );
++        assert!(
++            !after.contains(".wrap()"),
++            "{existing:?} wraps again:\n{after}"
+         );
+     }
+ 
+diff --git a/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs b/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
+index 8cf71326b..a2c206327 100644
+--- a/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
++++ b/crates/rs_cam_viz/tests/the_inspector_text_is_bounded_ic1.rs
+@@ -15,7 +15,10 @@
+ //! it asserts two rules:
+ //!
+ //! 1. No galley wraps to more than one row, except a refusal or an error
+-//!    that blocks work (`ALLOWED_MULTI_LINE`).
++//!    that blocks work (`may_wrap`). G-E (2026-10-28): in the toolpath
++//!    panel no text wraps at all, a refusal included: a refusal is one
++//!    word or one line, with its text on hover
++//!    (`a_generate_refusal_takes_one_line_g_e`).
+ //! 2. The number of visible text rows on each surface stays under a cap.
+ //!    The caps come from the after-state with a small margin.
+ //!
+@@ -434,8 +437,10 @@ fn the_inspector_text_is_bounded_ic1() {
+                 p.text.replace('\n', " / ")
+             );
+         }
++        // G-E: in the toolpath panel ("<op> / <tab>") no text wraps.
++        let toolpath_tab = name.contains(" / ");
+         for p in multi {
+-            if !may_wrap(p) {
++            if toolpath_tab || !may_wrap(p) {
+                 failures.push(format!("{name}: a {}-row text block: {:?}", p.rows, p.text));
+             }
+         }
+@@ -515,3 +520,85 @@ fn the_measures_see_a_paragraph_ic1() {
+     );
+     assert!(painted.iter().all(|p| p.text == SENTENCE));
+ }
++
++/// G-E sub-step 1: a refusal from the last generate takes ONE word in the
++/// Generate row and ONE face line under it, and no text wraps. Before G-E
++/// the D53 refusal printed in full beside Generate: 15 rows, and the tab
++/// strip moved down 257 points.
++#[test]
++fn a_generate_refusal_takes_one_line_g_e() {
++    // The D53 refusal text (`session/compute/generation.rs`), the longest
++    // generate refusal the panel can show.
++    const REFUSAL: &str = "'Edges' takes its boundary from the rest regions of 'Body rough' \
++        with Center containment, but its tool radius 5.000 mm is larger than the tool \
++        radius of 'Body rough', 3.000 mm. The regions are tool-centre positions of that \
++        tool, so this tool could cut up to 2.000 mm past the machining boundary of 'Body \
++        rough'. Set the boundary containment to Inside, or use a tool no larger than the \
++        tool of 'Body rough'.";
++    let mut state = fixture();
++    let id = state
++        .session()
++        .toolpath_configs()
++        .iter()
++        .find(|c| c.name == "3D Rough")
++        .map(|c| c.id)
++        .expect("fixture toolpath");
++    let tab_top = |painted: &[Painted]| {
++        painted
++            .iter()
++            .find(|p| p.text == "Geometry")
++            .and_then(|p| p.bands.first().map(|b| b.0))
++            .expect("the tab strip paints")
++    };
++    let clean = surface(
++        &mut state,
++        Selection::Toolpath(id),
++        Some(ToolpathTab::Cut),
++        PANEL_WIDTH,
++    );
++    state
++        .gui
++        .toolpath_rt
++        .get_mut(&id)
++        .expect("fixture runtime")
++        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(REFUSAL.to_owned());
++    let refused = surface(
++        &mut state,
++        Selection::Toolpath(id),
++        Some(ToolpathTab::Cut),
++        PANEL_WIDTH,
++    );
++    assert!(
++        refused.painted.iter().any(|p| p.text == "Refused"),
++        "the state word: {:?}",
++        refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
++    );
++    assert!(
++        refused
++            .painted
++            .iter()
++            .any(|p| p.text == REFUSAL && p.rows == 1),
++        "the face line holds the full text on one row"
++    );
++    let wrapped: Vec<&String> = refused
++        .painted
++        .iter()
++        .filter(|p| p.rows > 1)
++        .map(|p| &p.text)
++        .collect();
++    assert!(wrapped.is_empty(), "no text wraps: {wrapped:?}");
++    assert_eq!(
++        visible_lines(&refused.painted),
++        visible_lines(&clean.painted) + 1,
++        "the refusal adds one line"
++    );
++    let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
++    assert!(
++        (0.0..30.0).contains(&moved),
++        "the tab strip moves down one line at most, not {moved:.1} points"
++    );
++    assert!(
++        refused.excess_width <= 0.5,
++        "no row is wider than the panel"
++    );
++}

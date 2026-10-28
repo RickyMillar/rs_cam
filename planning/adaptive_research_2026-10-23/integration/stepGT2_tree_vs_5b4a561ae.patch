@@ -1,0 +1,21 @@
+diff --git a/crates/rs_cam_viz/src/ui/components/tab_strip.rs b/crates/rs_cam_viz/src/ui/components/tab_strip.rs
+index 8fa46f69d..83f6cc961 100644
+--- a/crates/rs_cam_viz/src/ui/components/tab_strip.rs
++++ b/crates/rs_cam_viz/src/ui/components/tab_strip.rs
+@@ -186,8 +186,15 @@ fn tab_label<T>(
+     match tab.badge {
+         None => return label().into(),
+         Some(TabBadge::Dot(color)) => {
++            // GT2: the compact strip (labels below body size) draws the dot
++            // with no space after it, about 3 points less per dot.
++            let dot = if size < tokens::SIZE_BODY {
++                "\u{25CF}"
++            } else {
++                "\u{25CF} "
++            };
+             append(
+-                egui::RichText::new("\u{25CF} ")
++                egui::RichText::new(dot)
+                     .size(tokens::SIZE_CAPTION)
+                     .color(color),
+             );
