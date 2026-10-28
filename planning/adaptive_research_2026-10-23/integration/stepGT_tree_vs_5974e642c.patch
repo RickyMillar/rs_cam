@@ -1,0 +1,308 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index fce61e840..5f00f6c3d 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -125,7 +125,7 @@ One selection says which items of the models an operation cuts (geometry selecti
+ - **the selection over MCP** (P2.7; feature `geometry_selection`) — `list_model_items(model_id, layer?, kind?, near?)` lists the items of a model in import order, each with its kind, layer, measure and match `key`. `selection_status(index, target?)` gives what the selection resolves to, with no generation: `counts`, `faces_by_facing` (`{up, down}` in the setup frame, P3.4), `islands`, `skipped_by_kind`, `notes`, `lost`, `refusal`, `holes`, `selected`, `item_states` and `foreign` (feature `selection_item_states`), and `faces_not_ready`. `edit_toolpath_selection(index, edit, target?)` applies one edit (`add_pick`, `remove_pick`, `add_rule`, `remove_rule`, `replace`, `reset`), and the reply carries the stored selection and its status. `target` is `"op"` (the default) or `"boundary"` (P4.1). Every selection on the wire is the project-file JSON. The command stores a key on the toolpath's own model as `toolpath_model`, whatever surface sends it, so a `list_model_items` pick and a viewport click on one item are one pick, and a second click removes it. `get_toolpath_params` returns `operation.params.selection`; `inspect_model` carries `items` (`total`, `summary`, `by_kind`, `by_layer`). Sentries: `one_item_is_one_pick_p2_7` (core), `mcp_core_and_gui_give_one_selection_status_p2_7` (viz lib), `selection_wire_is_the_file_json_p2_7` (rs_cam_mcp)
+ - **a pick replaces the default; a drop turns a rule into picks; the first face pick sets the face floor** (operator rulings O-PICK, GT-Q8 and Q2, 2026-10-22) — one rule in core for every surface (GUI click, MCP `edit_toolpath_selection`, a CLI job `replace`). O-PICK: while a selection is still its default (`Selection::is_default_of`, `ProjectSession::holds_its_default`; an empty default never counts), `add_pick` and `add_rule` replace the default (`Selection::apply`), so the op cuts only what the operator names; later edits add or remove; `reset` brings the default back. A click on an item that the default holds also picks it (`pick_edit`). GT-Q8: a `remove_pick` of an item that a rule holds turns each such rule into picks of all its members less that item, in one command (`ProjectSession::rule_drop_edit`); on a default rule the members are the items that the op cuts, so an open path that the op leaves out does not become a refusing pick. A click no longer writes an exclude; a wire `replace` still can. Q2: a face pick, a pick of a STEP face ring or a rule (UX-7b) on Pocket, Profile, Zigzag or Adaptive 2D (an op that cuts closed areas) whose floor is still a default floor (`OperationConfig::floor_is_default`: the floor of `new_default` or the stock default that every add door writes, by value; S11: a new op has no floor, `Floor::Unset`, and an unset floor counts as the default; UX-7b: Q2 compared with `new_default` only, so it never fired on an op that the GUI or MCP added) sets the floor "Each picked face", depth 0, in the same command (one undo step), when a picked face lies below the stock top in the setup frame (the UX-1 top, tolerance 0.01 mm, `ToolpathHeights::has_face_below_stock_top`). A pick of a face at the stock top (the top face of a part) keeps the default floor and gives no note, so it does not refuse; a later pick of a lower face, while the floor is still the default, sets the face floor. A floor that the operator set stays, and a Profile with side On keeps its floor (the operation check refuses that pair). `Effects::floor_set` names the change; the GUI shows the notice and the MCP reply the line "The floor is now 'Each picked face': each face cuts to its own height." A CLI job with face picks and no `floor` key now gets the face floor; a `floor` key still wins, because the job writes it after the selection. The rule is one function, `ProjectSession::each_face_floor_due`; the `AddToolpath` row runs it too (UX-7b), so a new area op on a STEP model, whose default rule holds the face rings, starts at "Each picked face", depth 0, and the GUI notice and the MCP `add_toolpath` reply give the same line. Sentries: `a_pick_replaces_the_default_rule_o_pick`, `the_first_face_pick_sets_each_face_floor_q2`, `a_default_step_pocket_never_cuts_below_a_ring_ux7b` (core, `--features step`), `w4_the_first_face_pick_sets_each_face_floor_o_pick_q2`, `a_pick_replaces_the_default_on_both_doors_o_pick` (viz lib)
+ - **no value without a derivation** (S11, operator ruling 2026-10-23: "If there is no logical reason for a default, then dont have it") — a new op has no floor (Pocket, Profile, Zigzag, Adaptive 2D, Bore, Drill: `Floor::Unset`; Profile and Drill still take the through-stock floor when the stock has a thickness, and a face or hole pick still sets each face or each hole), no drawing depth (Trace `depth`, V-Carve `max_depth`, Inlay and Inlay Plug `pocket_depth`, Project Curve `depth`) and, on a tool with no feeds data, no feed, plunge or RPM (the post spindle speed is no fallback). A drawing (DXF, SVG) gives a stock with no thickness: the import dialog asks for it, MCP `import_model` reports `stock_thickness_set`, the CLI takes `stock_z` / `--stock-z`. The GUI shows an unset field empty with the hint "set a value"; MCP lists `unset` on `add_toolpath` and `get_toolpath_params`; generation refuses with one text that names the field and the fix, in this order: the stock thickness, a depth, the floor, the feeds; the diagnostics give `precondition.not_set`. Derived instead of removed: Face `stock_offset` empty = the tool radius; Inlay `floor_overlap` empty = 0.9 x the tool diameter; link `max_distance` empty = 8 x the tool diameter (the 3D Rough stay-down rule); feed optimisation `feed_max_rate` empty = the machine maximum feed. A saved value stays; a file without the key loads it unset. The CLI job and `run` build the op through the same door as the GUI and MCP (Suggest, `DressupConfig::for_op`). Sentries: `unset_values_refuse_s11`, `a_face_pick_sets_each_face_on_an_unset_floor_s11` (core, `--features step`), `one_draft_for_every_add_door_s11` (viz), `the_job_drafts_through_the_core_door_s11` (cli)
+-- **the Geometry tab** (GT-1, GT-2, GT-3, GT-4; operator rulings GT-Q5..GT-Q9, 2026-10-22; replaces the P4.3 Selection section) — the toolpath inspector has six tabs: Geometry, Cut, Heights, Feeds & Speeds, Linking, Dressup (D7, 2026-10-23: Heights third, after Cut). Geometry opens first. The Cut tab holds what the old "Geometry" tab held (the tool, the input model, "Start from", the op parameters with their Suggest pills, and the Machining Boundary source; the floor moved to the Heights tab as "Bottom height", D6, 2026-10-23). MCP `set_ui_view properties_tab` takes `"geometry"` (the new tab) and `"cut"`; no alias (breaking). The Geometry tab shows, for the op selection and, under "Boundary", for a selection boundary (GT-Q7): the summary ("Cuts" with its OK, caution or Refused chip, "Selected N items", the hole size rows), Pick and Reset, a filter box (over 8 rows; it filters the rows, it does not search the model), and the SELECTED items only (GT-Q6): the default row while the selection holds its default rule ("Default: every closed loop (14)"; "Default: nothing that Drill cuts" when it is empty), else one group per rule (with its match count and "×") and one group per picked kind ("Picked circles (3)"). Each row gives the item (kind, size, place, Z, layer) and its state word. A group of more than 8 rows starts closed; an open group shows 8 rows, then "Show N more"; the rows draw through `ScrollArea::show_rows`. A row under the pointer lights its item in the viewport. Acts: "×" on a pick removes it, "×" on a rule member turns the rule into picks less that item (GT-Q8, core `rule_drop_edit`), "Rule…" on a pick lists the rule offers from the facts of that one item (core `ProjectSession::rule_offers`: a circle gives "All circles Ø d on this model" and "All circles on this model"; an up face "All up faces at Z z"; a STEP ring, edge or vertex "All <kind> at Z z" and "All <kind> on this model"; a drawing item its layer and its kind), each with its match count; "Add" writes ONE `Replace` (the new rule replaces the picks and the rules whose members it holds; an offer that a rule already holds has no "Add"). "Use as floor" on a picked face or STEP ring of a floor op sets the floor "A picked face" (one `SetToolpathFloor`); the floor face slot then names the face with "Clear" (Each picked face while a face pick remains, else the default floor; core `cleared_floor`). The notes follow: "Add a Bore for these", the Pocket open paths line, the skipped-item notes with Show me, the lost picks, the refusal in full, the "pick a face" fix and a closed Details. The `+ Rule` card and the O-2 "Each picked face" hint are gone (R2.4, FR-1 F7). The tab writes through events only (L-1). Not built: the coincident-item chooser (L-R7): the viewport click has no chooser to reuse. Sentries: `the_selection_section_writes_edits_only_p4_3` (viz), `the_selection_section_is_at_the_top_p4_d`, `the_selection_section_shows_one_pick_p4_d`, `a_step_pocket_names_the_face_pick_fix_p4_d`, `the_list_groups_hold_each_selected_item_once_gt2`, `the_geometry_tab_paints_the_groups_and_the_row_hover_gt2`, `use_as_floor_matches_set_toolpath_floor_gt4` (viz lib), `rule_offers_read_one_picked_item_gt3` (core)
++- **the Geometry tab** (GT-1, GT-2, GT-3, GT-4; operator rulings GT-Q5..GT-Q9, 2026-10-22; replaces the P4.3 Selection section) — the toolpath inspector has six tabs: Geometry, Cut, Heights, Feeds, Linking, Dressup (D7, 2026-10-23: Heights third, after Cut; the Feeds tab was "Feeds & Speeds" until step GT, 2026-10-28, so the strip fits one line at 280 points). Geometry opens first. The Cut tab holds what the old "Geometry" tab held (the tool, the input model, "Start from", the op parameters with their Suggest pills, and the Machining Boundary source; the floor moved to the Heights tab as "Bottom height", D6, 2026-10-23). MCP `set_ui_view properties_tab` takes `"geometry"` (the new tab) and `"cut"`; no alias (breaking). The Geometry tab shows, for the op selection and, under "Boundary", for a selection boundary (GT-Q7): the summary ("Cuts" with its OK, caution or Refused chip, "Selected N items", the hole size rows), Pick and Reset, a filter box (over 8 rows; it filters the rows, it does not search the model), and the SELECTED items only (GT-Q6): the default row while the selection holds its default rule ("Default: every closed loop (14)"; "Default: nothing that Drill cuts" when it is empty), else one group per rule (with its match count and "×") and one group per picked kind ("Picked circles (3)"). Each row gives the item (kind, size, place, Z, layer) and its state word. A group of more than 8 rows starts closed; an open group shows 8 rows, then "Show N more"; the rows draw through `ScrollArea::show_rows`. A row under the pointer lights its item in the viewport. Acts: "×" on a pick removes it, "×" on a rule member turns the rule into picks less that item (GT-Q8, core `rule_drop_edit`), "Rule…" on a pick lists the rule offers from the facts of that one item (core `ProjectSession::rule_offers`: a circle gives "All circles Ø d on this model" and "All circles on this model"; an up face "All up faces at Z z"; a STEP ring, edge or vertex "All <kind> at Z z" and "All <kind> on this model"; a drawing item its layer and its kind), each with its match count; "Add" writes ONE `Replace` (the new rule replaces the picks and the rules whose members it holds; an offer that a rule already holds has no "Add"). "Use as floor" on a picked face or STEP ring of a floor op sets the floor "A picked face" (one `SetToolpathFloor`); the floor face slot then names the face with "Clear" (Each picked face while a face pick remains, else the default floor; core `cleared_floor`). The notes follow: "Add a Bore for these", the Pocket open paths line, the skipped-item notes with Show me, the lost picks, the refusal in full, the "pick a face" fix and a closed Details. The `+ Rule` card and the O-2 "Each picked face" hint are gone (R2.4, FR-1 F7). The tab writes through events only (L-1). Not built: the coincident-item chooser (L-R7): the viewport click has no chooser to reuse. Sentries: `the_selection_section_writes_edits_only_p4_3` (viz), `the_selection_section_is_at_the_top_p4_d`, `the_selection_section_shows_one_pick_p4_d`, `a_step_pocket_names_the_face_pick_fix_p4_d`, `the_list_groups_hold_each_selected_item_once_gt2`, `the_geometry_tab_paints_the_groups_and_the_row_hover_gt2`, `use_as_floor_matches_set_toolpath_floor_gt4` (viz lib), `rule_offers_read_one_picked_item_gt3` (core)
+ - **item states, the highlight and the model eye** (P4.4, P4.D) — `selection_status` gives one state per item of the toolpath model (`item_states`: cut, island, skipped, excluded, not selected) and the state of each selected item of another model or of the stock (`foreign`). An island is a ring that the region nesting makes a hole, so it is the island that the kernel cuts round. A refused selection marks no item cut. The viewport draws every visible model drawing on import, with no toolpath, in the frame of the active setup and the neutral colour `DRAWING_NEUTRAL` (the `TEXT_MUTED` token). The drawing of the selected toolpath's model draws in its setup frame in the state colours: cut green, island blue, skipped amber, removed by hand dark grey with an X, not selected grey (UI tokens). A lost pick draws as a red ring or cross at its stored position, a stock item as the stock outline. An open path draws a green triangle at its start and a red square at its end; an open path with no state draws magenta (`PATH_OPEN`). The registry rows `selection_states`, `open_path_ends` and `boundary_outline` (the regions of a `Selection` boundary, off by default) control the marks, and the legend has a Selection chip. The upload runs once per report change, not per frame. Each model row of the Setup rail has an eye that hides or shows the model in the viewport: its mesh, its drawing and its hole markers. A hidden model takes no viewport pick (no face, item, open path, hole or tab loop). Generation and the simulation do not change, and the choice is not saved. MCP `set_ui_view` takes `model_visibility: {"<model id>": true|false}` and replies `model_visibility.applied` and `.refused` (feature `model_visibility`). "Show me" (a click on a note row of the section, or the Show me button of a lost pick) frames those items and flashes them; MCP `set_ui_view` takes `frame_items` for the same view. The toolpath draw set stays the selected toolpath (WP27). Sentries: `item_states_match_the_cut_p4_4` (core), `the_selection_colours_live_in_colors_p4_4`, `show_me_frames_the_items_p4_4`, `a_hidden_model_takes_no_pick_p4_d` (in `pick_mode_picks_by_kind_p4_5`), `a_hidden_model_takes_no_click_p4_d` (in `a_click_picks_the_drawn_item_p2_6`), `a_dxf_draws_on_import_and_its_eye_hides_it_p4_d`, `a_drawing_with_no_toolpath_gives_neutral_lines_p4_d` (viz lib)
+ - **pick mode and the filter bar** (P4.5) — `Pick` turns on a pick mode for that selection; one pick mode or tab editor is on at a time (L-3). A filter bar floats at the top centre of the viewport: kind chips Closed contours, Open contours, Circles, Faces, Points (L3, 2026-10-23), a circle diameter range (Ø ± tolerance) while the circle chip is on, a help line and Done. A chip for a kind that the selection cannot cut is disabled, and its hover gives the core reason; a chip for a kind that the model does not hold is disabled too. So the GUI cannot make a `KindNotCut` pick. In pick mode every click on an item goes to that selection and wins over the toolpath and stock picks. A click adds or removes the item (`pick_edit`); on the default rule the first click replaces it (O-PICK, see below). P3 (reference audit, 2026-10-23): a shift-click adds ONE item and never removes it (`AppEvent::AddPick`, CAD convention). A right-click adds the item's layer as a rule for the kinds of the chips that are on (`layer_rule_edit`; with a circle range the circles get their own rule). P4: the chips are a view filter. A click picks an item of an on chip first; with none under the pointer, a click on an item of a kind that the op can cut but whose chip is off turns that chip on and adds the item (`picking::pick_mode_item`, `pick_bar::click_event`). A kind that the op cannot cut never picks. Under the default selection the first layer rule replaces the default. An item on no layer gives a notice and no edit. A click picks the item whose drawn line passes nearest the pointer, within 15 px (12 px for a point), over the kinds that the chips admit, then over the other kinds that the op cuts (P4). The item under the pointer draws in the hover colour, and a tooltip names the kind, the layer, the size and the click result. Esc, Done or a change of the selected toolpath ends pick mode. MCP: `list_model_items` takes `near: {xy, radius_mm}` (model frame), the distance rule of a click, nearest first; a right-click is an `edit_toolpath_selection` `add_rule` or `replace` with the same rules. Sentries: `pick_mode_picks_by_kind_p4_5` (viz; P4 `_p4click`, P3 `_p3shift`), `an_mcp_near_pick_and_a_gui_click_give_one_pick_p4_5` (viz lib), `--lib p4_5` (core)
+ - **STEP shells face out** (2026-10-20) — STEP import turns each closed shell that is triangulated inward so it faces out, once, at import (`io/step_input.rs` `orient_shell_outward`; closed = every BREP edge used twice, once each way). Every reader of the mesh (3D ops, slope, flat regions, simulation, render normals) sees outward triangles. Sentry: `a_step_shell_faces_out_at_import`.
+diff --git a/crates/rs_cam_viz/src/ui/components/tab_strip.rs b/crates/rs_cam_viz/src/ui/components/tab_strip.rs
+index ba6dec5de..8fa46f69d 100644
+--- a/crates/rs_cam_viz/src/ui/components/tab_strip.rs
++++ b/crates/rs_cam_viz/src/ui/components/tab_strip.rs
+@@ -12,8 +12,14 @@
+ //! - `TabBadge::Count` — the caution glyph and a count after the label, in
+ //!   the colour of its role. A count of 0 shows no badge.
+ //!
+-//! The strip wraps in a narrow rail (UR1: a tab past the panel edge is a
+-//! defect). The active tab takes `ACCENT_QUIET` and an `ACCENT` underline;
++//! Compact form (stepGT, operator ruling 2026-10-28): when the tabs at
++//! their full size do not fit the width, the strip draws them compact:
++//! caption-size labels, no minimum tab width, a 2-point padding and no
++//! gap. The six toolpath tabs then fit one line of the 280-point
++//! inspector. The labels do not change.
++//!
++//! The strip still wraps in a narrow rail (UR1: a tab past the panel edge
++//! is a defect). The active tab takes `ACCENT_QUIET` and an `ACCENT` underline;
+ //! its radius is on the two top corners, because a tab joins the panel
+ //! below it (`DESIGN_SPEC.md` §2.2).
+ 
+@@ -24,6 +30,9 @@ use crate::ui::tokens;
+ /// "Dressup" wrapped to two rows.
+ const TAB_MIN_WIDTH: f32 = 55.0;
+ 
++/// The horizontal padding of a compact tab, in points.
++const COMPACT_PADDING_X: f32 = tokens::SPACE_1;
++
+ /// The glyph before the count of a count badge.
+ pub const COUNT_GLYPH: &str = "\u{26A0}";
+ 
+@@ -80,8 +89,18 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
+     pub fn show(self, ui: &mut egui::Ui) -> bool {
+         let mut changed = false;
+         let active = self.active;
++        let compact = full_width(ui, &self.tabs) > ui.available_width();
+         ui.horizontal_wrapped(|ui| {
+             ui.spacing_mut().item_spacing.x = 0.0;
++            if compact {
++                ui.spacing_mut().button_padding.x = COMPACT_PADDING_X;
++            }
++            let size = if compact {
++                tokens::SIZE_CAPTION
++            } else {
++                tokens::SIZE_BODY
++            };
++            let min_width = if compact { 0.0 } else { TAB_MIN_WIDTH };
+             for tab in &self.tabs {
+                 let is_active = *active == tab.value;
+                 let (fill, text_color) = if is_active {
+@@ -89,7 +108,7 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
+                 } else {
+                     (egui::Color32::TRANSPARENT, tokens::TEXT_MUTED)
+                 };
+-                let button = egui::Button::new(tab_label(ui, tab, text_color))
++                let button = egui::Button::new(tab_label(ui, tab, text_color, size))
+                     .fill(fill)
+                     .corner_radius(egui::CornerRadius {
+                         nw: tokens::RADIUS_SM,
+@@ -97,7 +116,7 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
+                         sw: 0,
+                         se: 0,
+                     })
+-                    .min_size(egui::vec2(TAB_MIN_WIDTH, tokens::ROW_ACTION));
++                    .min_size(egui::vec2(min_width, tokens::ROW_ACTION));
+                 let response = ui.add(button);
+                 if response.clicked() && !is_active {
+                     *active = tab.value;
+@@ -110,13 +129,32 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
+                         egui::Stroke::new(2.0_f32, tokens::ACCENT),
+                     );
+                 }
+-                ui.add_space(tokens::SPACE_1);
++                if !compact {
++                    ui.add_space(tokens::SPACE_1);
++                }
+             }
+         });
+         changed
+     }
+ }
+ 
++/// The width of the strip at full size on one line: each tab's label and
++/// padding, at least [`TAB_MIN_WIDTH`], and the gap after it.
++fn full_width<T>(ui: &egui::Ui, tabs: &[Tab<'_, T>]) -> f32 {
++    let padding = 2.0 * ui.spacing().button_padding.x;
++    tabs.iter()
++        .map(|tab| {
++            let galley = tab_label(ui, tab, tokens::TEXT_STRONG, tokens::SIZE_BODY).into_galley(
++                ui,
++                Some(egui::TextWrapMode::Extend),
++                f32::INFINITY,
++                egui::TextStyle::Button,
++            );
++            (galley.size().x + padding).max(TAB_MIN_WIDTH) + tokens::SPACE_1
++        })
++        .sum()
++}
++
+ /// The text of a count badge: the glyph and the count.
+ #[must_use]
+ pub fn count_text(count: usize) -> String {
+@@ -124,10 +162,15 @@ pub fn count_text(count: usize) -> String {
+ }
+ 
+ /// The label of one tab, with its badge, as one text run.
+-fn tab_label<T>(ui: &egui::Ui, tab: &Tab<'_, T>, text_color: egui::Color32) -> egui::WidgetText {
++fn tab_label<T>(
++    ui: &egui::Ui,
++    tab: &Tab<'_, T>,
++    text_color: egui::Color32,
++    size: f32,
++) -> egui::WidgetText {
+     let label = || {
+         egui::RichText::new(tab.label)
+-            .size(tokens::SIZE_BODY)
++            .size(size)
+             .color(text_color)
+             .strong()
+     };
+@@ -154,7 +197,7 @@ fn tab_label<T>(ui: &egui::Ui, tab: &Tab<'_, T>, text_color: egui::Color32) -> e
+             append(label());
+             append(
+                 egui::RichText::new(format!(" {}", count_text(count)))
+-                    .size(tokens::SIZE_BODY)
++                    .size(size)
+                     .color(role.text())
+                     .strong(),
+             );
+@@ -162,3 +205,91 @@ fn tab_label<T>(ui: &egui::Ui, tab: &Tab<'_, T>, text_color: egui::Color32) -> e
+     }
+     egui::WidgetText::LayoutJob(std::sync::Arc::new(job))
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    /// (rows, label font size, full width) of a strip of `labels` drawn at
++    /// `width`. `labels[dot]` carries a dot badge and `labels[count]` a
++    /// count badge, as the two inspectors draw them.
++    fn strip(
++        labels: &[&str],
++        dot: Option<usize>,
++        count: Option<usize>,
++        width: f32,
++    ) -> (usize, f32, f32) {
++        let ctx = egui::Context::default();
++        tokens::apply(&ctx);
++        tokens::apply_fonts(&ctx);
++        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
++        warmup.textures_delta.clear();
++        let mut full = 0.0;
++        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
++            ui.set_max_width(width);
++            let mut active = 0_usize;
++            let strip =
++                labels
++                    .iter()
++                    .enumerate()
++                    .fold(TabStrip::new(&mut active), |s, (i, label)| {
++                        let badge = if Some(i) == dot {
++                            Some(TabBadge::Dot(tokens::DANGER))
++                        } else if Some(i) == count {
++                            Some(TabBadge::Count(3, Role::Danger))
++                        } else {
++                            None
++                        };
++                        s.tab_badge(i, label, badge)
++                    });
++            full = full_width(ui, &strip.tabs);
++            let _ = strip.show(ui);
++        });
++        let mut rows: Vec<f32> = Vec::new();
++        let mut size = 0.0;
++        for clipped in &out.shapes {
++            if let egui::epaint::Shape::Text(text) = &clipped.shape
++                && labels.iter().any(|l| text.galley.job.text.contains(l))
++            {
++                let y = clipped.shape.visual_bounding_rect().center().y;
++                if !rows.iter().any(|r| (r - y).abs() < 4.0) {
++                    rows.push(y);
++                }
++                size = text
++                    .galley
++                    .job
++                    .sections
++                    .iter()
++                    .map(|s| s.format.font_id.size)
++                    .fold(0.0, f32::max);
++            }
++        }
++        out.textures_delta.clear();
++        (rows.len(), size, full)
++    }
++
++    const TOOLPATH: [&str; 6] = ["Geometry", "Cut", "Heights", "Feeds", "Linking", "Dressup"];
++    const SIM: [&str; 4] = ["Metrics", "Warnings", "Navigate", "Project"];
++
++    /// stepGT: at the inner width of the 280-point inspector (264 points)
++    /// the six toolpath tabs, with a dot on Feeds, are compact and on ONE
++    /// line. At full size they need more than the width (non-vacuity).
++    #[test]
++    fn the_toolpath_tabs_fit_one_line_compact_gt() {
++        let (rows, size, full) = strip(&TOOLPATH, Some(3), None, 264.0);
++        assert!(full > 264.0, "non-vacuity: full size fits ({full:.1})");
++        assert_eq!(size, tokens::SIZE_CAPTION, "compact labels");
++        assert_eq!(rows, 1, "one line at 264 points (full size {full:.1})");
++    }
++
++    /// stepGT: a strip that fits at full size keeps the full size: the
++    /// four Simulation tabs, with a count on Warnings, at the inner width
++    /// of the 304-point Simulation inspector (288 points).
++    #[test]
++    fn a_strip_that_fits_keeps_the_full_size_gt() {
++        let (rows, size, full) = strip(&SIM, None, Some(1), 288.0);
++        assert!(full <= 288.0, "the sim tabs need {full:.1} points");
++        assert_eq!(size, tokens::SIZE_BODY);
++        assert_eq!(rows, 1);
++    }
++}
+diff --git a/crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs b/crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs
+index 2ca75ccbb..3800fea13 100644
+--- a/crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs
++++ b/crates/rs_cam_viz/src/ui/properties/feeds_speeds.rs
+@@ -1,4 +1,4 @@
+-//! The Feeds & Speeds tab: the LUT calculator card, the manual speed
++//! The Feeds tab: the LUT calculator card, the manual speed
+ //! controls, the operating-point and advance-per-tooth readings, the vendor
+ //! LUT viewer and the entry-style preview diagram.
+ 
+diff --git a/crates/rs_cam_viz/src/ui/properties/mod.rs b/crates/rs_cam_viz/src/ui/properties/mod.rs
+index 167919d73..7587bafda 100644
+--- a/crates/rs_cam_viz/src/ui/properties/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/mod.rs
+@@ -183,7 +183,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
+ // the op cuts: the selected items, the floor face; geometry selection GT-1)
+ // comes first. Cut holds the tool, the input model, the start stock and
+ // the op parameters (the "Geometry" tab before GT-1). Then Heights (Z
+-// planes), Feeds & Speeds, Linking (how moves connect) and Dressup.
++// planes), Feeds, Linking (how moves connect) and Dressup.
+ // D7 (reference audit 2026-10-23): Heights is third, after Cut, as in
+ // FreeCAD and Fusion.
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -211,7 +211,7 @@ impl ToolpathTab {
+         match self {
+             ToolpathTab::Geometry => "Geometry",
+             ToolpathTab::Cut => "Cut",
+-            ToolpathTab::FeedsSpeeds => "Feeds & Speeds",
++            ToolpathTab::FeedsSpeeds => "Feeds",
+             ToolpathTab::Linking => "Linking",
+             ToolpathTab::Heights => "Heights",
+             ToolpathTab::Dressup => "Dressup",
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index 2e5fe19a4..2c969e428 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -294,7 +294,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
+     );
+ }
+ /// D7 (reference audit 2026-10-23, operator approved): the tab strip
+-/// draws Geometry, Cut, Heights, Feeds & Speeds, Linking, Dressup, from
++/// draws Geometry, Cut, Heights, Feeds, Linking, Dressup, from
+ /// left to right. The test renders the strip and reads the x of each
+ /// label, so a change of `ALL` or of the strip order turns it red.
+ ///
+@@ -302,14 +302,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
+ /// was Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup.
+ #[test]
+ fn the_tab_strip_puts_heights_after_cut_d7() {
+-    const WANT: [&str; 6] = [
+-        "Geometry",
+-        "Cut",
+-        "Heights",
+-        "Feeds & Speeds",
+-        "Linking",
+-        "Dressup",
+-    ];
++    const WANT: [&str; 6] = ["Geometry", "Cut", "Heights", "Feeds", "Linking", "Dressup"];
+     let ctx = egui::Context::default();
+     crate::ui::tokens::apply(&ctx);
+     crate::ui::tokens::apply_fonts(&ctx);
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 43bf1aabd..23313d18e 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -987,7 +987,7 @@ pub(super) fn draw_cut_tab(
+     }
+ }
+ 
+-/// The Feeds & Speeds tab: how fast.
++/// The Feeds tab: how fast.
+ fn draw_feeds_tab(
+     ui: &mut egui::Ui,
+     entry: &mut crate::state::toolpath::ToolpathEntry,
