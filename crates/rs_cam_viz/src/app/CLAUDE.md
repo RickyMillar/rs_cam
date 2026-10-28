@@ -19,14 +19,14 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
   - A click goes to the tab editor, then pick mode, then the drawing popover, then the plain pick.
     The tab editor also wins the right-click and a drag that starts on a tab (no orbit).
   - Pick mode: `pick_bar::click_event` maps a click (P3: shift = `AddPick`, right = `PickLayer`); `pick_mode_item` (P4) picks a chip-off kind second; the ray hits an STL mesh.
-  - The hover ring (`upload_hover_lines`) and the tab marks (`upload_tab_lines`) are their own buffers.
+  - B1: `hover_result` picks once per frame; every hover reader reads it. The hover ring (`upload_hover_lines`)
+    and the tab marks (`upload_tab_lines`) are their own buffers. D5: the hover ring reads `face_items` for an STL face.
   - `set_ui_view`: `model_visibility` sends `SetModelVisibility`; `frame_items` calls `frame_selection_items`.
 
 ## Invariants
 
 - An MCP mutation dispatches through the same command path as the UI. S11: `add_toolpath` drafts with core `draft_toolpath` and replies `unset` (R2/Q7: no `tool_index` = first fitting tool, reply `no_tool`; no `model_id` = the core model rule; `add_toolpath_via_gui` `model_id` = the selected model; parity `every_add_door_takes_one_model_and_tool_q7`); `get_toolpath_params` gives `unset`; `import_model` gives `stock_thickness_set`.
-- A setter stales the result. Regenerate before you export. Tool and model rebinding uses its own
-  endpoint, not a generic parameter setter.
+- A setter stales the result. Regenerate before you export. Tool and model rebinding uses its own endpoint, not a generic setter.
 - Export refuses missing or stale enabled geometry, and an unsafe or unmodelled load verdict, unless
   the caller accepts the override. An MCP export reports the machine-safety findings beside the path
   it wrote: take `io::export`'s reporting door; do not re-run the validator.

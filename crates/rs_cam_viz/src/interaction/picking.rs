@@ -58,6 +58,21 @@ pub enum PickHit {
     },
 }
 
+/// The pick under the pointer, computed once per frame (B1).
+#[derive(Debug, Clone, Default)]
+pub struct HoverResult {
+    /// The pointer position, or `None` when no pick ran.
+    pub pos: Option<egui::Pos2>,
+    /// Pick mode: the key (or its refusal) and the chip-off kind.
+    pub pick_mode: Option<(
+        Result<rs_cam_core::selection::MatchKey, String>,
+        Option<ItemKind>,
+    )>,
+    /// The scene pick (`pick` with `drill_pick: None`): the face hover and
+    /// the toolpath tooltip read it.
+    pub scene: Option<PickHit>,
+}
+
 /// Context for a pick operation, bundling camera and viewport parameters.
 pub struct PickContext<'a> {
     pub camera: &'a OrbitCamera,

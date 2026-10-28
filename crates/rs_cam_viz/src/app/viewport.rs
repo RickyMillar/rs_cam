@@ -99,6 +99,55 @@ impl RsCamApp {
         Some((key, found.chip_off))
     }
 
+    /// The pick under the pointer, computed once per frame (B1). Every
+    /// hover reader in `draw_viewport` reads it.
+    ///
+    /// The result is empty when the pointer is not over the viewport, and
+    /// during a drag (an orbit or a tab drag). Then no pick runs and the
+    /// hover clears. In pick mode the scene pick runs only when a model has
+    /// an enriched mesh, because only the face hover reads it there.
+    fn hover_result(
+        &self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        pick: Option<&ActivePick>,
+    ) -> crate::interaction::picking::HoverResult {
+        use crate::interaction::picking::HoverResult;
+        if !response.hovered() || response.dragged() {
+            return HoverResult::default();
+        }
+        let Some(pos) = ui.input(|i| i.pointer.hover_pos()) else {
+            return HoverResult::default();
+        };
+        let state = self.controller.state();
+        let pick_mode = pick.and_then(|pick| self.pick_mode_key(pick, pos));
+        let has_enriched = state
+            .session()
+            .models()
+            .iter()
+            .any(|m| m.enriched_mesh.is_some());
+        let scene = if pick.is_none() || has_enriched {
+            crate::interaction::picking::pick(
+                &self.pick_context(pos),
+                state.session(),
+                &state.gui,
+                self.controller.collision_positions(),
+                state.workspace,
+                crate::state::viewport::ToolpathDrawFilter::from_state(state),
+                None,
+                crate::state::pin_view::active_display_setup(state.session(), state.focus())
+                    .as_ref(),
+            )
+        } else {
+            None
+        };
+        HoverResult {
+            pos: Some(pos),
+            pick_mode,
+            scene,
+        }
+    }
+
     /// The match key of a pick-mode hit, or `None` for a hit that is not
     /// an item. A face that is not flat has no item: `Err` names it.
     fn pick_hit_key(
@@ -667,16 +716,21 @@ impl RsCamApp {
             self.handle_viewport_click(pos, shift);
         }
 
-        // P4.5: the item under the pointer in pick mode. The hover buffer
-        // uploads on a change of the item only (`HoverDetector`, the
-        // `last_hover_face` pattern below), never per frame.
+        // B1: one hover pick per frame. Every hover reader below reads
+        // `hover`; no reader picks again.
         let pick = self.active_pick();
-        let hovered_item = match (&pick, ui.input(|i| i.pointer.hover_pos())) {
-            (Some(pick), Some(pos)) if response.hovered() => self
-                .pick_mode_key(pick, pos)
-                .and_then(|(key, chip_off)| key.ok().map(|key| (pick, key, chip_off))),
+        let hover = self.hover_result(ui, &response, pick.as_ref());
+
+        // P4.5: the item under the pointer in pick mode. The hover buffer
+        // uploads on a change of the item only (`HoverDetector`), never per
+        // frame.
+        let hovered_item = match (&pick, &hover.pick_mode) {
+            (Some(pick), Some((Ok(key), chip_off))) => Some((pick, key.clone(), *chip_off)),
             _ => None,
         };
+        if hovered_item.is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
         // GT-2: with no pick hover, the row of the Geometry tab list under
         // the pointer lights its item.
         let hovered_key = hovered_item
@@ -709,68 +763,23 @@ impl RsCamApp {
             }
         }
 
-        // Update hovered face for BREP hover highlighting.
+        // The BREP face hover highlight.
         //
-        // V13: `last_hover_face` is read by `upload_gpu_data` when it builds
-        // the enriched (STEP/BREP) mesh colours, but until 2026-08-19 nothing
-        // here marked an upload pending — so the hover highlight only ever
-        // appeared when some *other* event happened to trigger an upload, and
-        // even then showed the face the pointer had been over on some earlier
-        // frame. A genuine user-visible defect, not just a missed
-        // optimisation.
-        //
-        // The flag is set only on a *change* of hovered face, and only now
-        // that per-object keys exist (V8): before that, one pointer move
-        // across a face boundary would have rebuilt the entire scene. With
-        // the keys in place the only resource whose key moved is the enriched
-        // mesh, so exactly that one buffer is rebuilt. The paired
-        // `request_repaint` is conditional on the same change — the
-        // unconditional repaint that G-LV.1 removed is not being reintroduced
-        // — and is needed because the pointer can come to rest on a new face,
-        // producing no further egui repaint of its own to carry the upload.
+        // V13: `upload_gpu_data` reads `last_hover_face` for the enriched
+        // mesh colours. Only a change of the hovered face sets the upload
+        // flag, so only the enriched mesh buffer rebuilds. The paired
+        // `request_repaint` fires on the same change only (G-LV.1). It is
+        // necessary because a pointer at rest on a new face makes no egui
+        // repaint of its own.
         let previous_hover_face = self.last_hover_face;
-        self.last_hover_face = None;
-        if response.hovered()
-            && self.controller.state().workspace == Workspace::Toolpaths
-            && self
-                .controller
-                .state()
-                .session()
-                .models()
-                .iter()
-                .any(|m| m.enriched_mesh.is_some())
-            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
-        {
-            let pick_ctx = crate::interaction::picking::PickContext {
-                camera: &self.camera,
-                screen_x: pos.x - rect.min.x,
-                screen_y: pos.y - rect.min.y,
-                aspect: if rect.height() > 0.0 {
-                    rect.width() / rect.height()
-                } else {
-                    1.0
-                },
-                vw: rect.width(),
-                vh: rect.height(),
-                visibility: &self.controller.state().overlays.model_visibility,
-            };
-            let state = self.controller.state();
-            if let Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. }) =
-                crate::interaction::picking::pick(
-                    &pick_ctx,
-                    state.session(),
-                    &state.gui,
-                    self.controller.collision_positions(),
-                    state.workspace,
-                    crate::state::viewport::ToolpathDrawFilter::from_state(state),
-                    None,
-                    crate::state::pin_view::active_display_setup(state.session(), state.focus())
-                        .as_ref(),
-                )
+        self.last_hover_face = match &hover.scene {
+            Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. })
+                if self.controller.state().workspace == Workspace::Toolpaths =>
             {
-                self.last_hover_face = Some(face_id);
+                Some(*face_id)
             }
-        }
+            _ => None,
+        };
         if self.last_hover_face != previous_hover_face {
             self.controller.set_pending_upload();
             ui.ctx().request_repaint();
@@ -780,48 +789,20 @@ impl RsCamApp {
         // the closest sampled move so the user can read what part of the
         // operation they're pointing at (e.g. "DepthPass 3 / Region 2").
         // In pick mode the item tooltip above has the pointer (P4.5).
-        if response.hovered()
-            && pick.is_none()
-            && let Some(pos) = ui.input(|i| i.pointer.hover_pos())
+        if pick.is_none()
+            && let Some(crate::interaction::picking::PickHit::Toolpath { id, move_index }) =
+                &hover.scene
+            && let Some(tip) = span_path_tooltip(self.controller.state(), *id, *move_index)
         {
-            let pick_ctx = crate::interaction::picking::PickContext {
-                camera: &self.camera,
-                screen_x: pos.x - rect.min.x,
-                screen_y: pos.y - rect.min.y,
-                aspect: if rect.height() > 0.0 {
-                    rect.width() / rect.height()
-                } else {
-                    1.0
-                },
-                vw: rect.width(),
-                vh: rect.height(),
-                visibility: &self.controller.state().overlays.model_visibility,
-            };
-            let state = self.controller.state();
-            if let Some(crate::interaction::picking::PickHit::Toolpath { id, move_index }) =
-                crate::interaction::picking::pick(
-                    &pick_ctx,
-                    state.session(),
-                    &state.gui,
-                    self.controller.collision_positions(),
-                    state.workspace,
-                    crate::state::viewport::ToolpathDrawFilter::from_state(state),
-                    None,
-                    crate::state::pin_view::active_display_setup(state.session(), state.focus())
-                        .as_ref(),
-                )
-                && let Some(tip) = span_path_tooltip(state, id, move_index)
-            {
-                egui::Tooltip::always_open(
-                    ui.ctx().clone(),
-                    response.layer_id,
-                    egui::Id::new("toolpath_span_tip"),
-                    egui::PopupAnchor::Pointer,
-                )
-                .show(|ui| {
-                    ui.label(tip);
-                });
-            }
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                response.layer_id,
+                egui::Id::new("toolpath_span_tip"),
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                ui.label(tip);
+            });
         }
 
         // P4.6: a right-click on a tab deletes it; a drag that starts on a
