@@ -127,7 +127,8 @@ fn an_old_file_loads_helical_with_one_warning() {
     );
     let line = warnings[0].message();
     assert!(
-        !line.contains('\n') && line.starts_with("Waterline 'Waterline': helical descent"),
+        !line.contains('\n')
+            && line == "Waterline 'Waterline': helical descent is now on (was continuous = false).",
         "one short line: {line}"
     );
     // The save writes the new key only.

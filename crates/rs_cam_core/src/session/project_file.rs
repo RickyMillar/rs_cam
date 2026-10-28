@@ -539,8 +539,8 @@ pub enum ProjectLoadWarning {
         changes: Vec<String>,
     },
     /// W1b: a Waterline stored the old key `continuous` (`stored` is its
-    /// value). The key was a dial no generator read, so the loader turned
-    /// the helical waterline on (`WaterlineConfig::helical`).
+    /// value). The loader turned the helical waterline on
+    /// (`WaterlineConfig::helical`, operator ruling 2026-10-28).
     WaterlineHelical { toolpath: String, stored: bool },
     /// A toolpath's rest-analysis flag did not match the demand the
     /// project declares, so the loader rewrote it. `enabled` is the value
@@ -614,8 +614,10 @@ impl ProjectLoadWarning {
                  The loader changed {}. Save the project to keep the change.",
                 changes.join(", ")
             ),
-            Self::WaterlineHelical { toolpath, .. } => {
-                format!("Waterline '{toolpath}': helical descent is now on (was the old default).")
+            Self::WaterlineHelical { toolpath, stored } => {
+                format!(
+                    "Waterline '{toolpath}': helical descent is now on (was continuous = {stored})."
+                )
             }
         }
     }
