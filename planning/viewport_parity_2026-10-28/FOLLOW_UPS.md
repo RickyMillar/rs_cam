@@ -35,3 +35,16 @@ that pass:
 - Keep the one-click rows (grid, stock, rapids, collisions) on the bar;
   move the rare rows behind one "More" popover.
 - The wizard rule applies: no clutter in main panels (operator 2026-10-22).
+
+## 3. Small items left open by the build
+
+- B §3.4 hole-rim folding of a batch: `AddPicks` does not run `hole_rim_key`
+  per key, so a box over a Drill hole sends the rim circle and the floor
+  circle as two keys. Fold them in core (`Selection::apply(AddPicks)`), so
+  MCP gives the same result; one test on a Drill fixture.
+- The pick-mode right-click menu (E5), the box (B6), the eased presets and
+  the face edges have not been seen on screen. Take screenshot pairs on a
+  quiet GUI (`planning/viewport_parity_2026-10-28/evidence/`).
+- B3 (the `MouseScheme` setting, right-drag orbit default) waits for the
+  operator's live look (A-Q9, B-O2). D6 (ID pass, outline) and the "select
+  other" cycle are phase 4.
