@@ -347,11 +347,27 @@ pub(crate) fn generate_waterline(
     } else {
         None
     };
+    // W2 (D69 §3): the inputs of the wall step. All four must be known;
+    // else the helix keeps every ring (the W1 ladder).
+    let wall = match (ctx.material, ctx.rest_axial_step_mm, cfg.spindle_rpm) {
+        (Some(material), Some(max_step_mm), Some(rpm))
+            if rpm > 0 && ctx.tool_cfg.flute_count > 0 =>
+        {
+            Some(WallInputs {
+                material,
+                max_step_mm,
+                // The feed per tooth: feed / (rpm x flutes).
+                fz_mm: params.feed_rate / (f64::from(rpm) * f64::from(ctx.tool_cfg.flute_count)),
+            })
+        }
+        _ => None,
+    };
     let pass = WaterlinePass {
         surface,
         cutter: ctx.tool_def,
         params,
         link_probe,
+        wall,
         levels: ladder.levels,
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
@@ -359,6 +375,68 @@ pub(crate) fn generate_waterline(
         boundary_regions: prepared.territory().regions(),
     };
     run_layered(&pass, ctx, prepared)
+}
+
+/// W2 (D69 §3): what the wall step of the helical Waterline reads.
+struct WallInputs<'a> {
+    material: &'a crate::material::Material,
+    /// The rough's axial step (`ExecutionContext::rest_axial_step_mm`).
+    max_step_mm: f64,
+    /// The feed per tooth of the op (mm).
+    fz_mm: f64,
+}
+
+/// W2 (D69 §3): the deflection check of a wall step. The tool `tool` cuts
+/// a wall at axial depth `ap` (mm) with radial skin `skin` (mm) at feed per
+/// tooth `fz` (mm). It passes when the shared force and cantilever model of
+/// the deflection gate (`feeds::predict::tip_deflection_from_engagement`,
+/// which `tool_load::deflection::sample_tip_deflection_mm` also reads; the
+/// cantilever is `ToolDefinition::tip_deflection_mm`) predicts at most
+/// `tool_load::deflection::WITHIN_BOUND_MM` (the gate's "Within, Validated"
+/// bound; lead ruling 2026-10-28). No skin: no load, so it passes. A model
+/// refusal (no force line, no stickout) fails.
+fn wall_step_admits(
+    tool: &ToolDefinition,
+    material: &crate::material::Material,
+    skin: f64,
+    ap: f64,
+    fz: f64,
+) -> bool {
+    if skin <= 0.0 {
+        return true;
+    }
+    let radius = crate::tool::MillingCutter::radius(tool);
+    crate::feeds::predict::tip_deflection_from_engagement(
+        tool,
+        material,
+        ap,
+        crate::feeds::force::immersion_angle(skin, radius),
+        fz,
+    )
+    .is_some_and(|deflection| deflection <= crate::tool_load::deflection::WITHIN_BOUND_MM)
+}
+
+impl WaterlinePass<'_> {
+    /// W2 (D69 §3): [`wall_step_admits`] along `ring`, with the widest
+    /// radial skin that the remaining stock shows there
+    /// (`StandingNear::radial_skin_mm`). No rest rule (fresh stock): fails.
+    fn wall_admits(
+        &self,
+        wall: &WallInputs<'_>,
+        standing: Option<&crate::compute::execute::standing_material::StandingNear<'_>>,
+        ring: &[crate::geo::P3],
+        ap: f64,
+    ) -> bool {
+        let Some(standing) = standing else {
+            return false;
+        };
+        let radius = crate::tool::MillingCutter::radius(self.cutter);
+        let skin = ring
+            .iter()
+            .map(|p| standing.radial_skin_mm(P2::new(p.x, p.y), radius))
+            .fold(0.0_f64, f64::max);
+        wall_step_admits(self.cutter, wall.material, skin, ap, wall.fz_mm)
+    }
 }
 
 /// The Waterline op: the push-cutter contours of the surface at each level
@@ -372,6 +450,9 @@ struct WaterlinePass<'a> {
     /// judges a chain link. `Some`: the op cuts the helical waterline;
     /// `None`: the stacked form, one entry per ring and level.
     link_probe: Option<ToolDefinition>,
+    /// W2 (D69 §3): the inputs of the wall step, or `None` (no material, no
+    /// rough step or no spindle speed): the helix keeps every ring.
+    wall: Option<WallInputs<'a>>,
     /// The ladder of `waterline_ladder`: nudged off the flat facets and
     /// floored at the stock bottom.
     levels: Vec<f64>,
@@ -523,8 +604,27 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
                 rest.tally(level.rest_kept, level.rest_dropped);
                 rings.push(level);
             }
-            let tp =
-                crate::ops::waterline::helical_waterline(&rings, &self.params, &probe, cancel)?;
+            let admits = |k: usize, ring: &[crate::geo::P3], ap: f64| {
+                let Some((wall, &z)) = self.wall.as_ref().zip(levels.get(k)) else {
+                    return false;
+                };
+                let rest = rest(z);
+                self.wall_admits(wall, rest.standing.as_ref(), ring, ap)
+            };
+            let wall_step = self
+                .wall
+                .as_ref()
+                .map(|wall| crate::ops::waterline::WallStep {
+                    max_step_mm: wall.max_step_mm,
+                    admits: &admits,
+                });
+            let tp = crate::ops::waterline::helical_waterline(
+                &rings,
+                &self.params,
+                &probe,
+                wall_step.as_ref(),
+                cancel,
+            )?;
             // P6.0c: a surface op states no material side.
             Ok(SidedToolpath::without_closed_passes(tp))
         };
@@ -566,5 +666,41 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             surface: self.surface,
             cutter: self.cutter,
         })
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::wall_step_admits;
+    use crate::compute::tool_config::{ToolConfig, ToolType};
+    use crate::ids::ToolId;
+    use crate::material::{Material, WoodSpecies};
+
+    fn endmill(diameter: f64, stickout: f64) -> crate::tool::ToolDefinition {
+        let mut cfg = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        cfg.diameter = diameter;
+        cfg.shank_diameter = diameter;
+        cfg.stickout = stickout;
+        crate::compute::cutter::build_cutter(&cfg).expect("a valid end mill")
+    }
+
+    /// W2: the wall step passes the deflection check for a stiff tool and
+    /// a thin skin, and fails for a long thin tool at the same cut. No skin
+    /// always passes.
+    #[test]
+    fn the_wall_step_reads_the_deflection_model_w2() {
+        let maple = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let (skin, ap, fz) = (0.5, 6.0, 0.05);
+        let stiff = endmill(6.0, 20.0);
+        let thin = endmill(2.0, 40.0);
+        assert!(wall_step_admits(&stiff, &maple, skin, ap, fz));
+        assert!(!wall_step_admits(&thin, &maple, skin, ap, fz));
+        assert!(wall_step_admits(&thin, &maple, 0.0, ap, fz));
     }
 }

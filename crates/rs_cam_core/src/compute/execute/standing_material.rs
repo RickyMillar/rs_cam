@@ -560,14 +560,16 @@ pub(crate) fn standing_near(
 }
 
 impl StandingNear<'_> {
-    /// True when the contour point `p` passes material, or when the grid
-    /// holds no answer in its band. See [`standing_near`].
+    /// The cells whose centre lies within the band of `p`: for each, its
+    /// distance (mm) from `p` and its `(row, col)`, or `None` for a cell
+    /// off the grid. One walk for [`Self::keeps`] and
+    /// [`Self::radial_skin_mm`].
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a far point saturates its cell index, and the range test rejects it; r and c are cast only after `on_grid` proves them not negative"
     )]
-    pub(crate) fn keeps(&self, p: P2) -> bool {
+    fn cells_in_band(&self, p: P2) -> impl Iterator<Item = (f64, Option<(usize, usize)>)> + '_ {
         let grid = self.grid;
         let cell = grid.cell_size;
         let index = |u: f64, origin: f64| ((u - origin) / cell).floor() as isize;
@@ -579,25 +581,58 @@ impl StandingNear<'_> {
             index(p.y - self.band, grid.origin_v),
             index(p.y + self.band, grid.origin_v) + 1,
         );
-        let mut seen = false;
-        for r in r0..=r1 {
-            for c in c0..=c1 {
+        (r0..=r1)
+            .flat_map(move |r| (c0..=c1).map(move |c| (r, c)))
+            .filter_map(move |(r, c)| {
                 let (x, y) = (
                     grid.origin_u + c as f64 * cell,
                     grid.origin_v + r as f64 * cell,
                 );
-                if (x - p.x).hypot(y - p.y) > self.band {
-                    continue;
+                let d = (x - p.x).hypot(y - p.y);
+                if d > self.band {
+                    return None;
                 }
-                seen = true;
                 let on_grid =
                     r >= 0 && c >= 0 && (r as usize) < grid.rows && (c as usize) < grid.cols;
-                if !on_grid || grid.has_material_above(r as usize, c as usize, self.floor) {
-                    return true;
-                }
+                Some((d, on_grid.then_some((r as usize, c as usize))))
+            })
+    }
+
+    /// True when the contour point `p` passes material, or when the grid
+    /// holds no answer in its band. See [`standing_near`].
+    pub(crate) fn keeps(&self, p: P2) -> bool {
+        let mut seen = false;
+        for (_, at) in self.cells_in_band(p) {
+            seen = true;
+            match at {
+                None => return true,
+                Some((r, c)) if self.grid.has_material_above(r, c, self.floor) => return true,
+                Some(_) => {}
             }
         }
         !seen
+    }
+
+    /// W2 (D69 §3): the widest radial skin (mm) that the tool of radius
+    /// `tool_radius` meets at `p`: for each cell of the band that holds
+    /// material above the level, `R + cell / 2 - d` (`d` the distance of
+    /// its centre; the half cell is the part of the cell nearest the
+    /// tool), at most `2R` (a full slot). A cell off the grid holds no
+    /// answer, so it counts as a full slot (cut more, never less).
+    pub(crate) fn radial_skin_mm(&self, p: P2, tool_radius: f64) -> f64 {
+        let half_cell = self.grid.cell_size / 2.0;
+        let full = 2.0 * tool_radius;
+        let mut skin: f64 = 0.0;
+        for (d, at) in self.cells_in_band(p) {
+            match at {
+                None => return full,
+                Some((r, c)) if self.grid.has_material_above(r, c, self.floor) => {
+                    skin = skin.max(tool_radius + half_cell - d);
+                }
+                Some(_) => {}
+            }
+        }
+        skin.clamp(0.0, full)
     }
 }
 

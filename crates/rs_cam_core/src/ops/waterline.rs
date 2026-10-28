@@ -902,6 +902,84 @@ fn emit_chain(
     toolpath.final_retract(params.safe_z);
 }
 
+/// W2 (D69 §3): what lets a helical chain cut a vertical wall at a wider
+/// step. See [`thin_wall_chain`].
+pub struct WallStep<'a> {
+    /// The rough's axial step (mm): no gap between two kept rings exceeds
+    /// it (`ExecutionContext::rest_axial_step_mm`).
+    pub max_step_mm: f64,
+    /// The deflection check: true when the tool may cut the wall at axial
+    /// depth `ap` (mm, the third argument) along `ring` (the second) at
+    /// level index `k` (the first), with the radial skin the remaining
+    /// stock shows there.
+    pub admits: &'a dyn Fn(usize, &[P3], f64) -> bool,
+}
+
+/// W2 (D69 §3): the rings of `chain` that the helix keeps on a vertical
+/// wall. Ring `i` (not the first, not the last) is skipped when:
+///
+/// 1. the rings from the last kept ring to ring `i + 1` coincide (each lies
+///    inside the other to within `tol`, the W1 test [`ring_inside`] both
+///    ways), and
+/// 2. the gap from the last kept ring to ring `i + 1` is at most
+///    [`WallStep::max_step_mm`] (to within the ladder's own epsilon
+///    [`WATERLINE_LADDER_EPSILON`]), and
+/// 3. [`WallStep::admits`] that gap at ring `i + 1`.
+///
+/// The first and the last ring always stay. The lap from a kept ring then
+/// descends over the wider gap ([`lap_count`]).
+fn thin_wall_chain<'p>(
+    chain: &[(usize, usize)],
+    polygons: &[Vec<Option<Polygon2>>],
+    path_of: &dyn Fn(usize, usize) -> Option<&'p [P3]>,
+    wall: &WallStep<'_>,
+    tol: f64,
+) -> Vec<(usize, usize)> {
+    let polygon = |(k, c): (usize, usize)| {
+        polygons
+            .get(k)
+            .and_then(|l| l.get(c))
+            .and_then(Option::as_ref)
+    };
+    let coincide = |u: (usize, usize), v: (usize, usize)| match (polygon(u), polygon(v)) {
+        (Some(a), Some(b)) => ring_inside(a, b, tol) && ring_inside(b, a, tol),
+        _ => false,
+    };
+    let z_of = |at: (usize, usize)| path_of(at.0, at.1).and_then(|p| p.first()).map(|p| p.z);
+    let (Some(&first), Some(&last)) = (chain.first(), chain.last()) else {
+        return chain.to_vec();
+    };
+    let mut kept = vec![first];
+    let mut anchor = 0;
+    for i in 1..chain.len().saturating_sub(1) {
+        let (Some(&ring), Some(&next), Some(&from)) =
+            (chain.get(i), chain.get(i + 1), chain.get(anchor))
+        else {
+            continue;
+        };
+        let skip = (|| {
+            let all_coincide = chain
+                .get(anchor + 1..=i + 1)?
+                .iter()
+                .all(|&at| coincide(from, at));
+            let gap = z_of(from)? - z_of(next)?;
+            let path = path_of(next.0, next.1)?;
+            Some(
+                all_coincide
+                    && gap <= wall.max_step_mm + WATERLINE_LADDER_EPSILON
+                    && (wall.admits)(next.0, path, gap),
+            )
+        })()
+        .unwrap_or(false);
+        if !skip {
+            kept.push(ring);
+            anchor = i;
+        }
+    }
+    kept.push(last);
+    kept
+}
+
 /// The helical waterline (D69 §2, `WaterlineConfig::helical`): the
 /// levels of [`waterline_level_rings`], top first, with each chain of
 /// whole rings over consecutive levels ([`chain_links`]) cut by ONE entry
@@ -921,6 +999,7 @@ pub fn helical_waterline(
     levels: &[LevelRings],
     params: &WaterlineParams,
     probe: &ChainLinkProbe<'_>,
+    wall: Option<&WallStep<'_>>,
     cancel: &dyn CancelCheck,
 ) -> Result<Toolpath, Cancelled> {
     let polygons: Vec<Vec<Option<Polygon2>>> = levels
@@ -994,15 +1073,18 @@ pub fn helical_waterline(
                 emit_run(&mut toolpath, run, params);
                 continue;
             }
-            let rings: Vec<&[P3]> = chain
-                .iter()
-                .filter_map(|&(ck, cc)| path_of(ck, cc))
-                .collect();
             for &(ck, cc) in &chain {
                 if let Some(slot) = consumed.get_mut(ck).and_then(|c| c.get_mut(cc)) {
                     *slot = true;
                 }
             }
+            if let Some(wall) = wall {
+                chain = thin_wall_chain(&chain, &polygons, &path_of, wall, params.sampling);
+            }
+            let rings: Vec<&[P3]> = chain
+                .iter()
+                .filter_map(|&(ck, cc)| path_of(ck, cc))
+                .collect();
             emit_chain(&mut toolpath, &rings, params, probe);
         }
     }
