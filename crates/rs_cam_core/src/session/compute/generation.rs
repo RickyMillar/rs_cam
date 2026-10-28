@@ -687,20 +687,15 @@ impl ProjectSession {
         index: usize,
         source_toolpath_id: crate::ids::ToolpathId,
     ) -> Option<LargerRestConsumer> {
-        use crate::tool::MillingCutter as _;
         let tc = self.toolpath_configs.get(index)?;
         let source = self
             .toolpath_configs
             .iter()
             .find(|s| s.id == source_toolpath_id)?;
-        let radius = |tool_id: Option<crate::ids::ToolId>| {
-            tool_id
-                .and_then(|id| self.tool_by_id(id))
-                .and_then(|tool| crate::session::session_cutter(tool).ok())
-                .map(|def| def.diameter() / 2.0)
-        };
-        let own = radius(tc.tool_id)?;
-        let theirs = radius(source.tool_id)?;
+        // The one radius rule of the containment, shared with the step 7.8
+        // door (`add_geodesic_body_and_edges`).
+        let own = self.built_tool_radius_mm(tc.tool_id)?;
+        let theirs = self.built_tool_radius_mm(source.tool_id)?;
         (own > theirs).then(|| LargerRestConsumer {
             op_name: tc.name.clone(),
             source_toolpath_id,
