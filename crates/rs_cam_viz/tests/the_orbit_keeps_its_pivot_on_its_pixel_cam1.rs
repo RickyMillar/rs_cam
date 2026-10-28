@@ -110,7 +110,7 @@ fn a_drag_orbits_about_the_point_under_the_press_cam1() {
     for projection in [ProjectionMode::Perspective, ProjectionMode::Orthographic] {
         let base = camera(projection);
         let mut state = CameraState::default();
-        state.set_pose(base.pose());
+        state.set_pose(base.pose(), rs_cam_viz::state::camera::CameraWrite::Instant);
         state.set_projection(projection);
         let pivot = Point3::new(30.0_f32, -10.0, 6.0);
         let basis = state.pose().basis();

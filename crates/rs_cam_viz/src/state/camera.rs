@@ -9,14 +9,100 @@
 //! setup sheet do not hold it.
 
 use nalgebra::Point3;
+use rs_cam_core::geo::BoundingBox3;
 
-use crate::render::camera::{CameraPose, OrbitCamera, ProjectionMode, ViewPreset};
+use super::AppState;
+use super::selection::Selection;
+use crate::render::camera::{
+    CameraPose, DISTANCE_RANGE, OrbitCamera, PITCH_LIMIT, ProjectionMode, ViewPreset,
+};
+
+/// How a pose write lands (design A, C4).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CameraWrite {
+    /// At once: every MCP write, the fit after a load or an import.
+    Instant,
+    /// Over `duration` seconds from the clock time `now` (egui
+    /// `input.time`): the key presets, Reset View, the orientation preview
+    /// and the GUI "Show me". The app passes `ui::tokens::MOTION_SLOW`.
+    Eased { now: f64, duration: f64 },
+}
+
+/// An eased move from one pose to another (design A §3, the page `tween`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraMotion {
+    from: CameraPose,
+    to: CameraPose,
+    /// The shortest arc from `from.yaw` to `to.yaw`.
+    yaw_step: f32,
+    started: f64,
+    duration: f64,
+}
+
+impl CameraMotion {
+    /// A move from `from` to `to` that starts at `now` and lasts `duration`
+    /// seconds. The yaw turns the short way:
+    /// `atan2(sin(to.yaw - from.yaw), cos(to.yaw - from.yaw))`.
+    pub fn new(from: CameraPose, to: CameraPose, now: f64, duration: f64) -> Self {
+        let delta = to.yaw - from.yaw;
+        Self {
+            from,
+            to,
+            yaw_step: delta.sin().atan2(delta.cos()),
+            started: now,
+            duration,
+        }
+    }
+
+    /// The part of the move done at `now`, in [0, 1]. A move with no
+    /// duration is done.
+    pub fn progress(&self, now: f64) -> f32 {
+        if self.duration <= 0.0 {
+            return 1.0;
+        }
+        ((now - self.started) / self.duration).clamp(0.0, 1.0) as f32
+    }
+
+    /// The pose at `now`: target, distance and pitch linear in the eased
+    /// progress, the yaw along the short arc. At the end it gives `to`
+    /// itself, so the end pose equals an instant write bit for bit.
+    pub fn sample(&self, now: f64) -> CameraPose {
+        let t = self.progress(now);
+        if t >= 1.0 {
+            return self.to;
+        }
+        let s = ease_in_out_cubic(t);
+        let (a, b) = (self.from, self.to);
+        CameraPose {
+            target: a.target + (b.target - a.target) * s,
+            distance: a.distance + (b.distance - a.distance) * s,
+            yaw: a.yaw + self.yaw_step * s,
+            pitch: a.pitch + (b.pitch - a.pitch) * s,
+        }
+    }
+
+    /// The pose the move ends at.
+    pub fn to(&self) -> CameraPose {
+        self.to
+    }
+}
+
+/// The ease-in-out cubic of the page `tween`: slow at both ends.
+pub fn ease_in_out_cubic(t: f32) -> f32 {
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+    }
+}
 
 /// The viewport camera. Read it with [`CameraState::pose`]; write it with
 /// the other methods.
 #[derive(Debug, Clone, Default)]
 pub struct CameraState {
     pose: OrbitCamera,
+    /// The eased move that runs, if any (C4).
+    motion: Option<CameraMotion>,
 }
 
 impl CameraState {
@@ -28,73 +114,156 @@ impl CameraState {
 
     /// Write a pose. Every pose write ends here. `OrbitCamera::set_pose`
     /// clamps the pitch and the distance.
-    pub fn set_pose(&mut self, to: CameraPose) {
-        self.pose.set_pose(to);
+    ///
+    /// An `Instant` write lands now and drops a running move. An `Eased`
+    /// write starts a move from the present (sampled) pose, so a second
+    /// write during a move does not jump.
+    pub fn set_pose(&mut self, to: CameraPose, how: CameraWrite) {
+        match how {
+            CameraWrite::Eased { now, duration } if duration > 0.0 => {
+                let from = self.motion.map_or(self.pose.pose(), |m| m.sample(now));
+                // The end pose is clamped as an instant write clamps it.
+                let mut end = self.pose;
+                end.set_pose(to);
+                self.pose.set_pose(from);
+                self.motion = Some(CameraMotion::new(from, end.pose(), now, duration));
+            }
+            CameraWrite::Eased { .. } | CameraWrite::Instant => {
+                self.motion = None;
+                self.pose.set_pose(to);
+            }
+        }
     }
 
     /// Turn the camera to a view preset. The target and the distance do not
     /// change.
-    pub fn preset(&mut self, p: ViewPreset) {
-        self.set_pose(self.pose.preset_pose(p));
+    pub fn preset(&mut self, p: ViewPreset, how: CameraWrite) {
+        self.set_pose(self.end_pose().preset_pose(p), how);
     }
 
     /// Turn the camera to `yaw` and `pitch`. The target and the distance do
     /// not change.
-    pub fn orientation(&mut self, yaw: f32, pitch: f32) {
-        self.set_pose(CameraPose {
-            yaw,
-            pitch,
-            ..self.pose.pose()
-        });
+    pub fn orientation(&mut self, yaw: f32, pitch: f32, how: CameraWrite) {
+        self.set_pose(
+            CameraPose {
+                yaw,
+                pitch,
+                ..self.end_pose().pose()
+            },
+            how,
+        );
     }
 
     /// Frame the box `min`..`max` (`OrbitCamera::fit_pose`).
-    pub fn fit(&mut self, min: [f32; 3], max: [f32; 3]) {
-        self.set_pose(self.pose.fit_pose(min, max));
+    pub fn fit(&mut self, min: [f32; 3], max: [f32; 3], how: CameraWrite) {
+        self.set_pose(self.end_pose().fit_pose(min, max), how);
     }
 
     /// Frame the box `bounds`. With no box, put the camera back to its
     /// start pose and projection. Reset View and the job-load fit call this
     /// with [`first_model_bounds`].
-    pub fn fit_or_reset(&mut self, bounds: Option<([f32; 3], [f32; 3])>) {
+    pub fn fit_or_reset(&mut self, bounds: Option<([f32; 3], [f32; 3])>, how: CameraWrite) {
         if let Some((min, max)) = bounds {
-            self.fit(min, max);
+            self.fit(min, max, how);
         } else {
             let start = OrbitCamera::new();
-            self.set_pose(start.pose());
-            self.set_projection(start.projection);
+            self.pose.projection = start.projection;
+            self.set_pose(start.pose(), how);
         }
     }
 
-    /// Set the projection mode.
+    /// The camera a running move ends at, else the present camera. A
+    /// preset or a fit during a move keeps the target of the move.
+    fn end_pose(&self) -> OrbitCamera {
+        let mut camera = self.pose;
+        if let Some(motion) = self.motion {
+            camera.set_pose(motion.to());
+        }
+        camera
+    }
+
+    /// True while an eased move runs.
+    pub fn is_moving(&self) -> bool {
+        self.motion.is_some()
+    }
+
+    /// Write the pose of the running move at `now`. True while the move
+    /// runs; at its end it writes the end pose, drops the move and gives
+    /// false. With no move it gives false. The frame reads the answer to
+    /// ask for the next frame (G-LV.1).
+    pub fn advance(&mut self, now: f64) -> bool {
+        let Some(motion) = self.motion else {
+            return false;
+        };
+        if motion.progress(now) >= 1.0 {
+            self.pose.set_pose(motion.to());
+            self.motion = None;
+            false
+        } else {
+            self.pose.set_pose(motion.sample(now));
+            true
+        }
+    }
+
+    /// End a running move at once on its end pose (an MCP screenshot).
+    pub fn finish(&mut self) {
+        if let Some(motion) = self.motion.take() {
+            self.pose.set_pose(motion.to());
+        }
+    }
+
+    /// Set the projection mode. It drops a running move.
     pub fn set_projection(&mut self, mode: ProjectionMode) {
+        self.motion = None;
         self.pose.projection = mode;
     }
 
-    /// Toggle between the perspective and the orthographic projection.
+    /// Toggle between the perspective and the orthographic projection. It
+    /// drops a running move.
     pub fn toggle_projection(&mut self) {
+        self.motion = None;
         self.pose.toggle_projection();
     }
 
-    /// Orbit about `pivot` by a drag of `(dx, dy)` pixels.
+    /// Orbit about `pivot` by a drag of `(dx, dy)` pixels. It drops a
+    /// running move and starts from the sampled pose.
     pub fn orbit_about(&mut self, pivot: Point3<f32>, dx: f32, dy: f32) {
         let mut next = self.pose;
         next.orbit_about(pivot, dx, dy);
-        self.set_pose(next.pose());
+        self.set_pose(next.pose(), CameraWrite::Instant);
     }
 
-    /// Zoom by the distance ratio `k` toward `point`.
+    /// Zoom by the distance ratio `k` toward `point`. It drops a running
+    /// move.
     pub fn zoom_toward(&mut self, point: Point3<f32>, k: f32) {
         let mut next = self.pose;
         next.zoom_toward(point, k);
-        self.set_pose(next.pose());
+        self.set_pose(next.pose(), CameraWrite::Instant);
     }
 
-    /// Pan by a drag of `(dx, dy)` pixels in a viewport `vh` pixels high.
+    /// Pan by a drag of `(dx, dy)` pixels in a viewport `vh` pixels high. It
+    /// drops a running move.
     pub fn pan_pixels(&mut self, dx: f32, dy: f32, vh: f32, grab_depth: Option<f32>) {
         let mut next = self.pose;
         next.pan_pixels(dx, dy, vh, grab_depth);
-        self.set_pose(next.pose());
+        self.set_pose(next.pose(), CameraWrite::Instant);
+    }
+}
+
+/// The yaw and the pitch of the orientation preview of `face` (the
+/// `PreviewOrientation` command). The side views read the same yaw table as
+/// the view presets (`render::camera::YAW_*`), so `FaceUp::Front` and
+/// `ViewPreset::Front` give one view. Top and Bottom keep `yaw_now`.
+pub fn face_up_orientation(face: super::job::FaceUp, yaw_now: f32) -> (f32, f32) {
+    use super::job::FaceUp;
+    use crate::render::camera::{YAW_BACK, YAW_FRONT, YAW_LEFT, YAW_RIGHT};
+    match face {
+        FaceUp::Top => (yaw_now, PITCH_LIMIT),
+        FaceUp::Bottom => (yaw_now, -PITCH_LIMIT),
+        FaceUp::Front => (YAW_FRONT, 0.0),
+        FaceUp::Back => (YAW_BACK, 0.0),
+        FaceUp::Right => (YAW_RIGHT, 0.0),
+        FaceUp::Left => (YAW_LEFT, 0.0),
     }
 }
 
@@ -103,19 +272,23 @@ impl CameraState {
 pub fn first_model_bounds(
     session: &rs_cam_core::session::ProjectSession,
 ) -> Option<([f32; 3], [f32; 3])> {
+    first_model_bbox(session).map(|bbox| bbox_corners(&bbox))
+}
+
+/// The bounding box of the first model that has one.
+fn first_model_bbox(session: &rs_cam_core::session::ProjectSession) -> Option<BoundingBox3> {
     session
         .models()
         .iter()
         .find_map(rs_cam_core::session::LoadedModel::bbox)
-        .map(|bbox| bbox_corners(&bbox))
 }
 
 /// Frame the first model of the project, or put the camera back to its
 /// start when the project has no model. Reset View, the job load and the
 /// import confirm with no box call this one routine.
-pub fn fit_to_first_model(state: &mut super::AppState) {
+pub fn fit_to_first_model(state: &mut AppState, how: CameraWrite) {
     let bounds = first_model_bounds(state.session());
-    state.camera.fit_or_reset(bounds);
+    state.camera.fit_or_reset(bounds, how);
 }
 
 /// The corners of a core box as the `f32` arrays that the camera takes.
@@ -124,6 +297,301 @@ pub fn bbox_corners(bbox: &rs_cam_core::geo::BoundingBox3) -> ([f32; 3], [f32; 3
         [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
         [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
     )
+}
+
+// ── The MCP camera door (design A, C5) ─────────────────────────────────
+
+/// What `set_ui_view camera.fit` frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitTarget {
+    /// The first model: the Reset View rule ([`first_model_bounds`]).
+    Model,
+    /// The picked items of the selected toolpath ([`selection_fit_bounds`]).
+    Selection,
+}
+
+/// A pose patch in radians. An omitted field keeps its value.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PosePatch {
+    pub target: Option<Point3<f32>>,
+    pub distance: Option<f32>,
+    pub yaw: Option<f32>,
+    pub pitch: Option<f32>,
+}
+
+/// The camera part of a `set_ui_view` call, in crate types.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct CameraRequest {
+    pub preset: Option<ViewPreset>,
+    pub projection: Option<ProjectionMode>,
+    pub fit: Option<FitTarget>,
+    pub pose: PosePatch,
+}
+
+/// The camera after a call: what the `set_ui_view` reply and `get_ui_view`
+/// echo.
+#[derive(Debug, Clone, Copy)]
+pub struct CameraEcho {
+    pub pose: CameraPose,
+    pub projection: ProjectionMode,
+    /// The vertical field of view, radians.
+    pub fov: f32,
+    /// The preset whose yaw and pitch the pose holds exactly, if any.
+    pub view_preset: Option<ViewPreset>,
+    /// The box that this call framed, if it framed one.
+    pub framed: Option<BoundingBox3>,
+}
+
+/// The view presets, in echo order.
+const PRESETS: [ViewPreset; 4] = [
+    ViewPreset::Top,
+    ViewPreset::Front,
+    ViewPreset::Right,
+    ViewPreset::Isometric,
+];
+
+/// The camera of `state` as an echo, with no framed box.
+pub fn camera_echo(state: &AppState) -> CameraEcho {
+    let camera = state.camera.pose();
+    let pose = camera.pose();
+    let view_preset = PRESETS.into_iter().find(|p| {
+        let preset = camera.preset_pose(*p);
+        preset.yaw == pose.yaw && preset.pitch == pose.pitch
+    });
+    CameraEcho {
+        pose,
+        projection: camera.projection,
+        fov: camera.fov,
+        view_preset,
+        framed: None,
+    }
+}
+
+/// The box that `fit: selection` frames: the picked items of the
+/// toolpath that `focus` names, through the "Show me" bounds routine
+/// (`display_frame::selection_frame_bounds`). `None` with no toolpath focus or no
+/// picked item.
+fn selection_fit_bounds_for(state: &AppState, focus: &Selection) -> Option<BoundingBox3> {
+    let Selection::Toolpath(id) = *focus else {
+        return None;
+    };
+    let session = state.session();
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let target = super::selection_highlight::highlight_target(tc);
+    let report = session.selection_status(tc, target).ok()?;
+    if report.selected.is_empty() {
+        return None;
+    }
+    crate::state::display_frame::selection_frame_bounds(session, id, &report.selected)
+}
+
+/// The box that `fit: selection` frames for the present focus.
+pub fn selection_fit_bounds(state: &AppState) -> Option<BoundingBox3> {
+    selection_fit_bounds_for(state, state.focus())
+}
+
+/// Check every field of `req` before any part of a call applies.
+///
+/// `focus` is the focus that the call leaves when the camera applies (a
+/// `toolpath_index` in the same call moves it). `with_frame_items` is true
+/// when the same call frames items: two framings in one call are refused.
+pub fn check_camera_request(
+    state: &AppState,
+    req: &CameraRequest,
+    focus: &Selection,
+    with_frame_items: bool,
+) -> Result<(), String> {
+    let PosePatch {
+        target,
+        distance,
+        yaw,
+        pitch,
+    } = req.pose;
+    if let Some(t) = target
+        && !(t.x.is_finite() && t.y.is_finite() && t.z.is_finite())
+    {
+        return Err("camera.pose.target must be three finite numbers".to_owned());
+    }
+    if let Some(d) = distance
+        && !(d.is_finite() && (DISTANCE_RANGE.0..=DISTANCE_RANGE.1).contains(&d))
+    {
+        return Err(format!(
+            "camera.pose.distance must be a finite number in [{}, {}] mm",
+            DISTANCE_RANGE.0, DISTANCE_RANGE.1
+        ));
+    }
+    if let Some(y) = yaw
+        && !y.is_finite()
+    {
+        return Err("camera.pose.yaw_deg must be a finite number".to_owned());
+    }
+    if let Some(p) = pitch
+        && !(p.is_finite() && p.abs() <= PITCH_LIMIT)
+    {
+        return Err(format!(
+            "camera.pose.pitch_deg must be a finite number in [-{0:.3}, {0:.3}] degrees",
+            f64::from(PITCH_LIMIT).to_degrees()
+        ));
+    }
+    match req.fit {
+        Some(_) if with_frame_items => {
+            Err("camera.fit and frame_items both frame the camera; send one".to_owned())
+        }
+        Some(FitTarget::Model) if first_model_bbox(state.session()).is_none() => {
+            Err("camera.fit model needs a model; the project has none".to_owned())
+        }
+        Some(FitTarget::Selection) if selection_fit_bounds_for(state, focus).is_none() => {
+            Err("fit selection needs a selected toolpath with picked items".to_owned())
+        }
+        Some(FitTarget::Model | FitTarget::Selection) | None => Ok(()),
+    }
+}
+
+/// The one door MCP uses to move the camera. It checks every field first
+/// ([`check_camera_request`] with the present focus); a refusal changes
+/// nothing. Then it applies in the order fit, preset, projection, pose.
+/// Every write is instant.
+pub fn apply_camera_request(
+    state: &mut AppState,
+    req: &CameraRequest,
+) -> Result<CameraEcho, String> {
+    let focus = state.focus().clone();
+    check_camera_request(state, req, &focus, false)?;
+    let framed = match req.fit {
+        Some(FitTarget::Model) => first_model_bbox(state.session()),
+        Some(FitTarget::Selection) => selection_fit_bounds(state),
+        None => None,
+    };
+    // Every MCP write is instant and drops a running GUI move.
+    state.camera.finish();
+    if let Some(bbox) = framed {
+        let (min, max) = bbox_corners(&bbox);
+        state.camera.fit(min, max, CameraWrite::Instant);
+    }
+    if let Some(preset) = req.preset {
+        state.camera.preset(preset, CameraWrite::Instant);
+    }
+    if let Some(mode) = req.projection {
+        state.camera.set_projection(mode);
+    }
+    let PosePatch {
+        target,
+        distance,
+        yaw,
+        pitch,
+    } = req.pose;
+    let now = state.camera.pose().pose();
+    state.camera.set_pose(
+        CameraPose {
+            target: target.unwrap_or(now.target),
+            distance: distance.unwrap_or(now.distance),
+            yaw: yaw.unwrap_or(now.yaw),
+            pitch: pitch.unwrap_or(now.pitch),
+        },
+        CameraWrite::Instant,
+    );
+    Ok(CameraEcho {
+        framed,
+        ..camera_echo(state)
+    })
+}
+
+/// The wire mirrors (`rs_cam_mcp`): an exhaustive `match` in each
+/// direction (F166), and a full destructure of the camera object (F118).
+/// Degrees on the wire, radians here (A-Q5).
+#[cfg(feature = "mcp")]
+mod wire {
+    use super::{CameraRequest, FitTarget, PosePatch, ProjectionMode, ViewPreset};
+    use nalgebra::Point3;
+    use rs_cam_mcp::server::{
+        CameraParam, CameraPoseParam, FitParam, ProjectionParam, ViewPresetParam,
+    };
+
+    impl From<ViewPresetParam> for ViewPreset {
+        fn from(p: ViewPresetParam) -> Self {
+            match p {
+                ViewPresetParam::Top => Self::Top,
+                ViewPresetParam::Front => Self::Front,
+                ViewPresetParam::Right => Self::Right,
+                ViewPresetParam::Iso => Self::Isometric,
+            }
+        }
+    }
+
+    impl From<ViewPreset> for ViewPresetParam {
+        fn from(p: ViewPreset) -> Self {
+            match p {
+                ViewPreset::Top => Self::Top,
+                ViewPreset::Front => Self::Front,
+                ViewPreset::Right => Self::Right,
+                ViewPreset::Isometric => Self::Iso,
+            }
+        }
+    }
+
+    impl From<ProjectionParam> for ProjectionMode {
+        fn from(p: ProjectionParam) -> Self {
+            match p {
+                ProjectionParam::Perspective => Self::Perspective,
+                ProjectionParam::Orthographic => Self::Orthographic,
+            }
+        }
+    }
+
+    impl From<ProjectionMode> for ProjectionParam {
+        fn from(p: ProjectionMode) -> Self {
+            match p {
+                ProjectionMode::Perspective => Self::Perspective,
+                ProjectionMode::Orthographic => Self::Orthographic,
+            }
+        }
+    }
+
+    impl From<FitParam> for FitTarget {
+        fn from(p: FitParam) -> Self {
+            match p {
+                FitParam::Model => Self::Model,
+                FitParam::Selection => Self::Selection,
+            }
+        }
+    }
+
+    impl From<FitTarget> for FitParam {
+        fn from(p: FitTarget) -> Self {
+            match p {
+                FitTarget::Model => Self::Model,
+                FitTarget::Selection => Self::Selection,
+            }
+        }
+    }
+
+    impl From<CameraParam> for CameraRequest {
+        fn from(param: CameraParam) -> Self {
+            let CameraParam {
+                preset,
+                projection,
+                fit,
+                pose,
+            } = param;
+            let CameraPoseParam {
+                target,
+                distance,
+                yaw_deg,
+                pitch_deg,
+            } = pose.unwrap_or_default();
+            Self {
+                preset: preset.map(Into::into),
+                projection: projection.map(Into::into),
+                fit: fit.map(Into::into),
+                pose: PosePatch {
+                    target: target.map(|[x, y, z]| Point3::new(x as f32, y as f32, z as f32)),
+                    distance: distance.map(|d| d as f32),
+                    yaw: yaw_deg.map(|d| d.to_radians() as f32),
+                    pitch: pitch_deg.map(|d| d.to_radians() as f32),
+                },
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -138,12 +606,15 @@ mod tests {
     fn the_camera_state_has_one_write_door_c2() {
         // `set_pose` clamps the pitch and the distance.
         let mut state = CameraState::default();
-        state.set_pose(CameraPose {
-            target: Point3::new(1.0, 2.0, 3.0),
-            distance: 0.0,
-            yaw: 0.4,
-            pitch: 3.0,
-        });
+        state.set_pose(
+            CameraPose {
+                target: Point3::new(1.0, 2.0, 3.0),
+                distance: 0.0,
+                yaw: 0.4,
+                pitch: 3.0,
+            },
+            CameraWrite::Instant,
+        );
         let p = state.pose().pose();
         assert_eq!(p.distance, crate::render::camera::DISTANCE_RANGE.0);
         assert_eq!(p.pitch, crate::render::camera::PITCH_LIMIT);
@@ -156,7 +627,7 @@ mod tests {
             ViewPreset::Isometric,
         ] {
             let mut state = CameraState::default();
-            state.preset(preset);
+            state.preset(preset, CameraWrite::Instant);
             let mut cam = OrbitCamera::new();
             cam.set_pose(cam.preset_pose(preset));
             assert_eq!(
@@ -169,7 +640,7 @@ mod tests {
         // `fit` is `set_pose(fit_pose)`.
         let (min, max) = ([-5.0, 2.0, -1.0], [40.0, 22.0, 9.5]);
         let mut state = CameraState::default();
-        state.fit(min, max);
+        state.fit(min, max, CameraWrite::Instant);
         let mut cam = OrbitCamera::new();
         cam.set_pose(cam.fit_pose(min, max));
         assert_eq!(*state.pose(), cam);
@@ -180,7 +651,7 @@ mod tests {
 
         // `fit_or_reset` with no box gives the start camera back.
         state.toggle_projection();
-        state.fit_or_reset(None);
+        state.fit_or_reset(None, CameraWrite::Instant);
         assert_eq!(*state.pose(), OrbitCamera::new());
     }
 }

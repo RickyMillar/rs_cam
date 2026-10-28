@@ -29,6 +29,24 @@ pub const ORBIT_RAD_PER_PX: f32 = 0.005;
 /// The zoom rate for one unit of wheel scroll: `k = exp(-scroll * ZOOM_PER_WHEEL)`.
 pub const ZOOM_PER_WHEEL: f32 = 0.001;
 
+/// The yaw that looks at the front of the stock: the eye on -Y, +X to the
+/// right of the screen (the Z-up CAD convention, design A Q1).
+pub const YAW_FRONT: f32 = -std::f32::consts::FRAC_PI_2;
+
+/// The yaw that looks at the right side: the eye on +X, +Y to the right of
+/// the screen.
+pub const YAW_RIGHT: f32 = 0.0;
+
+/// The yaw that looks at the back: the eye on +Y, -X to the right.
+pub const YAW_BACK: f32 = std::f32::consts::FRAC_PI_2;
+
+/// The yaw that looks at the left side: the eye on -X, -Y to the right.
+pub const YAW_LEFT: f32 = std::f32::consts::PI;
+
+/// The yaw of the isometric preset: the mean of [`YAW_FRONT`] and
+/// [`YAW_RIGHT`], so the eye sits front-right (+X, -Y).
+pub const YAW_ISO: f32 = (YAW_FRONT + YAW_RIGHT) / 2.0;
+
 /// The part of the camera state that a navigation gesture writes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraPose {
@@ -241,12 +259,17 @@ impl OrbitCamera {
     }
 
     /// The pose of a view preset. The target and the distance do not change.
+    ///
+    /// Top looks down with the Front yaw, so +X is to the right and +Y up on
+    /// the screen (the Z-up CAD convention). Isometric takes the yaw
+    /// [`YAW_ISO`], the mean of the Front and Right yaws (the eye front-right
+    /// and above), and keeps the pitch pi/6.
     pub fn preset_pose(&self, preset: ViewPreset) -> CameraPose {
         let (yaw, pitch) = match preset {
-            ViewPreset::Top => (0.0, PITCH_LIMIT),
-            ViewPreset::Front => (0.0, 0.0),
-            ViewPreset::Right => (std::f32::consts::FRAC_PI_2, 0.0),
-            ViewPreset::Isometric => (std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_6),
+            ViewPreset::Top => (YAW_FRONT, PITCH_LIMIT),
+            ViewPreset::Front => (YAW_FRONT, 0.0),
+            ViewPreset::Right => (YAW_RIGHT, 0.0),
+            ViewPreset::Isometric => (YAW_ISO, std::f32::consts::FRAC_PI_6),
         };
         CameraPose {
             yaw,

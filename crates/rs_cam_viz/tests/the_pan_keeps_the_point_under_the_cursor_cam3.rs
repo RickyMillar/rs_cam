@@ -106,7 +106,7 @@ fn a_drag_pans_with_the_point_under_the_press_cam3() {
     for projection in [ProjectionMode::Perspective, ProjectionMode::Orthographic] {
         let base = camera(projection);
         let mut state = CameraState::default();
-        state.set_pose(base.pose());
+        state.set_pose(base.pose(), rs_cam_viz::state::camera::CameraWrite::Instant);
         state.set_projection(projection);
         // An anchor off the centre and 25 units nearer than the target depth.
         let (origin, dir) = base

@@ -34,5 +34,9 @@ run the server; the live server, GUI dispatch and session ownership are in
 - R2/Q7 (2026-10-24): `AddToolpathParam` `tool_index` and `model_id` are optional (the first
   fitting tool; the core model rule), `AddToolpathViaGuiParam` has `model_id`, both replies carry
   `no_tool`, and the wire snapshot was re-blessed.
+- A C5 (2026-10-29): `SetUiViewParam.camera` is one `CameraParam` (`preset`, `projection`, `fit`,
+  `pose`), inline structs; viz `state::camera` holds the `From` mirrors. The snapshot was re-blessed.
+- E3 (2026-10-29): `SelectionEditParam` has `add_picks`/`remove_picks`; the core -> wire `From`
+  of `SelectionEdit`, `Selection`, `Rule`, `Filter` (and their parts) is exhaustive (F166/F118).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

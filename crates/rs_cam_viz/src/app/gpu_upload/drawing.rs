@@ -93,7 +93,7 @@ pub(super) fn upload(
         }
         // P4.4: the one point function of the draw and the pick.
         let transform_pt = |p: &rs_cam_core::geo::P2| -> (f64, f64) {
-            let q = crate::interaction::picking::item_display_xy(setup_opt, stock, *p);
+            let q = crate::state::display_frame::item_display_xy(setup_opt, stock, *p);
             (q.x, q.y)
         };
         let mut draw_segment = |a: (f64, f64), b: (f64, f64)| {
@@ -148,7 +148,7 @@ pub(super) fn upload(
         let setup_ref = model_setup.as_ref();
         // P4.5: the one plane of the draw and the pick.
         let planar_z =
-            crate::interaction::picking::drawing_plane_z(state.session(), &toolpath, setup_ref)
+            crate::state::display_frame::drawing_plane_z(state.session(), &toolpath, setup_ref)
                 as f32;
         let surface_mesh = match &toolpath.operation {
             rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => state
@@ -222,7 +222,7 @@ pub(super) fn upload(
             .filter(|f| f.toolpath == toolpath.id)
             .map_or(&[], |f| f.keys.as_slice());
         let flashed = |key: &MatchKey| flash.iter().any(|k| k.names_same_geometry(key));
-        let mark = crate::interaction::picking::POINT_MARK_RADIUS_MM;
+        let mark = crate::state::display_frame::POINT_MARK_RADIUS_MM;
         let line = |a: (f64, f64), b: (f64, f64), color: [f32; 3], verts: &mut Vec<LineVertex>| {
             if let (Some(z0), Some(z1)) = (point_z(a.0, a.1), point_z(b.0, b.1)) {
                 verts.push(LineVertex {
@@ -236,7 +236,7 @@ pub(super) fn upload(
             }
         };
         let display = |p: rs_cam_core::geo::P2| -> (f64, f64) {
-            let q = crate::interaction::picking::item_display_xy(setup_ref, stock, p);
+            let q = crate::state::display_frame::item_display_xy(setup_ref, stock, p);
             (q.x, q.y)
         };
         // A cross of half size `mark` at a display point.
@@ -605,7 +605,7 @@ pub(super) fn upload(
                 };
                 let radius = item
                     .diameter
-                    .map_or(crate::interaction::picking::POINT_MARK_RADIUS_MM, |d| {
+                    .map_or(crate::state::display_frame::POINT_MARK_RADIUS_MM, |d| {
                         d / 2.0
                     })
                     .max(crate::interaction::picking::HOLE_MARK_MIN_RADIUS_MM)
@@ -696,7 +696,7 @@ fn hole_misfits(state: &AppState, tc: &rs_cam_core::session::ToolpathConfig) -> 
 
 /// The lines of a STEP ring, edge, circle or point (geometry selection
 /// UX-7) at its own Z, in the display frame
-/// (`picking::item_display_point`, the one point rule of the draw and the
+/// (`display_frame::item_display_point`, the one point rule of the draw and the
 /// pick). A point draws as a ring of radius `mark`.
 fn edge_item_lines(
     item: &rs_cam_core::selection::Item,
@@ -709,7 +709,7 @@ fn edge_item_lines(
 ) {
     use crate::render::LineVertex;
     let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
-        let q = crate::interaction::picking::item_display_point(
+        let q = crate::state::display_frame::item_display_point(
             frame,
             stock,
             item,

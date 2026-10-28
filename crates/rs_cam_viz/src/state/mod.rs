@@ -1,5 +1,6 @@
 pub mod app_settings;
 pub mod camera;
+pub mod display_frame;
 pub mod freshness;
 pub mod history;
 pub mod job;
@@ -56,6 +57,17 @@ impl Workspace {
         Workspace::Simulation,
         Workspace::Readiness,
     ];
+
+    /// The wire token of this workspace: the `set_ui_view` and
+    /// `get_ui_view` echo, and the `WorkspaceParam` token.
+    pub fn wire_key(self) -> &'static str {
+        match self {
+            Workspace::Setup => "setup",
+            Workspace::Toolpaths => "toolpaths",
+            Workspace::Simulation => "simulation",
+            Workspace::Readiness => "readiness",
+        }
+    }
 
     /// This workspace's position in [`Workspace::ALL`].
     ///

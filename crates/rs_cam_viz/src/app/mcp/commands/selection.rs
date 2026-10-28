@@ -1003,6 +1003,122 @@ mod tests {
         );
     }
 
+    /// SEL-4 / E1-E3, MCP parity of a box select: the GUI batch
+    /// (`SelectionEdit::AddPicks` / `RemovePicks` through `EditSelection`)
+    /// and the wire `add_picks` / `remove_picks` / `replace` of the same
+    /// keys store ONE selection and give ONE `selection_status` report.
+    /// Arms: on the default (O-PICK replaces once), on a rule (the picks
+    /// join), `remove_picks` of a rule item (GT-Q8), `{replace: {}}`. A wire
+    /// batch with a lost key refuses and changes nothing.
+    #[test]
+    fn mcp_and_gui_give_one_box_select_v9() {
+        let loops = project()
+            .list_model_items(
+                rs_cam_core::ids::ModelId::from_raw(0),
+                None,
+                Some(ItemKind::Loop),
+            )
+            .unwrap();
+        assert_eq!(loops.len(), 2, "fixture: the CUT and KEEP squares");
+        let keys: Vec<_> = loops.iter().map(|i| i.key.clone()).collect();
+        let cut = loops
+            .iter()
+            .find(|i| i.key.layer.as_deref() == Some("CUT"))
+            .expect("fixture: a CUT square")
+            .key
+            .clone();
+        let keep = loops
+            .iter()
+            .find(|i| i.key.layer.as_deref() == Some("KEEP"))
+            .expect("fixture: a KEEP square")
+            .key
+            .clone();
+        let json = |keys: &[rs_cam_core::selection::MatchKey]| serde_json::to_value(keys).unwrap();
+        let report = |s: &ProjectSession, index: usize| {
+            let tc = s.toolpath_config_at(index).unwrap().clone();
+            s.selection_status(&tc, SelectionTarget::Op).unwrap()
+        };
+        let arms: [(&str, usize, SelectionEdit, serde_json::Value); 4] = [
+            (
+                "on the default",
+                3,
+                SelectionEdit::AddPicks(keys.clone()),
+                serde_json::json!({ "add_picks": json(&keys) }),
+            ),
+            (
+                "on a rule",
+                0,
+                SelectionEdit::AddPicks(vec![keep.clone()]),
+                serde_json::json!({ "add_picks": json(std::slice::from_ref(&keep)) }),
+            ),
+            (
+                "remove_picks of a rule item",
+                0,
+                SelectionEdit::RemovePicks(vec![cut.clone()]),
+                serde_json::json!({ "remove_picks": json(std::slice::from_ref(&cut)) }),
+            ),
+            (
+                "replace with nothing",
+                0,
+                SelectionEdit::Replace(Box::new(Selection::from_parts(
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ))),
+                serde_json::json!({ "replace": {} }),
+            ),
+        ];
+        for (name, index, gui_edit, wire) in arms {
+            let mut gui = project();
+            edit(&mut gui, index, gui_edit);
+            let mut mcp = project();
+            wire_edit(&mut mcp, index, &wire);
+            assert_eq!(
+                stored(&mcp, index),
+                stored(&gui, index),
+                "{name}: one selection"
+            );
+            assert_eq!(
+                *report(&mcp, index),
+                *report(&gui, index),
+                "{name}: one selection_status"
+            );
+            match name {
+                "on the default" => {
+                    assert!(stored(&gui, 3).rules().is_empty(), "the default is gone");
+                    assert_eq!(stored(&gui, 3).picks().len(), 2);
+                }
+                "on a rule" => {
+                    assert_eq!(stored(&gui, 0).rules().len(), 1, "the rule stays");
+                    assert_eq!(stored(&gui, 0).picks().len(), 1);
+                }
+                "remove_picks of a rule item" => {
+                    assert!(stored(&gui, 0).rules().is_empty(), "the rule became picks");
+                    assert!(stored(&gui, 0).excludes().is_empty(), "no exclude");
+                }
+                _ => assert!(stored(&gui, 0).is_empty()),
+            }
+        }
+
+        // A lost key refuses the whole wire batch; nothing changes.
+        let mut mcp = project();
+        let before = stored(&mcp, 3);
+        let mut lost = cut;
+        lost.anchor = [500.0, 500.0];
+        let wire: EditToolpathSelectionParam = serde_json::from_value(serde_json::json!({
+            "index": 3,
+            "edit": { "add_picks": json(&[keep, lost]) },
+        }))
+        .expect("the wire edit parses");
+        let refused = mcp.apply(Command::EditSelection(EditSelectionArgs {
+            index: wire.index,
+            target: wire.target.into(),
+            edit: wire.edit.into(),
+        }));
+        assert!(refused.is_err(), "a batch with a lost key refuses");
+        assert_eq!(stored(&mcp, 3), before, "the refused batch wrote nothing");
+    }
+
     /// Geometry selection P4.5, MCP parity of a click: an MCP
     /// `list_model_items { near }` at a circle centre, then the edit its
     /// key gives, stores the same pick as the GUI click on that circle

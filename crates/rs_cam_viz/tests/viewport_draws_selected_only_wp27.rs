@@ -447,14 +447,14 @@ fn vector_upload_is_contextual_and_uses_operation_specific_heights() {
     }
     // The operation-specific height of that plane (a Trace draws at its
     // last cutting level) lives in the shared function.
-    let picking = strip_comments(&source("src/interaction/picking.rs"));
+    let plane = strip_comments(&source("src/state/display_frame.rs"));
     for needle in [
         "pub fn drawing_plane_z(",
         "session.toolpath_heights(tc)",
         ".cutting_levels(&heights)",
     ] {
         assert!(
-            picking.contains(needle),
+            plane.contains(needle),
             "the drawing plane lost its operation-specific height `{needle}`"
         );
     }

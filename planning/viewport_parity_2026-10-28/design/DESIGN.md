@@ -119,6 +119,16 @@ from HEAD.
 | 0 | B1 one hover pick per frame (`HoverResult`, no pick during a drag, PointingHand cursor) | 03e5fa752 | 2026-10-29 |
 | 0 | E4 undo per act (`push_act_step`, `toolpath_parts_moved` in `state/history.rs`) | 591c4740f | 2026-10-29 |
 | 0 | D5 STL flat-face hover ring (option A) | 7c9b90595 | 2026-10-29 |
+| 1 | A C0 orthographic arm and claims C0o-C3o in the page | 5dcd157db | 2026-10-29 |
+| 1 | A C1 camera math (`orbit_about`, `zoom_toward`, `pan_pixels`); the wheel zooms to the cursor | 67357f9fc | 2026-10-29 |
+| 1 | A C2 the camera on `AppState.camera` (`state/camera.rs`) | 74f02d98b | 2026-10-29 |
+| 1 | B2 the input state machine (`DragState`, pure `step`, `MouseScheme` table with a `LeftOrbit` row); the pinch zooms | 20b0e55c3 | 2026-10-29 |
+| 1 | A C3a orbit about the point under the press; the pan holds the grabbed point | 3748829ef | 2026-10-29 |
+| 1 | A C5 + F3 MCP `set_ui_view camera`, `get_ui_view`, the focus echo; display-frame geometry to `state/display_frame.rs` (layering sentry f3) | 0e8bebedf | 2026-10-29 |
+| 2 | A C4 `CameraMotion`; the presets follow one yaw table (Front, Right, Top and Isometric fixed) | 7befd4558 | 2026-10-29 |
+| 3 | E1-E3 `AddPicks`/`RemovePicks`, `check_keys_name_items`, two face offers, the wire both ways | 6034bde9e | 2026-10-29 |
+| 2 | D1 MSAA (branch `viewport-render`) | d83da5d17 | 2026-10-29 |
+| 1 | C1 `MeshBvh` with the parity proof (branch `viewport-bvh`); the prune needed a relative slack `RAY_PRUNE_REL` for a flat sheet at zero, a hole in the design's proof | e1212253f | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel

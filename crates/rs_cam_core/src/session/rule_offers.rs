@@ -46,7 +46,9 @@ impl ProjectSession {
     /// rule filter reads them (`Filter::z`, `FaceFilter::z`).
     ///
     /// - A circle: the circles of its diameter, then every circle.
-    /// - An up face: the up faces at its plane Z.
+    /// - An up face: the up faces at its plane Z. Every face: every up face
+    ///   of the model. A down face on a boundary: the down faces at its
+    ///   plane Z (SEL-7).
     /// - A model ring, edge chain or vertex (a Z item): the items of its
     ///   kind at its Z, then every item of its kind.
     /// - A drawing loop, path or point: the items of its kind on its layer
@@ -118,6 +120,31 @@ impl ProjectSession {
                         Filter {
                             face: Some(FaceFilter {
                                 facing: Facing::Up,
+                                z: Some(z_range(face.plane_z)),
+                            }),
+                            ..only(ItemKind::Face)
+                        },
+                    ));
+                }
+                // SEL-7: every up face of the model.
+                filters.push((
+                    format!("All up {plural} on this model"),
+                    Filter {
+                        face: Some(FaceFilter {
+                            facing: Facing::Up,
+                            z: None,
+                        }),
+                        ..only(ItemKind::Face)
+                    },
+                ));
+                // SEL-7: the down faces at the plane Z, for a boundary only
+                // (`view` refuses a down face in an op area, `FaceFacesDown`).
+                if target == SelectionTarget::Boundary && Facing::Down.admits(face.normal.z) {
+                    filters.push((
+                        format!("All down {plural} at Z {:.2}", face.plane_z),
+                        Filter {
+                            face: Some(FaceFilter {
+                                facing: Facing::Down,
                                 z: Some(z_range(face.plane_z)),
                             }),
                             ..only(ItemKind::Face)

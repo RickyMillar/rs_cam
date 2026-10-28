@@ -287,23 +287,35 @@ impl Rule {
     /// The rules of a layer pick (geometry selection P4.5, a viewport
     /// shift-click): the items of `source` on `layer` whose kind is in
     /// `kinds`. With `circle`, the circles must also be in that diameter
-    /// range.
-    ///
-    /// A filter with a diameter range admits circles only
-    /// ([`Filter::admits`]). So when `kinds` holds circles and other kinds,
-    /// the circles get a rule of their own with the range, and the other
-    /// kinds get one rule with no range. A `circle` without
-    /// [`ItemKind::Circle`] in `kinds` is not used. No kind gives no rule.
+    /// range. It is [`Self::kind_rules`] with one layer.
     pub fn layer_rules(
         source: SourceRef,
         layer: &str,
         kinds: &[ItemKind],
         circle: Option<DiameterRange>,
     ) -> Vec<Rule> {
+        Self::kind_rules(source, &[layer.to_owned()], kinds, circle)
+    }
+
+    /// The rules of the items of `source` on `layers` (every layer when
+    /// empty) whose kind is in `kinds`. With `circle`, the circles must
+    /// also be in that diameter range.
+    ///
+    /// A filter with a diameter range admits circles only
+    /// ([`Filter::admits`]). So when `kinds` holds circles and other kinds,
+    /// the circles get a rule of their own with the range, and the other
+    /// kinds get one rule with no range. A `circle` without
+    /// [`ItemKind::Circle`] in `kinds` is not used. No kind gives no rule.
+    pub fn kind_rules(
+        source: SourceRef,
+        layers: &[String],
+        kinds: &[ItemKind],
+        circle: Option<DiameterRange>,
+    ) -> Vec<Rule> {
         let rule = |kinds: Vec<ItemKind>, diameter: Option<DiameterRange>| Rule {
             source,
             filter: Filter {
-                layers: vec![layer.to_owned()],
+                layers: layers.to_vec(),
                 kinds: KindFilter::Only(kinds),
                 diameter,
                 face: None,
@@ -386,6 +398,12 @@ pub enum SelectionEdit {
     /// Remove the picks that name the item. When no pick names it, the
     /// edit adds an exclude, so a rule match leaves the selection.
     RemovePick(MatchKey),
+    /// Add every key as one edit (box select, SEL-4). O-PICK: on a
+    /// selection that is still the op default, the keys replace it.
+    /// A key that `matches` an earlier key of the list is dropped.
+    AddPicks(Vec<MatchKey>),
+    /// Remove every key as one edit. Each key acts as `RemovePick`.
+    RemovePicks(Vec<MatchKey>),
     /// Back to the default selection of the op.
     Reset,
 }
@@ -410,6 +428,16 @@ impl SelectionEdit {
             SelectionEdit::RemovePick(key) => {
                 SelectionEdit::RemovePick(key.for_toolpath_model(toolpath_model))
             }
+            SelectionEdit::AddPicks(keys) => SelectionEdit::AddPicks(
+                keys.into_iter()
+                    .map(|k| k.for_toolpath_model(toolpath_model))
+                    .collect(),
+            ),
+            SelectionEdit::RemovePicks(keys) => SelectionEdit::RemovePicks(
+                keys.into_iter()
+                    .map(|k| k.for_toolpath_model(toolpath_model))
+                    .collect(),
+            ),
             SelectionEdit::RemoveRule(_) | SelectionEdit::Reset => self,
         }
     }
@@ -697,23 +725,55 @@ impl Selection {
             SelectionEdit::AddPick(key) if self.is_default_of(op_default) => {
                 *self = Self::from_picks(vec![key]);
             }
-            SelectionEdit::AddPick(key) => {
-                self.excludes.retain(|k| !k.matches(&key));
-                if !self.picks.iter().any(|k| k.matches(&key)) {
-                    self.picks.push(key);
+            SelectionEdit::AddPick(key) => self.add_pick(key),
+            SelectionEdit::RemovePick(key) => self.remove_pick(key),
+            SelectionEdit::AddPicks(keys) | SelectionEdit::RemovePicks(keys) if keys.is_empty() => {
+                return Err(SelectionRefusal::new(None, RefusalCause::NoKey));
+            }
+            SelectionEdit::AddPicks(keys) if self.is_default_of(op_default) => {
+                // O-PICK, once per batch: the keys replace the default.
+                let mut picks: Vec<MatchKey> = Vec::with_capacity(keys.len());
+                for key in keys {
+                    if !picks.iter().any(|k| k.matches(&key)) {
+                        picks.push(key);
+                    }
+                }
+                *self = Self::from_picks(picks);
+            }
+            SelectionEdit::AddPicks(keys) => {
+                for key in keys {
+                    self.add_pick(key);
                 }
             }
-            SelectionEdit::RemovePick(key) => {
-                let before = self.picks.len();
-                self.picks.retain(|k| !k.matches(&key));
-                let removed = self.picks.len() != before;
-                if !removed && !self.excludes.iter().any(|k| k.matches(&key)) {
-                    self.excludes.push(key);
+            SelectionEdit::RemovePicks(keys) => {
+                for key in keys {
+                    self.remove_pick(key);
                 }
             }
             SelectionEdit::Reset => *self = op_default.clone(),
         }
         Ok(())
+    }
+
+    /// Add one pick: drop every exclude that names the item, and store the
+    /// key unless a pick names the item already. `AddPick` and `AddPicks`
+    /// share this one body.
+    fn add_pick(&mut self, key: MatchKey) {
+        self.excludes.retain(|k| !k.matches(&key));
+        if !self.picks.iter().any(|k| k.matches(&key)) {
+            self.picks.push(key);
+        }
+    }
+
+    /// Remove the picks that name the item; when none does, exclude it.
+    /// `RemovePick` and `RemovePicks` share this one body.
+    fn remove_pick(&mut self, key: MatchKey) {
+        let before = self.picks.len();
+        self.picks.retain(|k| !k.matches(&key));
+        let removed = self.picks.len() != before;
+        if !removed && !self.excludes.iter().any(|k| k.matches(&key)) {
+            self.excludes.push(key);
+        }
     }
 }
 
@@ -736,6 +796,62 @@ mod tests {
             measure: 5.0,
             brep: None,
             z: None,
+        }
+    }
+
+    #[test]
+    fn a_layer_rule_is_a_kind_rule_with_one_layer() {
+        let range = DiameterRange {
+            nominal_mm: 5.0,
+            tolerance_mm: 0.1,
+        };
+        for kinds in [
+            vec![ItemKind::Loop],
+            vec![ItemKind::Loop, ItemKind::Circle],
+            vec![ItemKind::Circle],
+            vec![],
+        ] {
+            for circle in [None, Some(range)] {
+                assert_eq!(
+                    Rule::layer_rules(SourceRef::ToolpathModel, "H", &kinds, circle),
+                    Rule::kind_rules(SourceRef::ToolpathModel, &["H".to_owned()], &kinds, circle),
+                    "{kinds:?} {circle:?}"
+                );
+            }
+        }
+        // Every layer: an empty layer list.
+        let all = Rule::kind_rules(SourceRef::ToolpathModel, &[], &[ItemKind::Point], None);
+        assert_eq!(all.len(), 1);
+        assert!(all[0].filter.layers.is_empty());
+    }
+
+    #[test]
+    fn a_batch_pick_replaces_the_default_once_o_pick() {
+        let default = Selection::drawing();
+        let mut s = Selection::drawing();
+        s.apply(
+            SelectionEdit::AddPicks(vec![key(1.0), key(2.0), key(1.0)]),
+            &default,
+        )
+        .unwrap();
+        assert_eq!(s, Selection::from_picks(vec![key(1.0), key(2.0)]));
+        s.apply(SelectionEdit::AddPicks(vec![key(3.0), key(2.0)]), &default)
+            .unwrap();
+        assert_eq!(s.picks(), &[key(1.0), key(2.0), key(3.0)]);
+        s.apply(
+            SelectionEdit::RemovePicks(vec![key(1.0), key(3.0)]),
+            &default,
+        )
+        .unwrap();
+        assert_eq!(s.picks(), &[key(2.0)]);
+        for empty in [
+            SelectionEdit::AddPicks(Vec::new()),
+            SelectionEdit::RemovePicks(Vec::new()),
+        ] {
+            assert_eq!(
+                s.apply(empty, &default).unwrap_err().cause,
+                RefusalCause::NoKey
+            );
         }
     }
 

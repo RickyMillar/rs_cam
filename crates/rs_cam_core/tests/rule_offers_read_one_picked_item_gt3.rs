@@ -15,6 +15,12 @@
 //!    rule holds every match), and "All circles" replaces the Ø 6 rule and
 //!    the Ø 10 pick (it holds the members of both).
 //!
+//! 4. SEL-7 (design E §2.1): a face pick on a boundary selection offers
+//!    "All up faces on this model" (every up face) and, for a down face,
+//!    "All down faces at Z" (the down faces at its plane Z). An op
+//!    selection gets no down-face offer (`view` refuses a down face in an
+//!    op area).
+//!
 //! Red proof: drop the `already` test in `rule_offers` (every offer gets an
 //! edit). Claim 3 fails.
 //!
@@ -33,7 +39,9 @@ mod common;
 
 use std::sync::Arc;
 
-use common::session::{polygon_model, single_op_session_with, stock_under};
+use common::session::{
+    pick_faces_in, polygon_model, single_op_session_with, stock_under, toolpath_config,
+};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
 use rs_cam_core::geo::P2;
@@ -151,4 +159,145 @@ fn rule_offers_read_one_picked_item_gt3() {
     assert_eq!(all.rules().len(), 1, "the Ø 6 rule goes: {all:?}");
     assert!(all.picks().is_empty(), "the Ø 10 pick goes: {all:?}");
     assert_eq!(all.rules()[0].filter.diameter, None);
+}
+
+// ── SEL-7: the two face offers ──────────────────────────────────────────
+
+/// A flat square face of side 10 at `(x, z)`, wound so that its triangles
+/// face `up`.
+fn square_face(x: f64, z: f64, up: bool) -> rs_cam_core::geometry::enriched_mesh::FaceTessellation {
+    use rs_cam_core::geo::{P3, V3};
+    use rs_cam_core::geometry::enriched_mesh::{FaceTessellation, SurfaceParams, SurfaceType};
+    let v = vec![
+        P3::new(x, 0.0, z),
+        P3::new(x + 10.0, 0.0, z),
+        P3::new(x + 10.0, 10.0, z),
+        P3::new(x, 10.0, z),
+    ];
+    let triangles = if up {
+        vec![[0, 1, 2], [0, 2, 3]]
+    } else {
+        vec![[0, 2, 1], [0, 3, 2]]
+    };
+    FaceTessellation {
+        boundary_loops: vec![v.clone()],
+        vertices: v,
+        triangles,
+        surface_type: SurfaceType::Plane,
+        surface_params: SurfaceParams::Plane {
+            normal: V3::new(0.0, 0.0, if up { 1.0 } else { -1.0 }),
+            d: z,
+        },
+    }
+}
+
+/// Faces 0, 1: up at Z 0 and Z -4. Faces 2, 3: down at Z -18. Face 4: down
+/// at Z -12. A drop cutter whose boundary selection picks face 2.
+fn face_session() -> ProjectSession {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+    use rs_cam_core::compute::operation_configs::DropCutterConfig;
+    use rs_cam_core::geometry::enriched_mesh::build_enriched_mesh;
+    use rs_cam_core::selection::Selection;
+    use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder};
+    let enriched = build_enriched_mesh(
+        vec![
+            square_face(0.0, 0.0, true),
+            square_face(20.0, -4.0, true),
+            square_face(0.0, -18.0, false),
+            square_face(20.0, -18.0, false),
+            square_face(40.0, -12.0, false),
+        ],
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let model = LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
+        name: "sel7_part".to_owned(),
+        mesh: Some(Arc::clone(&enriched.mesh)),
+        items: Arc::new(rs_cam_core::io::brep_face_items(&enriched)),
+        path: std::path::PathBuf::from("synthetic://sel7_part.step"),
+        kind: None,
+        units: None,
+        enriched_mesh: Some(Arc::new(enriched)),
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    };
+    let mut builder = ProjectSessionBuilder::new().stock(rs_cam_core::compute::StockConfig {
+        x: 60.0,
+        y: 20.0,
+        z: Some(30.0),
+        origin_x: -5.0,
+        origin_y: -5.0,
+        origin_z: -25.0,
+        auto_from_model: false,
+        ..rs_cam_core::compute::StockConfig::default()
+    });
+    let tool_idx = builder.add_tool(endmill_tool_config(3.0));
+    let tool_id = builder.tools()[tool_idx].id;
+    let model_id = builder.add_model(model);
+    let mut cfg = toolpath_config(
+        "sel7 drop",
+        OperationConfig::DropCutter(DropCutterConfig {
+            stepover: 1.0,
+            ..DropCutterConfig::default()
+        }),
+        tool_id,
+        model_id,
+    );
+    cfg.boundary = BoundaryConfig {
+        enabled: true,
+        source: BoundarySource::Selection {
+            selection: Selection::empty(),
+            holes: false,
+        },
+        containment: BoundaryContainment::Center,
+        offset: 0.0,
+    };
+    let _ = builder.add_toolpath(0, cfg).unwrap();
+    let mut s = builder.build();
+    pick_faces_in(&mut s, 0, SelectionTarget::Boundary, &[2]).unwrap();
+    s
+}
+
+#[test]
+fn the_face_offers_hold_the_faces_that_share_the_fact_sel7() {
+    let s = face_session();
+    let tc = tc(&s);
+    let key = s
+        .face_pick_key(
+            &tc,
+            tc.model_id,
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId(2),
+        )
+        .unwrap();
+    let offers = s.rule_offers(&tc, SelectionTarget::Boundary, &key).unwrap();
+    let summary: Vec<(&str, usize)> = offers.iter().map(|o| (o.label.as_str(), o.count)).collect();
+    assert_eq!(
+        summary,
+        [
+            ("All up faces on this model", 2),
+            ("All down faces at Z -18.00", 2),
+        ],
+        "the down face at Z -12 is not at the plane Z"
+    );
+
+    // An up face on the op target: the up faces at its Z, then every up
+    // face; no down-face offer.
+    let up = s
+        .face_pick_key(
+            &tc,
+            tc.model_id,
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId(0),
+        )
+        .unwrap();
+    let offers = s.rule_offers(&tc, SelectionTarget::Boundary, &up).unwrap();
+    let labels: Vec<&str> = offers.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        ["All up faces at Z 0.00", "All up faces on this model"]
+    );
 }
