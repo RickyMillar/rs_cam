@@ -48,3 +48,29 @@ that pass:
 - B3 (the `MouseScheme` setting, right-drag orbit default) waits for the
   operator's live look (A-Q9, B-O2). D6 (ID pass, outline) and the "select
   other" cycle are phase 4.
+
+## 4. Operator rulings of 2026-10-29 (after phases 0-3)
+
+- **Scheme (A-Q9, B-O2): the desktop-CAD scheme is the default** (middle drag
+  orbits, Ctrl + middle pans, right drag pans; left selects). B3 lands it.
+  Laptops with no middle button get fallback rows in BOTH schemes:
+  Alt + left drag orbits (Blender's three-button emulation), Alt + right
+  drag pans, and a two-finger scroll zooms as today; the orientation gizmo
+  gains a drag-to-orbit later. The shortcuts window prints every row.
+- **Edges**: the operator finds the 1 px edges thin against old builds.
+  Plan the quad-expanded line pipeline (D §3.5) for edges, the hover ring
+  and the tab marks together, with a width token; take the before/after
+  pair on `stepped_block.step`.
+- **Edge picks**: STEP edge items exist only for edges in a horizontal
+  plane (the importer skips vertical and sloped edges: "edge_items=35,
+  skipped_edges=8" on the stepped block). The operator has not seen one
+  picked; a demo screenshot pair is owed (a ring pick in pick mode with
+  the `path`/`loop` chip). Sloped edges are a later import extension.
+- **Hole folding (B §3.4)**: the operator asked what other tools do.
+  Fusion and Onshape treat one hole as one feature whatever you click (the
+  cylinder face, its top edge or the floor): a selection never counts a
+  hole twice. Fold in core.
+- **Phase 4 order (operator: "whatever makes sense", not now)**: display
+  modes + the quad line pipeline (fixes the thin edges and removes dock
+  rows) → the ID pass outline → "select other" → materials and lighting →
+  the dock declutter.
