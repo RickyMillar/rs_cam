@@ -1890,6 +1890,7 @@ impl RsCamApp {
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
             | CommandId::BuildModelFaces
+            | CommandId::BuildModelPickIndex
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so no
             // wire tool builds one. The GUI dispatches twelve of them;
@@ -2975,6 +2976,7 @@ impl RsCamApp {
             | CommandId::RecommendClearingStrategy
             | CommandId::PreviewTierMap
             | CommandId::BuildModelFaces
+            | CommandId::BuildModelPickIndex
             | CommandId::AdoptSimulation
             // WP15a rows. Every one declares `mcp: Reach::Skip`, so
             // `CoreRequest` names no variant for any of them either. The

@@ -1464,6 +1464,9 @@ fn job_label(request: &JobRequest) -> String {
         JobHandle::BuildModelFaces(handle) => {
             format!("Flat faces of model {}", handle.model_id())
         }
+        JobHandle::BuildModelPickIndex(handle) => {
+            format!("Pick index of model {}", handle.model_id())
+        }
     }
 }
 
@@ -1797,6 +1800,11 @@ fn run_job(request: &JobRequest) -> Result<rs_cam_core::session::JobAnswer, Comp
         JobHandle::BuildModelFaces(handle) => {
             rs_cam_core::session::execute_build_model_faces(handle, &cancel)
                 .map(|answer| JobAnswer::BuildModelFaces(Box::new(answer)))
+                .map_err(|error| ComputeError::Message(error.to_string()))
+        }
+        JobHandle::BuildModelPickIndex(handle) => {
+            rs_cam_core::session::execute_build_model_pick_index(handle, &cancel)
+                .map(|answer| JobAnswer::BuildModelPickIndex(Box::new(answer)))
                 .map_err(|error| ComputeError::Message(error.to_string()))
         }
     }

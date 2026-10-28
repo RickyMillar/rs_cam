@@ -582,6 +582,93 @@ mod an_stl_face_click_p4_7 {
             .expect("the ray hits the mesh")
     }
 
+    /// SEL-2: the pick-index pump (`process_model_pick_index`).
+    ///
+    /// 1. It submits ONE `build_model_pick_index` job for the mesh model,
+    ///    with no pick mode and no focus, and stamps `AppState::job_run`.
+    /// 2. While that job runs, it submits nothing.
+    /// 3. The work step and the drain land the BVH; then the model is ready
+    ///    and the pump submits nothing more.
+    /// 4. A failed job marks the model, says why once, and the pump never
+    ///    submits it again.
+    ///
+    /// Red proof: the pump with no failed-set check submits again in step 4.
+    #[test]
+    fn the_pick_index_pump_builds_once_per_mesh_model_sel2() {
+        let mut controller = stl_controller();
+        assert!(!controller.state.session().models()[0].pick_index_ready());
+
+        // 1. One job.
+        controller.process_model_pick_index();
+        assert_eq!(
+            controller.compute.job_requests.len(),
+            1,
+            "one pick-index job"
+        );
+        assert!(controller.state.job_run.is_some(), "the job is the GUI job");
+
+        // 2. Not while a job runs.
+        controller.process_model_pick_index();
+        assert_eq!(
+            controller.compute.job_requests.len(),
+            1,
+            "no second job while one runs"
+        );
+
+        // 3. The work step and the drain land it.
+        let request = controller.compute.job_requests.remove(0);
+        let JobHandle::BuildModelPickIndex(handle) = &request.handle else {
+            panic!("the pump submits the build_model_pick_index row");
+        };
+        let answer = rs_cam_core::session::execute_build_model_pick_index(handle, &request.cancel)
+            .map(|a| rs_cam_core::session::JobAnswer::BuildModelPickIndex(Box::new(a)))
+            .map_err(|e| crate::compute::ComputeError::Message(e.to_string()));
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Job(Box::new(crate::compute::JobResult {
+                id: request.id,
+                answer,
+            })));
+        controller.drain_compute_results();
+        assert!(
+            controller.state.job_run.is_none(),
+            "the drain clears the job"
+        );
+        assert!(controller.state.session().models()[0].pick_index_ready());
+        controller.process_model_pick_index();
+        assert!(
+            controller.compute.job_requests.is_empty(),
+            "a built index submits no second job"
+        );
+
+        // 4. A failure marks the model; the pump does not try it again.
+        let mut controller = stl_controller();
+        controller.process_model_pick_index();
+        let request = controller.compute.job_requests.remove(0);
+        let notes = controller.notifications.len();
+        controller
+            .compute
+            .drained
+            .push(ComputeMessage::Job(Box::new(crate::compute::JobResult {
+                id: request.id,
+                answer: Err(crate::compute::ComputeError::Message("injected".to_owned())),
+            })));
+        controller.drain_compute_results();
+        assert!(
+            controller.state.job_run.is_none(),
+            "the drain clears the job"
+        );
+        assert_eq!(controller.notifications.len(), notes + 1, "one warning");
+        assert!(!controller.state.session().models()[0].pick_index_ready());
+        controller.process_model_pick_index();
+        controller.process_model_pick_index();
+        assert!(
+            controller.compute.job_requests.is_empty(),
+            "a failed model is not tried again"
+        );
+    }
+
     #[test]
     fn an_stl_face_click_adds_one_pick_p4_7() {
         let mut controller = stl_controller();

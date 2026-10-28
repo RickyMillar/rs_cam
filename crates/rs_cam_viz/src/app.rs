@@ -869,6 +869,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
         #[cfg(feature = "mcp")]
         self.mcp_pump_beat();
     }
@@ -1377,6 +1379,8 @@ impl RsCamApp {
         self.controller.process_reach_overlay();
         // P4.7: the flat faces of an STL that the selected toolpath needs.
         self.controller.process_model_faces();
+        // SEL-2: the ray-pick BVH of each mesh model, after the faces.
+        self.controller.process_model_pick_index();
 
         // G-LV.1: anything an MCP caller is still awaiting needs a FUTURE
         // frame to reach it — the compute drain, `generate_all`'s fixpoint

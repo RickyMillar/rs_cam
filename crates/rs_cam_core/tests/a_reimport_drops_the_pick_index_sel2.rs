@@ -14,8 +14,11 @@
 //!    scaled mesh. The old mesh stays alive in this test, so its entry
 //!    stays in the table; only the identity check keeps it out.
 //!
-//! The second half of row 4 (the `build_model_pick_index` job fills the
-//! cache and counts one build) lands with the Job row in commit C3.
+//! 4. The `build_model_pick_index` job (`start`, then
+//!    `execute_build_model_pick_index`) fills the cache for the new mesh:
+//!    with a set cancel flag it builds nothing; then it counts one build,
+//!    `pick_index_ready` turns true, and the pick keeps its answer. A
+//!    second job counts a hit.
 //!
 //! The pick table is one process-global table, so each test here takes
 //! [`cache_lock`] and reads counter deltas.
@@ -29,11 +32,13 @@
 
 #![expect(
     clippy::expect_used,
+    clippy::panic,
     clippy::indexing_slicing,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rs_cam_core::compute::stock_config::ModelUnits;
@@ -42,7 +47,8 @@ use rs_cam_core::ids::ModelId;
 use rs_cam_core::maps::geom_cache;
 use rs_cam_core::mesh::{TriangleMesh, ray_pick_triangle};
 use rs_cam_core::session::{
-    AddModelArgs, AdoptModelGeometryArgs, Command, LoadedModel, ProjectSession,
+    AddModelArgs, AdoptModelGeometryArgs, BuildModelPickIndexArgs, Command, Job, JobHandle,
+    LoadedModel, ProjectSession, execute_build_model_pick_index,
 };
 
 fn cache_lock() -> MutexGuard<'static, ()> {
@@ -203,6 +209,50 @@ fn a_reimport_drops_the_pick_index_sel2() {
         (builds0 + 1, hits0 + 1),
         "a pick never builds"
     );
+
+    // Claim 4: the job fills the cache; a set cancel flag builds nothing.
+    let job = || Job::BuildModelPickIndex(BuildModelPickIndexArgs { model_id });
+    let cancel = AtomicBool::new(false);
+    let Ok(JobHandle::BuildModelPickIndex(handle)) = session.start(job(), &cancel) else {
+        panic!("the build_model_pick_index row starts");
+    };
+    let set = AtomicBool::new(true);
+    assert!(
+        execute_build_model_pick_index(&handle, &set).is_err(),
+        "a set flag refuses"
+    );
+    assert_eq!(
+        geom_cache::bvh_stats(),
+        (builds0 + 1, hits0 + 1),
+        "a cancel builds nothing"
+    );
+    assert!(!model(&session).pick_index_ready());
+    let built = execute_build_model_pick_index(&handle, &cancel).expect("the job builds");
+    assert_eq!(built.model_id, model_id);
+    assert_eq!(
+        geom_cache::bvh_stats(),
+        (builds0 + 2, hits0 + 1),
+        "the job built once"
+    );
+    assert!(model(&session).pick_index_ready());
+    let bvh = geom_cache::peek_bvh(&new_mesh).expect("the job filled the table");
+    assert_eq!(built.nodes, bvh.node_count());
+    for (o, d) in rays(&new_mesh) {
+        assert_eq!(
+            model(&session).ray_pick(&o, &d),
+            ray_pick_triangle(&new_mesh, &o, &d)
+        );
+    }
+    let Ok(JobHandle::BuildModelPickIndex(again)) = session.start(job(), &cancel) else {
+        panic!("the row starts again");
+    };
+    let _ = execute_build_model_pick_index(&again, &cancel).expect("the second job answers");
+    assert_eq!(
+        geom_cache::bvh_stats(),
+        (builds0 + 2, hits0 + 2),
+        "a second job is a hit"
+    );
+
     drop(old_mesh);
     let _ = std::fs::remove_dir_all(&dir);
 }

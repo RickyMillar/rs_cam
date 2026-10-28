@@ -31,7 +31,11 @@ pub use op_draft::{
     DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME, GeodesicPairDraft,
     GeodesicPairRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
 };
+mod pick_index;
 mod pin_report;
+pub use pick_index::{
+    BuildModelPickIndexHandle, ModelPickIndexBuilt, execute_build_model_pick_index,
+};
 mod pins;
 pub mod project_file;
 mod reach;
@@ -54,15 +58,15 @@ pub use command::{
     AddAlignmentPinArgs, AddBoreFromDrillArgs, AddGeodesicBodyAndEdgesArgs, AddModelArgs,
     AddObstacleArgs, AddSetupArgs, AddStockChangeArgs, AddToolArgs, AddToolpathArgs,
     AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs,
-    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId,
-    CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation,
-    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
-    ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
-    InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
-    ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
-    PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer, Reach,
-    RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs, RemoveObstacleArgs,
-    RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
+    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, BuildModelPickIndexArgs,
+    Command, CommandId, CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects,
+    FeedModulation, ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer,
+    GetOperationSchemaArgs, ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs,
+    InvalidateStockArgs, InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer,
+    JobHandle, LedgerEdit, ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs,
+    MoveToolpathToSetupArgs, PlanMultitoolFinishingArgs, PreviewTierMapArgs, Query, QueryAnswer,
+    Reach, RecommendClearingStrategyArgs, RemoveAlignmentPinArgs, RemoveModelArgs,
+    RemoveObstacleArgs, RemoveSetupArgs, RemoveStockChangeArgs, RemoveToolArgs, RemoveToolpathArgs,
     ReorderToolpathArgs, ReplaceObstacleArgs, ReplaceStockChangeArgs, ReplaceToolArgs,
     ReplaceToolpathConfigArgs, ReplaceToolsArgs, RestoreToolpathSnapshotArgs, SaveProjectArgs,
     SelectionStatusArgs, SetAlignmentPinsArgs, SetBoundaryConfigArgs, SetDressupConfigArgs,

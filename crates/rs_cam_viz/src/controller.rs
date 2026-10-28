@@ -174,6 +174,10 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
     /// sweep (`process_model_faces`) does not submit them again, so a
     /// failure cannot loop.
     pub(crate) failed_face_models: std::collections::BTreeSet<rs_cam_core::ids::ModelId>,
+    /// SEL-2 — the models whose `build_model_pick_index` job failed. The
+    /// pick-index pump (`process_model_pick_index`) does not submit them
+    /// again, so a failure cannot loop.
+    pub(crate) failed_pick_index_models: std::collections::BTreeSet<rs_cam_core::ids::ModelId>,
     /// W1 — the in-flight generation plan, from whichever surface started
     /// it. Unconditional on purpose: the GUI's Generate All walks the same
     /// plan the MCP tool does, and `pending_mcp` is `None` outside `--mcp`.
@@ -269,6 +273,9 @@ pub(crate) enum GuiJobTarget {
     /// The flat faces of an STL (geometry selection P4.7): the answer is
     /// in the per-mesh cache; the section and the viewport read it.
     ModelFaces { model_id: rs_cam_core::ids::ModelId },
+    /// The ray-pick BVH of a mesh model (SEL-2): the answer is in the pick
+    /// table; `LoadedModel::ray_pick` reads it. No draw changes.
+    ModelPickIndex { model_id: rs_cam_core::ids::ModelId },
 }
 
 impl AppController<ThreadedComputeBackend> {
@@ -300,6 +307,7 @@ impl<B: ComputeBackend> AppController<B> {
             notifications: Vec::new(),
             superseded_toolpaths: std::collections::HashSet::new(),
             failed_face_models: std::collections::BTreeSet::new(),
+            failed_pick_index_models: std::collections::BTreeSet::new(),
             plan: None,
             pending_plan_confirm: None,
             #[cfg(feature = "mcp")]

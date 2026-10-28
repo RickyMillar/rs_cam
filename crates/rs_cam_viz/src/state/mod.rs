@@ -442,6 +442,9 @@ pub enum JobRunKind {
     /// `AppController::request_model_faces` — the `build_model_faces`
     /// `Job` row (geometry selection P4.7).
     ModelFaces,
+    /// `AppController::process_model_pick_index` — the
+    /// `build_model_pick_index` `Job` row (SEL-2).
+    ModelPickIndex,
 }
 
 impl JobRunKind {
@@ -454,6 +457,7 @@ impl JobRunKind {
         match self {
             Self::MultitoolPreview => "Tier-map preview",
             Self::ModelFaces => "Computing faces",
+            Self::ModelPickIndex => "Building pick index",
         }
     }
 }
