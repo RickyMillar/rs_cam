@@ -1,0 +1,36 @@
+   0.562181964s  INFO rs_cam_core::session::project_file: Loaded mesh model name=terrain.stl tris=661212
+   1.183411059s  INFO rs_cam_core::session::project_file: Loaded 2D model name=rivers_aligned.dxf items=249
+   1.183649445s  INFO rs_cam_core::session::project_file: Loaded 2D model name=lakes.dxf items=20
+   1.183715559s  INFO rs_cam_core::session::project_file: Loaded 2D model name=holes.dxf items=26
+   1.183776984s  WARN rs_cam_core::session::project_file: Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters.
+   1.183782364s  INFO rs_cam_core::session::project_file: Normalized the rest-analysis demand on load toolpath=2 Back Rough enabled=true
+   1.183806319s  INFO rs_cam_cli::project: Loaded project name=wanaka_play_base tools=6 models_loaded=true setups=2
+  11.042230673s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=9762
+  11.459372366s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Z levels computed count=4 z_top=19.54 z_bottom=4.0 depth_per_pass=5.46
+  11.468568396s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=19.54 region=1 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.550 shortfall_inset_mm=0.000 measured_after_mm=0.550 region_area_mm2=40099.9 centre_area_mm2=39631.1 target_area_mm2=39631.1 excess_mm2=-0.00 allowed_mm2=399.15 decision="grown, no sweep"
+  14.051712601s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=14.079999999999998 region=1 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.550 shortfall_inset_mm=0.000 measured_after_mm=0.550 region_area_mm2=40099.9 centre_area_mm2=39631.1 target_area_mm2=39631.1 excess_mm2=-0.00 allowed_mm2=399.15 decision="grown, no sweep"
+  16.501640546s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=8.619999999999997 region=1 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.550 shortfall_inset_mm=0.000 measured_after_mm=0.550 region_area_mm2=40099.9 centre_area_mm2=39631.1 target_area_mm2=39631.1 excess_mm2=-0.00 allowed_mm2=399.15 decision="grown, no sweep"
+  18.952284603s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=4.0 region=1 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.250 shortfall_inset_mm=0.260 measured_after_mm=0.509 region_area_mm2=2396.2 centre_area_mm2=1059.5 target_area_mm2=1007.8 excess_mm2=51.72 allowed_mm2=844.28 decision="the shortfall inset split the outline: shipped sweep"
+  19.127673937s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=4.0 region=1 area_mm2=1865.8 why="no field"
+  19.128720838s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=4.0 region=2 area_mm2=190.9 why="F-038 forecast"
+  19.129391665s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=4.0 region=3 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.253 shortfall_inset_mm=0.257 measured_after_mm=0.510 region_area_mm2=158.6 centre_area_mm2=108.2 target_area_mm2=107.3 excess_mm2=0.90 allowed_mm2=29.10 decision="grown, no sweep"
+  19.131829643s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=4.0 region=3 area_mm2=26.6 why="no field"
+  20.137020205s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=15740 annotations=391 cutting_mm=76218.95147498306 rapid_mm=2501.5083024428645
+  21.037096559s  INFO generate_toolpath{index=0}: rs_cam_core::surface::rest_field: Rest-field detector complete grid="415x415" rest_volume_mm3="47247.8" pencil_regions=1 clearing_regions=1 centerlines=1833 coverage="0.17" measurement=stock volume (mm³); measured on the rest-depth mask; 0.500 mm cell, caller-pinned grid
+  21.037316882s  INFO generate_toolpath{index=0}: rs_cam_core::compute::execute::dressup_apply: generic rest analysis attached region set regions=1 pre_cap=1 total_area_mm2="40987.1" cell_mm=0.5 min_valley_depth=0.05
+  21.037682797s  WARN generate_toolpath{index=0}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports operations that start from flat stock, not mesh-derived surfaces. toolpath=2 Back Rough
+  38.849341807s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=6607
+  38.904141198s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Z levels computed count=4 z_top=19.54 z_bottom=4.0 depth_per_pass=5.46
+  38.909604255s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: band band_cells=15354 polygons=72 rings=71 ring_mm=1997.9999999999998
+  38.919362131s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=19.54 segments=40 under_5mm=26 length_mm=320.5211710766459
+  38.972620123s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=14.079999999999998 segments=69 under_5mm=41 length_mm=766.3939123866521
+  39.056127651s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=8.619999999999997 segments=74 under_5mm=42 length_mm=1060.156951006296
+  39.154455471s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=4.0 segments=7 under_5mm=2 length_mm=82.19773061321439
+  39.368582052s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=4590 annotations=533 cutting_mm=16248.960637906723 rapid_mm=19295.9038272779
+  39.369273669s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=2 Back Rough (edges, CP rest)
+  49.634946142s  INFO rs_cam_cli::project: generation plan finished steps=4 simulations=2 blocked=0
+  49.634981729s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=2 hits=0 entries_reused=0
+  70.984240575s  INFO rs_cam_cli::project: Wrote simulation artifact path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2m_wanaka/simulation.json
+  81.443649368s  WARN export_gcode_checked{policy=ToolLoadExportPolicy { accept_unmodeled: false, accept_exceeded: false }}: rs_cam_core::tool_load::depth: depth gate Exceeds: the measured depth is past the machine rigidity cap verdict="Exceeds" peak_mm=12.418822288513184 cap_mm=9.0 factor=1.5
+  81.465462252s  INFO rs_cam_cli::project: Wrote project summary path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2m_wanaka/summary.json
+  81.473691537s  INFO rs_cam_cli::project: Wrote G-code path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2m_wanaka/program.nc bytes=654509 modulated=true kinematics_injected=false

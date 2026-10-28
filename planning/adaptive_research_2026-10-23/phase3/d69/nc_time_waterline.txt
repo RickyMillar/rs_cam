@@ -1,0 +1,6 @@
+      time     moves   size_kb  file
+------------------------------------------------------------
+   29m33s     44391      1492  wlg_base_base.nc
+   28m40s     44391      1492  wlg_base_region.nc
+   17m33s     40300      1349  wlg_base_helix_holes.nc
+   16m09s     43456      1449  wlg_base_helix.nc

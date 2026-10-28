@@ -1,0 +1,23 @@
+{
+ "1": {
+  "total_s": 2079.6,
+  "rapid_s": 76.8,
+  "cutting_s": 1226.4,
+  "entry_s": 509.5,
+  "linking_s": 267.0,
+  "entries": 568,
+  "peak_axial": 12.42,
+  "removed_mm3": 591311
+ },
+ "7": {
+  "total_s": 928.3,
+  "rapid_s": 252.7,
+  "cutting_s": 15.5,
+  "entry_s": 541.3,
+  "linking_s": 118.8,
+  "entries": 679,
+  "peak_axial": 1.2,
+  "removed_mm3": 1832
+ },
+ "job_s": 3007.9
+}

@@ -1,0 +1,6741 @@
+{
+  "toolpath_id": 4,
+  "toolpath_name": "Waterline 3",
+  "operation_type": "Waterline",
+  "op_kind": "waterline",
+  "tool": "6mm 2F flat",
+  "move_count": 44390,
+  "cutting_distance_mm": 21133.498902215957,
+  "rapid_distance_mm": 15884.389255998654,
+  "debug_trace": {
+    "schema_version": 1,
+    "toolpath_name": "Waterline 3",
+    "operation_label": "Waterline",
+    "summary": {
+      "total_elapsed_us": 809067,
+      "span_count": 1,
+      "hotspot_count": 0,
+      "dominant_span_kind": "core_generate",
+      "dominant_span_label": "Waterline",
+      "dominant_span_elapsed_us": 357162
+    },
+    "spans": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "core_generate",
+        "label": "Waterline",
+        "start_us": 1,
+        "elapsed_us": 357162,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 0,
+        "move_end": 36233,
+        "exit_reason": null,
+        "counters": {}
+      }
+    ],
+    "hotspots": [],
+    "annotations": []
+  },
+  "semantic_trace": {
+    "schema_version": 1,
+    "toolpath_name": "Waterline 3",
+    "operation_label": "Waterline",
+    "summary": {
+      "item_count": 302,
+      "move_linked_item_count": 302
+    },
+    "items": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "operation",
+        "label": "Waterline",
+        "move_start": 0,
+        "move_end": 44389,
+        "xy_bbox": {
+          "min_x": 2.3137300920144575,
+          "max_x": 151.07423118125106,
+          "min_y": -106.86231477111589,
+          "max_y": -0.12070589027668177
+        },
+        "z_min": 1.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 17.990 pass 1",
+        "move_start": 0,
+        "move_end": 1529,
+        "xy_bbox": {
+          "min_x": 3.8035803092049596,
+          "max_x": 149.58423118125106,
+          "min_y": -105.81957789614869,
+          "max_y": -1.6107061255163302
+        },
+        "z_min": 17.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 0,
+            "z_level": 17.99
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 3,
+        "parent_id": 2,
+        "kind": "region",
+        "label": "Run 1",
+        "move_start": 0,
+        "move_end": 732,
+        "xy_bbox": {
+          "min_x": 3.8035803092049596,
+          "max_x": 149.58423118125106,
+          "min_y": -105.81957789614869,
+          "max_y": -1.6107061255163302
+        },
+        "z_min": 17.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 302,
+        "parent_id": null,
+        "kind": "boundary_clip",
+        "label": "Boundary clip",
+        "move_start": 0,
+        "move_end": 44389,
+        "xy_bbox": {
+          "min_x": 2.3137300920144575,
+          "max_x": 151.07423118125106,
+          "min_y": -106.86231477111589,
+          "max_y": -0.12070589027668177
+        },
+        "z_min": 1.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "containment": "center",
+            "keep_out_count": 0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 4,
+        "parent_id": 2,
+        "kind": "region",
+        "label": "Run 2",
+        "move_start": 734,
+        "move_end": 1529,
+        "xy_bbox": {
+          "min_x": 11.813880243209566,
+          "max_x": 141.57408142089844,
+          "min_y": -105.81957789614869,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 17.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 1
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 5,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 17.000 pass 2",
+        "move_start": 1531,
+        "move_end": 3104,
+        "xy_bbox": {
+          "min_x": 2.816770121835737,
+          "max_x": 150.57423118125106,
+          "min_y": -106.34076796733721,
+          "max_y": -0.6207058902766533
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 1,
+            "z_level": 17.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 6,
+        "parent_id": 5,
+        "kind": "region",
+        "label": "Run 3",
+        "move_start": 1531,
+        "move_end": 2291,
+        "xy_bbox": {
+          "min_x": 2.816770121835737,
+          "max_x": 150.57423118125106,
+          "min_y": -106.34076796733721,
+          "max_y": -0.6207058902766533
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 2
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 7,
+        "parent_id": 5,
+        "kind": "region",
+        "label": "Run 4",
+        "move_start": 2293,
+        "move_end": 3104,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.34076796733721,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 3
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 8,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 16.000 pass 3",
+        "move_start": 3106,
+        "move_end": 4699,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 16.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 2,
+            "z_level": 16.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 9,
+        "parent_id": 8,
+        "kind": "region",
+        "label": "Run 5",
+        "move_start": 3106,
+        "move_end": 3870,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 16.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 4
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 10,
+        "parent_id": 8,
+        "kind": "region",
+        "label": "Run 6",
+        "move_start": 3872,
+        "move_end": 4699,
+        "xy_bbox": {
+          "min_x": 11.813730382003119,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 16.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 5
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 11,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 14.990 pass 4",
+        "move_start": 4701,
+        "move_end": 6324,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 14.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 3,
+            "z_level": 14.99
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 12,
+        "parent_id": 11,
+        "kind": "region",
+        "label": "Run 7",
+        "move_start": 4701,
+        "move_end": 5479,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 14.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 6
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 13,
+        "parent_id": 11,
+        "kind": "region",
+        "label": "Run 8",
+        "move_start": 5481,
+        "move_end": 6324,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 14.99,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 7
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 14,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 14.000 pass 5",
+        "move_start": 6326,
+        "move_end": 7977,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500669966
+        },
+        "z_min": 14.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 4,
+            "z_level": 14.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 15,
+        "parent_id": 14,
+        "kind": "region",
+        "label": "Run 9",
+        "move_start": 6326,
+        "move_end": 7116,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500669966
+        },
+        "z_min": 14.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 8
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 16,
+        "parent_id": 14,
+        "kind": "region",
+        "label": "Run 10",
+        "move_start": 7118,
+        "move_end": 7977,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 14.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 9
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 17,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 13.000 pass 6",
+        "move_start": 7979,
+        "move_end": 9658,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 13.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 5,
+            "z_level": 13.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 18,
+        "parent_id": 17,
+        "kind": "region",
+        "label": "Run 11",
+        "move_start": 7979,
+        "move_end": 8781,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 13.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 10
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 19,
+        "parent_id": 17,
+        "kind": "region",
+        "label": "Run 12",
+        "move_start": 8783,
+        "move_end": 9658,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 13.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 11
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 20,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 12.000 pass 7",
+        "move_start": 9660,
+        "move_end": 11367,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 12.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 6,
+            "z_level": 12.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 21,
+        "parent_id": 20,
+        "kind": "region",
+        "label": "Run 13",
+        "move_start": 9660,
+        "move_end": 10474,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 12.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 12
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 22,
+        "parent_id": 20,
+        "kind": "region",
+        "label": "Run 14",
+        "move_start": 10476,
+        "move_end": 11367,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 12.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 13
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 23,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 11.000 pass 8",
+        "move_start": 11369,
+        "move_end": 13104,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 7,
+            "z_level": 11.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 24,
+        "parent_id": 23,
+        "kind": "region",
+        "label": "Run 15",
+        "move_start": 11369,
+        "move_end": 12195,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 14
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 25,
+        "parent_id": 23,
+        "kind": "region",
+        "label": "Run 16",
+        "move_start": 12197,
+        "move_end": 13104,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 15
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 26,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 10.000 pass 9",
+        "move_start": 13106,
+        "move_end": 14869,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 10.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 8,
+            "z_level": 10.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 27,
+        "parent_id": 26,
+        "kind": "region",
+        "label": "Run 17",
+        "move_start": 13106,
+        "move_end": 13944,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 10.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 16
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 28,
+        "parent_id": 26,
+        "kind": "region",
+        "label": "Run 18",
+        "move_start": 13946,
+        "move_end": 14869,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 10.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 17
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 29,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 9.000 pass 10",
+        "move_start": 14871,
+        "move_end": 16662,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 9.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 9,
+            "z_level": 9.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 30,
+        "parent_id": 29,
+        "kind": "region",
+        "label": "Run 19",
+        "move_start": 14871,
+        "move_end": 15721,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 9.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 18
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 31,
+        "parent_id": 29,
+        "kind": "region",
+        "label": "Run 20",
+        "move_start": 15723,
+        "move_end": 16662,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 9.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 19
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 32,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 8.000 pass 11",
+        "move_start": 16664,
+        "move_end": 18483,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 8.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 10,
+            "z_level": 8.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 33,
+        "parent_id": 32,
+        "kind": "region",
+        "label": "Run 21",
+        "move_start": 16664,
+        "move_end": 17526,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 8.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 20
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 34,
+        "parent_id": 32,
+        "kind": "region",
+        "label": "Run 22",
+        "move_start": 17528,
+        "move_end": 18483,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 8.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 21
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 35,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 7.000 pass 12",
+        "move_start": 18485,
+        "move_end": 20332,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 7.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 11,
+            "z_level": 7.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 36,
+        "parent_id": 35,
+        "kind": "region",
+        "label": "Run 23",
+        "move_start": 18485,
+        "move_end": 19359,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 7.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 22
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 37,
+        "parent_id": 35,
+        "kind": "region",
+        "label": "Run 24",
+        "move_start": 19361,
+        "move_end": 20332,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 7.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 23
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 38,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 6.000 pass 13",
+        "move_start": 20334,
+        "move_end": 22209,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500669966
+        },
+        "z_min": 6.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 12,
+            "z_level": 6.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 39,
+        "parent_id": 38,
+        "kind": "region",
+        "label": "Run 25",
+        "move_start": 20334,
+        "move_end": 21220,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500669966
+        },
+        "z_min": 6.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 24
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 40,
+        "parent_id": 38,
+        "kind": "region",
+        "label": "Run 26",
+        "move_start": 21222,
+        "move_end": 22209,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 6.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 25
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 41,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 5.000 pass 14",
+        "move_start": 22211,
+        "move_end": 24113,
+        "xy_bbox": {
+          "min_x": 2.3137300920144575,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 13,
+            "z_level": 5.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 42,
+        "parent_id": 41,
+        "kind": "region",
+        "label": "Run 27",
+        "move_start": 22211,
+        "move_end": 23109,
+        "xy_bbox": {
+          "min_x": 2.3137300920144575,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 26
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 43,
+        "parent_id": 41,
+        "kind": "region",
+        "label": "Run 28",
+        "move_start": 23111,
+        "move_end": 24113,
+        "xy_bbox": {
+          "min_x": 11.813730382003122,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 27
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 44,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 4.000 pass 15",
+        "move_start": 24115,
+        "move_end": 26045,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 4.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 14,
+            "z_level": 4.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 45,
+        "parent_id": 44,
+        "kind": "region",
+        "label": "Run 29",
+        "move_start": 24115,
+        "move_end": 25025,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 4.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 28
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 46,
+        "parent_id": 44,
+        "kind": "region",
+        "label": "Run 30",
+        "move_start": 25027,
+        "move_end": 26045,
+        "xy_bbox": {
+          "min_x": 11.81373038200312,
+          "max_x": 141.57408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -9.620814323425293
+        },
+        "z_min": 4.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 29
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 47,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 3.000 pass 16",
+        "move_start": 26047,
+        "move_end": 30492,
+        "xy_bbox": {
+          "min_x": 2.313730092014458,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 3.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 15,
+            "z_level": 3.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 48,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 31",
+        "move_start": 26047,
+        "move_end": 26967,
+        "xy_bbox": {
+          "min_x": 2.313730092014458,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 3.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 30
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 49,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 32",
+        "move_start": 26971,
+        "move_end": 27004,
+        "xy_bbox": {
+          "min_x": 27.26641487270445,
+          "max_x": 29.32219192824122,
+          "min_y": -91.00718688964844,
+          "max_y": -89.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 31
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 50,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 33",
+        "move_start": 27008,
+        "move_end": 27077,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -86.00718688964844,
+          "max_y": -84.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 7.0,
+        "params": {
+          "values": {
+            "region_id": 32
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 53,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 36",
+        "move_start": 27081,
+        "move_end": 27114,
+        "xy_bbox": {
+          "min_x": 27.26641487262643,
+          "max_x": 29.32219192824122,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 35
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 51,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 34",
+        "move_start": 27118,
+        "move_end": 27155,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 33
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 54,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 37",
+        "move_start": 27159,
+        "move_end": 27194,
+        "xy_bbox": {
+          "min_x": 44.568076530958514,
+          "max_x": 46.64269978443956,
+          "min_y": -81.00718688964844,
+          "max_y": -79.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 36
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 52,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 35",
+        "move_start": 27198,
+        "move_end": 27237,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 34
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 55,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 38",
+        "move_start": 27241,
+        "move_end": 27278,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 37
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 57,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 40",
+        "move_start": 27282,
+        "move_end": 27321,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -76.00718688964844,
+          "max_y": -74.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 39
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 60,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 43",
+        "move_start": 27325,
+        "move_end": 27360,
+        "xy_bbox": {
+          "min_x": 44.568076531403065,
+          "max_x": 46.64269978443956,
+          "min_y": -71.00718688964844,
+          "max_y": -69.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 42
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 64,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 47",
+        "move_start": 27364,
+        "move_end": 27403,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 46
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 70,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 53",
+        "move_start": 27407,
+        "move_end": 27442,
+        "xy_bbox": {
+          "min_x": 44.56807653111885,
+          "max_x": 46.64269978443956,
+          "min_y": -61.00718688964844,
+          "max_y": -59.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 52
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 78,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 61",
+        "move_start": 27446,
+        "move_end": 27485,
+        "xy_bbox": {
+          "min_x": 53.21484195945169,
+          "max_x": 55.30295360329246,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 60
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 83,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 66",
+        "move_start": 27489,
+        "move_end": 27524,
+        "xy_bbox": {
+          "min_x": 44.5680765313432,
+          "max_x": 46.64269978443956,
+          "min_y": -51.007186889648445,
+          "max_y": -49.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 65
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 91,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 74",
+        "move_start": 27528,
+        "move_end": 27567,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 73
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 84,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 67",
+        "move_start": 27571,
+        "move_end": 27608,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 66
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 98,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 81",
+        "move_start": 27612,
+        "move_end": 27649,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 80
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 105,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 88",
+        "move_start": 27653,
+        "move_end": 27692,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 87
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 97,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 80",
+        "move_start": 27696,
+        "move_end": 27731,
+        "xy_bbox": {
+          "min_x": 44.568076531650306,
+          "max_x": 46.64269978443956,
+          "min_y": -41.00718688964844,
+          "max_y": -39.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 79
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 90,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 73",
+        "move_start": 27735,
+        "move_end": 27772,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 72
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 96,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 79",
+        "move_start": 27776,
+        "move_end": 27809,
+        "xy_bbox": {
+          "min_x": 27.266414872669888,
+          "max_x": 29.32219192824122,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 78
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 82,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 65",
+        "move_start": 27813,
+        "move_end": 27846,
+        "xy_bbox": {
+          "min_x": 27.266414872720702,
+          "max_x": 29.32219192824122,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 64
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 77,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 60",
+        "move_start": 27850,
+        "move_end": 27887,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 59
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 69,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 52",
+        "move_start": 27891,
+        "move_end": 27924,
+        "xy_bbox": {
+          "min_x": 27.26641487252679,
+          "max_x": 29.32219192824122,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 51
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 63,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 46",
+        "move_start": 27928,
+        "move_end": 27965,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 45
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 59,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 42",
+        "move_start": 27969,
+        "move_end": 28002,
+        "xy_bbox": {
+          "min_x": 27.266414872659542,
+          "max_x": 29.32219192824122,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 41
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 56,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 39",
+        "move_start": 28006,
+        "move_end": 28051,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 38
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 62,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 45",
+        "move_start": 28055,
+        "move_end": 28100,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 44
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 76,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 59",
+        "move_start": 28104,
+        "move_end": 28149,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -56.00718688964844,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 58
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 89,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 72",
+        "move_start": 28153,
+        "move_end": 28198,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -46.00718688964844,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 71
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 103,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 86",
+        "move_start": 28202,
+        "move_end": 28247,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 85
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 109,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 92",
+        "move_start": 28251,
+        "move_end": 28284,
+        "xy_bbox": {
+          "min_x": 27.266414872606425,
+          "max_x": 29.32219192824122,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 91
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 115,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 98",
+        "move_start": 28288,
+        "move_end": 28333,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -26.007186889648438,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 97
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 122,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 105",
+        "move_start": 28337,
+        "move_end": 28370,
+        "xy_bbox": {
+          "min_x": 27.266414872633074,
+          "max_x": 29.32219192824122,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 104
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 116,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 99",
+        "move_start": 28374,
+        "move_end": 28411,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 98
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 104,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 87",
+        "move_start": 28415,
+        "move_end": 28452,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 86
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 123,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 106",
+        "move_start": 28456,
+        "move_end": 28491,
+        "xy_bbox": {
+          "min_x": 44.56807653153748,
+          "max_x": 46.64269978443956,
+          "min_y": -21.007186889648438,
+          "max_y": -19.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 105
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 117,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 100",
+        "move_start": 28495,
+        "move_end": 28534,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 99
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 110,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 93",
+        "move_start": 28538,
+        "move_end": 28575,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 92
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 129,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 112",
+        "move_start": 28579,
+        "move_end": 28618,
+        "xy_bbox": {
+          "min_x": 53.214841408847235,
+          "max_x": 55.302954153896906,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974121
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 111
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 124,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 107",
+        "move_start": 28622,
+        "move_end": 28659,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 106
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 130,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 113",
+        "move_start": 28663,
+        "move_end": 28701,
+        "xy_bbox": {
+          "min_x": 70.5353484584078,
+          "max_x": 72.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.315544128417969
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 112
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 125,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 108",
+        "move_start": 28705,
+        "move_end": 28746,
+        "xy_bbox": {
+          "min_x": 79.18304565018295,
+          "max_x": 81.28371549683489,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 107
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 118,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 101",
+        "move_start": 28750,
+        "move_end": 28788,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 100
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 106,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 89",
+        "move_start": 28792,
+        "move_end": 28830,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 88
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 92,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 75",
+        "move_start": 28834,
+        "move_end": 28872,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 74
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 71,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 54",
+        "move_start": 28876,
+        "move_end": 28913,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 53
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 61,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 44",
+        "move_start": 28917,
+        "move_end": 28954,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 43
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 58,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 41",
+        "move_start": 28958,
+        "move_end": 28996,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 40
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 65,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 48",
+        "move_start": 29000,
+        "move_end": 29038,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 47
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 79,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 62",
+        "move_start": 29042,
+        "move_end": 29080,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 61
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 72,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 55",
+        "move_start": 29084,
+        "move_end": 29125,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 54
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 66,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 49",
+        "move_start": 29129,
+        "move_end": 29166,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 48
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 73,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 56",
+        "move_start": 29170,
+        "move_end": 29209,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -61.00718688964844,
+          "max_y": -59.300062728597055
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 55
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 67,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 50",
+        "move_start": 29213,
+        "move_end": 29253,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 49
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 74,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 57",
+        "move_start": 29257,
+        "move_end": 29288,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 56
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 81,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 64",
+        "move_start": 29292,
+        "move_end": 29332,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 63
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 87,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 70",
+        "move_start": 29336,
+        "move_end": 29367,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 69
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 101,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 84",
+        "move_start": 29371,
+        "move_end": 29402,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 83
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 108,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 91",
+        "move_start": 29406,
+        "move_end": 29446,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 90
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 100,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 83",
+        "move_start": 29450,
+        "move_end": 29489,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -41.00718688964844,
+          "max_y": -39.300062728597055
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 82
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 94,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 77",
+        "move_start": 29493,
+        "move_end": 29533,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 76
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 86,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 69",
+        "move_start": 29537,
+        "move_end": 29576,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -51.007186889648445,
+          "max_y": -49.30006272859704
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 68
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 80,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 63",
+        "move_start": 29580,
+        "move_end": 29617,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 62
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 85,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 68",
+        "move_start": 29621,
+        "move_end": 29662,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 67
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 93,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 76",
+        "move_start": 29666,
+        "move_end": 29703,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 75
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 99,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 82",
+        "move_start": 29707,
+        "move_end": 29748,
+        "xy_bbox": {
+          "min_x": 79.18304565018295,
+          "max_x": 81.28371549683489,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 81
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 107,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 90",
+        "move_start": 29752,
+        "move_end": 29789,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 89
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 111,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 94",
+        "move_start": 29793,
+        "move_end": 29834,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 93
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 119,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 102",
+        "move_start": 29838,
+        "move_end": 29875,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 101
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 131,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 114",
+        "move_start": 29879,
+        "move_end": 29916,
+        "xy_bbox": {
+          "min_x": 87.85585932266561,
+          "max_x": 89.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974121
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 113
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 126,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 109",
+        "move_start": 29920,
+        "move_end": 29959,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -21.007186889648438,
+          "max_y": -19.300062728597055
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 108
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 112,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 95",
+        "move_start": 29963,
+        "move_end": 30002,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -31.007186889648438,
+          "max_y": -29.300062728597055
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 94
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 120,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 103",
+        "move_start": 30006,
+        "move_end": 30046,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 102
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 113,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 96",
+        "move_start": 30050,
+        "move_end": 30081,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 95
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 127,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 110",
+        "move_start": 30085,
+        "move_end": 30116,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 109
+          }
+        },
+        "debug_span_id": 1
+      },
+      {
+        "id": 121,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 104",
+        "move_start": 30120,
+        "move_end": 30158,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.266735782267716
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 103
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 128,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 111",
+        "move_start": 30162,
+        "move_end": 30208,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 110
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 114,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 97",
+        "move_start": 30212,
+        "move_end": 30258,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 96
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 102,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 85",
+        "move_start": 30262,
+        "move_end": 30308,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 84
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 95,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 78",
+        "move_start": 30312,
+        "move_end": 30350,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.26673578226771
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 77
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 88,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 71",
+        "move_start": 30354,
+        "move_end": 30400,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 70
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 75,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 58",
+        "move_start": 30404,
+        "move_end": 30450,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 57
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 68,
+        "parent_id": 47,
+        "kind": "region",
+        "label": "Run 51",
+        "move_start": 30454,
+        "move_end": 30492,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.26673578226772
+        },
+        "z_min": 3.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 50
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 132,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 2.000 pass 17",
+        "move_start": 30494,
+        "move_end": 36609,
+        "xy_bbox": {
+          "min_x": 2.3163353801128497,
+          "max_x": 151.07423118125106,
+          "min_y": -106.86231477111589,
+          "max_y": -0.12070589027668177
+        },
+        "z_min": 2.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 16,
+            "z_level": 2.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 133,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 115",
+        "move_start": 30494,
+        "move_end": 31428,
+        "xy_bbox": {
+          "min_x": 2.3163353801128497,
+          "max_x": 151.07423118125106,
+          "min_y": -106.86231477111589,
+          "max_y": -0.12070589027668177
+        },
+        "z_min": 2.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 114
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 134,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 116",
+        "move_start": 31432,
+        "move_end": 31481,
+        "xy_bbox": {
+          "min_x": 27.266414872648717,
+          "max_x": 29.32219192824122,
+          "min_y": -91.00718688964844,
+          "max_y": -89.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 115
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 135,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 117",
+        "move_start": 31485,
+        "move_end": 31578,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -86.00718688964844,
+          "max_y": -84.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 7.0,
+        "params": {
+          "values": {
+            "region_id": 116
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 138,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 120",
+        "move_start": 31582,
+        "move_end": 31631,
+        "xy_bbox": {
+          "min_x": 27.266414872570703,
+          "max_x": 29.32219192824122,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 119
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 136,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 118",
+        "move_start": 31635,
+        "move_end": 31692,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 117
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 139,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 121",
+        "move_start": 31696,
+        "move_end": 31751,
+        "xy_bbox": {
+          "min_x": 44.568076530958514,
+          "max_x": 46.64269978443956,
+          "min_y": -81.00718688964844,
+          "max_y": -79.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 120
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 137,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 119",
+        "move_start": 31755,
+        "move_end": 31814,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 118
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 140,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 122",
+        "move_start": 31818,
+        "move_end": 31875,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 121
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 142,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 124",
+        "move_start": 31879,
+        "move_end": 31938,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -76.00718688964844,
+          "max_y": -74.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 123
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 145,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 127",
+        "move_start": 31942,
+        "move_end": 31997,
+        "xy_bbox": {
+          "min_x": 44.568076531403065,
+          "max_x": 46.64269978443956,
+          "min_y": -71.00718688964844,
+          "max_y": -69.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 126
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 149,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 131",
+        "move_start": 32001,
+        "move_end": 32060,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 130
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 155,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 137",
+        "move_start": 32064,
+        "move_end": 32119,
+        "xy_bbox": {
+          "min_x": 44.56807653111885,
+          "max_x": 46.64269978443956,
+          "min_y": -61.00718688964844,
+          "max_y": -59.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 136
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 163,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 145",
+        "move_start": 32123,
+        "move_end": 32182,
+        "xy_bbox": {
+          "min_x": 53.21484195945169,
+          "max_x": 55.30295360329246,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 144
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 168,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 150",
+        "move_start": 32186,
+        "move_end": 32241,
+        "xy_bbox": {
+          "min_x": 44.5680765313432,
+          "max_x": 46.64269978443956,
+          "min_y": -51.007186889648445,
+          "max_y": -49.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 149
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 176,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 158",
+        "move_start": 32245,
+        "move_end": 32304,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 157
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 169,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 151",
+        "move_start": 32308,
+        "move_end": 32365,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 150
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 183,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 165",
+        "move_start": 32369,
+        "move_end": 32426,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 164
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 190,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 172",
+        "move_start": 32430,
+        "move_end": 32489,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 171
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 182,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 164",
+        "move_start": 32493,
+        "move_end": 32548,
+        "xy_bbox": {
+          "min_x": 44.568076531650306,
+          "max_x": 46.64269978443956,
+          "min_y": -41.00718688964844,
+          "max_y": -39.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 163
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 175,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 157",
+        "move_start": 32552,
+        "move_end": 32609,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 156
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 181,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 163",
+        "move_start": 32613,
+        "move_end": 32662,
+        "xy_bbox": {
+          "min_x": 27.266414872669888,
+          "max_x": 29.32219192824122,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 162
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 167,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 149",
+        "move_start": 32666,
+        "move_end": 32715,
+        "xy_bbox": {
+          "min_x": 27.266414872720702,
+          "max_x": 29.32219192824122,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 148
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 162,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 144",
+        "move_start": 32719,
+        "move_end": 32776,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 143
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 154,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 136",
+        "move_start": 32780,
+        "move_end": 32829,
+        "xy_bbox": {
+          "min_x": 27.26641487252679,
+          "max_x": 29.32219192824122,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 135
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 148,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 130",
+        "move_start": 32833,
+        "move_end": 32890,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 129
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 144,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 126",
+        "move_start": 32894,
+        "move_end": 32943,
+        "xy_bbox": {
+          "min_x": 27.266414872729218,
+          "max_x": 29.32219192824122,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 125
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 141,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 123",
+        "move_start": 32947,
+        "move_end": 33016,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 122
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 147,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 129",
+        "move_start": 33020,
+        "move_end": 33089,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 128
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 161,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 143",
+        "move_start": 33093,
+        "move_end": 33162,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -56.00718688964844,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 142
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 174,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 156",
+        "move_start": 33166,
+        "move_end": 33235,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -46.00718688964844,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 155
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 188,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 170",
+        "move_start": 33239,
+        "move_end": 33308,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 169
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 194,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 176",
+        "move_start": 33312,
+        "move_end": 33361,
+        "xy_bbox": {
+          "min_x": 27.266414872606425,
+          "max_x": 29.32219192824122,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 175
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 200,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 182",
+        "move_start": 33365,
+        "move_end": 33434,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -26.007186889648438,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 181
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 207,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 189",
+        "move_start": 33438,
+        "move_end": 33487,
+        "xy_bbox": {
+          "min_x": 27.266414872633074,
+          "max_x": 29.32219192824122,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 188
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 201,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 183",
+        "move_start": 33491,
+        "move_end": 33548,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 182
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 189,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 171",
+        "move_start": 33552,
+        "move_end": 33609,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 170
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 208,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 190",
+        "move_start": 33613,
+        "move_end": 33668,
+        "xy_bbox": {
+          "min_x": 44.56807653153748,
+          "max_x": 46.64269978443956,
+          "min_y": -21.007186889648438,
+          "max_y": -19.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 189
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 202,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 184",
+        "move_start": 33672,
+        "move_end": 33731,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 183
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 195,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 177",
+        "move_start": 33735,
+        "move_end": 33792,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 176
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 214,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 196",
+        "move_start": 33796,
+        "move_end": 33855,
+        "xy_bbox": {
+          "min_x": 53.214841408847235,
+          "max_x": 55.302954153896906,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974121
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 195
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 209,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 191",
+        "move_start": 33859,
+        "move_end": 33916,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 190
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 215,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 197",
+        "move_start": 33920,
+        "move_end": 33978,
+        "xy_bbox": {
+          "min_x": 70.5353484584078,
+          "max_x": 72.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.315544128417969
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 196
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 210,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 192",
+        "move_start": 33982,
+        "move_end": 34043,
+        "xy_bbox": {
+          "min_x": 79.18304565018295,
+          "max_x": 81.28371549683489,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 191
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 203,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 185",
+        "move_start": 34047,
+        "move_end": 34105,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 184
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 191,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 173",
+        "move_start": 34109,
+        "move_end": 34167,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 172
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 177,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 159",
+        "move_start": 34171,
+        "move_end": 34229,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 158
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 156,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 138",
+        "move_start": 34233,
+        "move_end": 34290,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 137
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 146,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 128",
+        "move_start": 34294,
+        "move_end": 34351,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 127
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 143,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 125",
+        "move_start": 34355,
+        "move_end": 34413,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 124
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 150,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 132",
+        "move_start": 34417,
+        "move_end": 34475,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 131
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 164,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 146",
+        "move_start": 34479,
+        "move_end": 34537,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 145
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 157,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 139",
+        "move_start": 34541,
+        "move_end": 34602,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 138
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 151,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 133",
+        "move_start": 34606,
+        "move_end": 34663,
+        "xy_bbox": {
+          "min_x": 87.85585987327008,
+          "max_x": 89.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 132
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 158,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 140",
+        "move_start": 34667,
+        "move_end": 34726,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -61.00718688964844,
+          "max_y": -59.300062728597055
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 139
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 152,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 134",
+        "move_start": 34730,
+        "move_end": 34790,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 133
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 159,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 141",
+        "move_start": 34794,
+        "move_end": 34841,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 140
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 166,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 148",
+        "move_start": 34845,
+        "move_end": 34905,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 147
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 172,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 154",
+        "move_start": 34909,
+        "move_end": 34956,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 153
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 186,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 168",
+        "move_start": 34960,
+        "move_end": 35007,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 167
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 193,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 175",
+        "move_start": 35011,
+        "move_end": 35071,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 174
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 185,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 167",
+        "move_start": 35075,
+        "move_end": 35134,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -41.00718688964844,
+          "max_y": -39.300062728597055
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 166
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 179,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 161",
+        "move_start": 35138,
+        "move_end": 35198,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 160
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 171,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 153",
+        "move_start": 35202,
+        "move_end": 35261,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -51.007186889648445,
+          "max_y": -49.30006272859704
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 152
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 165,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 147",
+        "move_start": 35265,
+        "move_end": 35322,
+        "xy_bbox": {
+          "min_x": 87.85585987327008,
+          "max_x": 89.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 146
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 170,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 152",
+        "move_start": 35326,
+        "move_end": 35387,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 151
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 178,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 160",
+        "move_start": 35391,
+        "move_end": 35448,
+        "xy_bbox": {
+          "min_x": 87.85585987327008,
+          "max_x": 89.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 159
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 184,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 166",
+        "move_start": 35452,
+        "move_end": 35513,
+        "xy_bbox": {
+          "min_x": 79.18304565018295,
+          "max_x": 81.28371549683489,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 165
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 192,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 174",
+        "move_start": 35517,
+        "move_end": 35574,
+        "xy_bbox": {
+          "min_x": 87.85585987327008,
+          "max_x": 89.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 173
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 196,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 178",
+        "move_start": 35578,
+        "move_end": 35639,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 177
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 204,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 186",
+        "move_start": 35643,
+        "move_end": 35700,
+        "xy_bbox": {
+          "min_x": 87.85585987327008,
+          "max_x": 89.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 185
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 216,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 198",
+        "move_start": 35704,
+        "move_end": 35761,
+        "xy_bbox": {
+          "min_x": 87.85585932266562,
+          "max_x": 89.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974121
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 197
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 211,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 193",
+        "move_start": 35765,
+        "move_end": 35824,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -21.007186889648438,
+          "max_y": -19.300062728597055
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 192
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 197,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 179",
+        "move_start": 35828,
+        "move_end": 35887,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -31.007186889648438,
+          "max_y": -29.300062728597055
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 178
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 205,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 187",
+        "move_start": 35891,
+        "move_end": 35951,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667137,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 186
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 198,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 180",
+        "move_start": 35955,
+        "move_end": 36002,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 179
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 212,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 194",
+        "move_start": 36006,
+        "move_end": 36053,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 193
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 206,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 188",
+        "move_start": 36057,
+        "move_end": 36115,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.266735782267716
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 187
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 213,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 195",
+        "move_start": 36119,
+        "move_end": 36189,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 194
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 199,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 181",
+        "move_start": 36193,
+        "move_end": 36263,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 180
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 187,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 169",
+        "move_start": 36267,
+        "move_end": 36337,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 168
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 180,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 162",
+        "move_start": 36341,
+        "move_end": 36399,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.26673578226771
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 161
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 173,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 155",
+        "move_start": 36403,
+        "move_end": 36473,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 154
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 160,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 142",
+        "move_start": 36477,
+        "move_end": 36547,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 141
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 153,
+        "parent_id": 132,
+        "kind": "region",
+        "label": "Run 135",
+        "move_start": 36551,
+        "move_end": 36609,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.26673578226772
+        },
+        "z_min": 2.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 134
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 217,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Z 1.000 pass 18",
+        "move_start": 36611,
+        "move_end": 44388,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 1.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "pass_index": 17,
+            "z_level": 1.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 218,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 199",
+        "move_start": 36611,
+        "move_end": 37551,
+        "xy_bbox": {
+          "min_x": 2.3137300920144583,
+          "max_x": 151.07408142089844,
+          "min_y": -106.86220657638584,
+          "max_y": -0.12081408500671387
+        },
+        "z_min": 1.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "region_id": 198
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 219,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 200",
+        "move_start": 37555,
+        "move_end": 37620,
+        "xy_bbox": {
+          "min_x": 27.266414872158332,
+          "max_x": 29.32219192824122,
+          "min_y": -91.00718688964844,
+          "max_y": -89.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 199
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 220,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 201",
+        "move_start": 37624,
+        "move_end": 37741,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -86.00718688964844,
+          "max_y": -84.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 7.0,
+        "params": {
+          "values": {
+            "region_id": 200
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 223,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 204",
+        "move_start": 37745,
+        "move_end": 37810,
+        "xy_bbox": {
+          "min_x": 27.26641487262643,
+          "max_x": 29.32219192824122,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 203
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 221,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 202",
+        "move_start": 37814,
+        "move_end": 37891,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 201
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 224,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 205",
+        "move_start": 37895,
+        "move_end": 37970,
+        "xy_bbox": {
+          "min_x": 44.568076530958514,
+          "max_x": 46.64269978443956,
+          "min_y": -81.00718688964844,
+          "max_y": -79.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 204
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 222,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 203",
+        "move_start": 37974,
+        "move_end": 38053,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329244,
+          "min_y": -86.00718688964844,
+          "max_y": -84.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 202
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 225,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 206",
+        "move_start": 38057,
+        "move_end": 38134,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -81.00718688964844,
+          "max_y": -79.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 205
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 227,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 208",
+        "move_start": 38138,
+        "move_end": 38217,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329244,
+          "min_y": -76.00718688964844,
+          "max_y": -74.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 207
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 230,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 211",
+        "move_start": 38221,
+        "move_end": 38296,
+        "xy_bbox": {
+          "min_x": 44.56807653140307,
+          "max_x": 46.64269978443956,
+          "min_y": -71.00718688964844,
+          "max_y": -69.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 210
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 234,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 215",
+        "move_start": 38300,
+        "move_end": 38379,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 214
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 240,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 221",
+        "move_start": 38383,
+        "move_end": 38458,
+        "xy_bbox": {
+          "min_x": 44.568076531294714,
+          "max_x": 46.64269978443956,
+          "min_y": -61.00718688964844,
+          "max_y": -59.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 220
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 248,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 229",
+        "move_start": 38462,
+        "move_end": 38541,
+        "xy_bbox": {
+          "min_x": 53.21484195945169,
+          "max_x": 55.30295360329246,
+          "min_y": -56.00718688964844,
+          "max_y": -54.007186889648445
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 228
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 253,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 234",
+        "move_start": 38545,
+        "move_end": 38620,
+        "xy_bbox": {
+          "min_x": 44.56807653148428,
+          "max_x": 46.64269978443956,
+          "min_y": -51.007186889648445,
+          "max_y": -49.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 233
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 261,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 242",
+        "move_start": 38624,
+        "move_end": 38703,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 241
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 254,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 235",
+        "move_start": 38707,
+        "move_end": 38784,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 234
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 268,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 249",
+        "move_start": 38788,
+        "move_end": 38865,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 248
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 275,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 256",
+        "move_start": 38869,
+        "move_end": 38948,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.30295360329246,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 255
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 267,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 248",
+        "move_start": 38952,
+        "move_end": 39027,
+        "xy_bbox": {
+          "min_x": 44.56807653145313,
+          "max_x": 46.64269978443956,
+          "min_y": -41.00718688964842,
+          "max_y": -39.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 247
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 260,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 241",
+        "move_start": 39031,
+        "move_end": 39108,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 240
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 266,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 247",
+        "move_start": 39112,
+        "move_end": 39177,
+        "xy_bbox": {
+          "min_x": 27.266414872718432,
+          "max_x": 29.32219192824122,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 246
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 252,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 233",
+        "move_start": 39181,
+        "move_end": 39246,
+        "xy_bbox": {
+          "min_x": 27.266414872720702,
+          "max_x": 29.32219192824122,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 232
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 247,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 228",
+        "move_start": 39250,
+        "move_end": 39327,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.007186889648445
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 227
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 239,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 220",
+        "move_start": 39331,
+        "move_end": 39396,
+        "xy_bbox": {
+          "min_x": 27.26641487252679,
+          "max_x": 29.32219192824122,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 219
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 233,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 214",
+        "move_start": 39400,
+        "move_end": 39477,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 213
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 229,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 210",
+        "move_start": 39481,
+        "move_end": 39546,
+        "xy_bbox": {
+          "min_x": 27.266414872659542,
+          "max_x": 29.32219192824122,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 209
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 226,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 207",
+        "move_start": 39550,
+        "move_end": 39643,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 206
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 232,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 213",
+        "move_start": 39647,
+        "move_end": 39740,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 212
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 246,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 227",
+        "move_start": 39744,
+        "move_end": 39837,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -56.00718688964844,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 226
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 259,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 240",
+        "move_start": 39841,
+        "move_end": 39934,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -46.00718688964844,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 239
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 273,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 254",
+        "move_start": 39938,
+        "move_end": 40031,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 253
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 279,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 260",
+        "move_start": 40035,
+        "move_end": 40100,
+        "xy_bbox": {
+          "min_x": 27.266414872536252,
+          "max_x": 29.32219192824122,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 259
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 285,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 266",
+        "move_start": 40104,
+        "move_end": 40197,
+        "xy_bbox": {
+          "min_x": 18.573826503337116,
+          "max_x": 20.66193759682272,
+          "min_y": -26.007186889648438,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 265
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 292,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 273",
+        "move_start": 40201,
+        "move_end": 40266,
+        "xy_bbox": {
+          "min_x": 27.266414872560965,
+          "max_x": 29.32219192824122,
+          "min_y": -21.007186889648423,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 272
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 286,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 267",
+        "move_start": 40270,
+        "move_end": 40347,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 266
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 274,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 255",
+        "move_start": 40351,
+        "move_end": 40428,
+        "xy_bbox": {
+          "min_x": 35.89433490989115,
+          "max_x": 37.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 254
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 293,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 274",
+        "move_start": 40432,
+        "move_end": 40507,
+        "xy_bbox": {
+          "min_x": 44.568076531615915,
+          "max_x": 46.64269978443954,
+          "min_y": -21.007186889648423,
+          "max_y": -19.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 273
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 299,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 280",
+        "move_start": 40511,
+        "move_end": 40590,
+        "xy_bbox": {
+          "min_x": 53.21484140884724,
+          "max_x": 55.3029541538969,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974135
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 279
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 294,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 275",
+        "move_start": 40594,
+        "move_end": 40671,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 274
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 287,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 268",
+        "move_start": 40675,
+        "move_end": 40754,
+        "xy_bbox": {
+          "min_x": 53.2148419594517,
+          "max_x": 55.302953603292444,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 267
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 280,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 261",
+        "move_start": 40758,
+        "move_end": 40835,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 260
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 276,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 257",
+        "move_start": 40839,
+        "move_end": 40917,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 256
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 262,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 243",
+        "move_start": 40921,
+        "move_end": 40999,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -46.00718688964842,
+          "max_y": -44.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 242
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 241,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 222",
+        "move_start": 41003,
+        "move_end": 41080,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 221
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 231,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 212",
+        "move_start": 41084,
+        "move_end": 41161,
+        "xy_bbox": {
+          "min_x": 61.8750973915806,
+          "max_x": 63.31372880935669,
+          "min_y": -71.00718688964844,
+          "max_y": -69.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 211
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 228,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 209",
+        "move_start": 41165,
+        "move_end": 41243,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -76.00718688964844,
+          "max_y": -74.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 208
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 235,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 216",
+        "move_start": 41247,
+        "move_end": 41325,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 215
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 249,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 230",
+        "move_start": 41329,
+        "move_end": 41407,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -56.00718688964843,
+          "max_y": -54.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 229
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 255,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 236",
+        "move_start": 41411,
+        "move_end": 41492,
+        "xy_bbox": {
+          "min_x": 79.18304565018292,
+          "max_x": 81.28371549683489,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 235
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 263,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 244",
+        "move_start": 41496,
+        "move_end": 41573,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -46.00718688964844,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 243
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 269,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 250",
+        "move_start": 41577,
+        "move_end": 41658,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -41.00718688964842,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 249
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 277,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 258",
+        "move_start": 41662,
+        "move_end": 41739,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 257
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 281,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 262",
+        "move_start": 41743,
+        "move_end": 41824,
+        "xy_bbox": {
+          "min_x": 79.18304565018293,
+          "max_x": 81.28371549683489,
+          "min_y": -31.007186889648423,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 261
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 288,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 269",
+        "move_start": 41828,
+        "move_end": 41906,
+        "xy_bbox": {
+          "min_x": 70.53534900901225,
+          "max_x": 72.31372880935669,
+          "min_y": -26.007186889648423,
+          "max_y": -24.31554412841797
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 268
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 300,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 281",
+        "move_start": 41910,
+        "move_end": 41988,
+        "xy_bbox": {
+          "min_x": 70.5353484584078,
+          "max_x": 72.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.315544128417969
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 280
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 295,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 276",
+        "move_start": 41992,
+        "move_end": 42073,
+        "xy_bbox": {
+          "min_x": 79.18304565018292,
+          "max_x": 81.28371549683489,
+          "min_y": -21.007186889648423,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 275
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 289,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 270",
+        "move_start": 42077,
+        "move_end": 42154,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -26.007186889648438,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 269
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 301,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 282",
+        "move_start": 42158,
+        "move_end": 42235,
+        "xy_bbox": {
+          "min_x": 87.85585932266561,
+          "max_x": 89.31372880935669,
+          "min_y": -16.007186889648438,
+          "max_y": -14.007185935974121
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 281
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 296,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 277",
+        "move_start": 42239,
+        "move_end": 42318,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -21.007186889648438,
+          "max_y": -19.300062728597055
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 276
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 282,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 263",
+        "move_start": 42322,
+        "move_end": 42401,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -31.007186889648438,
+          "max_y": -29.300062728597055
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 262
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 290,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 271",
+        "move_start": 42405,
+        "move_end": 42485,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667136,
+          "min_y": -26.007186889648423,
+          "max_y": -24.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 270
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 283,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 264",
+        "move_start": 42489,
+        "move_end": 42552,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -31.007186889648423,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 263
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 271,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 252",
+        "move_start": 42556,
+        "move_end": 42619,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -41.00718688964842,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 251
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 278,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 259",
+        "move_start": 42623,
+        "move_end": 42703,
+        "xy_bbox": {
+          "min_x": 105.16722985622793,
+          "max_x": 107.26447856667136,
+          "min_y": -36.00718688964844,
+          "max_y": -34.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 258
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 270,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 251",
+        "move_start": 42707,
+        "move_end": 42786,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -41.00718688964844,
+          "max_y": -39.300062728597055
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 250
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 264,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 245",
+        "move_start": 42790,
+        "move_end": 42870,
+        "xy_bbox": {
+          "min_x": 105.16722985622793,
+          "max_x": 107.26447856667136,
+          "min_y": -46.00718688964842,
+          "max_y": -44.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 244
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 256,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 237",
+        "move_start": 42874,
+        "move_end": 42953,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -51.007186889648445,
+          "max_y": -49.30006272859704
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 236
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 250,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 231",
+        "move_start": 42957,
+        "move_end": 43034,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -56.00718688964844,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 230
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 242,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 223",
+        "move_start": 43038,
+        "move_end": 43119,
+        "xy_bbox": {
+          "min_x": 79.18304565018292,
+          "max_x": 81.28371549683489,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 222
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 236,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 217",
+        "move_start": 43123,
+        "move_end": 43200,
+        "xy_bbox": {
+          "min_x": 87.85585987327006,
+          "max_x": 89.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 216
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 243,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 224",
+        "move_start": 43204,
+        "move_end": 43283,
+        "xy_bbox": {
+          "min_x": 96.51611530539897,
+          "max_x": 98.53683795898604,
+          "min_y": -61.00718688964844,
+          "max_y": -59.300062728597055
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 223
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 237,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 218",
+        "move_start": 43287,
+        "move_end": 43367,
+        "xy_bbox": {
+          "min_x": 105.1672298562279,
+          "max_x": 107.26447856667136,
+          "min_y": -66.00718688964844,
+          "max_y": -64.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 217
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 244,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 225",
+        "move_start": 43371,
+        "move_end": 43434,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -61.00718688964844,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 224
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 251,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 232",
+        "move_start": 43438,
+        "move_end": 43518,
+        "xy_bbox": {
+          "min_x": 105.16722985622793,
+          "max_x": 107.26447856667136,
+          "min_y": -56.00718688964843,
+          "max_y": -54.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 231
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 257,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 238",
+        "move_start": 43522,
+        "move_end": 43585,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -51.007186889648445,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 237
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 265,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 246",
+        "move_start": 43589,
+        "move_end": 43667,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -46.00718688964842,
+          "max_y": -44.26673578226771
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 245
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 238,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 219",
+        "move_start": 43671,
+        "move_end": 43749,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -66.00718688964844,
+          "max_y": -64.26673578226772
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 218
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 245,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 226",
+        "move_start": 43753,
+        "move_end": 43847,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -61.00718688964843,
+          "max_y": -59.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 225
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 258,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 239",
+        "move_start": 43851,
+        "move_end": 43945,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -51.00718688964843,
+          "max_y": -49.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 238
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 272,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 253",
+        "move_start": 43949,
+        "move_end": 44043,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -41.00718688964844,
+          "max_y": -39.00718688964844
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 252
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 284,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 265",
+        "move_start": 44047,
+        "move_end": 44141,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -31.007186889648438,
+          "max_y": -29.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 264
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 298,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 279",
+        "move_start": 44145,
+        "move_end": 44239,
+        "xy_bbox": {
+          "min_x": 131.1514129437005,
+          "max_x": 133.24524486305808,
+          "min_y": -21.007186889648438,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 278
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 291,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 272",
+        "move_start": 44243,
+        "move_end": 44321,
+        "xy_bbox": {
+          "min_x": 122.49687397239116,
+          "max_x": 124.31372880935669,
+          "min_y": -26.007186889648423,
+          "max_y": -24.266735782267716
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 271
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 297,
+        "parent_id": 217,
+        "kind": "region",
+        "label": "Run 278",
+        "move_start": 44325,
+        "move_end": 44388,
+        "xy_bbox": {
+          "min_x": 113.83661854026225,
+          "max_x": 115.31372880935669,
+          "min_y": -21.007186889648423,
+          "max_y": -19.007186889648438
+        },
+        "z_min": 1.0,
+        "z_max": 6.0,
+        "params": {
+          "values": {
+            "region_id": 277
+          }
+        },
+        "debug_span_id": null
+      }
+    ]
+  },
+  "collision_count": 0,
+  "rapid_collision_count": 0,
+  "min_safe_stickout": null,
+  "truncated_core_mm2": null,
+  "untouched_material_mm2": null,
+  "reached_uncut_estimate_mm2": null,
+  "unmachined_band_area_mm2": null,
+  "tip_float_points": null,
+  "max_tip_float_mm": null,
+  "monotone_cells": null,
+  "source_stock": {
+    "cell_mm": 0.3,
+    "stock_digest": "7e9f86e057f75a2b",
+    "after": [
+      {
+        "id": 1,
+        "output": "2f27814b6fd38dae"
+      },
+      {
+        "id": 5,
+        "output": "6e2b6ae094ccf574"
+      },
+      {
+        "id": 3,
+        "output": "89de367bfcec8523"
+      }
+    ]
+  }
+}

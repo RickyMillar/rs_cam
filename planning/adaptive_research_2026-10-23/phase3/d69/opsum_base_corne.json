@@ -1,0 +1,42 @@
+{
+ "1": {
+  "total_s": 890.3,
+  "rapid_s": 79.5,
+  "cutting_s": 652.1,
+  "entry_s": 68.4,
+  "linking_s": 90.3,
+  "entries": 125,
+  "peak_axial": 7.5,
+  "removed_mm3": 218067
+ },
+ "3": {
+  "total_s": 1689.9,
+  "rapid_s": 418.3,
+  "cutting_s": 1145.0,
+  "entry_s": 87.7,
+  "linking_s": 39.0,
+  "entries": 311,
+  "peak_axial": 14.5,
+  "removed_mm3": 4992
+ },
+ "4": {
+  "total_s": 1299.9,
+  "rapid_s": 410.5,
+  "cutting_s": 371.0,
+  "entry_s": 518.3,
+  "entries": 282,
+  "peak_axial": 9.84,
+  "removed_mm3": 7805
+ },
+ "5": {
+  "total_s": 453.7,
+  "rapid_s": 199.6,
+  "cutting_s": 169.7,
+  "entry_s": 13.3,
+  "linking_s": 71.1,
+  "entries": 97,
+  "peak_axial": 8.96,
+  "removed_mm3": 53572
+ },
+ "job_s": 4333.8
+}

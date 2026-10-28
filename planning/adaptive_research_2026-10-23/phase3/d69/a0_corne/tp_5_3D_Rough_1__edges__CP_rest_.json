@@ -1,0 +1,5493 @@
+{
+  "toolpath_id": 5,
+  "toolpath_name": "3D Rough 1 (edges, CP rest)",
+  "operation_type": "3D Adaptive",
+  "op_kind": "adaptive3d",
+  "tool": "6mm 2F flat",
+  "move_count": 1847,
+  "cutting_distance_mm": 6613.382943972309,
+  "rapid_distance_mm": 9552.76492637774,
+  "debug_trace": {
+    "schema_version": 1,
+    "toolpath_name": "3D Rough 1 (edges, CP rest)",
+    "operation_label": "3D Adaptive",
+    "summary": {
+      "total_elapsed_us": 533799,
+      "span_count": 12,
+      "hotspot_count": 0,
+      "dominant_span_kind": "core_generate",
+      "dominant_span_label": "3D Adaptive",
+      "dominant_span_elapsed_us": 518604
+    },
+    "spans": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "core_generate",
+        "label": "3D Adaptive",
+        "start_us": 1,
+        "elapsed_us": 518604,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 0,
+        "move_end": 1464,
+        "exit_reason": null,
+        "counters": {}
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "surface_heightmap",
+        "label": "Surface heightmap",
+        "start_us": 3997,
+        "elapsed_us": 500741,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "cols": 511.0,
+          "rows": 372.0
+        }
+      },
+      {
+        "id": 3,
+        "parent_id": 1,
+        "kind": "border_clear",
+        "label": "Border clear",
+        "start_us": 39251,
+        "elapsed_us": 465486,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "cells": 882.0
+        }
+      },
+      {
+        "id": 4,
+        "parent_id": 1,
+        "kind": "z_level_plan",
+        "label": "Compute Z levels",
+        "start_us": 428713,
+        "elapsed_us": 76024,
+        "xy_bbox": null,
+        "z_level": null,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "count": 4.0,
+          "level_top": 23.0,
+          "z_bottom": 0.5,
+          "z_top": 17.0
+        }
+      },
+      {
+        "id": 5,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 17.000 (1/4)",
+        "start_us": 430383,
+        "elapsed_us": 5246,
+        "xy_bbox": null,
+        "z_level": 17.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 144497.0,
+          "floor_cells_surf_above": 45595.0,
+          "floor_cells_total": 190092.0,
+          "floor_cells_with_material": 3650.0,
+          "floor_cells_with_material_post": 14.0,
+          "material_remaining_post": 0.0000968878246607196,
+          "material_remaining_pre": 0.02526004000083047,
+          "planner_cut_mm": 306.49494051145024,
+          "planner_cut_path_points": 1046.0,
+          "planner_cut_segments": 5.0,
+          "planner_link_segments": 0.0,
+          "planner_rapid_segments": 5.0
+        }
+      },
+      {
+        "id": 6,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 17.000",
+        "start_us": 435631,
+        "elapsed_us": 7062,
+        "xy_bbox": null,
+        "z_level": 17.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 2.0
+        }
+      },
+      {
+        "id": 7,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 11.000 (2/4)",
+        "start_us": 442694,
+        "elapsed_us": 14216,
+        "xy_bbox": null,
+        "z_level": 11.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 144475.0,
+          "floor_cells_surf_above": 45617.0,
+          "floor_cells_total": 190092.0,
+          "floor_cells_with_material": 14758.0,
+          "floor_cells_with_material_post": 0.0,
+          "material_remaining_post": 0.0,
+          "material_remaining_pre": 0.10214916075445579,
+          "planner_cut_mm": 1044.3778892467453,
+          "planner_cut_path_points": 3918.0,
+          "planner_cut_segments": 51.0,
+          "planner_link_segments": 27.0,
+          "planner_rapid_segments": 24.0
+        }
+      },
+      {
+        "id": 8,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 11.000",
+        "start_us": 456911,
+        "elapsed_us": 5342,
+        "xy_bbox": null,
+        "z_level": 11.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 2.0
+        }
+      },
+      {
+        "id": 9,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 5.000 (3/4)",
+        "start_us": 462255,
+        "elapsed_us": 14364,
+        "xy_bbox": null,
+        "z_level": 5.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 144475.0,
+          "floor_cells_surf_above": 45617.0,
+          "floor_cells_total": 190092.0,
+          "floor_cells_with_material": 14758.0,
+          "floor_cells_with_material_post": 0.0,
+          "material_remaining_post": 0.0,
+          "material_remaining_pre": 0.10214916075445579,
+          "planner_cut_mm": 1044.3778892467453,
+          "planner_cut_path_points": 3918.0,
+          "planner_cut_segments": 51.0,
+          "planner_link_segments": 27.0,
+          "planner_rapid_segments": 24.0
+        }
+      },
+      {
+        "id": 10,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 5.000",
+        "start_us": 476621,
+        "elapsed_us": 5230,
+        "xy_bbox": null,
+        "z_level": 5.0,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "contours": 2.0,
+          "traced": 2.0
+        }
+      },
+      {
+        "id": 11,
+        "parent_id": 1,
+        "kind": "z_level_clear",
+        "label": "Z 0.500 (4/4)",
+        "start_us": 481853,
+        "elapsed_us": 15910,
+        "xy_bbox": null,
+        "z_level": 0.5,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "floor_cells_at_z": 54270.0,
+          "floor_cells_surf_above": 135822.0,
+          "floor_cells_total": 190092.0,
+          "floor_cells_with_material": 14758.0,
+          "floor_cells_with_material_post": 0.0,
+          "material_remaining_post": 0.0,
+          "material_remaining_pre": 0.27193661323014556,
+          "planner_cut_mm": 1044.3778892467453,
+          "planner_cut_path_points": 3918.0,
+          "planner_cut_segments": 51.0,
+          "planner_link_segments": 27.0,
+          "planner_rapid_segments": 24.0
+        }
+      },
+      {
+        "id": 12,
+        "parent_id": 1,
+        "kind": "waterline_cleanup",
+        "label": "Waterline cleanup Z 0.500",
+        "start_us": 497767,
+        "elapsed_us": 6968,
+        "xy_bbox": null,
+        "z_level": 0.5,
+        "move_start": 1536,
+        "move_end": 1539,
+        "exit_reason": null,
+        "counters": {
+          "contours": 31.0,
+          "traced": 31.0
+        }
+      }
+    ],
+    "hotspots": [],
+    "annotations": [
+      {
+        "move_index": 0,
+        "label": "Adaptive Z 17.0 (1/4)"
+      },
+      {
+        "move_index": 0,
+        "label": "Pass 0 — plunge entry at (20.0, -108.7) Z 17.0"
+      },
+      {
+        "move_index": 10,
+        "label": "Pass 1 — plunge entry at (2.3, -16.9) Z 17.1"
+      },
+      {
+        "move_index": 19,
+        "label": "Pass 2 — plunge entry at (152.3, -72.4) Z 17.0"
+      },
+      {
+        "move_index": 29,
+        "label": "Pass 3 — plunge entry at (67.1, 0.2) Z 17.0"
+      },
+      {
+        "move_index": 39,
+        "label": "Pass 4 — plunge entry at (30.0, -109.3) Z 17.0"
+      },
+      {
+        "move_index": 46,
+        "label": "Pass 5 — plunge entry at (20.3, -105.6) Z 17.5"
+      },
+      {
+        "move_index": 46,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 51,
+        "label": "Pass 6 — plunge entry at (18.8, -104.3) Z 17.5"
+      },
+      {
+        "move_index": 56,
+        "label": "Pass 7 — plunge entry at (18.1, -103.3) Z 17.6"
+      },
+      {
+        "move_index": 61,
+        "label": "Pass 8 — plunge entry at (17.0, -101.8) Z 17.5"
+      },
+      {
+        "move_index": 66,
+        "label": "Pass 9 — plunge entry at (16.6, -100.9) Z 17.5"
+      },
+      {
+        "move_index": 71,
+        "label": "Pass 10 — plunge entry at (16.1, -100.1) Z 17.5"
+      },
+      {
+        "move_index": 76,
+        "label": "Pass 11 — plunge entry at (15.1, -98.3) Z 17.5"
+      },
+      {
+        "move_index": 81,
+        "label": "Pass 12 — plunge entry at (14.6, -97.4) Z 17.5"
+      },
+      {
+        "move_index": 86,
+        "label": "Pass 13 — plunge entry at (14.1, -96.6) Z 17.5"
+      },
+      {
+        "move_index": 91,
+        "label": "Pass 14 — plunge entry at (13.1, -94.8) Z 17.5"
+      },
+      {
+        "move_index": 96,
+        "label": "Pass 15 — plunge entry at (12.6, -94.0) Z 17.5"
+      },
+      {
+        "move_index": 101,
+        "label": "Pass 16 — plunge entry at (12.1, -93.1) Z 17.5"
+      },
+      {
+        "move_index": 106,
+        "label": "Pass 17 — plunge entry at (11.1, -91.4) Z 17.5"
+      },
+      {
+        "move_index": 111,
+        "label": "Pass 18 — plunge entry at (10.6, -90.5) Z 17.5"
+      },
+      {
+        "move_index": 116,
+        "label": "Pass 19 — plunge entry at (9.5, -88.7) Z 17.5"
+      },
+      {
+        "move_index": 121,
+        "label": "Pass 20 — plunge entry at (9.1, -87.9) Z 17.5"
+      },
+      {
+        "move_index": 126,
+        "label": "Pass 21 — plunge entry at (8.6, -87.0) Z 17.5"
+      },
+      {
+        "move_index": 131,
+        "label": "Pass 22 — plunge entry at (7.5, -85.2) Z 17.5"
+      },
+      {
+        "move_index": 136,
+        "label": "Pass 23 — plunge entry at (7.1, -84.4) Z 17.5"
+      },
+      {
+        "move_index": 141,
+        "label": "Pass 24 — plunge entry at (6.6, -83.5) Z 17.5"
+      },
+      {
+        "move_index": 146,
+        "label": "Pass 25 — plunge entry at (5.5, -81.8) Z 17.5"
+      },
+      {
+        "move_index": 151,
+        "label": "Pass 26 — plunge entry at (5.1, -80.9) Z 17.5"
+      },
+      {
+        "move_index": 156,
+        "label": "Pass 27 — plunge entry at (4.6, -80.0) Z 17.5"
+      },
+      {
+        "move_index": 161,
+        "label": "Pass 28 — plunge entry at (4.1, -78.9) Z 17.6"
+      },
+      {
+        "move_index": 166,
+        "label": "Pass 29 — plunge entry at (3.5, -77.8) Z 17.6"
+      },
+      {
+        "move_index": 171,
+        "label": "Pass 30 — plunge entry at (3.1, -76.0) Z 17.6"
+      },
+      {
+        "move_index": 177,
+        "label": "Pass 31 — plunge entry at (3.4, -12.6) Z 17.7"
+      },
+      {
+        "move_index": 182,
+        "label": "Pass 32 — plunge entry at (4.4, -10.7) Z 17.6"
+      },
+      {
+        "move_index": 187,
+        "label": "Pass 33 — plunge entry at (6.8, -8.5) Z 17.5"
+      },
+      {
+        "move_index": 192,
+        "label": "Pass 34 — plunge entry at (7.9, -8.1) Z 17.5"
+      },
+      {
+        "move_index": 197,
+        "label": "Pass 35 — plunge entry at (23.7, -7.6) Z 17.4"
+      },
+      {
+        "move_index": 203,
+        "label": "Pass 36 — plunge entry at (27.4, -6.5) Z 17.7"
+      },
+      {
+        "move_index": 208,
+        "label": "Pass 37 — plunge entry at (28.4, -6.0) Z 17.7"
+      },
+      {
+        "move_index": 213,
+        "label": "Pass 38 — plunge entry at (29.7, -5.6) Z 17.6"
+      },
+      {
+        "move_index": 219,
+        "label": "Pass 39 — plunge entry at (46.4, -4.0) Z 17.7"
+      },
+      {
+        "move_index": 224,
+        "label": "Pass 40 — plunge entry at (47.1, -3.6) Z 17.6"
+      },
+      {
+        "move_index": 229,
+        "label": "Pass 41 — plunge entry at (49.3, -3.1) Z 17.6"
+      },
+      {
+        "move_index": 235,
+        "label": "Pass 42 — plunge entry at (64.7, -2.1) Z 17.5"
+      },
+      {
+        "move_index": 240,
+        "label": "Pass 43 — plunge entry at (65.6, -1.6) Z 17.6"
+      },
+      {
+        "move_index": 245,
+        "label": "Pass 44 — plunge entry at (67.1, -1.1) Z 17.7"
+      },
+      {
+        "move_index": 251,
+        "label": "Pass 45 — plunge entry at (87.5, -0.9) Z 17.6"
+      },
+      {
+        "move_index": 256,
+        "label": "Pass 46 — plunge entry at (89.6, -1.6) Z 17.5"
+      },
+      {
+        "move_index": 261,
+        "label": "Pass 47 — plunge entry at (90.9, -2.4) Z 17.5"
+      },
+      {
+        "move_index": 267,
+        "label": "Pass 48 — plunge entry at (107.3, -3.2) Z 17.5"
+      },
+      {
+        "move_index": 272,
+        "label": "Pass 49 — plunge entry at (108.5, -3.9) Z 17.7"
+      },
+      {
+        "move_index": 277,
+        "label": "Pass 50 — plunge entry at (109.7, -4.6) Z 17.6"
+      },
+      {
+        "move_index": 282,
+        "label": "Pass 51 — plunge entry at (110.6, -5.3) Z 17.5"
+      },
+      {
+        "move_index": 288,
+        "label": "Pass 52 — plunge entry at (144.5, -7.9) Z 17.6"
+      },
+      {
+        "move_index": 293,
+        "label": "Pass 53 — plunge entry at (149.1, -10.8) Z 17.6"
+      },
+      {
+        "move_index": 298,
+        "label": "Pass 54 — plunge entry at (150.4, -13.8) Z 17.6"
+      },
+      {
+        "move_index": 304,
+        "label": "Pass 55 — plunge entry at (149.8, -73.4) Z 17.6"
+      },
+      {
+        "move_index": 309,
+        "label": "Pass 56 — plunge entry at (149.5, -74.2) Z 17.5"
+      },
+      {
+        "move_index": 314,
+        "label": "Pass 57 — plunge entry at (146.4, -77.1) Z 17.5"
+      },
+      {
+        "move_index": 319,
+        "label": "Pass 58 — plunge entry at (144.7, -77.6) Z 17.6"
+      },
+      {
+        "move_index": 324,
+        "label": "Pass 59 — plunge entry at (92.1, -78.1) Z 17.3"
+      },
+      {
+        "move_index": 330,
+        "label": "Pass 60 — plunge entry at (88.9, -81.3) Z 17.5"
+      },
+      {
+        "move_index": 335,
+        "label": "Pass 61 — plunge entry at (87.5, -83.2) Z 17.5"
+      },
+      {
+        "move_index": 340,
+        "label": "Pass 62 — plunge entry at (86.2, -85.0) Z 17.5"
+      },
+      {
+        "move_index": 345,
+        "label": "Pass 63 — plunge entry at (84.8, -86.9) Z 17.5"
+      },
+      {
+        "move_index": 350,
+        "label": "Pass 64 — plunge entry at (83.5, -88.7) Z 17.5"
+      },
+      {
+        "move_index": 355,
+        "label": "Pass 65 — plunge entry at (80.5, -91.6) Z 17.6"
+      },
+      {
+        "move_index": 360,
+        "label": "Pass 66 — plunge entry at (79.5, -92.1) Z 17.5"
+      },
+      {
+        "move_index": 365,
+        "label": "Pass 67 — plunge entry at (77.6, -92.6) Z 17.5"
+      },
+      {
+        "move_index": 370,
+        "label": "Pass 68 — plunge entry at (74.3, -93.1) Z 17.5"
+      },
+      {
+        "move_index": 375,
+        "label": "Pass 69 — plunge entry at (71.0, -93.6) Z 17.5"
+      },
+      {
+        "move_index": 380,
+        "label": "Pass 70 — plunge entry at (67.6, -94.1) Z 17.5"
+      },
+      {
+        "move_index": 385,
+        "label": "Pass 71 — plunge entry at (64.2, -94.6) Z 17.5"
+      },
+      {
+        "move_index": 390,
+        "label": "Pass 72 — plunge entry at (60.9, -95.1) Z 17.5"
+      },
+      {
+        "move_index": 395,
+        "label": "Pass 73 — plunge entry at (57.5, -95.6) Z 17.5"
+      },
+      {
+        "move_index": 400,
+        "label": "Pass 74 — plunge entry at (54.1, -96.1) Z 17.5"
+      },
+      {
+        "move_index": 405,
+        "label": "Pass 75 — plunge entry at (50.8, -96.6) Z 17.5"
+      },
+      {
+        "move_index": 410,
+        "label": "Pass 76 — plunge entry at (47.4, -97.1) Z 17.5"
+      },
+      {
+        "move_index": 415,
+        "label": "Pass 77 — plunge entry at (44.2, -97.6) Z 17.5"
+      },
+      {
+        "move_index": 420,
+        "label": "Pass 78 — plunge entry at (40.9, -98.6) Z 17.5"
+      },
+      {
+        "move_index": 425,
+        "label": "Pass 79 — plunge entry at (40.0, -99.1) Z 17.5"
+      },
+      {
+        "move_index": 430,
+        "label": "Pass 80 — plunge entry at (38.3, -100.1) Z 17.5"
+      },
+      {
+        "move_index": 435,
+        "label": "Pass 81 — plunge entry at (37.4, -100.6) Z 17.5"
+      },
+      {
+        "move_index": 440,
+        "label": "Pass 82 — plunge entry at (36.6, -101.1) Z 17.5"
+      },
+      {
+        "move_index": 445,
+        "label": "Pass 83 — plunge entry at (34.8, -102.1) Z 17.5"
+      },
+      {
+        "move_index": 450,
+        "label": "Pass 84 — plunge entry at (34.0, -102.6) Z 17.5"
+      },
+      {
+        "move_index": 455,
+        "label": "Pass 85 — plunge entry at (33.1, -103.1) Z 17.5"
+      },
+      {
+        "move_index": 460,
+        "label": "Pass 86 — plunge entry at (31.4, -104.1) Z 17.5"
+      },
+      {
+        "move_index": 465,
+        "label": "Pass 87 — plunge entry at (30.5, -104.6) Z 17.5"
+      },
+      {
+        "move_index": 470,
+        "label": "Pass 88 — plunge entry at (26.4, -106.6) Z 17.5"
+      },
+      {
+        "move_index": 475,
+        "label": "Pass 89 — plunge entry at (22.3, -106.3) Z 17.6"
+      },
+      {
+        "move_index": 480,
+        "label": "Pass 90 — plunge entry at (20.7, -105.7) Z 17.6"
+      },
+      {
+        "move_index": 485,
+        "label": "Adaptive Z 11.0 (2/4)"
+      },
+      {
+        "move_index": 485,
+        "label": "Pass 91 — keep-down link at (18.5, -108.7) Z 11.0"
+      },
+      {
+        "move_index": 569,
+        "label": "Pass 92 — keep-down link at (31.4, -106.6) Z 11.0"
+      },
+      {
+        "move_index": 580,
+        "label": "Pass 93 — keep-down link at (16.4, -105.1) Z 11.0"
+      },
+      {
+        "move_index": 587,
+        "label": "Pass 94 — keep-down link at (35.0, -104.5) Z 11.0"
+      },
+      {
+        "move_index": 598,
+        "label": "Pass 95 — keep-down link at (14.6, -102.4) Z 11.0"
+      },
+      {
+        "move_index": 603,
+        "label": "Pass 96 — keep-down link at (39.2, -102.1) Z 11.0"
+      },
+      {
+        "move_index": 608,
+        "label": "Pass 97 — keep-down link at (14.3, -101.8) Z 11.0"
+      },
+      {
+        "move_index": 616,
+        "label": "Pass 98 — keep-down link at (41.3, -100.9) Z 11.0"
+      },
+      {
+        "move_index": 625,
+        "label": "Pass 99 — keep-down link at (12.2, -98.2) Z 11.0"
+      },
+      {
+        "move_index": 644,
+        "label": "Pass 100 — plunge entry at (80.6, -94.0) Z 11.0"
+      },
+      {
+        "move_index": 655,
+        "label": "Pass 101 — plunge entry at (8.9, -92.5) Z 11.0"
+      },
+      {
+        "move_index": 667,
+        "label": "Pass 102 — plunge entry at (85.4, -89.8) Z 11.0"
+      },
+      {
+        "move_index": 674,
+        "label": "Pass 103 — plunge entry at (6.5, -88.3) Z 11.0"
+      },
+      {
+        "move_index": 681,
+        "label": "Pass 104 — plunge entry at (86.9, -87.7) Z 11.0"
+      },
+      {
+        "move_index": 686,
+        "label": "Pass 105 — plunge entry at (5.9, -87.1) Z 11.0"
+      },
+      {
+        "move_index": 691,
+        "label": "Pass 106 — plunge entry at (87.8, -86.5) Z 11.0"
+      },
+      {
+        "move_index": 696,
+        "label": "Pass 107 — plunge entry at (5.3, -86.2) Z 11.0"
+      },
+      {
+        "move_index": 704,
+        "label": "Pass 108 — plunge entry at (89.3, -84.4) Z 11.0"
+      },
+      {
+        "move_index": 709,
+        "label": "Pass 109 — plunge entry at (3.2, -82.6) Z 11.0"
+      },
+      {
+        "move_index": 716,
+        "label": "Pass 110 — plunge entry at (91.1, -82.0) Z 11.0"
+      },
+      {
+        "move_index": 721,
+        "label": "Pass 111 — plunge entry at (2.6, -81.4) Z 11.0"
+      },
+      {
+        "move_index": 726,
+        "label": "Pass 112 — plunge entry at (91.7, -81.1) Z 11.0"
+      },
+      {
+        "move_index": 731,
+        "label": "Pass 113 — plunge entry at (2.3, -80.8) Z 11.0"
+      },
+      {
+        "move_index": 736,
+        "label": "Pass 114 — plunge entry at (146.0, -79.6) Z 11.0"
+      },
+      {
+        "move_index": 744,
+        "label": "Pass 115 — plunge entry at (20.3, -106.2) Z 17.0"
+      },
+      {
+        "move_index": 744,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 811,
+        "label": "Adaptive Z 5.0 (3/4)"
+      },
+      {
+        "move_index": 811,
+        "label": "Pass 116 — keep-down link at (18.5, -108.7) Z 5.0"
+      },
+      {
+        "move_index": 894,
+        "label": "Pass 117 — keep-down link at (31.4, -106.6) Z 5.0"
+      },
+      {
+        "move_index": 905,
+        "label": "Pass 118 — keep-down link at (16.4, -105.1) Z 5.0"
+      },
+      {
+        "move_index": 912,
+        "label": "Pass 119 — keep-down link at (35.0, -104.5) Z 5.0"
+      },
+      {
+        "move_index": 923,
+        "label": "Pass 120 — keep-down link at (14.6, -102.4) Z 5.0"
+      },
+      {
+        "move_index": 928,
+        "label": "Pass 121 — keep-down link at (39.2, -102.1) Z 5.0"
+      },
+      {
+        "move_index": 933,
+        "label": "Pass 122 — keep-down link at (14.3, -101.8) Z 5.0"
+      },
+      {
+        "move_index": 941,
+        "label": "Pass 123 — keep-down link at (41.3, -100.9) Z 5.0"
+      },
+      {
+        "move_index": 950,
+        "label": "Pass 124 — keep-down link at (12.2, -98.2) Z 5.0"
+      },
+      {
+        "move_index": 969,
+        "label": "Pass 125 — plunge entry at (80.6, -94.0) Z 5.0"
+      },
+      {
+        "move_index": 980,
+        "label": "Pass 126 — plunge entry at (8.9, -92.5) Z 5.0"
+      },
+      {
+        "move_index": 992,
+        "label": "Pass 127 — plunge entry at (85.4, -89.8) Z 5.0"
+      },
+      {
+        "move_index": 999,
+        "label": "Pass 128 — plunge entry at (6.5, -88.3) Z 5.0"
+      },
+      {
+        "move_index": 1006,
+        "label": "Pass 129 — plunge entry at (86.9, -87.7) Z 5.0"
+      },
+      {
+        "move_index": 1011,
+        "label": "Pass 130 — plunge entry at (5.9, -87.1) Z 5.0"
+      },
+      {
+        "move_index": 1016,
+        "label": "Pass 131 — plunge entry at (87.8, -86.5) Z 5.0"
+      },
+      {
+        "move_index": 1021,
+        "label": "Pass 132 — plunge entry at (5.3, -86.2) Z 5.0"
+      },
+      {
+        "move_index": 1029,
+        "label": "Pass 133 — plunge entry at (89.3, -84.4) Z 5.0"
+      },
+      {
+        "move_index": 1034,
+        "label": "Pass 134 — plunge entry at (3.2, -82.6) Z 5.0"
+      },
+      {
+        "move_index": 1041,
+        "label": "Pass 135 — plunge entry at (91.1, -82.0) Z 5.0"
+      },
+      {
+        "move_index": 1046,
+        "label": "Pass 136 — plunge entry at (2.6, -81.4) Z 5.0"
+      },
+      {
+        "move_index": 1051,
+        "label": "Pass 137 — plunge entry at (91.7, -81.1) Z 5.0"
+      },
+      {
+        "move_index": 1056,
+        "label": "Pass 138 — plunge entry at (2.3, -80.8) Z 5.0"
+      },
+      {
+        "move_index": 1061,
+        "label": "Pass 139 — plunge entry at (146.0, -79.6) Z 5.0"
+      },
+      {
+        "move_index": 1069,
+        "label": "Pass 140 — plunge entry at (20.3, -106.2) Z 17.0"
+      },
+      {
+        "move_index": 1069,
+        "label": "Waterline cleanup"
+      },
+      {
+        "move_index": 1140,
+        "label": "Adaptive Z 0.5 (4/4)"
+      },
+      {
+        "move_index": 1140,
+        "label": "Pass 141 — keep-down link at (18.5, -108.7) Z 0.5"
+      },
+      {
+        "move_index": 1221,
+        "label": "Pass 142 — keep-down link at (31.4, -106.6) Z 0.5"
+      },
+      {
+        "move_index": 1232,
+        "label": "Pass 143 — keep-down link at (16.4, -105.1) Z 0.5"
+      },
+      {
+        "move_index": 1239,
+        "label": "Pass 144 — keep-down link at (35.0, -104.5) Z 0.5"
+      },
+      {
+        "move_index": 1250,
+        "label": "Pass 145 — keep-down link at (14.6, -102.4) Z 0.5"
+      },
+      {
+        "move_index": 1255,
+        "label": "Pass 146 — keep-down link at (39.2, -102.1) Z 0.5"
+      },
+      {
+        "move_index": 1260,
+        "label": "Pass 147 — keep-down link at (14.3, -101.8) Z 0.5"
+      },
+      {
+        "move_index": 1268,
+        "label": "Pass 148 — keep-down link at (41.3, -100.9) Z 0.5"
+      },
+      {
+        "move_index": 1277,
+        "label": "Pass 149 — keep-down link at (12.2, -98.2) Z 0.5"
+      },
+      {
+        "move_index": 1296,
+        "label": "Pass 150 — plunge entry at (80.6, -94.0) Z 0.5"
+      },
+      {
+        "move_index": 1307,
+        "label": "Pass 151 — plunge entry at (8.9, -92.5) Z 0.5"
+      },
+      {
+        "move_index": 1319,
+        "label": "Pass 152 — plunge entry at (85.4, -89.8) Z 0.5"
+      },
+      {
+        "move_index": 1326,
+        "label": "Pass 153 — plunge entry at (6.5, -88.3) Z 0.5"
+      },
+      {
+        "move_index": 1333,
+        "label": "Pass 154 — plunge entry at (86.9, -87.7) Z 0.5"
+      },
+      {
+        "move_index": 1338,
+        "label": "Pass 155 — plunge entry at (5.9, -87.1) Z 0.5"
+      },
+      {
+        "move_index": 1343,
+        "label": "Pass 156 — plunge entry at (87.8, -86.5) Z 0.5"
+      },
+      {
+        "move_index": 1348,
+        "label": "Pass 157 — plunge entry at (5.3, -86.2) Z 0.5"
+      },
+      {
+        "move_index": 1356,
+        "label": "Pass 158 — plunge entry at (89.3, -84.4) Z 0.5"
+      },
+      {
+        "move_index": 1361,
+        "label": "Pass 159 — plunge entry at (3.2, -82.6) Z 0.5"
+      },
+      {
+        "move_index": 1368,
+        "label": "Pass 160 — plunge entry at (91.1, -82.0) Z 0.5"
+      },
+      {
+        "move_index": 1373,
+        "label": "Pass 161 — plunge entry at (2.6, -81.4) Z 0.5"
+      },
+      {
+        "move_index": 1378,
+        "label": "Pass 162 — plunge entry at (91.7, -81.1) Z 0.5"
+      },
+      {
+        "move_index": 1383,
+        "label": "Pass 163 — plunge entry at (2.3, -80.8) Z 0.5"
+      },
+      {
+        "move_index": 1388,
+        "label": "Pass 164 — plunge entry at (146.0, -79.6) Z 0.5"
+      },
+      {
+        "move_index": 1396,
+        "label": "Pass 165 — plunge entry at (20.3, -106.2) Z 17.0"
+      },
+      {
+        "move_index": 1396,
+        "label": "Waterline cleanup"
+      }
+    ]
+  },
+  "semantic_trace": {
+    "schema_version": 1,
+    "toolpath_name": "3D Rough 1 (edges, CP rest)",
+    "operation_label": "3D Adaptive",
+    "summary": {
+      "item_count": 176,
+      "move_linked_item_count": 168
+    },
+    "items": [
+      {
+        "id": 1,
+        "parent_id": null,
+        "kind": "operation",
+        "label": "3D Adaptive",
+        "move_start": 0,
+        "move_end": 1846,
+        "xy_bbox": {
+          "min_x": 0.7637288093566894,
+          "max_x": 152.56372880935666,
+          "min_y": -109.31554412841797,
+          "max_y": 1.2344558715820284
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 3,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 1 plunge entry",
+        "move_start": 0,
+        "move_end": 4,
+        "xy_bbox": {
+          "min_x": 19.963728809356688,
+          "max_x": 19.963728809356688,
+          "min_y": -108.71554412841796,
+          "max_y": -108.71554412841796
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 19.963728809356688,
+            "entry_y": -108.71554412841796,
+            "entry_z": 17.0,
+            "pass_index": 0,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 176,
+        "parent_id": null,
+        "kind": "boundary_clip",
+        "label": "Boundary clip",
+        "move_start": 0,
+        "move_end": 1846,
+        "xy_bbox": {
+          "min_x": 0.7637288093566894,
+          "max_x": 152.56372880935666,
+          "min_y": -109.31554412841797,
+          "max_y": 1.2344558715820284
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "containment": "center",
+            "keep_out_count": 0,
+            "region_count": 1
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 4,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 2 plunge entry",
+        "move_start": 10,
+        "move_end": 15,
+        "xy_bbox": {
+          "min_x": 2.2637288093566896,
+          "max_x": 20.113728809356687,
+          "min_y": -108.56554412841797,
+          "max_y": -16.915544128417963
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.2637288093566896,
+            "entry_y": -16.915544128417963,
+            "entry_z": 17.099946359739445,
+            "pass_index": 1,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 5,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 3 plunge entry",
+        "move_start": 21,
+        "move_end": 28,
+        "xy_bbox": {
+          "min_x": 2.2637288093566896,
+          "max_x": 152.26372880935668,
+          "min_y": -72.41554412841796,
+          "max_y": -17.215544128417974
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 152.26372880935668,
+            "entry_y": -72.41554412841796,
+            "entry_z": 17.0,
+            "pass_index": 2,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 6,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 4 plunge entry",
+        "move_start": 33,
+        "move_end": 40,
+        "xy_bbox": {
+          "min_x": 67.06372880935669,
+          "max_x": 152.11372880935667,
+          "min_y": -72.26554412841796,
+          "max_y": 0.18445587158203125
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 67.06372880935669,
+            "entry_y": 0.18445587158203125,
+            "entry_z": 17.0,
+            "pass_index": 3,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 7,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 5 plunge entry",
+        "move_start": 45,
+        "move_end": 52,
+        "xy_bbox": {
+          "min_x": 30.01372880935669,
+          "max_x": 66.91372880935668,
+          "min_y": -109.31554412841797,
+          "max_y": 0.33445587158203693
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 30.01372880935669,
+            "entry_y": -109.31554412841797,
+            "entry_z": 17.0,
+            "pass_index": 4,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 9,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 6 plunge entry",
+        "move_start": 54,
+        "move_end": 59,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 29.113728809356687,
+          "min_y": -109.31554412841797,
+          "max_y": -105.60864631305658
+        },
+        "z_min": 17.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.31372880935669,
+            "entry_y": -105.60864631305658,
+            "entry_z": 17.499999999949996,
+            "pass_index": 5,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 10,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 7 plunge entry",
+        "move_start": 61,
+        "move_end": 66,
+        "xy_bbox": {
+          "min_x": 18.77293666863116,
+          "max_x": 20.273784238189602,
+          "min_y": -105.57554412841797,
+          "max_y": -104.3317872946266
+        },
+        "z_min": 17.502924692098965,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 18.77293666863116,
+            "entry_y": -104.3317872946266,
+            "entry_z": 17.502924692098965,
+            "pass_index": 6,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 11,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 8 plunge entry",
+        "move_start": 68,
+        "move_end": 73,
+        "xy_bbox": {
+          "min_x": 18.052294861740357,
+          "max_x": 18.745623287079706,
+          "min_y": -104.30447391307514,
+          "max_y": -103.30932008943095
+        },
+        "z_min": 17.501895971469352,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 18.052294861740357,
+            "entry_y": -103.30932008943095,
+            "entry_z": 17.59227056541765,
+            "pass_index": 7,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 12,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 9 plunge entry",
+        "move_start": 75,
+        "move_end": 80,
+        "xy_bbox": {
+          "min_x": 17.047719025098452,
+          "max_x": 17.597064502376174,
+          "min_y": -102.6559151283716,
+          "max_y": -101.7863157726998
+        },
+        "z_min": 17.499905037640136,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 17.047719025098452,
+            "entry_y": -101.7863157726998,
+            "entry_z": 17.499905037640136,
+            "pass_index": 8,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 13,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 10 plunge entry",
+        "move_start": 82,
+        "move_end": 87,
+        "xy_bbox": {
+          "min_x": 16.553728809356688,
+          "max_x": 16.80489611591892,
+          "min_y": -101.36374674191435,
+          "max_y": -100.92659129384852
+        },
+        "z_min": 17.499865888641427,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 16.553728809356688,
+            "entry_y": -100.92659129384852,
+            "entry_z": 17.499865888641427,
+            "pass_index": 9,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 14,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 11 plunge entry",
+        "move_start": 89,
+        "move_end": 94,
+        "xy_bbox": {
+          "min_x": 16.053728809356688,
+          "max_x": 16.129690560783867,
+          "min_y": -100.1885411867793,
+          "max_y": -100.05632769197621
+        },
+        "z_min": 17.49986594869854,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 16.053728809356688,
+            "entry_y": -100.05632769197621,
+            "entry_z": 17.49986594869854,
+            "pass_index": 10,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 15,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 12 plunge entry",
+        "move_start": 96,
+        "move_end": 101,
+        "xy_bbox": {
+          "min_x": 15.05350714564748,
+          "max_x": 15.454495919085817,
+          "min_y": -99.01334654508126,
+          "max_y": -98.31541466079571
+        },
+        "z_min": 17.499865818109825,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 15.05350714564748,
+            "entry_y": -98.31541466079571,
+            "entry_z": 17.499865818109825,
+            "pass_index": 11,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 16,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 13 plunge entry",
+        "move_start": 103,
+        "move_end": 108,
+        "xy_bbox": {
+          "min_x": 14.55372880935669,
+          "max_x": 14.779379539732707,
+          "min_y": -97.83823016572815,
+          "max_y": -97.44543123737219
+        },
+        "z_min": 17.49989464405157,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.55372880935669,
+            "entry_y": -97.44543123737219,
+            "entry_z": 17.499918372398035,
+            "pass_index": 12,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 17,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 14 plunge entry",
+        "move_start": 110,
+        "move_end": 115,
+        "xy_bbox": {
+          "min_x": 14.05372880935669,
+          "max_x": 14.104272979785428,
+          "min_y": -96.66312360578087,
+          "max_y": -96.57515811205059
+        },
+        "z_min": 17.499923047511636,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.05372880935669,
+            "entry_y": -96.57515811205059,
+            "entry_z": 17.499923047511636,
+            "pass_index": 13,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 18,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 15 plunge entry",
+        "move_start": 117,
+        "move_end": 122,
+        "xy_bbox": {
+          "min_x": 13.05372880935669,
+          "max_x": 13.428933815247452,
+          "min_y": -95.4877844412429,
+          "max_y": -94.83474564581974
+        },
+        "z_min": 17.4998658105486,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 13.05372880935669,
+            "entry_y": -94.83474564581974,
+            "entry_z": 17.4998658105486,
+            "pass_index": 14,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 19,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 16 plunge entry",
+        "move_start": 124,
+        "move_end": 129,
+        "xy_bbox": {
+          "min_x": 12.55372880935669,
+          "max_x": 12.753717880078806,
+          "min_y": -94.31256850607424,
+          "max_y": -93.96448211741703
+        },
+        "z_min": 17.4998658105486,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 12.55372880935669,
+            "entry_y": -93.96448211741703,
+            "entry_z": 17.4998658105486,
+            "pass_index": 15,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 20,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 17 plunge entry",
+        "move_start": 131,
+        "move_end": 134,
+        "xy_bbox": {
+          "min_x": 12.05372880935669,
+          "max_x": 12.078523104405143,
+          "min_y": -93.13737373040058,
+          "max_y": -93.09421858901433
+        },
+        "z_min": 17.499865810548588,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 12.05372880935669,
+            "entry_y": -93.09421858901433,
+            "entry_z": 17.499865810548588,
+            "pass_index": 16,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 21,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 18 plunge entry",
+        "move_start": 136,
+        "move_end": 141,
+        "xy_bbox": {
+          "min_x": 11.05372880935669,
+          "max_x": 11.403474539777452,
+          "min_y": -91.9623251657729,
+          "max_y": -91.35356373714528
+        },
+        "z_min": 17.49991974906576,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 11.05372880935669,
+            "entry_y": -91.35356373714528,
+            "entry_z": 17.499929474261975,
+            "pass_index": 17,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 22,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 19 plunge entry",
+        "move_start": 143,
+        "move_end": 148,
+        "xy_bbox": {
+          "min_x": 10.55372880935669,
+          "max_x": 10.728258160545053,
+          "min_y": -90.78710878654049,
+          "max_y": -90.48335477564132
+        },
+        "z_min": 17.49990229065017,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 10.55372880935669,
+            "entry_y": -90.48335477564132,
+            "entry_z": 17.49990229065017,
+            "pass_index": 18,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 23,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 20 plunge entry",
+        "move_start": 150,
+        "move_end": 155,
+        "xy_bbox": {
+          "min_x": 9.531317152299138,
+          "max_x": 10.052963864630714,
+          "min_y": -89.61181449062616,
+          "max_y": -88.70385787343734
+        },
+        "z_min": 17.499875065450436,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 9.531317152299138,
+            "entry_y": -88.70385787343734,
+            "entry_z": 17.49988323558495,
+            "pass_index": 19,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 24,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 21 plunge entry",
+        "move_start": 157,
+        "move_end": 162,
+        "xy_bbox": {
+          "min_x": 9.05372880935669,
+          "max_x": 9.377811868380666,
+          "min_y": -88.43666249437611,
+          "max_y": -87.87255490411734
+        },
+        "z_min": 17.49989084714914,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 9.05372880935669,
+            "entry_y": -87.87255490411734,
+            "entry_z": 17.499906916817526,
+            "pass_index": 20,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 25,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 22 plunge entry",
+        "move_start": 164,
+        "move_end": 169,
+        "xy_bbox": {
+          "min_x": 8.55372880935669,
+          "max_x": 8.702707833478982,
+          "min_y": -87.26155845947441,
+          "max_y": -87.0022416085726
+        },
+        "z_min": 17.499924322203334,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 8.55372880935669,
+            "entry_y": -87.0022416085726,
+            "entry_z": 17.499931709332788,
+            "pass_index": 21,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 26,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 23 plunge entry",
+        "move_start": 171,
+        "move_end": 176,
+        "xy_bbox": {
+          "min_x": 7.537091994596741,
+          "max_x": 8.02735445036319,
+          "min_y": -86.08620507635862,
+          "max_y": -85.23289000716126
+        },
+        "z_min": 17.4998658105486,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 7.537091994596741,
+            "entry_y": -85.23289000716126,
+            "entry_z": 17.4998658105486,
+            "pass_index": 22,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 27,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 24 plunge entry",
+        "move_start": 178,
+        "move_end": 183,
+        "xy_bbox": {
+          "min_x": 7.05372880935669,
+          "max_x": 7.352159674689526,
+          "min_y": -84.91101030068496,
+          "max_y": -84.39158330498731
+        },
+        "z_min": 17.4998658105486,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 7.05372880935669,
+            "entry_y": -84.39158330498731,
+            "entry_z": 17.4998658105486,
+            "pass_index": 23,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 28,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 25 plunge entry",
+        "move_start": 185,
+        "move_end": 190,
+        "xy_bbox": {
+          "min_x": 6.55372880935669,
+          "max_x": 6.676964899015872,
+          "min_y": -83.7358155250113,
+          "max_y": -83.5213197765846
+        },
+        "z_min": 17.4998658105486,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 6.55372880935669,
+            "entry_y": -83.5213197765846,
+            "entry_z": 17.4998658105486,
+            "pass_index": 24,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 29,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 26 plunge entry",
+        "move_start": 192,
+        "move_end": 197,
+        "xy_bbox": {
+          "min_x": 5.5428183843449546,
+          "max_x": 6.00185164844861,
+          "min_y": -82.56070227444404,
+          "max_y": -81.7616785531263
+        },
+        "z_min": 17.4998958858642,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.5428183843449546,
+            "entry_y": -81.7616785531263,
+            "entry_z": 17.49992772152681,
+            "pass_index": 25,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 30,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 27 plunge entry",
+        "move_start": 199,
+        "move_end": 204,
+        "xy_bbox": {
+          "min_x": 5.05372880935669,
+          "max_x": 5.326783783507608,
+          "min_y": -81.38563440950304,
+          "max_y": -80.91044048801757
+        },
+        "z_min": 17.49990999993321,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.05372880935669,
+            "entry_y": -80.91044048801757,
+            "entry_z": 17.49990999993321,
+            "pass_index": 26,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 31,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 28 plunge entry",
+        "move_start": 206,
+        "move_end": 211,
+        "xy_bbox": {
+          "min_x": 4.55372880935669,
+          "max_x": 4.67404989285493,
+          "min_y": -80.23290051885036,
+          "max_y": -79.97009526667888
+        },
+        "z_min": 17.50822871872885,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 4.55372880935669,
+            "entry_y": -79.97009526667888,
+            "entry_z": 17.534822622415977,
+            "pass_index": 27,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 32,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 29 plunge entry",
+        "move_start": 213,
+        "move_end": 218,
+        "xy_bbox": {
+          "min_x": 4.05372880935669,
+          "max_x": 4.251823744439217,
+          "min_y": -79.31067437043465,
+          "max_y": -78.87799550938517
+        },
+        "z_min": 17.57709443732823,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 4.05372880935669,
+            "entry_y": -78.87799550938517,
+            "entry_z": 17.59611184588325,
+            "pass_index": 28,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 33,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 30 plunge entry",
+        "move_start": 220,
+        "move_end": 225,
+        "xy_bbox": {
+          "min_x": 3.5429543794027336,
+          "max_x": 3.8295975960235022,
+          "min_y": -78.38844822201894,
+          "max_y": -77.76236224741608
+        },
+        "z_min": 17.552091791274542,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.5429543794027336,
+            "entry_y": -77.76236224741608,
+            "entry_z": 17.552091791274542,
+            "pass_index": 29,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 34,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 31 plunge entry",
+        "move_start": 227,
+        "move_end": 232,
+        "xy_bbox": {
+          "min_x": 3.1041083495065207,
+          "max_x": 3.4073714476077908,
+          "min_y": -77.46622207360322,
+          "max_y": -75.96812928133399
+        },
+        "z_min": 17.52198365978475,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.1041083495065207,
+            "entry_y": -75.96812928133399,
+            "entry_z": 17.59971079898982,
+            "pass_index": 30,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 35,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 32 plunge entry",
+        "move_start": 240,
+        "move_end": 245,
+        "xy_bbox": {
+          "min_x": 3.0935271235780717,
+          "max_x": 3.4343055727144973,
+          "min_y": -13.652377749573507,
+          "max_y": -12.625620787829842
+        },
+        "z_min": 17.624048564552172,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.4343055727144973,
+            "entry_y": -12.625620787829842,
+            "entry_z": 17.668134363468663,
+            "pass_index": 31,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 36,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 33 plunge entry",
+        "move_start": 247,
+        "move_end": 252,
+        "xy_bbox": {
+          "min_x": 3.5537288093566897,
+          "max_x": 4.368156221106783,
+          "min_y": -12.265801556516761,
+          "max_y": -10.70408140973372
+        },
+        "z_min": 17.580468853069608,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 4.368156221106783,
+            "entry_y": -10.70408140973372,
+            "entry_z": 17.580468853069608,
+            "pass_index": 32,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 37,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 34 plunge entry",
+        "move_start": 254,
+        "move_end": 259,
+        "xy_bbox": {
+          "min_x": 5.923050114370416,
+          "max_x": 6.845938528770128,
+          "min_y": -9.149187516470086,
+          "max_y": -8.54894131488618
+        },
+        "z_min": 17.548071026186893,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 6.845938528770128,
+            "entry_y": -8.54894131488618,
+            "entry_z": 17.548071026186893,
+            "pass_index": 33,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 38,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 35 plunge entry",
+        "move_start": 261,
+        "move_end": 266,
+        "xy_bbox": {
+          "min_x": 7.2865458092383975,
+          "max_x": 7.916841675880666,
+          "min_y": -8.285691821602105,
+          "max_y": -8.055544128417969
+        },
+        "z_min": 17.5096685002936,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 7.916841675880666,
+            "entry_y": -8.055544128417969,
+            "entry_z": 17.523484962234747,
+            "pass_index": 34,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 39,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 36 plunge entry",
+        "move_start": 268,
+        "move_end": 273,
+        "xy_bbox": {
+          "min_x": 8.697627342354366,
+          "max_x": 23.7258238073548,
+          "min_y": -7.874610288486135,
+          "max_y": -7.555544128417969
+        },
+        "z_min": 17.426237335205077,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 23.7258238073548,
+            "entry_y": -7.555544128417969,
+            "entry_z": 17.426237335205077,
+            "pass_index": 35,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 40,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 37 plunge entry",
+        "move_start": 276,
+        "move_end": 281,
+        "xy_bbox": {
+          "min_x": 26.64696841691866,
+          "max_x": 27.426193866445775,
+          "min_y": -6.92526921392184,
+          "max_y": -6.532977558207973
+        },
+        "z_min": 17.580836711715147,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 27.426193866445775,
+            "entry_y": -6.532977558207973,
+            "entry_z": 17.671785427895077,
+            "pass_index": 36,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 41,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 38 plunge entry",
+        "move_start": 283,
+        "move_end": 288,
+        "xy_bbox": {
+          "min_x": 27.639760897234684,
+          "max_x": 28.414904379088366,
+          "min_y": -6.42545981200895,
+          "max_y": -6.03522317369493
+        },
+        "z_min": 17.661541237287665,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 28.414904379088366,
+            "entry_y": -6.03522317369493,
+            "entry_z": 17.661541237287665,
+            "pass_index": 37,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 42,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 39 plunge entry",
+        "move_start": 290,
+        "move_end": 295,
+        "xy_bbox": {
+          "min_x": 28.660629671709927,
+          "max_x": 29.69888087647443,
+          "min_y": -5.911515738379789,
+          "max_y": -5.555544128417969
+        },
+        "z_min": 17.555583123599437,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 29.69888087647443,
+            "entry_y": -5.555544128417969,
+            "entry_z": 17.555583123599437,
+            "pass_index": 38,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 43,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 40 plunge entry",
+        "move_start": 298,
+        "move_end": 303,
+        "xy_bbox": {
+          "min_x": 45.241459288320144,
+          "max_x": 46.384582166919344,
+          "min_y": -4.830778342520357,
+          "max_y": -4.041254628187932
+        },
+        "z_min": 17.639094854267032,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 46.384582166919344,
+            "entry_y": -4.041254628187932,
+            "entry_z": 17.659635527735396,
+            "pass_index": 39,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 44,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 41 plunge entry",
+        "move_start": 305,
+        "move_end": 310,
+        "xy_bbox": {
+          "min_x": 46.85786989405445,
+          "max_x": 47.08782486195652,
+          "min_y": -3.714367736786052,
+          "max_y": -3.555544128417969
+        },
+        "z_min": 17.555613103051222,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 47.08782486195652,
+            "entry_y": -3.555544128417969,
+            "entry_z": 17.555613103051222,
+            "pass_index": 40,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 45,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 42 plunge entry",
+        "move_start": 312,
+        "move_end": 317,
+        "xy_bbox": {
+          "min_x": 47.749512744483226,
+          "max_x": 49.26569558414534,
+          "min_y": -3.3227248863572783,
+          "max_y": -3.055544128417969
+        },
+        "z_min": 17.570247366597176,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 49.26569558414534,
+            "entry_y": -3.055544128417969,
+            "entry_z": 17.636378535743802,
+            "pass_index": 41,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 46,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 43 plunge entry",
+        "move_start": 320,
+        "move_end": 325,
+        "xy_bbox": {
+          "min_x": 64.2218280664842,
+          "max_x": 64.72599992945212,
+          "min_y": -2.3504095643562946,
+          "max_y": -2.055544128417969
+        },
+        "z_min": 17.44559186113993,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 64.72599992945212,
+            "entry_y": -2.055544128417969,
+            "entry_z": 17.534746358990603,
+            "pass_index": 42,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 47,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 44 plunge entry",
+        "move_start": 327,
+        "move_end": 332,
+        "xy_bbox": {
+          "min_x": 65.47572433744087,
+          "max_x": 65.60095456934773,
+          "min_y": -1.59651329339964,
+          "max_y": -1.5555441284179687
+        },
+        "z_min": 17.532324139660314,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 65.60095456934773,
+            "entry_y": -1.5555441284179687,
+            "entry_z": 17.557388461970255,
+            "pass_index": 43,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 48,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 45 plunge entry",
+        "move_start": 334,
+        "move_end": 339,
+        "xy_bbox": {
+          "min_x": 66.21883284814868,
+          "max_x": 67.12930194917462,
+          "min_y": -1.353404782691822,
+          "max_y": -1.0555441284179687
+        },
+        "z_min": 17.651668919155604,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 67.12930194917462,
+            "entry_y": -1.0555441284179687,
+            "entry_z": 17.667771316494775,
+            "pass_index": 44,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 49,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 46 plunge entry",
+        "move_start": 342,
+        "move_end": 347,
+        "xy_bbox": {
+          "min_x": 87.21973835879841,
+          "max_x": 87.47176532888437,
+          "min_y": -0.914814792503194,
+          "max_y": -0.8524992720420937
+        },
+        "z_min": 17.62765204534539,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 87.47176532888437,
+            "entry_y": -0.914814792503194,
+            "entry_z": 17.64564782431602,
+            "pass_index": 45,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 50,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 47 plunge entry",
+        "move_start": 349,
+        "move_end": 354,
+        "xy_bbox": {
+          "min_x": 88.04092671709664,
+          "max_x": 89.61881864244609,
+          "min_y": -1.5635986545732188,
+          "max_y": -1.0555441284179687
+        },
+        "z_min": 17.523455171566912,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 89.61881864244609,
+            "entry_y": -1.5635986545732188,
+            "entry_z": 17.523455171566912,
+            "pass_index": 46,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 51,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 48 plunge entry",
+        "move_start": 356,
+        "move_end": 361,
+        "xy_bbox": {
+          "min_x": 90.39508735844299,
+          "max_x": 90.90887530992663,
+          "min_y": -2.3536553220537524,
+          "max_y": -2.055544128417969
+        },
+        "z_min": 17.46183557978865,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 90.90887530992663,
+            "entry_y": -2.3536553220537524,
+            "entry_z": 17.46183557978865,
+            "pass_index": 47,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 52,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 49 plunge entry",
+        "move_start": 364,
+        "move_end": 369,
+        "xy_bbox": {
+          "min_x": 105.87332739048826,
+          "max_x": 107.27698127406691,
+          "min_y": -3.221761286194038,
+          "max_y": -3.055544128417969
+        },
+        "z_min": 17.50696958621982,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 107.27698127406691,
+            "entry_y": -3.221761286194038,
+            "entry_z": 17.50696958621982,
+            "pass_index": 48,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 53,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 50 plunge entry",
+        "move_start": 371,
+        "move_end": 376,
+        "xy_bbox": {
+          "min_x": 107.86769605005975,
+          "max_x": 108.47115489260192,
+          "min_y": -3.9144069118929217,
+          "max_y": -3.555544128417969
+        },
+        "z_min": 17.626845087458303,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 108.47115489260192,
+            "entry_y": -3.9144069118929217,
+            "entry_z": 17.69106582602329,
+            "pass_index": 49,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 54,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 51 plunge entry",
+        "move_start": 378,
+        "move_end": 383,
+        "xy_bbox": {
+          "min_x": 108.65510072790757,
+          "max_x": 109.70096759534924,
+          "min_y": -4.645747607476371,
+          "max_y": -4.023795174708544
+        },
+        "z_min": 17.631459195854994,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 109.70096759534924,
+            "entry_y": -4.645747607476371,
+            "entry_z": 17.631459195854994,
+            "pass_index": 50,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 55,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 52 plunge entry",
+        "move_start": 385,
+        "move_end": 390,
+        "xy_bbox": {
+          "min_x": 110.35749966810228,
+          "max_x": 110.5737288093567,
+          "min_y": -5.279830337763731,
+          "max_y": -5.055544128417969
+        },
+        "z_min": 17.501031831074794,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 110.5737288093567,
+            "entry_y": -5.279830337763731,
+            "entry_z": 17.501031831074794,
+            "pass_index": 51,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 56,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 53 plunge entry",
+        "move_start": 393,
+        "move_end": 398,
+        "xy_bbox": {
+          "min_x": 113.23668837959302,
+          "max_x": 144.4557361117799,
+          "min_y": -7.900516123907046,
+          "max_y": -7.555544128417969
+        },
+        "z_min": 17.434233894348147,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 144.4557361117799,
+            "entry_y": -7.900516123907046,
+            "entry_z": 17.64481960996283,
+            "pass_index": 52,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 57,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 54 plunge entry",
+        "move_start": 400,
+        "move_end": 405,
+        "xy_bbox": {
+          "min_x": 145.11238746220795,
+          "max_x": 149.07372880935668,
+          "min_y": -10.765357575770825,
+          "max_y": -8.055544128417969
+        },
+        "z_min": 17.57559334944778,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 149.07372880935668,
+            "entry_y": -10.765357575770825,
+            "entry_z": 17.57559334944778,
+            "pass_index": 53,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 58,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 55 plunge entry",
+        "move_start": 407,
+        "move_end": 412,
+        "xy_bbox": {
+          "min_x": 149.60623370196967,
+          "max_x": 150.3597410139628,
+          "min_y": -13.826567230746013,
+          "max_y": -11.551013714096815
+        },
+        "z_min": 17.54301172781423,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 150.3597410139628,
+            "entry_y": -13.826567230746013,
+            "entry_z": 17.597981025780065,
+            "pass_index": 54,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 59,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 56 plunge entry",
+        "move_start": 415,
+        "move_end": 420,
+        "xy_bbox": {
+          "min_x": 149.76117519634818,
+          "max_x": 150.2088693134707,
+          "min_y": -73.42513304836062,
+          "max_y": -72.14914333360518
+        },
+        "z_min": 17.6376590657403,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 149.76117519634818,
+            "entry_y": -73.42513304836062,
+            "entry_z": 17.64629719752415,
+            "pass_index": 55,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 60,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 57 plunge entry",
+        "move_start": 422,
+        "move_end": 427,
+        "xy_bbox": {
+          "min_x": 149.49092498712218,
+          "max_x": 149.57372880935668,
+          "min_y": -74.19538325758661,
+          "max_y": -73.95938099293159
+        },
+        "z_min": 17.52173530767099,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 149.49092498712218,
+            "entry_y": -74.19538325758661,
+            "entry_z": 17.52173530767099,
+            "pass_index": 56,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 61,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 58 plunge entry",
+        "move_start": 429,
+        "move_end": 434,
+        "xy_bbox": {
+          "min_x": 146.3694275328205,
+          "max_x": 149.0929326808588,
+          "min_y": -77.07554412841797,
+          "max_y": -74.71998452320615
+        },
+        "z_min": 17.51806247370067,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 146.3694275328205,
+            "entry_y": -77.07554412841797,
+            "entry_z": 17.51806247370067,
+            "pass_index": 57,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 62,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 59 plunge entry",
+        "move_start": 436,
+        "move_end": 441,
+        "xy_bbox": {
+          "min_x": 144.68652198085644,
+          "max_x": 145.86083305796373,
+          "min_y": -77.57554412841797,
+          "max_y": -77.32547518674508
+        },
+        "z_min": 17.507794558921297,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 144.68652198085644,
+            "entry_y": -77.57554412841797,
+            "entry_z": 17.61821467748915,
+            "pass_index": 58,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 63,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 60 plunge entry",
+        "move_start": 443,
+        "move_end": 448,
+        "xy_bbox": {
+          "min_x": 92.0912131989124,
+          "max_x": 143.9549833372809,
+          "min_y": -78.07554412841797,
+          "max_y": -77.7313249074279
+        },
+        "z_min": 17.299753417968745,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 92.0912131989124,
+            "entry_y": -78.07554412841797,
+            "entry_z": 17.299753417968745,
+            "pass_index": 59,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 64,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 61 plunge entry",
+        "move_start": 451,
+        "move_end": 456,
+        "xy_bbox": {
+          "min_x": 88.87149321733146,
+          "max_x": 89.5737288093567,
+          "min_y": -81.31481502737735,
+          "max_y": -80.35249697819894
+        },
+        "z_min": 17.499880642349193,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 88.87149321733146,
+            "entry_y": -81.31481502737735,
+            "entry_z": 17.499919724586974,
+            "pass_index": 60,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 65,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 62 plunge entry",
+        "move_start": 458,
+        "move_end": 463,
+        "xy_bbox": {
+          "min_x": 87.52199507440086,
+          "max_x": 88.0737288093567,
+          "min_y": -83.16431317030795,
+          "max_y": -82.40815761460115
+        },
+        "z_min": 17.499878365493668,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 87.52199507440086,
+            "entry_y": -83.16431317030795,
+            "entry_z": 17.499878365493668,
+            "pass_index": 61,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 66,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 63 plunge entry",
+        "move_start": 465,
+        "move_end": 470,
+        "xy_bbox": {
+          "min_x": 86.1720879430378,
+          "max_x": 86.5737288093567,
+          "min_y": -85.01422030167102,
+          "max_y": -84.46380029411714
+        },
+        "z_min": 17.49991972900091,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 86.1720879430378,
+            "entry_y": -85.01422030167102,
+            "entry_z": 17.499925576051787,
+            "pass_index": 62,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 67,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 64 plunge entry",
+        "move_start": 472,
+        "move_end": 477,
+        "xy_bbox": {
+          "min_x": 84.82256063269502,
+          "max_x": 85.5737288093567,
+          "min_y": -86.8637476120138,
+          "max_y": -85.83429754302053
+        },
+        "z_min": 17.499887198969155,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 84.82256063269502,
+            "entry_y": -86.8637476120138,
+            "entry_z": 17.499887198969155,
+            "pass_index": 63,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 68,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 65 plunge entry",
+        "move_start": 479,
+        "move_end": 484,
+        "xy_bbox": {
+          "min_x": 83.47265769156245,
+          "max_x": 84.0737288093567,
+          "min_y": -88.71365055314637,
+          "max_y": -87.88994449639496
+        },
+        "z_min": 17.499913393186503,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 83.47265769156245,
+            "entry_y": -88.71365055314637,
+            "entry_z": 17.49992935070067,
+            "pass_index": 64,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 69,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 66 plunge entry",
+        "move_start": 486,
+        "move_end": 491,
+        "xy_bbox": {
+          "min_x": 80.49816129552894,
+          "max_x": 82.59576006574645,
+          "min_y": -91.57554412841797,
+          "max_y": -89.70577027943688
+        },
+        "z_min": 17.55784144144297,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 80.49816129552894,
+            "entry_y": -91.57554412841797,
+            "entry_z": 17.55784144144297,
+            "pass_index": 65,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 70,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 67 plunge entry",
+        "move_start": 493,
+        "move_end": 498,
+        "xy_bbox": {
+          "min_x": 79.47684055313088,
+          "max_x": 79.70042222256751,
+          "min_y": -92.07554412841797,
+          "max_y": -91.9858860221413
+        },
+        "z_min": 17.534261624555146,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 79.47684055313088,
+            "entry_y": -92.07554412841797,
+            "entry_z": 17.539814062728087,
+            "pass_index": 66,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 71,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 68 plunge entry",
+        "move_start": 500,
+        "move_end": 505,
+        "xy_bbox": {
+          "min_x": 77.58420734449336,
+          "max_x": 78.8688571015897,
+          "min_y": -92.57554412841797,
+          "max_y": -92.31745114311911
+        },
+        "z_min": 17.50030883382654,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 77.58420734449336,
+            "entry_y": -92.57554412841797,
+            "entry_z": 17.513868518536594,
+            "pass_index": 67,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 72,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 69 plunge entry",
+        "move_start": 507,
+        "move_end": 512,
+        "xy_bbox": {
+          "min_x": 74.31566800020265,
+          "max_x": 75.83689304207563,
+          "min_y": -93.07554412841797,
+          "max_y": -92.84941520263318
+        },
+        "z_min": 17.499888035968187,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 74.31566800020265,
+            "entry_y": -93.07554412841797,
+            "entry_z": 17.499888035968187,
+            "pass_index": 68,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 73,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 70 plunge entry",
+        "move_start": 514,
+        "move_end": 519,
+        "xy_bbox": {
+          "min_x": 70.95204471186494,
+          "max_x": 72.31308112655277,
+          "min_y": -93.57554412841797,
+          "max_y": -93.37322711815604
+        },
+        "z_min": 17.499888035968187,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 70.95204471186494,
+            "entry_y": -93.57554412841797,
+            "entry_z": 17.499888035968187,
+            "pass_index": 69,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 74,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 71 plunge entry",
+        "move_start": 521,
+        "move_end": 526,
+        "xy_bbox": {
+          "min_x": 67.58842132150534,
+          "max_x": 69.3765711969504,
+          "min_y": -94.07554412841797,
+          "max_y": -93.80973704775842
+        },
+        "z_min": 17.499888035968187,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 67.58842132150534,
+            "entry_y": -94.07554412841797,
+            "entry_z": 17.499888050968796,
+            "pass_index": 70,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 75,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 72 plunge entry",
+        "move_start": 528,
+        "move_end": 533,
+        "xy_bbox": {
+          "min_x": 64.22479640882825,
+          "max_x": 65.85275934186859,
+          "min_y": -94.57554412841797,
+          "max_y": -94.33354890284022
+        },
+        "z_min": 17.499888035486936,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 64.22479640882825,
+            "entry_y": -94.57554412841797,
+            "entry_z": 17.499888035486936,
+            "pass_index": 71,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 76,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 73 plunge entry",
+        "move_start": 535,
+        "move_end": 540,
+        "xy_bbox": {
+          "min_x": 60.861169091361226,
+          "max_x": 62.32894806385057,
+          "min_y": -95.07554412841797,
+          "max_y": -94.85736018085825
+        },
+        "z_min": 17.499888035486958,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 60.861169091361226,
+            "entry_y": -95.07554412841797,
+            "entry_z": 17.499888035486958,
+            "pass_index": 72,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 77,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 74 plunge entry",
+        "move_start": 542,
+        "move_end": 547,
+        "xy_bbox": {
+          "min_x": 57.49729687827675,
+          "max_x": 58.80522689762803,
+          "min_y": -95.57554412841797,
+          "max_y": -95.38108134708078
+        },
+        "z_min": 17.499924043348823,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 57.49729687827675,
+            "entry_y": -95.57554412841797,
+            "entry_z": 17.499924043348823,
+            "pass_index": 73,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 78,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 75 plunge entry",
+        "move_start": 549,
+        "move_end": 554,
+        "xy_bbox": {
+          "min_x": 54.133914456427085,
+          "max_x": 55.86862756990009,
+          "min_y": -96.07554412841797,
+          "max_y": -95.81768067480873
+        },
+        "z_min": 17.499888035486936,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 54.133914456427085,
+            "entry_y": -96.07554412841797,
+            "entry_z": 17.499888035486958,
+            "pass_index": 74,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 79,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 76 plunge entry",
+        "move_start": 556,
+        "move_end": 561,
+        "xy_bbox": {
+          "min_x": 50.770287138960086,
+          "max_x": 52.344816391381656,
+          "min_y": -96.57554412841797,
+          "max_y": -96.34149185332716
+        },
+        "z_min": 17.499888035486936,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 50.770287138960086,
+            "entry_y": -96.57554412841797,
+            "entry_z": 17.499888035486936,
+            "pass_index": 75,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 80,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 77 plunge entry",
+        "move_start": 563,
+        "move_end": 568,
+        "xy_bbox": {
+          "min_x": 47.406659821493015,
+          "max_x": 48.82100521286323,
+          "min_y": -97.07554412841797,
+          "max_y": -96.86530303184558
+        },
+        "z_min": 17.499888035486958,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 47.406659821493015,
+            "entry_y": -97.07554412841797,
+            "entry_z": 17.499888035486958,
+            "pass_index": 76,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 81,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 78 plunge entry",
+        "move_start": 570,
+        "move_end": 575,
+        "xy_bbox": {
+          "min_x": 44.16137073048,
+          "max_x": 45.884495897431194,
+          "min_y": -97.57554412841797,
+          "max_y": -97.30181234727762
+        },
+        "z_min": 17.482488350839077,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 44.16137073048,
+            "entry_y": -97.57554412841797,
+            "entry_z": 17.482488350839077,
+            "pass_index": 77,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 82,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 79 plunge entry",
+        "move_start": 577,
+        "move_end": 582,
+        "xy_bbox": {
+          "min_x": 40.907788737416816,
+          "max_x": 41.37481748954167,
+          "min_y": -98.57554412841797,
+          "max_y": -98.31149075516716
+        },
+        "z_min": 17.49577979928011,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 40.907788737416816,
+            "entry_y": -98.57554412841797,
+            "entry_z": 17.499901895048353,
+            "pass_index": 78,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 83,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 80 plunge entry",
+        "move_start": 584,
+        "move_end": 589,
+        "xy_bbox": {
+          "min_x": 40.03909035936229,
+          "max_x": 40.207962478413755,
+          "min_y": -99.07554412841797,
+          "max_y": -98.97834576629506
+        },
+        "z_min": 17.499901895048353,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 40.03909035936229,
+            "entry_y": -99.07554412841797,
+            "entry_z": 17.49990189504837,
+            "pass_index": 79,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 84,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 81 plunge entry",
+        "move_start": 591,
+        "move_end": 596,
+        "xy_bbox": {
+          "min_x": 38.29481722975686,
+          "max_x": 39.02990145379205,
+          "min_y": -100.07950178121148,
+          "max_y": -99.65640679091676
+        },
+        "z_min": 17.499901895048353,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 38.29481722975686,
+            "entry_y": -100.07950178121148,
+            "entry_z": 17.499902074817754,
+            "pass_index": 80,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 85,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 82 plunge entry",
+        "move_start": 598,
+        "move_end": 603,
+        "xy_bbox": {
+          "min_x": 37.4329784419879,
+          "max_x": 37.85185236484056,
+          "min_y": -100.57554412841797,
+          "max_y": -100.33445587986826
+        },
+        "z_min": 17.499906294573957,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 37.4329784419879,
+            "entry_y": -100.57554412841797,
+            "entry_z": 17.49991035021504,
+            "pass_index": 81,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 86,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 83 plunge entry",
+        "move_start": 605,
+        "move_end": 610,
+        "xy_bbox": {
+          "min_x": 36.56426351006475,
+          "max_x": 36.67382178252577,
+          "min_y": -101.07554412841797,
+          "max_y": -101.01248646218305
+        },
+        "z_min": 17.49991770055789,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 36.56426351006475,
+            "entry_y": -101.07554412841797,
+            "entry_z": 17.499918761328228,
+            "pass_index": 82,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 87,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 84 plunge entry",
+        "move_start": 612,
+        "move_end": 617,
+        "xy_bbox": {
+          "min_x": 34.82690117897019,
+          "max_x": 35.49572963317269,
+          "min_y": -102.07554412841797,
+          "max_y": -101.69057861153613
+        },
+        "z_min": 17.499901895218628,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 34.82690117897019,
+            "entry_y": -102.07554412841797,
+            "entry_z": 17.499901895218628,
+            "pass_index": 83,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 88,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 85 plunge entry",
+        "move_start": 619,
+        "move_end": 624,
+        "xy_bbox": {
+          "min_x": 33.95820310824254,
+          "max_x": 34.31765563561343,
+          "min_y": -102.57554412841797,
+          "max_y": -102.36865260909539
+        },
+        "z_min": 17.499901895218628,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 33.95820310824254,
+            "entry_y": -102.57554412841797,
+            "entry_z": 17.499901895218628,
+            "pass_index": 84,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 89,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 86 plunge entry",
+        "move_start": 626,
+        "move_end": 629,
+        "xy_bbox": {
+          "min_x": 33.08950503751489,
+          "max_x": 33.139594045796564,
+          "min_y": -103.07554412841797,
+          "max_y": -103.04671419891224
+        },
+        "z_min": 17.499901895218606,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 33.08950503751489,
+            "entry_y": -103.07554412841797,
+            "entry_z": 17.499901895218606,
+            "pass_index": 85,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 90,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 87 plunge entry",
+        "move_start": 631,
+        "move_end": 636,
+        "xy_bbox": {
+          "min_x": 31.352079666687633,
+          "max_x": 31.961546972714032,
+          "min_y": -104.07554412841797,
+          "max_y": -103.72476127199478
+        },
+        "z_min": 17.49990723514049,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 31.352079666687633,
+            "entry_y": -104.07554412841797,
+            "entry_z": 17.499916476127535,
+            "pass_index": 86,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 91,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 88 plunge entry",
+        "move_start": 638,
+        "move_end": 643,
+        "xy_bbox": {
+          "min_x": 30.483380595966413,
+          "max_x": 30.783522380477457,
+          "min_y": -104.57554412841797,
+          "max_y": -104.40278586423135
+        },
+        "z_min": 17.49991697496873,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 30.483380595966413,
+            "entry_y": -104.57554412841797,
+            "entry_z": 17.49991697496873,
+            "pass_index": 87,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 92,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 89 plunge entry",
+        "move_start": 645,
+        "move_end": 650,
+        "xy_bbox": {
+          "min_x": 26.36427493713817,
+          "max_x": 29.605419499717694,
+          "min_y": -106.57554412841797,
+          "max_y": -105.08088874499111
+        },
+        "z_min": 17.49990565584444,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 26.36427493713817,
+            "entry_y": -106.57554412841797,
+            "entry_z": 17.50941483251854,
+            "pass_index": 88,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 93,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 90 plunge entry",
+        "move_start": 652,
+        "move_end": 657,
+        "xy_bbox": {
+          "min_x": 22.281385530813036,
+          "max_x": 22.91426106333169,
+          "min_y": -106.57554412841797,
+          "max_y": -106.34023615680847
+        },
+        "z_min": 17.575907930290025,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 22.281385530813036,
+            "entry_y": -106.34023615680847,
+            "entry_z": 17.64839765906058,
+            "pass_index": 89,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 94,
+        "parent_id": 2,
+        "kind": "entry",
+        "label": "Pass 91 plunge entry",
+        "move_start": 659,
+        "move_end": 664,
+        "xy_bbox": {
+          "min_x": 20.689516387688244,
+          "max_x": 21.569479736567075,
+          "min_y": -106.07554412841797,
+          "max_y": -105.74836701368368
+        },
+        "z_min": 17.56514557822016,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.689516387688244,
+            "entry_y": -105.74836701368368,
+            "entry_z": 17.56514557822016,
+            "pass_index": 90,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 96,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 92 keep-down link",
+        "move_start": 666,
+        "move_end": 672,
+        "xy_bbox": {
+          "min_x": 18.463728809356688,
+          "max_x": 20.31372880935669,
+          "min_y": -108.71554412841796,
+          "max_y": -105.60864631305658
+        },
+        "z_min": 11.0,
+        "z_max": 23.5,
+        "params": {
+          "values": {
+            "entry_x": 18.463728809356688,
+            "entry_y": -108.71554412841796,
+            "entry_z": 11.0,
+            "pass_index": 91,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 97,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 93 keep-down link",
+        "move_start": 750,
+        "move_end": 753,
+        "xy_bbox": {
+          "min_x": 18.613728809356687,
+          "max_x": 31.363728809356687,
+          "min_y": -107.36554412841797,
+          "max_y": -106.61554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 17.99997901916504,
+        "params": {
+          "values": {
+            "entry_x": 31.363728809356687,
+            "entry_y": -106.61554412841797,
+            "entry_z": 11.0,
+            "pass_index": 92,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 98,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 94 keep-down link",
+        "move_start": 761,
+        "move_end": 769,
+        "xy_bbox": {
+          "min_x": 16.363728809356687,
+          "max_x": 33.613728809356694,
+          "min_y": -105.26554412841797,
+          "max_y": -105.11554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 16.363728809356687,
+            "entry_y": -105.11554412841797,
+            "entry_z": 11.0,
+            "pass_index": 93,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 99,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 95 keep-down link",
+        "move_start": 773,
+        "move_end": 781,
+        "xy_bbox": {
+          "min_x": 16.213728809356688,
+          "max_x": 34.96372880935669,
+          "min_y": -104.96554412841796,
+          "max_y": -104.51554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 34.96372880935669,
+            "entry_y": -104.51554412841797,
+            "entry_z": 11.0,
+            "pass_index": 94,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 100,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 96 keep-down link",
+        "move_start": 789,
+        "move_end": 797,
+        "xy_bbox": {
+          "min_x": 14.563728809356688,
+          "max_x": 38.41372880935669,
+          "min_y": -102.56554412841797,
+          "max_y": -102.41554412841796
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.563728809356688,
+            "entry_y": -102.41554412841796,
+            "entry_z": 11.0,
+            "pass_index": 95,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 101,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 97 keep-down link",
+        "move_start": 799,
+        "move_end": 807,
+        "xy_bbox": {
+          "min_x": 14.713728809356688,
+          "max_x": 39.16372880935669,
+          "min_y": -102.26554412841797,
+          "max_y": -102.11554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 39.16372880935669,
+            "entry_y": -102.11554412841797,
+            "entry_z": 11.0,
+            "pass_index": 96,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 102,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 98 keep-down link",
+        "move_start": 809,
+        "move_end": 817,
+        "xy_bbox": {
+          "min_x": 14.263728809356689,
+          "max_x": 39.31372880935669,
+          "min_y": -101.96554412841796,
+          "max_y": -101.81554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.263728809356689,
+            "entry_y": -101.81554412841797,
+            "entry_z": 11.0,
+            "pass_index": 97,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 103,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 99 keep-down link",
+        "move_start": 822,
+        "move_end": 830,
+        "xy_bbox": {
+          "min_x": 13.813728809356688,
+          "max_x": 41.26372880935669,
+          "min_y": -101.06554412841797,
+          "max_y": -100.91554412841796
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 41.26372880935669,
+            "entry_y": -100.91554412841796,
+            "entry_z": 11.0,
+            "pass_index": 98,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 104,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 100 keep-down link",
+        "move_start": 836,
+        "move_end": 844,
+        "xy_bbox": {
+          "min_x": 12.163728809356689,
+          "max_x": 43.21372880935669,
+          "min_y": -99.86554412841797,
+          "max_y": -98.21554412841796
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 12.163728809356689,
+            "entry_y": -98.21554412841796,
+            "entry_z": 11.0,
+            "pass_index": 99,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 105,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 101 plunge entry",
+        "move_start": 860,
+        "move_end": 865,
+        "xy_bbox": {
+          "min_x": 9.613728809356688,
+          "max_x": 80.56372880935669,
+          "min_y": -94.01554412841797,
+          "max_y": -93.86554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 80.56372880935669,
+            "entry_y": -94.01554412841797,
+            "entry_z": 11.0,
+            "pass_index": 100,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 106,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 102 plunge entry",
+        "move_start": 873,
+        "move_end": 878,
+        "xy_bbox": {
+          "min_x": 8.863728809356688,
+          "max_x": 82.51372880935669,
+          "min_y": -92.96554412841797,
+          "max_y": -92.51554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 8.863728809356688,
+            "entry_y": -92.51554412841797,
+            "entry_z": 11.0,
+            "pass_index": 101,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 107,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 103 plunge entry",
+        "move_start": 887,
+        "move_end": 892,
+        "xy_bbox": {
+          "min_x": 7.51372880935669,
+          "max_x": 85.36372880935669,
+          "min_y": -90.26554412841797,
+          "max_y": -89.81554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 85.36372880935669,
+            "entry_y": -89.81554412841797,
+            "entry_z": 11.0,
+            "pass_index": 102,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 108,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 104 plunge entry",
+        "move_start": 896,
+        "move_end": 901,
+        "xy_bbox": {
+          "min_x": 6.46372880935669,
+          "max_x": 86.11372880935669,
+          "min_y": -88.76554412841797,
+          "max_y": -88.31554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 6.46372880935669,
+            "entry_y": -88.31554412841797,
+            "entry_z": 11.0,
+            "pass_index": 103,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 109,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 105 plunge entry",
+        "move_start": 905,
+        "move_end": 910,
+        "xy_bbox": {
+          "min_x": 6.3137288093566895,
+          "max_x": 86.86372880935669,
+          "min_y": -87.71554412841797,
+          "max_y": -87.56554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 86.86372880935669,
+            "entry_y": -87.71554412841797,
+            "entry_z": 11.0,
+            "pass_index": 104,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 110,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 106 plunge entry",
+        "move_start": 912,
+        "move_end": 917,
+        "xy_bbox": {
+          "min_x": 5.863728809356689,
+          "max_x": 87.01372880935669,
+          "min_y": -87.56554412841797,
+          "max_y": -87.11554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.863728809356689,
+            "entry_y": -87.11554412841797,
+            "entry_z": 11.0,
+            "pass_index": 105,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 111,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 107 plunge entry",
+        "move_start": 919,
+        "move_end": 924,
+        "xy_bbox": {
+          "min_x": 5.71372880935669,
+          "max_x": 87.76372880935669,
+          "min_y": -86.96554412841797,
+          "max_y": -86.51554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 87.76372880935669,
+            "entry_y": -86.51554412841797,
+            "entry_z": 11.0,
+            "pass_index": 106,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 112,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 108 plunge entry",
+        "move_start": 926,
+        "move_end": 931,
+        "xy_bbox": {
+          "min_x": 5.26372880935669,
+          "max_x": 87.91372880935668,
+          "min_y": -86.36554412841797,
+          "max_y": -86.21554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.26372880935669,
+            "entry_y": -86.21554412841797,
+            "entry_z": 11.0,
+            "pass_index": 107,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 113,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 109 plunge entry",
+        "move_start": 936,
+        "move_end": 941,
+        "xy_bbox": {
+          "min_x": 4.8137288093566895,
+          "max_x": 89.26372880935669,
+          "min_y": -85.46554412841797,
+          "max_y": -84.41554412841796
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 89.26372880935669,
+            "entry_y": -84.41554412841796,
+            "entry_z": 11.0,
+            "pass_index": 108,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 114,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 110 plunge entry",
+        "move_start": 943,
+        "move_end": 948,
+        "xy_bbox": {
+          "min_x": 3.1637288093566895,
+          "max_x": 89.41372880935668,
+          "min_y": -84.26554412841797,
+          "max_y": -82.61554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.1637288093566895,
+            "entry_y": -82.61554412841797,
+            "entry_z": 11.0,
+            "pass_index": 109,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 115,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 111 plunge entry",
+        "move_start": 952,
+        "move_end": 957,
+        "xy_bbox": {
+          "min_x": 3.0137288093566896,
+          "max_x": 91.06372880935669,
+          "min_y": -82.01554412841797,
+          "max_y": -81.86554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.06372880935669,
+            "entry_y": -82.01554412841797,
+            "entry_z": 11.0,
+            "pass_index": 110,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 116,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 112 plunge entry",
+        "move_start": 959,
+        "move_end": 964,
+        "xy_bbox": {
+          "min_x": 2.5637288093566895,
+          "max_x": 91.2137288093567,
+          "min_y": -81.86554412841797,
+          "max_y": -81.41554412841796
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.5637288093566895,
+            "entry_y": -81.41554412841796,
+            "entry_z": 11.0,
+            "pass_index": 111,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 117,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 113 plunge entry",
+        "move_start": 966,
+        "move_end": 971,
+        "xy_bbox": {
+          "min_x": 2.7137288093566894,
+          "max_x": 91.66372880935668,
+          "min_y": -81.26554412841797,
+          "max_y": -81.11554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.66372880935668,
+            "entry_y": -81.11554412841797,
+            "entry_z": 11.0,
+            "pass_index": 112,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 118,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 114 plunge entry",
+        "move_start": 973,
+        "move_end": 978,
+        "xy_bbox": {
+          "min_x": 2.2637288093566896,
+          "max_x": 91.81372880935669,
+          "min_y": -80.96554412841797,
+          "max_y": -80.81554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.2637288093566896,
+            "entry_y": -80.81554412841797,
+            "entry_z": 11.0,
+            "pass_index": 113,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 119,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 115 plunge entry",
+        "move_start": 980,
+        "move_end": 985,
+        "xy_bbox": {
+          "min_x": 2.4137288093566895,
+          "max_x": 145.96372880935667,
+          "min_y": -80.66554412841796,
+          "max_y": -79.61554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 145.96372880935667,
+            "entry_y": -79.61554412841797,
+            "entry_z": 11.0,
+            "pass_index": 114,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 121,
+        "parent_id": 95,
+        "kind": "entry",
+        "label": "Pass 116 plunge entry",
+        "move_start": 990,
+        "move_end": 995,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 149.11372880935667,
+          "min_y": -106.18412883954838,
+          "max_y": -77.96554412841797
+        },
+        "z_min": 11.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.31372880935669,
+            "entry_y": -106.18412883954838,
+            "entry_z": 16.999999999999982,
+            "pass_index": 115,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 123,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 117 keep-down link",
+        "move_start": 1059,
+        "move_end": 1064,
+        "xy_bbox": {
+          "min_x": 18.463728809356688,
+          "max_x": 20.31372880935669,
+          "min_y": -108.71554412841796,
+          "max_y": -106.18412883954838
+        },
+        "z_min": 5.0,
+        "z_max": 17.999984741210938,
+        "params": {
+          "values": {
+            "entry_x": 18.463728809356688,
+            "entry_y": -108.71554412841796,
+            "entry_z": 5.0,
+            "pass_index": 116,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 124,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 118 keep-down link",
+        "move_start": 1142,
+        "move_end": 1145,
+        "xy_bbox": {
+          "min_x": 18.613728809356687,
+          "max_x": 31.363728809356687,
+          "min_y": -107.36554412841797,
+          "max_y": -106.61554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 17.99997901916504,
+        "params": {
+          "values": {
+            "entry_x": 31.363728809356687,
+            "entry_y": -106.61554412841797,
+            "entry_z": 5.0,
+            "pass_index": 117,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 125,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 119 keep-down link",
+        "move_start": 1153,
+        "move_end": 1161,
+        "xy_bbox": {
+          "min_x": 16.363728809356687,
+          "max_x": 33.613728809356694,
+          "min_y": -105.26554412841797,
+          "max_y": -105.11554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 16.363728809356687,
+            "entry_y": -105.11554412841797,
+            "entry_z": 5.0,
+            "pass_index": 118,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 126,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 120 keep-down link",
+        "move_start": 1165,
+        "move_end": 1173,
+        "xy_bbox": {
+          "min_x": 16.213728809356688,
+          "max_x": 34.96372880935669,
+          "min_y": -104.96554412841796,
+          "max_y": -104.51554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 34.96372880935669,
+            "entry_y": -104.51554412841797,
+            "entry_z": 5.0,
+            "pass_index": 119,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 127,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 121 keep-down link",
+        "move_start": 1181,
+        "move_end": 1189,
+        "xy_bbox": {
+          "min_x": 14.563728809356688,
+          "max_x": 38.41372880935669,
+          "min_y": -102.56554412841797,
+          "max_y": -102.41554412841796
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.563728809356688,
+            "entry_y": -102.41554412841796,
+            "entry_z": 5.0,
+            "pass_index": 120,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 128,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 122 keep-down link",
+        "move_start": 1191,
+        "move_end": 1199,
+        "xy_bbox": {
+          "min_x": 14.713728809356688,
+          "max_x": 39.16372880935669,
+          "min_y": -102.26554412841797,
+          "max_y": -102.11554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 39.16372880935669,
+            "entry_y": -102.11554412841797,
+            "entry_z": 5.0,
+            "pass_index": 121,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 129,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 123 keep-down link",
+        "move_start": 1201,
+        "move_end": 1209,
+        "xy_bbox": {
+          "min_x": 14.263728809356689,
+          "max_x": 39.31372880935669,
+          "min_y": -101.96554412841796,
+          "max_y": -101.81554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.263728809356689,
+            "entry_y": -101.81554412841797,
+            "entry_z": 5.0,
+            "pass_index": 122,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 130,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 124 keep-down link",
+        "move_start": 1214,
+        "move_end": 1222,
+        "xy_bbox": {
+          "min_x": 13.813728809356688,
+          "max_x": 41.26372880935669,
+          "min_y": -101.06554412841797,
+          "max_y": -100.91554412841796
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 41.26372880935669,
+            "entry_y": -100.91554412841796,
+            "entry_z": 5.0,
+            "pass_index": 123,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 131,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 125 keep-down link",
+        "move_start": 1228,
+        "move_end": 1236,
+        "xy_bbox": {
+          "min_x": 12.163728809356689,
+          "max_x": 43.21372880935669,
+          "min_y": -99.86554412841797,
+          "max_y": -98.21554412841796
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 12.163728809356689,
+            "entry_y": -98.21554412841796,
+            "entry_z": 5.0,
+            "pass_index": 124,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 132,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 126 plunge entry",
+        "move_start": 1252,
+        "move_end": 1257,
+        "xy_bbox": {
+          "min_x": 9.613728809356688,
+          "max_x": 80.56372880935669,
+          "min_y": -94.01554412841797,
+          "max_y": -93.86554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 80.56372880935669,
+            "entry_y": -94.01554412841797,
+            "entry_z": 5.0,
+            "pass_index": 125,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 133,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 127 plunge entry",
+        "move_start": 1265,
+        "move_end": 1270,
+        "xy_bbox": {
+          "min_x": 8.863728809356688,
+          "max_x": 82.51372880935669,
+          "min_y": -92.96554412841797,
+          "max_y": -92.51554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 8.863728809356688,
+            "entry_y": -92.51554412841797,
+            "entry_z": 5.0,
+            "pass_index": 126,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 134,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 128 plunge entry",
+        "move_start": 1279,
+        "move_end": 1284,
+        "xy_bbox": {
+          "min_x": 7.51372880935669,
+          "max_x": 85.36372880935669,
+          "min_y": -90.26554412841797,
+          "max_y": -89.81554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 85.36372880935669,
+            "entry_y": -89.81554412841797,
+            "entry_z": 5.0,
+            "pass_index": 127,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 135,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 129 plunge entry",
+        "move_start": 1288,
+        "move_end": 1293,
+        "xy_bbox": {
+          "min_x": 6.46372880935669,
+          "max_x": 86.11372880935669,
+          "min_y": -88.76554412841797,
+          "max_y": -88.31554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 6.46372880935669,
+            "entry_y": -88.31554412841797,
+            "entry_z": 5.0,
+            "pass_index": 128,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 136,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 130 plunge entry",
+        "move_start": 1297,
+        "move_end": 1302,
+        "xy_bbox": {
+          "min_x": 6.3137288093566895,
+          "max_x": 86.86372880935669,
+          "min_y": -87.71554412841797,
+          "max_y": -87.56554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 86.86372880935669,
+            "entry_y": -87.71554412841797,
+            "entry_z": 5.0,
+            "pass_index": 129,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 137,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 131 plunge entry",
+        "move_start": 1304,
+        "move_end": 1309,
+        "xy_bbox": {
+          "min_x": 5.863728809356689,
+          "max_x": 87.01372880935669,
+          "min_y": -87.56554412841797,
+          "max_y": -87.11554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.863728809356689,
+            "entry_y": -87.11554412841797,
+            "entry_z": 5.0,
+            "pass_index": 130,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 138,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 132 plunge entry",
+        "move_start": 1311,
+        "move_end": 1316,
+        "xy_bbox": {
+          "min_x": 5.71372880935669,
+          "max_x": 87.76372880935669,
+          "min_y": -86.96554412841797,
+          "max_y": -86.51554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 87.76372880935669,
+            "entry_y": -86.51554412841797,
+            "entry_z": 5.0,
+            "pass_index": 131,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 139,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 133 plunge entry",
+        "move_start": 1318,
+        "move_end": 1323,
+        "xy_bbox": {
+          "min_x": 5.26372880935669,
+          "max_x": 87.91372880935668,
+          "min_y": -86.36554412841797,
+          "max_y": -86.21554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.26372880935669,
+            "entry_y": -86.21554412841797,
+            "entry_z": 5.0,
+            "pass_index": 132,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 140,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 134 plunge entry",
+        "move_start": 1328,
+        "move_end": 1333,
+        "xy_bbox": {
+          "min_x": 4.8137288093566895,
+          "max_x": 89.26372880935669,
+          "min_y": -85.46554412841797,
+          "max_y": -84.41554412841796
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 89.26372880935669,
+            "entry_y": -84.41554412841796,
+            "entry_z": 5.0,
+            "pass_index": 133,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 141,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 135 plunge entry",
+        "move_start": 1335,
+        "move_end": 1340,
+        "xy_bbox": {
+          "min_x": 3.1637288093566895,
+          "max_x": 89.41372880935668,
+          "min_y": -84.26554412841797,
+          "max_y": -82.61554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.1637288093566895,
+            "entry_y": -82.61554412841797,
+            "entry_z": 5.0,
+            "pass_index": 134,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 142,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 136 plunge entry",
+        "move_start": 1344,
+        "move_end": 1349,
+        "xy_bbox": {
+          "min_x": 3.0137288093566896,
+          "max_x": 91.06372880935669,
+          "min_y": -82.01554412841797,
+          "max_y": -81.86554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.06372880935669,
+            "entry_y": -82.01554412841797,
+            "entry_z": 5.0,
+            "pass_index": 135,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 143,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 137 plunge entry",
+        "move_start": 1351,
+        "move_end": 1356,
+        "xy_bbox": {
+          "min_x": 2.5637288093566895,
+          "max_x": 91.2137288093567,
+          "min_y": -81.86554412841797,
+          "max_y": -81.41554412841796
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.5637288093566895,
+            "entry_y": -81.41554412841796,
+            "entry_z": 5.0,
+            "pass_index": 136,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 144,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 138 plunge entry",
+        "move_start": 1358,
+        "move_end": 1363,
+        "xy_bbox": {
+          "min_x": 2.7137288093566894,
+          "max_x": 91.66372880935668,
+          "min_y": -81.26554412841797,
+          "max_y": -81.11554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.66372880935668,
+            "entry_y": -81.11554412841797,
+            "entry_z": 5.0,
+            "pass_index": 137,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 145,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 139 plunge entry",
+        "move_start": 1365,
+        "move_end": 1370,
+        "xy_bbox": {
+          "min_x": 2.2637288093566896,
+          "max_x": 91.81372880935669,
+          "min_y": -80.96554412841797,
+          "max_y": -80.81554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.2637288093566896,
+            "entry_y": -80.81554412841797,
+            "entry_z": 5.0,
+            "pass_index": 138,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 146,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 140 plunge entry",
+        "move_start": 1372,
+        "move_end": 1377,
+        "xy_bbox": {
+          "min_x": 2.4137288093566895,
+          "max_x": 145.96372880935667,
+          "min_y": -80.66554412841796,
+          "max_y": -79.61554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 145.96372880935667,
+            "entry_y": -79.61554412841797,
+            "entry_z": 5.0,
+            "pass_index": 139,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 148,
+        "parent_id": 122,
+        "kind": "entry",
+        "label": "Pass 141 plunge entry",
+        "move_start": 1382,
+        "move_end": 1387,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 149.11372880935667,
+          "min_y": -106.18412883954838,
+          "max_y": -77.96554412841797
+        },
+        "z_min": 5.0,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.31372880935669,
+            "entry_y": -106.18412883954838,
+            "entry_z": 16.999999999999982,
+            "pass_index": 140,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 150,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 142 keep-down link",
+        "move_start": 1455,
+        "move_end": 1458,
+        "xy_bbox": {
+          "min_x": 18.463728809356688,
+          "max_x": 20.31372880935669,
+          "min_y": -108.71554412841796,
+          "max_y": -106.18412883954838
+        },
+        "z_min": 0.5,
+        "z_max": 17.999984741210938,
+        "params": {
+          "values": {
+            "entry_x": 18.463728809356688,
+            "entry_y": -108.71554412841796,
+            "entry_z": 0.5,
+            "pass_index": 141,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 151,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 143 keep-down link",
+        "move_start": 1536,
+        "move_end": 1539,
+        "xy_bbox": {
+          "min_x": 18.613728809356687,
+          "max_x": 31.363728809356687,
+          "min_y": -107.36554412841797,
+          "max_y": -106.61554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 17.99997901916504,
+        "params": {
+          "values": {
+            "entry_x": 31.363728809356687,
+            "entry_y": -106.61554412841797,
+            "entry_z": 0.5,
+            "pass_index": 142,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": 1
+      },
+      {
+        "id": 152,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 144 keep-down link",
+        "move_start": 1547,
+        "move_end": 1555,
+        "xy_bbox": {
+          "min_x": 16.363728809356687,
+          "max_x": 33.613728809356694,
+          "min_y": -105.26554412841797,
+          "max_y": -105.11554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 16.363728809356687,
+            "entry_y": -105.11554412841797,
+            "entry_z": 0.5,
+            "pass_index": 143,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 153,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 145 keep-down link",
+        "move_start": 1559,
+        "move_end": 1567,
+        "xy_bbox": {
+          "min_x": 16.213728809356688,
+          "max_x": 34.96372880935669,
+          "min_y": -104.96554412841796,
+          "max_y": -104.51554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 34.96372880935669,
+            "entry_y": -104.51554412841797,
+            "entry_z": 0.5,
+            "pass_index": 144,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 154,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 146 keep-down link",
+        "move_start": 1575,
+        "move_end": 1583,
+        "xy_bbox": {
+          "min_x": 14.563728809356688,
+          "max_x": 38.41372880935669,
+          "min_y": -102.56554412841797,
+          "max_y": -102.41554412841796
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.563728809356688,
+            "entry_y": -102.41554412841796,
+            "entry_z": 0.5,
+            "pass_index": 145,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 155,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 147 keep-down link",
+        "move_start": 1585,
+        "move_end": 1593,
+        "xy_bbox": {
+          "min_x": 14.713728809356688,
+          "max_x": 39.16372880935669,
+          "min_y": -102.26554412841797,
+          "max_y": -102.11554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 39.16372880935669,
+            "entry_y": -102.11554412841797,
+            "entry_z": 0.5,
+            "pass_index": 146,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 156,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 148 keep-down link",
+        "move_start": 1595,
+        "move_end": 1603,
+        "xy_bbox": {
+          "min_x": 14.263728809356689,
+          "max_x": 39.31372880935669,
+          "min_y": -101.96554412841796,
+          "max_y": -101.81554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 14.263728809356689,
+            "entry_y": -101.81554412841797,
+            "entry_z": 0.5,
+            "pass_index": 147,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 157,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 149 keep-down link",
+        "move_start": 1608,
+        "move_end": 1616,
+        "xy_bbox": {
+          "min_x": 13.813728809356688,
+          "max_x": 41.26372880935669,
+          "min_y": -101.06554412841797,
+          "max_y": -100.91554412841796
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 41.26372880935669,
+            "entry_y": -100.91554412841796,
+            "entry_z": 0.5,
+            "pass_index": 148,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 158,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 150 keep-down link",
+        "move_start": 1622,
+        "move_end": 1630,
+        "xy_bbox": {
+          "min_x": 12.163728809356689,
+          "max_x": 43.21372880935669,
+          "min_y": -99.86554412841797,
+          "max_y": -98.21554412841796
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 12.163728809356689,
+            "entry_y": -98.21554412841796,
+            "entry_z": 0.5,
+            "pass_index": 149,
+            "style": "keep-down link"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 159,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 151 plunge entry",
+        "move_start": 1646,
+        "move_end": 1651,
+        "xy_bbox": {
+          "min_x": 9.613728809356688,
+          "max_x": 80.56372880935669,
+          "min_y": -94.01554412841797,
+          "max_y": -93.86554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 80.56372880935669,
+            "entry_y": -94.01554412841797,
+            "entry_z": 0.5,
+            "pass_index": 150,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 160,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 152 plunge entry",
+        "move_start": 1659,
+        "move_end": 1664,
+        "xy_bbox": {
+          "min_x": 8.863728809356688,
+          "max_x": 82.51372880935669,
+          "min_y": -92.96554412841797,
+          "max_y": -92.51554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 8.863728809356688,
+            "entry_y": -92.51554412841797,
+            "entry_z": 0.5,
+            "pass_index": 151,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 161,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 153 plunge entry",
+        "move_start": 1673,
+        "move_end": 1678,
+        "xy_bbox": {
+          "min_x": 7.51372880935669,
+          "max_x": 85.36372880935669,
+          "min_y": -90.26554412841797,
+          "max_y": -89.81554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 85.36372880935669,
+            "entry_y": -89.81554412841797,
+            "entry_z": 0.5,
+            "pass_index": 152,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 162,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 154 plunge entry",
+        "move_start": 1682,
+        "move_end": 1687,
+        "xy_bbox": {
+          "min_x": 6.46372880935669,
+          "max_x": 86.11372880935669,
+          "min_y": -88.76554412841797,
+          "max_y": -88.31554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 6.46372880935669,
+            "entry_y": -88.31554412841797,
+            "entry_z": 0.5,
+            "pass_index": 153,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 163,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 155 plunge entry",
+        "move_start": 1691,
+        "move_end": 1696,
+        "xy_bbox": {
+          "min_x": 6.3137288093566895,
+          "max_x": 86.86372880935669,
+          "min_y": -87.71554412841797,
+          "max_y": -87.56554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 86.86372880935669,
+            "entry_y": -87.71554412841797,
+            "entry_z": 0.5,
+            "pass_index": 154,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 164,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 156 plunge entry",
+        "move_start": 1698,
+        "move_end": 1703,
+        "xy_bbox": {
+          "min_x": 5.863728809356689,
+          "max_x": 87.01372880935669,
+          "min_y": -87.56554412841797,
+          "max_y": -87.11554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.863728809356689,
+            "entry_y": -87.11554412841797,
+            "entry_z": 0.5,
+            "pass_index": 155,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 165,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 157 plunge entry",
+        "move_start": 1705,
+        "move_end": 1710,
+        "xy_bbox": {
+          "min_x": 5.71372880935669,
+          "max_x": 87.76372880935669,
+          "min_y": -86.96554412841797,
+          "max_y": -86.51554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 87.76372880935669,
+            "entry_y": -86.51554412841797,
+            "entry_z": 0.5,
+            "pass_index": 156,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 166,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 158 plunge entry",
+        "move_start": 1712,
+        "move_end": 1717,
+        "xy_bbox": {
+          "min_x": 5.26372880935669,
+          "max_x": 87.91372880935668,
+          "min_y": -86.36554412841797,
+          "max_y": -86.21554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 5.26372880935669,
+            "entry_y": -86.21554412841797,
+            "entry_z": 0.5,
+            "pass_index": 157,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 167,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 159 plunge entry",
+        "move_start": 1722,
+        "move_end": 1727,
+        "xy_bbox": {
+          "min_x": 4.8137288093566895,
+          "max_x": 89.26372880935669,
+          "min_y": -85.46554412841797,
+          "max_y": -84.41554412841796
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 89.26372880935669,
+            "entry_y": -84.41554412841796,
+            "entry_z": 0.5,
+            "pass_index": 158,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 168,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 160 plunge entry",
+        "move_start": 1729,
+        "move_end": 1734,
+        "xy_bbox": {
+          "min_x": 3.1637288093566895,
+          "max_x": 89.41372880935668,
+          "min_y": -84.26554412841797,
+          "max_y": -82.61554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 3.1637288093566895,
+            "entry_y": -82.61554412841797,
+            "entry_z": 0.5,
+            "pass_index": 159,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 169,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 161 plunge entry",
+        "move_start": 1738,
+        "move_end": 1743,
+        "xy_bbox": {
+          "min_x": 3.0137288093566896,
+          "max_x": 91.06372880935669,
+          "min_y": -82.01554412841797,
+          "max_y": -81.86554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.06372880935669,
+            "entry_y": -82.01554412841797,
+            "entry_z": 0.5,
+            "pass_index": 160,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 170,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 162 plunge entry",
+        "move_start": 1745,
+        "move_end": 1750,
+        "xy_bbox": {
+          "min_x": 2.5637288093566895,
+          "max_x": 91.2137288093567,
+          "min_y": -81.86554412841797,
+          "max_y": -81.41554412841796
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.5637288093566895,
+            "entry_y": -81.41554412841796,
+            "entry_z": 0.5,
+            "pass_index": 161,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 171,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 163 plunge entry",
+        "move_start": 1752,
+        "move_end": 1757,
+        "xy_bbox": {
+          "min_x": 2.7137288093566894,
+          "max_x": 91.66372880935668,
+          "min_y": -81.26554412841797,
+          "max_y": -81.11554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 91.66372880935668,
+            "entry_y": -81.11554412841797,
+            "entry_z": 0.5,
+            "pass_index": 162,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 172,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 164 plunge entry",
+        "move_start": 1759,
+        "move_end": 1764,
+        "xy_bbox": {
+          "min_x": 2.2637288093566896,
+          "max_x": 91.81372880935669,
+          "min_y": -80.96554412841797,
+          "max_y": -80.81554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 2.2637288093566896,
+            "entry_y": -80.81554412841797,
+            "entry_z": 0.5,
+            "pass_index": 163,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 173,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 165 plunge entry",
+        "move_start": 1766,
+        "move_end": 1771,
+        "xy_bbox": {
+          "min_x": 2.4137288093566895,
+          "max_x": 145.96372880935667,
+          "min_y": -80.66554412841796,
+          "max_y": -79.61554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 145.96372880935667,
+            "entry_y": -79.61554412841797,
+            "entry_z": 0.5,
+            "pass_index": 164,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 175,
+        "parent_id": 149,
+        "kind": "entry",
+        "label": "Pass 166 plunge entry",
+        "move_start": 1776,
+        "move_end": 1781,
+        "xy_bbox": {
+          "min_x": 20.31372880935669,
+          "max_x": 149.11372880935667,
+          "min_y": -106.18412883954838,
+          "max_y": -77.96554412841797
+        },
+        "z_min": 0.5,
+        "z_max": 28.0,
+        "params": {
+          "values": {
+            "entry_x": 20.31372880935669,
+            "entry_y": -106.18412883954838,
+            "entry_z": 16.999999999999982,
+            "pass_index": 165,
+            "style": "plunge entry"
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 2,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 17.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "level_index": 1,
+            "level_total": 4,
+            "z_level": 17.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 8,
+        "parent_id": 2,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 95,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 11.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "level_index": 2,
+            "level_total": 4,
+            "z_level": 11.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 120,
+        "parent_id": 95,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 122,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 5.00",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "level_index": 3,
+            "level_total": 4,
+            "z_level": 5.0
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 147,
+        "parent_id": 122,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 149,
+        "parent_id": 1,
+        "kind": "depth_level",
+        "label": "Global Z 0.50",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {
+            "level_index": 4,
+            "level_total": 4,
+            "z_level": 0.5
+          }
+        },
+        "debug_span_id": null
+      },
+      {
+        "id": 174,
+        "parent_id": 149,
+        "kind": "cleanup",
+        "label": "Waterline cleanup",
+        "move_start": null,
+        "move_end": null,
+        "xy_bbox": null,
+        "z_min": null,
+        "z_max": null,
+        "params": {
+          "values": {}
+        },
+        "debug_span_id": null
+      }
+    ]
+  },
+  "collision_count": 0,
+  "rapid_collision_count": 0,
+  "min_safe_stickout": null,
+  "truncated_core_mm2": null,
+  "untouched_material_mm2": null,
+  "reached_uncut_estimate_mm2": null,
+  "unmachined_band_area_mm2": null,
+  "tip_float_points": null,
+  "max_tip_float_mm": null,
+  "monotone_cells": null,
+  "source_stock": {
+    "cell_mm": 0.3,
+    "stock_digest": "13a53fdc66a3eefb",
+    "after": [
+      {
+        "id": 1,
+        "output": "2f27814b6fd38dae"
+      }
+    ]
+  }
+}

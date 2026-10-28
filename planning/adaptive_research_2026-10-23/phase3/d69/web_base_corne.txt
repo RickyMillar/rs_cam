@@ -1,0 +1,4 @@
+1 web bottleneck Z 17.5 | stock outside the silhouette (no holes) above 0.5: 111791 mm3
+5 web bottleneck Z 0.5 | stock outside the silhouette (no holes) above 0.5: 59500 mm3
+3 web bottleneck Z 0.5 | stock outside the silhouette (no holes) above 0.5: 59406 mm3
+4 web bottleneck Z 0.5 | stock outside the silhouette (no holes) above 0.5: 56114 mm3

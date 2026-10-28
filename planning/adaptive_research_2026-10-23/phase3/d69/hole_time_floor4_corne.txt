@@ -1,0 +1,4 @@
+1 {'time_s': 0, 'vol_mm3': 0, 'visits': 0, 'holes_touched': 0}
+3 {'time_s': 587.2, 'vol_mm3': 14521.7, 'visits': 1868, 'holes_touched': 83}
+4 {'time_s': 105.4, 'vol_mm3': 657.6, 'visits': 249, 'holes_touched': 83}
+5 {'time_s': 0, 'vol_mm3': 0, 'visits': 0, 'holes_touched': 0}

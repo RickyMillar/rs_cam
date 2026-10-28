@@ -1,0 +1,75 @@
+{
+  "project": "corne_play_base",
+  "setup_count": 2,
+  "toolpath_count": 4,
+  "total_cutting_distance_mm": 78380.34979738167,
+  "total_rapid_distance_mm": 51381.58452781846,
+  "total_runtime_s": 4995.2969848622015,
+  "air_cut_pct_of_total_runtime": 52.321548599887116,
+  "air_cut_pct_of_cutting_time": 70.46683000286606,
+  "average_engagement": 0.11135422732748189,
+  "cut_metrics_not_measured": null,
+  "collision_count": 0,
+  "collision_checks_failed": 0,
+  "rapid_collision_count": 0,
+  "default_findings": [],
+  "awaiting_prior_stock": [],
+  "simulation_resolution": {
+    "mm": 0.3,
+    "mode": "auto",
+    "source": "project",
+    "project_mm": 0.3
+  },
+  "per_toolpath": [
+    {
+      "id": 1,
+      "name": "3D Rough 1",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6201,
+      "collision_count": 0
+    },
+    {
+      "id": 5,
+      "name": "3D Rough 1 (edges, CP rest)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 2844,
+      "collision_count": 0
+    },
+    {
+      "id": 3,
+      "name": "3D Rough 1 (copy)",
+      "operation": "3D Adaptive",
+      "status": "ok",
+      "move_count": 6476,
+      "collision_count": 0
+    },
+    {
+      "id": 4,
+      "name": "Waterline 3",
+      "operation": "Waterline",
+      "status": "ok",
+      "move_count": 44354,
+      "collision_count": 0
+    }
+  ],
+  "verdict": {
+    "kind": "high_air_cut",
+    "pct_of_total_runtime": 52.321548599887116,
+    "headline": "WARNING: 52.3% air cutting of total runtime"
+  },
+  "adaptive_feed_modulation": true,
+  "modulation_state": "on (ConstrainedMax, feed scale 1.00)",
+  "gcode_export": {
+    "refused": null,
+    "machine_safety_findings": 0,
+    "machine_safety_errors": 0,
+    "load_advisories": [
+      "  toolpath 5: depth of cut, peak 12.0000 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source",
+      "  toolpath 3: depth of cut, peak 14.1505 mm, limit 4.5000 mm, from the machine rigidity factor 1.50 times the engaged diameter 3.00 mm at that depth, which is 4.50 mm; a rule of thumb with no published source"
+    ],
+    "overrides_used": [],
+    "feeds_cautions": []
+  }
+}

@@ -1,0 +1,29 @@
+{
+ "passes": 282,
+ "chains": 94,
+ "closed": 279,
+ "chain_len_hist": {
+  "1": 7,
+  "2": 2,
+  "11": 2,
+  "3": 83
+ },
+ "max_haus_holes": 0.0,
+ "max_haus_walls": 1.581,
+ "base": {
+  "entries": 282,
+  "max_link_mm": 0.0
+ },
+ "region": {
+  "entries": 282,
+  "max_link_mm": 0.0
+ },
+ "helix": {
+  "entries": 94,
+  "max_link_mm": 0.522
+ },
+ "helix_holes": {
+  "entries": 116,
+  "max_link_mm": 0.0
+ }
+}

@@ -1,0 +1,41 @@
+Act on (1):
+  Alignment pins do not key the flip: two pins of one diameter never key. The part also seats on the dowels turned 180 deg. The worst pin then misses its hole by only 0.0 mm; a wrong seating is blocked only at 3.0 mm. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. — Two pins of one diameter never key: a half turn about their midpoint puts each hole on the other dowel. Use one pin on the flip axis plus a mirror pair off the axis, or two pins of different diameters. Do not put the three pins in a line or in an equilateral triangle. The stock panel's "Auto-place keyed pins" places the first pattern.
+
+Advisories:
+  397.1s wasted around (177.0, 164.8, 8.0) — engagement 0.19
+  9.1s wasted around (144.9, 202.8, 8.3) — engagement 0.25
+  2.9s wasted around (23.0, 196.7, 16.1) — engagement 0.02
+  2.9s wasted around (47.0, 28.0, 16.1) — engagement 0.01
+  2.7s wasted around (217.2, 155.4, 16.1) — engagement 0.01
+  2.7s wasted around (23.0, 115.3, 16.1) — engagement 0.00
+  2.7s wasted around (22.8, 150.0, 16.1) — engagement 0.03
+  2.7s wasted around (22.8, 88.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 66.0, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 78.0, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 82.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 73.8, 16.1) — engagement 0.01
+  2.7s wasted around (22.8, 61.8, 16.1) — engagement 0.02
+  2.7s wasted around (22.8, 88.2, 16.1) — engagement 0.01
+  2.7s wasted around (23.0, 93.8, 11.2) — engagement 0.01
+  2.7s wasted around (23.0, 99.3, 16.1) — engagement 0.00
+  2.3s wasted around (203.1, 28.0, 16.1) — engagement 0.02
+  2.1s wasted around (190.1, 28.0, 10.0) — engagement 0.01
+  2.1s wasted around (209.1, 28.0, 16.1) — engagement 0.03
+  2.1s wasted around (179.1, 28.0, 16.1) — engagement 0.04
+  ... 701 more not shown
+
+Counts: 196454 samples | 52123 flagged-air + 8513 flagged-low (per SAMPLE) | 19676 issue runs (COALESCED, the legacy "issue_count") | 721 hotspots
+
+Exceeded without refusing the export, because the bound does not gate one:
+  toolpath 1: depth of cut, peak 12.4188 mm, limit 9.0000 mm, from the machine rigidity factor 1.50 times the engaged diameter 6.00 mm at that depth, which is 9.00 mm; a rule of thumb with no published source
+
+=== Project Diagnostics: wanaka_play_base ===
+Toolpaths: 2  |  Cutting: 83550mm  |  Rapid: 29918mm  |  Time: 3121s
+Air cutting: 39.6% of total runtime  |  Avg engagement: 0.25  |  Peak commanded advance/tooth: 0.104 mm/tooth
+  [ ] #1 2 Back Rough (3D Adaptive) — 14558 moves, 0 collisions
+      kinematics: 100% of commanded (97% feed-bound → +18% at ×1.30, 3% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+  [ ] #7 2 Back Rough (edges, CP rest) (3D Adaptive) — 3157 moves, 0 collisions
+      kinematics: 100% of commanded (100% feed-bound → +21% at ×1.30, 0% machine-bound; plunge peak 1.0× plunge rate) (emitted)
+Adaptive feed modulation: on (ConstrainedMax, feed scale 1.00)
+Verdict: [ ] OK
+Output: /home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/base_wanaka

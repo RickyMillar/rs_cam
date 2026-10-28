@@ -1,0 +1,44 @@
+   0.003201754s  INFO rs_cam_core::session::project_file: Loaded mesh model name=Corne Case Hex.stl tris=6724
+   0.006058699s  INFO rs_cam_core::session::project_file: Normalized the rest-analysis demand on load toolpath=3D Rough 1 enabled=true
+   0.006087813s  INFO rs_cam_cli::project: Loaded project name=corne_play_base tools=2 models_loaded=true setups=2
+   0.042623251s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=14
+   0.165577356s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::path: Z levels computed count=4 z_top=17.0 z_bottom=0.5 depth_per_pass=6.0
+   0.171174747s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=17.0 region=1 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.258 shortfall_inset_mm=0.252 measured_after_mm=0.510 region_area_mm2=13841.6 centre_area_mm2=13460.5 target_area_mm2=13458.5 excess_mm2=2.02 allowed_mm2=238.32 decision="grown, no sweep"
+   1.434769951s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=11.0 region=1 area_mm2=1375.2 why="F-038 forecast"
+   1.437605285s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=11.0 region=2 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.276 shortfall_inset_mm=0.234 measured_after_mm=0.510 region_area_mm2=8408.4 centre_area_mm2=8092.7 target_area_mm2=8090.7 excess_mm2=1.98 allowed_mm2=198.30 decision="grown, no sweep"
+   2.577319547s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=5.0 region=1 area_mm2=1375.2 why="F-038 forecast"
+   2.579953522s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=5.0 region=2 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.276 shortfall_inset_mm=0.234 measured_after_mm=0.510 region_area_mm2=8408.4 centre_area_mm2=8092.7 target_area_mm2=8090.7 excess_mm2=1.98 allowed_mm2=198.30 decision="grown, no sweep"
+   3.779370645s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C38 piece left to the rest pass z=0.5 region=1 area_mm2=1375.2 why="F-038 forecast"
+   3.782506885s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d::clearing: C31 region opening z=0.5 region=2 cell_mm=0.5 nominal_margin_mm=0.550 measured_before_mm=0.276 shortfall_inset_mm=0.234 measured_after_mm=0.510 region_area_mm2=8408.4 centre_area_mm2=8092.7 target_area_mm2=8090.7 excess_mm2=1.98 allowed_mm2=198.30 decision="grown, no sweep"
+   5.057978852s  INFO generate_toolpath{index=0}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=6337 annotations=139 cutting_mm=27902.113865603427 rapid_mm=3258.280857781664
+   5.072679018s  INFO generate_toolpath{index=0}: rs_cam_core::surface::rest_field: Rest-field detector complete grid="301x218" rest_volume_mm3="13082.6" pencil_regions=5 clearing_regions=1 centerlines=8 coverage="0.74" measurement=stock volume (mm³); measured on the rest-depth mask; 0.500 mm cell, caller-pinned grid
+   5.072702763s  INFO generate_toolpath{index=0}: rs_cam_core::compute::execute::dressup_apply: generic rest analysis attached region set regions=3 pre_cap=3 total_area_mm2="3648.9" cell_mm=0.5 min_valley_depth=0.05
+   5.072745213s  WARN generate_toolpath{index=0}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports operations that start from flat stock, not mesh-derived surfaces. toolpath=3D Rough 1
+   5.356107925s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=29
+   5.757870461s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::path: Z levels computed count=4 z_top=17.0 z_bottom=0.5 depth_per_pass=6.0
+   5.804936019s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: band band_cells=25217 polygons=1 rings=2 ring_mm=1194.0
+   5.814724194s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=17.0 segments=26 under_5mm=10 length_mm=751.5446793345033
+   5.862799101s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=11.0 segments=6 under_5mm=0 length_mm=245.99036423323517
+   5.897200343s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=5.0 segments=6 under_5mm=0 length_mm=245.99036423323517
+   5.937750573s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=0.5 segments=6 under_5mm=0 length_mm=245.99036423323517
+   5.967621171s  INFO generate_toolpath{index=1}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=1848 annotations=191 cutting_mm=8905.902595647656 rapid_mm=9679.943177396608
+   5.968361895s  WARN generate_toolpath{index=1}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=3D Rough 1 (edges, CP rest)
+   6.397935233s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::path: Surface heightmap complete elapsed_ms=20
+   6.975922953s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::path: Z levels computed count=6 z_top=13.349493026733398 z_bottom=0.5 depth_per_pass=3.0
+   7.217020418s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: band band_cells=8506 polygons=1 rings=1 ring_mm=680.1
+   7.218940740s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=13.349493026733398 segments=0 under_5mm=0 length_mm=-0.0
+   7.230666892s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=10.349493026733398 segments=0 under_5mm=0 length_mm=-0.0
+   7.241128083s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=7.349493026733398 segments=0 under_5mm=0 length_mm=-0.0
+   7.251920598s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=4.349493026733398 segments=0 under_5mm=0 length_mm=-0.0
+   7.265194080s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=1.3494930267333984 segments=0 under_5mm=0 length_mm=-0.0
+   7.289718139s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d::clearing: D68 band edge: level z=0.5 segments=0 under_5mm=0 length_mm=-0.0
+   7.318941880s  INFO generate_toolpath{index=2}: rs_cam_core::adaptive3d: 3D adaptive toolpath complete moves=6486 annotations=308 cutting_mm=19578.89047120827 rapid_mm=19085.020977469314
+   7.319616058s  WARN generate_toolpath{index=2}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=3D Rough 1 (copy)
+   8.149120273s  WARN generate_toolpath{index=3}: rs_cam_core::session::compute: Skipping feed optimization: Phase 1 feed optimization only supports fresh stock, not remaining-stock workflows. toolpath=Waterline 3
+   9.245994056s  INFO rs_cam_cli::project: generation plan finished steps=7 simulations=4 blocked=0
+   9.246027358s  INFO rs_cam_cli::project: S5 prefix memo over the generation plan lookups=4 hits=0 entries_reused=0
+  11.416416379s  INFO rs_cam_cli::project: Wrote simulation artifact path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2_corne/simulation.json
+  12.392929861s  WARN export_gcode_checked{policy=ToolLoadExportPolicy { accept_unmodeled: false, accept_exceeded: false }}: rs_cam_core::tool_load::depth: depth gate Exceeds: the measured depth is past the machine rigidity cap verdict="Exceeds" peak_mm=12.0 cap_mm=9.0 factor=1.5
+  12.403760687s  WARN export_gcode_checked{policy=ToolLoadExportPolicy { accept_unmodeled: false, accept_exceeded: false }}: rs_cam_core::tool_load::depth: depth gate Exceeds: the measured depth is past the machine rigidity cap verdict="Exceeds" peak_mm=14.150506973266602 cap_mm=4.5 factor=1.5
+  12.478163476s  INFO rs_cam_cli::project: Wrote project summary path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2_corne/summary.json
+  12.478424497s  INFO rs_cam_cli::project: Wrote G-code path=/home/ricky/personal_repos/rs_cam/planning/adaptive_research_2026-10-23/phase3/d69/opt2_corne/program.nc bytes=1768871 modulated=true kinematics_injected=false
