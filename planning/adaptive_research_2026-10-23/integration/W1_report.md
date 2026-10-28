@@ -1,7 +1,9 @@
 # W1 report: helical Waterline (D69 §2, G-WLCONTINUOUS)
 
-Patch: `W1.patch` (diff against HEAD `5ca83fb6d`; it also applies on `5974e642c` + C2 + GT, because it touches no file of
-those commits). md5 in the final message. Nothing is committed.
+Patch: `W1.patch` = `git diff a884902e6~1 a884902e6` (the lead's commit of W1, 11 files), md5
+`bcb1c0a0ceb8cf19c46fbe5559e04ac7`. The first freeze (md5 d9c199f0…) held only the new test file: the path list was
+one zsh variable, and zsh does not split it, so `git diff HEAD -- $P` matched nothing. The commit holds exactly the
+11 paths of this report.
 
 ## What the patch does
 
