@@ -290,8 +290,9 @@ fn every_project_load_route_fits_the_camera() {
         "app.rs must record that RS_CAM_JOB loaded something"
     );
     assert!(
-        APP_SRC.contains("if loaded_a_job {")
-            && APP_SRC.contains("fit_to_first_model(app.controller.state_mut())"),
+        APP_SRC.find("if loaded_a_job {").is_some_and(|at| {
+            APP_SRC[at..APP_SRC.len().min(at + 200)].contains("fit_to_first_model(")
+        }),
         "app.rs must fit the camera once the app exists, for a job loaded at startup"
     );
 }

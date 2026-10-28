@@ -1041,7 +1041,10 @@ fn get_ui_view_reads_the_focus_kind_and_the_camera_echo_f3() {
         .expect("the toolpath")
         .id;
     let _ = state.set_focus(Selection::Toolpath(id));
-    state.camera.preset(crate::render::camera::ViewPreset::Top);
+    state.camera.preset(
+        crate::render::camera::ViewPreset::Top,
+        crate::state::camera::CameraWrite::Instant,
+    );
 
     let answer: serde_json::Value =
         serde_json::from_str(&super::view::get_ui_view_json(&state)).expect("JSON");

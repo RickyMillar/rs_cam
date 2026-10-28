@@ -31,7 +31,7 @@ use rs_cam_mcp::server::{CameraParam, CameraPoseParam};
 use rs_cam_viz::render::camera::{ProjectionMode, ViewPreset};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::camera::{
-    CameraEcho, CameraRequest, FitTarget, apply_camera_request, fit_to_first_model,
+    CameraEcho, CameraRequest, CameraWrite, FitTarget, apply_camera_request, fit_to_first_model,
 };
 
 fn bits(m: [[f32; 4]; 4]) -> [[u32; 4]; 4] {
@@ -82,7 +82,7 @@ fn a_view_preset_gives_one_view_by_key_and_by_mcp_cam9() {
         ] {
             let mut by_key = AppState::new();
             by_key.camera.set_projection(projection);
-            by_key.camera.preset(preset);
+            by_key.camera.preset(preset, CameraWrite::Instant);
             let mut by_mcp = AppState::new();
             let echo = apply_camera_request(
                 &mut by_mcp,
@@ -105,10 +105,42 @@ fn a_view_preset_gives_one_view_by_key_and_by_mcp_cam9() {
     assert_eq!(checked, 8, "every arm ran");
 }
 
+/// A C4: the eased key path ends on the same view as the MCP preset.
+#[test]
+fn an_eased_preset_ends_on_the_mcp_view_cam9() {
+    let duration = 0.24;
+    for preset in [
+        ViewPreset::Top,
+        ViewPreset::Front,
+        ViewPreset::Right,
+        ViewPreset::Isometric,
+    ] {
+        let mut by_key = AppState::new();
+        by_key
+            .camera
+            .preset(preset, CameraWrite::Eased { now: 0.0, duration });
+        assert!(!by_key.camera.advance(duration + 1.0), "the move ended");
+        let mut by_mcp = AppState::new();
+        let _ = apply_camera_request(
+            &mut by_mcp,
+            &CameraRequest {
+                preset: Some(preset),
+                ..CameraRequest::default()
+            },
+        )
+        .expect("a preset is never refused");
+        assert_eq!(
+            bits(by_key.camera.pose().view_proj(16.0 / 9.0)),
+            bits(by_mcp.camera.pose().view_proj(16.0 / 9.0)),
+            "{preset:?}"
+        );
+    }
+}
+
 #[test]
 fn fit_model_is_reset_view_cam9() {
     let mut by_key = state_with_a_model();
-    fit_to_first_model(&mut by_key);
+    fit_to_first_model(&mut by_key, CameraWrite::Instant);
     let mut by_mcp = state_with_a_model();
     let echo = apply_camera_request(
         &mut by_mcp,

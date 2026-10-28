@@ -840,7 +840,10 @@ impl RsCamApp {
                 // does. An agent's very next call is usually
                 // `screenshot_gui`, and before this the viewport still held
                 // the previous project's framing.
-                crate::state::camera::fit_to_first_model(self.controller.state_mut());
+                crate::state::camera::fit_to_first_model(
+                    self.controller.state_mut(),
+                    crate::state::camera::CameraWrite::Instant,
+                );
                 let name = self.controller.state().session().name().to_owned();
                 let tp_count = self.controller.state().session().toolpath_count();
                 let setup_count = self.controller.state().session().setup_count();

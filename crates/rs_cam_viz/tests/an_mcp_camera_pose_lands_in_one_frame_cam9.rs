@@ -58,9 +58,10 @@ fn wire(pose: CameraPoseParam) -> CameraRequest {
 #[test]
 fn a_refused_request_changes_nothing_cam9() {
     let mut state = AppState::new();
-    state
-        .camera
-        .preset(rs_cam_viz::render::camera::ViewPreset::Isometric);
+    state.camera.preset(
+        rs_cam_viz::render::camera::ViewPreset::Isometric,
+        rs_cam_viz::state::camera::CameraWrite::Instant,
+    );
     let before = *state.camera.pose();
 
     let refused = [
