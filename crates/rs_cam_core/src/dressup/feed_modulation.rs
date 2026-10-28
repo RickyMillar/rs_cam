@@ -291,6 +291,9 @@ pub struct ModulationContext<'a> {
     /// [`CuttingCeilingMmMin`] type, made only by
     /// `MachineProfile::cutting_ceiling`, so the travel rate
     /// (`MachineProfile::max_feed_mm_min`) cannot pose as the cap.
+    /// G-FEEDMAX: the session lowers it to the op's
+    /// `DressupConfig::feed_max_rate` ([`CuttingCeilingMmMin::capped_at`]),
+    /// so no modulated feed exceeds that dial.
     pub cutting_ceiling: CuttingCeilingMmMin,
     /// Rapid-move feed (mm/min) the machine emits for `G0`. Used only
     /// to thread the kinematics integrator correctly; rapids
@@ -973,9 +976,14 @@ pub fn adaptive_feed_modulate_with_materials(
             (ModulationStrategy::ConstrainedMax, Some(band)) => {
                 if engagement.radial_woc_fraction <= 1e-6 && engagement.axial_doc_fraction <= 1e-6 {
                     // No engagement — leave the commanded feed
-                    // alone. Record the per-move entry so the
-                    // diagnostic surface can still see it.
-                    (commanded, BindingConstraint::MachineMaxFeed)
+                    // alone, under the ceiling (G-FEEDMAX: the ceiling
+                    // holds the op's `feed_max_rate`, a hard cap of every
+                    // arm). Record the per-move entry so the diagnostic
+                    // surface can still see it.
+                    (
+                        commanded.min(ctx.cutting_ceiling.mm_min()),
+                        BindingConstraint::MachineMaxFeed,
+                    )
                 } else {
                     max_safe_feed_for_move(engagement, band, ctx, predicted_cap)
                 }

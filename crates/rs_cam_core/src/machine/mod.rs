@@ -196,6 +196,7 @@ impl TravelRateMmMin {
 /// `min(travel, DEFAULT_CUTTING_FEED_CAP_MM_MIN)`, never above the travel
 /// rate. Only [`MachineProfile::cutting_ceiling`] makes one; the field is
 /// private, so a travel rate cannot pose as a cutting cap.
+/// [`Self::capped_at`] can only lower it (G-FEEDMAX).
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct CuttingCeilingMmMin(f64);
 
@@ -211,6 +212,18 @@ impl CuttingCeilingMmMin {
     #[must_use]
     pub const fn at_least(self, floor_mm_min: f64) -> Self {
         Self(self.0.max(floor_mm_min))
+    }
+
+    /// G-FEEDMAX: the ceiling, lowered to the op's own cut-feed cap
+    /// (`DressupConfig::feed_max_rate`) when that is set, finite and
+    /// above zero. It only lowers, so the result is still no faster than
+    /// the machine: a cap above the machine ceiling changes nothing.
+    #[must_use]
+    pub fn capped_at(self, cap_mm_min: Option<f64>) -> Self {
+        match cap_mm_min {
+            Some(cap) if cap.is_finite() && cap > 0.0 => Self(self.0.min(cap)),
+            _ => self,
+        }
     }
 }
 

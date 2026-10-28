@@ -1525,6 +1525,9 @@ struct AdvisorContext {
     /// The cutter the toolpath is bound to. `None` when the toolpath names
     /// no tool in the project; the advisor then times the raw path.
     stored_tool: Option<ToolConfig>,
+    /// G-FEEDMAX: the toolpath's `DressupConfig::feed_max_rate`, which caps
+    /// the modulated candidate as it caps the post-sim pass.
+    feed_max_rate: Option<f64>,
     /// The world-frame stock bounding box.
     stock_bbox: BoundingBox3,
     /// Q1: the bbox of the model this toolpath machines, matched on
@@ -1803,7 +1806,13 @@ fn optimized_candidate(
     // the post-sim pass does. It read the travel rate here, so a candidate
     // could be modulated to cut at the rapid rate. Rapids keep the travel
     // rate, which `recommend_strategy` also times them at.
-    let max_feed = context.machine.cutting_ceiling().at_least(1.0);
+    // G-FEEDMAX: the op's `feed_max_rate` caps the candidate too, so the
+    // advisor times the feeds the post-sim pass would give.
+    let max_feed = context
+        .machine
+        .cutting_ceiling()
+        .capped_at(context.feed_max_rate)
+        .at_least(1.0);
     let rapid_feed = context.machine.travel_rate().mm_min().max(1.0);
 
     let cut_trace =

@@ -687,6 +687,7 @@ impl ProjectSession {
             toolpath_enabled: tc.enabled,
             stored_operation: tc.operation.clone(),
             stored_tool: self.toolpath_tool(tc).cloned(),
+            feed_max_rate: tc.dressups.feed_max_rate,
             stock_bbox: self.stock_bbox(),
             model_bbox: self.model_bbox_by_id(tc.model_id),
             setup_ctx: super::SetupEvalContext::build_for_setup(self, setup),
