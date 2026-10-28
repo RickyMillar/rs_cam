@@ -674,3 +674,57 @@ fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
     assert!(frame.painted.iter().all(|p| p.rows == 1), "no text wraps");
     assert!(frame.excess_width <= 0.5, "the row fits the panel");
 }
+
+/// G-E sub-step 4: a header validation error is one line: no wrap, one
+/// line more than the clean panel, the tab strip down by one line at most.
+/// The 3D Rough is bound to the 2D model, so it has no 3D mesh.
+#[test]
+fn a_validation_error_takes_one_line_g_e() {
+    use rs_cam_core::session::{Command, SetToolpathModelArgs};
+    let mut state = fixture();
+    let configs = state.session().toolpath_configs();
+    let index = configs
+        .iter()
+        .position(|c| c.name == "3D Rough")
+        .expect("fixture toolpath");
+    let id = configs[index].id;
+    let tab_top = |painted: &[Painted]| {
+        painted
+            .iter()
+            .find(|p| p.text == "Geometry")
+            .and_then(|p| p.bands.first().map(|b| b.0))
+            .expect("the tab strip paints")
+    };
+    let clean = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    let _ = state
+        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
+            index,
+            model_id: ModelId::from_raw(MODEL_2D),
+        }))
+        .expect("the model edit applies");
+    let refused = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    assert!(
+        refused
+            .painted
+            .iter()
+            .any(|p| p.text.starts_with("Selected model")),
+        "non-vacuity: the validation error paints: {:?}",
+        refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
+    );
+    assert!(refused.painted.iter().all(|p| p.rows == 1), "no text wraps");
+    let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
+    assert!(
+        (0.0..30.0).contains(&moved),
+        "the tab strip moves down one line at most, not {moved:.1} points"
+    );
+}

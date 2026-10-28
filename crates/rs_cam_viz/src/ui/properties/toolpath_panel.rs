@@ -11,7 +11,6 @@ use super::pills::PillSuggestions;
 use super::tab_badges::{
     RowTier, compute_tab_badges, draw_geometry_wiring, draw_start_from, draw_toolpath_tabs,
     merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_line,
-    wrapped_small_label,
 };
 use super::{
     ReachPanelSummary, ToolpathPanelInputs, ToolpathPanelSnapshot, ToolpathTab,
@@ -169,25 +168,27 @@ pub(super) fn draw_toolpath_panel(
                 section_refusal.as_deref() == Some(err.as_str())
                     || hole_refusal == Some(err.as_str())
             });
-        if !owned.is_empty() {
-            let detail = owned
-                .iter()
-                .map(|err| err.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-            ui.add(
-                OneLine::new(REFUSED_SEE_GEOMETRY)
-                    .color(crate::ui::tokens::DANGER)
-                    .detail(detail),
-            );
-        }
-        for err in other {
-            // A sentence, so it wraps explicitly rather than inheriting a
-            // wrap mode from whatever layout encloses this panel
-            // (G-REACHWRAP). It blocks Generate, so it is the danger colour
-            // and it is the one header line that may wrap (IC1).
-            wrapped_small_label(ui, err.clone(), crate::ui::tokens::DANGER);
-        }
+        // G-E (4), §7.2 rule 5: above the tab strip at most ONE refusal
+        // line. The Geometry tab's refusal names its tab; else the first
+        // validator sentence is the face, truncated. The hover holds every
+        // validation error. Before G-E each sentence wrapped (up to 3 rows
+        // each), and the tabs moved down.
+        let detail = owned
+            .iter()
+            .chain(other.iter())
+            .map(|err| err.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let face = if owned.is_empty() {
+            other.first().map_or("", |err| err.as_str())
+        } else {
+            REFUSED_SEE_GEOMETRY
+        };
+        ui.add(
+            OneLine::new(face)
+                .color(crate::ui::tokens::DANGER)
+                .detail(detail),
+        );
     }
 
     // Contextual diagnostics (non-blocking). Native `Diagnostic`
