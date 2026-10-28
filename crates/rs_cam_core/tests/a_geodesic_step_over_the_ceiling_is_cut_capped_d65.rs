@@ -93,6 +93,7 @@ fn params() -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: Some(StepSplit::StockDepth),
             keep_down_route: Some(KeepDownRoute::CutFeed),
+            level_contour: None,
         },
         feed_rate: FEED,
         plunge_rate: 500.0,

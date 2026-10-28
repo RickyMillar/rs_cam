@@ -26,6 +26,7 @@ mod centre_clip;
 mod clearing;
 mod intended_floor;
 mod keep_down;
+mod level_contour;
 mod outer_band;
 mod path;
 mod region_map;
@@ -274,6 +275,20 @@ pub struct Adaptive3dLinking {
     /// travel at an entry ([`KeepDownRoute`]). `None` is the strategy's
     /// default: [`KeepDownRoute::Off`] for every shipped strategy.
     pub keep_down_route: Option<KeepDownRoute>,
+    /// C4 (`Adaptive3dConfig::contour_each_level`): the contour on each
+    /// level along the machining boundary where stock in reach stands
+    /// (G-RESTDOC). `None`: off, and the plan is today's.
+    pub level_contour: Option<LevelContour>,
+}
+
+/// C4: the settings of the contour on each level
+/// ([`Adaptive3dLinking::level_contour`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LevelContour {
+    /// The machine's link timing, for the one feed-or-retract rule
+    /// (`machine::kinematics::retract_saves_time`) that joins two runs on
+    /// one ring. `None`: the runs are not joined.
+    pub link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
 }
 
 /// Where a draped cut is split at a step between two lifted points

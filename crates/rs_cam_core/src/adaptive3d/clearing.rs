@@ -406,6 +406,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// them), each with its Z level. The waterline cleanup of that level
     /// skips a contour inside one.
     pub(super) left_pieces: std::cell::RefCell<Vec<(f64, crate::polygon::Polygon2)>>,
+    /// C4 (`Adaptive3dLinking::level_contour`): the reach band and its
+    /// contour on each level. `None`: the option is off, or the rough has
+    /// no band.
+    pub(super) band_edge: std::cell::RefCell<Option<super::level_contour::BandEdge>>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -607,6 +611,28 @@ pub(super) struct PlannerCursor {
 /// planner spent seven weeks believing it had removed material its own
 /// emitted toolpath leaves standing — see
 /// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
+/// The path the emitter ships for a cut `path`: `drape_path_to_leave`,
+/// then `simplify_path_3d` at `tolerance`, then `blend_corners_3d` at
+/// `min_cutting_radius` (the order of [`stamp_emitted_segment`]'s list).
+/// C4's band state is lowered along it, as the stamp is.
+pub(super) fn shipped_cut_path(
+    path: &[P3],
+    tolerance: f64,
+    min_cutting_radius: f64,
+    drape: &StampDrape<'_>,
+) -> Vec<P3> {
+    let draped = drape_path_to_leave(
+        path,
+        drape.mesh,
+        drape.index,
+        drape.cutter,
+        drape.stock_to_leave,
+        drape.cutter.radius(),
+    );
+    let simplified = simplify_path_3d(&draped, tolerance);
+    blend_corners_3d(&simplified, min_cutting_radius)
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -636,16 +662,7 @@ fn stamp_emitted_segment(
             // the SAME tubes the simulator will stamp from the emitted
             // feeds. Order matters: the emitter drapes BEFORE
             // simplifying, so the RDP sees the densified, lifted path.
-            let draped = drape_path_to_leave(
-                path,
-                drape.mesh,
-                drape.index,
-                drape.cutter,
-                drape.stock_to_leave,
-                drape.cutter.radius(),
-            );
-            let simplified = simplify_path_3d(&draped, tolerance);
-            let blended = blend_corners_3d(&simplified, min_cutting_radius);
+            let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape);
             // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
             // from where the tool stands, not from `blended[0]`. Stamp the
             // same polyline: the tool position, then `blended[1..]`. With
@@ -971,6 +988,29 @@ pub(super) fn step_load(
     clearance: f64,
     cutter: &StepLoadCutter<'_>,
 ) -> f64 {
+    step_load_on(
+        stock,
+        &|row, col| super::stock_top_z_at(stock, row, col),
+        p,
+        q,
+        radius,
+        clearance,
+        cutter,
+    )
+}
+
+/// [`step_load`] with the column top of each cell read by `top_at` in place
+/// of the planner stock. C4's contour on each level reads the planner stock
+/// together with the reach band, which the boundary clear took out of it.
+pub(super) fn step_load_on(
+    stock: &TriDexelStock,
+    top_at: &dyn Fn(usize, usize) -> f64,
+    p: P3,
+    q: P3,
+    radius: f64,
+    clearance: f64,
+    cutter: &StepLoadCutter<'_>,
+) -> f64 {
     let grid = &stock.z_grid;
     let cs = grid.cell_size;
     let (dx, dy) = (q.x - p.x, q.y - p.y);
@@ -1007,7 +1047,7 @@ pub(super) fn step_load(
                 if d_sq > r_sq {
                     continue;
                 }
-                let mut top = super::stock_top_z_at(stock, row as usize, col as usize);
+                let mut top = top_at(row as usize, col as usize);
                 for j in 0..k {
                     let tj = j as f64 / n as f64;
                     let (jx, jy) = (p.x + dx * tj, p.y + dy * tj);
@@ -1046,7 +1086,7 @@ pub(super) fn step_load(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
 )]
-fn push_segment_with_stamp(
+pub(super) fn push_segment_with_stamp(
     segments: &mut Vec<Adaptive3dSegment>,
     material_stock: &mut TriDexelStock,
     lut: &RadialProfileLUT,
@@ -2798,7 +2838,7 @@ fn grown_outlines(
 }
 
 /// The rings of a polygon: its exterior, then its holes.
-fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
+pub(super) fn polygon_rings(poly: &crate::polygon::Polygon2) -> impl Iterator<Item = &[P2]> {
     std::iter::once(poly.exterior.as_slice()).chain(poly.holes.iter().map(Vec::as_slice))
 }
 

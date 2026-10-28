@@ -138,6 +138,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             stay_down_clearance_mm: 0.5,
             step_split: None,
             keep_down_route: None,
+            level_contour: None,
         },
         feed_rate: 1000.0,
         plunge_rate: 500.0,

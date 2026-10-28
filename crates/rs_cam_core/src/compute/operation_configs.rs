@@ -1716,7 +1716,20 @@ pub struct Adaptive3dConfig {
     #[serde(default = "default_stay_down_clearance_mm")]
     #[param(min = 0.0)]
     pub stay_down_clearance_mm: f64,
+    /// C4 (G-RESTDOC, operator ruling D69 2026-10-28): after each level,
+    /// contour the edge of the machining boundary where stock the tool can
+    /// reach still stands, so no later level cuts deeper than Depth/Pass
+    /// there. Off by default; with it off the output is today's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[param(help = HELP_CONTOUR_EACH_LEVEL)]
+    pub contour_each_level: bool,
 }
+
+/// The help of [`Adaptive3dConfig::contour_each_level`].
+const HELP_CONTOUR_EACH_LEVEL: &str = "After each level, contour the edge of the machining \
+    boundary where stock the tool can reach still stands above the level, so no later level \
+    cuts deeper than Depth/Pass there. Acts on a rest rough (remaining stock) with a machining \
+    boundary. Off by default. Costs time where stock stands beyond the boundary.";
 
 fn default_stay_down_clearance_mm() -> f64 {
     // F-038b: matches dexel cell-height resolution at standard sim
@@ -1765,6 +1778,7 @@ impl Default for Adaptive3dConfig {
             // it through the per-op config / CLI flag.
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
+            contour_each_level: false,
         }
     }
 }

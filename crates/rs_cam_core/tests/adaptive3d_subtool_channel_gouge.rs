@@ -208,6 +208,7 @@ fn build_session() -> ProjectSession {
         min_region_cut_length_mm: 0.0,
         max_stay_down_distance_mm: Some(0.0),
         stay_down_clearance_mm: 0.5,
+        contour_each_level: false,
     };
 
     let tc = ToolpathConfig {

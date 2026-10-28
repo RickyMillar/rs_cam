@@ -455,6 +455,126 @@ pub(super) fn rest_ceiling_keeps_doc(
     true
 }
 
+/// C4 (D63 port, `805368f98`; G-RESTDOC): the planner cells a tool whose
+/// centre stays in `centre_boundary` can meet: the cells inside the
+/// containment grown by R + cs/2 (the cell reach of the stamp). `None` when
+/// there is no containment: every cell is in reach.
+pub(super) fn tool_reach_cells(
+    stock: &TriDexelStock,
+    centre_boundary: &[crate::polygon::Polygon2],
+    tool_radius: f64,
+) -> Option<Vec<bool>> {
+    if centre_boundary.is_empty() {
+        return None;
+    }
+    let grid = &stock.z_grid;
+    let grow = tool_radius.max(0.0) + grid.cell_size * 0.5;
+    let reach: Vec<crate::polygon::Polygon2> = centre_boundary
+        .iter()
+        .flat_map(|p| crate::polygon::offset_polygon(p, -grow))
+        .collect();
+    let mut cells = Vec::with_capacity(grid.rows * grid.cols);
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let (x, y) = grid.cell_to_world(row, col);
+            let p = crate::geo::P2::new(x, y);
+            cells.push(reach.iter().any(|q| q.contains_point(&p)));
+        }
+    }
+    Some(cells)
+}
+
+/// C4 (D63 port, G-RESTDOC): the column tops of the cells in the tool's
+/// reach ([`tool_reach_cells`]), read after the border clear and BEFORE the
+/// boundary clear, so a cell beyond the raw boundary that the disc meets
+/// still counts. Read only with `Adaptive3dLinking::level_contour` on, on
+/// prior stock.
+pub(super) struct PriorStockTops {
+    /// Row-major; `None` for a cell out of reach or with no material.
+    pub(super) tops: Vec<Option<f64>>,
+    pub(super) cols: usize,
+}
+
+impl PriorStockTops {
+    pub(super) fn read(
+        stock: &TriDexelStock,
+        centre_boundary: &[crate::polygon::Polygon2],
+        tool_radius: f64,
+    ) -> Self {
+        let reach = tool_reach_cells(stock, centre_boundary, tool_radius);
+        let grid = &stock.z_grid;
+        let mut tops = Vec::with_capacity(grid.rows * grid.cols);
+        for row in 0..grid.rows {
+            for col in 0..grid.cols {
+                let in_reach = reach
+                    .as_ref()
+                    .is_none_or(|r| r.get(row * grid.cols + col).copied().unwrap_or(false));
+                tops.push(
+                    in_reach
+                        .then(|| crate::stock::dexel::ray_top(grid.ray(row, col)).map(f64::from))
+                        .flatten(),
+                );
+            }
+        }
+        Self {
+            tops,
+            cols: grid.cols,
+        }
+    }
+
+    /// `(row, col, top)` of every reach cell that holds material.
+    pub(super) fn cells(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
+        let cols = self.cols.max(1);
+        self.tops
+            .iter()
+            .enumerate()
+            .filter_map(move |(i, top)| top.map(|t| (i / cols, i % cols, t)))
+    }
+}
+
+/// C4 (D63 port): [`level_anchor_z`] on the tops the tool can reach
+/// ([`PriorStockTops`]): the highest of them above `surface +
+/// stock_to_leave`, never above `stock_top_z`.
+pub(super) fn level_anchor_z_in_reach(
+    prior: &PriorStockTops,
+    surface_hm: &SurfaceHeightmap,
+    stock_to_leave: f64,
+    stock_top_z: f64,
+) -> f64 {
+    let mut top = f64::NEG_INFINITY;
+    for (row, col, cell_top) in prior.cells() {
+        let floor = surface_hm.z_or_bbox_floor_at(row, col) + stock_to_leave;
+        if cell_top > floor + 0.01 {
+            top = top.max(cell_top);
+        }
+    }
+    if top.is_finite() {
+        top.min(stock_top_z)
+    } else {
+        stock_top_z
+    }
+}
+
+/// C4 (D63 port): [`rest_ceiling_keeps_doc`] on the tops the tool can reach
+/// ([`PriorStockTops`]), so a cell under the edge of the disc beyond the raw
+/// boundary counts too.
+pub(super) fn rest_ceiling_keeps_doc_in_reach(
+    prior: &PriorStockTops,
+    surface_hm: &SurfaceHeightmap,
+    params: &Adaptive3dParams,
+    first_level: f64,
+) -> bool {
+    let limit = params.depth.depth_per_pass + params.geometry.tolerance;
+    prior.cells().all(|(row, col, top)| {
+        let floor = super::intended_floor::level_floor_z(
+            surface_hm.z_or_bbox_floor_at(row, col),
+            params.depth.stock_to_leave,
+            first_level,
+        );
+        top <= floor + 0.01 || top - floor <= limit
+    })
+}
+
 /// The levels from `z_top` down to `z_bot`: `z_top - step`,
 /// `z_top - 2 step`, … while above `z_bot`, then `z_bot` itself.
 ///
@@ -580,6 +700,23 @@ fn clear_planned_level(
                 cancel,
             )?;
         }
+    }
+    // C4: the contour of this level along the containment where the reach
+    // band stands (G-RESTDOC). No band: nothing.
+    let contour = super::level_contour::level_contour_pass(
+        ctx,
+        material_stock,
+        surface_hm,
+        z_level,
+        segments,
+        cursor,
+    );
+    if let Some(scope) = level_scope.as_ref()
+        && ctx.band_edge.borrow().is_some()
+    {
+        scope.set_counter("contour_runs", contour.runs as f64);
+        scope.set_counter("contour_peak_load", contour.peak_load);
+        scope.set_counter("contour_min_cap_factor", contour.min_factor);
     }
     if let Some(scope) = level_scope {
         let tally = tally_segments_for_z_level(segments.get(segs_before..).unwrap_or(&[]));
@@ -909,6 +1046,19 @@ pub(super) fn adaptive_3d_segments(
         scope.set_counter("cells", border_cleared as f64);
     }
 
+    // C4 (D63 port, G-RESTDOC): with the contour on each level, on prior
+    // stock, the column tops the tool can meet, read now, after the border
+    // clear and before the boundary clear. Off: `None`, and the anchor
+    // reads as before.
+    let prior_tops = (params.linking.level_contour.is_some() && params.initial_stock.is_some())
+        .then(|| {
+            PriorStockTops::read(
+                &material_stock,
+                &params.geometry.centre_boundary,
+                tool_radius,
+            )
+        });
+
     // Boundary clip on the internal stock. When a 2D boundary polygon is
     // provided (e.g. the model silhouette inset by tool_radius), clear
     // cells whose center is outside the boundary. This forces the bool-grid
@@ -994,13 +1144,21 @@ pub(super) fn adaptive_3d_segments(
     );
     // G-LADDERANCHOR: an operation on prior stock starts the levels at the
     // top of the material it can still cut, not at the stock box top.
-    let anchor = level_anchor_z(
-        &material_stock,
-        &surface_hm,
-        params.depth.stock_to_leave,
-        params.depth.stock_top_z,
-        params.initial_stock.is_some(),
-    );
+    let anchor = match prior_tops.as_ref() {
+        Some(prior) => level_anchor_z_in_reach(
+            prior,
+            &surface_hm,
+            params.depth.stock_to_leave,
+            params.depth.stock_top_z,
+        ),
+        None => level_anchor_z(
+            &material_stock,
+            &surface_hm,
+            params.depth.stock_to_leave,
+            params.depth.stock_top_z,
+            params.initial_stock.is_some(),
+        ),
+    };
     // D50: a consumer of a source's derived rest regions starts no higher
     // than the top of the stock the source left in them, but only while no
     // level then cuts more than one Depth/Pass (`rest_ceiling_keeps_doc`).
@@ -1010,13 +1168,12 @@ pub(super) fn adaptive_3d_segments(
         z_bottom,
         params.initial_stock.is_some(),
     );
+    let first_level = (capped - params.depth.depth_per_pass).max(z_bottom);
     let level_top = if capped < anchor
-        && !rest_ceiling_keeps_doc(
-            &material_stock,
-            &surface_hm,
-            params,
-            (capped - params.depth.depth_per_pass).max(z_bottom),
-        ) {
+        && !match prior_tops.as_ref() {
+            Some(prior) => rest_ceiling_keeps_doc_in_reach(prior, &surface_hm, params, first_level),
+            None => rest_ceiling_keeps_doc(&material_stock, &surface_hm, params, first_level),
+        } {
         debug!(
             anchor,
             capped,
@@ -1108,6 +1265,21 @@ pub(super) fn adaptive_3d_segments(
         keep_down_route: super::effective_keep_down_route(params),
         region_clip,
         left_pieces: std::cell::RefCell::new(Vec::new()),
+        // C4: the reach band, when the option is on and the rough meets
+        // stock beyond its containment.
+        band_edge: std::cell::RefCell::new(params.linking.level_contour.as_ref().and_then(
+            |contour| {
+                let (prior, clip) = (prior_tops.as_ref()?, centre_clip.as_ref()?);
+                super::level_contour::BandEdge::new(
+                    &material_stock,
+                    prior,
+                    clip,
+                    tool_radius,
+                    params.emission_chord_tolerance(),
+                    contour.link_kinematics.clone(),
+                )
+            },
+        )),
     };
 
     let mut segments = Vec::new();
@@ -2062,6 +2234,7 @@ mod tests {
                 stay_down_clearance_mm: 0.5,
                 step_split: None,
                 keep_down_route: None,
+                level_contour: None,
             },
             trochoid_cap_mult: 1.6,
             feed_rate: 1500.0,

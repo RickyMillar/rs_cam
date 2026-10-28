@@ -49,6 +49,7 @@ pub(crate) fn generate_adaptive3d(
         feed_rate: op.cut_feeds()?.feed_rate,
         plunge_rate: op.cut_feeds()?.plunge_rate,
         entry_feed_rate: op.entry_feed_rate(),
+        link_kinematics: ctx.link_kinematics.clone(),
     };
     run_volumetric(&rough, ctx, prepared)
 }
@@ -60,6 +61,8 @@ pub(crate) struct Adaptive3dRough<'a> {
     feed_rate: f64,
     plunge_rate: f64,
     entry_feed_rate: Option<f64>,
+    /// C4: the machine's link timing, for the contour on each level.
+    link_kinematics: Option<crate::machine::kinematics::LinkKinematics>,
 }
 
 impl Adaptive3dRough<'_> {
@@ -143,6 +146,12 @@ impl Adaptive3dRough<'_> {
                 stay_down_clearance_mm: cfg.stay_down_clearance_mm,
                 step_split: None,
                 keep_down_route: None,
+                // C4: the contour on each level, when the op asks for it.
+                level_contour: cfg
+                    .contour_each_level
+                    .then(|| crate::adaptive3d::LevelContour {
+                        link_kinematics: self.link_kinematics.clone(),
+                    }),
             },
             feed_rate: self.feed_rate,
             plunge_rate: self.plunge_rate,
