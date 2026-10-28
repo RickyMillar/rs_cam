@@ -1,0 +1,1001 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index 61d20cf46..fce61e840 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -30,7 +30,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ | 2.5D | Bore (`bore`) | `ops/bore.rs` | Yes | No | Shipped (2026-10-22, geometry selection P6.6). A helix mills each picked circle to its drawn size: the tool centre runs on `r = (d - D) / 2`, so the wall stands at `d / 2`. The op cuts a circle larger than the tool and at most two tool diameters (one helix then reaches the centre, so no core is left). Under the default rule it leaves out a circle of the tool size, a smaller circle and a circle of more than two tool diameters, with one note each that names the fix ("drill it with a Drill op", "use a smaller tool, or a Drill with a tool of the circle size", "use a Pocket on the circle or a larger tool"); a picked misfit circle refuses by item. A point states no size, so a Bore does not cut it. The helix descends in whole turns of at most `pitch` (default 1 mm, the dressup helix pitch), counter-clockwise for `climb`, then cuts one turn on the floor. A `finish_allowance` above zero cuts the helix at `r - a`, then one floor turn and a helix up the wall at `r`. The floor is the op floor (`floor`, as Pocket); `Floor::StockBottom` gives a through hole. A flat or bull-nose end mill only. The helix runs at the ramp feed, else the plunge rate; the feeds rows are those of the 2.5D clearing family (Pocket, Roughing); the feeds matrix gains 40 Bore cells (16 ship: end mill and bull nose; 24 refuse), 1000 in all. The dressups that add an entry, a lead or a link are stripped. With stock source "remaining stock" each hole starts at the highest remaining stock within the hole radius of its centre, and a hole with no stock above its floor is dropped. The simulation sweeps the moves and the export writes them as moves (not a drill cycle). Sentry: `a_bore_cuts_the_stated_size_p6_6` |
+ | 2.5D | Chamfer | `chamfer.rs` | Yes | No | Shipped. Runs on the Layered runner (W3.5, 2026-10-15): one level, `top_z - (w + t) / tan(a)`, from the tool angle. With stock source "remaining stock" the chamfer is skipped when no material stands within `w + t` of its tip path above that level (an edge a prior op removed); it is never clipped, because a clipped ring would start its bevel in the middle of an edge (G-RESTLEVELS claim 11). R-C and F21 (operator ruling 2026-10-23, SAFETY): each outline cuts one level below ITS OWN top: a drawing area below the op Top Z (as before), a mesh face below its plane under an auto top, a STEP edge below its Z. On a STEP model the Chamfer bevels the convex top edges only (`ItemUse::Edges`): the STEP door states the form of each ring, chain, circle and up face from the two faces at each segment (`selection::EdgeForm`); the default takes the convex top edge chains and rims (not the face rings, a departure from ruling Q3 for Chamfer only); a pick of a concave edge, of a bottom edge, or of any model edge in a Bottom or side setup refuses `NotAConvexEdge` by name. A model edge takes its material side from the model, so the Side dial applies to drawing areas only; an open edge is cut in its point order with no chord. Each item refuses `BuriedFace` against its own Z (fresh stock: the lowest item; remaining stock: each area and a band of `w + 2 t` round each edge). The model gouge guard reads a Chamfer (`Bevel`): a cut deeper than the bevel depth `w / tan(a)` below the V-bit CL Z gouges (an edge that runs into a wall); it does not see a cut into another face that is shallower than the bevel depth. Break: a STEP Chamfer default changes from the face rings to the convex chains. Sentry: `a_step_chamfer_cuts_convex_edges_only_rc` (`--features step`). |
+ | 3D | Parallel finish | `dropcutter.rs` | Yes | Yes | Shipped |
+-| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The fields `trochoid_cap_mult` and `engagement_measure` stay load-only (removal step R6): no strategy reads them, their help says so, and saved projects load unchanged (sentry `--lib the_load_only_fields_do_not_change_the_toolpath_r6`). The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only). Sentry: `a_retired_clearing_strategy_is_named_r2`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. A capped move draws dashed in every move colour mode of the 3D view (legend entry "dashed: fed at a load cap"); the move count's hover on the Generate row gives the planned count and the lowest cap; MCP `get_cut_trace` carries `capped_move_count`, `capped_min_feed_mm_min` and the bounded `capped_moves` rows (step G-B, 2026-10-28). It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
++| 3D | 3D Adaptive | `adaptive3d/` | Yes | Yes | Shipped. The planner's stamp now mirrors the emitter's stock-to-leave drape (2026-08-04); before that the planner over-stated removal on curved and steep terrain, whose operator-visible symptom was skipped passes and standing material, not a gouge. Planner/simulator parity is gated directionally as well as by count. One Depth/Pass for every level; each level drapes to the surface, so a large Depth/Pass cuts a pocket or a valley in one pass. On prior stock the levels start at the top of the remaining material, not at the stock box top. The Fine Stepdown and Mill Shallow dials and the step ladder (`coarse_steps`) are removed (2026-09-24). Strategies (removal step R2, operator ruling 2026-10-28): Contour Parallel and Geodesic Adaptive only. The strategies Adaptive, Agent Search and Contour Spiral are removed: a project file or a job op that names `adaptive`, `agent_search` or `contour_spiral` refuses at load (or at the parameter door: MCP `set_toolpath_param`, a job file) and names the fix; nothing converts. The GUI shows a load refusal in the "Project not opened" modal: one row per retired key with its fix on hover, the fix line, and `Copy` (step G-D). The fields `trochoid_cap_mult` and `engagement_measure` stay load-only (removal step R6): no strategy reads them, their help says so, and saved projects load unchanged (sentry `--lib the_load_only_fields_do_not_change_the_toolpath_r6`). The strategy advisor compares Contour Parallel with Geodesic Adaptive, and Suggest recommends `geodesic_adaptive` on mixed terrain (warn-only; the Cut tab shows it as a ⚡ chip on the Strategy row, and a click switches the strategy, step G-D). Sentry: `a_retired_clearing_strategy_is_named_r2`. Strategy **Geodesic Adaptive** (`clearing_strategy = "geodesic_adaptive"`, integration step 7.4, 2026-10-28): NEW, NOT YET MACHINE-TESTED. Each slice piece is planned by the geodesic-wavefront plan (`adaptive::geodesic`, preset C35 plan A); the passes hold the pass load, the step split reads the stock depth, a keep-down link is routed at the cut feed, and each tight turn and plunge departure carries a feed cap (`Move::feed_cap`) from the larger of its swept width and its removal per mm. A capped move draws dashed in every move colour mode of the 3D view (legend entry "dashed: fed at a load cap"); the move count's hover on the Generate row gives the planned count and the lowest cap; MCP `get_cut_trace` carries `capped_move_count`, `capped_min_feed_mm_min` and the bounded `capped_moves` rows (step G-B, 2026-10-28). It clears the body only; a piece it cannot plan is left for a rest op (follow it with a Contour Parallel rest op; a "Rest regions of …" boundary on that op takes the regions it left, see rest analysis below). The usual roughing parameters only. An older build refuses a project file that names it. Sentries: `geodesic_adaptive_keeps_the_research_geometry_s7_4`, `a_geodesic_cap_survives_every_dressup_s7_4`, `adaptive3d_emission_byte_parity` (case `geodesic_adaptive`) |
+ | 3D | Waterline | `waterline.rs` | Yes | Yes | Shipped |
+ | 3D | Pencil Finish | `pencil.rs` | Yes | Yes | Shipped |
+ | 3D | Scallop Finish | `scallop.rs` | Yes | Yes | Shipped. `iso_field` dial (2026-09-03, default off): rings from the iso-scallop field — per-point spacing, spec-correct cosine slope law, completion by construction; measured 0.875× the unified op's time at 2.5 pp better envelope coverage on terrain (`planning/metrology_2026-09-02/FINDINGS.md` §M7–M8) |
+diff --git a/crates/rs_cam_core/src/feeds/suggest.rs b/crates/rs_cam_core/src/feeds/suggest.rs
+index 030b1d99d..6d92537fb 100644
+--- a/crates/rs_cam_core/src/feeds/suggest.rs
++++ b/crates/rs_cam_core/src/feeds/suggest.rs
+@@ -449,7 +449,7 @@ pub enum SuggestWarning {
+     /// ruling Q11, G10, 2026-09-25.)
+     /// Shipped for `clearing_strategy`, where auto-selection is
+     /// deferred to v4 until the classifier is calibrated (the
+-    /// `ContourParallel` → `Adaptive` promotion on mixed terrain needs
++    /// `ContourParallel` → `GeodesicAdaptive` promotion on mixed terrain needs
+     /// uncut-band evidence, not just a bbox heuristic).
+     ///
+     /// `param` is the snake-case field name, the values are labels, and
+diff --git a/crates/rs_cam_mcp/src/server.rs b/crates/rs_cam_mcp/src/server.rs
+index 711885756..b9c2b74a2 100644
+--- a/crates/rs_cam_mcp/src/server.rs
++++ b/crates/rs_cam_mcp/src/server.rs
+@@ -1680,7 +1680,7 @@ impl TryFrom<SetStockConfigParam> for rs_cam_core::compute::stock_config::StockC
+ 
+ /// `set_machine_kinematics` — typed write path for the accel /
+ /// junction-deviation numbers that decide cycle time and the
+-/// parallel-vs-spiral strategy verdict.
++/// strategy advisor's ranking.
+ #[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+ #[serde(deny_unknown_fields)]
+ pub struct SetMachineKinematicsParam {
+@@ -1725,7 +1725,8 @@ pub struct SetBoundaryConfigParam {
+     pub offset: Option<f64>,
+     /// Required when `source` is "derived_rest_regions": the stable id
+     /// (from `get_toolpath_params`'s `id` field, not an index) of the
+-    /// toolpath whose pencil rest-depth result supplies the boundary.
++    /// toolpath whose rest regions supply the boundary (its rest analysis,
++    /// or the pieces a Geodesic Adaptive rough left).
+     pub source_toolpath_id: Option<usize>,
+     /// Required when `source` is "selection": the selection whose closed
+     /// regions bound the toolpath, as the project file holds it. The closed
+diff --git a/crates/rs_cam_viz/src/app.rs b/crates/rs_cam_viz/src/app.rs
+index 0d13d3029..da5e8670e 100644
+--- a/crates/rs_cam_viz/src/app.rs
++++ b/crates/rs_cam_viz/src/app.rs
+@@ -1294,6 +1294,13 @@ impl RsCamApp {
+             }
+         }
+ 
++        // G-D (§4): a refused interactive open, in the same modal frame.
++        if let Some(refusal) = self.controller.load_refusal()
++            && crate::ui::load_refusal_modal::draw(ctx, refusal)
++        {
++            self.controller.clear_load_refusal();
++        }
++
+         // Toast notifications (bottom-right corner)
+         {
+             self.controller.gc_notifications();
+diff --git a/crates/rs_cam_viz/src/app/input.rs b/crates/rs_cam_viz/src/app/input.rs
+index d8dfce43e..59a07c80d 100644
+--- a/crates/rs_cam_viz/src/app/input.rs
++++ b/crates/rs_cam_viz/src/app/input.rs
+@@ -722,7 +722,9 @@ impl RsCamApp {
+                 self.fit_camera_to_first_model();
+                 tracing::info!("Loaded job from {}", path.display());
+             }
+-            Err(error) => self.controller.push_error(&error),
++            // G-D (§4): a load refusal opens the "Project not opened"
++            // modal; any other error stays a toast.
++            Err(error) => self.controller.report_open_error(path, error),
+         }
+     }
+ }
+diff --git a/crates/rs_cam_viz/src/controller.rs b/crates/rs_cam_viz/src/controller.rs
+index 53830a21f..8cbdea156 100644
+--- a/crates/rs_cam_viz/src/controller.rs
++++ b/crates/rs_cam_viz/src/controller.rs
+@@ -127,6 +127,15 @@ impl Notification {
+     }
+ }
+ 
++/// G-D (§4): an interactive project open that the loader refused: the file
++/// and the core error, kept typed so the modal lists the retired keys
++/// without a parse of the text.
++#[derive(Debug)]
++pub struct LoadRefusal {
++    pub path: std::path::PathBuf,
++    pub error: Box<rs_cam_core::session::SessionError>,
++}
++
+ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
+     pub state: AppState,
+     events: Vec<AppEvent>,
+@@ -143,6 +152,9 @@ pub struct AppController<B: ComputeBackend = ThreadedComputeBackend> {
+     /// it in place while it stands.
+     pin_drill_refusals_toasted: Vec<String>,
+     show_load_warnings: bool,
++    /// G-D (§4): the last interactive open that the loader refused. The
++    /// app draws it as the "Project not opened" modal, not a toast.
++    load_refusal: Option<LoadRefusal>,
+     status_message: Option<(String, Instant)>,
+     notifications: Vec<Notification>,
+     /// G-REGEN-RACE: toolpaths whose in-flight generation this controller
+@@ -283,6 +295,7 @@ impl<B: ComputeBackend> AppController<B> {
+             load_pin_warnings: Vec::new(),
+             pin_drill_refusals_toasted: Vec::new(),
+             show_load_warnings: false,
++            load_refusal: None,
+             status_message: None,
+             notifications: Vec::new(),
+             superseded_toolpaths: std::collections::HashSet::new(),
+@@ -557,6 +570,32 @@ impl<B: ComputeBackend> AppController<B> {
+         self.show_load_warnings = show;
+     }
+ 
++    /// G-D (§4): the refused open the modal shows, or `None`.
++    pub fn load_refusal(&self) -> Option<&LoadRefusal> {
++        self.load_refusal.as_ref()
++    }
++
++    /// Close the "Project not opened" modal.
++    pub fn clear_load_refusal(&mut self) {
++        self.load_refusal = None;
++    }
++
++    /// The failure of an interactive open of `path`. A load refusal
++    /// (`VizError::ProjectLoad`) opens the modal with the structured error;
++    /// every other error is a toast, as before.
++    pub fn report_open_error(&mut self, path: &std::path::Path, error: VizError) {
++        match error {
++            VizError::ProjectLoad(error) => {
++                tracing::error!("Failed to load project {}: {error}", path.display());
++                self.load_refusal = Some(LoadRefusal {
++                    path: path.to_path_buf(),
++                    error,
++                });
++            }
++            other => self.push_error(&other),
++        }
++    }
++
+     /// Push a notification from a VizError (logs via tracing AND shows toast).
+     pub fn push_error(&mut self, error: &VizError) {
+         tracing::error!("{error}");
+diff --git a/crates/rs_cam_viz/src/controller/tests/workspace.rs b/crates/rs_cam_viz/src/controller/tests/workspace.rs
+index c7bcd3442..bbcf8d7ab 100644
+--- a/crates/rs_cam_viz/src/controller/tests/workspace.rs
++++ b/crates/rs_cam_viz/src/controller/tests/workspace.rs
+@@ -182,3 +182,32 @@ fn reset_clears_the_run_and_the_stamps_without_dirtying_project() {
+     );
+     assert_eq!(controller.state.gui.dirty, dirty_before);
+ }
++
++/// G-D (§4): an interactive open of a missing file is a load refusal. It
++/// opens the "Project not opened" modal with one row, not a toast. Any
++/// other error stays a toast.
++#[test]
++fn a_refused_open_opens_the_modal_not_a_toast_g_d() {
++    let mut controller = AppController::with_backend(ScriptedBackend::new());
++    let path = std::path::Path::new("/nonexistent/rs_cam_g_d/missing.toml");
++    let error = controller
++        .open_job_from_path(path)
++        .expect_err("a missing file does not load");
++    assert!(
++        matches!(error, crate::error::VizError::ProjectLoad(_)),
++        "the load door builds ProjectLoad: {error:?}"
++    );
++    let toasts = controller.notifications().len();
++    controller.report_open_error(path, error);
++    assert_eq!(controller.notifications().len(), toasts, "no toast");
++    let refusal = controller.load_refusal().expect("the modal opens");
++    let view = crate::ui::load_refusal_modal::RefusalView::of(refusal);
++    assert_eq!(view.file_name, "missing.toml");
++    assert_eq!(view.notices.len(), 1, "one row: {view:?}");
++    controller.clear_load_refusal();
++    assert!(controller.load_refusal().is_none());
++
++    controller.report_open_error(path, crate::error::VizError::Other("x".to_owned()));
++    assert!(controller.load_refusal().is_none(), "not a load refusal");
++    assert_eq!(controller.notifications().len(), toasts + 1, "a toast");
++}
+diff --git a/crates/rs_cam_viz/src/mcp_server.rs b/crates/rs_cam_viz/src/mcp_server.rs
+index b631e8171..b50c66053 100644
+--- a/crates/rs_cam_viz/src/mcp_server.rs
++++ b/crates/rs_cam_viz/src/mcp_server.rs
+@@ -1360,7 +1360,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "set_boundary_config",
+-        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'selection' (requires selection — the rules and picks whose closed regions bound the toolpath, holes kept, as the project file holds them; the closed shapes of model 3 are {\"rules\": [{\"source\": {\"model\": 3}, \"filter\": {\"kinds\": {\"only\": [\"loop\", \"circle\"]}}}]}; a rule can read a model other than the toolpath's own; holes=true inverts it: the toolpath cuts inside the holes of the regions, for example the area inside an edge band, and stays off the regions, and generation refuses when the regions have no hole; a selection that resolves to no closed region refuses), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose REST ANALYSIS supplies the regions; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
++        description = "Set the machining boundary for a toolpath. Sources: 'stock', 'model_silhouette', 'selection' (requires selection — the rules and picks whose closed regions bound the toolpath, holes kept, as the project file holds them; the closed shapes of model 3 are {\"rules\": [{\"source\": {\"model\": 3}, \"filter\": {\"kinds\": {\"only\": [\"loop\", \"circle\"]}}}]}; a rule can read a model other than the toolpath's own; holes=true inverts it: the toolpath cuts inside the holes of the regions, for example the area inside an edge band, and stays off the regions, and generation refuses when the regions have no hole; a selection that resolves to no closed region refuses), 'derived_rest_regions' (requires source_toolpath_id — the id of another toolpath whose regions supply the boundary: its rest analysis, or the pieces a Geodesic Adaptive rough left; any operation attaches them when its rest analysis is enabled and the project carries a mesh). Containment: 'center', 'inside', 'outside'. Invalidates cached result."
+     )]
+     async fn set_boundary_config(
+         &self,
+@@ -1374,7 +1374,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "set_rest_analysis_config",
+-        description = "Run the rest-depth detector on this toolpath after it generates. It attaches a heatmap grid and the machining regions another toolpath can use as a `derived_rest_regions` boundary. It emits no pencil centerline toolpath. `reference_tool_id` names a library tool as the reference; unset prefers the machined stock. `cell_mm`, `min_valley_depth` and `region_margin_mm` default to 0.5, 0.05 and 0.5 mm. `offset_stepover_mm` and `num_offset_passes` tune the fan the ROUTING criterion assumes; leave both unset for the canonical reach policy. The call invalidates the cached result."
++        description = "Run the rest-depth detector on this toolpath after it generates. It attaches a heatmap grid and the machining regions another toolpath can use as a `derived_rest_regions` boundary. On a Geodesic Adaptive rough the regions are the pieces it left. It emits no pencil centerline toolpath. `reference_tool_id` names a library tool as the reference; unset prefers the machined stock. `cell_mm`, `min_valley_depth` and `region_margin_mm` default to 0.5, 0.05 and 0.5 mm. `offset_stepover_mm` and `num_offset_passes` tune the fan the ROUTING criterion assumes; leave both unset for the canonical reach policy. The call invalidates the cached result."
+     )]
+     async fn set_rest_analysis_config(
+         &self,
+@@ -1901,7 +1901,7 @@ impl EmbeddedCamServer {
+ 
+     #[tool(
+         name = "set_machine_kinematics",
+-        description = "Set the live machine profile's kinematics directly, without a GRBL dump: per-axis acceleration (acceleration_x/y/z_mm_s2, GRBL $120/$121/$122), per-axis maximum rate (max_rate_x/y/z_mm_min, GRBL $110/$111/$112), junction_deviation_mm ($11), and optionally the isotropic fallback acceleration_mm_s2, max_junction_velocity_mm_min and jerk_mm_s3. Every field is optional and omitted fields keep their current value; when all three axis accelerations are given, the isotropic scalar follows their mean unless you pass one. Pass the acceleration triple and the rate triple whole, or patch one axis of a triple the machine already carries. Neither is cosmetic — acceleration drives the cycle-time integrator and the parallel-vs-spiral verdict from `recommend_clearing_strategy`, and the max rates cap every move's cruise velocity, so a Z-dominant move runs at $112 (typically 1000 mm/min) instead of the X/Y travel rate. Breaks any machine-library link (the values become inline). For a raw `$$` dump use `import_machine_settings` instead. Verify with inspect_machine."
++        description = "Set the live machine profile's kinematics directly, without a GRBL dump: per-axis acceleration (acceleration_x/y/z_mm_s2, GRBL $120/$121/$122), per-axis maximum rate (max_rate_x/y/z_mm_min, GRBL $110/$111/$112), junction_deviation_mm ($11), and optionally the isotropic fallback acceleration_mm_s2, max_junction_velocity_mm_min and jerk_mm_s3. Every field is optional and omitted fields keep their current value; when all three axis accelerations are given, the isotropic scalar follows their mean unless you pass one. Pass the acceleration triple and the rate triple whole, or patch one axis of a triple the machine already carries. Neither is cosmetic — acceleration drives the cycle-time integrator and the strategy ranking from `recommend_clearing_strategy`, and the max rates cap every move's cruise velocity, so a Z-dominant move runs at $112 (typically 1000 mm/min) instead of the X/Y travel rate. Breaks any machine-library link (the values become inline). For a raw `$$` dump use `import_machine_settings` instead. Verify with inspect_machine."
+     )]
+     async fn set_machine_kinematics(
+         &self,
+diff --git a/crates/rs_cam_viz/src/ui/components/notice.rs b/crates/rs_cam_viz/src/ui/components/notice.rs
+index 5ee3470ad..9d170d1fc 100644
+--- a/crates/rs_cam_viz/src/ui/components/notice.rs
++++ b/crates/rs_cam_viz/src/ui/components/notice.rs
+@@ -46,6 +46,9 @@ pub struct Notice {
+     pub text: String,
+     /// Optional grouping key. Notices sharing a group draw under one header.
+     pub group: Option<String>,
++    /// Optional hover text of the row: the fix or the cause, so the row
++    /// stays one short line (G-D).
++    pub detail: Option<String>,
+ }
+ 
+ impl Notice {
+@@ -54,9 +57,17 @@ impl Notice {
+             role,
+             text: text.into(),
+             group: None,
++            detail: None,
+         }
+     }
+ 
++    /// The hover text of the row.
++    #[must_use]
++    pub fn detail(mut self, detail: impl Into<String>) -> Self {
++        self.detail = Some(detail.into());
++        self
++    }
++
+     #[must_use]
+     pub fn group(mut self, group: impl Into<String>) -> Self {
+         self.group = Some(group.into());
+@@ -234,7 +245,7 @@ impl NoticeStack {
+ /// One notice row. Geometry is ruling R13.
+ fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
+     let role = row.notice.role;
+-    egui::Frame::default()
++    let frame = egui::Frame::default()
+         .fill(role.tint())
+         .corner_radius(tokens::RADIUS_SM)
+         .inner_margin(egui::Margin::symmetric(
+@@ -255,6 +266,9 @@ fn notice_row(ui: &mut egui::Ui, row: &CollapsedNotice) {
+                 }
+             });
+         });
++    if let Some(detail) = row.notice.detail.as_deref() {
++        frame.response.on_hover_text(detail);
++    }
+ }
+ 
+ /// A full-width tinted strip carrying one sentence and at most one action.
+diff --git a/crates/rs_cam_viz/src/ui/mod.rs b/crates/rs_cam_viz/src/ui/mod.rs
+index 1d5c0d381..b1fe974fc 100644
+--- a/crates/rs_cam_viz/src/ui/mod.rs
++++ b/crates/rs_cam_viz/src/ui/mod.rs
+@@ -6,6 +6,7 @@ pub mod export_wizard;
+ pub mod feeds;
+ pub mod generation_resolution_modal;
+ pub mod import_modal;
++pub mod load_refusal_modal;
+ pub mod machine_library_modal;
+ pub mod menu_bar;
+ pub mod multitool_planner;
+diff --git a/crates/rs_cam_viz/src/ui/properties/mod.rs b/crates/rs_cam_viz/src/ui/properties/mod.rs
+index 0cb6c2d3e..167919d73 100644
+--- a/crates/rs_cam_viz/src/ui/properties/mod.rs
++++ b/crates/rs_cam_viz/src/ui/properties/mod.rs
+@@ -823,8 +823,9 @@ pub(crate) fn build_entry_from_session_and_gui(
+     toolpath_panel_snapshot(id, session, gui).map(|snapshot| snapshot.entry)
+ }
+ 
+-/// The one line the Geometry tab prints above the boundary controls
+-/// (UX-R03-009, G-BOUNDARYINHERIT). It names the STORED `boundary.source`,
++/// The hover of the Cut tab's boundary `Source:` combo (UX-R03-009,
++/// G-BOUNDARYINHERIT; a row until G-D, ruling D-1). It names the STORED
++/// `boundary.source`,
+ /// which is the boundary generation clips to. `auto` appends "(auto)" when
+ /// the caller can prove the controller assigned the source on add; the
+ /// panel cannot today (no provenance is stored), so it passes `false`.
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+index 215b5cd18..e32913d1f 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+@@ -83,6 +83,10 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
+     /// `SelectionReport::holds_a_model_area`). The Pocket editor shows the
+     /// setting only then, or while it is on.
+     pub model_areas: bool,
++    /// G-D (§3): the clearing strategy that the Suggest run recommends and
++    /// did not apply (`SuggestWarning::StrategyRecommendedNotApplied`).
++    /// The 3D Rough editor draws a ⚡ chip for it beside the Strategy combo.
++    pub strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
+ }
+ 
+ /// What shape diagram an operation shows under its parameter grid.
+@@ -303,7 +307,7 @@ editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
+     draw_dropcutter_params(ui, cfg, cx.pills);
+ });
+ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
+-    draw_adaptive3d_params(ui, cfg, cx.pills);
++    draw_adaptive3d_params(ui, cfg, cx.pills, cx.strategy_suggestion);
+ });
+ editor!(
+     ed_waterline,
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index b0678233d..b2d1d5533 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -8,7 +8,7 @@ use crate::state::toolpath::{
+ };
+ 
+ use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
+-use crate::ui::components::{DataRow, DataTable, Role, UiExt as _};
++use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton, UiExt as _};
+ use rs_cam_core::compute::catalog::OperationType;
+ 
+ pub(in crate::ui::properties) fn draw_dropcutter_params(
+@@ -56,6 +56,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+     ui: &mut egui::Ui,
+     cfg: &mut Adaptive3dConfig,
+     pills: Option<&PillSuggestions>,
++    strategy_suggestion: Option<ClearingStrategy>,
+ ) {
+     // Spec: pill stepover + depth_per_pass. Removal step R2: the
+     // ContourSpiral "Optimal load" slider left with its strategy.
+@@ -159,30 +160,41 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+             }
+         }
+         ui.label("Strategy:");
+-        egui::ComboBox::from_id_salt("a3d_strat")
+-            .truncate()
+-            .selected_text(match cfg.clearing_strategy {
+-                ClearingStrategy::ContourParallel => "Contour Parallel",
+-                ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
+-            })
+-            .show_ui(ui, |ui| {
+-                ui.selectable_value(
+-                    &mut cfg.clearing_strategy,
+-                    ClearingStrategy::ContourParallel,
+-                    "Contour Parallel",
+-                );
+-                ui.selectable_value(
+-                    &mut cfg.clearing_strategy,
+-                    ClearingStrategy::GeodesicAdaptive,
+-                    "Geodesic Adaptive",
+-                )
+-                .on_hover_text(
+-                    "Geodesic-wavefront roughing per slice: spiral wraps that hold \
++        // G-D (§3): the Suggest advice is a ⚡ chip in the combo's cell, not
++        // a row. It goes when the draft already holds the recommendation.
++        let suggestion = strategy_suggestion.filter(|s| *s != cfg.clearing_strategy);
++        ui.horizontal(|ui| {
++            egui::ComboBox::from_id_salt("a3d_strat")
++                .truncate()
++                .selected_text(strategy_label(cfg.clearing_strategy))
++                .show_ui(ui, |ui| {
++                    ui.selectable_value(
++                        &mut cfg.clearing_strategy,
++                        ClearingStrategy::ContourParallel,
++                        "Contour Parallel",
++                    );
++                    ui.selectable_value(
++                        &mut cfg.clearing_strategy,
++                        ClearingStrategy::GeodesicAdaptive,
++                        "Geodesic Adaptive",
++                    )
++                    .on_hover_text(
++                        "Geodesic-wavefront roughing per slice: spiral wraps that hold \
+                          the pass load, with each tight turn fed down to that load. It \
+                          clears the body only; follow it with a Contour Parallel rest \
+                          op for the edges. New, not yet machine-tested.",
+-                );
+-            });
++                    );
++                });
++            if let Some(recommended) = suggestion {
++                let chip = SuggestButton::field(ProvKind::RepoRule).hover(format!(
++                    "Suggest: {} for this terrain (mixed-terrain classifier). Click to switch.",
++                    strategy_label(recommended)
++                ));
++                if ui.add(chip).clicked() {
++                    cfg.clearing_strategy = recommended;
++                }
++            }
++        });
+         ui.end_row();
+     });
+     advanced(ui, "a3d_adv", |ui| {
+@@ -225,6 +237,14 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+     });
+ }
+ 
++/// The label of a clearing strategy in the Strategy combo and its ⚡ hover.
++fn strategy_label(strategy: ClearingStrategy) -> &'static str {
++    match strategy {
++        ClearingStrategy::ContourParallel => "Contour Parallel",
++        ClearingStrategy::GeodesicAdaptive => "Geodesic Adaptive",
++    }
++}
++
+ pub(in crate::ui::properties) fn draw_waterline_params(
+     ui: &mut egui::Ui,
+     cfg: &mut WaterlineConfig,
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index 791b11353..2e5fe19a4 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -443,6 +443,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
+                 &mut entry,
+                 &inputs,
+                 None,
++                None,
+                 &mut crate::state::pick::SelectionUi::default(),
+                 &mut events,
+             );
+@@ -527,6 +528,7 @@ fn tab_texts(
+             &mut entry,
+             &inputs,
+             None,
++            None,
+             &mut crate::state::pick::SelectionUi::default(),
+             &mut events,
+         ),
+@@ -1634,6 +1636,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
+             &mut entry,
+             &inputs,
+             None,
++            None,
+             &mut crate::state::pick::SelectionUi::default(),
+             &mut events,
+         );
+@@ -1657,3 +1660,144 @@ fn the_tool_picker_greys_refused_tools_r2() {
+         "the Tool combo reads `No tool`; it rendered {texts:?}"
+     );
+ }
++
++/// G-D (§3): the Suggest advice to use Geodesic Adaptive is one ⚡ chip in
++/// the Strategy row, not a text row. A click writes the strategy to the
++/// draft (the panel commits it as one `ReplaceToolpathConfig`). With no
++/// advice, or when the draft already holds it, there is no chip.
++#[test]
++fn the_strategy_row_carries_the_suggest_chip_g_d() {
++    use crate::state::toolpath::{Adaptive3dConfig, ClearingStrategy};
++    use rs_cam_core::feeds::suggest::SuggestWarning;
++    let warning = SuggestWarning::StrategyRecommendedNotApplied {
++        param: "clearing_strategy",
++        current: "contour_parallel".to_owned(),
++        recommended: "geodesic_adaptive".to_owned(),
++        reason: "mixed_terrain_classifier",
++    };
++    let suggestion = super::toolpath_panel::strategy_suggestion(Some(&[warning]));
++    assert_eq!(suggestion, Some(ClearingStrategy::GeodesicAdaptive));
++    assert_eq!(super::toolpath_panel::strategy_suggestion(Some(&[])), None);
++
++    // (the chips painted, the strategy after the frames) for one run.
++    let run = |strategy: ClearingStrategy, suggestion, click: bool| {
++        let ctx = egui::Context::default();
++        crate::ui::tokens::apply(&ctx);
++        crate::ui::tokens::apply_fonts(&ctx);
++        let mut cfg = Adaptive3dConfig {
++            clearing_strategy: strategy,
++            ..Adaptive3dConfig::default()
++        };
++        let mut chip_at: Option<egui::Pos2> = None;
++        let mut chips = 0;
++        for pass in 0..5 {
++            let mut input = egui::RawInput::default();
++            if click && let Some(pos) = chip_at {
++                match pass {
++                    3 => input.events.push(egui::Event::PointerMoved(pos)),
++                    4 => {
++                        for pressed in [true, false] {
++                            input.events.push(egui::Event::PointerButton {
++                                pos,
++                                button: egui::PointerButton::Primary,
++                                pressed,
++                                modifiers: egui::Modifiers::NONE,
++                            });
++                        }
++                    }
++                    _ => {}
++                }
++            }
++            let mut out = ctx.run_ui(input, |ui| {
++                ui.set_max_width(264.0);
++                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion);
++            });
++            if pass == 2 {
++                for clipped in &out.shapes {
++                    if let egui::epaint::Shape::Text(text) = &clipped.shape
++                        && text.galley.job.text == "\u{26A1}"
++                    {
++                        chips += 1;
++                        chip_at = Some(clipped.shape.visual_bounding_rect().center());
++                    }
++                }
++            }
++            out.textures_delta.clear();
++        }
++        (chips, cfg.clearing_strategy)
++    };
++    let cp = ClearingStrategy::ContourParallel;
++    let ga = ClearingStrategy::GeodesicAdaptive;
++    // The two ⚡ pills of Stepover and Depth/Pass need pill data; with
++    // `pills: None` the only ⚡ is the Strategy chip.
++    assert_eq!(run(cp, None, false), (0, cp), "no advice, no chip");
++    assert_eq!(
++        run(ga, Some(ga), false),
++        (0, ga),
++        "the draft holds it: no chip"
++    );
++    assert_eq!(run(cp, Some(ga), false), (1, cp), "one chip, no write");
++    assert_eq!(run(cp, Some(ga), true), (1, ga), "a click writes the draft");
++}
++
++/// G-D (ruling D-1): with the boundary on, the Cut tab draws the `Source:`
++/// combo and no `Boundary: …` row above it; the row's text is the combo's
++/// hover. The row repeated the combo one line above.
++#[test]
++fn the_boundary_summary_is_the_source_hover_d1() {
++    use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
++    let (session, _mesh) = one_pocket_session();
++    let tc = &session.toolpath_configs()[0];
++    let inputs = super::toolpath_panel_inputs(
++        tc.id,
++        &session,
++        &crate::state::runtime::GuiState::default(),
++        None,
++        Some(ToolpathTab::Cut),
++        false,
++    );
++    let mut entry = ToolpathEntry::for_operation(
++        tc.id,
++        "Case".to_owned(),
++        tc.tool_id.expect("the case tool"),
++        tc.model_id,
++        OperationType::Pocket,
++    );
++    entry.boundary.enabled = true;
++    entry.boundary.source = BoundarySource::Stock;
++    let ctx = egui::Context::default();
++    crate::ui::tokens::apply(&ctx);
++    crate::ui::tokens::apply_fonts(&ctx);
++    let mut texts = Vec::new();
++    for _ in 0..2 {
++        let mut events = Vec::new();
++        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
++            super::toolpath_panel::draw_cut_tab(
++                ui,
++                &mut entry,
++                &inputs,
++                None,
++                None,
++                &mut crate::state::pick::SelectionUi::default(),
++                &mut events,
++            );
++        });
++        texts = out
++            .shapes
++            .iter()
++            .filter_map(|c| match &c.shape {
++                egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
++                _ => None,
++            })
++            .collect();
++        out.textures_delta.clear();
++    }
++    assert!(
++        texts.iter().any(|t| t == "Source:"),
++        "non-vacuity: the boundary controls draw: {texts:?}"
++    );
++    assert!(
++        !texts.iter().any(|t| t.starts_with("Boundary:")),
++        "the summary row is back: {texts:?}"
++    );
++}
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 2081fd2ad..43bf1aabd 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -250,7 +250,15 @@ pub(super) fn draw_toolpath_panel(
+             super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
+         }
+         ToolpathTab::Cut => {
+-            draw_cut_tab(ui, entry, inputs, model_bbox, selection_ui, events);
++            draw_cut_tab(
++                ui,
++                entry,
++                inputs,
++                model_bbox,
++                strategy_suggestion(suggest_warnings),
++                selection_ui,
++                events,
++            );
+         }
+ 
+         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
+@@ -429,6 +437,7 @@ pub(super) fn draw_cut_tab(
+     entry: &mut crate::state::toolpath::ToolpathEntry,
+     inputs: &ToolpathPanelInputs,
+     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
++    strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
+     selection_ui: &mut crate::state::pick::SelectionUi,
+     events: &mut Vec<AppEvent>,
+ ) {
+@@ -545,6 +554,7 @@ pub(super) fn draw_cut_tab(
+         selection_ui: &mut *selection_ui,
+         model_areas: op_report(inputs)
+             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
++        strategy_suggestion,
+     };
+     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
+     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
+@@ -578,15 +588,12 @@ pub(super) fn draw_cut_tab(
+         if entry.boundary.enabled {
+             // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
+             // one generation uses (`session/compute.rs` clones
+-            // `tc.boundary` unconditionally). Name it, then show the
+-            // controls that drive it. The controller assigns the model
++            // `tc.boundary` unconditionally). G-D (ruling D-1): its name is
++            // the hover of the Source combo, not a row above it; the row
++            // repeated the combo. The controller assigns the model
+             // silhouette on add for 3D ops on a mesh; that provenance is
+-            // not stored, so the line never claims "(auto)".
+-            ui.add(OneLine::new(boundary_summary_line(
+-                &entry.boundary,
+-                false,
+-                models,
+-            )));
++            // not stored, so the hover never claims "(auto)".
++            let source_summary = boundary_summary_line(&entry.boundary, false, models);
+             // Source selector
+             ui.horizontal(|ui| {
+                 ui.label("Source:");
+@@ -667,9 +674,9 @@ pub(super) fn draw_cut_tab(
+                                 ),
+                             )
+                             .on_hover_text(if has_rest_candidates {
+-                                "Boundary = rest regions computed by another \
+-                                 toolpath's rest analysis. Pick the source \
+-                                 toolpath below."
++                                "The regions another toolpath leaves: the pieces a \
++                                 Geodesic Adaptive rough did not cut, or another op's \
++                                 rest analysis. Pick the source below."
+                             } else {
+                                 "No other toolpaths in this project yet — add \
+                                  one and generate it to use as the source. Picking it here \
+@@ -685,7 +692,9 @@ pub(super) fn draw_cut_tab(
+                                 source_toolpath_id: default_source,
+                             };
+                         }
+-                    });
++                    })
++                    .response
++                    .on_hover_text(source_summary);
+             });
+ 
+             // GT-Q7: the Geometry tab draws the boundary selection, with the
+@@ -747,11 +756,8 @@ pub(super) fn draw_cut_tab(
+                         })
+                         .response
+                         .on_hover_text(
+-                            "The toolpath whose rest analysis supplies the \
+-                             rest regions. ANY operation produces them: picking it here \
+-                             switches its analysis on, and the project needs a mesh. The \
+-                             pencil rest-depth detector and the Unified Finish claims \
+-                             pipeline attach their own.",
++                            "The toolpath whose regions bound this one. Picking it \
++                             switches its rest analysis on.",
+                         );
+                 });
+ 
+@@ -1267,6 +1273,22 @@ pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool
+     .inner
+ }
+ 
++/// G-D (§3): the clearing strategy that the Suggest run recommends and did
++/// not apply, from its records. The token is the serde spelling of
++/// `ClearingStrategy`, so serde reads it; there is no second token table.
++pub(super) fn strategy_suggestion(
++    warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
++) -> Option<crate::state::toolpath::ClearingStrategy> {
++    warnings?.iter().find_map(|warning| match warning {
++        rs_cam_core::feeds::suggest::SuggestWarning::StrategyRecommendedNotApplied {
++            param: "clearing_strategy",
++            recommended,
++            ..
++        } => serde_json::from_value(serde_json::Value::String(recommended.clone())).ok(),
++        _ => None,
++    })
++}
++
+ /// The figures as one hover line, for a state word that may push them
+ /// out of the row.
+ fn figures_hover(row: &HeaderRow<'_>) -> String {
+diff --git a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+index 1f15a3646..5b658c717 100644
+--- a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
++++ b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+@@ -5630,7 +5630,7 @@
+           "description": "The boundary source. Omit for `stock`."
+         },
+         "source_toolpath_id": {
+-          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose pencil rest-depth result supplies the boundary.",
++          "description": "Required when `source` is \"derived_rest_regions\": the stable id\n(from `get_toolpath_params`'s `id` field, not an index) of the\ntoolpath whose rest regions supply the boundary (its rest analysis,\nor the pieces a Geodesic Adaptive rough left).",
+           "format": "uint",
+           "minimum": 0,
+           "type": [
+@@ -5892,7 +5892,7 @@
+     "inputSchema": {
+       "$schema": "https://json-schema.org/draft/2020-12/schema",
+       "additionalProperties": false,
+-      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nparallel-vs-spiral strategy verdict.",
++      "description": "`set_machine_kinematics` — typed write path for the accel /\njunction-deviation numbers that decide cycle time and the\nstrategy advisor's ranking.",
+       "properties": {
+         "acceleration_mm_s2": {
+           "description": "Isotropic fallback acceleration in mm/s^2. Only used when the\nper-axis triple is absent; when all three axes are given this is\nset to their mean unless explicitly passed.",
+diff --git a/crates/rs_cam_viz/src/ui/load_refusal_modal.rs b/crates/rs_cam_viz/src/ui/load_refusal_modal.rs
+new file mode 100644
+index 000000000..1ed54f857
+--- /dev/null
++++ b/crates/rs_cam_viz/src/ui/load_refusal_modal.rs
+@@ -0,0 +1,258 @@
++//! G-D (§4): the "Project not opened" modal. An interactive open that the
++//! loader refuses shows here, not as an 8 s toast.
++//!
++//! The frame is the load-warnings modal's (`app.rs`): `egui::Modal`, a
++//! `NoticeStack` in a scroll area, then the buttons. One row per retired
++//! key, its fix on the row hover, one fix line under the list when every
++//! row shares it, and `Copy` puts the whole refusal on the clipboard.
++
++use rs_cam_core::session::SessionError;
++
++use crate::controller::LoadRefusal;
++use crate::ui::components::{Notice, NoticeStack, Role, text};
++use crate::ui::tokens;
++
++/// The modal title.
++pub const TITLE: &str = "Project not opened";
++
++/// The fix line when the rows name different fixes.
++pub const EACH_ROW_FIX: &str = "Each line's hover names its fix.";
++
++const MODAL_WIDTH: f32 = 420.0;
++const MODAL_MAX_LIST_HEIGHT: f32 = 280.0;
++
++/// What the modal shows for one refusal, before any drawing.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct RefusalView {
++    /// The file name; the full path is its hover.
++    pub file_name: String,
++    pub path: String,
++    /// One row per retired key, or one row with the error text.
++    pub notices: Vec<Notice>,
++    /// The fix line under the list. `None` for an error with no fix.
++    pub fix: Option<String>,
++}
++
++impl RefusalView {
++    /// The view of `refusal`. A `RetiredKeys` error lists each hit; any
++    /// other load error is one row with its own text.
++    #[must_use]
++    pub fn of(refusal: &LoadRefusal) -> Self {
++        let path = refusal.path.display().to_string();
++        let file_name = refusal
++            .path
++            .file_name()
++            .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned());
++        let (notices, fix) = match refusal.error.as_ref() {
++            SessionError::RetiredKeys(found) => {
++                let notices = found
++                    .iter()
++                    .map(|hit| Notice::new(Role::Danger, hit.path.clone()).detail(hit.replacement))
++                    .collect();
++                let fix = match found.first() {
++                    Some(first) if found.iter().all(|hit| hit.replacement == first.replacement) => {
++                        first.replacement.to_owned()
++                    }
++                    _ => EACH_ROW_FIX.to_owned(),
++                };
++                (notices, Some(fix))
++            }
++            other => (vec![Notice::new(Role::Danger, other.to_string())], None),
++        };
++        Self {
++            file_name,
++            path,
++            notices,
++            fix,
++        }
++    }
++
++    /// The clipboard text of `Copy`: the path, each row with its fix, and
++    /// the fix line, one per line.
++    #[must_use]
++    pub fn copy_text(&self) -> String {
++        let mut lines = vec![self.path.clone()];
++        for notice in &self.notices {
++            match notice.detail.as_deref() {
++                Some(detail) => lines.push(format!("{}  ({detail})", notice.text)),
++                None => lines.push(notice.text.clone()),
++            }
++        }
++        if let Some(fix) = &self.fix {
++            lines.push(fix.clone());
++        }
++        lines.join("\n")
++    }
++}
++
++/// Draw the modal for `refusal`. True when the operator closed it.
++pub fn draw(ctx: &egui::Context, refusal: &LoadRefusal) -> bool {
++    let view = RefusalView::of(refusal);
++    let expand_id = egui::Id::new("load_refusal_expanded");
++    let expanded = ctx.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
++    let modal = egui::Modal::new(egui::Id::new("load_refusal_modal"))
++        .backdrop_color(tokens::SCRIM)
++        .show(ctx, |ui| {
++            ui.set_max_width(MODAL_WIDTH);
++            let response = ui.label(text::display(TITLE));
++            crate::ui::automation::record(ui, "project_load_refusal", &response, TITLE);
++            ui.label(text::caption(&view.file_name))
++                .on_hover_text(&view.path);
++            ui.add_space(tokens::SPACE_3);
++            // Rule F: the container scrolls rather than clips.
++            let expand_clicked = egui::ScrollArea::vertical()
++                .max_height(MODAL_MAX_LIST_HEIGHT)
++                .show(ui, |ui| {
++                    NoticeStack::new(view.notices.clone())
++                        .expanded(expanded)
++                        .show(ui)
++                })
++                .inner;
++            if let Some(fix) = &view.fix {
++                ui.add_space(tokens::SPACE_2);
++                ui.label(egui::RichText::new(fix).color(tokens::TEXT_BODY));
++            }
++            ui.add_space(tokens::SPACE_3);
++            let (copy, close) = ui
++                .horizontal(|ui| {
++                    let close = ui
++                        .add(crate::ui::components::Button::primary("Close"))
++                        .clicked();
++                    let copy = ui.add(crate::ui::components::Button::new("Copy")).clicked();
++                    (copy, close)
++                })
++                .inner;
++            (expand_clicked, copy, close)
++        });
++    let (expand_clicked, copy_clicked, close_clicked) = modal.inner;
++    if expand_clicked {
++        ctx.data_mut(|d| d.insert_temp(expand_id, true));
++    }
++    if copy_clicked {
++        ctx.copy_text(view.copy_text());
++    }
++    let closed = close_clicked || modal.should_close();
++    if closed {
++        ctx.data_mut(|d| d.insert_temp(expand_id, false));
++    }
++    closed
++}
++
++#[cfg(test)]
++#[expect(
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++mod tests {
++    use super::*;
++    use rs_cam_core::session::RetiredKeyFound;
++
++    fn refusal(error: SessionError) -> LoadRefusal {
++        LoadRefusal {
++            path: std::path::PathBuf::from("/jobs/wanaka_back.toml"),
++            error: Box::new(error),
++        }
++    }
++
++    const FIX: &str = "Set clearing_strategy to geodesic_adaptive or contour_parallel";
++
++    /// Two retired values: two danger rows with the fix on hover, one fix
++    /// line, and `Copy` holds the path, each row and the fix.
++    #[test]
++    fn a_retired_value_refusal_lists_each_hit_g_d() {
++        let view = RefusalView::of(&refusal(SessionError::RetiredKeys(vec![
++            RetiredKeyFound {
++                path:
++                    "setups[0].toolpaths[2].operation.params.clearing_strategy = \"agent_search\""
++                        .to_owned(),
++                replacement: FIX,
++            },
++            RetiredKeyFound {
++                path:
++                    "setups[0].toolpaths[4].operation.params.clearing_strategy = \"contour_spiral\""
++                        .to_owned(),
++                replacement: FIX,
++            },
++        ])));
++        assert_eq!(view.file_name, "wanaka_back.toml");
++        assert_eq!(view.notices.len(), 2);
++        assert!(view.notices.iter().all(|n| n.role == Role::Danger));
++        assert_eq!(view.notices[1].detail.as_deref(), Some(FIX));
++        assert_eq!(view.fix.as_deref(), Some(FIX));
++        let copy = view.copy_text();
++        assert_eq!(copy.lines().count(), 4, "path, two hits, the fix: {copy}");
++        assert!(copy.starts_with("/jobs/wanaka_back.toml\n"));
++        assert!(copy.contains("\"contour_spiral\""));
++    }
++
++    /// Two different fixes: the fix line points to the row hovers.
++    #[test]
++    fn mixed_fixes_point_to_the_hovers_g_d() {
++        let view = RefusalView::of(&refusal(SessionError::RetiredKeys(vec![
++            RetiredKeyFound {
++                path: "setups[0].fixtures".to_owned(),
++                replacement: "Removed",
++            },
++            RetiredKeyFound {
++                path: "setups[0].toolpaths[0].operation.params.clearing_strategy = \"adaptive\""
++                    .to_owned(),
++                replacement: FIX,
++            },
++        ])));
++        assert_eq!(view.fix.as_deref(), Some(EACH_ROW_FIX));
++    }
++
++    /// Any other load error: the same modal, one row with its text, no fix.
++    #[test]
++    fn another_load_error_is_one_row_g_d() {
++        let error = SessionError::MissingOperation {
++            setup: "Setup 1".to_owned(),
++            toolpath: "Edges".to_owned(),
++        };
++        let text = error.to_string();
++        let view = RefusalView::of(&refusal(error));
++        assert_eq!(view.notices.len(), 1);
++        assert_eq!(view.notices[0].text, text);
++        assert_eq!(view.fix, None);
++    }
++
++    /// The modal paints the title, the file, both hits and the fix, and
++    /// no toast: the refusal is not a notification.
++    #[test]
++    fn the_modal_paints_the_refusal_g_d() {
++        let refusal = refusal(SessionError::RetiredKeys(vec![RetiredKeyFound {
++            path: "setups[0].toolpaths[2].operation.params.clearing_strategy = \"agent_search\""
++                .to_owned(),
++            replacement: FIX,
++        }]));
++        let ctx = egui::Context::default();
++        tokens::apply(&ctx);
++        tokens::apply_fonts(&ctx);
++        let mut texts = Vec::new();
++        for _ in 0..3 {
++            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
++                let closed = draw(ui.ctx(), &refusal);
++                assert!(!closed);
++            });
++            texts = out
++                .shapes
++                .iter()
++                .filter_map(|c| match &c.shape {
++                    egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
++                    _ => None,
++                })
++                .collect();
++            out.textures_delta.clear();
++        }
++        for want in [TITLE, "wanaka_back.toml", FIX, "Copy", "Close"] {
++            assert!(
++                texts.iter().any(|t| t == want),
++                "`{want}` missing: {texts:?}"
++            );
++        }
++        assert!(
++            texts.iter().any(|t| t.contains("\"agent_search\"")),
++            "the hit is a row: {texts:?}"
++        );
++    }
++}
