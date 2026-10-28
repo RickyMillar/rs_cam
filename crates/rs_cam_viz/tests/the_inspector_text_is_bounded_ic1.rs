@@ -15,7 +15,10 @@
 //! it asserts two rules:
 //!
 //! 1. No galley wraps to more than one row, except a refusal or an error
-//!    that blocks work (`ALLOWED_MULTI_LINE`).
+//!    that blocks work (`may_wrap`). G-E (2026-10-28): in the toolpath
+//!    panel no text wraps at all, a refusal included: a refusal is one
+//!    word or one line, with its text on hover
+//!    (`a_generate_refusal_takes_one_line_g_e`).
 //! 2. The number of visible text rows on each surface stays under a cap.
 //!    The caps come from the after-state with a small margin.
 //!
@@ -434,8 +437,10 @@ fn the_inspector_text_is_bounded_ic1() {
                 p.text.replace('\n', " / ")
             );
         }
+        // G-E: in the toolpath panel ("<op> / <tab>") no text wraps.
+        let toolpath_tab = name.contains(" / ");
         for p in multi {
-            if !may_wrap(p) {
+            if toolpath_tab || !may_wrap(p) {
                 failures.push(format!("{name}: a {}-row text block: {:?}", p.rows, p.text));
             }
         }
@@ -514,4 +519,86 @@ fn the_measures_see_a_paragraph_ic1() {
         visible_lines(&painted)
     );
     assert!(painted.iter().all(|p| p.text == SENTENCE));
+}
+
+/// G-E sub-step 1: a refusal from the last generate takes ONE word in the
+/// Generate row and ONE face line under it, and no text wraps. Before G-E
+/// the D53 refusal printed in full beside Generate: 15 rows, and the tab
+/// strip moved down 257 points.
+#[test]
+fn a_generate_refusal_takes_one_line_g_e() {
+    // The D53 refusal text (`session/compute/generation.rs`), the longest
+    // generate refusal the panel can show.
+    const REFUSAL: &str = "'Edges' takes its boundary from the rest regions of 'Body rough' \
+        with Center containment, but its tool radius 5.000 mm is larger than the tool \
+        radius of 'Body rough', 3.000 mm. The regions are tool-centre positions of that \
+        tool, so this tool could cut up to 2.000 mm past the machining boundary of 'Body \
+        rough'. Set the boundary containment to Inside, or use a tool no larger than the \
+        tool of 'Body rough'.";
+    let mut state = fixture();
+    let id = state
+        .session()
+        .toolpath_configs()
+        .iter()
+        .find(|c| c.name == "3D Rough")
+        .map(|c| c.id)
+        .expect("fixture toolpath");
+    let tab_top = |painted: &[Painted]| {
+        painted
+            .iter()
+            .find(|p| p.text == "Geometry")
+            .and_then(|p| p.bands.first().map(|b| b.0))
+            .expect("the tab strip paints")
+    };
+    let clean = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    state
+        .gui
+        .toolpath_rt
+        .get_mut(&id)
+        .expect("fixture runtime")
+        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(REFUSAL.to_owned());
+    let refused = surface(
+        &mut state,
+        Selection::Toolpath(id),
+        Some(ToolpathTab::Cut),
+        PANEL_WIDTH,
+    );
+    assert!(
+        refused.painted.iter().any(|p| p.text == "Refused"),
+        "the state word: {:?}",
+        refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
+    );
+    assert!(
+        refused
+            .painted
+            .iter()
+            .any(|p| p.text == REFUSAL && p.rows == 1),
+        "the face line holds the full text on one row"
+    );
+    let wrapped: Vec<&String> = refused
+        .painted
+        .iter()
+        .filter(|p| p.rows > 1)
+        .map(|p| &p.text)
+        .collect();
+    assert!(wrapped.is_empty(), "no text wraps: {wrapped:?}");
+    assert_eq!(
+        visible_lines(&refused.painted),
+        visible_lines(&clean.painted) + 1,
+        "the refusal adds one line"
+    );
+    let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
+    assert!(
+        (0.0..30.0).contains(&moved),
+        "the tab strip moves down one line at most, not {moved:.1} points"
+    );
+    assert!(
+        refused.excess_width <= 0.5,
+        "no row is wider than the panel"
+    );
 }

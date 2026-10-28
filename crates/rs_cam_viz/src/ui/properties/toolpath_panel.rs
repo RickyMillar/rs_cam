@@ -27,6 +27,10 @@ use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
 /// owns the text; the header names the tab, and the full text is the hover.
 pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
 
+/// G-E (§7.7): the state word of the Generate row when the last run
+/// refused. The full refusal is its hover.
+pub(crate) const REFUSED_STATE: &str = "Refused";
+
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     // The panel's whole read side: the owned entry, both static
@@ -124,6 +128,15 @@ pub(super) fn draw_toolpath_panel(
     };
     if draw_generate_row(ui, &header) {
         events.push(AppEvent::GenerateToolpath(entry.id));
+    }
+    // G-E (§7.5, §7.7): the last run's refusal gets one face line under
+    // the row, which truncates; its hover holds the full text. A
+    // validation refusal answers the settings on screen, so when one
+    // stands it takes the line and the state word keeps the last run.
+    if let crate::state::freshness::FreshnessState::Error(e) = freshness
+        && validation_errors.is_empty()
+    {
+        ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
     }
     if !validation_errors.is_empty() {
         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
@@ -1455,12 +1468,10 @@ pub(super) fn draw_header_state(
         FreshnessState::WaitingOnUpstream(block) => {
             // Amber, not red: this operation is fine, it is waiting its
             // turn. The hover names the operation it is waiting for.
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new("Waiting on upstream stock")
-                        .color(crate::ui::tokens::CAUTION),
-                )
-                .wrap(),
+            // G-E: one row; it truncates, it does not wrap.
+            state_word(
+                ui,
+                egui::RichText::new("Waiting on upstream stock").color(crate::ui::tokens::CAUTION),
             )
             .on_hover_text(&block.message);
         }
@@ -1471,12 +1482,13 @@ pub(super) fn draw_header_state(
             )
             .on_hover_text("Disabled: this operation does not go to G-code.");
         }
+        // G-E (§7.7): the last run refused. One word in the row, the full
+        // text on its hover. The text printed in full here took 3 to 15
+        // rows and moved the tab strip down by up to 257 points.
         FreshnessState::Error(e) => {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("Error: {e}")).color(crate::ui::tokens::DANGER),
-                )
-                .wrap(),
+            state_word(
+                ui,
+                egui::RichText::new(REFUSED_STATE).color(crate::ui::tokens::DANGER),
             )
             .on_hover_text(e);
         }

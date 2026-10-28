@@ -382,15 +382,23 @@ fn every_sentence_in_the_header_is_wrapped() {
     // `draw_header_state`, so the census reads that body too.
     let state = function_body(&src, "draw_header_state");
 
-    // Already wrapped before this commit: the two Generate-row statuses.
-    for existing in ["Waiting on upstream stock", "Error: {e}"] {
+    // The two Generate-row statuses with a long text. They wrapped until
+    // G-E (2026-10-28); now each is one truncating state word with the full
+    // text on hover (the IC1 remedy), and the last run's refusal is the
+    // word `Refused` (`REFUSED_STATE`).
+    for existing in ["Waiting on upstream stock", "REFUSED_STATE"] {
         let at = state
             .find(existing)
             .unwrap_or_else(|| panic!("{existing:?} left the header state"));
-        let after = &state[at..(at + 400).min(state.len())];
+        let before = &state[at.saturating_sub(120)..at];
+        let after = &state[at..(at + 200).min(state.len())];
         assert!(
-            after.contains(".wrap()"),
-            "{existing:?} used to wrap and must still:\n{after}"
+            before.contains("state_word(") && after.contains(".on_hover_text("),
+            "{existing:?} is one truncating word with its text on hover:\n{before}{after}"
+        );
+        assert!(
+            !after.contains(".wrap()"),
+            "{existing:?} wraps again:\n{after}"
         );
     }
 
