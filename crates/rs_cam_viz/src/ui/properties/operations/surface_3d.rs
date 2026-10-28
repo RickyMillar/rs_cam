@@ -198,10 +198,14 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
         });
         ui.end_row();
         // C4 (operator ruling D69): one visible row, shown where it acts: a
-        // rest rough (remaining stock) with a machining boundary, or while
-        // it is on (the Pocket "Cut past open sides" rule). The hover is the
-        // registry help (UI-04: keyed on the parameter name).
-        if contour_each_level_offered || cfg.contour_each_level {
+        // rest rough (remaining stock) with a machining boundary, any rough
+        // in By Area order (C4b: the walls of each region at each level),
+        // or while it is on (the Pocket "Cut past open sides" rule). The
+        // hover is the registry help (UI-04: keyed on the parameter name).
+        if contour_each_level_offered
+            || cfg.contour_each_level
+            || cfg.region_ordering == RegionOrdering::ByArea
+        {
             let help = super::super::help_for(OperationType::Adaptive3d, "contour_each_level")
                 .unwrap_or_default();
             ui.label("Contour each level:").on_hover_text(help);

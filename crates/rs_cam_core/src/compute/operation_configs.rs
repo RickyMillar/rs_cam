@@ -1729,7 +1729,8 @@ pub struct Adaptive3dConfig {
 const HELP_CONTOUR_EACH_LEVEL: &str = "After each level, contour the edge of the machining \
     boundary where stock the tool can reach still stands above the level, so no later level \
     cuts deeper than Depth/Pass there. Acts on a rest rough (remaining stock) with a machining \
-    boundary. Off by default. Costs time where stock stands beyond the boundary.";
+    boundary. With By Area ordering, fresh or rest, it also cuts the walls of each region at \
+    each level. Off by default. Costs time where stock stands beyond the boundary.";
 
 fn default_stay_down_clearance_mm() -> f64 {
     // F-038b: matches dexel cell-height resolution at standard sim
