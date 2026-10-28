@@ -205,9 +205,18 @@ pub struct RenderResources {
     mesh_pipeline: wgpu::RenderPipeline,
     sim_mesh_pipeline: wgpu::RenderPipeline,
     height_plane_pipeline: wgpu::RenderPipeline,
-    /// Opaque colored mesh pipeline — same vertex format as sim_mesh but no alpha blending.
-    /// Used for STEP models with per-face colors that should render as solid objects.
+    /// Opaque colored mesh pipeline — same vertex format as sim_mesh but no
+    /// alpha blending. The reach overlay draws with it.
     colored_opaque_pipeline: wgpu::RenderPipeline,
+    /// The face pipeline of the STEP models (D2): `FaceMeshVertex`, group 0
+    /// the mesh uniforms, group 1 the model's face state and the palette.
+    face_mesh_pipeline: wgpu::RenderPipeline,
+    /// Group 1 of `face_mesh_pipeline`: binding 0 the face state words
+    /// (read-only storage), binding 1 the palette uniform.
+    pub face_state_bgl: wgpu::BindGroupLayout,
+    /// The face palette uniform (`colors::face_palette`). `new` writes it
+    /// once; every model's state bind group reads it.
+    pub face_palette_buffer: wgpu::Buffer,
     line_pipeline: wgpu::RenderPipeline,
     mesh_uniform_buffer: wgpu::Buffer,
     sim_mesh_uniform_buffer: wgpu::Buffer,
@@ -261,7 +270,8 @@ pub struct RenderResources {
 
     // Scene data
     pub mesh_data_list: Vec<MeshGpuData>,
-    pub enriched_mesh_data_list: Vec<mesh_render::EnrichedMeshGpuData>,
+    /// The STEP models of the face pipeline, one entry per drawn model.
+    pub face_mesh_data_list: Vec<mesh_render::FaceMeshGpuData>,
     pub grid_data: GridGpuData,
     pub stock_data: Option<StockGpuData>,
     pub solid_stock_data: Option<stock_render::SolidStockGpuData>,
@@ -323,8 +333,10 @@ pub struct RenderResources {
     // actually moved. See `upload_cache` for the key contracts.
     /// Inputs `mesh_data_list` was last built from.
     pub mesh_upload_key: Option<upload_cache::MeshUploadKey>,
-    /// Inputs `enriched_mesh_data_list` was last built from.
+    /// Inputs `face_mesh_data_list` was last built from.
     pub enriched_upload_key: Option<upload_cache::EnrichedUploadKey>,
+    /// Inputs the face state words were last written from (D3).
+    pub face_state_key: Option<upload_cache::FaceStateKey>,
     /// Inputs the collision-marker buffer was last built from.
     pub collision_upload_key: Option<upload_cache::CollisionUploadKey>,
     /// Inputs `rest_heatmap_data` was last built from. `None` means the
@@ -436,6 +448,83 @@ impl RenderResources {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &mesh_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(depth_stencil.clone()),
+            multisample: scene_multisample,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // --- Face pipeline (STEP models, D2) ---
+        // The colour of a face comes from its state word and the palette,
+        // so a hover or a selection change rewrites the words only (D3).
+        let face_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("face_mesh_shader"),
+            source: wgpu::ShaderSource::Wgsl(FACE_MESH_SHADER_SRC.into()),
+        });
+        let face_state_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("face_state_bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let face_palette_buffer = {
+            use wgpu::util::DeviceExt;
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("face_palette"),
+                contents: bytemuck::cast_slice(&colors::face_palette()),
+                usage: wgpu::BufferUsages::UNIFORM,
+            })
+        };
+        let face_mesh_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("face_mesh_pl"),
+                bind_group_layouts: &[Some(&mesh_bind_group_layout), Some(&face_state_bgl)],
+                immediate_size: 0,
+            });
+        let face_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("face_mesh_pipeline"),
+            layout: Some(&face_mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &face_mesh_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(mesh_render::FaceMeshVertex::layout())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &face_mesh_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: target_format,
@@ -828,6 +917,9 @@ impl RenderResources {
             sim_mesh_pipeline,
             height_plane_pipeline,
             colored_opaque_pipeline,
+            face_mesh_pipeline,
+            face_state_bgl,
+            face_palette_buffer,
             line_pipeline,
             mesh_uniform_buffer,
             sim_mesh_uniform_buffer,
@@ -850,7 +942,7 @@ impl RenderResources {
             target_format,
             sample_count,
             mesh_data_list: Vec::new(),
-            enriched_mesh_data_list: Vec::new(),
+            face_mesh_data_list: Vec::new(),
             grid_data,
             stock_data: None,
             solid_stock_data: None,
@@ -872,6 +964,7 @@ impl RenderResources {
             gpu_limits,
             mesh_upload_key: None,
             enriched_upload_key: None,
+            face_state_key: None,
             collision_upload_key: None,
             rest_heatmap_upload_key: None,
             tier_preview_upload_key: None,
@@ -893,7 +986,7 @@ impl RenderResources {
     /// A pipeline and an attachment with different sample counts fail at
     /// pass time, not at pipeline creation. So the door runs
     /// `ensure_offscreen` and records the frame's own scene pass with an
-    /// empty callback that draws the grid. A second pass from the same
+    /// empty callback that draws the grid and the face meshes. A second pass from the same
     /// `begin_scene_pass` sets each scene pipeline once. The door then
     /// submits, so a validation error reaches the caller's error scope.
     #[doc(hidden)]
@@ -908,8 +1001,11 @@ impl RenderResources {
         let Some(offscreen) = self.offscreen.as_ref() else {
             return;
         };
+        // The model arm draws `face_mesh_data_list`, so a caller that
+        // pushes a face mesh first gets a face pipeline draw too.
         let callback = ViewportCallback {
             show_grid: true,
+            show_model: true,
             ..ViewportCallback::empty(width, height)
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -923,6 +1019,7 @@ impl RenderResources {
                 &self.sim_mesh_pipeline,
                 &self.height_plane_pipeline,
                 &self.colored_opaque_pipeline,
+                &self.face_mesh_pipeline,
                 &self.line_pipeline,
             ] {
                 pass.set_pipeline(pipeline);
@@ -1230,13 +1327,15 @@ impl ViewportCallback {
             pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..reach.index_count, 0, 0..1);
         } else if self.show_model {
-            // Draw all enriched (STEP) models
-            for enriched in &resources.enriched_mesh_data_list {
-                pass.set_pipeline(&resources.colored_opaque_pipeline);
-                pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-                pass.set_vertex_buffer(0, enriched.vertex_buffer.slice(..));
-                pass.set_index_buffer(enriched.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..enriched.index_count, 0, 0..1);
+            // Draw all STEP models with the face pipeline (D2): group 1
+            // is the model's own face state.
+            for face_mesh in &resources.face_mesh_data_list {
+                pass.set_pipeline(&resources.face_mesh_pipeline);
+                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                pass.set_bind_group(1, &face_mesh.state_bind_group, &[]);
+                pass.set_vertex_buffer(0, face_mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(face_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..face_mesh.index_count, 0, 0..1);
             }
             // Draw all plain (STL) models
             if self.has_mesh {
@@ -1477,9 +1576,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             0,
             bytemuck::bytes_of(&self.mesh_uniforms),
         );
-        // Always upload colored mesh uniforms when any colored pipeline will be used.
-        // The colored_opaque_pipeline (STEP) uses REPLACE blend so opacity doesn't
-        // affect it, but it still needs valid view_proj/light_dir uniforms.
+        // Upload the colored mesh uniforms when a colored pipeline draws.
         // The reach overlay draws with `colored_opaque_pipeline` through
         // `sim_mesh_bind_group`, so it needs these uniforms even on a project
         // that holds no STEP part and runs no simulation. That pipeline uses
@@ -1487,8 +1584,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         let needs_colored_uniforms = self.show_sim_mesh
             || self.show_solid_stock
             || self.show_height_planes
-            || self.show_reach_overlay
-            || !resources.enriched_mesh_data_list.is_empty();
+            || self.show_reach_overlay;
         if needs_colored_uniforms {
             let opacity = if self.show_sim_mesh {
                 self.sim_mesh_opacity
@@ -1760,6 +1856,50 @@ fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 "#;
 
+/// The face pipeline (D2). The palette slots are `colors::FACE_SLOT_*`;
+/// `face_shader_reads_the_palette_slots` holds the literals to them. The
+/// shading terms 0.25, 0.2 and 32.0 are the `fs_opaque` terms.
+const FACE_MESH_SHADER_SRC: &str = r#"
+struct Uniforms { view_proj: mat4x4<f32>, light_dir: vec3<f32>, camera_pos: vec3<f32> };
+@group(0) @binding(0) var<uniform> u: Uniforms;
+@group(1) @binding(0) var<storage, read> face_state: array<u32>;
+@group(1) @binding(1) var<uniform> palette: array<vec4<f32>, 24>;
+
+struct VsIn  { @location(0) pos: vec3<f32>, @location(1) nrm: vec3<f32>, @location(2) face_id: u32 };
+struct VsOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) nrm: vec3<f32>,
+    @location(1) world: vec3<f32>,
+    @location(2) @interpolate(flat) face_id: u32,
+};
+
+@vertex fn vs_main(i: VsIn) -> VsOut {
+    var o: VsOut;
+    o.clip = u.view_proj * vec4<f32>(i.pos, 1.0);
+    o.nrm = i.nrm; o.world = i.pos; o.face_id = i.face_id;
+    return o;
+}
+
+fn face_colour(id: u32) -> vec3<f32> {
+    let s = face_state[id];
+    if ((s & 2u) != 0u) { return palette[10].rgb; }
+    if ((s & 1u) != 0u) { return palette[11].rgb; }
+    let st = (s >> 2u) & 63u;
+    if (st != 0u) { return palette[st - 1u].rgb; }
+    return palette[id % 10u].rgb;
+}
+
+@fragment fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
+    let c = face_colour(i.face_id);
+    let l = normalize(u.light_dir);
+    let n0 = normalize(i.nrm);
+    let n = select(n0, -n0, dot(n0, l) < 0.0);
+    let v = normalize(u.camera_pos - i.world);
+    let spec = pow(max(dot(n, normalize(l + v)), 0.0), 32.0);
+    return vec4<f32>(c * 0.25 + c * max(dot(n, l), 0.0) + vec3<f32>(0.2) * spec, 1.0);
+}
+"#;
+
 const LINE_SHADER_SRC: &str = r#"
 struct Uniforms {
     view_proj: mat4x4<f32>,
@@ -1817,3 +1957,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_color, s_color, in.uv);
 }
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The WGSL literals of the face shader are the `colors::FACE_SLOT_*`
+    /// slots and the palette length, so the shader and the palette cannot
+    /// drift apart.
+    #[test]
+    fn face_shader_reads_the_palette_slots() {
+        let src = FACE_MESH_SHADER_SRC;
+        let len = colors::FACE_PALETTE_LEN;
+        assert!(src.contains(&format!("array<vec4<f32>, {len}>")));
+        let selected = colors::FACE_SLOT_SELECTED;
+        assert!(src.contains(&format!("return palette[{selected}].rgb; }}")));
+        let hover = colors::FACE_SLOT_HOVER;
+        assert!(src.contains(&format!("return palette[{hover}].rgb; }}")));
+        // The group pastels fill the slots below the selected slot.
+        assert_eq!(colors::FACE_SLOT_GROUPS, 0);
+        assert!(src.contains(&format!("palette[id % {selected}u]")));
+        assert_eq!(
+            std::mem::size_of_val(&colors::face_palette()),
+            16 * colors::FACE_PALETTE_LEN
+        );
+    }
+}

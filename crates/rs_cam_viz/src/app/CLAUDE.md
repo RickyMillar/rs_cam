@@ -14,13 +14,13 @@ The egui application, its per-frame work and the GUI-side MCP requests. The serv
   - The drawing takes the item state colours, open path ends, lost-pick ghosts and the boundary outline. P6.7: a mid-path arrow, the tool side mark of a Cut path (drawing frame, then `display`), each report `extended` ring (no rays), a `HOLE_MISFIT` drill marker.
     It uploads on a change of the report `Arc` (`ReportDetector`), never per frame.
   - A drawing that no drawn toolpath reads uploads as `neutral_drawing_vertices` (active setup frame).
-  - A hidden model (`ModelVisibility`) uploads no mesh and no drawing. Every pick reads
-    `PickContext::visibility`: a hidden model takes no face, item, open path, hole or tab-loop pick.
+  - A hidden model (`ModelVisibility`) uploads no mesh and no drawing. Every pick reads `PickContext::visibility`: a hidden model takes no face, item, open path, hole or tab-loop pick.
   - A click goes to the tab editor, then pick mode, then the drawing popover, then the plain pick.
     The tab editor also wins the right-click and a drag that starts on a tab (no orbit; B2: `step` claims it first). A C3a: the orbit pivot and the pan grab depth come from the point under the press origin (`drag_anchor`).
   - Pick mode: `pick_bar::click_event` maps a click (P3: shift = `AddPick`, right = `PickLayer`); `pick_mode_item` (P4) picks a chip-off kind second; the ray hits an STL mesh.
   - B1: `hover_result` picks once per frame; every hover reader reads it. The hover ring (`upload_hover_lines`)
     and the tab marks (`upload_tab_lines`) are their own buffers. D5: the hover ring reads `face_items` for an STL face.
+  - D3: `gpu_upload/face_state.rs` writes the STEP face state words (hover, selection: `(ModelId, FaceGroupId)`) after `meshes::upload`; a hover builds no mesh.
   - `set_ui_view`: `model_visibility` sends `SetModelVisibility`; `frame_items` calls `frame_selection_items`; `camera` calls `state::camera::apply_camera_request` (instant, checked first); `selection` and `get_ui_view` read `focus_summary`.
 
 ## Invariants

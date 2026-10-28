@@ -1,5 +1,5 @@
 use egui_wgpu::wgpu;
-use rs_cam_core::geometry::enriched_mesh::{EnrichedMesh, FaceGroupId};
+use rs_cam_core::geometry::enriched_mesh::EnrichedMesh;
 use rs_cam_core::mesh::TriangleMesh;
 
 use super::gpu_safety::{self, GpuLimits};
@@ -141,12 +141,6 @@ impl MeshGpuData {
 /// [`ColoredMeshVertex`], so the result draws with `colored_opaque_pipeline`
 /// instead of the plain mesh pipeline whose diffuse colour is a WGSL literal.
 ///
-/// Indexed, unlike [`enriched_mesh_gpu_data`], which is deliberately
-/// unindexed: that path is flat-shaded and per-face coloured, so two
-/// triangles can share a vertex only when they agree on normal AND colour.
-/// Here the colour is per VERTEX by construction, so the smooth-normal
-/// indexed upload is exact and costs a third of the VRAM.
-///
 /// Returns `None` when `colors` does not carry exactly one entry per mesh
 /// vertex, and when a buffer exceeds the device limits. A length mismatch is
 /// a caller error — the colours are indexed by vertex — so it refuses rather
@@ -227,112 +221,249 @@ pub fn colored_mesh_gpu_data(
 /// The normal of a degenerate vertex or triangle: straight up.
 const UP_NORMAL: [f32; 3] = [0.0, 0.0, 1.0];
 
-/// Deterministic pastel color for a face group ID.
-fn face_group_color(id: FaceGroupId) -> [f32; 3] {
-    super::colors::face_group_color(id.0 as usize).array()
-}
-
-/// Build GPU data for an enriched mesh with per-face-group coloring.
-///
-/// Uses the `ColoredMeshVertex` pipeline (same as simulation stock rendering).
-/// Selected faces get a highlight color, hovered face gets a hover tint,
-/// and other faces get deterministic pastel colors.
-/// Optional vertex transform applied during GPU upload.
-///
-/// **Why this emits 3 unindexed vertices per triangle** while
-/// [`MeshGpuData::from_mesh`] indexes: this path is *flat*-shaded (each
-/// triangle carries its own face normal) and per-face-group coloured, so two
-/// triangles can share a source vertex only when they agree on both normal
-/// and face group. Indexing it would mean switching to smooth normals — the
-/// wrong choice for a BREP part, where face boundaries should read as creases
-/// — or a (position, normal, colour) dedupe pass whose hashing cost on a
-/// large mesh plausibly exceeds the VRAM it saves. Left as-is deliberately
-/// (V13, `planning/perf_review_2026-08-19/DELTA_viz_w2.md`).
+/// A transform that the upload applies to each vertex position (the setup
+/// frame). `None` keeps the model frame.
 pub type VertexTransform<'a> =
     Option<Box<dyn Fn(rs_cam_core::geo::P3) -> rs_cam_core::geo::P3 + 'a>>;
 
+/// GPU vertex of the face pipeline (STEP / BREP models, D2).
+///
+/// `face_id` is the `FaceGroupId` of the face that owns the vertex. The
+/// fragment stage reads the colour of that face from the per-face state
+/// buffer and the palette, so a hover or a selection change rewrites the
+/// state words and never this buffer.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct FaceMeshVertex {
+    pub position: [f32; 3],
+    /// The area-weighted normal of the triangles of one face.
+    pub normal: [f32; 3],
+    pub face_id: u32,
+}
+
+impl FaceMeshVertex {
+    const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Uint32];
+
+    pub fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<FaceMeshVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBUTES,
+        }
+    }
+}
+
+/// GPU data of one STEP model for the face pipeline.
+///
+/// The geometry buffers hold no colour. `face_state` holds one `u32` per
+/// face (`app/gpu_upload/face_state.rs` writes it); `state_bind_group` binds
+/// it with the palette as group 1 of `face_mesh_pipeline`.
+pub struct FaceMeshGpuData {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
+    /// The number of faces, and of words in `face_state`.
+    pub face_count: u32,
+    /// One state word per face (`STORAGE | COPY_DST`).
+    pub face_state: wgpu::Buffer,
+    /// Group 1: `face_state` and the palette uniform.
+    pub state_bind_group: wgpu::BindGroup,
+    pub model_id: rs_cam_core::ids::ModelId,
+}
+
+/// The vertices and indices of the face pipeline for `enriched`.
+///
+/// The index buffer is the mesh's own `triangles`. Core gives each face its
+/// own vertex list (`build_enriched_mesh`), so no vertex belongs to two
+/// faces: the normals are smooth inside a face and a crease between two
+/// faces stays sharp. The normal of a vertex is the sum of the cross
+/// products of its triangles (area-weighted), taken after the transform,
+/// so the normal is in the drawn frame.
 #[expect(
     clippy::indexing_slicing,
     reason = "vertex/triangle indices bounded by mesh invariants"
 )]
-pub fn enriched_mesh_gpu_data(
+pub fn face_mesh_vertices(
+    enriched: &EnrichedMesh,
+    transform: &VertexTransform<'_>,
+) -> (Vec<FaceMeshVertex>, Vec<u32>) {
+    let mesh = enriched.as_mesh();
+    let positions: Vec<[f32; 3]> = mesh
+        .vertices
+        .iter()
+        .map(|&v| {
+            let v = if let Some(xf) = transform { xf(v) } else { v };
+            [v.x as f32, v.y as f32, v.z as f32]
+        })
+        .collect();
+    let mut normals = vec![[0.0f32; 3]; positions.len()];
+    let mut face_ids = vec![0u32; positions.len()];
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        let [a, b, c] = tri.map(|i| positions[i as usize]);
+        let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let n = [
+            u[1] * w[2] - u[2] * w[1],
+            u[2] * w[0] - u[0] * w[2],
+            u[0] * w[1] - u[1] * w[0],
+        ];
+        let face = u32::from(enriched.face_for_triangle(t).0);
+        for &vi in tri {
+            let slot = &mut normals[vi as usize];
+            slot[0] += n[0];
+            slot[1] += n[1];
+            slot[2] += n[2];
+            face_ids[vi as usize] = face;
+        }
+    }
+    let vertices = positions
+        .iter()
+        .zip(&normals)
+        .zip(&face_ids)
+        .map(|((&position, n), &face_id)| {
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let normal = if len > 1e-12 {
+                [n[0] / len, n[1] / len, n[2] / len]
+            } else {
+                UP_NORMAL
+            };
+            FaceMeshVertex {
+                position,
+                normal,
+                face_id,
+            }
+        })
+        .collect();
+    let indices = mesh
+        .triangles
+        .iter()
+        .flat_map(|tri| tri.iter().copied())
+        .collect();
+    (vertices, indices)
+}
+
+/// Build the face-pipeline GPU data of one STEP model: the geometry and a
+/// zeroed state buffer. It takes no selection and no hover input.
+///
+/// `layout` is `face_state_bgl` and `palette` is the palette uniform of
+/// `RenderResources`. Returns `None` when a buffer exceeds the device
+/// limits.
+pub fn face_mesh_gpu_data(
     device: &wgpu::Device,
     limits: &GpuLimits,
+    layout: &wgpu::BindGroupLayout,
+    palette: &wgpu::Buffer,
+    model_id: rs_cam_core::ids::ModelId,
     enriched: &EnrichedMesh,
-    selected_faces: &[FaceGroupId],
-    hovered_face: Option<FaceGroupId>,
     transform: &VertexTransform<'_>,
-) -> Option<EnrichedMeshGpuData> {
-    let mesh = enriched.as_mesh();
-    let highlight_color: [f32; 3] = super::colors::FACE_SELECTED.array();
-    let hover_color: [f32; 3] = super::colors::FACE_HOVER.array();
-
-    // V13: the selection test runs once per triangle, so a linear scan of the
-    // selected-face list is O(triangles × selected) — on a STEP part with a
-    // many-face selection that is the dominant cost of this upload. One
-    // small set build up front makes it O(triangles).
-    let selected: std::collections::HashSet<FaceGroupId> = selected_faces.iter().copied().collect();
-
-    let mut vertices = Vec::with_capacity(mesh.triangles.len() * 3);
-    let mut indices = Vec::with_capacity(mesh.triangles.len() * 3);
-
-    for (tri_idx, tri) in mesh.triangles.iter().enumerate() {
-        let face_id = enriched.face_for_triangle(tri_idx);
-        let color = if selected.contains(&face_id) {
-            highlight_color
-        } else if hovered_face == Some(face_id) {
-            hover_color
-        } else {
-            face_group_color(face_id)
-        };
-
-        let n = mesh.faces[tri_idx].normal;
-        let normal = [n.x as f32, n.y as f32, n.z as f32];
-
-        let base = (tri_idx * 3) as u32;
-        for &vi in tri {
-            let v = mesh.vertices[vi as usize];
-            let v = if let Some(xf) = transform { xf(v) } else { v };
-            vertices.push(ColoredMeshVertex {
-                position: [v.x as f32, v.y as f32, v.z as f32],
-                normal,
-                color,
-            });
-        }
-        indices.push(base);
-        indices.push(base + 1);
-        indices.push(base + 2);
-    }
-
+) -> Option<FaceMeshGpuData> {
+    let (vertices, indices) = face_mesh_vertices(enriched, transform);
     let vertex_buffer = gpu_safety::try_create_buffer(
         device,
         limits,
-        "enriched_mesh_vertices",
+        "face_mesh_vertices",
         bytemuck::cast_slice(&vertices),
         wgpu::BufferUsages::VERTEX,
     )?;
-
     let index_buffer = gpu_safety::try_create_buffer(
         device,
         limits,
-        "enriched_mesh_indices",
+        "face_mesh_indices",
         bytemuck::cast_slice(&indices),
         wgpu::BufferUsages::INDEX,
     )?;
-
-    Some(EnrichedMeshGpuData {
+    // A storage binding cannot be empty, so a mesh with no face still gets
+    // one word.
+    let face_count = enriched.face_groups.len() as u32;
+    let words = vec![0u32; enriched.face_groups.len().max(1)];
+    let face_state = gpu_safety::try_create_buffer(
+        device,
+        limits,
+        "face_state",
+        bytemuck::cast_slice(&words),
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+    )?;
+    let state_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("face_state_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: face_state.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: palette.as_entire_binding(),
+            },
+        ],
+    });
+    Some(FaceMeshGpuData {
         vertex_buffer,
         index_buffer,
         index_count: indices.len() as u32,
+        face_count,
+        face_state,
+        state_bind_group,
+        model_id,
     })
 }
 
-/// GPU data for an enriched mesh with per-face coloring.
-///
-/// Uses the same `ColoredMeshVertex` layout as the simulation mesh pipeline,
-/// so it can be rendered with `sim_mesh_pipeline`.
+/// GPU data of an indexed `ColoredMeshVertex` mesh: the reach overlay
+/// ([`colored_mesh_gpu_data`]). It draws with `colored_opaque_pipeline`.
 pub struct EnrichedMeshGpuData {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The VRAM of the face path: 28 B per vertex, 12 B of index per
+    /// triangle (D2 §2.1).
+    #[test]
+    fn a_face_vertex_is_28_bytes() {
+        assert_eq!(std::mem::size_of::<FaceMeshVertex>(), 28);
+        assert_eq!(FaceMeshVertex::layout().array_stride, 28);
+        assert_eq!(std::mem::size_of::<[u32; 3]>(), 12);
+    }
+
+    /// Two faces meet at a right-angle crease. Each vertex takes the id of
+    /// its own face and the normal of its own face, so the crease stays
+    /// sharp: the shared edge has two vertex pairs with two normals.
+    #[test]
+    fn each_face_keeps_its_own_ids_and_normals() {
+        use rs_cam_core::geo::P3;
+        let p = |x: f64, y: f64, z: f64| P3::new(x, y, z);
+        // Face 0 lies in z = 0; face 1 stands in x = 0. Both hold the edge
+        // from (0, 0, 0) to (0, 1, 0), each with its own copy.
+        let vertices = vec![
+            p(0.0, 0.0, 0.0),
+            p(1.0, 0.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.0, 0.0, 0.0),
+            p(0.0, 1.0, 0.0),
+            p(0.0, 0.0, 1.0),
+        ];
+        let mesh = TriangleMesh::from_raw(vertices, vec![[0, 1, 2], [3, 4, 5]]);
+        let enriched = EnrichedMesh {
+            mesh: std::sync::Arc::new(mesh),
+            face_groups: Vec::new(),
+            triangle_to_face: vec![0, 1],
+            adjacency: Vec::new(),
+            edges: Vec::new(),
+        };
+        let (vertices, indices) = face_mesh_vertices(&enriched, &None);
+        assert_eq!(indices, vec![0, 1, 2, 3, 4, 5]);
+        let ids: Vec<u32> = vertices.iter().map(|v| v.face_id).collect();
+        assert_eq!(ids, vec![0, 0, 0, 1, 1, 1]);
+        for v in vertices.iter().take(3) {
+            assert_eq!(v.normal, [0.0, 0.0, 1.0]);
+        }
+        for v in vertices.iter().skip(3) {
+            assert_eq!(v.normal, [1.0, 0.0, 0.0]);
+        }
+    }
 }

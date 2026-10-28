@@ -11,6 +11,7 @@ use crate::state::simulation::StockVizMode;
 use super::RsCamApp;
 
 mod drawing;
+mod face_state;
 mod meshes;
 mod overlays;
 mod reference;
@@ -18,28 +19,45 @@ mod sim;
 mod toolpaths;
 
 impl RsCamApp {
-    /// Get selected BREP face IDs for rendering highlights.
+    /// The selected BREP faces, each with its model (D3).
     /// The face highlight and the drawing highlight have one door (F-4):
     /// `highlight_report` names the lit toolpath and its selection report
     /// (the `selection_status` memo, so a face that a rule matches is lit
-    /// too). In Simulation the lit toolpath is the sim focus.
-    fn selected_face_ids(&self) -> Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
-        crate::state::selection_highlight::highlight_report(self.controller.state())
-            .map(|(_, _, report)| {
-                report
-                    .selected
-                    .iter()
-                    .filter(|k| k.kind == rs_cam_core::selection::ItemKind::Face)
-                    .filter_map(|k| k.brep)
-                    .map(rs_cam_core::geometry::enriched_mesh::FaceGroupId)
-                    .collect()
+    /// too). In Simulation the lit toolpath is the sim focus. A key names
+    /// its model with its source: `SourceRef::Model`, or the toolpath model.
+    fn selected_faces(
+        &self,
+    ) -> Vec<(
+        rs_cam_core::ids::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )> {
+        use rs_cam_core::selection::{ItemKind, SourceRef};
+        let state = self.controller.state();
+        let Some((toolpath_id, _, report)) =
+            crate::state::selection_highlight::highlight_report(state)
+        else {
+            return Vec::new();
+        };
+        let toolpath_model = state
+            .session()
+            .find_toolpath_config_by_id(toolpath_id)
+            .map(|(_, tc)| tc.model_id);
+        report
+            .selected
+            .iter()
+            .filter(|k| k.kind == ItemKind::Face)
+            .filter_map(|k| {
+                let model = match k.source {
+                    SourceRef::Model(model) => Some(model),
+                    SourceRef::ToolpathModel => toolpath_model,
+                    SourceRef::Stock => None,
+                }?;
+                Some((
+                    model,
+                    rs_cam_core::geometry::enriched_mesh::FaceGroupId(k.brep?),
+                ))
             })
-            .unwrap_or_default()
-    }
-
-    /// Get the currently hovered face ID (for hover highlighting).
-    fn hovered_face_id(&self) -> Option<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
-        self.last_hover_face
+            .collect()
     }
 
     /// Compute per-vertex colors for the sim mesh based on current viz mode.
@@ -257,13 +275,21 @@ impl RsCamApp {
         let state = self.controller.state();
         let pass = PassFrame::of(state);
 
-        let (plain, enriched) = meshes::inputs(
-            state,
-            &pass,
-            self.selected_face_ids(),
-            self.hovered_face_id(),
+        let (plain, enriched) = meshes::inputs(state, &pass);
+        meshes::upload(plain, &enriched, &gpu, resources);
+        // D3: after the meshes, so a rebuilt mesh gets its words this pass.
+        face_state::upload(
+            face_state::FaceStateInputs {
+                mesh: &enriched,
+                marks: face_state::FaceMarks {
+                    hovered: self.last_hover_face,
+                    selected: self.selected_faces(),
+                    states: Vec::new(),
+                },
+            },
+            &gpu,
+            resources,
         );
-        meshes::upload(plain, enriched, &gpu, resources);
         drawing::upload(state, &pass, &gpu, resources);
         let stock_bbox = reference::upload_stock(&pass, &gpu, resources);
         reference::upload_origin_axes(&pass, &gpu, resources);
@@ -292,6 +318,7 @@ impl RsCamApp {
         tracing::debug!(
             mesh_builds = delta.mesh_builds,
             enriched_builds = delta.enriched_builds,
+            face_state_writes = delta.face_state_writes,
             toolpath_builds = delta.toolpath_builds,
             toolpath_reuses = delta.toolpath_reuses,
             collision_builds = delta.collision_builds,

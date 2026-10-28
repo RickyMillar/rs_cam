@@ -824,18 +824,19 @@ impl RsCamApp {
 
         // The BREP face hover highlight.
         //
-        // V13: `upload_gpu_data` reads `last_hover_face` for the enriched
-        // mesh colours. Only a change of the hovered face sets the upload
-        // flag, so only the enriched mesh buffer rebuilds. The paired
+        // D3: `upload_gpu_data` reads `last_hover_face` (the model and the
+        // face) for the face state words. Only a change of the hovered face
+        // sets the upload flag, and the pass then rewrites the state words
+        // and builds no mesh. The paired
         // `request_repaint` fires on the same change only (G-LV.1). It is
         // necessary because a pointer at rest on a new face makes no egui
         // repaint of its own.
         let previous_hover_face = self.last_hover_face;
         self.last_hover_face = match &hover.scene {
-            Some(crate::interaction::picking::PickHit::ModelFace { face_id, .. })
+            Some(crate::interaction::picking::PickHit::ModelFace { model_id, face_id })
                 if self.controller.state().workspace == Workspace::Toolpaths =>
             {
-                Some(*face_id)
+                Some((*model_id, *face_id))
             }
             _ => None,
         };

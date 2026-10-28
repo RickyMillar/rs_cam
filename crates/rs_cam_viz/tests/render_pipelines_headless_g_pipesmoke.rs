@@ -12,12 +12,13 @@
 //! `RenderResources::new(&device, format, sample_count)`. That function is the app's ONE
 //! construction site for the viewport's GPU state, and it builds:
 //!
-//! - 4 shader modules: `mesh_shader`, `sim_mesh_shader`, `line_shader`,
-//!   `blit_shader`
-//! - 3 bind group layouts: `mesh_bgl`, `line_bgl`, `blit_bgl`
-//! - 6 render pipelines: `mesh_pipeline`, `sim_mesh_pipeline`,
-//!   `height_plane_pipeline`, `colored_opaque_pipeline`, `line_pipeline`,
-//!   `blit_pipeline`
+//! - 5 shader modules: `mesh_shader`, `face_mesh_shader`, `sim_mesh_shader`,
+//!   `line_shader`, `blit_shader`
+//! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
+//!   `blit_bgl`
+//! - 7 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
+//!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
+//!   `line_pipeline`, `blit_pipeline`
 //!
 //! `app.rs` calls the same function with `render_state.target_format`, and
 //! nothing else in the crate creates a pipeline, a layout, or a shader
@@ -43,7 +44,7 @@
 //!   pass (`paint`) does not run. `ensure_offscreen` builds `blit_bg`, so
 //!   wgpu checks it against `blit_bgl`, but no pass binds it.
 //! - A uniform buffer that is SMALLER than its WGSL struct still passes. All
-//!   three layouts set `min_binding_size: None`, so wgpu defers that check to
+//!   the layouts set `min_binding_size: None`, so wgpu defers that check to
 //!   draw time. The `_pad` field on `LineUniforms` guards the size by
 //!   convention alone. `min_binding_size: Some(...)` on each layout entry
 //!   would move the check here; that is a `render/mod.rs` change.
@@ -70,6 +71,11 @@ use std::sync::{Arc, Mutex};
 
 use egui_wgpu::wgpu;
 use gpu::{adapter_line, block_on, headless_device};
+use rs_cam_core::geo::P3;
+use rs_cam_core::geometry::enriched_mesh::EnrichedMesh;
+use rs_cam_core::ids::ModelId;
+use rs_cam_core::mesh::TriangleMesh;
+use rs_cam_viz::render::mesh_render::face_mesh_gpu_data;
 use rs_cam_viz::render::{MSAA_SAMPLES, RenderResources, scene_sample_count};
 
 /// The surface formats the app can be handed, in `egui_wgpu`'s own priority
@@ -85,6 +91,19 @@ const APP_TARGET_FORMATS: &[wgpu::TextureFormat] = &[
 /// height cannot pass.
 const FRAME_WIDTH: u32 = 64;
 const FRAME_HEIGHT: u32 = 48;
+
+/// A one-triangle STEP mesh with one face.
+fn one_face_mesh() -> EnrichedMesh {
+    let p = |x: f64, y: f64| P3::new(x, y, 0.0);
+    let mesh = TriangleMesh::from_raw(vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)], vec![[0, 1, 2]]);
+    EnrichedMesh {
+        mesh: std::sync::Arc::new(mesh),
+        face_groups: Vec::new(),
+        triangle_to_face: vec![0],
+        adjacency: Vec::new(),
+        edges: Vec::new(),
+    }
+}
 
 /// Collects the errors that no error scope filters. Install it before the
 /// first construction.
@@ -177,6 +196,19 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
             let scope = gpu.device.push_error_scope(wgpu::ErrorFilter::Validation);
             let mut resources = RenderResources::new(&gpu.device, format, count);
             assert_eq!(resources.sample_count(), count);
+            // One face mesh, so the frame draws the face pipeline with its
+            // state bind group (D2).
+            let face_mesh = face_mesh_gpu_data(
+                &gpu.device,
+                &resources.gpu_limits,
+                &resources.face_state_bgl,
+                &resources.face_palette_buffer,
+                ModelId::from_wire(1),
+                &one_face_mesh(),
+                &None,
+            )
+            .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
+            resources.face_mesh_data_list.push(face_mesh);
             resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
             let error = block_on(scope.pop());
             assert!(

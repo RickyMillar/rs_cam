@@ -341,7 +341,7 @@ pub fn deviation_color(d: f32) -> [f32; 3] {
     }
 }
 
-// ── Model faces (the enriched-mesh pipeline) ────────────────────────────
+// ── Model faces (the face pipeline, D2) ─────────────────────────────────
 
 /// A selected face group (bright blue).
 pub const FACE_SELECTED: Rgb = Rgb::new(0.3, 0.5, 1.0);
@@ -370,4 +370,71 @@ const FACE_GROUP_PALETTE: [Rgb; 10] = [
 )]
 pub fn face_group_color(index: usize) -> Rgb {
     FACE_GROUP_PALETTE[index % FACE_GROUP_PALETTE.len()]
+}
+
+// ── The face pipeline palette (D2) ──────────────────────────────────────
+//
+// `face_mesh_pipeline` reads one palette uniform. Its slots are the indices
+// that the WGSL and the state word use, so this block is the one source of
+// both the colours and the slot numbers.
+
+/// The number of `vec4` slots in the face palette uniform.
+pub const FACE_PALETTE_LEN: usize = 24;
+/// Slots `0..10` are the face group pastels.
+pub const FACE_SLOT_GROUPS: u32 = 0;
+/// The slot of a selected face.
+pub const FACE_SLOT_SELECTED: u32 = 10;
+/// The slot of the hovered face.
+pub const FACE_SLOT_HOVER: u32 = 11;
+/// The first item-state slot. `FACE_SLOT_STATE0 + i` is the colour of
+/// `ItemState` `i` in the order Cut, Island, Skipped, Excluded, NotSelected.
+pub const FACE_SLOT_STATE0: u32 = 12;
+/// The ink slot (face edges and the outline, later commits).
+pub const FACE_SLOT_INK: u32 = 17;
+/// The accent slot (the selection outline, a later commit).
+pub const FACE_SLOT_ACCENT: u32 = 18;
+
+/// The palette slot of one item state.
+pub fn face_state_slot(state: rs_cam_core::session::ItemState) -> u32 {
+    use rs_cam_core::session::ItemState;
+    FACE_SLOT_STATE0
+        + match state {
+            ItemState::Cut => 0,
+            ItemState::Island => 1,
+            ItemState::Skipped => 2,
+            ItemState::Excluded => 3,
+            ItemState::NotSelected => 4,
+        }
+}
+
+/// The face palette uniform: each slot an RGBA `vec4` (WGSL array stride
+/// 16 B). Slots `0..10` are [`face_group_color`]; then `FACE_SELECTED`,
+/// `FACE_HOVER`, the five selection state tokens, the ink token and the
+/// accent token. The other slots are zero.
+pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
+    use rs_cam_core::session::ItemState;
+    let rgba = |c: [f32; 3]| [c[0], c[1], c[2], 1.0];
+    let mut palette = [[0.0; 4]; FACE_PALETTE_LEN];
+    let mut put = |slot: u32, c: [f32; 3]| {
+        if let Some(entry) = palette.get_mut(slot as usize) {
+            *entry = rgba(c);
+        }
+    };
+    for (i, c) in FACE_GROUP_PALETTE.iter().enumerate() {
+        put(FACE_SLOT_GROUPS + i as u32, c.array());
+    }
+    put(FACE_SLOT_SELECTED, FACE_SELECTED.array());
+    put(FACE_SLOT_HOVER, FACE_HOVER.array());
+    for state in [
+        ItemState::Cut,
+        ItemState::Island,
+        ItemState::Skipped,
+        ItemState::Excluded,
+        ItemState::NotSelected,
+    ] {
+        put(face_state_slot(state), selection_state_color(state));
+    }
+    put(FACE_SLOT_INK, token_rgb(tokens::INK_65));
+    put(FACE_SLOT_ACCENT, token_rgb(tokens::ACCENT));
+    palette
 }
