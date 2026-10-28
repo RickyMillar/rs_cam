@@ -106,6 +106,10 @@ pub struct ResolvedGenInputs {
     /// `Produced::rest_regions_top_z`; it reaches the planner through
     /// `ExecutionContext::rest_top_z`. `None` for every other boundary.
     rest_top_z: Option<f64>,
+    /// W2 (D69 §3): on an op that cuts the remaining stock, the smallest
+    /// axial step of the earlier roughing ops of the setup; it reaches the
+    /// helical Waterline through `ExecutionContext::rest_axial_step_mm`.
+    rest_axial_step_mm: Option<f64>,
     /// The setup's local<->global transform, hoisted off the
     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
     /// `generate_toolpath` needs it and the context is scoped to this
@@ -1385,6 +1389,9 @@ pub fn execute_generation(
             .regions(regions.as_ref())
             .centre(boundary_centre.as_deref()),
         rest_top_z: inputs.rest_top_z,
+        // W2 (D69 §3): the wall step of the helical Waterline.
+        rest_axial_step_mm: inputs.rest_axial_step_mm,
+        material: Some(&context.material),
         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),
         rest_analysis: Some(&context.rest_analysis),

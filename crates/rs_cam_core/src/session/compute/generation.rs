@@ -461,6 +461,15 @@ impl ProjectSession {
                 _ => None,
             };
 
+        // W2 (D69 §3): on an op that cuts the remaining stock, the smallest
+        // axial step of the earlier enabled roughing ops of the setup (the
+        // registry's `PassRole::Roughing`): the depth at which the rough cut
+        // the walls. A finishing step (a Waterline `z_step`) is not a rough.
+        let rest_axial_step_mm = (tc.stock_source
+            == crate::compute::config::StockSource::FromRemainingStock)
+            .then(|| self.earlier_rough_step(index))
+            .flatten();
+
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
             tool,
@@ -481,7 +490,28 @@ impl ProjectSession {
             pre_boundary,
             pre_boundary_regions,
             rest_top_z,
+            rest_axial_step_mm,
         })
+    }
+
+    /// W2 (D69 §3): the smallest `OperationConfig::depth_per_pass` of the
+    /// enabled roughing ops (`PassRole::Roughing`) before toolpath `index`
+    /// in its setup, or `None` when no such op states one.
+    fn earlier_rough_step(&self, index: usize) -> Option<f64> {
+        let setup = self.find_setup_for_toolpath_index(index)?;
+        setup
+            .toolpath_indices()
+            .iter()
+            .take_while(|&&i| i != index)
+            .filter_map(|&i| self.toolpath_configs.get(i))
+            .filter(|tc| {
+                tc.enabled
+                    && tc.operation.op_type().spec().feeds_pass_role
+                        == crate::feeds::PassRole::Roughing
+            })
+            .filter_map(|tc| tc.operation.depth_per_pass())
+            .filter(|step| step.is_finite() && *step > 0.0)
+            .min_by(f64::total_cmp)
     }
 
     /// D50: the top Z of the stock that the toolpath `source_toolpath_id`
