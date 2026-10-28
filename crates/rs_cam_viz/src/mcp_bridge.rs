@@ -887,6 +887,9 @@ declare_core_requests! {
         /// Row `AddBoreFromDrill` (geometry selection P6.7).
         AddBoreFromDrill(rs_cam_mcp::server::AddBoreFromDrillParam)
             => AddBoreFromDrill, Some(Workspace::Toolpaths);
+        /// Row `AddGeodesicBodyAndEdges` (step 7.8).
+        AddGeodesicBodyAndEdges(rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam)
+            => AddGeodesicBodyAndEdges, Some(Workspace::Toolpaths);
         RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam)
             => RemoveToolpath, None;
         AddTool(rs_cam_mcp::server::AddToolParam)

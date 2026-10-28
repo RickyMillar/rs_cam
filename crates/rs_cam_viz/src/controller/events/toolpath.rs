@@ -56,38 +56,7 @@ impl<B: ComputeBackend> AppController<B> {
         op_type: crate::state::toolpath::OperationType,
         model_override: Option<rs_cam_core::ids::ModelId>,
     ) -> Option<Effects> {
-        // Q7: the model selected in the Setup rail or the viewport, and the
-        // faces picked in the viewport.
-        let (selected_model, picked_faces) = match &self.state.selection {
-            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
-            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
-            Selection::Faces(model_id, faces) => (
-                Some(*model_id),
-                faces.iter().map(|face| (*model_id, *face)).collect(),
-            ),
-            _ => (None, Vec::new()),
-        };
-        let selected_model = model_override.or(selected_model);
-        let setups = self.state.session().list_setups();
-        let target_setup_idx = match self.state.selection {
-            Selection::Toolpath(tp_id) => self
-                .setup_of_toolpath(tp_id)
-                .and_then(|sid| setups.iter().position(|s| s.id == sid)),
-            Selection::Setup(setup_id) | Selection::Obstacle(setup_id, _) => {
-                setups.iter().position(|s| s.id == setup_id)
-            }
-            // Q7: a selected model adds into the first setup whose
-            // "Models" list holds it (empty = every model).
-            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
-                .and_then(|model_id| {
-                    setups
-                        .iter()
-                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
-                }),
-            _ => None,
-        }
-        .unwrap_or(0); // default to first setup
-
+        let (target_setup_idx, selected_model, picked_faces) = self.add_target(model_override);
         let name = format!(
             "{} {}",
             op_type.label(),
@@ -176,6 +145,144 @@ impl<B: ComputeBackend> AppController<B> {
         }
         self.state.gui.mark_edited();
         effects
+    }
+
+    /// Step 7.8: the add menu's "Geodesic body + edges". The pair goes in
+    /// the setup of the GUI selection, with the selected model (Q7), the
+    /// first fitting tool and the edge op (D-T2: its enable box skips it).
+    pub(crate) fn handle_add_geodesic_pair(&mut self) {
+        let (setup_index, selected_model, _picks) = self.add_target(None);
+        let request = rs_cam_core::session::GeodesicPairRequest::new(setup_index, selected_model);
+        if let Err(msg) = self.add_geodesic_pair(request) {
+            tracing::warn!("{msg}");
+            self.push_notification(msg, super::super::Severity::Warning);
+        }
+    }
+
+    /// Step 7.8: draft the pair through core (`draft_geodesic_pair`, THE
+    /// draft door) and add it with ONE `AddGeodesicBodyAndEdges` command.
+    /// The GUI part is the op add's: a runtime entry per op, the selection
+    /// on op 1, and the R2 and S11 toasts. The GUI and MCP both call it.
+    ///
+    /// # Errors
+    ///
+    /// The text of a draft or command refusal ("Cannot add toolpath: …").
+    pub(crate) fn add_geodesic_pair(
+        &mut self,
+        request: rs_cam_core::session::GeodesicPairRequest,
+    ) -> Result<GeodesicPairAdded, String> {
+        let setup_index = request.setup_index;
+        let draft = self
+            .state
+            .session()
+            .draft_geodesic_pair(request)
+            .map_err(|error| format!("Cannot add toolpath: {error}"))?;
+        let notes: Vec<(Option<String>, Option<String>)> = std::iter::once(&draft.body)
+            .chain(draft.edges.as_ref())
+            .map(|d| (d.no_tool.clone(), d.feeds_refusal.clone()))
+            .collect();
+        let effects = self
+            .apply(Command::AddGeodesicBodyAndEdges(
+                rs_cam_core::session::AddGeodesicBodyAndEdgesArgs {
+                    setup_index,
+                    body: Box::new(draft.body.config),
+                    edges: draft.edges.map(|edge| Box::new(edge.config)),
+                },
+            ))
+            .map_err(|error| format!("Cannot add toolpath: {error}"))?;
+        let body_index = effects
+            .created
+            .ok_or_else(|| "Cannot add toolpath: the command created nothing".to_owned())?;
+        let edges_index = (notes.len() > 1).then_some(body_index + 1);
+        // One toast per kind, as the op add gives: the pair shares its tool.
+        if let Some(state) = notes.iter().find_map(|(no_tool, _)| no_tool.clone()) {
+            self.push_notification(
+                format!(
+                    "Added with no tool: {state}. {}.",
+                    rs_cam_core::session::NO_TOOL_FIX
+                ),
+                super::super::Severity::Warning,
+            );
+        }
+        if let Some(e) = notes.iter().find_map(|(_, feeds)| feeds.clone()) {
+            self.push_notification(
+                format!(
+                    "Added with no feeds: {e}. {}.",
+                    rs_cam_core::compute::not_set::FEEDS_NOT_SET_TEXT
+                ),
+                super::super::Severity::Warning,
+            );
+        }
+        let mut body_id = None;
+        for index in std::iter::once(body_index).chain(edges_index) {
+            if let Some(tc) = self.state.session().toolpath_configs().get(index) {
+                let (id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
+                body_id = body_id.or(Some(id));
+                self.state
+                    .gui
+                    .toolpath_rt
+                    .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
+            }
+        }
+        if let Some(id) = body_id {
+            self.state.selection = Selection::Toolpath(id);
+        }
+        self.pending_upload = true;
+        self.state.gui.mark_edited();
+        Ok(GeodesicPairAdded {
+            body_index,
+            edges_index,
+            no_tool: notes.iter().find_map(|(no_tool, _)| no_tool.clone()),
+            feeds_refusal: notes.iter().find_map(|(_, feeds)| feeds.clone()),
+        })
+    }
+
+    /// Where an add goes, from the GUI selection (Q7): the setup index, the
+    /// selected model (`model_override` wins), and the faces picked in the
+    /// viewport. Shared by the op add and the template (step 7.8).
+    fn add_target(
+        &self,
+        model_override: Option<rs_cam_core::ids::ModelId>,
+    ) -> (
+        usize,
+        Option<rs_cam_core::ids::ModelId>,
+        Vec<(
+            rs_cam_core::ids::ModelId,
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+        )>,
+    ) {
+        // Q7: the model selected in the Setup rail or the viewport, and the
+        // faces picked in the viewport.
+        let (selected_model, picked_faces) = match &self.state.selection {
+            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
+            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
+            Selection::Faces(model_id, faces) => (
+                Some(*model_id),
+                faces.iter().map(|face| (*model_id, *face)).collect(),
+            ),
+            _ => (None, Vec::new()),
+        };
+        let selected_model = model_override.or(selected_model);
+        let setups = self.state.session().list_setups();
+        let target_setup_idx = match self.state.selection {
+            Selection::Toolpath(tp_id) => self
+                .setup_of_toolpath(tp_id)
+                .and_then(|sid| setups.iter().position(|s| s.id == sid)),
+            Selection::Setup(setup_id) | Selection::Obstacle(setup_id, _) => {
+                setups.iter().position(|s| s.id == setup_id)
+            }
+            // Q7: a selected model adds into the first setup whose
+            // "Models" list holds it (empty = every model).
+            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
+                .and_then(|model_id| {
+                    setups
+                        .iter()
+                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
+                }),
+            _ => None,
+        }
+        .unwrap_or(0); // default to first setup
+        (target_setup_idx, selected_model, picked_faces)
     }
 
     /// Apply one add command. A refusal shows as a Warning toast, so a
@@ -722,4 +829,14 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
     }
+}
+
+/// Step 7.8: what [`AppController::add_geodesic_pair`] added: the indices
+/// of op 1 and the edge op (`None` without it), and the R2 and S11 notes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GeodesicPairAdded {
+    pub body_index: usize,
+    pub edges_index: Option<usize>,
+    pub no_tool: Option<String>,
+    pub feeds_refusal: Option<String>,
 }

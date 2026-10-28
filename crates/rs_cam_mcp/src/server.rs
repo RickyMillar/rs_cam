@@ -1490,6 +1490,28 @@ pub struct AddToolpathParam {
     pub name: Option<String>,
 }
 
+/// Step 7.8: `add_geodesic_body_and_edges`, the add menu's template
+/// "Geodesic body + edges".
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AddGeodesicBodyAndEdgesParam {
+    /// Setup index (0-based) that both toolpaths join.
+    pub setup_index: usize,
+    /// Tool index (0-based) from list_tools for the body rough. Omit it to
+    /// take the first project tool that a 3D Rough accepts (as
+    /// `add_toolpath`).
+    pub tool_index: Option<usize>,
+    /// Model ID (the `id` from `inspect_model`, not an index). Omit it to
+    /// take the model of the core rule (as `add_toolpath`).
+    pub model_id: Option<usize>,
+    /// Add the edge op (default true). False adds the body rough alone.
+    pub edges: Option<bool>,
+    /// Tool index (0-based) for the edge op. Omit it to take the body's
+    /// tool. A tool larger than the body's is refused (D53) and nothing is
+    /// added.
+    pub edge_tool_index: Option<usize>,
+}
+
 /// Geometry selection P6.7: `add_bore_from_drill`, the "Add a Bore for
 /// these" action of a Drill hole row.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -3608,6 +3630,10 @@ pub fn build_info() -> serde_json::Value {
             // `capped_min_feed_mm_min` and the bounded `capped_moves` rows
             // (the moves with a feed cap); `max_capped_moves` caps them.
             "cut_trace_capped_moves",
+            // Step 7.8 (2026-10-28): `add_geodesic_body_and_edges` adds the
+            // template "Geodesic body + edges" (a Geodesic Adaptive rough
+            // and an optional Contour Parallel rest op on its regions).
+            "geodesic_body_and_edges",
         ],
     })
 }

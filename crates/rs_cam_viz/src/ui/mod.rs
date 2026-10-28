@@ -212,6 +212,9 @@ pub enum AppEvent {
     /// Geometry selection P6.7: "Add a Bore for these" on a Drill hole row.
     /// One `AddBoreFromDrill` command and one undo step.
     AddBoreFromDrill(ToolpathId),
+    /// Step 7.8: the add menu's "Geodesic body + edges": one
+    /// `AddGeodesicBodyAndEdges` command.
+    AddGeodesicPair,
     RemoveToolpath(ToolpathId),
     MoveToolpathUp(ToolpathId),
     MoveToolpathDown(ToolpathId),

@@ -1276,6 +1276,22 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "add_geodesic_body_and_edges",
+        description = "Step 7.8: the GUI add menu's template \"Geodesic body + edges\". It adds TWO 3D Rough toolpaths to `setup_index` in one command: \"Geodesic body\" (clearing_strategy geodesic_adaptive, its rest analysis on) and, after it, \"Geodesic edges\" (clearing_strategy contour_parallel, rest machining from previous ops, machining boundary derived_rest_regions of the body with center containment and offset 0). Each op is drafted as `add_toolpath` drafts it (Suggest, the model rule, the first fitting tool). The edge op takes the body's tool unless `edge_tool_index` states one; a tool larger than the body's is refused with the D53 text and nothing is added. `edges: false` adds the body alone (its rest analysis stays off). Returns `body_index` and `edges_index` (null without the edge op); the edge op is the next index."
+    )]
+    async fn add_geodesic_body_and_edges(
+        &self,
+        Parameters(param): Parameters<rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::Core(CoreRequest::AddGeodesicBodyAndEdges(
+                param,
+            )))
+            .await,
+        )
+    }
+
+    #[tool(
         name = "remove_toolpath",
         description = "Remove a toolpath by index. Updates setup indices automatically."
     )]

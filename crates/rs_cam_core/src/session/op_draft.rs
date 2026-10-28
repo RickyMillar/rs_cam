@@ -655,3 +655,148 @@ impl ProjectSession {
         }
     }
 }
+
+// ── Step 7.8: the template "Geodesic body + edges" ─────────────────────
+
+/// The name of op 1 of [`ProjectSession::draft_geodesic_pair`].
+pub const GEODESIC_BODY_NAME: &str = "Geodesic body";
+/// The name of op 2 (the optional edge op).
+pub const GEODESIC_EDGES_NAME: &str = "Geodesic edges";
+
+/// Step 7.8 (operator ruling 2026-10-28, midday): what the template
+/// "Geodesic body + edges" adds.
+#[derive(Debug, Clone, Copy)]
+pub struct GeodesicPairRequest {
+    /// The setup that both ops join.
+    pub setup_index: usize,
+    /// The tool of op 1 (the GUI: the first fitting tool).
+    pub tool: ToolChoice,
+    /// The model of both ops.
+    pub model: ModelChoice,
+    /// The optional edge op (D-T2: the GUI always adds it; MCP `edges`).
+    pub edges: bool,
+    /// The tool of the edge op, or `None` for op 1's tool (D-T3). A tool
+    /// larger than op 1's refuses at the command (D-T4, D53).
+    pub edge_tool: Option<ToolId>,
+}
+
+impl GeodesicPairRequest {
+    /// The GUI request: the first fitting tool, the model rule with the
+    /// selected model, and the edge op with op 1's tool.
+    #[must_use]
+    pub fn new(setup_index: usize, selected_model: Option<ModelId>) -> Self {
+        Self {
+            setup_index,
+            tool: ToolChoice::FirstFitting,
+            model: ModelChoice::Rule {
+                selected: selected_model,
+            },
+            edges: true,
+            edge_tool: None,
+        }
+    }
+}
+
+/// The two drafts of the template. Send them as one
+/// [`Command::AddGeodesicBodyAndEdges`](crate::session::Command::AddGeodesicBodyAndEdges).
+#[derive(Debug, Clone)]
+pub struct GeodesicPairDraft {
+    /// Op 1, "Geodesic body".
+    pub body: ToolpathDraft,
+    /// Op 2, "Geodesic edges", or `None`.
+    pub edges: Option<ToolpathDraft>,
+}
+
+impl ProjectSession {
+    /// Step 7.8: draft the pair of the template "Geodesic body + edges"
+    /// through THE draft door ([`Self::draft_toolpath`]), so each op takes
+    /// the tool, model, Suggest values, dressups and boundary of any new
+    /// 3D Rough. The template then sets only these fields:
+    ///
+    /// - op 1: `clearing_strategy = GeodesicAdaptive` (the ruling), and its
+    ///   rest analysis on when the edge op exists (D44: the runner keeps
+    ///   the regions only on demand);
+    /// - op 2: `clearing_strategy = ContourParallel` (the ruling),
+    ///   `stock_source = FromRemainingStock`, and the boundary
+    ///   `DerivedRestRegions` with `Center` containment and offset 0 (the
+    ///   D47 pair of the D53 sentry). The source id is op 1's, which the
+    ///   command writes when it adds op 1; the draft holds a placeholder.
+    ///   Its tool is op 1's tool unless the request states one: an equal
+    ///   tool is the largest that D53 allows, and op 1's regions are the
+    ///   centre positions of that tool (D48), so `Center` is exact.
+    ///
+    /// # Errors
+    ///
+    /// The refusals of [`Self::draft_toolpath`].
+    pub fn draft_geodesic_pair(
+        &self,
+        request: GeodesicPairRequest,
+    ) -> Result<GeodesicPairDraft, DraftRefusal> {
+        use crate::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+        use crate::compute::operation_configs::ClearingStrategy;
+        let GeodesicPairRequest {
+            setup_index,
+            tool,
+            model,
+            edges,
+            edge_tool,
+        } = request;
+        let body_request = DraftRequest {
+            op_type: OperationType::Adaptive3d,
+            tool,
+            model,
+            setup_index,
+            name: GEODESIC_BODY_NAME.to_owned(),
+            picked_faces: Vec::new(),
+        };
+        let mut body = self.draft_toolpath(body_request)?;
+        if let OperationConfig::Adaptive3d(cfg) = &mut body.config.operation {
+            cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
+        }
+        body.config.rest_analysis.enabled = edges;
+        if !edges {
+            return Ok(GeodesicPairDraft { body, edges: None });
+        }
+        let edge_tool = match (edge_tool, body.config.tool_id) {
+            (Some(id), _) | (None, Some(id)) => ToolChoice::Exact(id),
+            // R2: op 1 has no tool, and the edge op has none either.
+            (None, None) => ToolChoice::FirstFitting,
+        };
+        let edge_request = DraftRequest {
+            op_type: OperationType::Adaptive3d,
+            tool: edge_tool,
+            model: ModelChoice::Exact(body.config.model_id),
+            setup_index,
+            name: GEODESIC_EDGES_NAME.to_owned(),
+            picked_faces: Vec::new(),
+        };
+        let mut edge = self.draft_toolpath(edge_request)?;
+        if let OperationConfig::Adaptive3d(cfg) = &mut edge.config.operation {
+            cfg.clearing_strategy = ClearingStrategy::ContourParallel;
+        }
+        edge.config.stock_source = crate::compute::config::StockSource::FromRemainingStock;
+        edge.config.boundary = BoundaryConfig {
+            enabled: true,
+            source: BoundarySource::DerivedRestRegions {
+                source_toolpath_id: crate::ToolpathId::placeholder(),
+            },
+            containment: BoundaryContainment::Center,
+            offset: 0.0,
+        };
+        Ok(GeodesicPairDraft {
+            body,
+            edges: Some(edge),
+        })
+    }
+
+    /// The radius (mm) of the built cutter of `tool_id`: the radius the
+    /// containment uses (`ResolvedGenInputs::boundary_centre`). `None` for
+    /// no tool or a tool that does not build.
+    pub(crate) fn built_tool_radius_mm(&self, tool_id: Option<ToolId>) -> Option<f64> {
+        use crate::tool::MillingCutter as _;
+        tool_id
+            .and_then(|id| self.tool_by_id(id))
+            .and_then(|tool| super::session_cutter(tool).ok())
+            .map(|def| def.diameter() / 2.0)
+    }
+}
