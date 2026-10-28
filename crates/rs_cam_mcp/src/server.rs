@@ -929,6 +929,75 @@ pub struct ScreenshotGuiParam {
     pub height: Option<f32>,
 }
 
+/// The view preset `set_ui_view camera.preset` turns the camera to.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum ViewPresetParam {
+    Top,
+    Front,
+    Right,
+    Iso,
+}
+
+/// The camera projection `set_ui_view camera.projection` sets.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum ProjectionParam {
+    Perspective,
+    Orthographic,
+}
+
+/// What `set_ui_view camera.fit` frames: `model` is Reset View (the first
+/// model); `selection` is the picked items of the selected toolpath.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum FitParam {
+    Model,
+    Selection,
+}
+
+/// A camera pose patch. Every field is optional; an omitted field keeps
+/// its value. Degrees on the wire.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[schemars(inline)]
+pub struct CameraPoseParam {
+    /// The orbit target, mm, display frame.
+    pub target: Option<[f64; 3]>,
+    /// The eye-to-target distance, mm. Refused outside [0.1, 50000].
+    pub distance: Option<f64>,
+    /// The turntable yaw, degrees, about +Z from +X.
+    pub yaw_deg: Option<f64>,
+    /// The pitch, degrees. Refused outside +/-89.427 (90 deg - 0.01 rad).
+    pub pitch_deg: Option<f64>,
+}
+
+/// The camera fields of `set_ui_view`. Applied in the order `fit`,
+/// `preset`, `projection`, `pose`; the camera moves at once.
+#[derive(Deserialize, schemars::JsonSchema, Default, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[schemars(inline)]
+pub struct CameraParam {
+    /// Turn the camera to a view preset (yaw and pitch).
+    pub preset: Option<ViewPresetParam>,
+    /// Set the projection mode.
+    pub projection: Option<ProjectionParam>,
+    /// Frame the first model (`model`) or the picked items of the selected
+    /// toolpath (`selection`). Refused together with `frame_items`.
+    pub fit: Option<FitParam>,
+    /// Override single pose fields last.
+    pub pose: Option<CameraPoseParam>,
+}
+
 #[derive(Deserialize, schemars::JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
 pub struct SetUiViewParam {
@@ -988,6 +1057,14 @@ pub struct SetUiViewParam {
     /// reports each id under `model_visibility.applied` or
     /// `model_visibility.refused` (an id that names no model).
     pub model_visibility: Option<std::collections::BTreeMap<usize, bool>>,
+    /// A C5: move the camera. `preset` (`top`, `front`, `right`, `iso`),
+    /// `projection` (`perspective`, `orthographic`), `fit` (`model`,
+    /// `selection`) and `pose` (`target`, `distance`, `yaw_deg`,
+    /// `pitch_deg`). Applied after `frame_items`, in the order fit, preset,
+    /// projection, pose. Every field is checked before any part of the call
+    /// applies; a refusal changes nothing. The camera moves at once (no
+    /// animation). The reply always carries the `camera` echo.
+    pub camera: Option<CameraParam>,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.
@@ -3634,6 +3711,12 @@ pub fn build_info() -> serde_json::Value {
             // template "Geodesic body + edges" (a Geodesic Adaptive rough
             // and an optional Contour Parallel rest op on its regions).
             "geodesic_body_and_edges",
+            // A C5 + F3 (2026-10-29): `set_ui_view` takes `camera`
+            // (`preset`, `projection`, `fit`, `pose`) and its reply carries
+            // the `camera` echo; the reply `selection` is the focus wire
+            // kind. `get_ui_view` reads the focus summary and the camera.
+            "view_camera",
+            "get_ui_view",
         ],
     })
 }
@@ -3731,6 +3814,8 @@ mod tests {
             "geometry_selection",
             "add_bore_from_drill",
             "selection_hole_fit",
+            "view_camera",
+            "get_ui_view",
         ] {
             assert!(
                 features.contains(&flag),
@@ -4235,6 +4320,50 @@ mod tests {
         let overlays = p.overlays.expect("the map deserializes");
         assert_eq!(overlays.get("rest_heatmap"), Some(&true));
         assert_eq!(overlays.get("tier_map"), Some(&false));
+    }
+
+    /// A C5: the `camera` object deserializes with its four fields and
+    /// their tokens, and an unknown key inside it is refused (F26).
+    #[test]
+    fn set_ui_view_param_carries_a_camera_cam9() {
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(p.camera.is_none());
+
+        let p: SetUiViewParam = serde_json::from_value(serde_json::json!({
+            "camera": {
+                "preset": "iso",
+                "projection": "orthographic",
+                "fit": "selection",
+                "pose": {
+                    "target": [1.0, 2.0, 3.0],
+                    "distance": 150.0,
+                    "yaw_deg": 30.0,
+                    "pitch_deg": -10.0,
+                },
+            },
+        }))
+        .unwrap();
+        let camera = p.camera.expect("the camera object deserializes");
+        assert_eq!(camera.preset, Some(ViewPresetParam::Iso));
+        assert_eq!(camera.projection, Some(ProjectionParam::Orthographic));
+        assert_eq!(camera.fit, Some(FitParam::Selection));
+        let pose = camera.pose.expect("the pose deserializes");
+        assert_eq!(pose.target, Some([1.0, 2.0, 3.0]));
+        assert_eq!(pose.distance, Some(150.0));
+        assert_eq!(pose.yaw_deg, Some(30.0));
+        assert_eq!(pose.pitch_deg, Some(-10.0));
+
+        for bad in [
+            serde_json::json!({ "camera": { "zoom": 2.0 } }),
+            serde_json::json!({ "camera": { "pose": { "yaw": 1.0 } } }),
+            serde_json::json!({ "camera": { "preset": "isometric" } }),
+            serde_json::json!({ "camera": { "fit": "all" } }),
+        ] {
+            assert!(
+                serde_json::from_value::<SetUiViewParam>(bad.clone()).is_err(),
+                "{bad} must be refused"
+            );
+        }
     }
 
     // ── Gap 6 (2026-08-19 run log): typed `value` ─────────────────────

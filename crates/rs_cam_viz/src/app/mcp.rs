@@ -492,7 +492,7 @@ impl super::RsCamApp {
 
             // ── View reads (WP13) ───────────────────────────────────
             //
-            // One arm for all eight rows. `ui_query` takes `&self`, so a
+            // One arm for all nine rows. `ui_query` takes `&self`, so a
             // read cannot write the session.
             McpRequestKind::UiQuery(query) => {
                 let resp = self.ui_query(query).into_json();
@@ -591,6 +591,7 @@ impl super::RsCamApp {
                     overlays,
                     frame_items,
                     model_visibility,
+                    camera,
                 }) => {
                     let resp = self.mcp_set_ui_view(
                         ctx,
@@ -602,6 +603,7 @@ impl super::RsCamApp {
                         overlays.as_ref(),
                         frame_items,
                         model_visibility.as_ref(),
+                        camera,
                     );
                     let _ = response_tx.send(McpResponse { result: Ok(resp) });
                 }
@@ -648,12 +650,15 @@ impl super::RsCamApp {
     /// write the session and cannot write the view.
     ///
     /// **The receiver is the application, not `AppState`.** Two of the
-    /// eight rows read state `AppState` does not hold: `get_notifications`
+    /// nine rows read state `AppState` does not hold: `get_notifications`
     /// reads the toast stack and `get_diagnostics` reads the controller's
     /// own triage builder. Both hang on the controller, one level above
     /// `AppState`, so a door on `AppState` could answer neither.
     fn ui_query(&self, query: UiQuery) -> UiQueryAnswer {
         match query {
+            UiQuery::GetUiView(NoArgs) => {
+                UiQueryAnswer::GetUiView(view::get_ui_view_json(self.controller.state()))
+            }
             UiQuery::ListToolLibrary(NoArgs) => {
                 UiQueryAnswer::ListToolLibrary(self.mcp_list_tool_library())
             }
@@ -1064,16 +1069,6 @@ fn workspace_of(p: rs_cam_mcp::server::WorkspaceParam) -> Workspace {
         WorkspaceParam::Toolpaths => Workspace::Toolpaths,
         WorkspaceParam::Simulation => Workspace::Simulation,
         WorkspaceParam::Readiness => Workspace::Readiness,
-    }
-}
-
-/// The wire token of a [`Workspace`], for the `set_ui_view` JSON echo.
-fn workspace_key(w: Workspace) -> &'static str {
-    match w {
-        Workspace::Setup => "setup",
-        Workspace::Toolpaths => "toolpaths",
-        Workspace::Simulation => "simulation",
-        Workspace::Readiness => "readiness",
     }
 }
 

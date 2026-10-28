@@ -471,8 +471,8 @@ fn build_advance_bands(
 pub(crate) fn tab_vertices(
     scene: &crate::interaction::picking::TabScene,
 ) -> Vec<crate::render::LineVertex> {
-    use crate::interaction::picking::POINT_MARK_RADIUS_MM;
     use crate::render::{LineVertex, colors};
+    use crate::state::display_frame::POINT_MARK_RADIUS_MM;
     let z = scene.z as f32;
     let mut verts = Vec::new();
     for tab in &scene.tabs {
@@ -519,8 +519,8 @@ pub(crate) fn neutral_drawing_vertices(
     frame: Option<&SetupFrame>,
     stock: &rs_cam_core::compute::StockConfig,
 ) -> Vec<crate::render::LineVertex> {
-    use crate::interaction::picking::{POINT_MARK_RADIUS_MM, drawing_display_z, item_display_xy};
     use crate::render::{LineVertex, colors};
+    use crate::state::display_frame::{POINT_MARK_RADIUS_MM, drawing_display_z, item_display_xy};
     let color = colors::DRAWING_NEUTRAL;
     let z = drawing_display_z(frame, stock) as f32;
     let at = |p: &rs_cam_core::geo::P2| -> [f32; 3] {
@@ -584,10 +584,10 @@ pub(crate) fn hover_vertices(
     tc: &rs_cam_core::session::ToolpathConfig,
     key: &rs_cam_core::selection::MatchKey,
 ) -> Vec<crate::render::LineVertex> {
-    use crate::interaction::picking::{
+    use crate::render::{LineVertex, colors};
+    use crate::state::display_frame::{
         POINT_MARK_RADIUS_MM, drawing_plane_z, item_display_point, toolpath_setup_frame,
     };
-    use crate::render::{LineVertex, colors};
     let color = colors::SELECTION_HOVER;
     let Some(model) = session.models().iter().find(|m| m.id == tc.model_id) else {
         return Vec::new();
@@ -683,7 +683,7 @@ mod tests {
             verts.len(),
             model.items.ring_count()
         );
-        let z = crate::interaction::picking::drawing_display_z(None, &stock) as f32;
+        let z = crate::state::display_frame::drawing_display_z(None, &stock) as f32;
         for v in &verts {
             assert_eq!(v.color, crate::render::colors::DRAWING_NEUTRAL);
             assert!((v.position[2] - z).abs() < 1e-4, "{:?}", v.position);
@@ -864,7 +864,7 @@ mod tests {
             let corner = face_shape.rings.exterior[0];
             let verts = super::super::hover_vertices(&session, tc, face.key());
             assert!(!verts.is_empty(), "the STL face hover draws its ring");
-            let frame = crate::interaction::picking::toolpath_setup_frame(&session, tc.id);
+            let frame = crate::state::display_frame::toolpath_setup_frame(&session, tc.id);
             let z = face_shape.plane_z;
             let at = P3::new(corner.x, corner.y, z);
             let want = frame

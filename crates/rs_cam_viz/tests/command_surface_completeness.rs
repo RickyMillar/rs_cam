@@ -734,6 +734,59 @@ fn no_mcp_skipped_view_row_claims_a_wire_name() {
     assert!(checked > 0, "no view row declares an MCP skip");
 }
 
+/// F §7: every `mcp: Skip` reason that sends the reader to `set_ui_view`
+/// names a field that the `set_ui_view` schema has. A dotted name
+/// (`camera.preset`) must resolve to a nested field. The schema is read
+/// off the router the embedded server registers.
+#[cfg(feature = "mcp")]
+#[test]
+fn every_set_ui_view_skip_names_a_schema_field() {
+    let router = rs_cam_viz::mcp_server::EmbeddedCamServer::into_tool_router();
+    let tool = router
+        .list_all()
+        .into_iter()
+        .find(|t| t.name == "set_ui_view")
+        .unwrap_or_else(|| panic!("the embedded server no longer registers set_ui_view"));
+    let schema = serde_json::Value::Object((*tool.input_schema).clone());
+    let resolves = |path: &str| {
+        let pointer: String = path
+            .split('.')
+            .map(|part| format!("/properties/{part}"))
+            .collect();
+        schema.pointer(&pointer).is_some()
+    };
+    let mut checked = 0_usize;
+    for id in UiCommandId::ALL {
+        let Reach::Skip(reason) = id.surfaces().mcp else {
+            continue;
+        };
+        if !reason.contains("set_ui_view") {
+            continue;
+        }
+        checked += 1;
+        let tokens: Vec<&str> = reason
+            .split(|c: char| !(c.is_ascii_lowercase() || c == '_' || c == '.'))
+            .map(|t| t.trim_end_matches('.'))
+            .filter(|t| !t.is_empty() && *t != "set_ui_view")
+            .collect();
+        for dotted in tokens.iter().filter(|t| t.contains('.')) {
+            assert!(
+                resolves(dotted),
+                "{id:?}: the reason '{reason}' names `{dotted}`, which the \
+                 set_ui_view schema does not have"
+            );
+        }
+        assert!(
+            tokens.iter().any(|t| resolves(t)),
+            "{id:?}: the reason '{reason}' names set_ui_view and no field of it"
+        );
+    }
+    assert!(
+        checked >= 4,
+        "too few set_ui_view skip reasons ({checked}); the scan is vacuous"
+    );
+}
+
 // ── P5 — one name, one row, across both registries ───────────────────
 
 #[test]

@@ -746,7 +746,7 @@ fn workspace_keys_round_trip() {
     // menu (G-WSMENU).
     for ws in Workspace::ALL {
         let wire: rs_cam_mcp::server::WorkspaceParam =
-            serde_json::from_value(serde_json::json!(workspace_key(ws))).unwrap();
+            serde_json::from_value(serde_json::json!(ws.wire_key())).unwrap();
         assert_eq!(workspace_of(wire), ws);
     }
     // The "sim" alias is gone (no-legacy ruling 2026-09-16).
@@ -992,4 +992,74 @@ fn mcp_generate_all_leaves_the_saved_debug_options_unchanged_u4() {
         !tc.debug_options.enabled,
         "an MCP generate_all must not switch on the saved generator-trace option"
     );
+}
+
+// ── F3: get_ui_view reads the focus summary and the camera echo ─────
+
+/// `get_ui_view` gives `selection.kind` = `Selection::wire_kind` for a
+/// toolpath focus (and its index), and `camera` = the camera echo that the
+/// `set_ui_view` reply carries.
+#[test]
+fn get_ui_view_reads_the_focus_kind_and_the_camera_echo_f3() {
+    let mut state = crate::state::AppState::new();
+    let operation = crate::state::toolpath::OperationConfig::new_default(
+        rs_cam_core::compute::catalog::OperationType::Pocket,
+    );
+    let op_type = operation.op_type();
+    let config = rs_cam_core::session::ToolpathConfig {
+        shoe: Default::default(),
+        id: rs_cam_core::ToolpathId::from_raw(0),
+        name: "Pocket".to_owned(),
+        enabled: true,
+        operation,
+        dressups: crate::state::toolpath::DressupConfig::for_op(op_type),
+        heights: crate::state::toolpath::HeightsConfig::default(),
+        tool_id: None,
+        model_id: rs_cam_core::ids::ModelId::from_raw(0),
+        pre_gcode: None,
+        post_gcode: None,
+        boundary: crate::state::toolpath::BoundaryConfig::default(),
+        boundary_inherit: true,
+        stock_source: crate::state::toolpath::StockSource::default(),
+        coolant: rs_cam_core::gcode::CoolantMode::Off,
+        debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
+        feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+        rest_analysis: crate::state::toolpath::RestAnalysisConfig::default(),
+        planner_origin: None,
+    };
+    let index = state
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(config),
+        }))
+        .expect("setup 0 exists on a default session")
+        .created
+        .expect("the AddToolpath row reports the new toolpath index");
+    let id = state
+        .session()
+        .toolpath_config_at(index)
+        .expect("the toolpath")
+        .id;
+    let _ = state.set_focus(Selection::Toolpath(id));
+    state.camera.preset(crate::render::camera::ViewPreset::Top);
+
+    let answer: serde_json::Value =
+        serde_json::from_str(&super::view::get_ui_view_json(&state)).expect("JSON");
+    assert_eq!(answer["selection"]["kind"], state.focus().wire_kind());
+    assert_eq!(answer["selection"]["kind"], "toolpath");
+    assert_eq!(answer["selection"]["toolpath_index"], index);
+    assert_eq!(answer["selection"]["workspace"], state.workspace.wire_key());
+    assert_eq!(
+        answer["camera"],
+        super::view::camera_echo_json(&crate::state::camera::camera_echo(&state))
+    );
+    assert_eq!(answer["camera"]["view_preset"], "top");
+    assert!(answer["camera"]["fit"].is_null());
+
+    // Non-vacuity: a stock focus gives its own kind, not "toolpath".
+    let _ = state.set_focus(Selection::Stock);
+    let answer: serde_json::Value =
+        serde_json::from_str(&super::view::get_ui_view_json(&state)).expect("JSON");
+    assert_eq!(answer["selection"]["kind"], "stock");
+    assert!(answer["selection"]["toolpath_index"].is_null());
 }

@@ -77,10 +77,11 @@ use rs_cam_viz::compute::{
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::interaction::picking::{
-    PickContext, PickHit, drawing_plane_z, pick_items, pick_mode_item, pick_open_path,
+    PickContext, PickHit, pick_items, pick_mode_item, pick_open_path,
 };
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
+use rs_cam_viz::state::display_frame::drawing_plane_z;
 use rs_cam_viz::state::job::{ModelId, SetupFrame};
 use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
 use rs_cam_viz::state::selection::Selection as UiSelection;

@@ -209,6 +209,9 @@ pub struct SetUiViewArgs {
     /// P4.D: the models to show or hide, by raw model id (the eye of a
     /// model row).
     pub model_visibility: Option<std::collections::BTreeMap<usize, bool>>,
+    /// A C5: the camera request (preset, projection, fit, pose), applied
+    /// after `frame_items`.
+    pub camera: Option<crate::state::camera::CameraRequest>,
 }
 
 /// Whether the project feeds rollup is on screen.
@@ -385,19 +388,19 @@ macro_rules! for_each_ui_command {
             (UiCommand, Select, "select_in_tree", SelectArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("set_ui_view carries the selection instead"),
+                 mcp: Reach::Skip("set_ui_view toolpath_index carries the selection instead"),
                  cli: Reach::Skip("the batch CLI draws no tree"),
              }),
             (UiCommand, SetViewPreset, "set_view_preset", SetViewPresetArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool moves the camera to a preset"),
+                 mcp: Reach::Skip("set_ui_view camera.preset writes the same CameraState::preset"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
             (UiCommand, ToggleProjection, "toggle_projection", NoArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool switches the camera projection"),
+                 mcp: Reach::Skip("set_ui_view camera.projection sets the mode"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
             (UiCommand, PreviewOrientation, "preview_orientation", PreviewOrientationArgs, (),
@@ -409,7 +412,7 @@ macro_rules! for_each_ui_command {
             (UiCommand, ResetView, "reset_view", NoArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool refits the camera"),
+                 mcp: Reach::Skip("set_ui_view camera.fit: model is the same fit"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
             (UiCommand, SwitchWorkspace, "switch_workspace", SwitchWorkspaceArgs, (),
@@ -781,6 +784,14 @@ macro_rules! for_each_ui_command {
              }),
 
             // ── View reads ──────────────────────────────────────────
+            (UiQuery, GetUiView, "get_ui_view", NoArgs, String,
+             Surfaces {
+                 gui: Reach::Skip(
+                     "the operator sees the focus and the camera on screen; no panel reads this door",
+                 ),
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip("the batch CLI draws no view"),
+             }),
             (UiQuery, GetDiagnostics, "get_diagnostics", NoArgs, String,
              Surfaces {
                  gui: Reach::Skip(

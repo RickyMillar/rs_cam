@@ -8,7 +8,7 @@
 //!    `AppEvent::FrameSelectionItems` with the keys of the skipped items of
 //!    the note's kind and layer, and edits nothing.
 //! 2. The "Show me" button of a lost pick sends the stored key of the pick.
-//! 3. `picking::selection_frame_bounds` gives the box the camera fits: the
+//! 3. `display_frame::selection_frame_bounds` gives the box the camera fits: the
 //!    display box of the item rings for a note, and the stored anchor grown
 //!    by half the key measure for a lost pick (it has no item).
 //! 4. P3.8: under the floor "each picked face", a face at the top gives a
@@ -43,8 +43,8 @@ use rs_cam_core::selection::{ItemKind, MatchKey, Selection, SelectionEdit};
 use rs_cam_core::session::{
     Command, EditSelectionArgs, ProjectSessionBuilder, SelectionTarget, ToolpathConfig,
 };
-use rs_cam_viz::interaction::picking::selection_frame_bounds;
 use rs_cam_viz::state::AppState;
+use rs_cam_viz::state::display_frame::selection_frame_bounds;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection as UiSelection;
 use rs_cam_viz::ui::{AppEvent, properties, tokens};
@@ -253,12 +253,12 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
         .find(|i| i.kind() == ItemKind::Path)
         .and_then(|i| i.shape().drawing_ring().cloned())
         .unwrap();
-    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(state.session(), pocket);
+    let frame = rs_cam_viz::state::display_frame::toolpath_setup_frame(state.session(), pocket);
     let shown: Vec<_> = ring
         .exterior
         .iter()
         .map(|p| {
-            rs_cam_viz::interaction::picking::item_display_xy(
+            rs_cam_viz::state::display_frame::item_display_xy(
                 frame.as_ref(),
                 state.session().stock_config(),
                 *p,
@@ -287,10 +287,10 @@ fn show_me_frames_a_note_and_a_lost_pick_p4_4() {
     let drill = state.session().toolpath_configs()[1].id;
     let bbox =
         selection_frame_bounds(state.session(), drill, &keys).expect("a box for a lost pick");
-    let frame = rs_cam_viz::interaction::picking::toolpath_setup_frame(state.session(), drill);
-    let half = (lost.measure / 2.0).max(rs_cam_viz::interaction::picking::POINT_MARK_RADIUS_MM);
+    let frame = rs_cam_viz::state::display_frame::toolpath_setup_frame(state.session(), drill);
+    let half = (lost.measure / 2.0).max(rs_cam_viz::state::display_frame::POINT_MARK_RADIUS_MM);
     let corner = |dx: f64, dy: f64| {
-        rs_cam_viz::interaction::picking::item_display_xy(
+        rs_cam_viz::state::display_frame::item_display_xy(
             frame.as_ref(),
             state.session().stock_config(),
             rs_cam_core::geo::P2::new(lost.anchor[0] + dx, lost.anchor[1] + dy),

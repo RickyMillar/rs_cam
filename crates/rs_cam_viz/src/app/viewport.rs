@@ -403,10 +403,8 @@ impl RsCamApp {
             && let Some(pos) = response.interact_pointer_pos()
         {
             let snapped = {
-                use crate::interaction::picking::{
-                    drawing_plane_z, loop_ring, pointer_on_plane, snap_to_loop,
-                    toolpath_setup_frame,
-                };
+                use crate::interaction::picking::{loop_ring, pointer_on_plane, snap_to_loop};
+                use crate::state::display_frame::{drawing_plane_z, toolpath_setup_frame};
                 let state = self.controller.state();
                 let session = state.session();
                 state

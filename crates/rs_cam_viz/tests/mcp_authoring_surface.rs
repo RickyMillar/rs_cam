@@ -252,3 +252,71 @@ fn machine_kinematics_have_a_typed_write_path() {
         "set_machine_kinematics must be an all-optional patch"
     );
 }
+
+/// A C5 — `set_ui_view` moves the camera. The schema carries one `camera`
+/// object with its four fields and their tokens (inline, no `$ref`), and
+/// the description names each field and says the write is instant.
+#[test]
+fn set_ui_view_moves_the_camera_cam9() {
+    let facts = tool_facts("set_ui_view");
+    let camera = property(&facts, "camera");
+    let text = camera.to_string();
+    assert!(
+        !text.contains("$ref"),
+        "the camera schema must be inline: {text}"
+    );
+    for field in ["preset", "projection", "fit", "pose"] {
+        assert!(
+            camera.pointer(&format!("/properties/{field}")).is_some()
+                || text.contains(&format!("\"{field}\"")),
+            "the camera schema has no `{field}`: {text}"
+        );
+    }
+    for token in [
+        "top",
+        "front",
+        "right",
+        "iso",
+        "perspective",
+        "orthographic",
+        "model",
+        "selection",
+        "target",
+        "distance",
+        "yaw_deg",
+        "pitch_deg",
+    ] {
+        assert!(
+            text.contains(&format!("\"{token}\"")),
+            "the camera schema does not name `{token}`: {text}"
+        );
+        assert!(
+            facts.description.contains(token),
+            "the set_ui_view description does not name `{token}`"
+        );
+    }
+    assert!(
+        facts.description.contains("at once (no animation)"),
+        "the set_ui_view description must say the camera moves at once"
+    );
+    assert!(
+        facts.description.contains("fit, preset, projection, pose"),
+        "the set_ui_view description must give the apply order"
+    );
+}
+
+/// F3 — `get_ui_view` exists, takes no argument and names what it reads.
+#[test]
+fn get_ui_view_reads_the_focus_and_the_camera_f3() {
+    let facts = tool_facts("get_ui_view");
+    assert!(
+        required(&facts).is_empty(),
+        "get_ui_view takes no required argument"
+    );
+    for phrase in ["focus kind", "workspace", "pick mode", "camera pose"] {
+        assert!(
+            facts.description.contains(phrase),
+            "the get_ui_view description does not name `{phrase}`"
+        );
+    }
+}

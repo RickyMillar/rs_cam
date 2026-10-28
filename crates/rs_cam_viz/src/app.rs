@@ -435,7 +435,7 @@ impl RsCamApp {
 
     /// "Show me" (geometry selection P4.4): fit the camera to the items
     /// `keys` of the toolpath `id` in the display frame
-    /// (`picking::selection_frame_bounds`) and flash them in the hover
+    /// (`display_frame::selection_frame_bounds`) and flash them in the hover
     /// colour for `tokens::MOTION_SLOW`. `now` is the egui time. Returns
     /// the framed box, or `None` (and changes nothing) when no key gives a
     /// point. The GUI button and MCP `set_ui_view {frame_items}` both call
@@ -446,7 +446,7 @@ impl RsCamApp {
         keys: Vec<rs_cam_core::selection::MatchKey>,
         now: f64,
     ) -> Option<rs_cam_core::geo::BoundingBox3> {
-        let bbox = crate::interaction::picking::selection_frame_bounds(
+        let bbox = crate::state::display_frame::selection_frame_bounds(
             self.controller.state().session(),
             id,
             &keys,

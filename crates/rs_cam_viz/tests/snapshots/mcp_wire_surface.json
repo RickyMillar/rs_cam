@@ -3758,6 +3758,13 @@
   },
   {
     "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_ui_view"
+  },
+  {
+    "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "description": "GRBL `$$` settings dump to import onto the live machine profile.",
@@ -7141,6 +7148,101 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "camera": {
+          "additionalProperties": false,
+          "description": "A C5: move the camera. `preset` (`top`, `front`, `right`, `iso`),\n`projection` (`perspective`, `orthographic`), `fit` (`model`,\n`selection`) and `pose` (`target`, `distance`, `yaw_deg`,\n`pitch_deg`). Applied after `frame_items`, in the order fit, preset,\nprojection, pose. Every field is checked before any part of the call\napplies; a refusal changes nothing. The camera moves at once (no\nanimation). The reply always carries the `camera` echo.",
+          "properties": {
+            "fit": {
+              "description": "Frame the first model (`model`) or the picked items of the selected\ntoolpath (`selection`). Refused together with `frame_items`.",
+              "enum": [
+                "model",
+                "selection",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pose": {
+              "additionalProperties": false,
+              "description": "Override single pose fields last.",
+              "properties": {
+                "distance": {
+                  "description": "The eye-to-target distance, mm. Refused outside [0.1, 50000].",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "pitch_deg": {
+                  "description": "The pitch, degrees. Refused outside +/-89.427 (90 deg - 0.01 rad).",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "target": {
+                  "description": "The orbit target, mm, display frame.",
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "yaw_deg": {
+                  "description": "The turntable yaw, degrees, about +Z from +X.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "preset": {
+              "description": "Turn the camera to a view preset (yaw and pitch).",
+              "enum": [
+                "top",
+                "front",
+                "right",
+                "iso",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "projection": {
+              "description": "Set the projection mode.",
+              "enum": [
+                "perspective",
+                "orthographic",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "frame_items": {
           "description": "Geometry selection P4.4 (\"Show me\"): match keys of items of the\nselected toolpath (copy them from `selection_status` or\n`list_model_items`). The camera frames them and the viewport flashes\nthem. A key that names no item (a lost pick) frames its stored\nposition. Needs a selected toolpath (`toolpath_index` in the same\ncall, or a selection already made).",
           "items": {

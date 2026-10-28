@@ -18,7 +18,7 @@ use crate::ui::properties::ToolpathTab;
 use crate::ui_command::{NoArgs, UiCommand};
 
 use super::simulation::sim_mesh_in_world_frame;
-use super::{ScreenshotToolpathOptions, workspace_key, workspace_of};
+use super::{ScreenshotToolpathOptions, workspace_of};
 
 impl RsCamApp {
     /// The model surface as a render background, shaded by the reach map
@@ -450,7 +450,33 @@ impl RsCamApp {
         overlays: Option<&std::collections::BTreeMap<String, bool>>,
         frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
         model_visibility: Option<&std::collections::BTreeMap<usize, bool>>,
+        camera: Option<crate::state::camera::CameraRequest>,
     ) -> String {
+        // 0. The camera request (A C5) is checked before anything applies,
+        //    so a refusal changes nothing. It is checked against the focus
+        //    this call leaves: `select` wins over `toolpath_index`, and
+        //    `toolpath_index` over the present focus.
+        if let Some(request) = camera.as_ref() {
+            let state = self.controller.state();
+            let focus = match (select, toolpath_index) {
+                (Some(_), _) => Selection::None,
+                (None, Some(idx)) => state
+                    .session()
+                    .toolpath_configs()
+                    .get(idx)
+                    .map_or(Selection::None, |tc| Selection::Toolpath(tc.id)),
+                (None, None) => state.focus().clone(),
+            };
+            if let Err(refusal) = crate::state::camera::check_camera_request(
+                state,
+                request,
+                &focus,
+                frame_items.is_some(),
+            ) {
+                return json_str(serde_json::json!({ "error": refusal }));
+            }
+        }
+
         // 1. Workspace.
         //
         // Applied SYNCHRONOUSLY, not through the event queue. A workspace
@@ -465,7 +491,7 @@ impl RsCamApp {
         if let Some(ws) = workspace {
             let target = workspace_of(ws);
             crate::ui::overlays::registry::switch_workspace(self.controller.state_mut(), target);
-            workspace_applied = Some(workspace_key(target));
+            workspace_applied = Some(target.wire_key());
         }
 
         // 2. Toolpath selection (0-based index -> semantic id).
@@ -549,7 +575,7 @@ impl RsCamApp {
                     self.controller.state_mut(),
                     Workspace::Setup,
                 );
-                workspace_applied = Some(workspace_key(Workspace::Setup));
+                workspace_applied = Some(Workspace::Setup.wire_key());
             }
             self.controller.set_focus(target);
             select_applied = Some(key);
@@ -664,6 +690,23 @@ impl RsCamApp {
             }));
         }
 
+        // 7. The camera (A C5), after `frame_items`, so a `toolpath_index`
+        //    in this call is the selection that `fit: selection` reads. The
+        //    check above passed, so this cannot refuse; the arm stays for
+        //    the type.
+        let echo = match camera.as_ref() {
+            Some(request) => {
+                match crate::state::camera::apply_camera_request(
+                    self.controller.state_mut(),
+                    request,
+                ) {
+                    Ok(echo) => echo,
+                    Err(refusal) => return json_str(serde_json::json!({ "error": refusal })),
+                }
+            }
+            None => crate::state::camera::camera_echo(self.controller.state()),
+        };
+
         // Echo the resulting view. Modal mutations route through the event
         // queue and land later this same frame, so echo the requested
         // targets plus the already-applied selection.
@@ -684,18 +727,12 @@ impl RsCamApp {
                 }),
             _ => None,
         };
-        let selection_kind = match *state.focus() {
-            Selection::Machine => "machine",
-            Selection::Stock => "stock",
-            Selection::Toolpath(_) => "toolpath",
-            Selection::Tool(_) => "tool",
-            _ => "other",
-        };
         json_str(serde_json::json!({
             "ok": true,
-            "workspace": workspace_applied.unwrap_or_else(|| workspace_key(state.workspace)),
+            "workspace": workspace_applied.unwrap_or_else(|| state.workspace.wire_key()),
             "selected_toolpath": selected,
-            "selection": selection_kind,
+            // F3: the focus wire kind (`FocusSummary::kind`).
+            "selection": crate::state::selection::focus_summary(state).kind,
             "select": select_applied,
             "properties_tab": tab_applied,
             "modal": modal,
@@ -705,7 +742,38 @@ impl RsCamApp {
             })),
             "framed": framed,
             "model_visibility": visibility_report,
+            "camera": camera_echo_json(&echo),
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
     }
+}
+
+/// The `camera` object of the `set_ui_view` reply and of `get_ui_view`:
+/// the pose in degrees, the projection, the field of view, the preset the
+/// pose holds (or null) and the box this call framed (or null).
+pub(super) fn camera_echo_json(echo: &crate::state::camera::CameraEcho) -> serde_json::Value {
+    use rs_cam_mcp::server::{ProjectionParam, ViewPresetParam};
+    let pose = echo.pose;
+    serde_json::json!({
+        "target": [f64::from(pose.target.x), f64::from(pose.target.y), f64::from(pose.target.z)],
+        "distance": f64::from(pose.distance),
+        "yaw_deg": f64::from(pose.yaw).to_degrees(),
+        "pitch_deg": f64::from(pose.pitch).to_degrees(),
+        "projection": ProjectionParam::from(echo.projection),
+        "fov_deg": f64::from(echo.fov).to_degrees(),
+        "view_preset": echo.view_preset.map(ViewPresetParam::from),
+        "fit": echo.framed.map(|bbox| serde_json::json!({
+            "min": [bbox.min.x, bbox.min.y, bbox.min.z],
+            "max": [bbox.max.x, bbox.max.y, bbox.max.z],
+        })),
+    })
+}
+
+/// The `get_ui_view` answer (F3): the focus summary and the camera echo.
+/// The `set_ui_view` reply reads the same two values.
+pub(super) fn get_ui_view_json(state: &crate::state::AppState) -> String {
+    json_str(serde_json::json!({
+        "selection": crate::state::selection::focus_summary(state),
+        "camera": camera_echo_json(&crate::state::camera::camera_echo(state)),
+    }))
 }

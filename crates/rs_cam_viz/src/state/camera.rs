@@ -9,8 +9,13 @@
 //! setup sheet do not hold it.
 
 use nalgebra::Point3;
+use rs_cam_core::geo::BoundingBox3;
 
-use crate::render::camera::{CameraPose, OrbitCamera, ProjectionMode, ViewPreset};
+use super::AppState;
+use super::selection::Selection;
+use crate::render::camera::{
+    CameraPose, DISTANCE_RANGE, OrbitCamera, PITCH_LIMIT, ProjectionMode, ViewPreset,
+};
 
 /// The viewport camera. Read it with [`CameraState::pose`]; write it with
 /// the other methods.
@@ -103,17 +108,21 @@ impl CameraState {
 pub fn first_model_bounds(
     session: &rs_cam_core::session::ProjectSession,
 ) -> Option<([f32; 3], [f32; 3])> {
+    first_model_bbox(session).map(|bbox| bbox_corners(&bbox))
+}
+
+/// The bounding box of the first model that has one.
+fn first_model_bbox(session: &rs_cam_core::session::ProjectSession) -> Option<BoundingBox3> {
     session
         .models()
         .iter()
         .find_map(rs_cam_core::session::LoadedModel::bbox)
-        .map(|bbox| bbox_corners(&bbox))
 }
 
 /// Frame the first model of the project, or put the camera back to its
 /// start when the project has no model. Reset View, the job load and the
 /// import confirm with no box call this one routine.
-pub fn fit_to_first_model(state: &mut super::AppState) {
+pub fn fit_to_first_model(state: &mut AppState) {
     let bounds = first_model_bounds(state.session());
     state.camera.fit_or_reset(bounds);
 }
@@ -124,6 +133,296 @@ pub fn bbox_corners(bbox: &rs_cam_core::geo::BoundingBox3) -> ([f32; 3], [f32; 3
         [bbox.min.x as f32, bbox.min.y as f32, bbox.min.z as f32],
         [bbox.max.x as f32, bbox.max.y as f32, bbox.max.z as f32],
     )
+}
+
+// ── The MCP camera door (design A, C5) ─────────────────────────────────
+
+/// What `set_ui_view camera.fit` frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FitTarget {
+    /// The first model: the Reset View rule ([`first_model_bounds`]).
+    Model,
+    /// The picked items of the selected toolpath ([`selection_fit_bounds`]).
+    Selection,
+}
+
+/// A pose patch in radians. An omitted field keeps its value.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PosePatch {
+    pub target: Option<Point3<f32>>,
+    pub distance: Option<f32>,
+    pub yaw: Option<f32>,
+    pub pitch: Option<f32>,
+}
+
+/// The camera part of a `set_ui_view` call, in crate types.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct CameraRequest {
+    pub preset: Option<ViewPreset>,
+    pub projection: Option<ProjectionMode>,
+    pub fit: Option<FitTarget>,
+    pub pose: PosePatch,
+}
+
+/// The camera after a call: what the `set_ui_view` reply and `get_ui_view`
+/// echo.
+#[derive(Debug, Clone, Copy)]
+pub struct CameraEcho {
+    pub pose: CameraPose,
+    pub projection: ProjectionMode,
+    /// The vertical field of view, radians.
+    pub fov: f32,
+    /// The preset whose yaw and pitch the pose holds exactly, if any.
+    pub view_preset: Option<ViewPreset>,
+    /// The box that this call framed, if it framed one.
+    pub framed: Option<BoundingBox3>,
+}
+
+/// The view presets, in echo order.
+const PRESETS: [ViewPreset; 4] = [
+    ViewPreset::Top,
+    ViewPreset::Front,
+    ViewPreset::Right,
+    ViewPreset::Isometric,
+];
+
+/// The camera of `state` as an echo, with no framed box.
+pub fn camera_echo(state: &AppState) -> CameraEcho {
+    let camera = state.camera.pose();
+    let pose = camera.pose();
+    let view_preset = PRESETS.into_iter().find(|p| {
+        let preset = camera.preset_pose(*p);
+        preset.yaw == pose.yaw && preset.pitch == pose.pitch
+    });
+    CameraEcho {
+        pose,
+        projection: camera.projection,
+        fov: camera.fov,
+        view_preset,
+        framed: None,
+    }
+}
+
+/// The box that `fit: selection` frames: the picked items of the
+/// toolpath that `focus` names, through the "Show me" bounds routine
+/// (`display_frame::selection_frame_bounds`). `None` with no toolpath focus or no
+/// picked item.
+fn selection_fit_bounds_for(state: &AppState, focus: &Selection) -> Option<BoundingBox3> {
+    let Selection::Toolpath(id) = *focus else {
+        return None;
+    };
+    let session = state.session();
+    let (_, tc) = session.find_toolpath_config_by_id(id)?;
+    let target = super::selection_highlight::highlight_target(tc);
+    let report = session.selection_status(tc, target).ok()?;
+    if report.selected.is_empty() {
+        return None;
+    }
+    crate::state::display_frame::selection_frame_bounds(session, id, &report.selected)
+}
+
+/// The box that `fit: selection` frames for the present focus.
+pub fn selection_fit_bounds(state: &AppState) -> Option<BoundingBox3> {
+    selection_fit_bounds_for(state, state.focus())
+}
+
+/// Check every field of `req` before any part of a call applies.
+///
+/// `focus` is the focus that the call leaves when the camera applies (a
+/// `toolpath_index` in the same call moves it). `with_frame_items` is true
+/// when the same call frames items: two framings in one call are refused.
+pub fn check_camera_request(
+    state: &AppState,
+    req: &CameraRequest,
+    focus: &Selection,
+    with_frame_items: bool,
+) -> Result<(), String> {
+    let PosePatch {
+        target,
+        distance,
+        yaw,
+        pitch,
+    } = req.pose;
+    if let Some(t) = target
+        && !(t.x.is_finite() && t.y.is_finite() && t.z.is_finite())
+    {
+        return Err("camera.pose.target must be three finite numbers".to_owned());
+    }
+    if let Some(d) = distance
+        && !(d.is_finite() && (DISTANCE_RANGE.0..=DISTANCE_RANGE.1).contains(&d))
+    {
+        return Err(format!(
+            "camera.pose.distance must be a finite number in [{}, {}] mm",
+            DISTANCE_RANGE.0, DISTANCE_RANGE.1
+        ));
+    }
+    if let Some(y) = yaw
+        && !y.is_finite()
+    {
+        return Err("camera.pose.yaw_deg must be a finite number".to_owned());
+    }
+    if let Some(p) = pitch
+        && !(p.is_finite() && p.abs() <= PITCH_LIMIT)
+    {
+        return Err(format!(
+            "camera.pose.pitch_deg must be a finite number in [-{0:.3}, {0:.3}] degrees",
+            f64::from(PITCH_LIMIT).to_degrees()
+        ));
+    }
+    match req.fit {
+        Some(_) if with_frame_items => {
+            Err("camera.fit and frame_items both frame the camera; send one".to_owned())
+        }
+        Some(FitTarget::Model) if first_model_bbox(state.session()).is_none() => {
+            Err("camera.fit model needs a model; the project has none".to_owned())
+        }
+        Some(FitTarget::Selection) if selection_fit_bounds_for(state, focus).is_none() => {
+            Err("fit selection needs a selected toolpath with picked items".to_owned())
+        }
+        Some(FitTarget::Model | FitTarget::Selection) | None => Ok(()),
+    }
+}
+
+/// The one door MCP uses to move the camera. It checks every field first
+/// ([`check_camera_request`] with the present focus); a refusal changes
+/// nothing. Then it applies in the order fit, preset, projection, pose.
+/// Every write is instant.
+pub fn apply_camera_request(
+    state: &mut AppState,
+    req: &CameraRequest,
+) -> Result<CameraEcho, String> {
+    let focus = state.focus().clone();
+    check_camera_request(state, req, &focus, false)?;
+    let framed = match req.fit {
+        Some(FitTarget::Model) => first_model_bbox(state.session()),
+        Some(FitTarget::Selection) => selection_fit_bounds(state),
+        None => None,
+    };
+    if let Some(bbox) = framed {
+        let (min, max) = bbox_corners(&bbox);
+        state.camera.fit(min, max);
+    }
+    if let Some(preset) = req.preset {
+        state.camera.preset(preset);
+    }
+    if let Some(mode) = req.projection {
+        state.camera.set_projection(mode);
+    }
+    let PosePatch {
+        target,
+        distance,
+        yaw,
+        pitch,
+    } = req.pose;
+    let now = state.camera.pose().pose();
+    state.camera.set_pose(CameraPose {
+        target: target.unwrap_or(now.target),
+        distance: distance.unwrap_or(now.distance),
+        yaw: yaw.unwrap_or(now.yaw),
+        pitch: pitch.unwrap_or(now.pitch),
+    });
+    Ok(CameraEcho {
+        framed,
+        ..camera_echo(state)
+    })
+}
+
+/// The wire mirrors (`rs_cam_mcp`): an exhaustive `match` in each
+/// direction (F166), and a full destructure of the camera object (F118).
+/// Degrees on the wire, radians here (A-Q5).
+#[cfg(feature = "mcp")]
+mod wire {
+    use super::{CameraRequest, FitTarget, PosePatch, ProjectionMode, ViewPreset};
+    use nalgebra::Point3;
+    use rs_cam_mcp::server::{
+        CameraParam, CameraPoseParam, FitParam, ProjectionParam, ViewPresetParam,
+    };
+
+    impl From<ViewPresetParam> for ViewPreset {
+        fn from(p: ViewPresetParam) -> Self {
+            match p {
+                ViewPresetParam::Top => Self::Top,
+                ViewPresetParam::Front => Self::Front,
+                ViewPresetParam::Right => Self::Right,
+                ViewPresetParam::Iso => Self::Isometric,
+            }
+        }
+    }
+
+    impl From<ViewPreset> for ViewPresetParam {
+        fn from(p: ViewPreset) -> Self {
+            match p {
+                ViewPreset::Top => Self::Top,
+                ViewPreset::Front => Self::Front,
+                ViewPreset::Right => Self::Right,
+                ViewPreset::Isometric => Self::Iso,
+            }
+        }
+    }
+
+    impl From<ProjectionParam> for ProjectionMode {
+        fn from(p: ProjectionParam) -> Self {
+            match p {
+                ProjectionParam::Perspective => Self::Perspective,
+                ProjectionParam::Orthographic => Self::Orthographic,
+            }
+        }
+    }
+
+    impl From<ProjectionMode> for ProjectionParam {
+        fn from(p: ProjectionMode) -> Self {
+            match p {
+                ProjectionMode::Perspective => Self::Perspective,
+                ProjectionMode::Orthographic => Self::Orthographic,
+            }
+        }
+    }
+
+    impl From<FitParam> for FitTarget {
+        fn from(p: FitParam) -> Self {
+            match p {
+                FitParam::Model => Self::Model,
+                FitParam::Selection => Self::Selection,
+            }
+        }
+    }
+
+    impl From<FitTarget> for FitParam {
+        fn from(p: FitTarget) -> Self {
+            match p {
+                FitTarget::Model => Self::Model,
+                FitTarget::Selection => Self::Selection,
+            }
+        }
+    }
+
+    impl From<CameraParam> for CameraRequest {
+        fn from(param: CameraParam) -> Self {
+            let CameraParam {
+                preset,
+                projection,
+                fit,
+                pose,
+            } = param;
+            let CameraPoseParam {
+                target,
+                distance,
+                yaw_deg,
+                pitch_deg,
+            } = pose.unwrap_or_default();
+            Self {
+                preset: preset.map(Into::into),
+                projection: projection.map(Into::into),
+                fit: fit.map(Into::into),
+                pose: PosePatch {
+                    target: target.map(|[x, y, z]| Point3::new(x as f32, y as f32, z as f32)),
+                    distance: distance.map(|d| d as f32),
+                    yaw: yaw_deg.map(|d| d.to_radians() as f32),
+                    pitch: pitch_deg.map(|d| d.to_radians() as f32),
+                },
+            }
+        }
+    }
 }
 
 #[cfg(test)]

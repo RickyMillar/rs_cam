@@ -21,7 +21,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `tab_edit.rs` — the `tab_layout` read per toolpath revision and `TabMarksDetector`.
 - `history.rs`, `wizard.rs`, `multitool_planner.rs` — undo (`ModelDrawingEdits`; P6.7 `BoreAdded`, `rebind_bore` after a redo), the export wizard, the planner.
 - `panels.rs` — panel drafts (`join_all_mm`, `drawing_popover`, `number_drafts`: the value in flight of
-  `committed_number`, ui09). `app_settings.rs`; `pin_view.rs` (pin frame, C8); `shoe_plan.rs` (shoe plan, H2).
+  `committed_number`, ui09). `app_settings.rs`; `pin_view.rs` (pin frame, C8); `shoe_plan.rs` (shoe plan, H2). `display_frame.rs` — where an item sits in a setup display frame (`drawing_plane_z`, `item_display_point`, `selection_frame_bounds`); `state/` imports no `interaction/` (F3).
 
 ## Invariants
 

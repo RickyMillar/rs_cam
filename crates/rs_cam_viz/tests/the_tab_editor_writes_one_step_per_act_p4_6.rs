@@ -53,11 +53,10 @@ use rs_cam_viz::compute::{
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::{AppController, Severity};
-use rs_cam_viz::interaction::picking::{
-    PickContext, drawing_plane_z, pick_tab, pick_tab_loop, tab_scene,
-};
+use rs_cam_viz::interaction::picking::{PickContext, pick_tab, pick_tab_loop, tab_scene};
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
+use rs_cam_viz::state::display_frame::drawing_plane_z;
 use rs_cam_viz::state::job::SetupFrame;
 use rs_cam_viz::state::overlays::ModelVisibility;
 use rs_cam_viz::state::selection::Selection as UiSelection;
