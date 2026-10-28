@@ -1,0 +1,196 @@
+diff --git a/crates/rs_cam_core/src/session/op_draft.rs b/crates/rs_cam_core/src/session/op_draft.rs
+index 72db40548..231b86cd6 100644
+--- a/crates/rs_cam_core/src/session/op_draft.rs
++++ b/crates/rs_cam_core/src/session/op_draft.rs
+@@ -717,6 +717,7 @@ impl ProjectSession {
+     ///   rest analysis on when the edge op exists (D44: the runner keeps
+     ///   the regions only on demand);
+     /// - op 2: `clearing_strategy = ContourParallel` (the ruling),
++    ///   `contour_each_level = true` (C4; G-RESTDOC, D61/D68),
+     ///   `stock_source = FromRemainingStock`, and the boundary
+     ///   `DerivedRestRegions` with `Center` containment and offset 0 (the
+     ///   D47 pair of the D53 sentry). The source id is op 1's, which the
+@@ -773,6 +774,12 @@ impl ProjectSession {
+         let mut edge = self.draft_toolpath(edge_request)?;
+         if let OperationConfig::Adaptive3d(cfg) = &mut edge.config.operation {
+             cfg.clearing_strategy = ClearingStrategy::ContourParallel;
++            // C4 (lead ruling at the 7.8 approval; source: G-RESTDOC,
++            // D61/D68): this pair is the G-RESTDOC case (D61: a Corne edge
++            // op cut 8.96 mm at a Depth/Pass of 6), so the template sets
++            // the edge op's own value on. "Off by default" is the field's
++            // default for any other op.
++            cfg.contour_each_level = true;
+         }
+         edge.config.stock_source = crate::compute::config::StockSource::FromRemainingStock;
+         edge.config.boundary = BoundaryConfig {
+diff --git a/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs b/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs
+index 253dbde10..2191d3613 100644
+--- a/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs
++++ b/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs
+@@ -6,7 +6,8 @@
+ //!    Adaptive, rest analysis on) and, directly after it, op 2 "Geodesic
+ //!    edges" (Contour Parallel, rest machining from previous ops, the
+ //!    rest regions of op 1 with Center containment and offset 0, op 1's
+-//!    tool). The pair generates: the edge op is not refused (D53, D44).
++//!    tool, and C4 "Contour each level" on: G-RESTDOC, D61/D68). The pair
++//!    generates: the edge op is not refused (D53, D44).
+ //! 2. `edges: false` adds op 1 alone, with its rest analysis off.
+ //! 3. An edge tool larger than op 1's refuses with the D53 sentence, and
+ //!    the command adds nothing.
+@@ -119,6 +120,18 @@ fn the_template_adds_the_channel_pair_s7_8() {
+     );
+     assert_eq!(edge.name, GEODESIC_EDGES_NAME);
+     assert_eq!(strategy(&edge.operation), ClearingStrategy::ContourParallel);
++    let contour_each_level = |op: &OperationConfig| match op {
++        OperationConfig::Adaptive3d(cfg) => cfg.contour_each_level,
++        other => panic!("a 3D Rough, not {}", other.label()),
++    };
++    assert!(
++        contour_each_level(&edge.operation),
++        "C4: the edge op contours each level (G-RESTDOC, D61/D68)"
++    );
++    assert!(
++        !contour_each_level(&body.operation),
++        "op 1 keeps the field default"
++    );
+     assert_eq!(edge.stock_source, StockSource::FromRemainingStock);
+     assert_eq!(edge.tool_id, body.tool_id, "D-T3: op 1's tool");
+     assert!(edge.boundary.enabled);
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+index e32913d1f..44a37e2c8 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/registry.rs
+@@ -87,6 +87,9 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
+     /// did not apply (`SuggestWarning::StrategyRecommendedNotApplied`).
+     /// The 3D Rough editor draws a ⚡ chip for it beside the Strategy combo.
+     pub strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
++    /// C4: the machining boundary of the draft is on. With a rest source
++    /// (`stock_source`), the 3D Rough offers "Contour each level".
++    pub boundary_enabled: bool,
+ }
+ 
+ /// What shape diagram an operation shows under its parameter grid.
+@@ -307,7 +310,13 @@ editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
+     draw_dropcutter_params(ui, cfg, cx.pills);
+ });
+ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
+-    draw_adaptive3d_params(ui, cfg, cx.pills, cx.strategy_suggestion);
++    draw_adaptive3d_params(
++        ui,
++        cfg,
++        cx.pills,
++        cx.strategy_suggestion,
++        cx.stock_source == StockSource::FromRemainingStock && cx.boundary_enabled,
++    );
+ });
+ editor!(
+     ed_waterline,
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index bbe202111..3780bd583 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -57,6 +57,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+     cfg: &mut Adaptive3dConfig,
+     pills: Option<&PillSuggestions>,
+     strategy_suggestion: Option<ClearingStrategy>,
++    contour_each_level_offered: bool,
+ ) {
+     // Spec: pill stepover + depth_per_pass. Removal step R2: the
+     // ContourSpiral "Optimal load" slider left with its strategy.
+@@ -196,6 +197,18 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+             }
+         });
+         ui.end_row();
++        // C4 (operator ruling D69): one visible row, shown where it acts: a
++        // rest rough (remaining stock) with a machining boundary, or while
++        // it is on (the Pocket "Cut past open sides" rule). The hover is the
++        // registry help (UI-04: keyed on the parameter name).
++        if contour_each_level_offered || cfg.contour_each_level {
++            let help = super::super::help_for(OperationType::Adaptive3d, "contour_each_level")
++                .unwrap_or_default();
++            ui.label("Contour each level:").on_hover_text(help);
++            ui.checkbox(&mut cfg.contour_each_level, "")
++                .on_hover_text(help);
++            ui.end_row();
++        }
+     });
+     advanced(ui, "a3d_adv", |ui| {
+         dv(
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index ae4db069d..ea9ceff48 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -1706,7 +1706,7 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
+             }
+             let mut out = ctx.run_ui(input, |ui| {
+                 ui.set_max_width(264.0);
+-                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion);
++                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion, false);
+             });
+             if pass == 2 {
+                 for clipped in &out.shapes {
+@@ -2171,3 +2171,52 @@ fn the_waterline_row_reads_helical_w1b() {
+         "the row's hover is the registry help"
+     );
+ }
++
++/// C4: the 3D Rough row "Contour each level" shows where it acts: a rest
++/// rough with a machining boundary (`offered`), or while it is on. A body
++/// rough (fresh stock) draws no row. The hover is the registry help.
++#[test]
++fn contour_each_level_shows_where_it_acts_c4() {
++    use crate::state::toolpath::Adaptive3dConfig;
++    let rows = |offered: bool, on: bool| {
++        let ctx = egui::Context::default();
++        crate::ui::tokens::apply(&ctx);
++        crate::ui::tokens::apply_fonts(&ctx);
++        let mut cfg = Adaptive3dConfig {
++            contour_each_level: on,
++            ..Adaptive3dConfig::default()
++        };
++        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
++            super::operations::draw_adaptive3d_params(ui, &mut cfg, None, None, offered);
++        });
++        let n = out
++            .shapes
++            .iter()
++            .filter(|c| {
++                matches!(&c.shape, egui::epaint::Shape::Text(t)
++                    if t.galley.job.text == "Contour each level:")
++            })
++            .count();
++        out.textures_delta.clear();
++        n
++    };
++    assert_eq!(rows(false, false), 0, "a body rough draws no row");
++    assert_eq!(
++        rows(true, false),
++        1,
++        "a rest rough with a boundary draws it"
++    );
++    assert_eq!(
++        rows(false, true),
++        1,
++        "an op with the option on keeps the row"
++    );
++    assert!(
++        super::help_for(
++            crate::state::toolpath::OperationType::Adaptive3d,
++            "contour_each_level"
++        )
++        .is_some_and(|h| h.contains("Depth/Pass")),
++        "the hover is the registry help"
++    );
++}
+diff --git a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+index 717abb3d8..5a4c54df3 100644
+--- a/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/properties/toolpath_panel.rs
+@@ -632,6 +632,7 @@ pub(super) fn draw_cut_tab(
+         model_areas: op_report(inputs)
+             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
+         strategy_suggestion,
++        boundary_enabled: entry.boundary.enabled,
+     };
+     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
+     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
