@@ -987,7 +987,7 @@ pub(super) fn draw_cut_tab(
     }
 }
 
-/// The Feeds & Speeds tab: how fast.
+/// The Feeds tab: how fast.
 fn draw_feeds_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,

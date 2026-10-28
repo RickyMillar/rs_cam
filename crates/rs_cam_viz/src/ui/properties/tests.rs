@@ -294,7 +294,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
     );
 }
 /// D7 (reference audit 2026-10-23, operator approved): the tab strip
-/// draws Geometry, Cut, Heights, Feeds & Speeds, Linking, Dressup, from
+/// draws Geometry, Cut, Heights, Feeds, Linking, Dressup, from
 /// left to right. The test renders the strip and reads the x of each
 /// label, so a change of `ALL` or of the strip order turns it red.
 ///
@@ -302,14 +302,7 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
 /// was Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup.
 #[test]
 fn the_tab_strip_puts_heights_after_cut_d7() {
-    const WANT: [&str; 6] = [
-        "Geometry",
-        "Cut",
-        "Heights",
-        "Feeds & Speeds",
-        "Linking",
-        "Dressup",
-    ];
+    const WANT: [&str; 6] = ["Geometry", "Cut", "Heights", "Feeds", "Linking", "Dressup"];
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);

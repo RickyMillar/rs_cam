@@ -183,7 +183,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 // the op cuts: the selected items, the floor face; geometry selection GT-1)
 // comes first. Cut holds the tool, the input model, the start stock and
 // the op parameters (the "Geometry" tab before GT-1). Then Heights (Z
-// planes), Feeds & Speeds, Linking (how moves connect) and Dressup.
+// planes), Feeds, Linking (how moves connect) and Dressup.
 // D7 (reference audit 2026-10-23): Heights is third, after Cut, as in
 // FreeCAD and Fusion.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -211,7 +211,7 @@ impl ToolpathTab {
         match self {
             ToolpathTab::Geometry => "Geometry",
             ToolpathTab::Cut => "Cut",
-            ToolpathTab::FeedsSpeeds => "Feeds & Speeds",
+            ToolpathTab::FeedsSpeeds => "Feeds",
             ToolpathTab::Linking => "Linking",
             ToolpathTab::Heights => "Heights",
             ToolpathTab::Dressup => "Dressup",

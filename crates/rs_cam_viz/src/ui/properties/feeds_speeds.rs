@@ -1,4 +1,4 @@
-//! The Feeds & Speeds tab: the LUT calculator card, the manual speed
+//! The Feeds tab: the LUT calculator card, the manual speed
 //! controls, the operating-point and advance-per-tooth readings, the vendor
 //! LUT viewer and the entry-style preview diagram.
 
