@@ -632,6 +632,23 @@ pub(super) fn draw_linking_params(
     );
     ui.add_space(crate::ui::tokens::SPACE_2);
     ui.disclosure("linking_adv", "Advanced", false, |ui| {
+    // G-FEEDMAX (C2, 2026-10-28): the max rate caps every feed stage,
+    // the feed modulation after a simulation as well as the optimiser, so
+    // it is one row whatever the optimisation checkbox says. Its hover is
+    // the core field description, which says so.
+    ui.param_grid("fmax_p", |ui| {
+        // S11: empty = the machine maximum feed.
+        dv_dressup_rule(
+            ui,
+            "feed_max_rate",
+            "Max Rate:",
+            &mut cfg.feed_max_rate,
+            " mm/min",
+            50.0,
+            500.0..=20000.0,
+            "machine max",
+        );
+    });
     if let Some(reason) = feed_opt_reason {
         // G-LINKFEEDOPT: viewing a tab commits nothing. The disabled
         // checkbox reads a local copy; `dressup_apply` already skips the
@@ -650,17 +667,6 @@ pub(super) fn draw_linking_params(
     }
     if cfg.feed_optimization && feed_opt_reason.is_none() {
         ui.param_grid("fopt_p", |ui| {
-            // S11: empty = the machine maximum feed.
-            dv_dressup_rule(
-                ui,
-                "feed_max_rate",
-                "  Max Rate:",
-                &mut cfg.feed_max_rate,
-                " mm/min",
-                50.0,
-                500.0..=20000.0,
-                "machine max",
-            );
             dv_dressup(
                 ui,
                 "feed_ramp_rate",

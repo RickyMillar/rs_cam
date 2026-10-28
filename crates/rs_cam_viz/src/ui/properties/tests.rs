@@ -1819,3 +1819,65 @@ fn the_footer_findings_are_bounded_g_e() {
         "under the cap"
     );
 }
+
+/// G-FEEDMAX (C2): the Max Rate row caps every feed stage, so the Linking
+/// tab's Advanced section draws it with "Feed rate optimization" off. The
+/// Ramp Rate row belongs to the optimiser and stays hidden.
+#[test]
+fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
+    use crate::state::toolpath::{OperationType, ToolpathEntry};
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tc.tool_id.expect("the case tool"),
+        tc.model_id,
+        OperationType::Pocket,
+    );
+    entry.dressups.feed_optimization = false;
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+    let mut advanced_at: Option<egui::Pos2> = None;
+    let mut texts: Vec<String> = Vec::new();
+    for pass in 0..6 {
+        let mut input = egui::RawInput::default();
+        if pass == 2
+            && let Some(pos) = advanced_at
+        {
+            input.events.push(egui::Event::PointerMoved(pos));
+            for pressed in [true, false] {
+                input.events.push(egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
+        let mut out = ctx.run_ui(input, |ui| {
+            super::linking_dressup::draw_linking_params(ui, &mut entry, None, None);
+        });
+        texts = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => {
+                    if t.galley.job.text == "Advanced" {
+                        advanced_at = Some(c.shape.visual_bounding_rect().center());
+                    }
+                    Some(t.galley.job.text.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        out.textures_delta.clear();
+    }
+    assert!(
+        texts.iter().any(|t| t == "Feed rate optimization"),
+        "non-vacuity: the Advanced section is open: {texts:?}"
+    );
+    assert!(texts.iter().any(|t| t == "Max Rate:"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("Ramp Rate")), "{texts:?}");
+}
