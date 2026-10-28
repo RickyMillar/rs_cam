@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks every claim that viewport_parity.html makes (C1-C8). It extracts
+// Checks every claim that viewport_parity.html makes (C1-C8, C0o-C3o). It extracts
 // the page's own camera-model script and runs it, so the checked code is
 // the drawn code. Run from anywhere: node check_claims.mjs
 import { readFileSync } from "node:fs";
@@ -79,6 +79,82 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   check("C2a orbit about the pivot keeps it fixed through a drag", maxFixed < 1e-6, `max drift ${maxFixed.toExponential(2)} px`);
   check("C2b fixed-target orbit moves the pivot point", minMoved > 1, `min move ${minMoved.toFixed(1)} px`);
   check("C3 the pivot alone changes no pose", maxPose < 1e-9, `max change ${maxPose.toExponential(2)}`);
+}
+
+// C0o, C1o, C2o, C3o: the orthographic arm (design A §2, commit C0).
+// Tolerance 1e-2 px at 1600 x 900.
+{
+  const OW = 1600, OH = 900, TOL = 1e-2;
+  const ortho = (c) => Object.assign(M.clone(c), { projection: "orthographic" });
+  const randCam = () => M.make({ target: [(rnd() - 0.5) * 100, (rnd() - 0.5) * 100, rnd() * 20],
+    yaw: rnd() * 6.28, pitch: 0.2 + rnd() * 1.2, distance: 100 + rnd() * 400 });
+
+  // C0o: at the target depth, the orthographic and perspective images coincide.
+  let maxAnchor = 0;
+  for (let i = 0; i < 40; i++) {
+    const cam = randCam();
+    const P = M.pointAtTargetDepth(cam, rnd() * OW, rnd() * OH, OW, OH);
+    maxAnchor = Math.max(maxAnchor, dist(M.project(cam, P, OW, OH), M.project(ortho(cam), P, OW, OH)));
+  }
+  check("C0o ortho and perspective images coincide at the target depth", maxAnchor < TOL, `max difference ${maxAnchor.toExponential(2)} px`);
+
+  // C1o: zoom toward P keeps P's pixel, P at and off the target depth.
+  // Also: pointAtTargetDepth with the ortho ray gives a point at the
+  // target depth that projects back to its pixel.
+  let maxInv = 0, maxDepth = 0, maxOn = 0, maxOff = 0;
+  for (let i = 0; i < 40; i++) {
+    const cam = ortho(randCam());
+    const sx = 40 + rnd() * (OW - 80), sy = 40 + rnd() * (OH - 80);
+    const k = 0.5 + rnd();
+    const P = M.pointAtTargetDepth(cam, sx, sy, OW, OH);
+    const { f } = M.basis(cam);
+    maxInv = Math.max(maxInv, dist(M.project(cam, P, OW, OH), [sx, sy]));
+    maxDepth = Math.max(maxDepth, Math.abs(f.reduce((acc, fj, j) => acc + fj * (P[j] - cam.target[j]), 0)));
+    maxOn = Math.max(maxOn, dist([sx, sy], M.project(M.zoomToCursor(cam, k, sx, sy, OW, OH), P, OW, OH)));
+    const off = (rnd() < 0.5 ? -1 : 1) * (50 + rnd() * 100);
+    const Poff = P.map((pj, j) => pj + f[j] * off);
+    const before = M.project(cam, Poff, OW, OH);
+    maxOff = Math.max(maxOff, dist(before, M.project(M.zoomToward(cam, Poff, k), Poff, OW, OH)));
+  }
+  check("C1o ortho: pointAtTargetDepth inverts the ortho ray", maxInv < TOL && maxDepth < 1e-9, `pixel error ${maxInv.toExponential(2)} px, depth error ${maxDepth.toExponential(2)} mm`);
+  check("C1o ortho zoom-to-cursor keeps the point fixed, at and off the target depth", maxOn < TOL && maxOff < TOL, `max drift at depth ${maxOn.toExponential(2)} px, off depth ${maxOff.toExponential(2)} px`);
+
+  // C2o: orbit about the pivot keeps its pixel through 20 steps, past the pitch clamp.
+  let maxFixed = 0, clamped = 0;
+  for (let i = 0; i < 40; i++) {
+    const cam = ortho(randCam());
+    const sx = 40 + rnd() * (OW - 80), sy = 40 + rnd() * (OH - 80);
+    const Q = M.hitGround(cam, sx, sy, OW, OH) || M.pointAtTargetDepth(cam, sx, sy, OW, OH);
+    const before = M.project(cam, Q, OW, OH);
+    let a = cam, hit = false;
+    for (let s = 0; s < 20; s++) {
+      const dx = (rnd() - 0.5) * 40;
+      const dy = s < 10 ? 60 + rnd() * 40 : (rnd() - 0.5) * 20;   // 10 steps up drive pitch to the clamp
+      a = M.orbitAboutPivot(a, Q, dx, dy);
+      if (a.pitch === M.PITCH_LIM) hit = true;
+      maxFixed = Math.max(maxFixed, dist(before, M.project(a, Q, OW, OH)));
+    }
+    if (hit) clamped += 1;
+  }
+  check("C2o ortho orbit about the pivot keeps it fixed through 20 steps", maxFixed < TOL && clamped === 40, `max drift ${maxFixed.toExponential(2)} px; ${clamped}/40 drags reach the pitch clamp`);
+
+  // C3o: the derived pan moves a grabbed point at any depth by exactly (dx, dy) px.
+  let maxErr = 0;
+  for (const vh of [400, 828, 1400]) {
+    for (let i = 0; i < 40; i++) {
+      const cam = ortho(randCam());
+      const sx = rnd() * OW, sy = rnd() * vh;
+      const P0 = M.pointAtTargetDepth(cam, sx, sy, OW, vh);
+      const { f } = M.basis(cam);
+      const off = (rnd() - 0.5) * 400;
+      const P = P0.map((pj, j) => pj + f[j] * off);
+      const dx = (rnd() - 0.5) * 200, dy = (rnd() - 0.5) * 200;
+      const before = M.project(cam, P, OW, vh);
+      const after = M.project(M.panDerived(cam, dx, dy, OW, vh), P, OW, vh);
+      maxErr = Math.max(maxErr, Math.hypot(after[0] - before[0] - dx, after[1] - before[1] - dy));
+    }
+  }
+  check("C3o ortho derived pan moves the grabbed point by (dx, dy) px at vh 400, 828, 1400", maxErr < TOL, `max error ${maxErr.toExponential(2)} px`);
 }
 
 // C4: the tween starts at a, ends at b, moves monotonically.

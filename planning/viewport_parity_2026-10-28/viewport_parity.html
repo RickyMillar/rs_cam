@@ -111,7 +111,7 @@
       <tr><td>hemisphere 800²</td><td class="num">1280000</td><td class="num">5.317</td><td class="num">0.0026</td><td class="num">450.6</td></tr>
     </tbody>
   </table>
-  <p class="hint">Source: <code>probe/run.log</code>. The hover path runs the pick twice per frame (<code>viewport.rs:727-766</code> and <code>:777-815</code>).</p>
+  <p class="hint">Source: <code>probe/run.log</code>. Before commit B1 (<code>03e5fa752</code>), the hover path ran the same scene pick twice per frame. Now <code>hover_result</code> runs one pick per frame (<code>viewport.rs:130</code>). <code>handle_viewport_click</code> runs a pick for each click (<code>viewport.rs:449</code>).</p>
 
   <h2>4. Claims this page makes</h2>
   <p class="hint"><code>node check_claims.mjs</code> runs the camera model below and checks each one.</p>
@@ -119,6 +119,10 @@
     <li><b>C1</b> Zoom to the cursor keeps the point under the pointer fixed on the screen; the centre zoom moves a point at the target depth by its distance from the centre times |1/k − 1|, where k is the distance factor.</li>
     <li><b>C2</b> Orbit about the cursor pivot keeps the pivot fixed on the screen through the drag; the fixed-target orbit moves it.</li>
     <li><b>C3</b> Moving the pivot alone changes no pose: the eye and the look direction are the same before the first drag step.</li>
+    <li><b>C0o</b> At the target depth, the orthographic image of a point is the perspective image. The orthographic half height is <code>distance × tan(fov/2)</code>, as in <code>camera.rs</code>.</li>
+    <li><b>C1o</b> Zoom to the cursor in orthographic projection keeps the point under the pointer fixed on the screen. The rule holds for a point at the target depth and for a point off it.</li>
+    <li><b>C2o</b> Orbit about the cursor pivot in orthographic projection keeps the pivot fixed on the screen through a 20-step drag. The drag goes past the pitch limit.</li>
+    <li><b>C3o</b> The projection-derived pan in orthographic projection moves the grabbed point by exactly the pointer step in pixels. The point depth and the viewport height have no effect.</li>
     <li><b>C4</b> The preset tween starts at the old pose, ends at the new pose, and moves monotonically between them.</li>
     <li><b>C5</b> The hover rebuild writes 120 bytes per triangle (three 36-byte vertices and three 4-byte indices): 15 835 440 bytes for the 131 962-triangle terrain.</li>
     <li><b>C6</b> The probe numbers in section 3 are the numbers in <code>probe/run.log</code>.</li>
@@ -139,10 +143,10 @@
   {"file": "crates/rs_cam_core/src/mesh.rs", "line": 373, "contains": "pub fn ray_pick_triangle("},
   {"file": "crates/rs_cam_viz/src/render/mod.rs", "line": 811, "contains": "sample_count: 1"},
   {"file": "crates/rs_cam_viz/src/render/mod.rs", "line": 646, "contains": "PrimitiveTopology::LineList"},
-  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 850, "contains": "self.camera.orbit("},
-  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 881, "contains": "self.camera.zoom("},
-  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 753, "contains": "crate::interaction::picking::pick("},
-  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 796, "contains": "crate::interaction::picking::pick("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 837, "contains": "self.camera.orbit("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 868, "contains": "self.camera.zoom("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 130, "contains": "crate::interaction::picking::pick("},
+  {"file": "crates/rs_cam_viz/src/app/viewport.rs", "line": 449, "contains": "crate::interaction::picking::pick("},
   {"file": "crates/rs_cam_core/src/io/step_input.rs", "line": 468, "contains": "fn find_shared_edge_vertices("},
   {"file": "crates/rs_cam_core/src/geometry/enriched_mesh.rs", "line": 78, "contains": "pub boundary_loops: Vec<Vec<P3>>"},
   {"file": "crates/rs_cam_mcp/src/server.rs", "line": 934, "contains": "pub struct SetUiViewParam"}
@@ -166,7 +170,7 @@ const CamModel = (() => {
 
   function make(over) {
     return Object.assign({ target: v(0, 0, 0), distance: 200, yaw: Math.PI / 4, pitch: Math.PI / 6,
-      fov: 45 * Math.PI / 180 }, over || {});
+      fov: 45 * Math.PI / 180, far: 10000, projection: "perspective" }, over || {});
   }
   function clone(c) { return { ...c, target: c.target.slice() }; }
   function eye(c) {
@@ -184,6 +188,7 @@ const CamModel = (() => {
   }
   // World point -> screen pixel (x right, y down). null when behind the eye.
   function project(c, p, w, h) {
+    if (c.projection === "orthographic") return projectOrtho(c, p, w, h);
     const { e, f, r, u } = basis(c);
     const d = sub(p, e);
     const z = dot(d, f);
@@ -196,6 +201,7 @@ const CamModel = (() => {
   }
   // Screen pixel -> world ray {o, d}.
   function ray(c, sx, sy, w, h) {
+    if (c.projection === "orthographic") return rayOrtho(c, sx, sy, w, h);
     const { e, f, r, u } = basis(c);
     const t = Math.tan(c.fov / 2);
     const aspect = w / h;
@@ -203,7 +209,37 @@ const CamModel = (() => {
     const ny = 1 - (sy / h) * 2;
     return { o: e, d: norm(add(f, add(mul(r, nx * t * aspect), mul(u, ny * t)))) };
   }
+  // Orthographic arm, as camera.rs projection_matrix: half_h =
+  // distance * tan(fov/2), half_w = half_h * aspect. The image at the
+  // target depth is the perspective image (claim C0o). The product clips
+  // view depth to -far..far, so this arm has no behind-the-eye cull.
+  function projectOrtho(c, p, w, h) {
+    const { e, r, u } = basis(c);
+    const d = sub(p, e);
+    const halfH = c.distance * Math.tan(c.fov / 2);
+    const halfW = halfH * (w / h);
+    const nx = dot(d, r) / halfW;
+    const ny = dot(d, u) / halfH;
+    return [(nx + 1) * 0.5 * w, (1 - ny) * 0.5 * h];
+  }
+  // Orthographic ray, as camera.rs unproject_ray: the direction is forward
+  // for every pixel and the origin is offset in the image plane. The origin
+  // is on the near plane. new_orthographic(.., -far, far) puts that plane
+  // at far behind the eye.
+  function rayOrtho(c, sx, sy, w, h) {
+    const { e, f, r, u } = basis(c);
+    const halfH = c.distance * Math.tan(c.fov / 2);
+    const halfW = halfH * (w / h);
+    const nx = (sx / w) * 2 - 1;
+    const ny = 1 - (sy / h) * 2;
+    const o = add(sub(e, mul(f, c.far)), add(mul(r, nx * halfW), mul(u, ny * halfH)));
+    return { o, d: f };
+  }
   // The point on the ray in the plane through the target normal to forward.
+  // This function has no projection branch. In orthographic, the ray
+  // direction is forward, so t = distance + far, and the point is the
+  // image-plane offset of the target. check_claims.mjs C1o checks that the
+  // point projects back to its pixel and has the target depth.
   function pointAtTargetDepth(c, sx, sy, w, h) {
     const { f } = basis(c);
     const R = ray(c, sx, sy, w, h);
@@ -239,7 +275,14 @@ const CamModel = (() => {
   // ray through P by the factor k, so P stays on the same pixel.
   // Derivation: target' = target + (1 - k) (P - target).
   function zoomToCursor(c, k, sx, sy, w, h) {
-    const P = pointAtTargetDepth(c, sx, sy, w, h);
+    return zoomToward(c, pointAtTargetDepth(c, sx, sy, w, h), k);
+  }
+  // The kernel of zoomToCursor for any point P (design A: zoom_toward).
+  // The move is a homothety about P with ratio kk, and the basis does not
+  // change. In perspective, P - eye keeps its direction. In orthographic,
+  // the image-plane offset of P and half_h both scale by kk. P keeps its
+  // pixel in both projections, at any depth (claims C1, C1o).
+  function zoomToward(c, P, k) {
     const n = clone(c);
     n.distance = Math.min(50000, Math.max(0.1, c.distance * k));
     const kk = n.distance / c.distance;
@@ -259,7 +302,9 @@ const CamModel = (() => {
     n.target = add(eyeNew, mul(b1.f, n.distance));
     return n;
   }
-  // Pan by the world size of one pixel at the target depth.
+  // Pan by the world size of one pixel at the target depth. In orthographic,
+  // 2 * distance * tan(fov/2) / h is 2 * half_h / h, the world size of one
+  // pixel at every depth, so this function has no projection branch.
   function panDerived(c, dx, dy, w, h) {
     const n = clone(c);
     const s = 2 * c.distance * Math.tan(c.fov / 2) / h;
@@ -278,7 +323,7 @@ const CamModel = (() => {
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     return make({ target: add(a.target, mul(sub(b.target, a.target), s)),
       distance: a.distance + (b.distance - a.distance) * s, yaw: a.yaw + dy * s,
-      pitch: a.pitch + (b.pitch - a.pitch) * s, fov: a.fov });
+      pitch: a.pitch + (b.pitch - a.pitch) * s, fov: a.fov, far: a.far, projection: a.projection });
   }
   const PRESETS = { top: { yaw: 0, pitch: PITCH_LIM }, front: { yaw: 0, pitch: 0 },
     right: { yaw: Math.PI / 2, pitch: 0 }, iso: { yaw: Math.PI / 4, pitch: Math.PI / 6 } };
@@ -296,8 +341,8 @@ const CamModel = (() => {
   function hoverRebuildBytes(tris) { return tris * 3 * (VERTEX_BYTES + INDEX_BYTES); }
   function hoverStateBytes() { return 2 * 4; }  // old face word + new face word
 
-  return { make, clone, eye, basis, project, ray, pointAtTargetDepth, hitGround, orbitFixed, zoomCentre,
-    panNow, zoomToCursor, orbitAboutPivot, panDerived, panAgreeHeight, tween, easeInOut, preset, fit,
+  return { make, clone, eye, basis, project, ray, projectOrtho, rayOrtho, pointAtTargetDepth, hitGround,
+    orbitFixed, zoomCentre, panNow, zoomToCursor, zoomToward, orbitAboutPivot, panDerived, panAgreeHeight, tween, easeInOut, preset, fit,
     hoverRebuildBytes, hoverStateBytes, PRESETS, PITCH_LIM };
 })();
 if (typeof module !== "undefined") module.exports = CamModel;
