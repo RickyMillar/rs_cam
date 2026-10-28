@@ -6,7 +6,6 @@ use crate::render::RenderResources;
 use crate::render::sim_render;
 use crate::render::upload_cache;
 use crate::state::job::{SetupFrame, SetupId};
-use crate::state::selection::Selection;
 use crate::state::simulation::StockVizMode;
 
 use super::RsCamApp;
@@ -20,35 +19,22 @@ mod toolpaths;
 
 impl RsCamApp {
     /// Get selected BREP face IDs for rendering highlights.
-    /// Reads the faces that the selection of the selected toolpath that a
-    /// face click edits resolves to (geometry selection P2.6: the
-    /// `selection_status` memo, so a face that a rule matches is lit too;
-    /// P4.1: the boundary selection of an op with no selection slot), or
-    /// the visual Selection::Face/Faces state otherwise.
+    /// The face highlight and the drawing highlight have one door (F-4):
+    /// `highlight_report` names the lit toolpath and its selection report
+    /// (the `selection_status` memo, so a face that a rule matches is lit
+    /// too). In Simulation the lit toolpath is the sim focus.
     fn selected_face_ids(&self) -> Vec<rs_cam_core::geometry::enriched_mesh::FaceGroupId> {
-        let state = self.controller.state();
-        match &state.selection {
-            Selection::Toolpath(tp_id) => state
-                .session()
-                .find_toolpath_config_by_id(*tp_id)
-                .and_then(|(_, tc)| {
-                    let target = rs_cam_core::session::SelectionTarget::for_face_pick(tc);
-                    state.session().selection_status(tc, target).ok()
-                })
-                .map(|report| {
-                    report
-                        .selected
-                        .iter()
-                        .filter(|k| k.kind == rs_cam_core::selection::ItemKind::Face)
-                        .filter_map(|k| k.brep)
-                        .map(rs_cam_core::geometry::enriched_mesh::FaceGroupId)
-                        .collect()
-                })
-                .unwrap_or_default(),
-            Selection::Face(_, face_id) => vec![*face_id],
-            Selection::Faces(_, face_ids) => face_ids.clone(),
-            _ => Vec::new(),
-        }
+        crate::state::selection_highlight::highlight_report(self.controller.state())
+            .map(|(_, _, report)| {
+                report
+                    .selected
+                    .iter()
+                    .filter(|k| k.kind == rs_cam_core::selection::ItemKind::Face)
+                    .filter_map(|k| k.brep)
+                    .map(rs_cam_core::geometry::enriched_mesh::FaceGroupId)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Get the currently hovered face ID (for hover highlighting).

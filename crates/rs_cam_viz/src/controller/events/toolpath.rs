@@ -56,7 +56,7 @@ impl<B: ComputeBackend> AppController<B> {
         op_type: crate::state::toolpath::OperationType,
         model_override: Option<rs_cam_core::ids::ModelId>,
     ) -> Option<Effects> {
-        let (target_setup_idx, selected_model, picked_faces) = self.add_target(model_override);
+        let (target_setup_idx, selected_model) = self.add_target(model_override);
         let name = format!(
             "{} {}",
             op_type.label(),
@@ -65,8 +65,7 @@ impl<B: ComputeBackend> AppController<B> {
         // S11 parity: THE draft door of core (`ProjectSession::draft_toolpath`),
         // which MCP and the CLI job share.
         let request = rs_cam_core::session::DraftRequest::new(op_type, target_setup_idx, name)
-            .selected_model(selected_model)
-            .picks(picked_faces);
+            .selected_model(selected_model);
         let draft = match self.state.session().draft_toolpath(request) {
             Ok(draft) => draft,
             Err(error) => {
@@ -80,7 +79,8 @@ impl<B: ComputeBackend> AppController<B> {
             config: tc,
             feeds_refusal,
             no_tool,
-            dropped_picks,
+            // The GUI add passes no picks, so no pick drops.
+            dropped_picks: _,
         } = draft;
         if !tc.operation.is_stock_based() && self.state.session().models().is_empty() {
             let msg = format!(
@@ -110,12 +110,6 @@ impl<B: ComputeBackend> AppController<B> {
             );
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
-        }
-        for note in dropped_picks {
-            self.push_notification(
-                format!("A picked face is not used: {note}"),
-                super::super::Severity::Warning,
-            );
         }
         let target_setup_idx = Some(target_setup_idx);
 
@@ -151,7 +145,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// the setup of the GUI selection, with the selected model (Q7), the
     /// first fitting tool and the edge op (D-T2: its enable box skips it).
     pub(crate) fn handle_add_geodesic_pair(&mut self) {
-        let (setup_index, selected_model, _picks) = self.add_target(None);
+        let (setup_index, selected_model) = self.add_target(None);
         let request = rs_cam_core::session::GeodesicPairRequest::new(setup_index, selected_model);
         if let Err(msg) = self.add_geodesic_pair(request) {
             tracing::warn!("{msg}");
@@ -237,30 +231,18 @@ impl<B: ComputeBackend> AppController<B> {
         })
     }
 
-    /// Where an add goes, from the GUI selection (Q7): the setup index, the
-    /// selected model (`model_override` wins), and the faces picked in the
-    /// viewport. Shared by the op add and the template (step 7.8).
+    /// Where an add goes, from the GUI selection (Q7): the setup index and
+    /// the selected model (`model_override` wins). Shared by the op add and
+    /// the template (step 7.8). The tree focus holds no faces. An op gets
+    /// its faces from its own selection (`Command::EditSelection`).
     fn add_target(
         &self,
         model_override: Option<rs_cam_core::ids::ModelId>,
-    ) -> (
-        usize,
-        Option<rs_cam_core::ids::ModelId>,
-        Vec<(
-            rs_cam_core::ids::ModelId,
-            rs_cam_core::geometry::enriched_mesh::FaceGroupId,
-        )>,
-    ) {
-        // Q7: the model selected in the Setup rail or the viewport, and the
-        // faces picked in the viewport.
-        let (selected_model, picked_faces) = match &self.state.selection {
-            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
-            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
-            Selection::Faces(model_id, faces) => (
-                Some(*model_id),
-                faces.iter().map(|face| (*model_id, *face)).collect(),
-            ),
-            _ => (None, Vec::new()),
+    ) -> (usize, Option<rs_cam_core::ids::ModelId>) {
+        // Q7: the model selected in the Setup rail or the viewport.
+        let selected_model = match self.state.selection {
+            Selection::Model(model_id) => Some(model_id),
+            _ => None,
         };
         let selected_model = model_override.or(selected_model);
         let setups = self.state.session().list_setups();
@@ -273,16 +255,15 @@ impl<B: ComputeBackend> AppController<B> {
             }
             // Q7: a selected model adds into the first setup whose
             // "Models" list holds it (empty = every model).
-            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
-                .and_then(|model_id| {
-                    setups
-                        .iter()
-                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
-                }),
+            Selection::Model(_) => selected_model.and_then(|model_id| {
+                setups
+                    .iter()
+                    .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
+            }),
             _ => None,
         }
         .unwrap_or(0); // default to first setup
-        (target_setup_idx, selected_model, picked_faces)
+        (target_setup_idx, selected_model)
     }
 
     /// Apply one add command. A refusal shows as a Warning toast, so a

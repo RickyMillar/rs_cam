@@ -874,11 +874,8 @@ impl<B: ComputeBackend> AppController<B> {
             if self.apply_quietly(command).is_none() {
                 return;
             }
-            let clear_selection = matches!(
-                self.state.selection,
-                Selection::Model(mid) | Selection::Face(mid, _) | Selection::Faces(mid, _)
-                    if mid == model_id
-            );
+            let clear_selection =
+                matches!(self.state.selection, Selection::Model(mid) if mid == model_id);
             if clear_selection {
                 self.state.selection = Selection::None;
             }

@@ -57,7 +57,6 @@ use crate::state::job::{ModelId, ObstacleId, SetupId, ToolId};
 use crate::state::selection::Selection;
 use crate::state::toolpath::{BoundarySource, ToolpathEntry, ToolpathId};
 use crate::ui::AppEvent;
-use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
 
 /// Candidate source toolpath for a `BoundarySource::DerivedRestRegions`
 /// picker: (id, display name, whether its cached result already has
@@ -267,10 +266,6 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
         Selection::Setup(setup_id) => draw_setup_selection(ui, state, events, setup_id),
         Selection::Obstacle(setup_id, obstacle_id) => {
             draw_obstacle_selection(ui, state, events, setup_id, obstacle_id);
-        }
-        Selection::Face(model_id, face_id) => draw_face_selection(ui, state, model_id, face_id),
-        Selection::Faces(model_id, ref face_ids) => {
-            draw_faces_selection(ui, state, model_id, face_ids);
         }
         Selection::Toolpath(id) => draw_toolpath_selection(ui, state, events, id),
     }
@@ -1675,66 +1670,6 @@ fn draw_obstacle_selection(
         }
     }
     state.panels.obstacle_editor = Some(editor);
-}
-
-/// The `Face` arm of [`draw`]'s selection dispatch.
-fn draw_face_selection(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    model_id: ModelId,
-    face_id: FaceGroupId,
-) {
-    ui.heading("Face Selected");
-    ui.separator();
-    let model_name = state
-        .session()
-        .models()
-        .iter()
-        .find(|m| m.id == model_id)
-        .map(|m| m.name.as_str())
-        .unwrap_or("Unknown");
-    use crate::ui::components::{DataRow, DataTable};
-    let mut table = DataTable::new("face_selection")
-        .row(DataRow::value("Model", model_name))
-        .row(DataRow::value("Face", face_id.0.to_string()));
-    if let Some(model) = state.session().models().iter().find(|m| m.id == model_id)
-        && let Some(enriched) = &model.enriched_mesh
-        && let Some(group) = enriched.face_group(face_id)
-    {
-        table = table
-            .row(DataRow::value(
-                "Surface type",
-                format!("{:?}", group.surface_type),
-            ))
-            .row(DataRow::value(
-                "Triangles",
-                group.triangle_range.len().to_string(),
-            ));
-    }
-    table.show(ui);
-}
-
-/// The `Faces` arm of [`draw`]'s selection dispatch.
-fn draw_faces_selection(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    model_id: ModelId,
-    face_ids: &[FaceGroupId],
-) {
-    ui.heading("Faces Selected");
-    ui.separator();
-    let model_name = state
-        .session()
-        .models()
-        .iter()
-        .find(|m| m.id == model_id)
-        .map(|m| m.name.as_str())
-        .unwrap_or("Unknown");
-    use crate::ui::components::{DataRow, DataTable};
-    DataTable::new("faces_selection")
-        .row(DataRow::value("Model", model_name))
-        .row(DataRow::value("Faces", face_ids.len().to_string()))
-        .show(ui);
 }
 
 /// The `Toolpath` arm of [`draw`]'s selection dispatch.

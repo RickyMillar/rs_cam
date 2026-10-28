@@ -1271,58 +1271,6 @@ fn w6_height_ordering_with_various_depths() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// W10: Compute Status State Machine
-// ═══════════════════════════════════════════════════════════════════════
-
-#[test]
-fn w10_model_removal_clears_face_selection() {
-    let mut c = step_controller();
-    let model_id = c.state.session().models()[0].id;
-
-    // Set selection to a face
-    c.state.selection = Selection::Face(model_id, FaceGroupId(0));
-
-    // Remove model
-    c.handle_internal_event(AppEvent::RemoveModel(model_id));
-
-    // Selection should be cleared (model is still in use by toolpaths?
-    // — the handler checks if toolpaths reference it first)
-    // Since we haven't added a toolpath, the model can be removed
-    assert_eq!(
-        c.state.selection,
-        Selection::None,
-        "Face selection should be cleared when model is removed"
-    );
-    assert!(
-        c.state.session().models().is_empty(),
-        "Model should be removed"
-    );
-}
-
-#[test]
-fn w10_model_removal_blocked_when_toolpath_references_it() {
-    let mut c = step_controller();
-    let model_id = c.state.session().models()[0].id;
-    let _tp_id = add_pocket(&mut c);
-
-    c.state.selection = Selection::Face(model_id, FaceGroupId(0));
-
-    // Try to remove model — should be blocked
-    c.handle_internal_event(AppEvent::RemoveModel(model_id));
-
-    assert_eq!(
-        c.state.session().models().len(),
-        1,
-        "Model should NOT be removed when toolpaths reference it"
-    );
-    // Selection should still be set (model wasn't removed)
-    assert!(
-        matches!(c.state.selection, Selection::Face(..)),
-        "Selection should stay since model wasn't removed"
-    );
-}
-
 // ── G-OPENGUARD — unsaved edits are named before anything discards them ──
 //
 // F1.12. Quitting asked; File > Open / Ctrl+O and MCP `load_project`

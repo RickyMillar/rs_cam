@@ -1,5 +1,3 @@
-use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
-
 use super::job::{ModelId, ObstacleId, SetupId, ToolId};
 use super::toolpath::ToolpathId;
 
@@ -16,8 +14,4 @@ pub enum Selection {
     /// K1: an obstacle of a setup (a fixture or a keep-out zone).
     Obstacle(SetupId, ObstacleId),
     Toolpath(ToolpathId),
-    /// Single BREP face selected on an enriched mesh model.
-    Face(ModelId, FaceGroupId),
-    /// Multiple BREP faces selected (shift+click accumulation).
-    Faces(ModelId, Vec<FaceGroupId>),
 }

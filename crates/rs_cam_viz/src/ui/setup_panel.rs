@@ -131,10 +131,7 @@ fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 /// open flag, and opening the list and opening the editor are one click.
 fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let models = state.session().models();
-    let open = matches!(
-        state.selection,
-        Selection::Model(_) | Selection::Face(..) | Selection::Faces(..)
-    );
+    let open = matches!(state.selection, Selection::Model(_));
 
     let value = if models.is_empty() {
         "none".to_owned()
