@@ -787,7 +787,7 @@ fn a_selection_is_pumped_before_the_same_calls_overlays_map() {
     let body = &mcp[start..];
 
     let select = body
-        .find("selection = Selection::Toolpath(tp_id)")
+        .find("set_focus(Selection::Toolpath(tp_id))")
         .expect("mcp_set_ui_view no longer writes the toolpath selection");
     let pump = body.find("process_reach_overlay()").expect(
         "mcp_set_ui_view no longer pumps the reach overlay — a `toolpath_index` \

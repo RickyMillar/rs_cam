@@ -409,8 +409,8 @@ fn the_upload_key_carries_the_scope_and_the_selection() {
          upload — the tool-profile ghost defect class"
     );
     assert!(
-        body.contains("state.selection"),
-        "`overlay_upload_key` does not read `state.selection`, so a \
+        body.contains("state.focus()"),
+        "`overlay_upload_key` does not read `state.focus()`, so a \
          selection change leaves the viewport drawing the previous toolpath"
     );
     assert!(

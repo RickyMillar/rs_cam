@@ -161,7 +161,7 @@ fn controller() -> AppController<SilentBackend> {
         .gui
         .toolpath_rt
         .insert(id, ToolpathRuntime::new(true));
-    controller.state.selection = Selection::Toolpath(id);
+    let _ = controller.state.set_focus(Selection::Toolpath(id));
     controller
 }
 

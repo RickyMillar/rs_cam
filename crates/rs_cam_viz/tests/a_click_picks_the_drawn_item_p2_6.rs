@@ -196,7 +196,7 @@ fn orient(c: &mut AppController<SilentBackend>, face_up: FaceUp, turn: ZRotation
     let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
 }
 
 /// A camera that sees the whole displayed stock from above.
@@ -243,8 +243,7 @@ fn click(
         state.workspace,
         ToolpathDrawFilter::from_state(state),
         drill,
-        rs_cam_viz::state::pin_view::active_display_setup(state.session(), &state.selection)
-            .as_ref(),
+        rs_cam_viz::state::pin_view::active_display_setup(state.session(), state.focus()).as_ref(),
     )
 }
 

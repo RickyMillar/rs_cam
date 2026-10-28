@@ -252,11 +252,11 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     flush_toolpath_snapshot(state);
     // P4.3: the pick mode and the `+ Rule` draft end when no toolpath is
     // on screen.
-    if !matches!(state.selection, Selection::Toolpath(_)) {
+    if !matches!(*state.focus(), Selection::Toolpath(_)) {
         state.gui.selection_ui.keep_only(None);
     }
 
-    match state.selection.clone() {
+    match state.focus().clone() {
         Selection::None => draw_nothing_selected(ui, state),
         Selection::Stock => draw_stock_selection(ui, state),
         Selection::PostProcessor => draw_post_selection(ui, state),
@@ -1557,7 +1557,7 @@ fn draw_obstacle_list(
                 })
         })
         .collect();
-    let selected = match state.selection {
+    let selected = match *state.focus() {
         Selection::Obstacle(sid, oid) if sid == setup_id => Some(oid),
         _ => None,
     };

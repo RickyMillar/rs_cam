@@ -114,7 +114,7 @@ impl super::RsCamApp {
             return;
         }
         let Some((frame, _)) =
-            crate::state::pin_view::active_display_setup(state.session(), &state.selection)
+            crate::state::pin_view::active_display_setup(state.session(), state.focus())
         else {
             return;
         };

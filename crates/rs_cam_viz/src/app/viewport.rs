@@ -48,7 +48,7 @@ impl RsCamApp {
         if state.workspace != Workspace::Toolpaths {
             return None;
         }
-        let Selection::Toolpath(id) = state.selection else {
+        let Selection::Toolpath(id) = *state.focus() else {
             return None;
         };
         let mode = state.gui.selection_ui.pick_mode(id)?;
@@ -194,7 +194,7 @@ impl RsCamApp {
         if state.workspace != Workspace::Toolpaths {
             return None;
         }
-        let Selection::Toolpath(id) = state.selection else {
+        let Selection::Toolpath(id) = *state.focus() else {
             return None;
         };
         state
@@ -405,7 +405,7 @@ impl RsCamApp {
                 workspace,
                 crate::state::viewport::ToolpathDrawFilter::from_state(state),
                 drill_pick,
-                crate::state::pin_view::active_display_setup(state.session(), &state.selection)
+                crate::state::pin_view::active_display_setup(state.session(), state.focus())
                     .as_ref(),
             )
         };
@@ -413,7 +413,7 @@ impl RsCamApp {
         if let Some(hit) = hit {
             self.handle_pick_hit(hit);
         } else {
-            self.controller.state_mut().selection = Selection::None;
+            self.controller.set_focus(Selection::None);
         }
     }
 
@@ -426,7 +426,7 @@ impl RsCamApp {
         if state.workspace != Workspace::Toolpaths {
             return None;
         }
-        let Selection::Toolpath(id) = state.selection else {
+        let Selection::Toolpath(id) = *state.focus() else {
             return None;
         };
         let tc = state
@@ -506,21 +506,27 @@ impl RsCamApp {
                     obstacle_id,
                 },
             ) => {
-                self.controller.state_mut().selection = Selection::Obstacle(setup_id, obstacle_id);
+                self.controller
+                    .set_focus(Selection::Obstacle(setup_id, obstacle_id));
             }
             (Workspace::Setup | Workspace::Toolpaths, PickHit::AlignmentPin { pin_index }) => {
                 // Pins are stock-level: a pin click opens the stock panel
                 // with that pin's row marked (P7), and the viewport rings
                 // the pin.
-                let state = self.controller.state_mut();
-                state.selection = Selection::Stock;
-                state.panels.selected_pin = Some(pin_index);
+                self.controller.set_focus(Selection::Stock);
+                self.controller.state_mut().panels.selected_pin = Some(pin_index);
                 self.controller.set_pending_upload();
             }
             (_, PickHit::StockFace { .. }) => {
-                let state = self.controller.state_mut();
-                state.selection = Selection::Stock;
-                if state.panels.selected_pin.take().is_some() {
+                self.controller.set_focus(Selection::Stock);
+                if self
+                    .controller
+                    .state_mut()
+                    .panels
+                    .selected_pin
+                    .take()
+                    .is_some()
+                {
                     self.controller.set_pending_upload();
                 }
             }
@@ -546,7 +552,7 @@ impl RsCamApp {
                 }
             }
             (_, PickHit::Toolpath { id, .. }) => {
-                self.controller.state_mut().selection = Selection::Toolpath(id);
+                self.controller.set_focus(Selection::Toolpath(id));
             }
             (Workspace::Toolpaths, PickHit::Item { toolpath_id, key }) => {
                 // Geometry selection P2.6: toggle this item in the op
@@ -569,7 +575,7 @@ impl RsCamApp {
                 // a selection, the click sets the source to `Selection` with
                 // that face (`ProjectSession::click_edit`), one undo step,
                 // and the controller gives a notice.
-                if let Selection::Toolpath(tp_id) = self.controller.state().selection {
+                if let Selection::Toolpath(tp_id) = *self.controller.state().focus() {
                     let pick = {
                         let session = self.controller.state().session();
                         // P4.3 (L-3): the section whose Pick button is on
@@ -758,7 +764,7 @@ impl RsCamApp {
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
-                    crate::state::pin_view::active_display_setup(state.session(), &state.selection)
+                    crate::state::pin_view::active_display_setup(state.session(), state.focus())
                         .as_ref(),
                 )
             {
@@ -801,7 +807,7 @@ impl RsCamApp {
                     state.workspace,
                     crate::state::viewport::ToolpathDrawFilter::from_state(state),
                     None,
-                    crate::state::pin_view::active_display_setup(state.session(), &state.selection)
+                    crate::state::pin_view::active_display_setup(state.session(), state.focus())
                         .as_ref(),
                 )
                 && let Some(tip) = span_path_tooltip(state, id, move_index)
@@ -894,7 +900,7 @@ impl RsCamApp {
         // P5 — is a reach map held for the toolpath that is selected RIGHT
         // NOW? A map held for a previous selection must never be drawn under
         // the new one, so the identity is compared rather than assumed.
-        let reach_map_ready = match state.selection {
+        let reach_map_ready = match *state.focus() {
             Selection::Toolpath(id) => {
                 state.gui.reach_overlay.toolpath == Some(id)
                     && state.gui.reach_overlay.ready_map().is_some()
@@ -960,7 +966,7 @@ impl RsCamApp {
                     .any(|m| m.items.has_drawing()),
             show_solid_stock: state.viewport.show_stock_solid,
             show_height_planes: state.viewport.show_height_planes
-                && matches!(state.selection, Selection::Toolpath(_)),
+                && matches!(*state.focus(), Selection::Toolpath(_)),
             show_entry_markers: state.viewport.show_entry_markers,
             show_rest_heatmap: state.viewport.show_rest_heatmap
                 && state.workspace == Workspace::Toolpaths
@@ -1160,7 +1166,7 @@ impl RsCamApp {
                     .into_iter()
                     .find(|s| s.key.names_same_geometry(&popover.key))
             });
-        let selected = self.controller.state().selection == Selection::Model(popover.model_id);
+        let selected = *self.controller.state().focus() == Selection::Model(popover.model_id);
         let Some(shape) = shape.filter(|_| selected) else {
             self.controller.state_mut().panels.drawing_popover = None;
             return;
@@ -1225,7 +1231,7 @@ impl RsCamApp {
     /// A click on an open path of the selected model opens its popover
     /// (geometry selection P4.9). Returns true when the click opened it.
     fn handle_drawing_popover_click(&mut self, click_pos: egui::Pos2) -> bool {
-        let Selection::Model(model_id) = self.controller.state().selection else {
+        let Selection::Model(model_id) = *self.controller.state().focus() else {
             return false;
         };
         let key = {
@@ -1336,7 +1342,7 @@ impl RsCamApp {
         let Some(map) = crate::ui::overlays::registry::selected_area_regions(state) else {
             return;
         };
-        let shift = match state.selection {
+        let shift = match *state.focus() {
             Selection::Toolpath(id) => state
                 .session()
                 .setup_of_toolpath_id(id)

@@ -250,7 +250,7 @@ fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> Toolp
             }))
             .expect("the index is in range");
     }
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     id
 }
 
@@ -346,7 +346,7 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
     // Reach: Computing and Failed for the selection.
     let mut state = fresh_state();
     let id = ToolpathId::from_raw(7);
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     state.gui.reach_overlay.toolpath = Some(id);
     state.gui.reach_overlay.status = ReachStatus::Computing;
     let reach_computing = state_of(&state, "reach_map");
@@ -451,7 +451,7 @@ fn the_rest_row_reads_toolpath_freshness_g_vpstate() {
 #[test]
 fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
     let mut state = fresh_state();
-    state.selection = Selection::Toolpath(ToolpathId::from_raw(1));
+    let _ = state.set_focus(Selection::Toolpath(ToolpathId::from_raw(1)));
     assert!(!state.viewport.show_collisions, "fixture precondition");
     let mut events = Vec::new();
     assert!(panel::request_compute(
@@ -469,7 +469,7 @@ fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
     assert_eq!(request.preferred, None);
 
     // The operator moves on while the check runs.
-    state.selection = Selection::Toolpath(ToolpathId::from_raw(2));
+    let _ = state.set_focus(Selection::Toolpath(ToolpathId::from_raw(2)));
     state.simulation.submitted_collision_epoch = Some(state.session().simulation_epoch());
     land_collision_check(&mut state, 3);
     assert_eq!(panel::settle_pending_show(&mut state), ShowSettle::Dropped);
@@ -483,7 +483,7 @@ fn a_result_for_an_old_target_does_not_take_over_g_vpstate() {
     // grid computed.
     let mut state = fresh_state();
     let id = ToolpathId::from_raw(9);
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     assert!(
         state.viewport.show_reach_map,
         "fixture: Reach is the default"

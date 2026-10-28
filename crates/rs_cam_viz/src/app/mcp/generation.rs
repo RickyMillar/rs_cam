@@ -377,7 +377,7 @@ impl RsCamApp {
                 );
             };
             let setup_id = setup.id;
-            self.controller.state_mut().selection = Selection::Setup(setup_id);
+            self.controller.set_focus(Selection::Setup(setup_id));
         }
 
         let before = self.mcp_diagnostic_snapshot();

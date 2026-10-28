@@ -148,7 +148,10 @@ pub struct AppState {
     session: rs_cam_core::session::ProjectSession,
     /// GUI-only runtime overlay (dirty flag, per-toolpath display state, datum config).
     pub gui: GuiState,
-    pub selection: Selection,
+    /// The tree focus (F2). The field is private: [`Self::focus`] reads it
+    /// and [`Self::set_focus`] writes it. The write door reports the change,
+    /// so the caller can raise the upload flag.
+    selection: Selection,
     pub viewport: ViewportState,
     /// The viewport Overlays panel's own state (P6). The overlay FLAGS live
     /// on [`ViewportState`]; this is only the panel's shape plus the
@@ -224,6 +227,20 @@ pub struct AppState {
     pub panel_side_effects: PanelSideEffects,
 }
 
+/// What a [`AppState::set_focus`] call changed (F2).
+///
+/// `setup_changed` compares the setup of the old focus with the setup of
+/// the new one. A focus that is not a setup, an obstacle or a toolpath has
+/// no setup, so `None` → `Toolpath` in a setup is a setup change.
+#[must_use]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FocusChange {
+    /// The new focus differs from the old one.
+    pub changed: bool,
+    /// The setup of the new focus differs from the setup of the old one.
+    pub setup_changed: bool,
+}
+
 /// The session to read beside every other [`AppState`] field to write.
 ///
 /// [`AppState::split_mut`] builds it. A draw site that reads the session
@@ -234,7 +251,7 @@ pub struct StateParts<'a> {
     pub session: &'a rs_cam_core::session::ProjectSession,
     pub workspace: &'a mut Workspace,
     pub gui: &'a mut GuiState,
-    pub selection: &'a mut Selection,
+    pub selection: &'a Selection,
     pub viewport: &'a mut ViewportState,
     pub overlays: &'a mut OverlayPanelState,
     pub simulation: &'a mut SimulationState,
@@ -584,8 +601,9 @@ impl AppState {
         let setups = self.session.list_setups();
         let by_id = |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id) };
         match &self.selection {
-            Selection::Setup(id) | Selection::Obstacle(id, _) => by_id(*id),
-            Selection::Toolpath(tp_id) => self.session.setup_of_toolpath_id(*tp_id),
+            Selection::Setup(_) | Selection::Obstacle(..) | Selection::Toolpath(_) => {
+                self.setup_of_focus(&self.selection).and_then(by_id)
+            }
             _ => {
                 if setups.is_empty() {
                     None
@@ -593,6 +611,38 @@ impl AppState {
                     Some(0)
                 }
             }
+        }
+    }
+
+    /// The tree focus: what is selected in the project tree (F2).
+    #[must_use]
+    pub fn focus(&self) -> &Selection {
+        &self.selection
+    }
+
+    /// The one write door of the tree focus (F2). It stores `next` and
+    /// reports the change. The controller turns the report into
+    /// `pending_upload` ([`crate::controller::AppController`] `set_focus`).
+    pub fn set_focus(&mut self, next: Selection) -> FocusChange {
+        let changed = self.selection != next;
+        let setup_changed = self.setup_of_focus(&self.selection) != self.setup_of_focus(&next);
+        self.selection = next;
+        FocusChange {
+            changed,
+            setup_changed,
+        }
+    }
+
+    /// The setup of a focus: the setup of a `Setup` or an `Obstacle`, the
+    /// setup that holds a `Toolpath`. Any other focus has no setup (`None`).
+    fn setup_of_focus(&self, focus: &Selection) -> Option<job::SetupId> {
+        match focus {
+            Selection::Setup(id) | Selection::Obstacle(id, _) => Some(*id),
+            Selection::Toolpath(tp_id) => self
+                .session
+                .setup_of_toolpath_id(*tp_id)
+                .and_then(|idx| self.session.list_setups().get(idx).map(|s| s.id)),
+            _ => None,
         }
     }
 
@@ -710,5 +760,99 @@ mod tests {
         assert!(!state.show_export_wizard);
         assert!(!state.show_preflight);
         assert!(state.preferences.is_none(), "the Preferences window closes");
+    }
+
+    /// A Face toolpath with the stated id, for the focus-door test.
+    fn face_toolpath(id: usize) -> rs_cam_core::session::ToolpathConfig {
+        use crate::state::toolpath::{OperationConfig, OperationType, StockSource};
+        rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
+            id: rs_cam_core::ToolpathId::from_raw(id),
+            name: format!("Op {id}"),
+            enabled: true,
+            operation: OperationConfig::new_default(OperationType::Face),
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id: None,
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            rest_analysis: Default::default(),
+            stock_source: StockSource::Fresh,
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            planner_origin: None,
+        }
+    }
+
+    /// F2: the focus door reports what a write changed. Two setups; the
+    /// toolpath sits in the first one.
+    #[test]
+    #[expect(
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        reason = "test code: a panic is how a test reports a failure"
+    )]
+    fn the_focus_door_reports_its_change_f2() {
+        use rs_cam_core::compute::transform::FaceUp;
+        let mut builder = rs_cam_core::session::ProjectSessionBuilder::new();
+        let first = builder.add_setup("A".to_owned(), FaceUp::Top);
+        let second = builder.add_setup("B".to_owned(), FaceUp::Bottom);
+        builder
+            .add_toolpath(first, face_toolpath(7))
+            .expect("the setup exists");
+        let mut state = AppState::new();
+        state.replace_session(builder.build());
+        let ids: Vec<job::SetupId> = state.session().list_setups().iter().map(|s| s.id).collect();
+        let (a, b) = (ids[first], ids[second]);
+        // The session allocates the toolpath id on add; read it back.
+        let tp = state.session().toolpath_configs()[0].id;
+        assert_eq!(state.session().setup_of_toolpath_id(tp), Some(first));
+
+        // None has no setup; the toolpath has setup A.
+        let change = state.set_focus(Selection::Toolpath(tp));
+        assert_eq!(
+            change,
+            FocusChange {
+                changed: true,
+                setup_changed: true
+            }
+        );
+        assert_eq!(*state.focus(), Selection::Toolpath(tp));
+
+        // The same focus again changes nothing.
+        let change = state.set_focus(Selection::Toolpath(tp));
+        assert_eq!(
+            change,
+            FocusChange {
+                changed: false,
+                setup_changed: false
+            }
+        );
+
+        // Setup A to setup B changes both.
+        let _ = state.set_focus(Selection::Setup(a));
+        let change = state.set_focus(Selection::Setup(b));
+        assert_eq!(
+            change,
+            FocusChange {
+                changed: true,
+                setup_changed: true
+            }
+        );
+
+        // The toolpath of setup A after setup A: a change, the same setup.
+        let _ = state.set_focus(Selection::Setup(a));
+        let change = state.set_focus(Selection::Toolpath(tp));
+        assert_eq!(
+            change,
+            FocusChange {
+                changed: true,
+                setup_changed: false
+            }
+        );
     }
 }

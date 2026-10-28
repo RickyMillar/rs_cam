@@ -47,7 +47,7 @@ pub(super) fn push_obstacle_lines(
         let Ok(set) = ObstacleSet::resolve(std::slice::from_ref(obstacle), models) else {
             continue;
         };
-        let selected = state.selection == Selection::Obstacle(setup_id, obstacle.id);
+        let selected = *state.focus() == Selection::Obstacle(setup_id, obstacle.id);
         let rgb = if selected {
             OBSTACLE_SELECTED
         } else {
@@ -71,7 +71,7 @@ pub(super) fn push_obstacle_lines(
         resolved.extend(set.obstacles().iter().cloned());
     }
 
-    let focused = match state.selection {
+    let focused = match *state.focus() {
         Selection::Setup(id) | Selection::Obstacle(id, _) => id == setup_id,
         _ => false,
     };
@@ -146,14 +146,14 @@ mod tests {
     #[test]
     fn a_box_obstacle_draws_its_prism_its_clearance_and_a_plane_on_focus_k2() {
         let mut state = state_with(vec![Obstacle::new_default_box(ObstacleId::from_raw(0))]);
-        state.selection = Selection::None;
+        let _ = state.set_focus(Selection::None);
         let out = lines(&state);
         assert_eq!(count(&out, OBSTACLE), 24, "the box prism");
         assert!(count(&out, OBSTACLE_CLEARANCE) >= 8, "the clearance ring");
         assert_eq!(count(&out, OBSTACLE_PLANE), 0, "no plane without focus");
 
         let setup = state.session().list_setups()[0].id;
-        state.selection = Selection::Setup(setup);
+        let _ = state.set_focus(Selection::Setup(setup));
         let out = lines(&state);
         let plane: Vec<&LineVertex> = out.iter().filter(|v| v.color == OBSTACLE_PLANE).collect();
         assert_eq!(plane.len(), 8, "the plane rectangle");
@@ -169,7 +169,7 @@ mod tests {
             assert!((f64::from(v.position[2]) - (plane_z + shift_z)).abs() < 1e-3);
         }
 
-        state.selection = Selection::Obstacle(setup, ObstacleId::from_raw(0));
+        let _ = state.set_focus(Selection::Obstacle(setup, ObstacleId::from_raw(0)));
         let out = lines(&state);
         assert_eq!(count(&out, OBSTACLE_SELECTED), 24, "the selected prism");
         assert_eq!(count(&out, OBSTACLE), 0);
@@ -198,7 +198,7 @@ mod tests {
         let mut sd = state.session().list_setups()[0].clone();
         sd.obstacles.push(broken);
         let frame = SetupFrame::of(&sd);
-        state.selection = Selection::None;
+        let _ = state.set_focus(Selection::None);
         let mut out = Vec::new();
         push_obstacle_lines(&state, &frame, &sd, &mut out);
         assert_eq!(count(&out, OBSTACLE), 24, "the good box still draws");

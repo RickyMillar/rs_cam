@@ -1397,7 +1397,7 @@ mod tests {
             let mut state = crate::state::AppState::new();
             state.replace_session(s);
             state.workspace = crate::state::Workspace::Toolpaths;
-            state.selection = crate::state::selection::Selection::Toolpath(id);
+            let _ = state.set_focus(crate::state::selection::Selection::Toolpath(id));
             state.gui.selection_ui.set_tab_edit(id, true);
             assert!(crate::state::tab_edit::refresh_layout(&mut state));
             let gui = state

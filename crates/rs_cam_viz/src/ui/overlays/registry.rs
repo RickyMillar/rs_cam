@@ -320,7 +320,7 @@ fn has_model_mesh(state: &AppState) -> bool {
 }
 
 fn selected_toolpath(state: &AppState) -> Option<crate::state::toolpath::ToolpathId> {
-    match state.selection {
+    match *state.focus() {
         crate::state::selection::Selection::Toolpath(id) => Some(id),
         _ => None,
     }

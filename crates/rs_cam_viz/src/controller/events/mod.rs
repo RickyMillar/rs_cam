@@ -122,7 +122,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         match self.apply(command) {
             Ok(effects) => {
-                self.state.selection = Selection::Toolpath(toolpath_id);
+                self.set_focus(Selection::Toolpath(toolpath_id));
                 self.state.gui.mark_edited();
                 self.pending_upload = true;
                 // Operator ruling Q2: the first face pick set the floor.
@@ -152,7 +152,7 @@ impl<B: ComputeBackend> AppController<B> {
         let command =
             Command::SetToolpathFloor(rs_cam_core::session::SetToolpathFloorArgs { index, floor });
         if self.apply_controller_command(command, "the floor") {
-            self.state.selection = Selection::Toolpath(toolpath_id);
+            self.set_focus(Selection::Toolpath(toolpath_id));
             self.state.gui.mark_edited();
             self.pending_upload = true;
         }
@@ -179,7 +179,7 @@ impl<B: ComputeBackend> AppController<B> {
             boundary: (**boundary).clone(),
         });
         if self.apply_controller_command(command, "the boundary") {
-            self.state.selection = Selection::Toolpath(toolpath_id);
+            self.set_focus(Selection::Toolpath(toolpath_id));
             self.state.gui.mark_edited();
             self.pending_upload = true;
             if let Some(notice) = click.notice() {
@@ -302,7 +302,7 @@ impl<B: ComputeBackend> AppController<B> {
             old_feeds_provenance: before.3,
             new_feeds_provenance: after.3,
         });
-        self.state.selection = Selection::Toolpath(toolpath_id);
+        self.set_focus(Selection::Toolpath(toolpath_id));
         self.state.gui.mark_edited();
         self.pending_upload = true;
     }

@@ -254,7 +254,7 @@ fn a_report_change_uploads_once_p4_4() {
     let mut state = AppState::new();
     state.replace_session(builder.build());
     let id = state.session().toolpath_configs()[0].id;
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
 
     // The frame loop's call, frame by frame.
     let mut detector = ReportDetector::default();
@@ -295,7 +295,7 @@ fn a_report_change_uploads_once_p4_4() {
         );
     }
     // No toolpath drawn: one upload to clear the highlight, then none.
-    state.selection = UiSelection::None;
+    let _ = state.set_focus(UiSelection::None);
     assert_eq!(frame(&state, &mut detector), 3);
     assert_eq!(frame(&state, &mut detector), 3);
 

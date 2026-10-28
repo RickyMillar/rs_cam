@@ -105,7 +105,7 @@ pub fn state(
             .insert(config.id, ToolpathRuntime::new(true));
     }
     let id = state.session().toolpath_configs()[0].id;
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Geometry));
     state
 }

@@ -131,7 +131,7 @@ fn the_template_has_one_door_s7_8() {
         },
         "the command wrote op 1's id"
     );
-    assert_eq!(c.state.selection, Selection::Toolpath(configs[0].id));
+    assert_eq!(*c.state.focus(), Selection::Toolpath(configs[0].id));
     for tc in &configs {
         assert!(
             c.state.gui.toolpath_rt.contains_key(&tc.id),

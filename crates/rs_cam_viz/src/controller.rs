@@ -749,7 +749,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.pending_upload = true;
         }
 
-        let Selection::Toolpath(id) = self.state.selection else {
+        let Selection::Toolpath(id) = *self.state.focus() else {
             if self.state.gui.reach_overlay.toolpath.is_some() {
                 self.state.gui.reach_overlay.clear();
                 self.pending_upload = true;

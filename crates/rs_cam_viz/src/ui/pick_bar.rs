@@ -144,7 +144,7 @@ fn chip_label(kind: ItemKind) -> &'static str {
 /// Draw the bar when a pick mode of the selected toolpath is on. The bar
 /// edits the filter of the mode; `Done` ends the mode.
 pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect) {
-    let crate::state::selection::Selection::Toolpath(tp_id) = state.selection else {
+    let crate::state::selection::Selection::Toolpath(tp_id) = *state.focus() else {
         return;
     };
     if state.workspace != crate::state::Workspace::Toolpaths {

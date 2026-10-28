@@ -125,7 +125,7 @@ fn state_from(configs: Vec<ToolpathConfig>) -> AppState {
             .toolpath_rt
             .insert(config.id, ToolpathRuntime::new(true));
     }
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Cut));
     state
 }

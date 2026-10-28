@@ -271,7 +271,7 @@ fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationTyp
         .gui
         .toolpath_rt
         .insert(tp_id_raw, ToolpathRuntime::new(true));
-    controller.state.selection = Selection::Toolpath(tp_id);
+    let _ = controller.state.set_focus(Selection::Toolpath(tp_id));
     tp_id
 }
 
@@ -327,9 +327,9 @@ fn w3_face_toggle_adds_and_removes() {
 
     // Selection should stay on toolpath (not switch to Face panel)
     assert!(
-        matches!(c.state.selection, Selection::Toolpath(id) if id == tp_id),
+        matches!(*c.state.focus(), Selection::Toolpath(id) if id == tp_id),
         "Selection should stay on Toolpath, got {:?}",
-        c.state.selection
+        *c.state.focus()
     );
 
     // Toggle same face OFF: the pick leaves, and no exclude is stored.
@@ -1048,7 +1048,7 @@ fn a_dxf_draws_on_import_and_its_eye_hides_it_p4_d() {
 
     // A selected Pocket that reads the drawing takes it over.
     let tp_id = add_pocket(&mut c);
-    c.state.selection = Selection::Toolpath(tp_id);
+    let _ = c.state.set_focus(Selection::Toolpath(tp_id));
     assert_eq!(
         drawing_draws(&c.state),
         vec![DrawingDraw::Toolpath {

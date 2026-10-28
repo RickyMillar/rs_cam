@@ -151,7 +151,7 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                 ui.separator();
                 // W1.2/P6-001 — was a hardcoded add_enabled(false) advertising
                 // a "Del" it never fired. Enable + wire it to the selection.
-                let delete_event = match state.selection {
+                let delete_event = match *state.focus() {
                     Selection::Toolpath(id) => Some(AppEvent::RemoveToolpath(id)),
                     Selection::Tool(id) => Some(AppEvent::RemoveTool(id)),
                     _ => None,

@@ -22,7 +22,7 @@ use super::{Gpu, PassFrame, has_shift, shift_key, shift_stock_mesh, translate_an
 /// The selected toolpath and its result, the source of the two
 /// per-toolpath overlays.
 fn selected_result(state: &AppState) -> Option<(ToolpathId, &Arc<AnnotatedToolpath>)> {
-    let Selection::Toolpath(tp_id) = state.selection else {
+    let Selection::Toolpath(tp_id) = *state.focus() else {
         return None;
     };
     state

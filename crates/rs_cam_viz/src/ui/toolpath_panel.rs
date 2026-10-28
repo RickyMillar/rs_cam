@@ -530,7 +530,7 @@ fn draw_toolpath_card(
     _local_idx: usize,
 ) -> RowGeometry {
     let tp_id = tc.id;
-    let selected = state.selection == Selection::Toolpath(tp_id);
+    let selected = *state.focus() == Selection::Toolpath(tp_id);
     let visible = rt.visible;
     // F2.2 — the one state the dot reads. It replaces the
     // `ComputeStatus::effective` call that used to stand here: A/M11's "one

@@ -328,7 +328,7 @@ fn surface(
     if let (Selection::Toolpath(id), Some(tab)) = (&selection, tab) {
         state.gui.pending_toolpath_tab = Some((*id, tab));
     }
-    state.selection = selection;
+    let _ = state.set_focus(selection);
     let _ = render(&ctx, state, width);
     render(&ctx, state, width)
 }

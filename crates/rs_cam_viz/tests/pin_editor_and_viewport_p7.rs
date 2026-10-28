@@ -138,7 +138,7 @@ fn mini_session(origin: (f64, f64)) -> ProjectSession {
 fn stock_state() -> AppState {
     let mut state = AppState::new();
     state.replace_session(mini_session((0.0, 0.0)));
-    state.selection = Selection::Stock;
+    let _ = state.set_focus(Selection::Stock);
     state
 }
 
@@ -400,8 +400,8 @@ fn a_pick_on_a_flipped_setup_hits_the_drawn_pin() {
         .find(|s| s.name == "Back")
         .unwrap()
         .id;
-    state.selection = Selection::Setup(back);
-    let (frame, _) = active_display_setup(state.session(), &state.selection).unwrap();
+    let _ = state.set_focus(Selection::Setup(back));
+    let (frame, _) = active_display_setup(state.session(), state.focus()).unwrap();
     assert_eq!(frame.face_up, FaceUp::Bottom);
 
     let stock = state.session().stock_config().clone();

@@ -131,14 +131,16 @@ pub struct HeadEditor {
 }
 
 /// K2: the obstacle `obstacle_id` of the setup is gone. Close an editor
-/// open on it, and move a selection of it to its setup (the S4 rule). The
+/// open on it. When `focus` is that obstacle, return its setup as the new
+/// focus (the S4 rule); the caller writes it through the focus door. The
 /// controller door, the undo and the MCP remove all call it.
+#[must_use]
 pub fn forget_obstacle(
     panels: &mut PanelDrafts,
-    selection: &mut super::selection::Selection,
+    focus: &super::selection::Selection,
     setup_id: SetupId,
     obstacle_id: rs_cam_core::ids::ObstacleId,
-) {
+) -> Option<super::selection::Selection> {
     if panels
         .obstacle_editor
         .as_ref()
@@ -146,9 +148,8 @@ pub fn forget_obstacle(
     {
         panels.obstacle_editor = None;
     }
-    if *selection == super::selection::Selection::Obstacle(setup_id, obstacle_id) {
-        *selection = super::selection::Selection::Setup(setup_id);
-    }
+    (*focus == super::selection::Selection::Obstacle(setup_id, obstacle_id))
+        .then_some(super::selection::Selection::Setup(setup_id))
 }
 
 /// Every panel draft that outlives one frame.

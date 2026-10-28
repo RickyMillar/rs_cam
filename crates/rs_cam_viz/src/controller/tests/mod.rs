@@ -285,7 +285,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
     });
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
-    controller.state.selection = Selection::Toolpath(tp_id);
+    let _ = controller.state.set_focus(Selection::Toolpath(tp_id));
 }
 
 /// The index of the toolpath carrying `id`.

@@ -135,7 +135,7 @@ impl<B: ComputeBackend> AppController<B> {
                 tc.id,
                 crate::state::runtime::ToolpathRuntime::new(tc.operation.default_auto_regen()),
             );
-            self.state.selection = Selection::Toolpath(tp_id);
+            self.set_focus(Selection::Toolpath(tp_id));
         }
         self.state.gui.mark_edited();
         effects
@@ -219,7 +219,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
         }
         if let Some(id) = body_id {
-            self.state.selection = Selection::Toolpath(id);
+            self.set_focus(Selection::Toolpath(id));
         }
         self.pending_upload = true;
         self.state.gui.mark_edited();
@@ -240,13 +240,13 @@ impl<B: ComputeBackend> AppController<B> {
         model_override: Option<rs_cam_core::ids::ModelId>,
     ) -> (usize, Option<rs_cam_core::ids::ModelId>) {
         // Q7: the model selected in the Setup rail or the viewport.
-        let selected_model = match self.state.selection {
+        let selected_model = match *self.state.focus() {
             Selection::Model(model_id) => Some(model_id),
             _ => None,
         };
         let selected_model = model_override.or(selected_model);
         let setups = self.state.session().list_setups();
-        let target_setup_idx = match self.state.selection {
+        let target_setup_idx = match *self.state.focus() {
             Selection::Toolpath(tp_id) => self
                 .setup_of_toolpath(tp_id)
                 .and_then(|sid| setups.iter().position(|s| s.id == sid)),
@@ -338,7 +338,7 @@ impl<B: ComputeBackend> AppController<B> {
                         new_tc.operation.default_auto_regen(),
                     ),
                 );
-                self.state.selection = Selection::Toolpath(new_id);
+                self.set_focus(Selection::Toolpath(new_id));
             }
             self.state.gui.mark_edited();
         }
@@ -569,8 +569,8 @@ impl<B: ComputeBackend> AppController<B> {
             // still resolves, the walker names every consumer, and
             // `apply_quietly` stamps them from `Effects::stale`.
         }
-        if self.state.selection == Selection::Toolpath(tp_id) {
-            self.state.selection = Selection::None;
+        if *self.state.focus() == Selection::Toolpath(tp_id) {
+            self.set_focus(Selection::None);
         }
         self.pending_upload = true;
         self.state.gui.mark_edited();

@@ -161,7 +161,7 @@ fn state() -> AppState {
 /// Show toolpath `index` on its Geometry tab.
 fn select(state: &mut AppState, index: usize) {
     let id = state.session().toolpath_configs()[index].id;
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Geometry));
 }
 

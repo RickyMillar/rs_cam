@@ -189,7 +189,7 @@ fn controller(
     let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
     state.gui.selection_ui.set_tab_edit(id, true);
     assert!(rs_cam_viz::state::tab_edit::refresh_layout(state));
     c

@@ -240,7 +240,7 @@ fn controller(
     let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
     c
 }
 

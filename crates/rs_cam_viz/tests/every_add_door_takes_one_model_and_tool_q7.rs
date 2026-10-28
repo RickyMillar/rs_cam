@@ -159,7 +159,7 @@ fn every_add_door_takes_one_model_and_tool_q7() {
 
     // Claim 2: the drawing selected in the Setup rail, a 3D op.
     let mut c = controller();
-    c.state.selection = Selection::Model(DRAWING);
+    let _ = c.state.set_focus(Selection::Model(DRAWING));
     let core = c
         .state
         .session()

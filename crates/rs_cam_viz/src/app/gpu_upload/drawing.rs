@@ -40,7 +40,7 @@ pub(super) fn upload(
         use crate::state::selection::Selection;
         let st = state;
         if st.workspace == Workspace::Toolpaths
-            && let Selection::Toolpath(id) = st.selection
+            && let Selection::Toolpath(id) = *st.focus()
         {
             st.session()
                 .toolpath_configs()

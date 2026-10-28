@@ -121,7 +121,7 @@ pub const COLLISION_STALE_NOTE: &str = "from a check that is older than the last
 
 /// The selected toolpath, if the selection is a toolpath.
 pub fn selected_toolpath(state: &AppState) -> Option<ToolpathId> {
-    match state.selection {
+    match *state.focus() {
         Selection::Toolpath(id) => Some(id),
         _ => None,
     }

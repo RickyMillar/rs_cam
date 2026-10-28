@@ -16,32 +16,22 @@ impl<B: ComputeBackend> AppController<B> {
     // ── Tree / selection helpers ─────────────────────────────────────────
 
     pub(crate) fn handle_select(&mut self, selection: &Selection) {
-        let old_setup = match &self.state.selection {
-            Selection::Setup(id) => Some(*id),
-            Selection::Obstacle(id, _) => Some(*id),
-            Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
-            _ => None,
-        };
-        let new_setup = match selection {
-            Selection::Setup(id) => Some(*id),
-            Selection::Obstacle(id, _) => Some(*id),
-            Selection::Toolpath(tp_id) => self.setup_of_toolpath(*tp_id),
-            _ => None,
-        };
-        // `upload_gpu_data` (app/gpu_upload.rs) keys the height-plane and
-        // rest-heatmap overlays off "whichever toolpath is currently
-        // `Selection::Toolpath`", rebuilt only when `pending_upload` fires —
-        // not every frame. The setup-changed check above catches switching
-        // setups, but switching the selected *toolpath within the same
-        // setup* (e.g. selecting a pencil rest-analysis toolpath right
-        // after a scallop in the same setup) left both overlays showing
-        // stale data from whichever toolpath was selected the last time
-        // something else happened to set `pending_upload`. Any actual
-        // selection change needs the same treatment.
-        if old_setup != new_setup || self.state.selection != *selection {
+        self.set_focus(selection.clone());
+    }
+
+    /// The one controller write of the tree focus (F2). It turns the
+    /// [`crate::state::FocusChange`] into `pending_upload`.
+    ///
+    /// `upload_gpu_data` (app/gpu_upload.rs) keys the height-plane and
+    /// rest-heatmap overlays off the `Selection::Toolpath` focus. It
+    /// rebuilds them only when `pending_upload` fires, not every frame. A
+    /// change of toolpath in the same setup left both overlays stale, so
+    /// any focus change raises the flag, not only a setup change.
+    pub(crate) fn set_focus(&mut self, next: Selection) {
+        let change = self.state.set_focus(next);
+        if change.changed || change.setup_changed {
             self.pending_upload = true;
         }
-        self.state.selection = selection.clone();
     }
 
     /// Find the setup that owns a given toolpath ID.
@@ -67,7 +57,7 @@ impl<B: ComputeBackend> AppController<B> {
         let created = self.apply_created(command);
         // The session assigned the ID — read it back.
         if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
-            self.state.selection = Selection::Tool(tool.id);
+            self.set_focus(Selection::Tool(tool.id));
         }
         self.state.gui.mark_edited();
     }
@@ -81,7 +71,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let created = self.apply_created(command);
         if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
-            self.state.selection = Selection::Tool(tool.id);
+            self.set_focus(Selection::Tool(tool.id));
         }
         self.state.gui.mark_edited();
     }
@@ -240,7 +230,7 @@ impl<B: ComputeBackend> AppController<B> {
             });
             let created = self.apply_created(command);
             if let Some(tool) = created.and_then(|idx| self.state.session().tools().get(idx)) {
-                self.state.selection = Selection::Tool(tool.id);
+                self.set_focus(Selection::Tool(tool.id));
             }
             self.state.gui.mark_edited();
         }
@@ -260,8 +250,8 @@ impl<B: ComputeBackend> AppController<B> {
                     // WP19: the row runs `invalidate_tool`, which drops
                     // the session's simulation. `AppController::apply`
                     // clears the viewport one too (F096).
-                    if self.state.selection == Selection::Tool(tool_id) {
-                        self.state.selection = Selection::None;
+                    if *self.state.focus() == Selection::Tool(tool_id) {
+                        self.set_focus(Selection::None);
                     }
                     self.state.gui.mark_edited();
                 }
@@ -291,7 +281,7 @@ impl<B: ComputeBackend> AppController<B> {
         });
         let created = self.apply_created(command);
         if let Some(setup) = created.and_then(|idx| self.state.session().list_setups().get(idx)) {
-            self.state.selection = Selection::Setup(setup.id);
+            self.set_focus(Selection::Setup(setup.id));
         }
         self.state.gui.mark_edited();
     }
@@ -385,7 +375,7 @@ impl<B: ComputeBackend> AppController<B> {
             self.state.simulation.debug.pending_inspect_toolpath = None;
         }
 
-        self.state.selection = replacement.map_or(Selection::None, Selection::Setup);
+        self.set_focus(replacement.map_or(Selection::None, Selection::Setup));
         self.pending_upload = true;
         self.state.gui.mark_edited();
     }
@@ -483,7 +473,7 @@ impl<B: ComputeBackend> AppController<B> {
         self.pending_upload = true;
         self.state.gui.mark_edited();
         let _ = self.sync_alignment_pin_drill();
-        self.state.selection = Selection::Stock;
+        self.set_focus(Selection::Stock);
     }
 
     /// Write the name the operator reads for a setup.
@@ -564,7 +554,7 @@ impl<B: ComputeBackend> AppController<B> {
         if self.apply_quietly(command).is_none() {
             return;
         }
-        self.state.selection = Selection::Obstacle(setup_id, obstacle_id);
+        self.set_focus(Selection::Obstacle(setup_id, obstacle_id));
         self.state.panels.obstacle_editor = Some(crate::state::panels::ObstacleEditor {
             setup_id,
             obstacle_id,
@@ -731,12 +721,15 @@ impl<B: ComputeBackend> AppController<B> {
         setup_id: SetupId,
         obstacle_id: crate::state::job::ObstacleId,
     ) {
-        crate::state::panels::forget_obstacle(
+        let focus = self.state.focus().clone();
+        if let Some(next) = crate::state::panels::forget_obstacle(
             &mut self.state.panels,
-            &mut self.state.selection,
+            &focus,
             setup_id,
             obstacle_id,
-        );
+        ) {
+            self.set_focus(next);
+        }
     }
 
     /// Run one stock-change action of the setup panel (S4) as one S2
@@ -875,9 +868,9 @@ impl<B: ComputeBackend> AppController<B> {
                 return;
             }
             let clear_selection =
-                matches!(self.state.selection, Selection::Model(mid) if mid == model_id);
+                matches!(*self.state.focus(), Selection::Model(mid) if mid == model_id);
             if clear_selection {
-                self.state.selection = Selection::None;
+                self.set_focus(Selection::None);
             }
             self.pending_upload = true;
             self.state.gui.mark_edited();

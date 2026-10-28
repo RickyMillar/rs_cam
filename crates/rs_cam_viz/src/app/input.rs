@@ -438,7 +438,7 @@ impl RsCamApp {
             // Delete: remove the selected toolpath or tool (W1.1 — the tool
             // arm was missing, so Del never fired on a selected tool).
             if i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace) {
-                match self.controller.state().selection {
+                match *self.controller.state().focus() {
                     Selection::Toolpath(id) => {
                         self.controller
                             .events_mut()
@@ -455,7 +455,7 @@ impl RsCamApp {
             if i.key_pressed(egui::Key::G) {
                 if modifiers.shift {
                     self.controller.events_mut().push(AppEvent::GenerateAll);
-                } else if let Selection::Toolpath(id) = self.controller.state().selection {
+                } else if let Selection::Toolpath(id) = *self.controller.state().focus() {
                     self.controller
                         .events_mut()
                         .push(AppEvent::GenerateToolpath(id));
@@ -474,7 +474,7 @@ impl RsCamApp {
             // H: toggle visibility of selected toolpath
             if self.controller.state().viewport.show_all_toolpaths
                 && i.key_pressed(egui::Key::H)
-                && let Selection::Toolpath(id) = self.controller.state().selection
+                && let Selection::Toolpath(id) = *self.controller.state().focus()
             {
                 self.controller
                     .events_mut()

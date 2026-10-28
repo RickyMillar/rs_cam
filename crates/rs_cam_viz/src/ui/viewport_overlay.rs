@@ -269,7 +269,7 @@ pub fn target_text(state: &AppState) -> String {
             .focused_toolpath()
             .and_then(numbered)
             .map_or_else(none, |text| format!("Target: {text} (playback)")),
-        Workspace::Toolpaths | Workspace::Readiness => match state.selection {
+        Workspace::Toolpaths | Workspace::Readiness => match *state.focus() {
             Selection::Toolpath(id) => {
                 numbered(id).map_or_else(none, |text| format!("Target: {text}"))
             }

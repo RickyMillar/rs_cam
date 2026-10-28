@@ -218,7 +218,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
     assert_eq!(row().label, "By Area regions");
 
     // Nothing selected: the row cannot draw.
-    state.selection = Selection::None;
+    let _ = state.set_focus(Selection::None);
     assert!(!(row().precondition)(&state).is_ready());
     assert!(
         reason(&state).contains("select a 3D Adaptive"),
@@ -227,7 +227,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
     );
 
     // The By Area toolpath is selected: the row switches on and draws.
-    state.selection = Selection::Toolpath(by_area);
+    let _ = state.set_focus(Selection::Toolpath(by_area));
     assert!((row().precondition)(&state).is_ready());
     registry::set_overlay(&mut state, row(), true);
     assert!(state.viewport.show_area_regions);
@@ -236,13 +236,13 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
     assert_eq!(map.regions.len(), 2);
 
     // Another toolpath is selected: the first map does not draw (WP27).
-    state.selection = Selection::Toolpath(other);
+    let _ = state.set_focus(Selection::Toolpath(other));
     assert!(!registry::area_regions_drawn(&state));
     assert!(registry::selected_area_regions(&state).is_none());
     assert!(reason(&state).contains("generate"), "{}", reason(&state));
 
     // Back on the By Area toolpath, the Simulation workspace refuses it.
-    state.selection = Selection::Toolpath(by_area);
+    let _ = state.set_focus(Selection::Toolpath(by_area));
     state.workspace = Workspace::Simulation;
     assert!(!registry::area_regions_drawn(&state));
     assert!(reason(&state).contains("Toolpaths workspace"));
@@ -258,7 +258,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
 fn global_ordering_and_other_operations_say_why_nothing_draws() {
     let mut state = fresh_state();
     let global = add(&mut state, rough(RegionOrdering::Global), None, true);
-    state.selection = Selection::Toolpath(global);
+    let _ = state.set_focus(Selection::Toolpath(global));
     registry::set_overlay(&mut state, row(), true);
     assert!(!registry::area_regions_drawn(&state));
     assert!(reason(&state).contains("Global"), "{}", reason(&state));
@@ -269,7 +269,7 @@ fn global_ordering_and_other_operations_say_why_nothing_draws() {
         None,
         true,
     );
-    state.selection = Selection::Toolpath(pocket);
+    let _ = state.set_focus(Selection::Toolpath(pocket));
     assert!(
         reason(&state).contains("not a 3D Adaptive"),
         "{}",
@@ -286,7 +286,7 @@ fn the_legend_names_each_region_in_its_mesh_colour() {
         Some(two_region_map()),
         true,
     );
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     let lines = legend_rail::active_lines(&state);
     assert!(
         !lines.contains(&RailLine::Categories(Categories::AreaRegions)),
@@ -317,7 +317,7 @@ fn the_legend_names_each_region_in_its_mesh_colour() {
         }),
         true,
     );
-    state.selection = Selection::Toolpath(empty);
+    let _ = state.set_focus(Selection::Toolpath(empty));
     let entries = legend_rail::category_entries(&state, Categories::AreaRegions);
     assert_eq!(
         entries,

@@ -6,13 +6,13 @@ use super::*;
 fn delete_selected_toolpath_clears_selection() {
     let mut controller = sample_controller();
     let tp_id = ToolpathId::from_raw(0);
-    controller.state.selection = Selection::Toolpath(tp_id);
+    let _ = controller.state.set_focus(Selection::Toolpath(tp_id));
 
     // Remove the selected toolpath
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(tp_id));
 
     assert_eq!(
-        controller.state.selection,
+        *controller.state.focus(),
         Selection::None,
         "Selection should be cleared after deleting the selected toolpath"
     );
@@ -26,18 +26,20 @@ fn delete_unselected_toolpath_preserves_selection() {
     controller.handle_internal_event(crate::ui::AppEvent::AddToolpath(
         crate::state::toolpath::OperationType::Pocket,
     ));
-    let Selection::Toolpath(new_tp_id) = controller.state.selection else {
+    let Selection::Toolpath(new_tp_id) = *controller.state.focus() else {
         panic!("Selection should be new toolpath");
     };
 
     // Select back to the original toolpath
-    controller.state.selection = Selection::Toolpath(ToolpathId::from_raw(0));
+    let _ = controller
+        .state
+        .set_focus(Selection::Toolpath(ToolpathId::from_raw(0)));
 
     // Delete the other toolpath
     controller.handle_internal_event(crate::ui::AppEvent::RemoveToolpath(new_tp_id));
 
     assert_eq!(
-        controller.state.selection,
+        *controller.state.focus(),
         Selection::Toolpath(ToolpathId::from_raw(0)),
         "Selection should be preserved when a different toolpath is deleted"
     );
@@ -442,7 +444,7 @@ mod an_stl_face_click_p4_7 {
             .toolpath_rt
             .insert(id, ToolpathRuntime::new(false));
         controller.state.workspace = Workspace::Toolpaths;
-        controller.state.selection = Selection::Toolpath(id);
+        let _ = controller.state.set_focus(Selection::Toolpath(id));
         controller
     }
 

@@ -247,7 +247,7 @@ fn state(session: ProjectSession, tab: properties::ToolpathTab) -> AppState {
     state.replace_session(session);
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
-    state.selection = GuiSelection::Toolpath(id);
+    let _ = state.set_focus(GuiSelection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, tab));
     state
 }

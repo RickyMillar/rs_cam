@@ -364,22 +364,18 @@ impl RsCamApp {
         if let Some(setup_id) = setup_id
             && let Ok(raw) = usize::try_from(obstacle_id)
         {
-            let state = self.controller.state_mut();
             let id = ObstacleId::from_wire(raw);
             if verb == "Removed" {
-                crate::state::panels::forget_obstacle(
-                    &mut state.panels,
-                    &mut state.selection,
-                    setup_id,
-                    id,
-                );
-            } else if state
-                .panels
-                .obstacle_editor
-                .as_ref()
-                .is_some_and(|e| e.setup_id == setup_id && e.obstacle_id == id)
-            {
-                state.panels.obstacle_editor = None;
+                self.controller.forget_obstacle_view(setup_id, id);
+            } else {
+                let panels = &mut self.controller.state_mut().panels;
+                if panels
+                    .obstacle_editor
+                    .as_ref()
+                    .is_some_and(|e| e.setup_id == setup_id && e.obstacle_id == id)
+                {
+                    panels.obstacle_editor = None;
+                }
             }
         }
         let stale = self.core_stale(effects);

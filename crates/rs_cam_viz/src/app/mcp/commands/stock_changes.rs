@@ -688,7 +688,7 @@ mod tests {
         let setup_id = rows[0].setup_id;
         let mut state = crate::state::AppState::new();
         state.replace_session(session);
-        state.selection = crate::state::selection::Selection::Setup(setup_id);
+        let _ = state.set_focus(crate::state::selection::Selection::Setup(setup_id));
         let texts = painted_setup_panel(&mut state);
         assert!(
             texts.iter().any(|t| t == "Stock changes"),
@@ -747,7 +747,7 @@ mod tests {
         assert!(summary.ends_with("(own material)"), "{summary}");
         let mut state = crate::state::AppState::new();
         state.replace_session(session);
-        state.selection = crate::state::selection::Selection::Setup(setup_id);
+        let _ = state.set_focus(crate::state::selection::Selection::Setup(setup_id));
         let texts = painted_setup_panel(&mut state);
         assert!(
             texts.contains(&summary),

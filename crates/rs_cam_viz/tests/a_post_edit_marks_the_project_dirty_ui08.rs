@@ -56,7 +56,7 @@ fn draw_inspector(ctx: &egui::Context, state: &mut AppState) {
 fn a_post_edit_marks_the_project_dirty() {
     let ctx = ctx();
     let mut state = AppState::new();
-    state.selection = Selection::PostProcessor;
+    let _ = state.set_focus(Selection::PostProcessor);
 
     // The tab must start clean, or the assertion below proves nothing.
     draw_inspector(&ctx, &mut state);
@@ -89,7 +89,7 @@ fn a_post_edit_marks_the_project_dirty() {
 fn looking_at_the_post_tab_does_not_mark_the_project_dirty() {
     let ctx = ctx();
     let mut state = AppState::new();
-    state.selection = Selection::PostProcessor;
+    let _ = state.set_focus(Selection::PostProcessor);
 
     for _ in 0..3 {
         draw_inspector(&ctx, &mut state);

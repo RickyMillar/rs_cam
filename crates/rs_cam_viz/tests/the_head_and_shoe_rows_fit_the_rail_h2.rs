@@ -214,7 +214,7 @@ fn the_head_section_with_an_open_part_and_a_refusal_fits_the_rail_h2() {
 #[test]
 fn a_machine_panel_draw_with_no_edit_keeps_no_head_draft_h2() {
     let mut state = fixture();
-    state.selection = Selection::Machine;
+    let _ = state.set_focus(Selection::Machine);
     state.panels.head_part_open = Some((PartList::Shoe, 1));
     let _ = measure(240.0, &mut state, draw_properties);
     assert!(state.panels.head_editor.is_none());
@@ -239,7 +239,7 @@ fn the_dust_shoe_row_in_the_heights_tab_fits_the_rail_h2() {
                     }))
                     .unwrap();
                 let id = state.session().toolpath_configs()[0].id;
-                state.selection = Selection::Toolpath(id);
+                let _ = state.set_focus(Selection::Toolpath(id));
                 state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Heights));
                 state
             },

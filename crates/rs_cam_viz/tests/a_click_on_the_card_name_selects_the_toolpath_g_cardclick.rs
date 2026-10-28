@@ -88,7 +88,7 @@ fn state_with_a_toolpath() -> AppState {
         .expect("add the fixture pocket");
     let mut state = AppState::new();
     state.replace_session(builder.build());
-    state.selection = Selection::None;
+    let _ = state.set_focus(Selection::None);
     state
 }
 

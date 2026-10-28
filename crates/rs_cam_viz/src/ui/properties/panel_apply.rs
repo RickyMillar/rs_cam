@@ -15,7 +15,7 @@ pub(super) fn flush_tool_draft(state: &mut AppState) {
     let Some((tool_id, draft)) = state.history.tool_draft.take() else {
         return;
     };
-    if matches!(state.selection, crate::state::selection::Selection::Tool(id) if id == tool_id) {
+    if matches!(*state.focus(), crate::state::selection::Selection::Tool(id) if id == tool_id) {
         // Still editing — keep the draft.
         state.history.tool_draft = Some((tool_id, draft));
         return;
@@ -452,7 +452,7 @@ pub(super) fn apply_machine_import(
 pub(super) fn flush_post_snapshot(state: &mut AppState) {
     if let Some(old) = state.history.post_snapshot.take() {
         if !matches!(
-            state.selection,
+            *state.focus(),
             crate::state::selection::Selection::PostProcessor
         ) {
             state
@@ -471,7 +471,7 @@ pub(super) fn flush_post_snapshot(state: &mut AppState) {
 /// Flush machine undo snapshot if the user navigated away from machine.
 pub(super) fn flush_machine_snapshot(state: &mut AppState) {
     if let Some(old) = state.history.machine_snapshot.take() {
-        if !matches!(state.selection, crate::state::selection::Selection::Machine) {
+        if !matches!(*state.focus(), crate::state::selection::Selection::Machine) {
             state
                 .history
                 .push(crate::state::history::UndoAction::MachineChange {
@@ -490,7 +490,7 @@ pub(super) fn flush_toolpath_snapshot(state: &mut AppState) {
     if let Some((tp_id, old_op, old_dressups, old_boundary, old_provenance)) =
         state.history.toolpath_snapshot.take()
     {
-        if !matches!(state.selection, crate::state::selection::Selection::Toolpath(id) if id == tp_id)
+        if !matches!(*state.focus(), crate::state::selection::Selection::Toolpath(id) if id == tp_id)
         {
             if let Some((_, tc)) = state.session().find_toolpath_config_by_id(tp_id) {
                 state

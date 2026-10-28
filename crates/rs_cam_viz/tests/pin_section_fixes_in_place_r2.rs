@@ -152,7 +152,7 @@ fn mini_pins() -> Vec<AlignmentPin> {
 fn stock_state(pins: Vec<AlignmentPin>) -> AppState {
     let mut state = AppState::new();
     state.replace_session(mini_session(pins));
-    state.selection = Selection::Stock;
+    let _ = state.set_focus(Selection::Stock);
     state
 }
 

@@ -173,7 +173,7 @@ fn inputs<'a>(
     let session = state.session();
     let gui = &state.gui;
     let display_shift = frame.display_shift();
-    let selected_tp_id = match state.selection {
+    let selected_tp_id = match *state.focus() {
         Selection::Toolpath(id) => Some(id),
         _ => None,
     };
@@ -428,7 +428,7 @@ pub(super) fn upload_height_planes(
     gpu: &Gpu<'_>,
     resources: &mut RenderResources,
 ) {
-    let Selection::Toolpath(tp_id) = state.selection else {
+    let Selection::Toolpath(tp_id) = *state.focus() else {
         resources.height_planes_data = None;
         return;
     };

@@ -36,7 +36,7 @@ impl<B: ComputeBackend> AppController<B> {
         if self.state.is_job_running() {
             return;
         }
-        let Selection::Toolpath(id) = self.state.selection else {
+        let Selection::Toolpath(id) = *self.state.focus() else {
             return;
         };
         let Some(model_id) = self.model_needing_faces(id) else {

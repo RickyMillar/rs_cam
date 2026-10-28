@@ -120,9 +120,9 @@ fn state_for(tool: ToolConfig, select_tool: bool) -> AppState {
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     if select_tool {
-        state.selection = Selection::Tool(ToolId::from_raw(1));
+        let _ = state.set_focus(Selection::Tool(ToolId::from_raw(1)));
     } else {
-        state.selection = Selection::Toolpath(id);
+        let _ = state.set_focus(Selection::Toolpath(id));
         state.gui.pending_toolpath_tab =
             Some((id, rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds));
     }

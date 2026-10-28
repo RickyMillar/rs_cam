@@ -97,8 +97,8 @@ impl<B: ComputeBackend> AppController<B> {
         // does, minus the session removal the planner already performed.
         for id in &outcome.replaced {
             self.state.gui.toolpath_rt.remove(id);
-            if self.state.selection == Selection::Toolpath(*id) {
-                self.state.selection = Selection::None;
+            if *self.state.focus() == Selection::Toolpath(*id) {
+                self.set_focus(Selection::None);
             }
         }
 
@@ -361,7 +361,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .find(|m| m.id == id && m.mesh.is_some())
                 .map(|m| (m.id, m.name.clone()))
         };
-        if let Selection::Toolpath(tp_id) = self.state.selection
+        if let Selection::Toolpath(tp_id) = *self.state.focus()
             && let Some((_, tc)) = self.state.session().find_toolpath_config_by_id(tp_id)
             && let Some(found) = mesh_model(tc.model_id)
         {
@@ -378,7 +378,7 @@ impl<B: ComputeBackend> AppController<B> {
     /// The setup the chain is emitted into: the one owning the current
     /// selection when there is one, else the first.
     fn planner_setup_index(&self) -> usize {
-        let Selection::Toolpath(id) = self.state.selection else {
+        let Selection::Toolpath(id) = *self.state.focus() else {
             return 0;
         };
         let Some((index, _)) = self.state.session().find_toolpath_config_by_id(id) else {

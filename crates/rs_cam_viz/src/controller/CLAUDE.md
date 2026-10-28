@@ -20,6 +20,7 @@
 
 - The view mirrors `Effects`. Use `Effects.stale`; never a narrower answer. F040: `apply_multitool_plan` applies `PlanMultitoolFinishing`; F115: the sim drain re-points the run result for `Effects::modulated`.
   F096: every controller and MCP write takes `AppController::apply` (the state door, then the view sim clears at once).
+  F2: a focus write takes `AppController::set_focus`; a change of focus or of its setup raises `pending_upload`.
 - A toolpath edit clears the viewport simulation. A stale mesh beside a new toolpath is a wrong picture.
 - A GUI `Job` (the tier-map preview; the STL faces: `process_model_faces`, one submit per cold model)
   sets `AppState::job_run`; only `deliver_gui_job` clears it.

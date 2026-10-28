@@ -378,7 +378,7 @@ impl RsCamApp {
             && let Some(setup) = controller.state().session().list_setups().get(idx)
         {
             let setup_id = setup.id;
-            controller.state_mut().selection = crate::state::selection::Selection::Setup(setup_id);
+            controller.set_focus(crate::state::selection::Selection::Setup(setup_id));
         }
 
         // Switch workspace if requested via env var.
@@ -1547,7 +1547,7 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
     OverlayUploadKey {
         tool_profile: state.viewport.show_tool_profile_preview,
         obstacles: state.viewport.show_obstacles,
-        obstacle_focus: match state.selection {
+        obstacle_focus: match *state.focus() {
             crate::state::selection::Selection::Setup(id) => Some((id, None)),
             crate::state::selection::Selection::Obstacle(id, obstacle) => {
                 Some((id, Some(obstacle)))
@@ -1558,18 +1558,15 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
         flip_axis: state.viewport.show_flip_axis,
         pin_ghost: state.viewport.show_pin_ghost,
         selected_pin: state.panels.selected_pin,
-        display_setup: crate::state::pin_view::active_display_setup(
-            state.session(),
-            &state.selection,
-        )
-        .map(|(_, id)| id),
+        display_setup: crate::state::pin_view::active_display_setup(state.session(), state.focus())
+            .map(|(_, id)| id),
         datum: state.viewport.show_datum,
         span_filter: state.viewport.span_kind_filter,
         toolpath_color_mode: state.viewport.toolpath_color_mode,
         stock_viz_mode: state.simulation.stock_viz_mode,
         workspace: state.workspace,
         show_all_toolpaths: state.viewport.show_all_toolpaths,
-        selected_toolpath: match state.selection {
+        selected_toolpath: match *state.focus() {
             crate::state::selection::Selection::Toolpath(id) => Some(id),
             _ => None,
         },

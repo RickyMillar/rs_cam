@@ -125,7 +125,7 @@ fn fixture() -> AppState {
     state.replace_session(builder.build());
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
-    state.selection = Selection::Toolpath(id);
+    let _ = state.set_focus(Selection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Cut));
     state
 }

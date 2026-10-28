@@ -212,17 +212,17 @@ fn active_setup_index_follows_the_selection() {
         .expect("the AddSetup row reports the new setup index");
 
     // Nothing setup-scoped selected: the first setup's frame is displayed.
-    controller.state.selection = Selection::None;
+    let _ = controller.state.set_focus(Selection::None);
     assert_eq!(controller.state.active_setup_index(), Some(0));
 
     // Selecting the second setup moves the display frame with it.
     let second_id = controller.state.session().list_setups()[second].id;
-    controller.state.selection = Selection::Setup(second_id);
+    let _ = controller.state.set_focus(Selection::Setup(second_id));
     assert_eq!(controller.state.active_setup_index(), Some(second));
 
     // A toolpath selection resolves through its owning setup.
     let tp_id = controller.state.session().toolpath_configs()[0].id;
-    controller.state.selection = Selection::Toolpath(tp_id);
+    let _ = controller.state.set_focus(Selection::Toolpath(tp_id));
     assert_eq!(
         controller.state.active_setup_index(),
         controller.state.session().setup_of_toolpath_id(tp_id)

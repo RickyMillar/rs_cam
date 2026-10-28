@@ -77,7 +77,7 @@ fn add_tool_and_remove_tool_lifecycle() {
     );
 
     // Verify selection was set to the new tool
-    assert_eq!(controller.state.selection, Selection::Tool(tool_id));
+    assert_eq!(*controller.state.focus(), Selection::Tool(tool_id));
 
     // Remove the tool (no toolpaths reference it)
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
@@ -118,7 +118,7 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(second));
 
     assert_eq!(controller.state.session().list_setups().len(), 2);
-    assert_eq!(controller.state.selection, Selection::Setup(first));
+    assert_eq!(*controller.state.focus(), Selection::Setup(first));
     assert_eq!(
         controller.compute.toolpath_lane.state,
         LaneState::Cancelling
@@ -127,7 +127,7 @@ fn remove_setup_selects_previous_then_next_and_cancels_generation() {
     controller.handle_internal_event(crate::ui::AppEvent::RemoveSetup(first));
 
     assert_eq!(controller.state.session().list_setups().len(), 1);
-    assert_eq!(controller.state.selection, Selection::Setup(third));
+    assert_eq!(*controller.state.focus(), Selection::Setup(third));
 }
 
 #[test]
@@ -450,7 +450,7 @@ fn add_toolpath_and_remove_toolpath_lifecycle() {
     );
 
     // Find the newly added toolpath ID (it should be the selected one)
-    let Selection::Toolpath(new_tp_id) = controller.state.selection else {
+    let Selection::Toolpath(new_tp_id) = *controller.state.focus() else {
         panic!("Selection should be the new toolpath");
     };
 
@@ -580,13 +580,13 @@ fn delete_selected_tool_clears_selection() {
     // Add a tool and select it
     controller.handle_internal_event(crate::ui::AppEvent::AddTool(ToolType::BallNose));
     let tool_id = controller.state.session().tools()[0].id;
-    assert_eq!(controller.state.selection, Selection::Tool(tool_id));
+    assert_eq!(*controller.state.focus(), Selection::Tool(tool_id));
 
     // Remove the tool
     controller.handle_internal_event(crate::ui::AppEvent::RemoveTool(tool_id));
 
     assert_eq!(
-        controller.state.selection,
+        *controller.state.focus(),
         Selection::None,
         "Selection should be cleared after deleting the selected tool"
     );
@@ -844,7 +844,7 @@ mod obstacle_panel_k2 {
         let id = ObstacleId::from_raw(0);
         let added = stored(&controller, id).expect("the add applies");
         assert!(matches!(added.geometry, ObstacleGeometry::Box { .. }));
-        assert_eq!(controller.state.selection, Selection::Obstacle(setup, id));
+        assert_eq!(*controller.state.focus(), Selection::Obstacle(setup, id));
         assert!(
             controller
                 .state
@@ -891,7 +891,7 @@ mod obstacle_panel_k2 {
 
         // Remove: the list is empty, the editor closes, the setup is
         // selected.
-        controller.state.selection = Selection::Obstacle(setup, id);
+        let _ = controller.state.set_focus(Selection::Obstacle(setup, id));
         controller.state.gui.dirty = false;
         controller.handle_internal_event(AppEvent::RemoveObstacle(setup, id));
         assert!(
@@ -900,7 +900,7 @@ mod obstacle_panel_k2 {
                 .is_empty()
         );
         assert!(controller.state.panels.obstacle_editor.is_none());
-        assert_eq!(controller.state.selection, Selection::Setup(setup));
+        assert_eq!(*controller.state.focus(), Selection::Setup(setup));
         assert!(controller.state.gui.dirty);
     }
 

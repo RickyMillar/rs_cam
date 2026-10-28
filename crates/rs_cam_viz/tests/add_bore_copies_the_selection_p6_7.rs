@@ -154,7 +154,7 @@ fn controller(tool_diameter: f64) -> AppController<SilentBackend> {
 /// Select the toolpath `id` on its Geometry tab.
 fn show(c: &mut AppController<SilentBackend>, id: rs_cam_viz::state::toolpath::ToolpathId) {
     let state = c.state_mut();
-    state.selection = UiSelection::Toolpath(id);
+    let _ = state.set_focus(UiSelection::Toolpath(id));
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Geometry));
 }
 
@@ -243,7 +243,7 @@ fn add_bore_copies_the_selection_p6_7() {
         "the add is one undo step"
     );
     assert_eq!(
-        c.state().selection,
+        *c.state().focus(),
         UiSelection::Toolpath(drill_id),
         "the selection stays on the Drill"
     );

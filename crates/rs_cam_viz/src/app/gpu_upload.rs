@@ -326,7 +326,7 @@ struct PassFrame {
 impl PassFrame {
     fn of(state: &crate::state::AppState) -> Self {
         Self {
-            setup: crate::state::pin_view::active_display_setup(state.session(), &state.selection)
+            setup: crate::state::pin_view::active_display_setup(state.session(), state.focus())
                 .map(|(frame, id)| (id, frame)),
             stock: state.session().stock_config().clone(),
         }

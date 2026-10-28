@@ -107,7 +107,7 @@ fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
     };
     let value = format!("{eff_w:.0} × {eff_d:.0} × {eff_h:.0} mm");
 
-    let selected = state.selection == Selection::Stock;
+    let selected = *state.focus() == Selection::Stock;
     let row = resource_row(ui, "Stock", &value, selected, true, None);
     if row.on_hover_text("Stock dimensions and material").clicked() {
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Stock)));
@@ -118,7 +118,7 @@ fn draw_stock_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
 /// preset, feeds, kinematics and the GRBL `$$` import.
 fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let name = state.session().machine().name.as_str();
-    let selected = state.selection == Selection::Machine;
+    let selected = *state.focus() == Selection::Machine;
     let row = resource_row(ui, "Machine", name, selected, true, None);
     if row.on_hover_text("Machine, feeds and kinematics").clicked() {
         events.push(AppEvent::Ui(UiCommand::Select(Selection::Machine)));
@@ -131,7 +131,7 @@ fn draw_machine_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEve
 /// open flag, and opening the list and opening the editor are one click.
 fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
     let models = state.session().models();
-    let open = matches!(state.selection, Selection::Model(_));
+    let open = matches!(*state.focus(), Selection::Model(_));
 
     let value = if models.is_empty() {
         "none".to_owned()
@@ -157,7 +157,7 @@ fn draw_models_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEven
     ui.indent("setup_rail_models", |ui| {
         for model in models {
             let mid = model.id;
-            let selected = state.selection == Selection::Model(mid);
+            let selected = *state.focus() == Selection::Model(mid);
             let response = ui
                 .horizontal(|ui| {
                     // P4.D: the eye shows or hides the model in the viewport
@@ -237,7 +237,7 @@ fn import_model_from_disk(events: &mut Vec<AppEvent>) {
 /// routes. The row's `…` menu is its only trailing affordance; the nested
 /// list holds the tools and appears while a tool is selected.
 fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
-    let open = matches!(state.selection, Selection::Tool(_));
+    let open = matches!(*state.focus(), Selection::Tool(_));
     let count = state.session().tools().len();
 
     let mut menu = |ui: &mut egui::Ui| {
@@ -312,7 +312,7 @@ fn draw_tools_row(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent
     }
     ui.indent("setup_rail_tools", |ui| {
         for tool in state.session().tools() {
-            let selected = state.selection == Selection::Tool(tool.id);
+            let selected = *state.focus() == Selection::Tool(tool.id);
             let response = ui.selectable_label(selected, tool.summary());
             if response.clicked() {
                 events.push(AppEvent::Ui(UiCommand::Select(Selection::Tool(tool.id))));
@@ -420,7 +420,7 @@ fn draw_setup_card(
     events: &mut Vec<AppEvent>,
 ) {
     let setup_id = setup.id;
-    let is_selected = state.selection == Selection::Setup(setup_id);
+    let is_selected = *state.focus() == Selection::Setup(setup_id);
 
     // F2.2 — `is_current()`, not `ComputeStatus::Done`. An edited operation
     // keeps `Done`, so a header that read `n/n` disagreed with a card that
@@ -552,7 +552,7 @@ fn state_dot(ui: &mut egui::Ui, role: Role) {
 /// Determine the active setup from the current selection.
 fn active_setup(state: &AppState) -> Option<&SetupData> {
     let setups = state.session().list_setups();
-    let setup_id = match &state.selection {
+    let setup_id = match state.focus() {
         Selection::Setup(id) => Some(*id),
         Selection::Obstacle(id, _) => Some(*id),
         Selection::Toolpath(tp_id) => state

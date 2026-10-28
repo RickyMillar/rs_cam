@@ -18,7 +18,7 @@ use super::toolpath::ToolpathId;
 /// Read the tab layout of the tab editor again when the input revision of
 /// its toolpath moved since the last read. `true` when it read.
 pub fn refresh_layout(state: &mut AppState) -> bool {
-    let Selection::Toolpath(id) = state.selection else {
+    let Selection::Toolpath(id) = *state.focus() else {
         return false;
     };
     let Some((index, _)) = state.session().find_toolpath_config_by_id(id) else {
@@ -89,7 +89,7 @@ impl TabMarksKey {
         if state.workspace != super::Workspace::Toolpaths {
             return None;
         }
-        let Selection::Toolpath(id) = state.selection else {
+        let Selection::Toolpath(id) = *state.focus() else {
             return None;
         };
         let mode = state.gui.selection_ui.tab_edit(id)?;

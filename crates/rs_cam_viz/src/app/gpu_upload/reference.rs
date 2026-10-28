@@ -144,7 +144,7 @@ fn obstacle_inputs<'a>(state: &'a AppState, frame: &'a PassFrame) -> Option<Obst
         setup_frame,
         setup,
         models,
-        focus: match state.selection {
+        focus: match *state.focus() {
             Selection::Setup(id) => Some((id, None)),
             Selection::Obstacle(id, obstacle) => Some((id, Some(obstacle))),
             _ => None,

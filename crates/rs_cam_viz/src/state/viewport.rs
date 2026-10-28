@@ -315,7 +315,7 @@ impl ToolpathDrawFilter {
     /// Read the two dials, each from the one place it lives.
     pub fn from_state(state: &super::AppState) -> Self {
         Self {
-            selected: match state.selection {
+            selected: match *state.focus() {
                 super::selection::Selection::Toolpath(id) => Some(id),
                 _ => None,
             },
@@ -358,7 +358,7 @@ pub fn vector_source_focus(
 }
 
 pub fn vector_source_toolpath(state: &super::AppState) -> Option<ToolpathId> {
-    let selected = match state.selection {
+    let selected = match *state.focus() {
         super::selection::Selection::Toolpath(id) => Some(id),
         _ => None,
     };

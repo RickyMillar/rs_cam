@@ -231,7 +231,7 @@ impl RsCamApp {
                     .get(*setup_index)
                     .map(|s| s.id);
                 if let Some(setup_id) = setup_id {
-                    self.controller.state_mut().selection = Selection::Setup(setup_id);
+                    self.controller.set_focus(Selection::Setup(setup_id));
                 }
             }
             CoreRequest::SetToolpathParam(p) => {
@@ -244,7 +244,7 @@ impl RsCamApp {
                     .map(|tc| tc.id);
                 if let Some(tp_id) = tp_id {
                     self.mcp_highlight(format!("toolpath_{tp_id}_{}", p.param));
-                    self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+                    self.controller.set_focus(Selection::Toolpath(tp_id));
                 }
             }
             CoreRequest::SetToolParam(p) => {
@@ -255,7 +255,7 @@ impl RsCamApp {
                 let tool_id = tools.get(p.index).map(|t| t.id);
                 if let Some(tool_id) = tool_id {
                     self.mcp_highlight(format!("tool_{tool_id}_{}", p.param.token()));
-                    self.controller.state_mut().selection = Selection::Tool(tool_id);
+                    self.controller.set_focus(Selection::Tool(tool_id));
                 }
             }
             CoreRequest::SetToolpathTool(p) => self.select_toolpath_for_mcp(p.index),
@@ -272,8 +272,10 @@ impl RsCamApp {
                     .iter()
                     .any(|m| m.id.raw() == p.model_id) =>
             {
-                self.controller.state_mut().selection =
-                    Selection::Model(rs_cam_core::ids::ModelId::from_wire(p.model_id));
+                self.controller
+                    .set_focus(Selection::Model(rs_cam_core::ids::ModelId::from_wire(
+                        p.model_id,
+                    )));
             }
             _ => {}
         }
@@ -2033,8 +2035,7 @@ impl RsCamApp {
                 };
                 // The controller's own import door writes these three
                 // after every import; the MCP route takes the same step.
-                self.controller.state_mut().selection =
-                    Selection::Model(id);
+                self.controller.set_focus(Selection::Model(id));
                 self.controller.state_mut().gui.mark_edited();
                 self.controller.set_pending_upload();
 
@@ -2102,8 +2103,7 @@ impl RsCamApp {
                 };
                 // The GUI's own add door selects the new setup; the MCP
                 // route takes the same step.
-                self.controller.state_mut().selection =
-                    Selection::Setup(setup_id);
+                self.controller.set_focus(Selection::Setup(setup_id));
                 self.controller.state_mut().gui.mark_edited();
                 let reply = self.mcp_mutation_result(
                     format!("Added setup {index}"),
@@ -2356,7 +2356,7 @@ impl RsCamApp {
                         .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
                     // Select the newly added toolpath so its properties
                     // are visible.
-                    self.controller.state_mut().selection = Selection::Toolpath(id);
+                    self.controller.set_focus(Selection::Toolpath(id));
                 }
                 self.controller.state_mut().gui.mark_edited();
                 let label = before.extra_str("operation");
@@ -2411,7 +2411,7 @@ impl RsCamApp {
                         .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
                 }
                 if let Some(&(id, _)) = infos.first() {
-                    self.controller.state_mut().selection = Selection::Toolpath(id);
+                    self.controller.set_focus(Selection::Toolpath(id));
                 }
                 self.controller.state_mut().gui.mark_edited();
                 let message = match edges_index {
@@ -2451,7 +2451,7 @@ impl RsCamApp {
                         .gui
                         .toolpath_rt
                         .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
-                    self.controller.state_mut().selection = Selection::Toolpath(id);
+                    self.controller.set_focus(Selection::Toolpath(id));
                 }
                 self.controller.state_mut().gui.mark_edited();
                 let stale = self.core_stale(&effects);

@@ -77,7 +77,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .find(|m| m.id.raw() == raw)
                 .map(|m| m.id)
         }) {
-            self.state.selection = Selection::Model(model_id);
+            self.set_focus(Selection::Model(model_id));
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -106,7 +106,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .find(|m| m.id.raw() == raw)
                 .map(|m| m.id)
         }) {
-            self.state.selection = Selection::Model(model_id);
+            self.set_focus(Selection::Model(model_id));
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -205,7 +205,7 @@ impl<B: ComputeBackend> AppController<B> {
                 .find(|m| m.id.raw() == raw)
                 .map(|m| m.id)
         }) {
-            self.state.selection = Selection::Model(model_id);
+            self.set_focus(Selection::Model(model_id));
         }
         self.state.gui.mark_edited();
         self.pending_upload = true;
@@ -557,7 +557,7 @@ impl<B: ComputeBackend> AppController<B> {
 
         self.state.replace_session(session);
         self.state.gui = gui;
-        self.state.selection = Selection::None;
+        self.set_focus(Selection::None);
         self.state.panels.pending_setup_removal = None;
         self.state.panels.import_dialog = None;
         self.state.simulation = SimulationState::new();

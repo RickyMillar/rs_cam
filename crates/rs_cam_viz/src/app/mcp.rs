@@ -998,7 +998,7 @@ impl super::RsCamApp {
             .get(index)
             .map(|tc| tc.id);
         if let Some(tp_id) = tp_id {
-            self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+            self.controller.set_focus(Selection::Toolpath(tp_id));
         }
     }
 

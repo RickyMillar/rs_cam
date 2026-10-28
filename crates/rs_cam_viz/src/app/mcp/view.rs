@@ -485,7 +485,7 @@ impl RsCamApp {
                     )
                 }));
             };
-            self.controller.state_mut().selection = Selection::Toolpath(tp_id);
+            self.controller.set_focus(Selection::Toolpath(tp_id));
             // The selection write is not the whole selection. Overlays whose
             // precondition reads a DERIVED per-selection artefact — the reach
             // map is the one — are answered from state the pump refreshes,
@@ -524,7 +524,7 @@ impl RsCamApp {
             // Scope the override to its target toolpath (the one selected
             // above, or the pre-existing selection) so an intervening
             // render of another toolpath can't consume it.
-            let Selection::Toolpath(target_id) = self.controller.state().selection else {
+            let Selection::Toolpath(target_id) = *self.controller.state().focus() else {
                 return json_str(serde_json::json!({
                     "error": "properties_tab needs a toolpath — pass toolpath_index in this \
                               call or select a toolpath first"
@@ -551,7 +551,7 @@ impl RsCamApp {
                 );
                 workspace_applied = Some(workspace_key(Workspace::Setup));
             }
-            self.controller.state_mut().selection = target;
+            self.controller.set_focus(target);
             select_applied = Some(key);
         }
 
@@ -579,7 +579,7 @@ impl RsCamApp {
                     self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
                 ModalParam::FeedsModal => {
-                    let Selection::Toolpath(tp_id) = self.controller.state().selection else {
+                    let Selection::Toolpath(tp_id) = *self.controller.state().focus() else {
                         return json_str(serde_json::json!({
                             "error": "'feeds_modal' needs a toolpath — pass toolpath_index in \
                                       this call or select a toolpath first"
@@ -646,7 +646,7 @@ impl RsCamApp {
         //    button makes, after the selection above.
         let mut framed: Option<serde_json::Value> = None;
         if let Some(keys) = frame_items {
-            let Selection::Toolpath(tp_id) = self.controller.state().selection else {
+            let Selection::Toolpath(tp_id) = *self.controller.state().focus() else {
                 return json_str(serde_json::json!({
                     "error": "frame_items needs a toolpath \u{2014} pass toolpath_index in this \
                               call or select a toolpath first"
@@ -668,7 +668,7 @@ impl RsCamApp {
         // queue and land later this same frame, so echo the requested
         // targets plus the already-applied selection.
         let state = self.controller.state();
-        let selected = match state.selection {
+        let selected = match *state.focus() {
             Selection::Toolpath(id) => state
                 .session()
                 .toolpath_configs()
@@ -684,7 +684,7 @@ impl RsCamApp {
                 }),
             _ => None,
         };
-        let selection_kind = match state.selection {
+        let selection_kind = match *state.focus() {
             Selection::Machine => "machine",
             Selection::Stock => "stock",
             Selection::Toolpath(_) => "toolpath",
