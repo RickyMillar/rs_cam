@@ -35,6 +35,7 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
                     ("Space", "Go to Simulation"),
                     ("1 / 2 / 3 / 4", "Top / Front / Right / Iso view"),
                     ("F", "Fit the selection (else the model)"),
+                    ("Ctrl+A", "Pick mode: every item of the chip kinds"),
                 ],
             );
             ui.add_space(8.0);

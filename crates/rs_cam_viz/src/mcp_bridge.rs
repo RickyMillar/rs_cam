@@ -558,6 +558,13 @@ pub enum McpRequestKind {
     },
     /// Geometry selection P2.7: the `list_model_items` query row.
     ListModelItems(rs_cam_mcp::server::ListModelItemsParam),
+    /// E5: the `list_rule_offers` query row: the "Rule…" offers of the
+    /// item `key` in the selection `target` of the toolpath at `index`.
+    RuleOffers {
+        index: usize,
+        target: rs_cam_core::session::SelectionTarget,
+        key: rs_cam_core::selection::MatchKey,
+    },
     /// Geometry selection P4.6: the `tab_layout` query row of the Profile
     /// at `index`.
     TabLayout {

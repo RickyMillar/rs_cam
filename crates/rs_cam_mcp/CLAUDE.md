@@ -38,5 +38,7 @@ run the server; the live server, GUI dispatch and session ownership are in
   `pose`), inline structs; viz `state::camera` holds the `From` mirrors. The snapshot was re-blessed.
 - E3 (2026-10-29): `SelectionEditParam` has `add_picks`/`remove_picks`; the core -> wire `From`
   of `SelectionEdit`, `Selection`, `Rule`, `Filter` (and their parts) is exhaustive (F166/F118).
+- E5 (2026-10-29): `ListRuleOffersParam` (`list_rule_offers`); the reply `edit` is the
+  `SelectionEditParam` JSON. The snapshot was re-blessed.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

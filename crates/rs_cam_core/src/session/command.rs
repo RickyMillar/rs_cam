@@ -608,6 +608,15 @@ macro_rules! for_each_command {
                      "the batch CLI writes rules in its job file; it lists no items",
                  ),
              }),
+            (Query, RuleOffers, "list_rule_offers", RuleOffersArgs, Vec<super::RuleOffer>,
+             Surfaces {
+                 // E5: the viewport right-click menu in pick mode reads it.
+                 gui: Reach::Reached,
+                 mcp: Reach::Reached,
+                 cli: Reach::Skip(
+                     "the batch CLI writes rules in its job file; it offers no rules",
+                 ),
+             }),
             (Query, TabLayout, "tab_layout", TabLayoutArgs, TabLayoutAnswer,
              Surfaces {
                  gui: Reach::Reached,
@@ -2022,6 +2031,19 @@ pub struct ListItemsAnswer {
     pub items: Vec<ModelItem>,
 }
 
+/// The arguments of the `list_rule_offers` read (E5, GT-3): the "Rule…"
+/// offers of one picked item in the selection `target` of a toolpath.
+#[derive(Debug, Clone)]
+pub struct RuleOffersArgs {
+    /// The index of the toolpath to read.
+    pub index: usize,
+    /// The selection the offers edit.
+    pub target: crate::session::SelectionTarget,
+    /// The key of the picked item (a `list_model_items` or
+    /// `selection_status` key).
+    pub key: crate::selection::MatchKey,
+}
+
 /// The arguments of the `tab_layout` read (geometry selection P4.6).
 #[derive(Debug, Clone)]
 pub struct TabLayoutArgs {
@@ -3101,6 +3123,14 @@ impl ProjectSession {
                 } = args;
                 let items = self.list_model_items_near(model_id, layer.as_deref(), kind, near)?;
                 Ok(QueryAnswer::ListItems(ListItemsAnswer { items }))
+            }
+            Query::RuleOffers(args) => {
+                let RuleOffersArgs { index, target, key } = args;
+                let tc = self
+                    .toolpath_configs()
+                    .get(index)
+                    .ok_or(SessionError::ToolpathNotFound(index))?;
+                Ok(QueryAnswer::RuleOffers(self.rule_offers(tc, target, &key)?))
             }
             Query::TabLayout(args) => {
                 let tc = self

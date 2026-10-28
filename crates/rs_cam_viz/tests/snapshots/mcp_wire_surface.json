@@ -4382,6 +4382,158 @@
   },
   {
     "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "`list_rule_offers` (E5, GT-3): the \"Rule…\" offers of one picked item.",
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "key": {
+          "additionalProperties": false,
+          "description": "The key of the picked item (copy it from `list_model_items` or\n`selection_status`).",
+          "properties": {
+            "anchor": {
+              "description": "Loop and face: the area centroid. Path: the first vertex. Point:\nthe point. Circle: the centre.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "brep": {
+              "default": null,
+              "description": "Face only: the BREP face id.",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "kind": {
+              "description": "The kind of an item.",
+              "oneOf": [
+                {
+                  "const": "loop",
+                  "description": "A closed loop.",
+                  "type": "string"
+                },
+                {
+                  "const": "path",
+                  "description": "An open path.",
+                  "type": "string"
+                },
+                {
+                  "const": "point",
+                  "description": "A point.",
+                  "type": "string"
+                },
+                {
+                  "const": "circle",
+                  "description": "A circle (one item; centre and diameter).",
+                  "type": "string"
+                },
+                {
+                  "const": "face",
+                  "description": "A flat face of a STEP model.",
+                  "type": "string"
+                }
+              ]
+            },
+            "layer": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "measure": {
+              "description": "Loop and face: the square root of the area (mm). Path: the length.\nCircle: the diameter. Point: 0.",
+              "format": "double",
+              "type": "number"
+            },
+            "source": {
+              "description": "Where an item comes from: `\"toolpath_model\"`, `{\"model\": <id>}` (an\n`inspect_model` id) or `\"stock\"`.",
+              "oneOf": [
+                {
+                  "const": "toolpath_model",
+                  "description": "The model of the toolpath.",
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A project model by its `inspect_model` id.",
+                  "properties": {
+                    "model": {
+                      "format": "uint",
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "const": "stock",
+                  "description": "The stock outline of the setup.",
+                  "type": "string"
+                }
+              ]
+            },
+            "z": {
+              "default": null,
+              "description": "A STEP ring, edge, circle or point: its Z (model frame). Absent for\na drawing item, a stock item and a face.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "source",
+            "kind",
+            "anchor",
+            "measure"
+          ],
+          "type": "object"
+        },
+        "target": {
+          "description": "The selection the offers edit. Absent: `\"op\"`.",
+          "oneOf": [
+            {
+              "const": "op",
+              "description": "The selection of the op.",
+              "type": "string"
+            },
+            {
+              "const": "boundary",
+              "description": "The selection of the machining boundary.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "key"
+      ],
+      "title": "ListRuleOffersParam",
+      "type": "object"
+    },
+    "name": "list_rule_offers"
+  },
+  {
+    "inputSchema": {
       "properties": {},
       "type": "object"
     },

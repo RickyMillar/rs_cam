@@ -1873,6 +1873,50 @@ impl ProjectSession {
         })
     }
 
+    /// E5 (SEL-13): the edit of Ctrl+A in pick mode: the rules of every
+    /// item of `kinds` on every layer of the toolpath model
+    /// ([`crate::selection::Rule::kind_rules`]; with `circle`, the circles
+    /// in that range). One rule gives `AddRule`, more give one `Replace`
+    /// (one command, one undo step).
+    ///
+    /// O-PICK: while the selection still holds its default, the default
+    /// already selects every item that the op cuts, so the answer is
+    /// `Ok(None)` (no edit; the GUI gives a notice). No kind gives
+    /// `Ok(None)` too.
+    ///
+    /// # Errors
+    ///
+    /// An op that holds no selection, a boundary that is not a selection.
+    pub fn kind_rule_edit(
+        &self,
+        tc: &ToolpathConfig,
+        target: SelectionTarget,
+        kinds: &[ItemKind],
+        circle: Option<crate::selection::DiameterRange>,
+    ) -> Result<Option<SelectionEdit>, SessionError> {
+        let no_selection = || {
+            SessionError::InvalidParam(format!(
+                "Toolpath '{}' holds no selection: its operation cuts no drawing item",
+                tc.name
+            ))
+        };
+        let current = tc.selection_of(target)?.ok_or_else(no_selection)?;
+        if self.holds_its_default(tc, target)? {
+            return Ok(None);
+        }
+        let op_default = self
+            .selection_default_of(tc, target)
+            .ok_or_else(no_selection)?;
+        let rules =
+            crate::selection::Rule::kind_rules(SourceRef::ToolpathModel, &[], kinds, circle);
+        Ok(SelectionEdit::add_rules(
+            current,
+            &op_default,
+            tc.model_id,
+            rules,
+        ))
+    }
+
     /// The items of the model with id `model_id`, in import order, with
     /// an optional layer and kind filter: the `list_model_items` read.
     pub fn list_model_items(

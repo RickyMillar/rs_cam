@@ -6,8 +6,10 @@
 //! click picks first and the circle diameter range, and it ends the pick
 //! mode. P4 (reference audit 2026-10-23): the chips are a view filter. A
 //! click on an item of a kind whose chip is off, but that the op can cut,
-//! turns the chip on and picks the item. P3: a shift-click adds one item;
-//! a right-click adds the layer of the item as a rule.
+//! turns the chip on and picks the item. P3: a shift-click adds one item.
+//! E5: a right-click on an item opens the rule menu ([`PickMenu`]: its
+//! layer, then the "Rule…" offers of the item); Ctrl+A adds the rules of
+//! the chip kinds ([`select_all_edit`]).
 //!
 //! [`click_event`] is THE map from a pick-mode click to its event.
 //!
@@ -34,7 +36,193 @@ const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 
 /// The help line of the bar.
 pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the item. \
-     Ctrl-click: remove the item. Right-click: add its layer.";
+     Ctrl-click: remove the item. Right-click: rules from the item. \
+     Ctrl+A: every item of the chip kinds.";
+
+/// The first row of the rule menu: the layer rule of the item (the
+/// right-click act before E5).
+pub const LAYER_ROW: &str = "Add its layer";
+
+/// The notice of Ctrl+A under the default selection (E5, O-PICK).
+pub const SELECT_ALL_UNDER_DEFAULT: &str =
+    "The default already selects every item that the op cuts";
+
+/// The rule menu of a right-click on an item in pick mode (E5): the layer
+/// rule first, then one row per "Rule…" offer of the item (core
+/// `list_rule_offers`, the GT-3 offers). It holds data only; a chosen row
+/// gives its event ([`PickMenu::layer_event`], [`PickMenu::offer_event`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickMenu {
+    pub toolpath_id: crate::state::toolpath::ToolpathId,
+    pub target: SelectionTarget,
+    pub key: rs_cam_core::selection::MatchKey,
+    /// The kind whose chip the layer row turns on (P4), if any.
+    pub chip_off: Option<ItemKind>,
+    /// The kinds of the layer rule (the chips that are on, with the
+    /// chip-off kind).
+    pub kinds: Vec<ItemKind>,
+    pub circle: Option<rs_cam_core::selection::DiameterRange>,
+    /// One row per offer: "{label} ({count})" and the edit (`None` when a
+    /// rule of the selection already holds every match).
+    pub offers: Vec<(String, Option<rs_cam_core::selection::SelectionEdit>)>,
+}
+
+impl PickMenu {
+    /// The menu of the item `key` in `mode`. The offers come from the core
+    /// query row `list_rule_offers` (the MCP tool reads the same row).
+    pub fn new(
+        session: &rs_cam_core::session::ProjectSession,
+        mode: &crate::state::pick::PickMode,
+        item_use: ItemUse,
+        held: &BTreeSet<ItemKind>,
+        key: rs_cam_core::selection::MatchKey,
+        chip_off: Option<ItemKind>,
+    ) -> Self {
+        use rs_cam_core::session::{Query, QueryAnswer, RuleOffersArgs};
+        let mut filter = mode.filter.clone();
+        if let Some(kind) = chip_off {
+            let _ = filter.kinds.insert(kind);
+        }
+        let offers = session
+            .toolpath_configs()
+            .iter()
+            .position(|tc| tc.id == mode.toolpath_id)
+            .and_then(|index| {
+                session
+                    .query(Query::RuleOffers(RuleOffersArgs {
+                        index,
+                        target: mode.target,
+                        key: key.clone(),
+                    }))
+                    .ok()
+            })
+            .map(|answer| match answer {
+                QueryAnswer::RuleOffers(offers) => offers
+                    .into_iter()
+                    .map(|o| (format!("{} ({})", o.label, o.count), o.edit))
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .unwrap_or_default();
+        Self {
+            toolpath_id: mode.toolpath_id,
+            target: mode.target,
+            key,
+            chip_off,
+            kinds: filter.effective_kinds(item_use, held),
+            circle: filter.circle,
+            offers,
+        }
+    }
+
+    /// The event of the layer row: `PickLayer`, as the right-click before
+    /// E5 sent.
+    pub fn layer_event(&self) -> crate::ui::AppEvent {
+        crate::ui::AppEvent::PickLayer {
+            toolpath_id: self.toolpath_id,
+            target: self.target,
+            key: self.key.clone(),
+            kinds: self.kinds.clone(),
+            circle: self.circle,
+        }
+    }
+
+    /// The event of offer row `row`: one `EditToolpathSelection` (one
+    /// command, one undo step), or `None` for a held offer.
+    pub fn offer_event(&self, row: usize) -> Option<crate::ui::AppEvent> {
+        let edit = self.offers.get(row)?.1.clone()?;
+        Some(crate::ui::AppEvent::EditToolpathSelection {
+            toolpath_id: self.toolpath_id,
+            target: self.target,
+            edit,
+        })
+    }
+}
+
+/// What the rule menu did this frame.
+#[derive(Debug)]
+pub enum PickMenuOutcome {
+    /// The menu is open; nothing is chosen.
+    Open,
+    /// The menu closed with no choice.
+    Closed,
+    /// The layer row (the caller turns the chip-off kind on first).
+    Layer,
+    /// An offer row was chosen.
+    Offer(usize),
+}
+
+/// Show `menu` as the context menu of the viewport `response`. egui opens
+/// it on the right-click of the frame that built the menu.
+pub fn show_pick_menu(response: &egui::Response, menu: &PickMenu) -> PickMenuOutcome {
+    let mut chose = None;
+    let shown = response.context_menu(|ui| {
+        if ui.button(LAYER_ROW).clicked() {
+            chose = Some(PickMenuOutcome::Layer);
+            ui.close();
+        }
+        if !menu.offers.is_empty() {
+            ui.separator();
+        }
+        for (row, (label, edit)) in menu.offers.iter().enumerate() {
+            let clicked = ui
+                .add_enabled(edit.is_some(), egui::Button::new(label.as_str()))
+                .on_disabled_hover_text("A rule of the selection already holds every item")
+                .clicked();
+            if clicked {
+                chose = Some(PickMenuOutcome::Offer(row));
+                ui.close();
+            }
+        }
+    });
+    match (chose, shown) {
+        (Some(outcome), _) => outcome,
+        (None, Some(_)) => PickMenuOutcome::Open,
+        (None, None) if response.secondary_clicked() => PickMenuOutcome::Open,
+        (None, None) => PickMenuOutcome::Closed,
+    }
+}
+
+/// The edit of Ctrl+A in the pick mode that is on (E5, SEL-13): the rules
+/// of the chip kinds that the selection serves and the model holds, through
+/// core `kind_rule_edit`. `Ok(None)`: no edit (under the default, O-PICK,
+/// the caller shows [`SELECT_ALL_UNDER_DEFAULT`]). `Err`: no chip is on, or
+/// the core refusal text.
+pub fn select_all_edit(
+    state: &AppState,
+) -> Result<
+    Option<(
+        crate::state::toolpath::ToolpathId,
+        SelectionTarget,
+        rs_cam_core::selection::SelectionEdit,
+    )>,
+    String,
+> {
+    let Some(crate::state::pick::ViewportMode::Pick(mode)) = state.gui.selection_ui.mode.as_ref()
+    else {
+        return Ok(None);
+    };
+    let session = state.session();
+    let Some((_, tc)) = session.find_toolpath_config_by_id(mode.toolpath_id) else {
+        return Ok(None);
+    };
+    let held = session
+        .models()
+        .iter()
+        .find(|m| m.id == tc.model_id)
+        .map(held_kinds)
+        .unwrap_or_default();
+    let kinds = mode
+        .filter
+        .effective_kinds(target_item_use(tc, mode.target), &held);
+    if kinds.is_empty() {
+        return Err("No chip is on, so Ctrl+A names no item".to_owned());
+    }
+    session
+        .kind_rule_edit(tc, mode.target, &kinds, mode.filter.circle)
+        .map(|edit| edit.map(|edit| (mode.toolpath_id, mode.target, edit)))
+        .map_err(|e| e.to_string())
+}
 
 /// The button of a pick-mode click (P3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -432,9 +620,9 @@ pub fn hover_text(
         .map(|kind| format!(" The click turns the {} chip on.", chip_label(kind)))
         .unwrap_or_default();
     let layer = if key.layer.is_some() {
-        "Right-click: add its layer."
+        "Right-click: rules from the item (its layer, similar items)."
     } else {
-        "Right-click: the item is on no layer."
+        "Right-click: rules from the item (it is on no layer)."
     };
     format!(
         "{} \u{2014} {click}.{chip}\nShift-click: add the item. Ctrl-click: remove the item. {layer}",

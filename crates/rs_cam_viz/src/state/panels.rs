@@ -191,6 +191,9 @@ pub struct PanelDrafts {
     pub join_all_mm: Option<f64>,
     /// The viewport popover of an open path (P4.9), while it is open.
     pub drawing_popover: Option<DrawingPopover>,
+    /// E5: the rule menu of a right-click on an item in pick mode, while
+    /// it is open.
+    pub pick_menu: Option<crate::ui::pick_bar::PickMenu>,
     /// The value in flight of each committed number field
     /// (`ui::import_modal::committed_number`: the import dialog, the model
     /// panel's scale, join tolerance and "Join all within"), by widget id,

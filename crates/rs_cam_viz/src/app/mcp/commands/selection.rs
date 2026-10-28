@@ -253,6 +253,43 @@ pub(crate) fn item_counts_json(counts: &ItemCounts) -> serde_json::Value {
     })
 }
 
+/// The `list_rule_offers` reply (E5): the answer of the core query row,
+/// one `{label, rule, count, edit}` per offer. `edit` is the project-file
+/// JSON of the one edit the offer writes (the `edit_toolpath_selection`
+/// wire JSON, so an agent sends it back unchanged), or null when a rule of
+/// the selection already holds every match.
+pub(crate) fn rule_offers_reply(
+    session: &ProjectSession,
+    index: usize,
+    target: SelectionTarget,
+    key: rs_cam_core::selection::MatchKey,
+) -> serde_json::Value {
+    match session.query(Query::RuleOffers(rs_cam_core::session::RuleOffersArgs {
+        index,
+        target,
+        key,
+    })) {
+        Ok(QueryAnswer::RuleOffers(offers)) => {
+            let rows: Vec<serde_json::Value> = offers
+                .iter()
+                .map(|offer| {
+                    serde_json::json!({
+                        "label": offer.label,
+                        "rule": offer.rule,
+                        "count": offer.count,
+                        "edit": offer.edit,
+                    })
+                })
+                .collect();
+            serde_json::json!({ "index": index, "target": target, "offers": rows })
+        }
+        Ok(other) => serde_json::json!({
+            "error": format!("the list_rule_offers read answered {other:?}"),
+        }),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    }
+}
+
 /// The `selection_status` reply for the selection `target` of the
 /// toolpath at `index`: the answer of the core query row, with the
 /// toolpath's name, op, the target and its stored selection.
@@ -346,6 +383,21 @@ pub(crate) fn tab_layout_reply(session: &ProjectSession, index: usize) -> serde_
 }
 
 impl RsCamApp {
+    /// The `list_rule_offers` read: the core query row (E5).
+    pub(crate) fn mcp_list_rule_offers(
+        &self,
+        index: usize,
+        target: SelectionTarget,
+        key: rs_cam_core::selection::MatchKey,
+    ) -> String {
+        json_str(rule_offers_reply(
+            self.controller.state().session(),
+            index,
+            target,
+            key,
+        ))
+    }
+
     /// The `tab_layout` read: the core query row (P4.6).
     pub(crate) fn mcp_tab_layout(&self, index: usize) -> String {
         json_str(tab_layout_reply(self.controller.state().session(), index))
@@ -1000,6 +1052,105 @@ mod tests {
                 .iter()
                 .any(|k| k.names_same_geometry(&held)),
             "the dropped item is not a pick"
+        );
+    }
+
+    /// E5 (SEL-7, SEL-13), MCP parity of "select similar" and Ctrl+A.
+    ///
+    /// - An offer row of the GUI rule menu (the core `list_rule_offers`
+    ///   row) and the wire `add_rule` of the same rule store one selection
+    ///   (toolpath 0: a CUT rule; the offer "loops on layer KEEP" of the
+    ///   KEEP square adds a rule that holds no pick).
+    /// - The `list_rule_offers` reply's `edit`, sent back through
+    ///   `edit_toolpath_selection` unchanged, stores the offer's rule.
+    /// - Ctrl+A (`kind_rule_edit`) and the wire `add_rule` of the
+    ///   `kind_rules` rule store one selection; under the default it
+    ///   writes nothing (O-PICK).
+    #[test]
+    fn mcp_and_gui_give_one_similar_rule_v11() {
+        let keep = project()
+            .list_model_items(rs_cam_core::ids::ModelId::from_raw(0), Some("KEEP"), None)
+            .unwrap()[0]
+            .key
+            .clone();
+        let offers_of =
+            |s: &ProjectSession, index: usize, key: &rs_cam_core::selection::MatchKey| match s
+                .query(Query::RuleOffers(rs_cam_core::session::RuleOffersArgs {
+                    index,
+                    target: SelectionTarget::Op,
+                    key: key.clone(),
+                })) {
+                Ok(QueryAnswer::RuleOffers(offers)) => offers,
+                other => panic!("list_rule_offers answered {other:?}"),
+            };
+
+        // An offer row and the wire add_rule of its rule.
+        let mut gui = project();
+        let offers = offers_of(&gui, 0, &keep);
+        let offer = offers
+            .iter()
+            .find(|o| o.label.contains("layer KEEP"))
+            .unwrap_or_else(|| panic!("an offer of the KEEP layer: {offers:?}"))
+            .clone();
+        edit(&mut gui, 0, offer.edit.clone().expect("the offer writes"));
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({ "add_rule": serde_json::to_value(&offer.rule).unwrap() }),
+        );
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one rule, two doors");
+
+        // The reply's edit, sent back unchanged.
+        let reply = rule_offers_reply(&project(), 0, SelectionTarget::Op, keep);
+        let row = reply["offers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["label"].as_str().unwrap().contains("layer KEEP"))
+            .expect("the reply lists the KEEP offer")
+            .clone();
+        assert_eq!(row["count"], serde_json::json!(offer.count));
+        let mut back = project();
+        wire_edit(&mut back, 0, &row["edit"]);
+        assert_eq!(
+            stored(&back, 0),
+            stored(&gui, 0),
+            "the reply edit round-trips"
+        );
+        assert!(
+            stored(&back, 0).rules().contains(&offer.rule),
+            "the stored selection holds the offer's rule"
+        );
+
+        // Ctrl+A on a selection that is not the default.
+        let kinds = [ItemKind::Loop];
+        let mut gui = project();
+        let tc = gui.toolpath_config_at(0).unwrap().clone();
+        let select_all = gui
+            .kind_rule_edit(&tc, SelectionTarget::Op, &kinds, None)
+            .unwrap()
+            .expect("Ctrl+A writes after a rule");
+        edit(&mut gui, 0, select_all);
+        let rule = Rule::kind_rules(SourceRef::ToolpathModel, &[], &kinds, None)
+            .pop()
+            .unwrap();
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({ "add_rule": serde_json::to_value(&rule).unwrap() }),
+        );
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "Ctrl+A, two doors");
+
+        // Ctrl+A under the default writes nothing.
+        let s = project();
+        let tc = s.toolpath_config_at(3).unwrap().clone();
+        assert_eq!(
+            s.kind_rule_edit(&tc, SelectionTarget::Op, &kinds, None)
+                .unwrap(),
+            None,
+            "the default already selects every item that the op cuts"
         );
     }
 

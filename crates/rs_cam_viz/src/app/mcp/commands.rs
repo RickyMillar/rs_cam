@@ -1877,6 +1877,7 @@ impl RsCamApp {
             | CommandId::SelectionStatus
             | CommandId::ListItems
             | CommandId::TabLayout
+            | CommandId::RuleOffers
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             // F114: the apply_feeds tool reaches this row through the
@@ -2962,6 +2963,7 @@ impl RsCamApp {
             | CommandId::SelectionStatus
             | CommandId::ListItems
             | CommandId::TabLayout
+            | CommandId::RuleOffers
             | CommandId::RestoreToolpathSnapshot
             | CommandId::ReplaceToolpathConfig
             // F114: the apply_feeds tool reaches this row through the

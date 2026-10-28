@@ -207,6 +207,30 @@ impl RsCamApp {
             return false;
         };
         match self.pick_mode_key(&pick, click_pos) {
+            // E5: a right-click on an item opens the rule menu (its layer,
+            // then the "Rule…" offers); the menu sends the edit.
+            Some((Ok(key), chip_off)) if click == crate::ui::pick_bar::PickClick::Secondary => {
+                let state = self.controller.state();
+                let menu = state
+                    .gui
+                    .selection_ui
+                    .mode
+                    .as_ref()
+                    .and_then(|mode| match mode {
+                        crate::state::pick::ViewportMode::Pick(mode) => {
+                            Some(crate::ui::pick_bar::PickMenu::new(
+                                state.session(),
+                                mode,
+                                pick.item_use,
+                                &pick.held,
+                                key,
+                                chip_off,
+                            ))
+                        }
+                        crate::state::pick::ViewportMode::Tabs(_) => None,
+                    });
+                self.controller.state_mut().panels.pick_menu = menu;
+            }
             Some((Ok(key), chip_off)) => {
                 let event = self
                     .controller
@@ -865,12 +889,40 @@ impl RsCamApp {
 
         // P4.6: a right-click on a tab deletes it; a drag that starts on a
         // tab moves it, and the camera does not orbit during that drag.
-        // P3: in pick mode, a right-click on an item adds its layer.
+        // E5: in pick mode, a right-click on an item opens the rule menu.
         for action in &actions {
-            if let InputAction::SecondaryClick { pos } = *action
-                && !self.handle_tab_secondary_click(pos)
-            {
-                let _ = self.handle_pick_mode_click(pos, crate::ui::pick_bar::PickClick::Secondary);
+            if let InputAction::SecondaryClick { pos } = *action {
+                self.controller.state_mut().panels.pick_menu = None;
+                if !self.handle_tab_secondary_click(pos) {
+                    let _ =
+                        self.handle_pick_mode_click(pos, crate::ui::pick_bar::PickClick::Secondary);
+                }
+            }
+        }
+        if let Some(menu) = self.controller.state().panels.pick_menu.clone() {
+            use crate::ui::pick_bar::PickMenuOutcome;
+            let event = match crate::ui::pick_bar::show_pick_menu(&response, &menu) {
+                PickMenuOutcome::Open => None,
+                PickMenuOutcome::Closed => {
+                    self.controller.state_mut().panels.pick_menu = None;
+                    None
+                }
+                PickMenuOutcome::Layer => {
+                    // P4: the layer row turns the chip-off kind on, as the
+                    // right-click did.
+                    if let (Some(kind), Some(mode)) = (
+                        menu.chip_off,
+                        self.controller.state_mut().gui.selection_ui.pick_mut(),
+                    ) {
+                        let _ = mode.filter.kinds.insert(kind);
+                    }
+                    Some(menu.layer_event())
+                }
+                PickMenuOutcome::Offer(row) => menu.offer_event(row),
+            };
+            if let Some(event) = event {
+                self.controller.state_mut().panels.pick_menu = None;
+                self.controller.events_mut().push(event);
             }
         }
         // §1.5: `step` claims a primary drag that starts on a tab before

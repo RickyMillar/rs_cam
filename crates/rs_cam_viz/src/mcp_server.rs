@@ -28,19 +28,19 @@ use rs_cam_mcp::server::{
     AddToolpathViaGuiParam, ApplyFeedsParam, CollisionCheckParam, CompareRestWithFreshParam,
     CutTraceParam, EditToolpathSelectionParam, ExportParam, GenDebugTraceParam, GenerateAllParam,
     GenerateToolpathParam, GetNotificationsParam, ImportMachineSettingsParam, IndexParam,
-    InspectSpansParam, ListModelItemsParam, ListToolCatalogParam, LoadMachineFromLibraryParam,
-    LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam, OperationSchemaParam,
-    PlaceAlignmentPatternParam, PlanMultitoolFinishingParam, PreviewTierMapParam, ReachMapParam,
-    RemoveAlignmentPinParam, RemoveToolParam, RemoveToolpathParam, SaveProjectParam,
-    ScreenshotGuiParam, ScreenshotSimParam, ScreenshotToolpathParam, SelectionStatusParam,
-    SetAlignmentPinsParam, SetBoundaryConfigParam, SetDressupConfigParam, SetDressupFieldParam,
-    SetMachineHeadParam, SetMachineKinematicsParam, SetRestAnalysisConfigParam,
-    SetSetupRotationParam, SetSimulationResolutionParam, SetSpindleStrategyParam,
-    SetStockConfigParam, SetStockSourceParam, SetToolParamInput, SetToolpathEnabledParam,
-    SetToolpathFloorParam, SetToolpathHeightsParam, SetToolpathModelParam, SetToolpathParamInput,
-    SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam, SimJumpToMoveParam,
-    SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam, TabLayoutParam,
-    json_str,
+    InspectSpansParam, ListModelItemsParam, ListRuleOffersParam, ListToolCatalogParam,
+    LoadMachineFromLibraryParam, LoadProjectParam, ModelIdParam, MoveAlignmentPinsParam,
+    OperationSchemaParam, PlaceAlignmentPatternParam, PlanMultitoolFinishingParam,
+    PreviewTierMapParam, ReachMapParam, RemoveAlignmentPinParam, RemoveToolParam,
+    RemoveToolpathParam, SaveProjectParam, ScreenshotGuiParam, ScreenshotSimParam,
+    ScreenshotToolpathParam, SelectionStatusParam, SetAlignmentPinsParam, SetBoundaryConfigParam,
+    SetDressupConfigParam, SetDressupFieldParam, SetMachineHeadParam, SetMachineKinematicsParam,
+    SetRestAnalysisConfigParam, SetSetupRotationParam, SetSimulationResolutionParam,
+    SetSpindleStrategyParam, SetStockConfigParam, SetStockSourceParam, SetToolParamInput,
+    SetToolpathEnabledParam, SetToolpathFloorParam, SetToolpathHeightsParam, SetToolpathModelParam,
+    SetToolpathParamInput, SetToolpathShoeParam, SetToolpathToolParam, SetUiViewParam,
+    SimJumpToMoveParam, SimJumpToToolpathBoundaryParam, SimScrubToolpathParam, SimulationParam,
+    TabLayoutParam, json_str,
 };
 
 /// How long a cheap read waits for the GUI frame loop before falling back to
@@ -709,6 +709,24 @@ impl EmbeddedCamServer {
             self.send_request(McpRequestKind::SelectionStatus {
                 index,
                 target: target.into(),
+            })
+            .await,
+        )
+    }
+
+    #[tool(
+        name = "list_rule_offers",
+        description = "Geometry selection (E5, GT-3): the \"Rule…\" offers of ONE picked item in a selection of the toolpath at `index`, the menu the GUI shows on a right-click in pick mode. `target` is `\"op\"` (default) or `\"boundary\"`; `key` is the item key (copy it from `list_model_items` or `selection_status`). Each offer reads one fact of that item: a circle gives the circles of its diameter and every circle; an up face gives the up faces at its plane Z, every face gives every up face of the model, and a down face on a boundary gives the down faces at its plane Z; a STEP ring, edge or point gives the items of its kind at its Z; a drawing item gives the items of its kind on its layer and every item of its kind. Returns `{index, target, offers: [{label, rule, count, edit}]}`: `count` is the number of items the rule matches, `edit` is the ONE edit the offer writes (the `edit_toolpath_selection` JSON: send it back unchanged as `edit`), or null when a rule of the selection already holds every match. Read only."
+    )]
+    async fn list_rule_offers(
+        &self,
+        Parameters(ListRuleOffersParam { index, target, key }): Parameters<ListRuleOffersParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::RuleOffers {
+                index,
+                target: target.into(),
+                key: key.into(),
             })
             .await,
         )

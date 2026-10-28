@@ -76,6 +76,8 @@ pub use command::{
     Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
     UpdateStockFromBboxArgs,
 };
+// E5: one line of its own, so the re-export block above keeps its shape.
+pub use command::RuleOffersArgs;
 pub use compute::{
     BoundaryCollapse, GenContext, GenObserver, GenerateToolpathHandle, LargerRestConsumer,
     RecommendClearingStrategyHandle, ResolvedGenInputs, RestBoundaryRefusal, TriageSessionKey,

@@ -461,6 +461,33 @@ impl RsCamApp {
         {
             self.controller.state_mut().gui.selection_ui.set_pick(None);
         }
+        // E5 (SEL-13): Ctrl+A in pick mode adds the rules of the chip
+        // kinds; under the default it writes nothing and says why (O-PICK,
+        // core `kind_rule_edit`).
+        if matches!(
+            self.controller.state().gui.selection_ui.mode,
+            Some(crate::state::pick::ViewportMode::Pick(_))
+        ) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::A))
+        {
+            match crate::ui::pick_bar::select_all_edit(self.controller.state()) {
+                Ok(Some((toolpath_id, target, edit))) => {
+                    self.controller
+                        .events_mut()
+                        .push(AppEvent::EditToolpathSelection {
+                            toolpath_id,
+                            target,
+                            edit,
+                        });
+                }
+                Ok(None) => self.controller.push_notification(
+                    crate::ui::pick_bar::SELECT_ALL_UNDER_DEFAULT.to_owned(),
+                    crate::controller::Severity::Info,
+                ),
+                Err(refusal) => self
+                    .controller
+                    .push_notification(refusal, crate::controller::Severity::Warning),
+            }
+        }
 
         ctx.input(|i| {
             let modifiers = i.modifiers;

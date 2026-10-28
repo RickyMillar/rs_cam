@@ -307,6 +307,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_list_model_items(&param);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::RuleOffers { index, target, key } => {
+                let resp = self.mcp_list_rule_offers(index, target, key);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::TabLayout { index } => {
                 let resp = self.mcp_tab_layout(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });

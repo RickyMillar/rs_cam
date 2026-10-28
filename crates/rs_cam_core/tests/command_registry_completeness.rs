@@ -221,6 +221,7 @@ fn query_answer_has_one_variant_per_query_row() {
         QueryAnswer::SelectionStatus(_) => {}
         QueryAnswer::ListItems(_) => {}
         QueryAnswer::TabLayout(_) => {}
+        QueryAnswer::RuleOffers(_) => {}
     }
 }
 

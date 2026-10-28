@@ -2468,6 +2468,20 @@ pub struct SelectionStatusParam {
     pub target: SelectionTargetParam,
 }
 
+/// `list_rule_offers` (E5, GT-3): the "Rule…" offers of one picked item.
+#[derive(Deserialize, schemars::JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct ListRuleOffersParam {
+    /// Toolpath index (0-based).
+    pub index: usize,
+    /// The selection the offers edit. Absent: `"op"`.
+    #[serde(default)]
+    pub target: SelectionTargetParam,
+    /// The key of the picked item (copy it from `list_model_items` or
+    /// `selection_status`).
+    pub key: MatchKeyParam,
+}
+
 /// `tab_layout` (geometry selection P4.6): the tabs that generation cuts
 /// for a Profile, as marks in the drawing frame.
 #[derive(Deserialize, schemars::JsonSchema, Default)]
@@ -3844,6 +3858,10 @@ pub fn build_info() -> serde_json::Value {
             // `add_picks` / `remove_picks` (one edit, one undo step); a pick
             // key that names no item refuses `PickNamesNoItem`.
             "selection_batch",
+            // E5 (2026-10-29): `list_rule_offers` gives the "Rule…" offers
+            // of one picked item, each with its count and the edit that
+            // `edit_toolpath_selection` takes unchanged.
+            "rule_offers",
         ],
     })
 }
@@ -3944,6 +3962,7 @@ mod tests {
             "view_camera",
             "get_ui_view",
             "selection_batch",
+            "rule_offers",
         ] {
             assert!(
                 features.contains(&flag),
