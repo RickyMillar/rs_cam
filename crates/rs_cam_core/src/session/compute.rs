@@ -110,6 +110,10 @@ pub struct ResolvedGenInputs {
     /// axial step of the earlier roughing ops of the setup; it reaches the
     /// helical Waterline through `ExecutionContext::rest_axial_step_mm`.
     rest_axial_step_mm: Option<f64>,
+    /// W4 (D69 §4): for a Waterline, what the job holds the part with at the
+    /// end of a through cut; it reaches the generator through
+    /// `ExecutionContext::through_cut_hold`.
+    through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
     /// The setup's local<->global transform, hoisted off the
     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
     /// `generate_toolpath` needs it and the context is scoped to this
@@ -1391,6 +1395,8 @@ pub fn execute_generation(
         rest_top_z: inputs.rest_top_z,
         // W2 (D69 §3): the wall step of the helical Waterline.
         rest_axial_step_mm: inputs.rest_axial_step_mm,
+        // W4 (D69 §4): the through-cut web of a Waterline.
+        through_cut_hold: inputs.through_cut_hold,
         material: Some(&context.material),
         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
         link_kinematics: context.link_kinematics.clone(),

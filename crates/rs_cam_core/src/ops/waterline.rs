@@ -290,6 +290,7 @@ fn waterline_toolpath_at_levels(
         boundary_regions,
         keep: None,
         split_timing: None,
+        outer_floor_z: None,
     };
     for &z in levels {
         check_cancel(cancel)?;
@@ -321,12 +322,25 @@ pub struct RunFilter<'f> {
     /// motion the emitter makes at a run end and a run start). `None`: no
     /// time model, so `keep` drops nothing (cut more, never less).
     pub split_timing: Option<&'f LinkKinematics>,
+    /// W4 (D69 §4): the web Z of a through cut. At a level at or below it
+    /// (to within [`WATERLINE_LADDER_EPSILON`]), an OUTER ring (one that no
+    /// other ring of the level holds, [`ring_inside`] to within the op's
+    /// `sampling`) is not cut: only an outer ring separates the part from
+    /// the stock. A hole ring or an inner wall ring keeps its level.
+    /// `None`: every ring is cut.
+    pub outer_floor_z: Option<f64>,
 }
 
 impl RunFilter<'_> {
     /// True when no rule drops a point.
     fn keeps_all(&self) -> bool {
         self.boundary_regions.is_none() && self.keep.is_none()
+    }
+
+    /// W4: true when `z` is at or below [`Self::outer_floor_z`].
+    fn below_web(&self, z: f64) -> bool {
+        self.outer_floor_z
+            .is_some_and(|web| z <= web + WATERLINE_LADDER_EPSILON)
     }
 
     /// True when the boundary rule keeps `p`.
@@ -346,6 +360,8 @@ pub struct WaterlineLevel {
     /// True when [`RunFilter::keep`] dropped a point inside the boundary,
     /// after the time rule.
     pub rest_dropped: bool,
+    /// W4: the outer rings [`RunFilter::outer_floor_z`] kept from the cut.
+    pub outer_rings_skipped: usize,
 }
 
 /// The motion a run end and a run start make, which
@@ -471,6 +487,7 @@ pub fn waterline_level(
         toolpath,
         rest_kept: rings.rest_kept,
         rest_dropped: rings.rest_dropped,
+        outer_rings_skipped: rings.outer_rings_skipped,
     })
 }
 
@@ -500,6 +517,8 @@ pub struct LevelRings {
     pub rest_kept: bool,
     /// See [`WaterlineLevel::rest_dropped`].
     pub rest_dropped: bool,
+    /// See [`WaterlineLevel::outer_rings_skipped`].
+    pub outer_rings_skipped: usize,
 }
 
 /// The contours at `z`, the leave lift and the run split of `filter`:
@@ -535,8 +554,19 @@ pub fn waterline_level_rings(
         }
     }
 
+    // W4: at a level at or below the web, the outer rings are not cut.
+    let outer = if filter.below_web(z) {
+        outer_contours(&contours, params.sampling)
+    } else {
+        vec![false; contours.len()]
+    };
+    let mut outer_rings_skipped = 0;
     for (c, contour) in contours.iter().enumerate() {
         if contour.len() < 3 {
+            continue;
+        }
+        if outer.get(c).copied().unwrap_or(false) {
+            outer_rings_skipped += 1;
             continue;
         }
         if filter.keeps_all() {
@@ -607,7 +637,29 @@ pub fn waterline_level_rings(
         runs,
         rest_kept,
         rest_dropped,
+        outer_rings_skipped,
     })
+}
+
+/// W4: for each contour of one level, true when it is an OUTER ring: a ring
+/// of three or more points that no other ring of the level holds
+/// ([`ring_inside`] to within `tol`).
+fn outer_contours(contours: &[Vec<P3>], tol: f64) -> Vec<bool> {
+    let polygons: Vec<Option<Polygon2>> = contours.iter().map(|c| ring_polygon(c)).collect();
+    polygons
+        .iter()
+        .enumerate()
+        .map(|(i, ring)| {
+            ring.as_ref().is_some_and(|ring| {
+                !polygons.iter().enumerate().any(|(j, other)| {
+                    j != i
+                        && other
+                            .as_ref()
+                            .is_some_and(|other| ring_inside(ring, other, tol))
+                })
+            })
+        })
+        .collect()
 }
 
 /// Emit one run as its own pass: retract, rapid, plunge, cut, retract.

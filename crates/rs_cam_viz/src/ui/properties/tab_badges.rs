@@ -163,6 +163,9 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::GEOM_BOUNDARY_CLIP_DROPPED, G),
         (i::GEOM_WATERLINE_LEVELS_BELOW_STOCK, C),
         (i::GEOM_WATERLINE_LADDER_EMPTY, C),
+        // W4: the fix is a tabbed Profile after the Waterline; no tab of the
+        // Waterline holds it.
+        (i::GEOM_WATERLINE_PART_UNHELD, NO),
         (i::GEOM_REGION_CAP_TRUNCATED, C),
         (i::GEOM_REST_LEVELS_FALLBACK, C),
         (i::CONFIG_DERIVED_STEPOVER, C),

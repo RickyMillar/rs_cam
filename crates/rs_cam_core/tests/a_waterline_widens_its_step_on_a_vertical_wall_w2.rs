@@ -68,6 +68,7 @@ fn levels(draft: f64) -> Vec<LevelRings> {
                 contours: vec![ring],
                 rest_kept: false,
                 rest_dropped: false,
+                outer_rings_skipped: 0,
             }
         })
         .collect()

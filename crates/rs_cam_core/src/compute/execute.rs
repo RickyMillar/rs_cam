@@ -512,6 +512,11 @@ pub struct ExecutionContext<'a> {
     /// walls. The helical Waterline widens its step on a vertical wall up
     /// to it. `None`: a fresh op, or no earlier op states a step.
     pub rest_axial_step_mm: Option<f64>,
+    /// W4 (D69 §4): for a Waterline, what the job holds the part with at
+    /// the end of a through cut (the session derives it from the later and
+    /// the earlier ops of the setup). `None`: not derived (another op, or a
+    /// caller with no session).
+    pub through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
 }
 
 impl<'a> ExecutionContext<'a> {
@@ -596,6 +601,7 @@ impl<'a> ExecutionContext<'a> {
             rest_top_z: None,
             material: None,
             rest_axial_step_mm: None,
+            through_cut_hold: None,
         }
     }
 }

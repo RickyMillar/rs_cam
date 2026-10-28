@@ -250,12 +250,14 @@ fn an_unmatched_ring_keeps_the_stacked_form() {
             contours: upper,
             rest_kept: false,
             rest_dropped: false,
+            outer_rings_skipped: 0,
         },
         LevelRings {
             runs: whole(&lower),
             contours: lower,
             rest_kept: false,
             rest_dropped: false,
+            outer_rings_skipped: 0,
         },
     ];
     let params = WaterlineParams {

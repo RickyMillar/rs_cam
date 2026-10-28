@@ -48,7 +48,10 @@ const BOSS_HALF: f64 = 10.0;
 const SKIN: f64 = 0.5;
 const BOSS_TOP: f64 = 15.0;
 const LEVEL_TOP: f64 = 14.5;
-const LEVEL_BOTTOM: f64 = 0.5;
+/// Above the web the rough leaves (its 0.5 mm axial leave on the model
+/// bottom): W4 keeps the outer ring of a through part off the levels at or
+/// below the web, and this file pins the wall step, not the web.
+const LEVEL_BOTTOM: f64 = 1.0;
 const Z_STEP: f64 = 0.5;
 
 /// A closed box of half width `h`: the boss.

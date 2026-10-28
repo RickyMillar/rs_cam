@@ -325,7 +325,16 @@ pub(crate) fn generate_waterline(
         cfg.z_step,
         ctx.stock_bbox.min.z,
     );
-    ctx.record(&crate::compute::toolpath_stats::WaterlineLadderFinding {
+    // W4 (D69 §4, operator ruling 2026-10-28): on a through part (the
+    // model bottom at the stock bottom, to within the ladder's own "on a
+    // face" tolerance) the Waterline cuts no outer ring at or below the web
+    // the job holds (`ExecutionContext::through_cut_hold`, from the
+    // session). A model that stands on stock keeps every ring.
+    let through_part =
+        surface.mesh.bbox.min.z <= ctx.stock_bbox.min.z + crate::ops::waterline::FLAT_FACE_SNAP_MM;
+    let hold = ctx.through_cut_hold.filter(|_| through_part);
+    let web = hold.and_then(|h| h.web);
+    let mut finding = crate::compute::toolpath_stats::WaterlineLadderFinding {
         requested_top_z_mm: ctx.heights.top_z,
         requested_bottom_z_mm: ctx.heights.bottom_z,
         stock_bottom_z_mm: ctx.stock_bbox.min.z,
@@ -334,7 +343,11 @@ pub(crate) fn generate_waterline(
         nudged_levels: ladder.nudged_levels,
         dropped_below_stock: ladder.dropped_below_stock,
         delivered_levels: ladder.levels.len(),
-    });
+        web,
+        outer_rings_skipped: 0,
+        part_unheld: hold.is_some_and(|h| !h.tabbed_profile_follows),
+    };
+    ctx.record(&finding);
     // D69 §2: the helical waterline judges each link between two chained
     // rings with the model gouge guard's reduced tool. A tool that cannot
     // shrink (no cutter) joins no level: the op cuts the stacked form.
@@ -368,13 +381,19 @@ pub(crate) fn generate_waterline(
         params,
         link_probe,
         wall,
+        outer_floor_z: web.map(|w| w.z_mm),
+        outer_rings_skipped: std::cell::Cell::new(0),
         levels: ladder.levels,
         hookup_mm: cfg.hookup_mm,
         op_type: op.op_type(),
         rest_use: op.capabilities().rest_use,
         boundary_regions: prepared.territory().regions(),
     };
-    run_layered(&pass, ctx, prepared)
+    let generated = run_layered(&pass, ctx, prepared)?;
+    // W4: the count is known only after the levels are cut.
+    finding.outer_rings_skipped = pass.outer_rings_skipped.get();
+    ctx.record(&finding);
+    Ok(generated)
 }
 
 /// W2 (D69 §3): what the wall step of the helical Waterline reads.
@@ -453,6 +472,11 @@ struct WaterlinePass<'a> {
     /// W2 (D69 §3): the inputs of the wall step, or `None` (no material, no
     /// rough step or no spindle speed): the helix keeps every ring.
     wall: Option<WallInputs<'a>>,
+    /// W4 (D69 §4): the web Z of a through cut (`RunFilter::outer_floor_z`),
+    /// or `None`.
+    outer_floor_z: Option<f64>,
+    /// W4: the outer rings the web kept from the cut, over every level.
+    outer_rings_skipped: std::cell::Cell<usize>,
     /// The ladder of `waterline_ladder`: nudged off the flat facets and
     /// floored at the stock bottom.
     levels: Vec<f64>,
@@ -524,6 +548,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             boundary_regions: self.boundary_regions,
             keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
             split_timing: rest.split_timing,
+            outer_floor_z: self.outer_floor_z,
         };
         let mut tp = Toolpath::new();
         let (mut kept, mut dropped) = (false, false);
@@ -539,6 +564,8 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
             )?;
             kept |= piece.rest_kept;
             dropped |= piece.rest_dropped;
+            self.outer_rings_skipped
+                .set(self.outer_rings_skipped.get() + piece.outer_rings_skipped);
             tp.moves.extend(piece.toolpath.moves);
         }
         rest.tally(kept, dropped);
@@ -575,12 +602,14 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
                     boundary_regions: self.boundary_regions,
                     keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
                     split_timing: rest.split_timing,
+                    outer_floor_z: self.outer_floor_z,
                 };
                 let mut level = crate::ops::waterline::LevelRings {
                     contours: Vec::new(),
                     runs: Vec::new(),
                     rest_kept: false,
                     rest_dropped: false,
+                    outer_rings_skipped: 0,
                 };
                 for surface in geometry {
                     let piece = crate::ops::waterline::waterline_level_rings(
@@ -600,8 +629,11 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
                     }));
                     level.rest_kept |= piece.rest_kept;
                     level.rest_dropped |= piece.rest_dropped;
+                    level.outer_rings_skipped += piece.outer_rings_skipped;
                 }
                 rest.tally(level.rest_kept, level.rest_dropped);
+                self.outer_rings_skipped
+                    .set(self.outer_rings_skipped.get() + level.outer_rings_skipped);
                 rings.push(level);
             }
             let admits = |k: usize, ring: &[crate::geo::P3], ap: f64| {

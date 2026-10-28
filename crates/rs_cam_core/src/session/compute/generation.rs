@@ -470,6 +470,14 @@ impl ProjectSession {
             .then(|| self.earlier_rough_step(index))
             .flatten();
 
+        // W4 (D69 §4): for a Waterline, what the job holds the part with
+        // at the end of a through cut.
+        let through_cut_hold = matches!(
+            tc.operation,
+            crate::compute::catalog::OperationConfig::Waterline(_)
+        )
+        .then(|| self.through_cut_hold(index));
+
         Ok(ResolvedGenInputs {
             setup_transform: ctx.local_to_global,
             tool,
@@ -491,7 +499,111 @@ impl ProjectSession {
             pre_boundary_regions,
             rest_top_z,
             rest_axial_step_mm,
+            through_cut_hold,
         })
+    }
+
+    /// W4 (D69 §4, operator ruling 2026-10-28): what the job holds the part
+    /// with at the end of a through cut, for the Waterline at `index`.
+    /// Derived from the project (the ops' configs and their resolved
+    /// heights), never from a generated result, so a stale or missing
+    /// result cannot change the Waterline. The first rule that applies:
+    ///
+    /// 1. A later enabled Profile of the setup with tabs (`tab_count > 0`
+    ///    or hand tabs) whose floor reaches the stock bottom (to within
+    ///    `FLAT_FACE_SNAP_MM`): the web is its tab top, floor plus
+    ///    `tab_height` (the highest of several). The Waterline then never
+    ///    cuts below a tab.
+    /// 2. The lowest floor that an earlier enabled roughing op
+    ///    (`PassRole::Roughing`) of the setup leaves on the outline: an op
+    ///    whose resolved bottom is the model bottom (to within
+    ///    `FLAT_FACE_SNAP_MM`; it cuts down to the part bottom), at its
+    ///    bottom plus its axial stock to leave
+    ///    (`OperationConfig::model_gouge_allowance`), when that floor stands
+    ///    above the stock bottom (an earlier op that cut through holds no
+    ///    web). A pocket that stops above the model bottom leaves a floor,
+    ///    not a web, and is not read.
+    /// 3. No web.
+    ///
+    /// An op whose heights do not resolve is not read.
+    fn through_cut_hold(&self, index: usize) -> crate::compute::toolpath_stats::ThroughCutHold {
+        use crate::compute::catalog::OperationConfig;
+        use crate::compute::toolpath_stats::{ThroughCutHold, WaterlineWeb, WebSource};
+        let no_hold = ThroughCutHold {
+            web: None,
+            tabbed_profile_follows: false,
+        };
+        let Some(setup) = self.find_setup_for_toolpath_index(index) else {
+            return no_hold;
+        };
+        let order = setup.toolpath_indices();
+        let Some(at) = order.iter().position(|&i| i == index) else {
+            return no_hold;
+        };
+        let enabled = |i: &usize| self.toolpath_configs.get(*i).filter(|tc| tc.enabled);
+        let tab_top = order
+            .iter()
+            .skip(at + 1)
+            .filter_map(enabled)
+            .filter_map(|tc| {
+                let OperationConfig::Profile(profile) = &tc.operation else {
+                    return None;
+                };
+                if profile.tab_count == 0 && profile.tab_points.is_empty() {
+                    return None;
+                }
+                let h = self.toolpath_heights(tc).ok()?;
+                (h.heights.bottom_z
+                    <= h.context.stock_bottom_z + crate::ops::waterline::FLAT_FACE_SNAP_MM)
+                    .then_some(h.heights.bottom_z + profile.tab_height)
+            })
+            .max_by(f64::total_cmp);
+        if let Some(z_mm) = tab_top {
+            return ThroughCutHold {
+                web: Some(WaterlineWeb {
+                    z_mm,
+                    source: WebSource::TabbedProfile,
+                }),
+                tabbed_profile_follows: true,
+            };
+        }
+        let earlier_floor = order
+            .get(..at)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(enabled)
+            .filter(|tc| {
+                tc.operation.op_type().spec().feeds_pass_role == crate::feeds::PassRole::Roughing
+            })
+            .filter_map(|tc| {
+                let h = self.toolpath_heights(tc).ok()?;
+                // Only a rough that cuts down to the part bottom leaves a web
+                // on the outline. A pocket that stops above the model bottom
+                // leaves a floor, not a web.
+                let to_part_bottom = h.context.model_bottom_z.is_some_and(|model_bottom| {
+                    h.heights.bottom_z <= model_bottom + crate::ops::waterline::FLAT_FACE_SNAP_MM
+                });
+                if !to_part_bottom {
+                    return None;
+                }
+                let leave = tc
+                    .operation
+                    .model_gouge_allowance(None)
+                    .map_or(0.0, |a| a.leave_mm);
+                Some((h.heights.bottom_z + leave, h.context.stock_bottom_z))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        ThroughCutHold {
+            web: earlier_floor
+                .filter(|&(floor, bottom)| {
+                    floor > bottom + crate::ops::waterline::STOCK_BOTTOM_FLOOR_EPS_MM
+                })
+                .map(|(z_mm, _)| WaterlineWeb {
+                    z_mm,
+                    source: WebSource::EarlierFloor,
+                }),
+            tabbed_profile_follows: false,
+        }
     }
 
     /// W2 (D69 §3): the smallest `OperationConfig::depth_per_pass` of the
