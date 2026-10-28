@@ -17,6 +17,7 @@ pub mod stale;
 pub mod tab_edit;
 pub mod toolpath;
 pub mod viewport;
+pub mod viewport_input;
 pub mod wizard;
 
 use history::UndoHistory;

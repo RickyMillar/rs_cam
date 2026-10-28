@@ -440,7 +440,7 @@ impl RsCamApp {
         if self.controller.state().gui.selection_ui.mode.is_some()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            self.controller.state_mut().gui.selection_ui.mode = None;
+            self.controller.state_mut().gui.selection_ui.set_pick(None);
         }
 
         ctx.input(|i| {

@@ -1,3 +1,4 @@
+use crate::interaction::input::InputAction;
 use crate::render::{LineUniforms, MeshUniforms, ViewportCallback};
 use crate::state::Workspace;
 use crate::state::selection::Selection;
@@ -252,6 +253,31 @@ impl RsCamApp {
             .tab_edit(id)
             .filter(|mode| mode.answer().is_some())
             .map(|_| id)
+    }
+
+    /// The input actions of this frame (B2): read the sample, then run the
+    /// one transition on `SelectionUi::drag`.
+    fn viewport_input_actions(
+        &mut self,
+        ui: &egui::Ui,
+        response: &egui::Response,
+    ) -> Vec<InputAction> {
+        use crate::interaction::input::{InputEnv, InputSample, MouseScheme, step};
+        let sample = InputSample::read(ui, response);
+        // The tab test runs only on a primary drag start, as before.
+        let press_on_tab = sample.started == Some(egui::PointerButton::Primary)
+            && self
+                .active_tab_edit()
+                .zip(sample.press_origin)
+                .is_some_and(|(id, origin)| self.tab_under(id, origin).is_some());
+        let env = InputEnv {
+            // B3: the setting.
+            scheme: MouseScheme::LeftOrbit,
+            pick_mode_on: self.active_pick().is_some(),
+            press_on_tab,
+        };
+        let drag = &mut self.controller.state_mut().gui.selection_ui.drag;
+        step(drag, &sample, &env)
     }
 
     /// The tab mark under the screen point `pos`, in the tab editor of
@@ -706,14 +732,20 @@ impl RsCamApp {
             self.draw_sim_deflection_overlay(ui, rect);
         }
 
+        // B2: one input sample and one transition per frame. The actions
+        // apply below at the places the old reads were, so the frame order
+        // does not change: the click, then the hover, then the right-click
+        // and the tab drag, then the camera.
+        let actions = self.viewport_input_actions(ui, &response);
+
         // Click-to-select toolpath in viewport. A click that only closed a
         // dock popover does not also select (MOCKUPS §12, Q1).
-        if response.clicked()
-            && !dock.closed_popover_on_click
-            && let Some(pos) = response.interact_pointer_pos()
-        {
-            let shift = ui.input(|i| i.modifiers.shift);
-            self.handle_viewport_click(pos, shift);
+        for action in &actions {
+            if let InputAction::Click { pos, shift } = *action
+                && !dock.closed_popover_on_click
+            {
+                self.handle_viewport_click(pos, shift);
+            }
         }
 
         // B1: one hover pick per frame. Every hover reader below reads
@@ -808,13 +840,19 @@ impl RsCamApp {
         // P4.6: a right-click on a tab deletes it; a drag that starts on a
         // tab moves it, and the camera does not orbit during that drag.
         // P3: in pick mode, a right-click on an item adds its layer.
-        if response.secondary_clicked()
-            && let Some(pos) = response.interact_pointer_pos()
-            && !self.handle_tab_secondary_click(pos)
-        {
-            let _ = self.handle_pick_mode_click(pos, crate::ui::pick_bar::PickClick::Secondary);
+        for action in &actions {
+            if let InputAction::SecondaryClick { pos } = *action
+                && !self.handle_tab_secondary_click(pos)
+            {
+                let _ = self.handle_pick_mode_click(pos, crate::ui::pick_bar::PickClick::Secondary);
+            }
         }
-        let tab_drag = self.handle_tab_drag(ui, &response);
+        // §1.5: `step` claims a primary drag that starts on a tab before
+        // any orbit (`InputEnv::press_on_tab`).
+        let tab_drag = actions.contains(&InputAction::TabDrag);
+        if tab_drag {
+            let _ = self.handle_tab_drag(ui, &response);
+        }
         if !tab_drag
             && response.hovered()
             && let Some(id) = self.active_tab_edit()
@@ -832,64 +870,14 @@ impl RsCamApp {
             self.tab_upload_pending = true;
             ui.ctx().request_repaint();
         }
-        if !tab_drag && response.dragged_by(egui::PointerButton::Primary) {
-            let delta = response.drag_delta();
-            // C1: the pivot is the target. The pivot under the cursor is C3a.
-            let camera = &mut self.controller.state_mut().camera;
-            let pivot = camera.pose().target;
-            camera.orbit_about(pivot, delta.x, delta.y);
-        }
-        if response.dragged_by(egui::PointerButton::Secondary)
-            || response.dragged_by(egui::PointerButton::Middle)
-        {
-            let delta = response.drag_delta();
-            // The pan step follows the viewport height, so a point at the
-            // target depth stays under the cursor.
-            self.controller
-                .state_mut()
-                .camera
-                .pan_pixels(delta.x, delta.y, rect.height(), None);
-        }
-
-        // The wheel belongs to whatever is UNDER the pointer, and the
-        // viewport is the bottom layer.
-        //
-        // Reported 2026-09-16: scrolling inside the Explore window also
-        // zoomed the 3D camera behind it. The guard below used to be
-        // `rect.contains(pointer)` against the GLOBAL input state, and a
-        // rectangle knows nothing about layering — a modal window drawn over
-        // the viewport sits inside that same rectangle, so the wheel drove
-        // both. `Response::hovered` is the layer-aware question: egui's hit
-        // test resolves which `Area` is on top, so it is false while an
-        // `Area` above the viewport owns the pointer.
-        //
-        // `unwrap_or_default` made it worse: with no pointer at all the
-        // fallback is `Pos2::ZERO`, which a viewport anchored near the
-        // window origin contains.
-        let scroll_raw = ui.input(|i| i.smooth_scroll_delta.y);
-        if response.hovered() && scroll_raw != 0.0 {
-            // Normalize scroll direction: use signum for consistent zoom
-            // across platforms, then scale by the absolute magnitude clamped
-            // to a reasonable range so track-pad and mouse-wheel both feel right.
-            let magnitude = scroll_raw.abs().clamp(1.0, 120.0);
-            let scroll = scroll_raw.signum() * magnitude;
-            // The wheel zooms toward the point under the cursor at the target
-            // depth. Without a pointer position it zooms toward the target.
-            let k = (-scroll * crate::render::camera::ZOOM_PER_WHEEL).exp();
-            let pointer = ui.input(|i| i.pointer.hover_pos());
-            let camera = &mut self.controller.state_mut().camera;
-            let point = pointer
-                .and_then(|pos| {
-                    camera.pose().point_at_target_depth(
-                        pos.x - rect.min.x,
-                        pos.y - rect.min.y,
-                        rect.width(),
-                        rect.height(),
-                    )
-                })
-                .unwrap_or(camera.pose().target);
-            camera.zoom_toward(point, k);
-        }
+        // The drag and the wheel (G-SCROLLLAYER: `InputSample::read` takes
+        // the wheel only with the layer-aware hover answer). A
+        // `BoxRelease` is B6; it cannot occur under `LeftOrbit`.
+        crate::interaction::input::apply_camera(
+            &actions,
+            &mut self.controller.state_mut().camera,
+            rect,
+        );
 
         let aspect = if rect.height() > 0.0 {
             rect.width() / rect.height()

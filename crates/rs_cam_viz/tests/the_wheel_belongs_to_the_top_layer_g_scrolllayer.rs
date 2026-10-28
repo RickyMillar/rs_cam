@@ -42,7 +42,11 @@
 //! sufficient, which a source scan never could.
 //!
 //! Arm 2 is the source scan, because arm 1 proves the tool works without
-//! proving the product uses it.
+//! proving the product uses it. Since B2 the viewport reads the wheel in
+//! `interaction/input.rs` (`InputSample::read`), so the arm scans that file
+//! and checks that `app/viewport.rs` takes its input from there. The unit
+//! tests `step_a_wheel_zooms_by_the_old_ratio_only_when_hovered` and
+//! `step_a_pinch_zooms_only_when_hovered` hold the gate in `step`.
 
 #![expect(
     clippy::expect_used,
@@ -122,9 +126,16 @@ fn a_window_over_the_viewport_takes_the_pointer_g_scrolllayer() {
 
 #[test]
 fn the_viewport_zoom_asks_whether_it_is_hovered_g_scrolllayer() {
-    let source =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/viewport.rs"))
-            .expect("read viewport source");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let viewport =
+        std::fs::read_to_string(root.join("src/app/viewport.rs")).expect("read viewport source");
+    assert!(
+        viewport.contains("InputSample::read(ui, response)"),
+        "the viewport no longer reads its input through `InputSample::read`; \
+         re-derive this arm"
+    );
+    let source = std::fs::read_to_string(root.join("src/interaction/input.rs"))
+        .expect("read the input layer source");
     let at = source
         .find("smooth_scroll_delta")
         .expect("the viewport no longer reads the wheel; re-derive this arm");

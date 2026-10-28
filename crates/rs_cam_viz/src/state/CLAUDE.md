@@ -11,7 +11,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support. R2: `ToolpathEntry.tool_id` is `Option` (an op with no tool), as `ShoePlanRow.tool_id` and `RunLine.tool_id`.
 - `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216);
   `ToolpathRun` is the run and its result as one value (F031), `status()` derives `ComputeStatus`.
-- `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`.
+- `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`. `viewport_input.rs` — `DragState` (B2), held on `SelectionUi::drag`.
 - `camera.rs` — `CameraState` (A C2): the pose is private; `pose()` reads, the methods write; `first_model_bounds`, `fit_to_first_model`.
 - `viewport.rs` — `drawing_draws`: every visible drawing draws; the selected op's model draws its states.
 - `selection.rs` — the tree focus `Selection`, `wire_kind`. F2: the field is private; `focus()` reads, `set_focus()` writes (returns `FocusChange`). `overlays.rs` — the dock and catalogue; `ModelVisibility` (view state). `selection_highlight.rs` — the report the viewport colours, `ReportDetector`, `HoverDetector`, the note keys (a `NoOpenSide` note frames its first face, a `FreesThePart` note the part outline); P6.7 open path marks: `open_path_side`, `path_middle`, `side_point` (drawing frame).

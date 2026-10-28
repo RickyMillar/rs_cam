@@ -229,6 +229,9 @@ pub struct SelectionUi {
     /// The text of the filter box of the Geometry tab (GT-2): it filters
     /// the rows of the list; it does not search the model.
     pub list_filter: String,
+    /// The pointer gesture in the viewport (B2). A change or the end of the
+    /// mode sets it to `Idle`, so a gesture never outlives its mode.
+    pub drag: super::viewport_input::DragState,
 }
 
 impl SelectionUi {
@@ -241,7 +244,15 @@ impl SelectionUi {
     /// Turn the pick mode of `target` on `toolpath_id` on (with `mode`) or
     /// off. Any other mode ends (L-3).
     pub fn set_pick(&mut self, mode: Option<PickMode>) {
-        self.mode = mode.map(ViewportMode::Pick);
+        self.set_mode(mode.map(ViewportMode::Pick));
+    }
+
+    /// Write the mode. A change of the mode ends the gesture (B2).
+    fn set_mode(&mut self, mode: Option<ViewportMode>) {
+        if self.mode != mode {
+            self.drag = super::viewport_input::DragState::Idle;
+        }
+        self.mode = mode;
     }
 
     /// The pick mode that is on, of any toolpath.
@@ -272,9 +283,9 @@ impl SelectionUi {
     /// mode (L-3).
     pub fn set_tab_edit(&mut self, toolpath_id: ToolpathId, on: bool) {
         if on {
-            self.mode = Some(ViewportMode::Tabs(TabEditMode::new(toolpath_id)));
+            self.set_mode(Some(ViewportMode::Tabs(TabEditMode::new(toolpath_id))));
         } else if self.tab_edit(toolpath_id).is_some() {
-            self.mode = None;
+            self.set_mode(None);
         }
     }
 
@@ -312,7 +323,7 @@ impl SelectionUi {
             .as_ref()
             .is_some_and(|m| Some(m.toolpath_id()) != toolpath_id)
         {
-            self.mode = None;
+            self.set_mode(None);
         }
         if self
             .offers_for

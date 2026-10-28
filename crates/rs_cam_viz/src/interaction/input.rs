@@ -1,0 +1,817 @@
+//! The viewport input layer (design B, commit B2).
+//!
+//! [`InputSample::read`] reads the viewport `Response` and the input state
+//! once per frame. [`step`] is THE transition: a pure function of the
+//! gesture, the sample and the environment, with no egui context and no
+//! session. It returns the actions; the frame applies them, and
+//! [`apply_camera`] applies the camera ones. A test drives `step` and
+//! `apply_camera` without a frame.
+//!
+//! The mouse scheme is one table ([`rows`]). [`classify`] reads it, so a
+//! printed row and the behaviour cannot differ.
+
+use crate::state::camera::CameraState;
+use crate::state::viewport_input::{BoxMode, BoxOp, DragState};
+use egui::PointerButton;
+
+/// The buttons that [`InputSample::read`] tests, in order.
+const BUTTONS: [PointerButton; 5] = [
+    PointerButton::Primary,
+    PointerButton::Secondary,
+    PointerButton::Middle,
+    PointerButton::Extra1,
+    PointerButton::Extra2,
+];
+
+/// The raw wheel step range. A track pad and a notched wheel both give a
+/// step in this range, so both zoom at a usable rate.
+const WHEEL_STEP_RANGE: (f32, f32) = (1.0, 120.0);
+
+/// What the viewport `Response` and the input state say this frame.
+#[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is one separate egui answer of the frame; they are not a state"
+)]
+pub struct InputSample {
+    /// The button whose drag started this frame (the first match).
+    pub started: Option<PointerButton>,
+    /// The button that drags this frame (the first match).
+    pub dragging: Option<PointerButton>,
+    /// The drag ended this frame.
+    pub stopped: bool,
+    /// The pointer move of the drag this frame, in points.
+    pub delta: egui::Vec2,
+    /// Where the button went down.
+    pub press_origin: Option<egui::Pos2>,
+    /// The pointer of an interaction (`interact_pointer_pos`).
+    pub pointer: Option<egui::Pos2>,
+    /// The pointer over the viewport (`hover_pos`): the zoom point.
+    pub hover_pos: Option<egui::Pos2>,
+    pub modifiers: egui::Modifiers,
+    pub clicked: bool,
+    pub secondary_clicked: bool,
+    /// The layer-aware hover answer: false while a window above the
+    /// viewport owns the pointer (G-SCROLLLAYER).
+    pub hovered: bool,
+    /// The pinch factor (`InputState::zoom_delta`); 1.0 is no pinch.
+    pub zoom_delta: f32,
+    /// The wheel move, in points. egui removes a Ctrl + scroll from it and
+    /// gives it to `zoom_delta`, so one gesture never zooms twice.
+    pub scroll: egui::Vec2,
+}
+
+impl InputSample {
+    /// Read the sample of this frame from `ui` and the viewport `response`.
+    pub fn read(ui: &egui::Ui, response: &egui::Response) -> Self {
+        let (press_origin, hover_pos, modifiers, zoom_delta, scroll) = ui.input(|i| {
+            (
+                i.pointer.press_origin(),
+                i.pointer.hover_pos(),
+                i.modifiers,
+                i.zoom_delta(),
+                i.smooth_scroll_delta,
+            )
+        });
+        let hovered = response.hovered();
+        // The wheel and the pinch zoom only while the viewport is hovered
+        // (layer-aware). The hover read is beside the wheel read on purpose:
+        // the sentry `the_wheel_belongs_to_the_top_layer_g_scrolllayer`
+        // holds it.
+        Self {
+            started: BUTTONS.into_iter().find(|b| response.drag_started_by(*b)),
+            dragging: BUTTONS.into_iter().find(|b| response.dragged_by(*b)),
+            stopped: response.drag_stopped(),
+            delta: response.drag_delta(),
+            press_origin,
+            pointer: response.interact_pointer_pos(),
+            hover_pos,
+            modifiers,
+            clicked: response.clicked(),
+            secondary_clicked: response.secondary_clicked(),
+            hovered,
+            zoom_delta,
+            scroll,
+        }
+    }
+}
+
+/// What the frame does after the transition.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputAction {
+    /// Turn the camera by a drag of `(dx, dy)` points.
+    Orbit { dx: f32, dy: f32 },
+    /// Pan the camera by a drag of `(dx, dy)` points.
+    Pan { dx: f32, dy: f32 },
+    /// Zoom by the distance ratio `factor` toward the point under `at`
+    /// (screen points), or toward the target when `at` is `None`.
+    Zoom { factor: f32, at: Option<egui::Pos2> },
+    /// Hand the click to the click chain (`handle_viewport_click`).
+    Click { pos: egui::Pos2, shift: bool },
+    /// Hand the right-click to the tab delete, then the layer pick.
+    SecondaryClick { pos: egui::Pos2 },
+    /// The release of a box: the rectangle and its rule.
+    BoxRelease {
+        rect: egui::Rect,
+        mode: BoxMode,
+        op: BoxOp,
+    },
+    /// The tab editor handles this frame (`handle_tab_drag`).
+    TabDrag,
+}
+
+/// The facts the transition needs and cannot read from the sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InputEnv {
+    pub scheme: MouseScheme,
+    pub pick_mode_on: bool,
+    /// The tab editor is on and the press origin is on a tab mark.
+    pub press_on_tab: bool,
+}
+
+/// THE transition. The order in one frame is: drag start, drag, release,
+/// click, wheel.
+pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<InputAction> {
+    let mut actions = Vec::new();
+    let delta = |actions: &mut Vec<InputAction>, orbit: bool| {
+        let (dx, dy) = (s.delta.x, s.delta.y);
+        actions.push(if orbit {
+            InputAction::Orbit { dx, dy }
+        } else {
+            InputAction::Pan { dx, dy }
+        });
+    };
+
+    if let Some(button) = s.started {
+        // A start begins a new gesture. A gesture whose release the frame
+        // did not see does not hold the new one back.
+        *state = DragState::Idle;
+        if button == PointerButton::Primary && env.press_on_tab {
+            *state = DragState::Tab;
+            actions.push(InputAction::TabDrag);
+        } else {
+            match classify(env.scheme, button, s.modifiers) {
+                Intent::Orbit => {
+                    *state = DragState::Orbit { pivot: None };
+                    delta(&mut actions, true);
+                }
+                Intent::Pan => {
+                    *state = DragState::Pan;
+                    delta(&mut actions, false);
+                }
+                Intent::Select if env.pick_mode_on => {
+                    if let Some(anchor) = s.press_origin {
+                        let op = if s.modifiers.command {
+                            BoxOp::Remove
+                        } else {
+                            BoxOp::Add
+                        };
+                        *state = DragState::BoxSelect {
+                            anchor,
+                            to: s.pointer.unwrap_or(anchor),
+                            op,
+                        };
+                    }
+                }
+                Intent::Select | Intent::None => {}
+            }
+        }
+    } else if s.dragging.is_some() {
+        match state {
+            DragState::Orbit { .. } => delta(&mut actions, true),
+            DragState::Pan => delta(&mut actions, false),
+            DragState::BoxSelect { to, .. } => {
+                if let Some(p) = s.pointer {
+                    *to = p;
+                }
+            }
+            DragState::Tab => actions.push(InputAction::TabDrag),
+            DragState::Idle | DragState::Cancelled => {}
+        }
+    } else if !s.stopped && *state != DragState::Idle {
+        // No drag, no release: the frame lost the release. Go back to idle.
+        *state = DragState::Idle;
+    }
+
+    if s.stopped {
+        match std::mem::take(state) {
+            DragState::BoxSelect { anchor, to, op } => actions.push(InputAction::BoxRelease {
+                rect: egui::Rect::from_two_pos(anchor, to),
+                mode: DragState::box_mode(anchor, to),
+                op,
+            }),
+            DragState::Tab => actions.push(InputAction::TabDrag),
+            DragState::Idle | DragState::Orbit { .. } | DragState::Pan | DragState::Cancelled => {}
+        }
+    }
+
+    if s.clicked
+        && let Some(pos) = s.pointer
+    {
+        actions.push(InputAction::Click {
+            pos,
+            shift: s.modifiers.shift,
+        });
+    }
+    if s.secondary_clicked
+        && let Some(pos) = s.pointer
+    {
+        actions.push(InputAction::SecondaryClick { pos });
+    }
+
+    if s.hovered {
+        // A pinch apart (zoom_delta > 1) moves the camera closer.
+        if s.zoom_delta != 1.0 && s.zoom_delta > 0.0 {
+            actions.push(InputAction::Zoom {
+                factor: 1.0 / s.zoom_delta,
+                at: s.hover_pos,
+            });
+        }
+        let raw = s.scroll.y;
+        if raw != 0.0 {
+            // The sign gives the direction; the magnitude is clamped so a
+            // track pad and a mouse wheel both zoom at a usable rate.
+            let magnitude = raw.abs().clamp(WHEEL_STEP_RANGE.0, WHEEL_STEP_RANGE.1);
+            let scroll = raw.signum() * magnitude;
+            actions.push(InputAction::Zoom {
+                factor: (-scroll * crate::render::camera::ZOOM_PER_WHEEL).exp(),
+                at: s.hover_pos,
+            });
+        }
+    }
+    actions
+}
+
+/// Apply the camera actions (`Orbit`, `Pan`, `Zoom`) to `camera` in the
+/// viewport `rect`. Every other action is left to the caller.
+pub fn apply_camera(actions: &[InputAction], camera: &mut CameraState, rect: egui::Rect) {
+    for action in actions {
+        match *action {
+            InputAction::Orbit { dx, dy } => {
+                // C1: the pivot is the target. The pivot under the cursor
+                // is C3a.
+                let pivot = camera.pose().target;
+                camera.orbit_about(pivot, dx, dy);
+            }
+            InputAction::Pan { dx, dy } => {
+                // The pan step follows the viewport height, so a point at
+                // the target depth stays under the cursor.
+                camera.pan_pixels(dx, dy, rect.height(), None);
+            }
+            InputAction::Zoom { factor, at } => {
+                // Toward the point under the cursor at the target depth;
+                // toward the target without a pointer position.
+                let point = at
+                    .and_then(|pos| {
+                        camera.pose().point_at_target_depth(
+                            pos.x - rect.min.x,
+                            pos.y - rect.min.y,
+                            rect.width(),
+                            rect.height(),
+                        )
+                    })
+                    .unwrap_or(camera.pose().target);
+                camera.zoom_toward(point, factor);
+            }
+            InputAction::Click { .. }
+            | InputAction::SecondaryClick { .. }
+            | InputAction::BoxRelease { .. }
+            | InputAction::TabDrag => {}
+        }
+    }
+}
+
+// ── the mouse scheme ───────────────────────────────────────────────────
+
+/// The viewport mouse scheme. B3 moves it to a core setting and deletes
+/// `LeftOrbit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseScheme {
+    /// Today's buttons: left drag orbits, right or middle drag pans.
+    LeftOrbit,
+    /// Right drag orbits, middle drag pans, left selects (Onshape).
+    WebCad,
+    /// Middle drag orbits, Ctrl + middle drag pans, left selects
+    /// (SolidWorks).
+    DesktopCad,
+}
+
+/// What a drag does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Intent {
+    Orbit,
+    Pan,
+    Select,
+    None,
+}
+
+/// One row of a scheme: the button, the modifier, the intent, the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchemeRow {
+    pub button: PointerButton,
+    /// Ctrl (Cmd on macOS): egui `Modifiers::command`.
+    pub command: bool,
+    pub intent: Intent,
+    pub keys: &'static str,
+    pub does: &'static str,
+}
+
+const fn row(
+    button: PointerButton,
+    command: bool,
+    intent: Intent,
+    keys: &'static str,
+    does: &'static str,
+) -> SchemeRow {
+    SchemeRow {
+        button,
+        command,
+        intent,
+        keys,
+        does,
+    }
+}
+
+const LEFT_ORBIT: [SchemeRow; 6] = [
+    row(
+        PointerButton::Primary,
+        false,
+        Intent::Orbit,
+        "Left drag",
+        "Orbit",
+    ),
+    row(
+        PointerButton::Primary,
+        true,
+        Intent::Orbit,
+        "Ctrl + left drag",
+        "Orbit",
+    ),
+    row(
+        PointerButton::Secondary,
+        false,
+        Intent::Pan,
+        "Right drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Secondary,
+        true,
+        Intent::Pan,
+        "Ctrl + right drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Middle,
+        false,
+        Intent::Pan,
+        "Middle drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Middle,
+        true,
+        Intent::Pan,
+        "Ctrl + middle drag",
+        "Pan",
+    ),
+];
+
+const WEB_CAD: [SchemeRow; 6] = [
+    row(
+        PointerButton::Primary,
+        false,
+        Intent::Select,
+        "Left drag",
+        "Box select (pick mode)",
+    ),
+    row(
+        PointerButton::Primary,
+        true,
+        Intent::Select,
+        "Ctrl + left drag",
+        "Box remove (pick mode)",
+    ),
+    row(
+        PointerButton::Secondary,
+        false,
+        Intent::Orbit,
+        "Right drag",
+        "Orbit",
+    ),
+    row(
+        PointerButton::Secondary,
+        true,
+        Intent::Pan,
+        "Ctrl + right drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Middle,
+        false,
+        Intent::Pan,
+        "Middle drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Middle,
+        true,
+        Intent::Pan,
+        "Ctrl + middle drag",
+        "Pan",
+    ),
+];
+
+const DESKTOP_CAD: [SchemeRow; 6] = [
+    row(
+        PointerButton::Primary,
+        false,
+        Intent::Select,
+        "Left drag",
+        "Box select (pick mode)",
+    ),
+    row(
+        PointerButton::Primary,
+        true,
+        Intent::Select,
+        "Ctrl + left drag",
+        "Box remove (pick mode)",
+    ),
+    row(
+        PointerButton::Secondary,
+        false,
+        Intent::Pan,
+        "Right drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Secondary,
+        true,
+        Intent::Pan,
+        "Ctrl + right drag",
+        "Pan",
+    ),
+    row(
+        PointerButton::Middle,
+        false,
+        Intent::Orbit,
+        "Middle drag",
+        "Orbit",
+    ),
+    row(
+        PointerButton::Middle,
+        true,
+        Intent::Pan,
+        "Ctrl + middle drag",
+        "Pan",
+    ),
+];
+
+/// THE table of `scheme`. `classify` and the shortcuts window both read
+/// it, so the text and the behaviour cannot differ.
+pub fn rows(scheme: MouseScheme) -> &'static [SchemeRow] {
+    match scheme {
+        MouseScheme::LeftOrbit => &LEFT_ORBIT,
+        MouseScheme::WebCad => &WEB_CAD,
+        MouseScheme::DesktopCad => &DESKTOP_CAD,
+    }
+}
+
+/// The intent of a drag that starts with `button` and `modifiers`. The
+/// first row whose button and `command` match wins; no row gives `None`.
+/// Shift and Alt do not change the intent.
+pub fn classify(scheme: MouseScheme, button: PointerButton, modifiers: egui::Modifiers) -> Intent {
+    rows(scheme)
+        .iter()
+        .find(|r| r.button == button && r.command == modifiers.command)
+        .map_or(Intent::None, |r| r.intent)
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::*;
+
+    const ENV: InputEnv = InputEnv {
+        scheme: MouseScheme::LeftOrbit,
+        pick_mode_on: false,
+        press_on_tab: false,
+    };
+
+    fn sample() -> InputSample {
+        InputSample {
+            started: None,
+            dragging: None,
+            stopped: false,
+            delta: egui::Vec2::ZERO,
+            press_origin: None,
+            pointer: None,
+            hover_pos: None,
+            modifiers: egui::Modifiers::NONE,
+            clicked: false,
+            secondary_clicked: false,
+            hovered: false,
+            zoom_delta: 1.0,
+            scroll: egui::Vec2::ZERO,
+        }
+    }
+
+    fn drag(button: PointerButton, start: bool) -> InputSample {
+        InputSample {
+            started: start.then_some(button),
+            dragging: Some(button),
+            delta: egui::vec2(3.0, -2.0),
+            press_origin: Some(egui::pos2(100.0, 100.0)),
+            pointer: Some(egui::pos2(103.0, 98.0)),
+            ..sample()
+        }
+    }
+
+    #[test]
+    fn step_a_start_on_a_tab_is_a_tab_drag() {
+        let mut state = DragState::Idle;
+        let env = InputEnv {
+            press_on_tab: true,
+            ..ENV
+        };
+        let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
+        assert_eq!(state, DragState::Tab);
+        assert_eq!(actions, vec![InputAction::TabDrag]);
+    }
+
+    #[test]
+    fn step_an_orbit_intent_orbits_with_the_delta() {
+        let mut state = DragState::Idle;
+        let actions = step(&mut state, &drag(PointerButton::Primary, true), &ENV);
+        assert_eq!(state, DragState::Orbit { pivot: None });
+        assert_eq!(actions, vec![InputAction::Orbit { dx: 3.0, dy: -2.0 }]);
+    }
+
+    #[test]
+    fn step_a_pan_intent_pans_with_the_delta() {
+        for button in [PointerButton::Secondary, PointerButton::Middle] {
+            let mut state = DragState::Idle;
+            let actions = step(&mut state, &drag(button, true), &ENV);
+            assert_eq!(state, DragState::Pan);
+            assert_eq!(actions, vec![InputAction::Pan { dx: 3.0, dy: -2.0 }]);
+        }
+    }
+
+    #[test]
+    fn step_a_select_intent_in_pick_mode_starts_a_box() {
+        let mut state = DragState::Idle;
+        let env = InputEnv {
+            scheme: MouseScheme::WebCad,
+            pick_mode_on: true,
+            press_on_tab: false,
+        };
+        let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
+        assert_eq!(
+            state,
+            DragState::BoxSelect {
+                anchor: egui::pos2(100.0, 100.0),
+                to: egui::pos2(103.0, 98.0),
+                op: BoxOp::Add,
+            }
+        );
+        assert!(actions.is_empty(), "{actions:?}");
+    }
+
+    #[test]
+    fn step_a_select_intent_without_pick_mode_does_nothing() {
+        let mut state = DragState::Idle;
+        let env = InputEnv {
+            scheme: MouseScheme::WebCad,
+            ..ENV
+        };
+        let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
+        assert_eq!(state, DragState::Idle);
+        assert!(actions.is_empty(), "{actions:?}");
+        // The rest of that drag does nothing either.
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &env);
+        assert_eq!(state, DragState::Idle);
+        assert!(actions.is_empty(), "{actions:?}");
+    }
+
+    #[test]
+    fn step_a_click_is_a_click() {
+        let mut state = DragState::Idle;
+        let s = InputSample {
+            clicked: true,
+            pointer: Some(egui::pos2(5.0, 6.0)),
+            modifiers: egui::Modifiers::SHIFT,
+            ..sample()
+        };
+        let actions = step(&mut state, &s, &ENV);
+        assert_eq!(state, DragState::Idle);
+        assert_eq!(
+            actions,
+            vec![InputAction::Click {
+                pos: egui::pos2(5.0, 6.0),
+                shift: true
+            }]
+        );
+    }
+
+    #[test]
+    fn step_a_secondary_click_is_a_secondary_click() {
+        let mut state = DragState::Idle;
+        let s = InputSample {
+            secondary_clicked: true,
+            pointer: Some(egui::pos2(5.0, 6.0)),
+            ..sample()
+        };
+        let actions = step(&mut state, &s, &ENV);
+        assert_eq!(state, DragState::Idle);
+        assert_eq!(
+            actions,
+            vec![InputAction::SecondaryClick {
+                pos: egui::pos2(5.0, 6.0)
+            }]
+        );
+    }
+
+    #[test]
+    fn step_a_pinch_zooms_only_when_hovered() {
+        let at = Some(egui::pos2(40.0, 30.0));
+        let mut state = DragState::Idle;
+        let s = InputSample {
+            zoom_delta: 1.25,
+            hover_pos: at,
+            hovered: true,
+            ..sample()
+        };
+        assert_eq!(
+            step(&mut state, &s, &ENV),
+            vec![InputAction::Zoom {
+                factor: 1.0 / 1.25,
+                at
+            }]
+        );
+        let s = InputSample {
+            hovered: false,
+            ..s
+        };
+        assert!(step(&mut state, &s, &ENV).is_empty());
+    }
+
+    #[test]
+    fn step_a_wheel_zooms_by_the_old_ratio_only_when_hovered() {
+        let at = Some(egui::pos2(40.0, 30.0));
+        let mut state = DragState::Idle;
+        for (raw, used) in [(50.0_f32, 50.0_f32), (0.2, 1.0), (-500.0, -120.0)] {
+            let s = InputSample {
+                scroll: egui::vec2(0.0, raw),
+                hover_pos: at,
+                hovered: true,
+                ..sample()
+            };
+            // The C1 wheel: k = exp(-scroll * 0.001), the scroll clamped.
+            let want = (-used * 0.001_f32).exp();
+            assert_eq!(
+                step(&mut state, &s, &ENV),
+                vec![InputAction::Zoom { factor: want, at }],
+                "raw {raw}"
+            );
+            let s = InputSample {
+                hovered: false,
+                ..s
+            };
+            assert!(step(&mut state, &s, &ENV).is_empty(), "raw {raw}");
+        }
+    }
+
+    #[test]
+    fn step_an_orbit_or_a_pan_drag_sends_the_delta() {
+        let mut state = DragState::Orbit { pivot: None };
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        assert_eq!(actions, vec![InputAction::Orbit { dx: 3.0, dy: -2.0 }]);
+        let mut state = DragState::Pan;
+        let actions = step(&mut state, &drag(PointerButton::Secondary, false), &ENV);
+        assert_eq!(actions, vec![InputAction::Pan { dx: 3.0, dy: -2.0 }]);
+        assert_eq!(state, DragState::Pan);
+    }
+
+    #[test]
+    fn step_a_box_drag_moves_its_corner_and_sends_nothing() {
+        let anchor = egui::pos2(100.0, 100.0);
+        let mut state = DragState::BoxSelect {
+            anchor,
+            to: anchor,
+            op: BoxOp::Add,
+        };
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        assert!(actions.is_empty(), "{actions:?}");
+        assert_eq!(
+            state,
+            DragState::BoxSelect {
+                anchor,
+                to: egui::pos2(103.0, 98.0),
+                op: BoxOp::Add
+            }
+        );
+    }
+
+    #[test]
+    fn step_a_box_release_sends_the_rect_and_its_mode() {
+        let anchor = egui::pos2(100.0, 100.0);
+        let to = egui::pos2(60.0, 140.0);
+        let mut state = DragState::BoxSelect {
+            anchor,
+            to,
+            op: BoxOp::Remove,
+        };
+        let s = InputSample {
+            stopped: true,
+            ..sample()
+        };
+        let actions = step(&mut state, &s, &ENV);
+        assert_eq!(state, DragState::Idle);
+        assert_eq!(
+            actions,
+            vec![InputAction::BoxRelease {
+                rect: egui::Rect::from_two_pos(anchor, to),
+                mode: BoxMode::Crossing,
+                op: BoxOp::Remove,
+            }]
+        );
+        assert_eq!(
+            DragState::box_mode(anchor, egui::pos2(140.0, 60.0)),
+            BoxMode::Enclose
+        );
+    }
+
+    #[test]
+    fn step_a_tab_drag_ends_on_its_release() {
+        let mut state = DragState::Tab;
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        assert_eq!(actions, vec![InputAction::TabDrag]);
+        assert_eq!(state, DragState::Tab);
+        let s = InputSample {
+            stopped: true,
+            ..sample()
+        };
+        let actions = step(&mut state, &s, &ENV);
+        assert_eq!(actions, vec![InputAction::TabDrag]);
+        assert_eq!(state, DragState::Idle);
+    }
+
+    #[test]
+    fn step_a_cancelled_box_ends_with_no_action() {
+        let mut state = DragState::Cancelled;
+        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        assert!(
+            actions.is_empty(),
+            "the rest of a cancelled drag: {actions:?}"
+        );
+        assert_eq!(state, DragState::Cancelled);
+        let s = InputSample {
+            stopped: true,
+            ..sample()
+        };
+        let actions = step(&mut state, &s, &ENV);
+        assert!(actions.is_empty(), "{actions:?}");
+        assert_eq!(state, DragState::Idle);
+    }
+
+    #[test]
+    fn step_a_lost_release_goes_back_to_idle() {
+        let mut state = DragState::Pan;
+        let actions = step(&mut state, &sample(), &ENV);
+        assert!(actions.is_empty(), "{actions:?}");
+        assert_eq!(state, DragState::Idle);
+    }
+
+    #[test]
+    fn apply_camera_with_the_target_is_the_c1_camera() {
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(800.0, 600.0));
+        let mut camera = CameraState::default();
+        let mut want = *camera.pose();
+        apply_camera(
+            &[
+                InputAction::Orbit { dx: 4.0, dy: 2.0 },
+                InputAction::Pan { dx: 3.0, dy: 1.0 },
+                InputAction::Zoom {
+                    factor: 0.9,
+                    at: None,
+                },
+            ],
+            &mut camera,
+            rect,
+        );
+        let target = want.target;
+        want.orbit_about(target, 4.0, 2.0);
+        want.pan_pixels(3.0, 1.0, 600.0, None);
+        let target = want.target;
+        want.zoom_toward(target, 0.9);
+        if *camera.pose() != want {
+            panic!(
+                "apply_camera added arithmetic: {:?} != {want:?}",
+                camera.pose()
+            );
+        }
+    }
+}
