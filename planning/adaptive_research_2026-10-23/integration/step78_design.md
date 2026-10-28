@@ -1,7 +1,7 @@
 # Step 7.8 design: the template "Geodesic body + edges"
 
-Author: I4. Date: 2026-10-28. Base: `22e96b652`. Design only; this step
-changes no code.
+Author: I4. Date: 2026-10-28. Base: `22e96b652`. Approved by the lead
+(D-T1 to D-T4 as recommended; C4 on for the edge op, see §4 and §6).
 
 The operator ruling (OPERATOR_DECISIONS_2026-10-28.md, midday):
 
@@ -150,7 +150,7 @@ No number is typed. Each value comes from a rule or a door that exists.
 | `stock_source` | `FromRemainingStock` ("Rest machining: from previous ops") | the D47 pair; D50 starts it at the left stock top |
 | boundary | `{ enabled, DerivedRestRegions { op 1's id }, Center, offset 0 }` | the D53 sentry pair (`session_on`: `offset: 0.0`). The regions are already tool-centre positions, so the draft's tool-diameter offset would shrink them by a whole tool |
 | containment | `Center` | "Inside-safe": with an equal tool, D53 refuses nothing and `Center` is exact; `Inside` would inset by the tool radius and can collapse narrow regions (G-BOUNDCOLLAPSE) |
-| `contour_each_level` (C4) | not set (the field default, off) | the D69 ruling: "off by default". See §6 |
+| `contour_each_level` (C4) | `true` (lead ruling at approval; the line lands in a follow-up patch once C4 is committed) | G-RESTDOC, D61/D68: this pair is the G-RESTDOC case (D61: Corne op 5 cut 8.96 mm at a Depth/Pass of 6); "off by default" is the field default, and the template sets the edge op's own value |
 | name | "Geodesic edges" | the template |
 
 **"Inside-safe."** The template never writes `Inside` itself. With an equal
@@ -175,11 +175,10 @@ one that is allowed.
 
 ## 6. C4 and W4
 
-- **C4 (`contour_each_level`)**: the template leaves it off. The ruling
-  makes it "off by default". G-RESTDOC (whether the region-side fix or C4
-  is the answer) is still a study. The operator turns it on in the edge
-  op's Cut tab (one checkbox, I3's row). Once G-RESTDOC is ruled, the
-  template default can change in one line, with the ruling as its source.
+- **C4 (`contour_each_level`)**: changed at approval. The template sets
+  it ON for the edge op (source: G-RESTDOC, D61/D68), so it never makes a
+  pair with a known over-Depth/Pass cut. C4 is not committed yet: the one
+  line and its test land in a follow-up patch.
 - **W4 (the tabbed Profile)**: the template does NOT offer it. A tabbed
   Profile ends the job: it cuts after every finishing op (the D69 ruling
   "the job ends with a tabbed Profile"). The template makes the roughing

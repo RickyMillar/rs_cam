@@ -1,0 +1,1317 @@
+diff --git a/FEATURE_CATALOG.md b/FEATURE_CATALOG.md
+index f2be811c7..e8e8d4090 100644
+--- a/FEATURE_CATALOG.md
++++ b/FEATURE_CATALOG.md
+@@ -105,7 +105,7 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
+ - Generate All submits only ENABLED operations on every project (G-GENALLDISABLED, 2026-09-10); before, a project with no rest-stock chain took a branch that submitted every operation, enabled or not. A project with nothing enabled now says "No enabled toolpaths to generate" rather than starting a run with no work in it
+ - Generate is a plan over the dependency edges (2026-09-19, `planning/gen_sim_rest_ux_2026-09-18/`): Generate All, a single Generate and the setup row's "Regenerate setup only" all walk one core plan that simulates a setup prefix before an operation that starts from remaining stock, generates in plan order, and finishes with one full simulation. A single Generate first makes the operation's upstream current. The plan's simulations run at the Simulation panel's setting; on "Auto from tool size" the plan takes the finer of auto and the cell size the rest tool needs (tip radius / 5), silently; a manual value coarser than that raises a confirm naming both values before the plan starts, and that confirm is the only place the plan writes the panel. A blocked operation never toasts; its row reads WAIT. The Generate All button carries the step count and the current activity while a plan runs, and a click cancels it
+ - the Operations list draws each dependency as a rail down the swatch column from the source to the dependent operation: green solid when ready, amber dashed while it waits on a generation or a simulation, red dashed when nothing can satisfy it; the rail breaks at a setup header. A row in a running simulation draws a ring in its dot slot, a generating row a spinner. One edit stales every dependent row and every waiting rail, through the setup boundary
+-- rest analysis runs only on demand: another operation's boundary set to "Rest regions of …", or the rest-heatmap overlay switched on for the operation. The Rest Analysis checkbox is gone; the dials sit behind a disclosure titled by the demand. The loader derives the flag from the demand, so a saved flag with no consumer loads off A Geodesic Adaptive 3D Rough states its own rest regions under that demand (integration step 7.5, D44): the pieces it left, one union grown by one planner cell, in tool-centre space and clipped to its own containment (D48), so a consumer with `Center` containment and a tool no larger than the rough's stays inside the rough's boundary. The generic analysis then keeps them and attaches only its heatmap grid. With no demand nothing is published, and the output is unchanged. With the regions it states the top Z of the stock it left in them (D50, step 7.5b); a 3D Adaptive consumer on remaining stock starts its levels no higher, but never moves its floor and never puts more than one Depth/Pass on its first level. A consumer with `Center` or `Outside` containment and a tool larger than its source's refuses to generate and names both radii and both fixes (D53). The GUI shows it before a generate (step G-C): `Center` and `Outside` are grey in the Containment combo with the sizes on hover, the header reads `Refused · see Cut` with Generate off, and `Use Inside` on the Containment row writes `Inside` unless `Inside` would collapse the boundary (core `boundary_collapse_with`); the `Rest Regions` pick writes `Inside` for a larger tool with the `⟲` badge (D-2). The source combo and the source's rest disclosure read `· N regions`, and the combo hover gives the top Z of the regions. A rest-boundary refusal from the last generate reads as a short line with a `⟳` that generates the source (G-E). Sentries: `a_rough_publishes_the_regions_it_leaves_d44`, `a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `a_rest_consumer_starts_at_the_left_stock_top_d50`, `a_larger_rest_consumer_tool_refuses_d53`.
++- rest analysis runs only on demand: another operation's boundary set to "Rest regions of …", or the rest-heatmap overlay switched on for the operation. The Rest Analysis checkbox is gone; the dials sit behind a disclosure titled by the demand. The loader derives the flag from the demand, so a saved flag with no consumer loads off A Geodesic Adaptive 3D Rough states its own rest regions under that demand (integration step 7.5, D44): the pieces it left, one union grown by one planner cell, in tool-centre space and clipped to its own containment (D48), so a consumer with `Center` containment and a tool no larger than the rough's stays inside the rough's boundary. The generic analysis then keeps them and attaches only its heatmap grid. With no demand nothing is published, and the output is unchanged. With the regions it states the top Z of the stock it left in them (D50, step 7.5b); a 3D Adaptive consumer on remaining stock starts its levels no higher, but never moves its floor and never puts more than one Depth/Pass on its first level. A consumer with `Center` or `Outside` containment and a tool larger than its source's refuses to generate and names both radii and both fixes (D53). The GUI shows it before a generate (step G-C): `Center` and `Outside` are grey in the Containment combo with the sizes on hover, the header reads `Refused · see Cut` with Generate off, and `Use Inside` on the Containment row writes `Inside` unless `Inside` would collapse the boundary (core `boundary_collapse_with`); the `Rest Regions` pick writes `Inside` for a larger tool with the `⟲` badge (D-2). The source combo and the source's rest disclosure read `· N regions`, and the combo hover gives the top Z of the regions. A rest-boundary refusal from the last generate reads as a short line with a `⟳` that generates the source (G-E). The add menu's "Geodesic body + edges" (step 7.8, operator ruling 2026-10-28) adds the pair in one command (`AddGeodesicBodyAndEdges`; MCP `add_geodesic_body_and_edges`): "Geodesic body" (Geodesic Adaptive, rest analysis on) and, after it, "Geodesic edges" (Contour Parallel, rest machining from previous ops, the rest regions of op 1 with Center containment and offset 0, op 1's tool). The edge op is an ordinary op: its enable box skips it; MCP `edges: false` adds the body alone, and an edge tool larger than the body's refuses (D53). Sentries: `the_template_adds_the_channel_pair_s7_8`, viz `the_template_has_one_door_s7_8`. Sentries: `a_rough_publishes_the_regions_it_leaves_d44`, `a_derived_rest_rough_cuts_only_the_leftovers_d44`, `a_rest_consumer_stays_inside_the_source_boundary_d48`, `a_rest_consumer_starts_at_the_left_stock_top_d50`, `a_larger_rest_consumer_tool_refuses_d53`.
+ 
+ ## Simulation, verification, and export
+ 
+diff --git a/crates/rs_cam_core/src/session/command.rs b/crates/rs_cam_core/src/session/command.rs
+index 044491577..ec2622a45 100644
+--- a/crates/rs_cam_core/src/session/command.rs
++++ b/crates/rs_cam_core/src/session/command.rs
+@@ -383,6 +383,17 @@ macro_rules! for_each_command {
+                      "a job file states a bore operation with type = \"bore\"",
+                  ),
+              }),
++            // Step 7.8 (operator ruling 2026-10-28): the template "Geodesic
++            // body + edges" of the add menu, and the MCP tool of that name.
++            (Command, AddGeodesicBodyAndEdges, "add_geodesic_body_and_edges",
++             AddGeodesicBodyAndEdgesArgs, Effects,
++             Surfaces {
++                 gui: Reach::Reached,
++                 mcp: Reach::Reached,
++                 cli: Reach::Skip(
++                     "a job file has no rest-regions boundary to state the edge op",
++                 ),
++             }),
+             (Command, RemoveToolpath, "remove_toolpath", RemoveToolpathArgs, Effects,
+              Surfaces {
+                  gui: Reach::Reached,
+@@ -1719,6 +1730,26 @@ pub struct AddBoreFromDrillArgs {
+     pub drill_id: crate::ids::ToolpathId,
+ }
+ 
++/// The arguments of the `add_geodesic_body_and_edges` command (step 7.8):
++/// the two drafts of [`ProjectSession::draft_geodesic_pair`].
++///
++/// The command adds `body`, then `edges` directly after it in the same
++/// setup, in ONE effects window (one undo step). It writes op 1's new id as
++/// the source of the edge op's rest-regions boundary, and keeps op 1's
++/// rest analysis on only when the edge op exists. It refuses, and adds
++/// nothing, when the edge tool is larger than op 1's (D53, with the
++/// `Center` sentence). [`Effects::created`] is op 1's index; the edge op is
++/// the next index.
++#[derive(Debug, Clone)]
++pub struct AddGeodesicBodyAndEdgesArgs {
++    /// The setup that both ops join.
++    pub setup_index: usize,
++    /// Op 1, "Geodesic body".
++    pub body: Box<ToolpathConfig>,
++    /// Op 2, "Geodesic edges", or `None`.
++    pub edges: Option<Box<ToolpathConfig>>,
++}
++
+ /// The arguments of the `remove_toolpath` command.
+ #[derive(Debug, Clone)]
+ pub struct RemoveToolpathArgs {
+@@ -2808,6 +2839,11 @@ impl ProjectSession {
+             }
+             Command::AddToolpath(args) => self.add_toolpath(args.setup_index, *args.config),
+             Command::AddBoreFromDrill(args) => self.add_bore_from_drill(args.index, args.drill_id),
++            Command::AddGeodesicBodyAndEdges(args) => self.add_geodesic_body_and_edges(
++                args.setup_index,
++                *args.body,
++                args.edges.map(|e| *e),
++            ),
+             Command::RemoveToolpath(args) => self.remove_toolpath(args.index),
+             Command::AddTool(args) => self.add_tool(*args.tool),
+             Command::AddToolFromLibrary(args) => self.add_tool(*args.tool),
+diff --git a/crates/rs_cam_core/src/session/mod.rs b/crates/rs_cam_core/src/session/mod.rs
+index 23b42066b..20ae85ccc 100644
+--- a/crates/rs_cam_core/src/session/mod.rs
++++ b/crates/rs_cam_core/src/session/mod.rs
+@@ -28,7 +28,8 @@ pub mod multitool;
+ mod mutation;
+ mod op_draft;
+ pub use op_draft::{
+-    DraftRefusal, DraftRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
++    DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME, GeodesicPairDraft,
++    GeodesicPairRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
+ };
+ mod pin_report;
+ mod pins;
+@@ -50,12 +51,12 @@ pub use auto_stock::auto_stock_bbox;
+ pub(crate) use auto_stock::fit_auto_stock;
+ pub use builder::ProjectSessionBuilder;
+ pub use command::{
+-    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddModelArgs, AddObstacleArgs, AddSetupArgs,
+-    AddStockChangeArgs, AddToolArgs, AddToolpathArgs, AdoptModelGeometryArgs,
+-    AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs, ApplyFeedsArgs,
+-    AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId, CommandKind,
+-    EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation, ForgetResultArgs,
+-    GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
++    AddAlignmentPinArgs, AddBoreFromDrillArgs, AddGeodesicBodyAndEdgesArgs, AddModelArgs,
++    AddObstacleArgs, AddSetupArgs, AddStockChangeArgs, AddToolArgs, AddToolpathArgs,
++    AdoptModelGeometryArgs, AdoptRestFreshComparisonArgs, AdoptResultArgs, AdoptSimulationArgs,
++    ApplyFeedsArgs, AutoEnableRestAnalysisArgs, BuildModelFacesArgs, Command, CommandId,
++    CommandKind, EditModelDrawingArgs, EditSelectionArgs, Effects, FeedModulation,
++    ForgetResultArgs, GenerateToolpathArgs, GetOperationSchemaAnswer, GetOperationSchemaArgs,
+     ImportMachineSettingsArgs, InvalidateMachineArgs, InvalidateModelArgs, InvalidateStockArgs,
+     InvalidateToolArgs, InvalidateToolpathInputsArgs, Job, JobAnswer, JobHandle, LedgerEdit,
+     ListItemsAnswer, ListItemsArgs, MoveStockChangeArgs, MoveToolpathToSetupArgs,
+diff --git a/crates/rs_cam_core/src/session/mutation/toolpath.rs b/crates/rs_cam_core/src/session/mutation/toolpath.rs
+index e96376f91..d8f571e9d 100644
+--- a/crates/rs_cam_core/src/session/mutation/toolpath.rs
++++ b/crates/rs_cam_core/src/session/mutation/toolpath.rs
+@@ -205,6 +205,69 @@ impl ProjectSession {
+         Ok(effects)
+     }
+ 
++    /// Step 7.8: add the pair of the template "Geodesic body + edges". The
++    /// door of
++    /// [`Command::AddGeodesicBodyAndEdges`](crate::session::Command::AddGeodesicBodyAndEdges):
++    /// each op goes through [`Self::add_toolpath_impl`], the function of
++    /// the `AddToolpath` row, after the same checks, in one effects window.
++    ///
++    /// The pair rule lives here, so every surface gets it: op 1 keeps its
++    /// rest analysis on exactly when the edge op exists (D44), the edge op
++    /// takes op 1's new id as its `DerivedRestRegions` source, and an edge
++    /// tool larger than op 1's refuses before anything is added (D53).
++    pub(crate) fn add_geodesic_body_and_edges(
++        &mut self,
++        setup_index: usize,
++        mut body: ToolpathConfig,
++        edges: Option<ToolpathConfig>,
++    ) -> Result<Effects, SessionError> {
++        use crate::compute::config::BoundarySource;
++        if self.setups.get(setup_index).is_none() {
++            return Err(SessionError::SetupNotFound(setup_index));
++        }
++        body.rest_analysis.enabled = edges.is_some();
++        for config in std::iter::once(&body).chain(edges.as_ref()) {
++            config.floor_conflict()?;
++            crate::compute::domain::validate_toolpath(config)?;
++        }
++        if let Some(edge) = edges.as_ref()
++            && let (Some(own), Some(theirs)) = (
++                self.built_tool_radius_mm(edge.tool_id),
++                self.built_tool_radius_mm(body.tool_id),
++            )
++            && own > theirs
++        {
++            let larger = crate::session::LargerRestConsumer {
++                op_name: edge.name.clone(),
++                source_toolpath_id: crate::ids::ToolpathId::placeholder(),
++                source_name: body.name.clone(),
++                tool_radius_mm: own,
++                source_tool_radius_mm: theirs,
++            };
++            return Err(SessionError::OperationFailed(larger.refusal("Center")));
++        }
++        let mut created = None;
++        let mut effects = self.try_with_effects(None, |session| {
++            let body_index = session.add_toolpath_impl(setup_index, body)?;
++            created = Some(body_index);
++            if let Some(mut edge) = edges {
++                let body_id = session
++                    .toolpath_configs
++                    .get(body_index)
++                    .map(|tc| tc.id)
++                    .ok_or(SessionError::ToolpathNotFound(body_index))?;
++                edge.boundary.enabled = true;
++                edge.boundary.source = BoundarySource::DerivedRestRegions {
++                    source_toolpath_id: body_id,
++                };
++                let _ = session.add_toolpath_impl(setup_index, edge)?;
++            }
++            Ok::<(), SessionError>(())
++        })?;
++        effects.created = created;
++        Ok(effects)
++    }
++
+     /// Remove a toolpath by its index in `toolpath_configs`.
+     ///
+     /// Updates all setup `toolpath_indices` so that indices above the
+diff --git a/crates/rs_cam_core/src/session/op_draft.rs b/crates/rs_cam_core/src/session/op_draft.rs
+index 8f455ca9e..72db40548 100644
+--- a/crates/rs_cam_core/src/session/op_draft.rs
++++ b/crates/rs_cam_core/src/session/op_draft.rs
+@@ -655,3 +655,148 @@ impl ProjectSession {
+         }
+     }
+ }
++
++// ── Step 7.8: the template "Geodesic body + edges" ─────────────────────
++
++/// The name of op 1 of [`ProjectSession::draft_geodesic_pair`].
++pub const GEODESIC_BODY_NAME: &str = "Geodesic body";
++/// The name of op 2 (the optional edge op).
++pub const GEODESIC_EDGES_NAME: &str = "Geodesic edges";
++
++/// Step 7.8 (operator ruling 2026-10-28, midday): what the template
++/// "Geodesic body + edges" adds.
++#[derive(Debug, Clone, Copy)]
++pub struct GeodesicPairRequest {
++    /// The setup that both ops join.
++    pub setup_index: usize,
++    /// The tool of op 1 (the GUI: the first fitting tool).
++    pub tool: ToolChoice,
++    /// The model of both ops.
++    pub model: ModelChoice,
++    /// The optional edge op (D-T2: the GUI always adds it; MCP `edges`).
++    pub edges: bool,
++    /// The tool of the edge op, or `None` for op 1's tool (D-T3). A tool
++    /// larger than op 1's refuses at the command (D-T4, D53).
++    pub edge_tool: Option<ToolId>,
++}
++
++impl GeodesicPairRequest {
++    /// The GUI request: the first fitting tool, the model rule with the
++    /// selected model, and the edge op with op 1's tool.
++    #[must_use]
++    pub fn new(setup_index: usize, selected_model: Option<ModelId>) -> Self {
++        Self {
++            setup_index,
++            tool: ToolChoice::FirstFitting,
++            model: ModelChoice::Rule {
++                selected: selected_model,
++            },
++            edges: true,
++            edge_tool: None,
++        }
++    }
++}
++
++/// The two drafts of the template. Send them as one
++/// [`Command::AddGeodesicBodyAndEdges`](crate::session::Command::AddGeodesicBodyAndEdges).
++#[derive(Debug, Clone)]
++pub struct GeodesicPairDraft {
++    /// Op 1, "Geodesic body".
++    pub body: ToolpathDraft,
++    /// Op 2, "Geodesic edges", or `None`.
++    pub edges: Option<ToolpathDraft>,
++}
++
++impl ProjectSession {
++    /// Step 7.8: draft the pair of the template "Geodesic body + edges"
++    /// through THE draft door ([`Self::draft_toolpath`]), so each op takes
++    /// the tool, model, Suggest values, dressups and boundary of any new
++    /// 3D Rough. The template then sets only these fields:
++    ///
++    /// - op 1: `clearing_strategy = GeodesicAdaptive` (the ruling), and its
++    ///   rest analysis on when the edge op exists (D44: the runner keeps
++    ///   the regions only on demand);
++    /// - op 2: `clearing_strategy = ContourParallel` (the ruling),
++    ///   `stock_source = FromRemainingStock`, and the boundary
++    ///   `DerivedRestRegions` with `Center` containment and offset 0 (the
++    ///   D47 pair of the D53 sentry). The source id is op 1's, which the
++    ///   command writes when it adds op 1; the draft holds a placeholder.
++    ///   Its tool is op 1's tool unless the request states one: an equal
++    ///   tool is the largest that D53 allows, and op 1's regions are the
++    ///   centre positions of that tool (D48), so `Center` is exact.
++    ///
++    /// # Errors
++    ///
++    /// The refusals of [`Self::draft_toolpath`].
++    pub fn draft_geodesic_pair(
++        &self,
++        request: GeodesicPairRequest,
++    ) -> Result<GeodesicPairDraft, DraftRefusal> {
++        use crate::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
++        use crate::compute::operation_configs::ClearingStrategy;
++        let GeodesicPairRequest {
++            setup_index,
++            tool,
++            model,
++            edges,
++            edge_tool,
++        } = request;
++        let body_request = DraftRequest {
++            op_type: OperationType::Adaptive3d,
++            tool,
++            model,
++            setup_index,
++            name: GEODESIC_BODY_NAME.to_owned(),
++            picked_faces: Vec::new(),
++        };
++        let mut body = self.draft_toolpath(body_request)?;
++        if let OperationConfig::Adaptive3d(cfg) = &mut body.config.operation {
++            cfg.clearing_strategy = ClearingStrategy::GeodesicAdaptive;
++        }
++        body.config.rest_analysis.enabled = edges;
++        if !edges {
++            return Ok(GeodesicPairDraft { body, edges: None });
++        }
++        let edge_tool = match (edge_tool, body.config.tool_id) {
++            (Some(id), _) | (None, Some(id)) => ToolChoice::Exact(id),
++            // R2: op 1 has no tool, and the edge op has none either.
++            (None, None) => ToolChoice::FirstFitting,
++        };
++        let edge_request = DraftRequest {
++            op_type: OperationType::Adaptive3d,
++            tool: edge_tool,
++            model: ModelChoice::Exact(body.config.model_id),
++            setup_index,
++            name: GEODESIC_EDGES_NAME.to_owned(),
++            picked_faces: Vec::new(),
++        };
++        let mut edge = self.draft_toolpath(edge_request)?;
++        if let OperationConfig::Adaptive3d(cfg) = &mut edge.config.operation {
++            cfg.clearing_strategy = ClearingStrategy::ContourParallel;
++        }
++        edge.config.stock_source = crate::compute::config::StockSource::FromRemainingStock;
++        edge.config.boundary = BoundaryConfig {
++            enabled: true,
++            source: BoundarySource::DerivedRestRegions {
++                source_toolpath_id: crate::ToolpathId::placeholder(),
++            },
++            containment: BoundaryContainment::Center,
++            offset: 0.0,
++        };
++        Ok(GeodesicPairDraft {
++            body,
++            edges: Some(edge),
++        })
++    }
++
++    /// The radius (mm) of the built cutter of `tool_id`: the radius the
++    /// containment uses (`ResolvedGenInputs::boundary_centre`). `None` for
++    /// no tool or a tool that does not build.
++    pub(crate) fn built_tool_radius_mm(&self, tool_id: Option<ToolId>) -> Option<f64> {
++        use crate::tool::MillingCutter as _;
++        tool_id
++            .and_then(|id| self.tool_by_id(id))
++            .and_then(|tool| super::session_cutter(tool).ok())
++            .map(|def| def.diameter() / 2.0)
++    }
++}
+diff --git a/crates/rs_cam_mcp/src/server.rs b/crates/rs_cam_mcp/src/server.rs
+index b9c2b74a2..d51905959 100644
+--- a/crates/rs_cam_mcp/src/server.rs
++++ b/crates/rs_cam_mcp/src/server.rs
+@@ -1490,6 +1490,28 @@ pub struct AddToolpathParam {
+     pub name: Option<String>,
+ }
+ 
++/// Step 7.8: `add_geodesic_body_and_edges`, the add menu's template
++/// "Geodesic body + edges".
++#[derive(Deserialize, schemars::JsonSchema, Default)]
++#[serde(deny_unknown_fields)]
++pub struct AddGeodesicBodyAndEdgesParam {
++    /// Setup index (0-based) that both toolpaths join.
++    pub setup_index: usize,
++    /// Tool index (0-based) from list_tools for the body rough. Omit it to
++    /// take the first project tool that a 3D Rough accepts (as
++    /// `add_toolpath`).
++    pub tool_index: Option<usize>,
++    /// Model ID (the `id` from `inspect_model`, not an index). Omit it to
++    /// take the model of the core rule (as `add_toolpath`).
++    pub model_id: Option<usize>,
++    /// Add the edge op (default true). False adds the body rough alone.
++    pub edges: Option<bool>,
++    /// Tool index (0-based) for the edge op. Omit it to take the body's
++    /// tool. A tool larger than the body's is refused (D53) and nothing is
++    /// added.
++    pub edge_tool_index: Option<usize>,
++}
++
+ /// Geometry selection P6.7: `add_bore_from_drill`, the "Add a Bore for
+ /// these" action of a Drill hole row.
+ #[derive(Deserialize, schemars::JsonSchema, Default)]
+@@ -3608,6 +3630,10 @@ pub fn build_info() -> serde_json::Value {
+             // `capped_min_feed_mm_min` and the bounded `capped_moves` rows
+             // (the moves with a feed cap); `max_capped_moves` caps them.
+             "cut_trace_capped_moves",
++            // Step 7.8 (2026-10-28): `add_geodesic_body_and_edges` adds the
++            // template "Geodesic body + edges" (a Geodesic Adaptive rough
++            // and an optional Contour Parallel rest op on its regions).
++            "geodesic_body_and_edges",
+         ],
+     })
+ }
+diff --git a/crates/rs_cam_viz/src/app/mcp/commands.rs b/crates/rs_cam_viz/src/app/mcp/commands.rs
+index d8ed25546..0c3198d3f 100644
+--- a/crates/rs_cam_viz/src/app/mcp/commands.rs
++++ b/crates/rs_cam_viz/src/app/mcp/commands.rs
+@@ -571,6 +571,7 @@ impl RsCamApp {
+                 )
+             }
+             CoreRequest::AddToolpath(p) => self.core_add_toolpath(p, before),
++            CoreRequest::AddGeodesicBodyAndEdges(p) => self.core_add_geodesic_pair(&p, before),
+             CoreRequest::AddBoreFromDrill(p) => {
+                 // The id pairs with the index (W13b): the core row refuses
+                 // an index that names another toolpath.
+@@ -857,6 +858,82 @@ impl RsCamApp {
+         )
+     }
+ 
++    /// Step 7.8: build the `add_geodesic_body_and_edges` command from THE
++    /// core draft of the pair (`draft_geodesic_pair`), as the GUI action
++    /// does. The tool and model arguments mean what they mean on
++    /// `add_toolpath`.
++    fn core_add_geodesic_pair(
++        &mut self,
++        p: &rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam,
++        mut before: CoreBefore,
++    ) -> CorePlan {
++        let session = self.controller.state().session();
++        let tools = session.list_tools();
++        let tool_at = |index: usize| tools.get(index).map(|info| info.id);
++        let tool = match p.tool_index {
++            None => rs_cam_core::session::ToolChoice::FirstFitting,
++            Some(i) => match tool_at(i) {
++                Some(id) => rs_cam_core::session::ToolChoice::Exact(id),
++                None => {
++                    return CorePlan::Answered(CoreReply::refused(
++                        &format!("Error: Tool index {i} not found"),
++                        Some("tool_index"),
++                    ));
++                }
++            },
++        };
++        let edge_tool = match p.edge_tool_index {
++            None => None,
++            Some(i) => match tool_at(i) {
++                Some(id) => Some(id),
++                None => {
++                    return CorePlan::Answered(CoreReply::refused(
++                        &format!("Error: Tool index {i} not found"),
++                        Some("edge_tool_index"),
++                    ));
++                }
++            },
++        };
++        let model = match p.model_id {
++            Some(id) => {
++                rs_cam_core::session::ModelChoice::Exact(rs_cam_core::ids::ModelId::from_wire(id))
++            }
++            None => rs_cam_core::session::ModelChoice::Rule { selected: None },
++        };
++        let request = rs_cam_core::session::GeodesicPairRequest {
++            setup_index: p.setup_index,
++            tool,
++            model,
++            edges: p.edges.unwrap_or(true),
++            edge_tool,
++        };
++        let draft = match session.draft_geodesic_pair(request) {
++            Ok(draft) => draft,
++            Err(e) => {
++                return CorePlan::Answered(CoreReply::refused(
++                    &format!("Cannot add toolpath: {e}"),
++                    None,
++                ));
++            }
++        };
++        let drafts: Vec<&rs_cam_core::session::ToolpathDraft> = std::iter::once(&draft.body)
++            .chain(draft.edges.as_ref())
++            .collect();
++        before.extra = serde_json::json!({
++            "edges": draft.edges.is_some(),
++            "no_tool": drafts.iter().find_map(|d| d.no_tool.clone()),
++            "feeds_refusal": drafts.iter().find_map(|d| d.feeds_refusal.clone()),
++        });
++        CorePlan::Apply(
++            Command::AddGeodesicBodyAndEdges(rs_cam_core::session::AddGeodesicBodyAndEdgesArgs {
++                setup_index: p.setup_index,
++                body: Box::new(draft.body.config),
++                edges: draft.edges.map(|edge| Box::new(edge.config)),
++            }),
++            Box::new(before),
++        )
++    }
++
+     /// Build the `add_tool` command.
+     ///
+     /// [`build_tool_config`] refuses when the geometry that defines the
+@@ -1627,6 +1704,9 @@ impl RsCamApp {
+                 let tp_name = self.mcp_toolpath_name(p.index);
+                 Some(format!("MCP: Added a Bore for '{tp_name}'"))
+             }
++            CoreRequest::AddGeodesicBodyAndEdges(_) => {
++                Some("MCP: Added 'Geodesic body + edges'".to_owned())
++            }
+             CoreRequest::RemoveToolpath(p) => {
+                 let index = p.index;
+                 Some(format!("MCP: Removed toolpath {index}"))
+@@ -1769,6 +1849,7 @@ impl RsCamApp {
+             | CommandId::SetToolpathDebugOptions
+             | CommandId::AddToolpath
+             | CommandId::AddBoreFromDrill
++            | CommandId::AddGeodesicBodyAndEdges
+             | CommandId::RemoveToolpath
+             | CommandId::AddTool
+             | CommandId::AddToolFromLibrary
+@@ -2304,6 +2385,55 @@ impl RsCamApp {
+                 );
+                 CoreReply::succeeded(reply)
+             }
++            CommandId::AddGeodesicBodyAndEdges => {
++                let body_index = effects.created.unwrap_or_default();
++                let edges = before.extra.get("edges").and_then(serde_json::Value::as_bool)
++                    == Some(true);
++                let edges_index = edges.then_some(body_index + 1);
++                // The GUI runtime entries, as `AddToolpath` makes them.
++                let infos: Vec<(rs_cam_core::ToolpathId, bool)> =
++                    std::iter::once(body_index)
++                        .chain(edges_index)
++                        .filter_map(|i| {
++                            self.controller
++                                .state()
++                                .session()
++                                .toolpath_configs()
++                                .get(i)
++                                .map(|tc| (tc.id, tc.operation.default_auto_regen()))
++                        })
++                        .collect();
++                for &(id, auto_regen) in &infos {
++                    self.controller
++                        .state_mut()
++                        .gui
++                        .toolpath_rt
++                        .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
++                }
++                if let Some(&(id, _)) = infos.first() {
++                    self.controller.state_mut().selection = Selection::Toolpath(id);
++                }
++                self.controller.state_mut().gui.mark_edited();
++                let message = match edges_index {
++                    Some(e) => format!(
++                        "Added toolpath {body_index} (Geodesic body) and toolpath {e} \
++                         (Geodesic edges)."
++                    ),
++                    None => format!("Added toolpath {body_index} (Geodesic body)."),
++                };
++                let reply = self.mcp_mutation_result(
++                    message,
++                    serde_json::json!({
++                        "body_index": body_index,
++                        "edges_index": edges_index,
++                        "no_tool": before.extra.get("no_tool"),
++                        "feeds_refusal": before.extra.get("feeds_refusal"),
++                    }),
++                    std::iter::once(body_index).chain(edges_index).collect(),
++                    &before.diagnostics,
++                );
++                CoreReply::succeeded(reply)
++            }
+             CommandId::AddBoreFromDrill => {
+                 let index = effects.created.unwrap_or_default();
+                 // The GUI runtime entry of the new toolpath, as
+diff --git a/crates/rs_cam_viz/src/controller/events/mod.rs b/crates/rs_cam_viz/src/controller/events/mod.rs
+index 259ac08b6..5a3ab1a25 100644
+--- a/crates/rs_cam_viz/src/controller/events/mod.rs
++++ b/crates/rs_cam_viz/src/controller/events/mod.rs
+@@ -442,6 +442,7 @@ impl<B: ComputeBackend> AppController<B> {
+             }
+             AppEvent::DuplicateToolpath(tp_id) => self.handle_duplicate_toolpath(tp_id),
+             AppEvent::AddBoreFromDrill(drill_id) => self.handle_add_bore_from_drill(drill_id),
++            AppEvent::AddGeodesicPair => self.handle_add_geodesic_pair(),
+             AppEvent::MoveToolpathUp(tp_id) => self.handle_move_toolpath_up(tp_id),
+             AppEvent::MoveToolpathDown(tp_id) => self.handle_move_toolpath_down(tp_id),
+             AppEvent::ReorderToolpath(tp_id, target_idx) => {
+diff --git a/crates/rs_cam_viz/src/controller/events/toolpath.rs b/crates/rs_cam_viz/src/controller/events/toolpath.rs
+index fb66c351d..79323c24e 100644
+--- a/crates/rs_cam_viz/src/controller/events/toolpath.rs
++++ b/crates/rs_cam_viz/src/controller/events/toolpath.rs
+@@ -56,38 +56,7 @@ impl<B: ComputeBackend> AppController<B> {
+         op_type: crate::state::toolpath::OperationType,
+         model_override: Option<rs_cam_core::ids::ModelId>,
+     ) -> Option<Effects> {
+-        // Q7: the model selected in the Setup rail or the viewport, and the
+-        // faces picked in the viewport.
+-        let (selected_model, picked_faces) = match &self.state.selection {
+-            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
+-            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
+-            Selection::Faces(model_id, faces) => (
+-                Some(*model_id),
+-                faces.iter().map(|face| (*model_id, *face)).collect(),
+-            ),
+-            _ => (None, Vec::new()),
+-        };
+-        let selected_model = model_override.or(selected_model);
+-        let setups = self.state.session().list_setups();
+-        let target_setup_idx = match self.state.selection {
+-            Selection::Toolpath(tp_id) => self
+-                .setup_of_toolpath(tp_id)
+-                .and_then(|sid| setups.iter().position(|s| s.id == sid)),
+-            Selection::Setup(setup_id) | Selection::Obstacle(setup_id, _) => {
+-                setups.iter().position(|s| s.id == setup_id)
+-            }
+-            // Q7: a selected model adds into the first setup whose
+-            // "Models" list holds it (empty = every model).
+-            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
+-                .and_then(|model_id| {
+-                    setups
+-                        .iter()
+-                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
+-                }),
+-            _ => None,
+-        }
+-        .unwrap_or(0); // default to first setup
+-
++        let (target_setup_idx, selected_model, picked_faces) = self.add_target(model_override);
+         let name = format!(
+             "{} {}",
+             op_type.label(),
+@@ -178,6 +147,144 @@ impl<B: ComputeBackend> AppController<B> {
+         effects
+     }
+ 
++    /// Step 7.8: the add menu's "Geodesic body + edges". The pair goes in
++    /// the setup of the GUI selection, with the selected model (Q7), the
++    /// first fitting tool and the edge op (D-T2: its enable box skips it).
++    pub(crate) fn handle_add_geodesic_pair(&mut self) {
++        let (setup_index, selected_model, _picks) = self.add_target(None);
++        let request = rs_cam_core::session::GeodesicPairRequest::new(setup_index, selected_model);
++        if let Err(msg) = self.add_geodesic_pair(request) {
++            tracing::warn!("{msg}");
++            self.push_notification(msg, super::super::Severity::Warning);
++        }
++    }
++
++    /// Step 7.8: draft the pair through core (`draft_geodesic_pair`, THE
++    /// draft door) and add it with ONE `AddGeodesicBodyAndEdges` command.
++    /// The GUI part is the op add's: a runtime entry per op, the selection
++    /// on op 1, and the R2 and S11 toasts. The GUI and MCP both call it.
++    ///
++    /// # Errors
++    ///
++    /// The text of a draft or command refusal ("Cannot add toolpath: …").
++    pub(crate) fn add_geodesic_pair(
++        &mut self,
++        request: rs_cam_core::session::GeodesicPairRequest,
++    ) -> Result<GeodesicPairAdded, String> {
++        let setup_index = request.setup_index;
++        let draft = self
++            .state
++            .session()
++            .draft_geodesic_pair(request)
++            .map_err(|error| format!("Cannot add toolpath: {error}"))?;
++        let notes: Vec<(Option<String>, Option<String>)> = std::iter::once(&draft.body)
++            .chain(draft.edges.as_ref())
++            .map(|d| (d.no_tool.clone(), d.feeds_refusal.clone()))
++            .collect();
++        let effects = self
++            .apply(Command::AddGeodesicBodyAndEdges(
++                rs_cam_core::session::AddGeodesicBodyAndEdgesArgs {
++                    setup_index,
++                    body: Box::new(draft.body.config),
++                    edges: draft.edges.map(|edge| Box::new(edge.config)),
++                },
++            ))
++            .map_err(|error| format!("Cannot add toolpath: {error}"))?;
++        let body_index = effects
++            .created
++            .ok_or_else(|| "Cannot add toolpath: the command created nothing".to_owned())?;
++        let edges_index = (notes.len() > 1).then_some(body_index + 1);
++        // One toast per kind, as the op add gives: the pair shares its tool.
++        if let Some(state) = notes.iter().find_map(|(no_tool, _)| no_tool.clone()) {
++            self.push_notification(
++                format!(
++                    "Added with no tool: {state}. {}.",
++                    rs_cam_core::session::NO_TOOL_FIX
++                ),
++                super::super::Severity::Warning,
++            );
++        }
++        if let Some(e) = notes.iter().find_map(|(_, feeds)| feeds.clone()) {
++            self.push_notification(
++                format!(
++                    "Added with no feeds: {e}. {}.",
++                    rs_cam_core::compute::not_set::FEEDS_NOT_SET_TEXT
++                ),
++                super::super::Severity::Warning,
++            );
++        }
++        let mut body_id = None;
++        for index in std::iter::once(body_index).chain(edges_index) {
++            if let Some(tc) = self.state.session().toolpath_configs().get(index) {
++                let (id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
++                body_id = body_id.or(Some(id));
++                self.state
++                    .gui
++                    .toolpath_rt
++                    .insert(id, crate::state::runtime::ToolpathRuntime::new(auto_regen));
++            }
++        }
++        if let Some(id) = body_id {
++            self.state.selection = Selection::Toolpath(id);
++        }
++        self.pending_upload = true;
++        self.state.gui.mark_edited();
++        Ok(GeodesicPairAdded {
++            body_index,
++            edges_index,
++            no_tool: notes.iter().find_map(|(no_tool, _)| no_tool.clone()),
++            feeds_refusal: notes.iter().find_map(|(_, feeds)| feeds.clone()),
++        })
++    }
++
++    /// Where an add goes, from the GUI selection (Q7): the setup index, the
++    /// selected model (`model_override` wins), and the faces picked in the
++    /// viewport. Shared by the op add and the template (step 7.8).
++    fn add_target(
++        &self,
++        model_override: Option<rs_cam_core::ids::ModelId>,
++    ) -> (
++        usize,
++        Option<rs_cam_core::ids::ModelId>,
++        Vec<(
++            rs_cam_core::ids::ModelId,
++            rs_cam_core::geometry::enriched_mesh::FaceGroupId,
++        )>,
++    ) {
++        // Q7: the model selected in the Setup rail or the viewport, and the
++        // faces picked in the viewport.
++        let (selected_model, picked_faces) = match &self.state.selection {
++            Selection::Model(model_id) => (Some(*model_id), Vec::new()),
++            Selection::Face(model_id, face) => (Some(*model_id), vec![(*model_id, *face)]),
++            Selection::Faces(model_id, faces) => (
++                Some(*model_id),
++                faces.iter().map(|face| (*model_id, *face)).collect(),
++            ),
++            _ => (None, Vec::new()),
++        };
++        let selected_model = model_override.or(selected_model);
++        let setups = self.state.session().list_setups();
++        let target_setup_idx = match self.state.selection {
++            Selection::Toolpath(tp_id) => self
++                .setup_of_toolpath(tp_id)
++                .and_then(|sid| setups.iter().position(|s| s.id == sid)),
++            Selection::Setup(setup_id) | Selection::Obstacle(setup_id, _) => {
++                setups.iter().position(|s| s.id == setup_id)
++            }
++            // Q7: a selected model adds into the first setup whose
++            // "Models" list holds it (empty = every model).
++            Selection::Model(_) | Selection::Face(..) | Selection::Faces(..) => selected_model
++                .and_then(|model_id| {
++                    setups
++                        .iter()
++                        .position(|s| s.model_ids.is_empty() || s.model_ids.contains(&model_id))
++                }),
++            _ => None,
++        }
++        .unwrap_or(0); // default to first setup
++        (target_setup_idx, selected_model, picked_faces)
++    }
++
+     /// Apply one add command. A refusal shows as a Warning toast, so a
+     /// refused add is never silent: the toast is the only record that
+     /// the operator sees.
+@@ -723,3 +830,13 @@ impl<B: ComputeBackend> AppController<B> {
+         }
+     }
+ }
++
++/// Step 7.8: what [`AppController::add_geodesic_pair`] added: the indices
++/// of op 1 and the edge op (`None` without it), and the R2 and S11 notes.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub(crate) struct GeodesicPairAdded {
++    pub body_index: usize,
++    pub edges_index: Option<usize>,
++    pub no_tool: Option<String>,
++    pub feeds_refusal: Option<String>,
++}
+diff --git a/crates/rs_cam_viz/src/mcp_bridge.rs b/crates/rs_cam_viz/src/mcp_bridge.rs
+index 05f8fed53..c803ec087 100644
+--- a/crates/rs_cam_viz/src/mcp_bridge.rs
++++ b/crates/rs_cam_viz/src/mcp_bridge.rs
+@@ -887,6 +887,9 @@ declare_core_requests! {
+         /// Row `AddBoreFromDrill` (geometry selection P6.7).
+         AddBoreFromDrill(rs_cam_mcp::server::AddBoreFromDrillParam)
+             => AddBoreFromDrill, Some(Workspace::Toolpaths);
++        /// Row `AddGeodesicBodyAndEdges` (step 7.8).
++        AddGeodesicBodyAndEdges(rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam)
++            => AddGeodesicBodyAndEdges, Some(Workspace::Toolpaths);
+         RemoveToolpath(rs_cam_mcp::server::RemoveToolpathParam)
+             => RemoveToolpath, None;
+         AddTool(rs_cam_mcp::server::AddToolParam)
+diff --git a/crates/rs_cam_viz/src/mcp_server.rs b/crates/rs_cam_viz/src/mcp_server.rs
+index 111c2004e..f122393db 100644
+--- a/crates/rs_cam_viz/src/mcp_server.rs
++++ b/crates/rs_cam_viz/src/mcp_server.rs
+@@ -1275,6 +1275,22 @@ impl EmbeddedCamServer {
+         )
+     }
+ 
++    #[tool(
++        name = "add_geodesic_body_and_edges",
++        description = "Step 7.8: the GUI add menu's template \"Geodesic body + edges\". It adds TWO 3D Rough toolpaths to `setup_index` in one command: \"Geodesic body\" (clearing_strategy geodesic_adaptive, its rest analysis on) and, after it, \"Geodesic edges\" (clearing_strategy contour_parallel, rest machining from previous ops, machining boundary derived_rest_regions of the body with center containment and offset 0). Each op is drafted as `add_toolpath` drafts it (Suggest, the model rule, the first fitting tool). The edge op takes the body's tool unless `edge_tool_index` states one; a tool larger than the body's is refused with the D53 text and nothing is added. `edges: false` adds the body alone (its rest analysis stays off). Returns `body_index` and `edges_index` (null without the edge op); the edge op is the next index."
++    )]
++    async fn add_geodesic_body_and_edges(
++        &self,
++        Parameters(param): Parameters<rs_cam_mcp::server::AddGeodesicBodyAndEdgesParam>,
++    ) -> String {
++        Self::format_result(
++            self.send_request(McpRequestKind::Core(CoreRequest::AddGeodesicBodyAndEdges(
++                param,
++            )))
++            .await,
++        )
++    }
++
+     #[tool(
+         name = "remove_toolpath",
+         description = "Remove a toolpath by index. Updates setup indices automatically."
+diff --git a/crates/rs_cam_viz/src/ui/mod.rs b/crates/rs_cam_viz/src/ui/mod.rs
+index b1fe974fc..f259285e9 100644
+--- a/crates/rs_cam_viz/src/ui/mod.rs
++++ b/crates/rs_cam_viz/src/ui/mod.rs
+@@ -212,6 +212,9 @@ pub enum AppEvent {
+     /// Geometry selection P6.7: "Add a Bore for these" on a Drill hole row.
+     /// One `AddBoreFromDrill` command and one undo step.
+     AddBoreFromDrill(ToolpathId),
++    /// Step 7.8: the add menu's "Geodesic body + edges": one
++    /// `AddGeodesicBodyAndEdges` command.
++    AddGeodesicPair,
+     RemoveToolpath(ToolpathId),
+     MoveToolpathUp(ToolpathId),
+     MoveToolpathDown(ToolpathId),
+diff --git a/crates/rs_cam_viz/src/ui/toolpath_panel.rs b/crates/rs_cam_viz/src/ui/toolpath_panel.rs
+index a22f9b32f..f1b0814ed 100644
+--- a/crates/rs_cam_viz/src/ui/toolpath_panel.rs
++++ b/crates/rs_cam_viz/src/ui/toolpath_panel.rs
+@@ -1212,6 +1212,42 @@ fn add_menu_items(
+     for &op in OperationType::ALL_3D {
+         add_op_menu_item(ui, op, setup_id, state.session(), events);
+     }
++    add_geodesic_pair_menu_item(ui, setup_id, state.session(), events);
++}
++
++/// Step 7.8: the label of the add menu's template item.
++pub const MENU_GEODESIC_PAIR: &str = "Geodesic body + edges";
++
++/// Step 7.8: the hover of the template item.
++pub const MENU_GEODESIC_PAIR_HOVER: &str = "A Geodesic Adaptive rough, then a Contour \
++     Parallel rest op on the regions it leaves, with the same tool. The edge op is an \
++     ordinary op: untick it in the queue to skip it.";
++
++/// Step 7.8 (operator ruling 2026-10-28): the template "Geodesic body +
++/// edges", one item after the 3D ops. It is offered under the 3D Rough's
++/// rule (a model with a mesh), and off with that rule's reason.
++fn add_geodesic_pair_menu_item(
++    ui: &mut egui::Ui,
++    setup_id: SetupId,
++    session: &rs_cam_core::session::ProjectSession,
++    events: &mut Vec<AppEvent>,
++) {
++    if add_menu_offers(session, OperationType::Adaptive3d) {
++        if ui
++            .button(MENU_GEODESIC_PAIR)
++            .on_hover_text(MENU_GEODESIC_PAIR_HOVER)
++            .clicked()
++        {
++            events.push(AppEvent::Ui(UiCommand::Select(Selection::Setup(setup_id))));
++            events.push(AppEvent::AddGeodesicPair);
++            ui.close();
++        }
++    } else {
++        ui.add_enabled(false, egui::Button::new(MENU_GEODESIC_PAIR))
++            .on_disabled_hover_text(format!(
++                "{MENU_GEODESIC_PAIR_HOVER}\nRequires 3D mesh (STL/STEP)"
++            ));
++    }
+ }
+ 
+ /// True when the add menu offers `op` for the models of `session`.
+diff --git a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+index 5b658c717..a2529000b 100644
+--- a/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
++++ b/crates/rs_cam_viz/tests/snapshots/mcp_wire_surface.json
+@@ -52,6 +52,61 @@
+     },
+     "name": "add_bore_from_drill"
+   },
++  {
++    "inputSchema": {
++      "$schema": "https://json-schema.org/draft/2020-12/schema",
++      "additionalProperties": false,
++      "description": "Step 7.8: `add_geodesic_body_and_edges`, the add menu's template\n\"Geodesic body + edges\".",
++      "properties": {
++        "edge_tool_index": {
++          "description": "Tool index (0-based) for the edge op. Omit it to take the body's\ntool. A tool larger than the body's is refused (D53) and nothing is\nadded.",
++          "format": "uint",
++          "minimum": 0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        },
++        "edges": {
++          "description": "Add the edge op (default true). False adds the body rough alone.",
++          "type": [
++            "boolean",
++            "null"
++          ]
++        },
++        "model_id": {
++          "description": "Model ID (the `id` from `inspect_model`, not an index). Omit it to\ntake the model of the core rule (as `add_toolpath`).",
++          "format": "uint",
++          "minimum": 0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        },
++        "setup_index": {
++          "description": "Setup index (0-based) that both toolpaths join.",
++          "format": "uint",
++          "minimum": 0,
++          "type": "integer"
++        },
++        "tool_index": {
++          "description": "Tool index (0-based) from list_tools for the body rough. Omit it to\ntake the first project tool that a 3D Rough accepts (as\n`add_toolpath`).",
++          "format": "uint",
++          "minimum": 0,
++          "type": [
++            "integer",
++            "null"
++          ]
++        }
++      },
++      "required": [
++        "setup_index"
++      ],
++      "title": "AddGeodesicBodyAndEdgesParam",
++      "type": "object"
++    },
++    "name": "add_geodesic_body_and_edges"
++  },
+   {
+     "inputSchema": {
+       "$schema": "https://json-schema.org/draft/2020-12/schema",
+diff --git a/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs b/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs
+new file mode 100644
+index 000000000..253dbde10
+--- /dev/null
++++ b/crates/rs_cam_core/tests/the_template_adds_the_channel_pair_s7_8.rs
+@@ -0,0 +1,183 @@
++//! Step 7.8 (`planning/adaptive_research_2026-10-23/integration/
++//! step78_design.md`; operator ruling 2026-10-28, midday): the template
++//! "Geodesic body + edges" adds the D47 channel pair in ONE command.
++//!
++//! 1. The draft and the command give op 1 "Geodesic body" (Geodesic
++//!    Adaptive, rest analysis on) and, directly after it, op 2 "Geodesic
++//!    edges" (Contour Parallel, rest machining from previous ops, the
++//!    rest regions of op 1 with Center containment and offset 0, op 1's
++//!    tool). The pair generates: the edge op is not refused (D53, D44).
++//! 2. `edges: false` adds op 1 alone, with its rest analysis off.
++//! 3. An edge tool larger than op 1's refuses with the D53 sentence, and
++//!    the command adds nothing.
++//! 4. With no fitting tool, both ops are added with no tool (R2).
++//!
++//! ```text
++//! cargo test -p rs_cam_core -q --test the_template_adds_the_channel_pair_s7_8
++//! ```
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++
++use common::meshes::height_field;
++use common::session::{mesh_model, stock_over};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::OperationConfig;
++use rs_cam_core::compute::config::{BoundaryContainment, BoundarySource, StockSource};
++use rs_cam_core::compute::operation_configs::ClearingStrategy;
++use rs_cam_core::ids::ToolId;
++use rs_cam_core::session::{
++    AddGeodesicBodyAndEdgesArgs, Command, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME,
++    GeodesicPairRequest, ProjectSession, ProjectSessionBuilder, SessionError, SimulationOptions,
++    SimulationResolution, ToolChoice,
++};
++use std::sync::atomic::AtomicBool;
++
++// The narrow channel of the D53 sentry: one stepped pocket.
++const TOP_Z: f64 = 10.0;
++const FLOOR_Z: f64 = 4.0;
++const MESH_HALF: f64 = 40.0;
++const MESH_STEP: f64 = 0.5;
++const CHANNEL_HALF_LENGTH: f64 = 30.0;
++const CHANNEL_HALF_WIDTH: f64 = 4.8;
++const WIDE_HALF_X: f64 = 34.0;
++const WIDE_HALF_Y: f64 = 24.0;
++const WIDE_FLOOR_Z: f64 = 7.0;
++const SOURCE_DIAMETER: f64 = 6.0;
++const LARGER_DIAMETER: f64 = 8.0;
++/// The simulation cell of the D50 sentry, mm: the mesh step of the
++/// channel, so a cell holds one height sample.
++const SIM_CELL: f64 = MESH_STEP;
++
++/// The channel model and stock, with the tools `diameters` in list order.
++fn session(diameters: &[f64]) -> ProjectSession {
++    let mesh = height_field(MESH_HALF, MESH_STEP, |x, y| {
++        if x.abs() <= CHANNEL_HALF_LENGTH && y.abs() <= CHANNEL_HALF_WIDTH {
++            FLOOR_Z
++        } else if x.abs() <= WIDE_HALF_X && y.abs() <= WIDE_HALF_Y {
++            WIDE_FLOOR_Z
++        } else {
++            TOP_Z
++        }
++    });
++    let mut stock = stock_over(MESH_HALF, TOP_Z);
++    rs_cam_core::compute::fixture_values::fill_unset_stock(&mut stock);
++    let mut builder = ProjectSessionBuilder::new().stock(stock);
++    for &d in diameters {
++        let _ = builder.add_tool(endmill_tool_config(d));
++    }
++    let _ = builder.add_model(mesh_model(mesh, "channel"));
++    builder.build()
++}
++
++fn add(
++    s: &mut ProjectSession,
++    request: GeodesicPairRequest,
++) -> Result<rs_cam_core::session::Effects, SessionError> {
++    let draft = s.draft_geodesic_pair(request).expect("the pair drafts");
++    s.apply(Command::AddGeodesicBodyAndEdges(
++        AddGeodesicBodyAndEdgesArgs {
++            setup_index: 0,
++            body: Box::new(draft.body.config),
++            edges: draft.edges.map(|e| Box::new(e.config)),
++        },
++    ))
++}
++
++fn strategy(op: &OperationConfig) -> ClearingStrategy {
++    match op {
++        OperationConfig::Adaptive3d(cfg) => cfg.clearing_strategy,
++        other => panic!("a 3D Rough, not {}", other.label()),
++    }
++}
++
++#[test]
++fn the_template_adds_the_channel_pair_s7_8() {
++    // 1. The pair, its values, and a generation.
++    let mut s = session(&[SOURCE_DIAMETER]);
++    let effects = add(&mut s, GeodesicPairRequest::new(0, None)).expect("the pair adds");
++    assert_eq!(effects.created, Some(0), "op 1 is the created index");
++    let configs = s.toolpath_configs();
++    assert_eq!(configs.len(), 2);
++    let (body, edge) = (&configs[0], &configs[1]);
++    assert_eq!(s.list_setups()[0].toolpath_indices(), &[0, 1]);
++    assert_eq!(body.name, GEODESIC_BODY_NAME);
++    assert_eq!(
++        strategy(&body.operation),
++        ClearingStrategy::GeodesicAdaptive
++    );
++    assert!(
++        body.rest_analysis.enabled,
++        "D44: the edge op demands the regions"
++    );
++    assert_eq!(edge.name, GEODESIC_EDGES_NAME);
++    assert_eq!(strategy(&edge.operation), ClearingStrategy::ContourParallel);
++    assert_eq!(edge.stock_source, StockSource::FromRemainingStock);
++    assert_eq!(edge.tool_id, body.tool_id, "D-T3: op 1's tool");
++    assert!(edge.boundary.enabled);
++    assert_eq!(
++        edge.boundary.source,
++        BoundarySource::DerivedRestRegions {
++            source_toolpath_id: body.id
++        }
++    );
++    assert_eq!(edge.boundary.containment, BoundaryContainment::Center);
++    assert!(edge.boundary.offset.abs() < f64::EPSILON, "offset 0");
++    assert_eq!(s.larger_rest_consumer(1, body.id), None, "D53 allows it");
++    let cancel = AtomicBool::new(false);
++    s.generate_toolpath(0, &cancel).expect("the body generates");
++    // The edge op reads the remaining stock: the plan simulates op 1 first.
++    let _ = s
++        .run_simulation(
++            &SimulationOptions {
++                resolution: SimulationResolution::Fixed(SIM_CELL),
++                ..SimulationOptions::default()
++            },
++            &cancel,
++        )
++        .expect("simulate the body");
++    s.generate_toolpath(1, &cancel)
++        .expect("the edge op generates");
++    assert!(s.result_at(1).is_some(), "the edge op holds a result");
++
++    // 2. The body alone.
++    let mut s = session(&[SOURCE_DIAMETER]);
++    let mut request = GeodesicPairRequest::new(0, None);
++    request.edges = false;
++    let _ = add(&mut s, request).expect("the body adds");
++    assert_eq!(s.toolpath_configs().len(), 1);
++    assert!(
++        !s.toolpath_configs()[0].rest_analysis.enabled,
++        "no op demands the regions"
++    );
++
++    // 3. A larger edge tool refuses and adds nothing.
++    let mut s = session(&[SOURCE_DIAMETER, LARGER_DIAMETER]);
++    let larger = ToolId::from_raw(s.tools()[1].id.raw());
++    let mut request = GeodesicPairRequest::new(0, None);
++    request.tool = ToolChoice::Exact(ToolId::from_raw(s.tools()[0].id.raw()));
++    request.edge_tool = Some(larger);
++    let Err(SessionError::OperationFailed(text)) = add(&mut s, request) else {
++        panic!("a larger edge tool must refuse");
++    };
++    assert!(
++        text.contains("with Center containment")
++            && text.contains(&format!("{:.3} mm", LARGER_DIAMETER / 2.0))
++            && text.contains("no larger than"),
++        "the D53 sentence: {text}"
++    );
++    assert!(s.toolpath_configs().is_empty(), "the command added nothing");
++
++    // 4. No tool fits: both ops have no tool.
++    let mut s = session(&[]);
++    let _ = add(&mut s, GeodesicPairRequest::new(0, None)).expect("the pair adds");
++    assert_eq!(s.toolpath_configs().len(), 2);
++    assert!(s.toolpath_configs().iter().all(|tc| tc.tool_id.is_none()));
++}
+diff --git a/crates/rs_cam_viz/tests/the_template_has_one_door_s7_8.rs b/crates/rs_cam_viz/tests/the_template_has_one_door_s7_8.rs
+new file mode 100644
+index 000000000..f1dac4dd7
+--- /dev/null
++++ b/crates/rs_cam_viz/tests/the_template_has_one_door_s7_8.rs
+@@ -0,0 +1,192 @@
++//! Step 7.8 (`planning/adaptive_research_2026-10-23/integration/
++//! step78_design.md`): the template "Geodesic body + edges" has ONE door.
++//!
++//! 1. The GUI action (`AppEvent::AddGeodesicPair`, the add menu item)
++//!    stores the core draft of the pair (`draft_geodesic_pair`): the same
++//!    two ops, in order, with the edge op's rest-regions source set to op
++//!    1's new id. Op 1 is selected, and both ops have a runtime entry.
++//! 2. The MCP arm drafts with the same core door and sends the same one
++//!    command; an absent tool and model take the core rules (Q7). The add
++//!    menu draws the item. `RsCamApp` needs an `eframe::CreationContext`,
++//!    so a source scan pins these arms (as the Q7 sentry does).
++//!
++//! ```text
++//! cargo test -p rs_cam_viz -q --test the_template_has_one_door_s7_8
++//! ```
++
++#![expect(
++    clippy::expect_used,
++    clippy::panic,
++    clippy::indexing_slicing,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++use std::path::{Path, PathBuf};
++use std::sync::Arc;
++
++use rs_cam_core::compute::config::BoundarySource;
++use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
++use rs_cam_core::ids::ModelId;
++use rs_cam_core::session::{
++    GeodesicPairRequest, LoadedModel, ProjectSessionBuilder, ToolpathConfig,
++};
++use rs_cam_viz::compute::{
++    CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
++    GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
++};
++use rs_cam_viz::controller::AppController;
++use rs_cam_viz::state::selection::Selection;
++use rs_cam_viz::ui::AppEvent;
++
++/// Accepts every submission, returns nothing.
++struct SilentBackend;
++
++impl ComputeBackend for SilentBackend {
++    fn submit_toolpath(&mut self, _request: ComputeRequest) -> ToolpathSubmitOutcome {
++        ToolpathSubmitOutcome::Queued
++    }
++    fn submit_simulation(&mut self, _request: SimulationRequest) {}
++    fn submit_collision(&mut self, _request: CollisionRequest) {}
++    fn cancel_lane(&mut self, _lane: ComputeLane) {}
++    fn drain_results(&mut self) -> Vec<ComputeMessage> {
++        Vec::new()
++    }
++    fn lane_snapshot(&self, lane: ComputeLane) -> LaneSnapshot {
++        LaneSnapshot::idle(lane)
++    }
++    fn generation_control(&self) -> GenerationControl {
++        GenerationControl::detached()
++    }
++}
++
++const MESH: ModelId = ModelId::from_raw(0);
++
++fn model(id: ModelId, name: &str) -> LoadedModel {
++    LoadedModel {
++        id,
++        path: PathBuf::from(format!("{name}.svg")),
++        name: name.to_owned(),
++        kind: None,
++        mesh: None,
++        items: Arc::default(),
++        enriched_mesh: None,
++        units: Some(rs_cam_core::compute::stock_config::ModelUnits::Millimeters),
++        winding_report: None,
++        load_error: None,
++        import_options: Default::default(),
++        import_report: None,
++        drawing: Default::default(),
++    }
++}
++
++fn controller() -> AppController<SilentBackend> {
++    let mesh = LoadedModel {
++        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
++        kind: Some(rs_cam_core::compute::stock_config::ModelKind::Stl),
++        ..model(MESH, "part")
++    };
++    let session = ProjectSessionBuilder::new()
++        .tool(ToolConfig::new_default(
++            ToolId::from_raw(0),
++            ToolType::EndMill,
++        ))
++        .model(mesh)
++        .build();
++    let mut controller = AppController::with_backend(SilentBackend);
++    controller.state.replace_session(session);
++    controller
++}
++
++fn assert_same(gui: &ToolpathConfig, core: &ToolpathConfig) {
++    assert_eq!(gui.name, core.name, "one name");
++    assert_eq!(gui.model_id, core.model_id, "one model");
++    assert_eq!(gui.tool_id, core.tool_id, "one tool");
++    assert_eq!(
++        gui.operation.params_value_including_nulls(),
++        core.operation.params_value_including_nulls(),
++        "one operation"
++    );
++    assert_eq!(gui.stock_source, core.stock_source, "one stock source");
++    assert_eq!(gui.rest_analysis, core.rest_analysis, "one rest analysis");
++}
++
++#[test]
++fn the_template_has_one_door_s7_8() {
++    let mut c = controller();
++    let core = c
++        .state
++        .session()
++        .draft_geodesic_pair(GeodesicPairRequest::new(0, None))
++        .expect("the pair drafts");
++    let core_edge = core.edges.expect("the edge op").config;
++    c.handle_internal_event(AppEvent::AddGeodesicPair);
++    let configs = c.state.session().toolpath_configs().to_vec();
++    assert_eq!(configs.len(), 2, "one action, two ops");
++    assert_same(&configs[0], &core.body.config);
++    assert_same(&configs[1], &core_edge);
++    assert_eq!(
++        configs[1].boundary.source,
++        BoundarySource::DerivedRestRegions {
++            source_toolpath_id: configs[0].id
++        },
++        "the command wrote op 1's id"
++    );
++    assert_eq!(c.state.selection, Selection::Toolpath(configs[0].id));
++    for tc in &configs {
++        assert!(
++            c.state.gui.toolpath_rt.contains_key(&tc.id),
++            "{}: no runtime entry",
++            tc.name
++        );
++    }
++}
++
++/// The code of a source file, each line cut at its first `//`.
++fn code_of(relative: &str) -> String {
++    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(relative);
++    std::fs::read_to_string(&path)
++        .unwrap_or_else(|err| panic!("read {}: {err}", path.display()))
++        .lines()
++        .map(|line| line.find("//").map_or(line, |at| &line[..at]))
++        .collect::<Vec<_>>()
++        .join("\n")
++}
++
++/// The body of `fn name` in `code`, to the first line that closes it:
++/// `close` is `"\n    }\n"` for a method and `"\n}\n"` for a free function.
++fn fn_body<'a>(code: &'a str, signature: &str, close: &str) -> &'a str {
++    let start = code
++        .find(signature)
++        .unwrap_or_else(|| panic!("`{signature}` is missing"));
++    let rest = &code[start..];
++    let end = rest
++        .find(close)
++        .unwrap_or_else(|| panic!("`{signature}` has no closing brace"));
++    &rest[..end]
++}
++
++#[test]
++fn the_mcp_door_and_the_menu_take_the_core_draft_s7_8() {
++    let mcp = code_of("src/app/mcp/commands.rs");
++    let add = fn_body(&mcp, "fn core_add_geodesic_pair(", "\n    }\n");
++    for needle in [
++        "None => rs_cam_core::session::ToolChoice::FirstFitting",
++        "None => rs_cam_core::session::ModelChoice::Rule { selected: None }",
++        ".draft_geodesic_pair(",
++        "Command::AddGeodesicBodyAndEdges(",
++    ] {
++        assert!(
++            add.contains(needle),
++            "`core_add_geodesic_pair` lacks `{needle}`"
++        );
++    }
++    let menu = code_of("src/ui/toolpath_panel.rs");
++    let items = fn_body(&menu, "fn add_menu_items(", "\n}\n");
++    assert!(
++        items.contains("add_geodesic_pair_menu_item("),
++        "the add menu does not draw the template item"
++    );
++    let item = fn_body(&menu, "fn add_geodesic_pair_menu_item(", "\n}\n");
++    assert!(item.contains("AppEvent::AddGeodesicPair"));
++    assert!(item.contains("add_menu_offers(session, OperationType::Adaptive3d)"));
++}
