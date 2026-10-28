@@ -129,6 +129,16 @@ from HEAD.
 | 3 | E1-E3 `AddPicks`/`RemovePicks`, `check_keys_name_items`, two face offers, the wire both ways | 6034bde9e | 2026-10-29 |
 | 2 | D1 MSAA (branch `viewport-render`) | d83da5d17 | 2026-10-29 |
 | 1 | C1 `MeshBvh` with the parity proof (branch `viewport-bvh`); the prune needed a relative slack `RAY_PRUNE_REL` for a flat sheet at zero, a hole in the design's proof | e1212253f | 2026-10-29 |
+| 1 | C2 the pick-index cache (`cached_bvh`, `peek_bvh`, no count cap) and `LoadedModel::ray_pick` | 8e732e624 | 2026-10-29 |
+| 1 | C3 the Job row `build_model_pick_index` and the GUI pump | 8ad6fa0fe | 2026-10-29 |
+| 1 | C4 the viewport picks through `ray_pick` | f157ec94e | 2026-10-29 |
+| 2 | D2 + D3 the face pipeline (`FaceMeshVertex`, the face-state buffer, the palette); a hover rewrites no mesh; per-model face highlight | d3bf90ee3 | 2026-10-29 |
+| 2 | D4 face edges (`model_edges` slot and row, the view-space offset; the margin is eight depth steps, not four: wgpu keeps clip z in [0, w]) | 181eb0878 | 2026-10-29 |
+| 3 | B4 Ctrl-click removes the item | 7e62f8905 | 2026-10-29 |
+| 3 | A C6 the F key fits the selection | 7f6a63f6e | 2026-10-29 |
+| 3 | F7 the CLI job keys `boundary` and `boundary_selection` | a2e5a4686 | 2026-10-29 |
+| 3 | E5 the right-click rule menu, Ctrl+A, MCP `list_rule_offers` | 969ca2fcf | 2026-10-29 |
+| — | the two branches merged into master | 1343e37d0 | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
