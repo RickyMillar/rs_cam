@@ -1706,7 +1706,7 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
             }
             let mut out = ctx.run_ui(input, |ui| {
                 ui.set_max_width(264.0);
-                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion);
+                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion, false);
             });
             if pass == 2 {
                 for clipped in &out.shapes {
@@ -2169,5 +2169,54 @@ fn the_waterline_row_reads_helical_w1b() {
     assert!(
         super::help_for(crate::state::toolpath::OperationType::Waterline, "helical").is_some(),
         "the row's hover is the registry help"
+    );
+}
+
+/// C4: the 3D Rough row "Contour each level" shows where it acts: a rest
+/// rough with a machining boundary (`offered`), or while it is on. A body
+/// rough (fresh stock) draws no row. The hover is the registry help.
+#[test]
+fn contour_each_level_shows_where_it_acts_c4() {
+    use crate::state::toolpath::Adaptive3dConfig;
+    let rows = |offered: bool, on: bool| {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut cfg = Adaptive3dConfig {
+            contour_each_level: on,
+            ..Adaptive3dConfig::default()
+        };
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            super::operations::draw_adaptive3d_params(ui, &mut cfg, None, None, offered);
+        });
+        let n = out
+            .shapes
+            .iter()
+            .filter(|c| {
+                matches!(&c.shape, egui::epaint::Shape::Text(t)
+                    if t.galley.job.text == "Contour each level:")
+            })
+            .count();
+        out.textures_delta.clear();
+        n
+    };
+    assert_eq!(rows(false, false), 0, "a body rough draws no row");
+    assert_eq!(
+        rows(true, false),
+        1,
+        "a rest rough with a boundary draws it"
+    );
+    assert_eq!(
+        rows(false, true),
+        1,
+        "an op with the option on keeps the row"
+    );
+    assert!(
+        super::help_for(
+            crate::state::toolpath::OperationType::Adaptive3d,
+            "contour_each_level"
+        )
+        .is_some_and(|h| h.contains("Depth/Pass")),
+        "the hover is the registry help"
     );
 }

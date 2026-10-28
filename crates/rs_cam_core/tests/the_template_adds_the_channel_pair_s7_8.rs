@@ -6,7 +6,8 @@
 //!    Adaptive, rest analysis on) and, directly after it, op 2 "Geodesic
 //!    edges" (Contour Parallel, rest machining from previous ops, the
 //!    rest regions of op 1 with Center containment and offset 0, op 1's
-//!    tool). The pair generates: the edge op is not refused (D53, D44).
+//!    tool, and C4 "Contour each level" on: G-RESTDOC, D61/D68). The pair
+//!    generates: the edge op is not refused (D53, D44).
 //! 2. `edges: false` adds op 1 alone, with its rest analysis off.
 //! 3. An edge tool larger than op 1's refuses with the D53 sentence, and
 //!    the command adds nothing.
@@ -119,6 +120,18 @@ fn the_template_adds_the_channel_pair_s7_8() {
     );
     assert_eq!(edge.name, GEODESIC_EDGES_NAME);
     assert_eq!(strategy(&edge.operation), ClearingStrategy::ContourParallel);
+    let contour_each_level = |op: &OperationConfig| match op {
+        OperationConfig::Adaptive3d(cfg) => cfg.contour_each_level,
+        other => panic!("a 3D Rough, not {}", other.label()),
+    };
+    assert!(
+        contour_each_level(&edge.operation),
+        "C4: the edge op contours each level (G-RESTDOC, D61/D68)"
+    );
+    assert!(
+        !contour_each_level(&body.operation),
+        "op 1 keeps the field default"
+    );
     assert_eq!(edge.stock_source, StockSource::FromRemainingStock);
     assert_eq!(edge.tool_id, body.tool_id, "D-T3: op 1's tool");
     assert!(edge.boundary.enabled);

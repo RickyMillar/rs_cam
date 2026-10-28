@@ -717,6 +717,7 @@ impl ProjectSession {
     ///   rest analysis on when the edge op exists (D44: the runner keeps
     ///   the regions only on demand);
     /// - op 2: `clearing_strategy = ContourParallel` (the ruling),
+    ///   `contour_each_level = true` (C4; G-RESTDOC, D61/D68),
     ///   `stock_source = FromRemainingStock`, and the boundary
     ///   `DerivedRestRegions` with `Center` containment and offset 0 (the
     ///   D47 pair of the D53 sentry). The source id is op 1's, which the
@@ -773,6 +774,12 @@ impl ProjectSession {
         let mut edge = self.draft_toolpath(edge_request)?;
         if let OperationConfig::Adaptive3d(cfg) = &mut edge.config.operation {
             cfg.clearing_strategy = ClearingStrategy::ContourParallel;
+            // C4 (lead ruling at the 7.8 approval; source: G-RESTDOC,
+            // D61/D68): this pair is the G-RESTDOC case (D61: a Corne edge
+            // op cut 8.96 mm at a Depth/Pass of 6), so the template sets
+            // the edge op's own value on. "Off by default" is the field's
+            // default for any other op.
+            cfg.contour_each_level = true;
         }
         edge.config.stock_source = crate::compute::config::StockSource::FromRemainingStock;
         edge.config.boundary = BoundaryConfig {
