@@ -87,3 +87,10 @@ The lead (session rs-cam-85) ran the research and the integration overnight. Thi
 - **Merge:** merge now, test-cut later. Done: master cc00aa0c3 merges geodesic-integration.
 - **G-RESTDOC:** the operator likes the edge contour pass. They asked what the region-side fix would do to the numbers, and how either option behaves when there are many boundaries or regions. Study first (C24), then decide.
 - **Core full gate:** not run yet; the operator deferred it (2026-10-28). C1 can make a core test that generated through a collapsed boundary refuse; only the full gate would show it.
+
+## Operator feedback after playing (2026-10-28 afternoon)
+
+- Wants a 3D Rough option, "add a contour pass on each level" ("would make a great toolpath"). It also answers G-RESTDOC (option 2, made a user option).
+- Waterline: very shallow cuts (z_step 1 mm, 88.5 % air), hops between 84 regions per level (283 retracts); asks whether it could spiral in the holes, or whether that is Bore; asks for tabs.
+- Planning: skip the small holes in the 6 mm rough, and do them all with the 3 mm op.
+- Research first (S2, phase3/d69), then the optimisations. "So far looking great."
