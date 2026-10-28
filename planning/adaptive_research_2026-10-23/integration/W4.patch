@@ -1,0 +1,915 @@
+diff --git a/crates/rs_cam_core/src/compute/execute.rs b/crates/rs_cam_core/src/compute/execute.rs
+index 123a71ccf..def0533e8 100644
+--- a/crates/rs_cam_core/src/compute/execute.rs
++++ b/crates/rs_cam_core/src/compute/execute.rs
+@@ -512,6 +512,11 @@ pub struct ExecutionContext<'a> {
+     /// walls. The helical Waterline widens its step on a vertical wall up
+     /// to it. `None`: a fresh op, or no earlier op states a step.
+     pub rest_axial_step_mm: Option<f64>,
++    /// W4 (D69 §4): for a Waterline, what the job holds the part with at
++    /// the end of a through cut (the session derives it from the later and
++    /// the earlier ops of the setup). `None`: not derived (another op, or a
++    /// caller with no session).
++    pub through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
+ }
+ 
+ impl<'a> ExecutionContext<'a> {
+@@ -596,6 +601,7 @@ impl<'a> ExecutionContext<'a> {
+             rest_top_z: None,
+             material: None,
+             rest_axial_step_mm: None,
++            through_cut_hold: None,
+         }
+     }
+ }
+diff --git a/crates/rs_cam_core/src/compute/execute/finish_raster.rs b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+index 0ce00f5df..0ba08492a 100644
+--- a/crates/rs_cam_core/src/compute/execute/finish_raster.rs
++++ b/crates/rs_cam_core/src/compute/execute/finish_raster.rs
+@@ -325,7 +325,16 @@ pub(crate) fn generate_waterline(
+         cfg.z_step,
+         ctx.stock_bbox.min.z,
+     );
+-    ctx.record(&crate::compute::toolpath_stats::WaterlineLadderFinding {
++    // W4 (D69 §4, operator ruling 2026-10-28): on a through part (the
++    // model bottom at the stock bottom, to within the ladder's own "on a
++    // face" tolerance) the Waterline cuts no outer ring at or below the web
++    // the job holds (`ExecutionContext::through_cut_hold`, from the
++    // session). A model that stands on stock keeps every ring.
++    let through_part =
++        surface.mesh.bbox.min.z <= ctx.stock_bbox.min.z + crate::ops::waterline::FLAT_FACE_SNAP_MM;
++    let hold = ctx.through_cut_hold.filter(|_| through_part);
++    let web = hold.and_then(|h| h.web);
++    let mut finding = crate::compute::toolpath_stats::WaterlineLadderFinding {
+         requested_top_z_mm: ctx.heights.top_z,
+         requested_bottom_z_mm: ctx.heights.bottom_z,
+         stock_bottom_z_mm: ctx.stock_bbox.min.z,
+@@ -334,7 +343,11 @@ pub(crate) fn generate_waterline(
+         nudged_levels: ladder.nudged_levels,
+         dropped_below_stock: ladder.dropped_below_stock,
+         delivered_levels: ladder.levels.len(),
+-    });
++        web,
++        outer_rings_skipped: 0,
++        part_unheld: hold.is_some_and(|h| !h.tabbed_profile_follows),
++    };
++    ctx.record(&finding);
+     // D69 §2: the helical waterline judges each link between two chained
+     // rings with the model gouge guard's reduced tool. A tool that cannot
+     // shrink (no cutter) joins no level: the op cuts the stacked form.
+@@ -368,13 +381,19 @@ pub(crate) fn generate_waterline(
+         params,
+         link_probe,
+         wall,
++        outer_floor_z: web.map(|w| w.z_mm),
++        outer_rings_skipped: std::cell::Cell::new(0),
+         levels: ladder.levels,
+         hookup_mm: cfg.hookup_mm,
+         op_type: op.op_type(),
+         rest_use: op.capabilities().rest_use,
+         boundary_regions: prepared.territory().regions(),
+     };
+-    run_layered(&pass, ctx, prepared)
++    let generated = run_layered(&pass, ctx, prepared)?;
++    // W4: the count is known only after the levels are cut.
++    finding.outer_rings_skipped = pass.outer_rings_skipped.get();
++    ctx.record(&finding);
++    Ok(generated)
+ }
+ 
+ /// W2 (D69 §3): what the wall step of the helical Waterline reads.
+@@ -453,6 +472,11 @@ struct WaterlinePass<'a> {
+     /// W2 (D69 §3): the inputs of the wall step, or `None` (no material, no
+     /// rough step or no spindle speed): the helix keeps every ring.
+     wall: Option<WallInputs<'a>>,
++    /// W4 (D69 §4): the web Z of a through cut (`RunFilter::outer_floor_z`),
++    /// or `None`.
++    outer_floor_z: Option<f64>,
++    /// W4: the outer rings the web kept from the cut, over every level.
++    outer_rings_skipped: std::cell::Cell<usize>,
+     /// The ladder of `waterline_ladder`: nudged off the flat facets and
+     /// floored at the stock bottom.
+     levels: Vec<f64>,
+@@ -524,6 +548,7 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+             boundary_regions: self.boundary_regions,
+             keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
+             split_timing: rest.split_timing,
++            outer_floor_z: self.outer_floor_z,
+         };
+         let mut tp = Toolpath::new();
+         let (mut kept, mut dropped) = (false, false);
+@@ -539,6 +564,8 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+             )?;
+             kept |= piece.rest_kept;
+             dropped |= piece.rest_dropped;
++            self.outer_rings_skipped
++                .set(self.outer_rings_skipped.get() + piece.outer_rings_skipped);
+             tp.moves.extend(piece.toolpath.moves);
+         }
+         rest.tally(kept, dropped);
+@@ -575,12 +602,14 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+                     boundary_regions: self.boundary_regions,
+                     keep: standing.is_some().then_some(&keep as &dyn Fn(P2) -> bool),
+                     split_timing: rest.split_timing,
++                    outer_floor_z: self.outer_floor_z,
+                 };
+                 let mut level = crate::ops::waterline::LevelRings {
+                     contours: Vec::new(),
+                     runs: Vec::new(),
+                     rest_kept: false,
+                     rest_dropped: false,
++                    outer_rings_skipped: 0,
+                 };
+                 for surface in geometry {
+                     let piece = crate::ops::waterline::waterline_level_rings(
+@@ -600,8 +629,11 @@ impl<'a> LayeredOp for WaterlinePass<'a> {
+                     }));
+                     level.rest_kept |= piece.rest_kept;
+                     level.rest_dropped |= piece.rest_dropped;
++                    level.outer_rings_skipped += piece.outer_rings_skipped;
+                 }
+                 rest.tally(level.rest_kept, level.rest_dropped);
++                self.outer_rings_skipped
++                    .set(self.outer_rings_skipped.get() + level.outer_rings_skipped);
+                 rings.push(level);
+             }
+             let admits = |k: usize, ring: &[crate::geo::P3], ap: f64| {
+diff --git a/crates/rs_cam_core/src/compute/toolpath_stats.rs b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+index b6172b489..3317e1bd9 100644
+--- a/crates/rs_cam_core/src/compute/toolpath_stats.rs
++++ b/crates/rs_cam_core/src/compute/toolpath_stats.rs
+@@ -771,6 +771,48 @@ impl RestLevelsFinding {
+     }
+ }
+ 
++/// W4 (D69 §4): where the web Z of a through cut comes from.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum WebSource {
++    /// The tab top of a later tabbed Profile that cuts to the stock bottom:
++    /// its final floor plus its `tab_height`.
++    TabbedProfile,
++    /// The lowest floor that an earlier roughing op of the setup leaves (its
++    /// resolved floor plus its axial stock to leave).
++    EarlierFloor,
++}
++
++impl WebSource {
++    fn phrase(self) -> &'static str {
++        match self {
++            Self::TabbedProfile => "the tab top of a later tabbed Profile",
++            Self::EarlierFloor => "the floor an earlier op leaves",
++        }
++    }
++}
++
++/// W4 (D69 §4): the web a through cut holds. The Waterline cuts no outer
++/// ring at or below `z_mm` (`ops::waterline::RunFilter::outer_floor_z`).
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub struct WaterlineWeb {
++    /// The web Z (mm), in the setup frame.
++    pub z_mm: f64,
++    pub source: WebSource,
++}
++
++/// W4 (D69 §4): what the job holds the part with at the end of a through
++/// cut, as the session derives it for a Waterline
++/// (`ExecutionContext::through_cut_hold`).
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub struct ThroughCutHold {
++    /// The web, or `None` (no later tabbed Profile and no earlier floor
++    /// above the stock bottom).
++    pub web: Option<WaterlineWeb>,
++    /// True when a later enabled tabbed Profile of the setup cuts to the
++    /// stock bottom.
++    pub tabbed_profile_follows: bool,
++}
++
+ #[derive(Debug, Clone, Copy, PartialEq)]
+ pub struct WaterlineLadderFinding {
+     /// The resolved `top_z` (mm) the ladder started from.
+@@ -789,6 +831,13 @@ pub struct WaterlineLadderFinding {
+     pub dropped_below_stock: usize,
+     /// Levels that were cut.
+     pub delivered_levels: usize,
++    /// W4: on a through part, the web the Waterline stops at, or `None`
++    /// (not a through part, or no web).
++    pub web: Option<WaterlineWeb>,
++    /// W4: the outer rings that [`Self::web`] kept from being cut.
++    pub outer_rings_skipped: usize,
++    /// W4: a through part, and no tabbed Profile follows the Waterline.
++    pub part_unheld: bool,
+ }
+ 
+ impl WaterlineLadderFinding {
+@@ -839,9 +888,25 @@ impl WaterlineLadderFinding {
+                  against the model",
+             );
+         }
++        if let Some(web) = self.web.filter(|_| self.outer_rings_skipped > 0) {
++            s.push_str(&format!(
++                "; stops at the web Z {:.3} ({}): {} outer ring(s) not cut",
++                web.z_mm,
++                web.source.phrase(),
++                self.outer_rings_skipped
++            ));
++        }
+         s.push_str(". [Generation stage; report-only — no gate consumes this.]");
+         s
+     }
++
++    /// W4: the one-line text of the `geom.waterline_part_unheld` Caution.
++    #[must_use]
++    pub fn part_unheld_message(&self) -> String {
++        "Through cut: no tabbed Profile follows this Waterline, so the job does not hold the \
++         part at the end. Add a tabbed Profile on the outline."
++            .to_owned()
++    }
+ }
+ 
+ /// A/M7 gate 1: how many retract round trips a toolpath took, and whether
+diff --git a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+index 241039adb..28654c1f8 100644
+--- a/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
++++ b/crates/rs_cam_core/src/diagnostics/adapters/from_generation.rs
+@@ -298,6 +298,13 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
+     if f.degenerate() {
+         out.push(make(ids::GEOM_WATERLINE_LADDER_EMPTY));
+     }
++    // W4 (D69 §4): one line; the GUI shows the ladder finding on hover.
++    if f.part_unheld {
++        out.push(Diagnostic {
++            message: f.part_unheld_message(),
++            ..make(ids::GEOM_WATERLINE_PART_UNHELD)
++        });
++    }
+     out
+ }
+ 
+diff --git a/crates/rs_cam_core/src/diagnostics/ids.rs b/crates/rs_cam_core/src/diagnostics/ids.rs
+index 0f121e091..9c4d62725 100644
+--- a/crates/rs_cam_core/src/diagnostics/ids.rs
++++ b/crates/rs_cam_core/src/diagnostics/ids.rs
+@@ -345,6 +345,11 @@ diag_ids! {
+     /// exemption there ("a model with no steep walls legitimately yields
+     /// nothing"), so a one-level or empty ladder passed as a legitimate empty.
+     pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty";
++    /// W4 (D69 §4, operator ruling 2026-10-28): the Waterline cuts a through
++    /// part (its model bottom is at the stock bottom), and no tabbed Profile
++    /// follows it in the setup, so the job does not hold the part at the
++    /// end. The fix is a tabbed Profile on the outline after the Waterline.
++    pub const GEOM_WATERLINE_PART_UNHELD: &str = "geom.waterline_part_unheld";
+     /// F3 (2026-08-23): a rest-region extraction produced more islands than
+     /// `region_mask::MAX_REST_REGIONS` and the list was TRUNCATED to the largest
+     /// 64 by area. Every dropped island is territory a `DerivedRestRegions`
+diff --git a/crates/rs_cam_core/src/ops/waterline.rs b/crates/rs_cam_core/src/ops/waterline.rs
+index 8d9422bc0..758281993 100644
+--- a/crates/rs_cam_core/src/ops/waterline.rs
++++ b/crates/rs_cam_core/src/ops/waterline.rs
+@@ -290,6 +290,7 @@ fn waterline_toolpath_at_levels(
+         boundary_regions,
+         keep: None,
+         split_timing: None,
++        outer_floor_z: None,
+     };
+     for &z in levels {
+         check_cancel(cancel)?;
+@@ -321,6 +322,13 @@ pub struct RunFilter<'f> {
+     /// motion the emitter makes at a run end and a run start). `None`: no
+     /// time model, so `keep` drops nothing (cut more, never less).
+     pub split_timing: Option<&'f LinkKinematics>,
++    /// W4 (D69 §4): the web Z of a through cut. At a level at or below it
++    /// (to within [`WATERLINE_LADDER_EPSILON`]), an OUTER ring (one that no
++    /// other ring of the level holds, [`ring_inside`] to within the op's
++    /// `sampling`) is not cut: only an outer ring separates the part from
++    /// the stock. A hole ring or an inner wall ring keeps its level.
++    /// `None`: every ring is cut.
++    pub outer_floor_z: Option<f64>,
+ }
+ 
+ impl RunFilter<'_> {
+@@ -329,6 +337,12 @@ impl RunFilter<'_> {
+         self.boundary_regions.is_none() && self.keep.is_none()
+     }
+ 
++    /// W4: true when `z` is at or below [`Self::outer_floor_z`].
++    fn below_web(&self, z: f64) -> bool {
++        self.outer_floor_z
++            .is_some_and(|web| z <= web + WATERLINE_LADDER_EPSILON)
++    }
++
+     /// True when the boundary rule keeps `p`.
+     fn inside(&self, p: &P3) -> bool {
+         self.boundary_regions
+@@ -346,6 +360,8 @@ pub struct WaterlineLevel {
+     /// True when [`RunFilter::keep`] dropped a point inside the boundary,
+     /// after the time rule.
+     pub rest_dropped: bool,
++    /// W4: the outer rings [`RunFilter::outer_floor_z`] kept from the cut.
++    pub outer_rings_skipped: usize,
+ }
+ 
+ /// The motion a run end and a run start make, which
+@@ -471,6 +487,7 @@ pub fn waterline_level(
+         toolpath,
+         rest_kept: rings.rest_kept,
+         rest_dropped: rings.rest_dropped,
++        outer_rings_skipped: rings.outer_rings_skipped,
+     })
+ }
+ 
+@@ -500,6 +517,8 @@ pub struct LevelRings {
+     pub rest_kept: bool,
+     /// See [`WaterlineLevel::rest_dropped`].
+     pub rest_dropped: bool,
++    /// See [`WaterlineLevel::outer_rings_skipped`].
++    pub outer_rings_skipped: usize,
+ }
+ 
+ /// The contours at `z`, the leave lift and the run split of `filter`:
+@@ -535,10 +554,21 @@ pub fn waterline_level_rings(
+         }
+     }
+ 
++    // W4: at a level at or below the web, the outer rings are not cut.
++    let outer = if filter.below_web(z) {
++        outer_contours(&contours, params.sampling)
++    } else {
++        vec![false; contours.len()]
++    };
++    let mut outer_rings_skipped = 0;
+     for (c, contour) in contours.iter().enumerate() {
+         if contour.len() < 3 {
+             continue;
+         }
++        if outer.get(c).copied().unwrap_or(false) {
++            outer_rings_skipped += 1;
++            continue;
++        }
+         if filter.keeps_all() {
+             let path = floor_contour(contour, true);
+             if path.len() < 3 {
+@@ -607,9 +637,31 @@ pub fn waterline_level_rings(
+         runs,
+         rest_kept,
+         rest_dropped,
++        outer_rings_skipped,
+     })
+ }
+ 
++/// W4: for each contour of one level, true when it is an OUTER ring: a ring
++/// of three or more points that no other ring of the level holds
++/// ([`ring_inside`] to within `tol`).
++fn outer_contours(contours: &[Vec<P3>], tol: f64) -> Vec<bool> {
++    let polygons: Vec<Option<Polygon2>> = contours.iter().map(|c| ring_polygon(c)).collect();
++    polygons
++        .iter()
++        .enumerate()
++        .map(|(i, ring)| {
++            ring.as_ref().is_some_and(|ring| {
++                !polygons.iter().enumerate().any(|(j, other)| {
++                    j != i
++                        && other
++                            .as_ref()
++                            .is_some_and(|other| ring_inside(ring, other, tol))
++                })
++            })
++        })
++        .collect()
++}
++
+ /// Emit one run as its own pass: retract, rapid, plunge, cut, retract.
+ fn emit_run(toolpath: &mut Toolpath, run: &LevelRun, params: &WaterlineParams) {
+     if run.whole {
+diff --git a/crates/rs_cam_core/src/session/compute.rs b/crates/rs_cam_core/src/session/compute.rs
+index 9096b065a..19f848bdd 100644
+--- a/crates/rs_cam_core/src/session/compute.rs
++++ b/crates/rs_cam_core/src/session/compute.rs
+@@ -110,6 +110,10 @@ pub struct ResolvedGenInputs {
+     /// axial step of the earlier roughing ops of the setup; it reaches the
+     /// helical Waterline through `ExecutionContext::rest_axial_step_mm`.
+     rest_axial_step_mm: Option<f64>,
++    /// W4 (D69 §4): for a Waterline, what the job holds the part with at the
++    /// end of a through cut; it reaches the generator through
++    /// `ExecutionContext::through_cut_hold`.
++    through_cut_hold: Option<crate::compute::toolpath_stats::ThroughCutHold>,
+     /// The setup's local<->global transform, hoisted off the
+     /// `SetupEvalContext` alongside `emission_stock_bbox` above because
+     /// `generate_toolpath` needs it and the context is scoped to this
+@@ -1391,6 +1395,8 @@ pub fn execute_generation(
+         rest_top_z: inputs.rest_top_z,
+         // W2 (D69 §3): the wall step of the helical Waterline.
+         rest_axial_step_mm: inputs.rest_axial_step_mm,
++        // W4 (D69 §4): the through-cut web of a Waterline.
++        through_cut_hold: inputs.through_cut_hold,
+         material: Some(&context.material),
+         obstacles: (!inputs.obstacle_view.is_empty()).then_some(inputs.obstacle_view.as_ref()),
+         link_kinematics: context.link_kinematics.clone(),
+diff --git a/crates/rs_cam_core/src/session/compute/generation.rs b/crates/rs_cam_core/src/session/compute/generation.rs
+index b22bbf663..90373144c 100644
+--- a/crates/rs_cam_core/src/session/compute/generation.rs
++++ b/crates/rs_cam_core/src/session/compute/generation.rs
+@@ -470,6 +470,14 @@ impl ProjectSession {
+             .then(|| self.earlier_rough_step(index))
+             .flatten();
+ 
++        // W4 (D69 §4): for a Waterline, what the job holds the part with
++        // at the end of a through cut.
++        let through_cut_hold = matches!(
++            tc.operation,
++            crate::compute::catalog::OperationConfig::Waterline(_)
++        )
++        .then(|| self.through_cut_hold(index));
++
+         Ok(ResolvedGenInputs {
+             setup_transform: ctx.local_to_global,
+             tool,
+@@ -491,9 +499,113 @@ impl ProjectSession {
+             pre_boundary_regions,
+             rest_top_z,
+             rest_axial_step_mm,
++            through_cut_hold,
+         })
+     }
+ 
++    /// W4 (D69 §4, operator ruling 2026-10-28): what the job holds the part
++    /// with at the end of a through cut, for the Waterline at `index`.
++    /// Derived from the project (the ops' configs and their resolved
++    /// heights), never from a generated result, so a stale or missing
++    /// result cannot change the Waterline. The first rule that applies:
++    ///
++    /// 1. A later enabled Profile of the setup with tabs (`tab_count > 0`
++    ///    or hand tabs) whose floor reaches the stock bottom (to within
++    ///    `FLAT_FACE_SNAP_MM`): the web is its tab top, floor plus
++    ///    `tab_height` (the highest of several). The Waterline then never
++    ///    cuts below a tab.
++    /// 2. The lowest floor that an earlier enabled roughing op
++    ///    (`PassRole::Roughing`) of the setup leaves on the outline: an op
++    ///    whose resolved bottom is the model bottom (to within
++    ///    `FLAT_FACE_SNAP_MM`; it cuts down to the part bottom), at its
++    ///    bottom plus its axial stock to leave
++    ///    (`OperationConfig::model_gouge_allowance`), when that floor stands
++    ///    above the stock bottom (an earlier op that cut through holds no
++    ///    web). A pocket that stops above the model bottom leaves a floor,
++    ///    not a web, and is not read.
++    /// 3. No web.
++    ///
++    /// An op whose heights do not resolve is not read.
++    fn through_cut_hold(&self, index: usize) -> crate::compute::toolpath_stats::ThroughCutHold {
++        use crate::compute::catalog::OperationConfig;
++        use crate::compute::toolpath_stats::{ThroughCutHold, WaterlineWeb, WebSource};
++        let no_hold = ThroughCutHold {
++            web: None,
++            tabbed_profile_follows: false,
++        };
++        let Some(setup) = self.find_setup_for_toolpath_index(index) else {
++            return no_hold;
++        };
++        let order = setup.toolpath_indices();
++        let Some(at) = order.iter().position(|&i| i == index) else {
++            return no_hold;
++        };
++        let enabled = |i: &usize| self.toolpath_configs.get(*i).filter(|tc| tc.enabled);
++        let tab_top = order
++            .iter()
++            .skip(at + 1)
++            .filter_map(enabled)
++            .filter_map(|tc| {
++                let OperationConfig::Profile(profile) = &tc.operation else {
++                    return None;
++                };
++                if profile.tab_count == 0 && profile.tab_points.is_empty() {
++                    return None;
++                }
++                let h = self.toolpath_heights(tc).ok()?;
++                (h.heights.bottom_z
++                    <= h.context.stock_bottom_z + crate::ops::waterline::FLAT_FACE_SNAP_MM)
++                    .then_some(h.heights.bottom_z + profile.tab_height)
++            })
++            .max_by(f64::total_cmp);
++        if let Some(z_mm) = tab_top {
++            return ThroughCutHold {
++                web: Some(WaterlineWeb {
++                    z_mm,
++                    source: WebSource::TabbedProfile,
++                }),
++                tabbed_profile_follows: true,
++            };
++        }
++        let earlier_floor = order
++            .get(..at)
++            .unwrap_or_default()
++            .iter()
++            .filter_map(enabled)
++            .filter(|tc| {
++                tc.operation.op_type().spec().feeds_pass_role == crate::feeds::PassRole::Roughing
++            })
++            .filter_map(|tc| {
++                let h = self.toolpath_heights(tc).ok()?;
++                // Only a rough that cuts down to the part bottom leaves a web
++                // on the outline. A pocket that stops above the model bottom
++                // leaves a floor, not a web.
++                let to_part_bottom = h.context.model_bottom_z.is_some_and(|model_bottom| {
++                    h.heights.bottom_z <= model_bottom + crate::ops::waterline::FLAT_FACE_SNAP_MM
++                });
++                if !to_part_bottom {
++                    return None;
++                }
++                let leave = tc
++                    .operation
++                    .model_gouge_allowance(None)
++                    .map_or(0.0, |a| a.leave_mm);
++                Some((h.heights.bottom_z + leave, h.context.stock_bottom_z))
++            })
++            .min_by(|a, b| a.0.total_cmp(&b.0));
++        ThroughCutHold {
++            web: earlier_floor
++                .filter(|&(floor, bottom)| {
++                    floor > bottom + crate::ops::waterline::STOCK_BOTTOM_FLOOR_EPS_MM
++                })
++                .map(|(z_mm, _)| WaterlineWeb {
++                    z_mm,
++                    source: WebSource::EarlierFloor,
++                }),
++            tabbed_profile_follows: false,
++        }
++    }
++
+     /// W2 (D69 §3): the smallest `OperationConfig::depth_per_pass` of the
+     /// enabled roughing ops (`PassRole::Roughing`) before toolpath `index`
+     /// in its setup, or `None` when no such op states one.
+diff --git a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+index 34db37516..ba4aa2ece 100644
+--- a/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
++++ b/crates/rs_cam_core/tests/a_helical_waterline_cuts_a_stack_with_one_entry_d69.rs
+@@ -250,12 +250,14 @@ fn an_unmatched_ring_keeps_the_stacked_form() {
+             contours: upper,
+             rest_kept: false,
+             rest_dropped: false,
++            outer_rings_skipped: 0,
+         },
+         LevelRings {
+             runs: whole(&lower),
+             contours: lower,
+             rest_kept: false,
+             rest_dropped: false,
++            outer_rings_skipped: 0,
+         },
+     ];
+     let params = WaterlineParams {
+diff --git a/crates/rs_cam_core/tests/a_rest_waterline_after_a_rough_widens_its_wall_step_w2.rs b/crates/rs_cam_core/tests/a_rest_waterline_after_a_rough_widens_its_wall_step_w2.rs
+index 165aaa78e..295218403 100644
+--- a/crates/rs_cam_core/tests/a_rest_waterline_after_a_rough_widens_its_wall_step_w2.rs
++++ b/crates/rs_cam_core/tests/a_rest_waterline_after_a_rough_widens_its_wall_step_w2.rs
+@@ -48,7 +48,10 @@ const BOSS_HALF: f64 = 10.0;
+ const SKIN: f64 = 0.5;
+ const BOSS_TOP: f64 = 15.0;
+ const LEVEL_TOP: f64 = 14.5;
+-const LEVEL_BOTTOM: f64 = 0.5;
++/// Above the web the rough leaves (its 0.5 mm axial leave on the model
++/// bottom): W4 keeps the outer ring of a through part off the levels at or
++/// below the web, and this file pins the wall step, not the web.
++const LEVEL_BOTTOM: f64 = 1.0;
+ const Z_STEP: f64 = 0.5;
+ 
+ /// A closed box of half width `h`: the boss.
+diff --git a/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs b/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs
+index 14cdd7ede..27d061cad 100644
+--- a/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs
++++ b/crates/rs_cam_core/tests/a_waterline_widens_its_step_on_a_vertical_wall_w2.rs
+@@ -68,6 +68,7 @@ fn levels(draft: f64) -> Vec<LevelRings> {
+                 contours: vec![ring],
+                 rest_kept: false,
+                 rest_dropped: false,
++                outer_rings_skipped: 0,
+             }
+         })
+         .collect()
+diff --git a/crates/rs_cam_core/tests/findings_transport_join_h21.rs b/crates/rs_cam_core/tests/findings_transport_join_h21.rs
+index 84556ba3c..24ec25568 100644
+--- a/crates/rs_cam_core/tests/findings_transport_join_h21.rs
++++ b/crates/rs_cam_core/tests/findings_transport_join_h21.rs
+@@ -229,6 +229,13 @@ fn every_finding_recorded() -> GenerationFindings {
+             nudged_levels: 2,
+             dropped_below_stock: 1,
+             delivered_levels: 23,
++            // W4: the through-cut web and its counts travel with it.
++            web: Some(rs_cam_core::compute::toolpath_stats::WaterlineWeb {
++                z_mm: 0.5,
++                source: rs_cam_core::compute::toolpath_stats::WebSource::EarlierFloor,
++            }),
++            outer_rings_skipped: 3,
++            part_unheld: true,
+         }),
+         // F4. Recorded from the operation's CONFIG rather than from anything
+         // measured, and the join must carry it like any other finding.
+diff --git a/crates/rs_cam_viz/src/ui/properties/tab_badges.rs b/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
+index 5378407d9..91a2f5c41 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tab_badges.rs
+@@ -163,6 +163,9 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
+         (i::GEOM_BOUNDARY_CLIP_DROPPED, G),
+         (i::GEOM_WATERLINE_LEVELS_BELOW_STOCK, C),
+         (i::GEOM_WATERLINE_LADDER_EMPTY, C),
++        // W4: the fix is a tabbed Profile after the Waterline; no tab of the
++        // Waterline holds it.
++        (i::GEOM_WATERLINE_PART_UNHELD, NO),
+         (i::GEOM_REGION_CAP_TRUNCATED, C),
+         (i::GEOM_REST_LEVELS_FALLBACK, C),
+         (i::CONFIG_DERIVED_STEPOVER, C),
+diff --git a/crates/rs_cam_core/tests/a_waterline_stops_at_the_web_of_a_through_cut_w4.rs b/crates/rs_cam_core/tests/a_waterline_stops_at_the_web_of_a_through_cut_w4.rs
+new file mode 100644
+index 000000000..3bdf1d25d
+--- /dev/null
++++ b/crates/rs_cam_core/tests/a_waterline_stops_at_the_web_of_a_through_cut_w4.rs
+@@ -0,0 +1,291 @@
++//! W4 (D69 §4, operator ruling 2026-10-28): on a through cut the Waterline
++//! stops at the web the job holds, and the job ends with a tabbed Profile.
++//!
++//! Pre-registration:
++//! `planning/adaptive_research_2026-10-23/integration/W4_PREREG.md` (lead
++//! approval: per ring, a check that warns, the web from the configs). On a
++//! through part (model bottom at the stock bottom) the Waterline cuts no
++//! OUTER ring at or below the web Z; a hole ring keeps its levels. The web Z,
++//! from the project only:
++//!
++//! 1. a later tabbed Profile that cuts to the stock bottom: its tab top;
++//! 2. else an earlier roughing op that cuts to the model bottom: its floor
++//!    plus its axial stock to leave;
++//! 3. else no web (today's ladder), and the Caution
++//!    `geom.waterline_part_unheld` names the missing tabbed Profile.
++//!
++//! The fixture: a 6 mm plate (drafted outer wall, a vertical 10 mm square
++//! hole) whose bottom is the stock bottom; a helical Waterline at Z 5.5 to
++//! 0.5 by 1 mm.
++
++#![expect(
++    clippy::expect_used,
++    clippy::indexing_slicing,
++    clippy::panic,
++    reason = "test code: a panic is how a test reports a failure"
++)]
++
++mod common;
++
++use std::sync::atomic::AtomicBool;
++
++use common::op_fixtures::no_dressups;
++use common::session::{
++    mesh_model, pinned_heights, polygon_model, square_polygon, stock_over, toolpath_config,
++};
++use common::tools::endmill_tool_config;
++
++use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
++use rs_cam_core::compute::floor::Floor;
++use rs_cam_core::compute::operation_configs::WaterlineConfig;
++use rs_cam_core::compute::toolpath_stats::{WaterlineLadderFinding, WebSource};
++use rs_cam_core::diagnostics::{Severity, ids};
++use rs_cam_core::geo::P3;
++use rs_cam_core::mesh::TriangleMesh;
++use rs_cam_core::session::{LoadedModel, ProjectSession, ProjectSessionBuilder};
++use rs_cam_core::toolpath::Toolpath;
++
++const OUTER_BOTTOM: f64 = 20.0;
++const OUTER_TOP: f64 = 18.0;
++const HOLE: f64 = 5.0;
++const PLATE: f64 = 6.0;
++const TOOL_D: f64 = 6.0;
++const TAB_HEIGHT: f64 = 2.0;
++
++/// The plate, lifted by `lift` (0: a through part; above 0: a relief that
++/// stands on stock).
++fn plate(lift: f64) -> TriangleMesh {
++    let mut vertices: Vec<P3> = Vec::new();
++    let mut square = |half: f64, z: f64| -> [u32; 4] {
++        let mut ids = [0_u32; 4];
++        for (k, (sx, sy)) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
++            .into_iter()
++            .enumerate()
++        {
++            vertices.push(P3::new(sx * half, sy * half, z + lift));
++            ids[k] = u32::try_from(vertices.len() - 1).expect("few vertices");
++        }
++        ids
++    };
++    let ob = square(OUTER_BOTTOM, 0.0);
++    let ot = square(OUTER_TOP, PLATE);
++    let hb = square(HOLE, 0.0);
++    let ht = square(HOLE, PLATE);
++    let mut triangles: Vec<[u32; 3]> = Vec::new();
++    let mut quad = |a: u32, b: u32, c: u32, d: u32| {
++        triangles.push([a, b, c]);
++        triangles.push([a, c, d]);
++    };
++    for k in 0..4 {
++        let n = (k + 1) % 4;
++        quad(ob[k], ob[n], ot[n], ot[k]);
++        quad(hb[n], hb[k], ht[k], ht[n]);
++        quad(ot[k], ot[n], ht[n], ht[k]);
++        quad(ob[k], hb[k], hb[n], ob[n]);
++    }
++    TriangleMesh::from_raw(vertices, triangles)
++}
++
++/// The plate mesh with the outline square as a drawing item (a Profile
++/// reads it).
++fn model(lift: f64) -> LoadedModel {
++    let mut m = mesh_model(plate(lift), "w4_plate");
++    m.items = polygon_model(vec![square_polygon(OUTER_BOTTOM)], "w4_outline").items;
++    m
++}
++
++/// What the job holds around the Waterline.
++#[derive(Clone, Copy, PartialEq)]
++enum Job {
++    /// The Waterline alone.
++    Alone,
++    /// A 3D Rough before the Waterline.
++    RoughFirst,
++    /// The Waterline, then a tabbed Profile to the stock bottom.
++    TabbedProfileAfter,
++}
++
++/// The session; the index of the Waterline.
++fn session(job: Job, lift: f64) -> (ProjectSession, usize) {
++    let mut builder =
++        ProjectSessionBuilder::new().stock(stock_over(OUTER_BOTTOM + 8.0, PLATE + lift + 2.0));
++    let tool_idx = builder.add_tool(endmill_tool_config(TOOL_D));
++    let tool_id = rs_cam_core::ids::ToolId::from_raw(builder.tools()[tool_idx].id.raw());
++    let model_id = builder.add_model(model(lift));
++    let mut index = 0;
++    if job == Job::RoughFirst {
++        let rough = toolpath_config(
++            "rough",
++            OperationConfig::new_default(OperationType::Adaptive3d),
++            tool_id,
++            model_id,
++        );
++        let _ = builder.add_toolpath(0, rough).expect("add the rough");
++        index = 1;
++    }
++    let mut waterline = toolpath_config(
++        "waterline",
++        OperationConfig::Waterline(WaterlineConfig {
++            z_step: 1.0,
++            sampling: 0.5,
++            ..WaterlineConfig::default()
++        }),
++        tool_id,
++        model_id,
++    );
++    waterline.heights = pinned_heights(lift + 5.5, lift + 0.5);
++    waterline.dressups = no_dressups();
++    let _ = builder
++        .add_toolpath(0, waterline)
++        .expect("add the waterline");
++    if job == Job::TabbedProfileAfter {
++        let mut op = OperationConfig::new_default(OperationType::Profile);
++        if let OperationConfig::Profile(cfg) = &mut op {
++            cfg.tab_count = 4;
++            cfg.tab_height = TAB_HEIGHT;
++            cfg.floor = Floor::StockBottom { depth: 0.0 };
++        }
++        let profile = toolpath_config("profile", op, tool_id, model_id);
++        let _ = builder.add_toolpath(0, profile).expect("add the profile");
++    }
++    (builder.build(), index)
++}
++
++fn generate(job: Job, lift: f64) -> (ProjectSession, usize) {
++    let (mut s, index) = session(job, lift);
++    let cancel = AtomicBool::new(false);
++    let _ = s
++        .generate_toolpath(index, &cancel)
++        .expect("the waterline generates");
++    (s, index)
++}
++
++fn finding(s: &ProjectSession, index: usize) -> WaterlineLadderFinding {
++    s.result_at(index)
++        .expect("a result")
++        .stats
++        .waterline_ladder
++        .expect("the ladder finding")
++}
++
++/// The lowest cutting Z of the moves outside the hole (the outer ring) and
++/// inside it (the hole ring).
++fn lowest_cuts(tp: &Toolpath) -> (f64, f64) {
++    let (mut outer, mut hole) = (f64::INFINITY, f64::INFINITY);
++    for m in tp.moves.iter().filter(|m| m.move_type.is_cutting()) {
++        let inside = m.target.x.abs() < HOLE && m.target.y.abs() < HOLE;
++        let slot = if inside { &mut hole } else { &mut outer };
++        *slot = slot.min(m.target.z);
++    }
++    (outer, hole)
++}
++
++fn unheld(s: &ProjectSession, index: usize) -> bool {
++    s.diagnose_toolpath_with_trace(index, None)
++        .expect("diagnose")
++        .iter()
++        .any(|d| {
++            d.id.as_str() == ids::GEOM_WATERLINE_PART_UNHELD
++                && d.severity == Severity::Caution
++                && !d.message.contains('\n')
++        })
++}
++
++#[test]
++fn a_later_tabbed_profile_sets_the_web_at_its_tab_top() {
++    let (s, index) = generate(Job::TabbedProfileAfter, 0.0);
++    let f = finding(&s, index);
++    let web = f.web.expect("a web");
++    assert_eq!(web.source, WebSource::TabbedProfile);
++    assert!((web.z_mm - TAB_HEIGHT).abs() < 1e-9, "tab top {}", web.z_mm);
++    assert_eq!(
++        f.outer_rings_skipped, 2,
++        "levels 1.5 and 0.5 of the outer ring"
++    );
++    assert!(!f.part_unheld);
++    let (outer, hole) = lowest_cuts(s.result_at(index).expect("r").toolpath());
++    assert!(
++        outer > TAB_HEIGHT,
++        "the outer ring stops above the tab top: {outer}"
++    );
++    assert!(
++        (hole - 0.5).abs() < 1e-9,
++        "the hole ring keeps level 0.5: {hole}"
++    );
++    assert!(!unheld(&s, index));
++    assert!(
++        f.message().contains("stops at the web Z 2.000"),
++        "{}",
++        f.message()
++    );
++}
++
++#[test]
++fn an_earlier_rough_sets_the_web_at_its_floor() {
++    let (mut s, index) = generate(Job::RoughFirst, 0.0);
++    let f = finding(&s, index);
++    let web = f.web.expect("a web");
++    assert_eq!(web.source, WebSource::EarlierFloor);
++    // The 3D Rough default: the model bottom 0 plus its axial leave.
++    let OperationConfig::Adaptive3d(rough) = &s.toolpath_configs()[0].operation else {
++        panic!("toolpath 0 is the rough");
++    };
++    let leave = rough.stock_to_leave_axial;
++    assert!((web.z_mm - leave).abs() < 1e-9, "web {}", web.z_mm);
++    assert_eq!(f.outer_rings_skipped, 1, "level 0.5 of the outer ring");
++    assert!(f.part_unheld, "no tabbed Profile follows");
++    assert!(unheld(&s, index));
++    let (outer, hole) = lowest_cuts(s.result_at(index).expect("r").toolpath());
++    assert!(outer > leave, "{outer}");
++    assert!((hole - 0.5).abs() < 1e-9, "{hole}");
++
++    // The lead's check: the generated rough cuts no lower than the web
++    // that its config gives, so the config rule and the result agree.
++    let cancel = AtomicBool::new(false);
++    let _ = s
++        .generate_toolpath(0, &cancel)
++        .expect("the rough generates");
++    let rough_low = s
++        .result_at(0)
++        .expect("r")
++        .toolpath()
++        .moves
++        .iter()
++        .filter(|m| m.move_type.is_cutting())
++        .map(|m| m.target.z)
++        .fold(f64::INFINITY, f64::min);
++    assert!(
++        rough_low >= web.z_mm - 1e-6,
++        "the rough's lowest cut {rough_low} is under the web {}",
++        web.z_mm
++    );
++}
++
++#[test]
++fn a_relief_keeps_every_ring() {
++    let (alone, i) = generate(Job::Alone, 1.0);
++    let (rough_first, j) = generate(Job::RoughFirst, 1.0);
++    let a = alone.result_at(i).expect("r").toolpath();
++    let b = rough_first.result_at(j).expect("r").toolpath();
++    assert_eq!(a.moves.len(), b.moves.len());
++    assert!(
++        a.moves
++            .iter()
++            .zip(&b.moves)
++            .all(|(x, y)| x.target == y.target)
++    );
++    let f = finding(&rough_first, j);
++    assert!(f.web.is_none() && !f.part_unheld, "not a through part");
++}
++
++#[test]
++fn a_through_part_with_no_web_keeps_its_ladder_and_warns() {
++    let (s, index) = generate(Job::Alone, 0.0);
++    let f = finding(&s, index);
++    assert!(f.web.is_none());
++    assert_eq!(f.outer_rings_skipped, 0);
++    assert!(f.part_unheld);
++    assert!(unheld(&s, index));
++    let (outer, _) = lowest_cuts(s.result_at(index).expect("r").toolpath());
++    assert!((outer - 0.5).abs() < 1e-9, "today's ladder: {outer}");
++}
