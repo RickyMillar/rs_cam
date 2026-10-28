@@ -636,6 +636,73 @@ impl RsCamApp {
         false
     }
 
+    /// B6 (design B §3.4): the release of a box in pick mode. The keys come
+    /// from `picking::pick_items_in_rect` over the chips that are on; the
+    /// event comes from `interaction::intent::gesture_events(BoxRelease)`:
+    /// one `AddPicks` or `RemovePicks`, one undo step. No key sends nothing.
+    /// A boundary whose source is not a selection gives a notice and no
+    /// edit.
+    fn handle_box_release(
+        &mut self,
+        boxed: egui::Rect,
+        mode: crate::state::viewport_input::BoxMode,
+        op: crate::state::viewport_input::BoxOp,
+    ) {
+        let Some(pick) = self.active_pick() else {
+            return;
+        };
+        let state = self.controller.state();
+        let boundary_not_selection = pick.target == rs_cam_core::session::SelectionTarget::Boundary
+            && state
+                .session()
+                .find_toolpath_config_by_id(pick.toolpath_id)
+                .is_some_and(|(_, tc)| {
+                    !matches!(
+                        tc.boundary.source,
+                        rs_cam_core::compute::config::BoundarySource::Selection { .. }
+                    )
+                });
+        if boundary_not_selection {
+            self.controller.push_notification(
+                crate::ui::pick_bar::BOX_NEEDS_SELECTION_BOUNDARY.to_owned(),
+                crate::controller::Severity::Info,
+            );
+            return;
+        }
+        let origin = self.viewport_rect.min;
+        let local = crate::interaction::picking::ScreenRect::from_corners(
+            [
+                f64::from(boxed.min.x - origin.x),
+                f64::from(boxed.min.y - origin.y),
+            ],
+            [
+                f64::from(boxed.max.x - origin.x),
+                f64::from(boxed.max.y - origin.y),
+            ],
+        );
+        let keys = crate::interaction::picking::pick_items_in_rect(
+            &self.pick_context(boxed.center()),
+            state.session(),
+            pick.toolpath_id,
+            &pick.filter,
+            &pick.kinds,
+            local,
+            mode,
+        );
+        let events = crate::interaction::intent::gesture_events(
+            &crate::interaction::intent::ViewportGesture::BoxRelease { keys, op },
+            &crate::interaction::intent::ViewContext {
+                workspace: state.workspace,
+                focus: state.focus(),
+                selection_ui: &state.gui.selection_ui,
+                session: state.session(),
+            },
+        );
+        for event in events {
+            self.controller.events_mut().push(event);
+        }
+    }
+
     /// The writes of a scene hit that are not the focus (F4): a pin click
     /// rings the pin (P7), a stock click drops that ring, and a collision
     /// marker moves the playback. The focus itself is the `UiCommand::Select`
@@ -911,13 +978,29 @@ impl RsCamApp {
             ui.ctx().request_repaint();
         }
         // The drag and the wheel (G-SCROLLLAYER: `InputSample::read` takes
-        // the wheel only with the layer-aware hover answer). A
-        // `BoxRelease` is B6; it cannot occur under `LeftOrbit`.
+        // the wheel only with the layer-aware hover answer).
         crate::interaction::input::apply_camera(
             &actions,
             &mut self.controller.state_mut().camera,
             rect,
         );
+        // B6: the box. A release selects; a box in flight paints in egui
+        // (nothing uploads during the drag).
+        for action in &actions {
+            if let InputAction::BoxRelease {
+                rect: boxed,
+                mode,
+                op,
+            } = *action
+            {
+                self.handle_box_release(boxed, mode, op);
+            }
+        }
+        if let crate::state::viewport_input::DragState::BoxSelect { anchor, to, .. } =
+            self.controller.state().gui.selection_ui.drag
+        {
+            crate::ui::pick_bar::paint_box(&ui.painter_at(rect), anchor, to);
+        }
 
         let aspect = if rect.height() > 0.0 {
             rect.width() / rect.height()

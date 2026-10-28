@@ -458,9 +458,11 @@ impl RsCamApp {
         // ends the tab editor too (a drag in progress sends nothing).
         // F4: the key goes through the one gesture translation, which
         // sends `UiCommand::EndViewportMode`; the controller ends the mode.
-        // B6: a first Escape will cancel a running box and keep the mode.
+        // B6: a first Escape during a box cancels the box and keeps the
+        // mode; the next Escape ends it.
         if self.controller.state().gui.selection_ui.mode.is_some()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            && !self.controller.state_mut().gui.selection_ui.cancel_box()
         {
             let events = {
                 let state = self.controller.state();

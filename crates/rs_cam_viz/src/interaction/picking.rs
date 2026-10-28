@@ -450,6 +450,211 @@ pub fn pick_items(
     pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
 }
 
+/// A screen rectangle in viewport-local points (B6, box select).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScreenRect {
+    pub min: [f64; 2],
+    pub max: [f64; 2],
+}
+
+impl ScreenRect {
+    /// The rectangle with corners `a` and `b`, in any order.
+    pub fn from_corners(a: [f64; 2], b: [f64; 2]) -> Self {
+        Self {
+            min: [a[0].min(b[0]), a[1].min(b[1])],
+            max: [a[0].max(b[0]), a[1].max(b[1])],
+        }
+    }
+
+    fn holds(&self, p: [f64; 2]) -> bool {
+        p[0] >= self.min[0] && p[0] <= self.max[0] && p[1] >= self.min[1] && p[1] <= self.max[1]
+    }
+
+    fn centre(&self) -> [f64; 2] {
+        [
+            (self.min[0] + self.max[0]) / 2.0,
+            (self.min[1] + self.max[1]) / 2.0,
+        ]
+    }
+
+    /// True when the segment `a`-`b` crosses an edge of the rectangle.
+    fn crosses(&self, a: [f64; 2], b: [f64; 2]) -> bool {
+        let [x0, y0] = self.min;
+        let [x1, y1] = self.max;
+        let edges = [
+            ([x0, y0], [x1, y0]),
+            ([x1, y0], [x1, y1]),
+            ([x1, y1], [x0, y1]),
+            ([x0, y1], [x0, y0]),
+        ];
+        edges.iter().any(|&(c, d)| segments_cross(a, b, c, d))
+    }
+}
+
+/// True when the segments `a`-`b` and `c`-`d` meet (touching counts).
+fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let orient = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    };
+    let on = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+        r[0] >= p[0].min(q[0])
+            && r[0] <= p[0].max(q[0])
+            && r[1] >= p[1].min(q[1])
+            && r[1] <= p[1].max(q[1])
+    };
+    let (o1, o2, o3, o4) = (
+        orient(a, b, c),
+        orient(a, b, d),
+        orient(c, d, a),
+        orient(c, d, b),
+    );
+    if ((o1 > 0.0 && o2 < 0.0) || (o1 < 0.0 && o2 > 0.0))
+        && ((o3 > 0.0 && o4 < 0.0) || (o3 < 0.0 && o4 > 0.0))
+    {
+        return true;
+    }
+    (o1 == 0.0 && on(a, b, c))
+        || (o2 == 0.0 && on(a, b, d))
+        || (o3 == 0.0 && on(c, d, a))
+        || (o4 == 0.0 && on(c, d, b))
+}
+
+/// True when `p` is inside the closed polygon `ring` (even-odd rule).
+fn ring_holds(ring: &[[f64; 2]], p: [f64; 2]) -> bool {
+    let mut inside = false;
+    let n = ring.len();
+    for i in 0..n {
+        let (Some(a), Some(b)) = (ring.get(i), ring.get((i + n - 1) % n)) else {
+            continue;
+        };
+        if (a[1] > p[1]) != (b[1] > p[1])
+            && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]
+        {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// The keys of the items of the model of `toolpath_id` that a box selects
+/// (B6, design B §3.3). `ctx.screen_x/y` are not read; `rect` is in
+/// viewport-local points. `kinds` are the chips that are on
+/// (`PickFilter::effective_kinds`): a box ignores a chip-off kind (a click
+/// turns a chip on; a box does not).
+///
+/// Each line of an item that `filter` admits projects as the drawing draws
+/// it (`item_display_point`, a face at its own Z). Enclose: every vertex
+/// projects into the rectangle (a vertex behind the eye fails the item).
+/// Crossing: a vertex is in the rectangle, or a segment crosses an edge;
+/// a face also when the rectangle centre is inside its outer ring and
+/// outside its holes. The key follows the `face_pick_key` rule: the
+/// toolpath model is stored as `ToolpathModel`. An STL takes its faces from
+/// the flat-region cache (`peek_flat_regions`; a cold cache gives none).
+/// Import order, no duplicates. A hidden model gives nothing.
+pub fn pick_items_in_rect(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+    filter: &PickFilter,
+    kinds: &[ItemKind],
+    rect: ScreenRect,
+    mode: crate::state::viewport_input::BoxMode,
+) -> Vec<rs_cam_core::selection::MatchKey> {
+    use crate::state::viewport_input::BoxMode;
+    let Some((_, tc)) = session.find_toolpath_config_by_id(toolpath_id) else {
+        return Vec::new();
+    };
+    let Some(model) = session.models().iter().find(|m| m.id == tc.model_id) else {
+        return Vec::new();
+    };
+    if !ctx.shows(model.id) {
+        return Vec::new();
+    }
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, toolpath_id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    let screen = |item: &rs_cam_core::selection::Item, p: &P2| -> Option<[f64; 2]> {
+        let q = item_display_point(frame.as_ref(), stock, item, *p, z);
+        ctx.camera
+            .project_to_screen(
+                [q.x as f32, q.y as f32, q.z as f32],
+                ctx.aspect,
+                ctx.vw,
+                ctx.vh,
+            )
+            .map(|s| [f64::from(s[0]), f64::from(s[1])])
+    };
+    let flat = match (&model.mesh, model.faces_are_flat_regions()) {
+        (Some(mesh), true) => rs_cam_core::maps::geom_cache::peek_flat_regions(mesh),
+        _ => None,
+    };
+    let items = model
+        .items
+        .iter()
+        .chain(flat.iter().flat_map(|set| set.iter()));
+    let mut keys: Vec<rs_cam_core::selection::MatchKey> = Vec::new();
+    for item in items {
+        if !filter.admits(kinds, item) {
+            continue;
+        }
+        // Each line, projected; `None` for a vertex behind the eye.
+        let lines: Vec<(Vec<Option<[f64; 2]>>, bool)> = item
+            .shape()
+            .pick_lines()
+            .into_iter()
+            .map(|(pts, closed)| (pts.iter().map(|p| screen(item, p)).collect(), closed))
+            .collect();
+        let taken = match mode {
+            BoxMode::Enclose => {
+                !lines.is_empty()
+                    && lines
+                        .iter()
+                        .all(|(pts, _)| pts.iter().all(|p| p.is_some_and(|p| rect.holds(p))))
+            }
+            BoxMode::Crossing => {
+                let touches = lines.iter().any(|(pts, closed)| {
+                    let shown: Vec<[f64; 2]> = pts.iter().flatten().copied().collect();
+                    if shown.iter().any(|p| rect.holds(*p)) {
+                        return true;
+                    }
+                    let mut segments: Vec<([f64; 2], [f64; 2])> = shown
+                        .windows(2)
+                        .filter_map(|w| Some((*w.first()?, *w.get(1)?)))
+                        .collect();
+                    if *closed
+                        && shown.len() > 2
+                        && let (Some(first), Some(last)) = (shown.first(), shown.last())
+                    {
+                        segments.push((*last, *first));
+                    }
+                    segments.iter().any(|&(a, b)| rect.crosses(a, b))
+                });
+                let face_holds_centre = item.kind() == ItemKind::Face && {
+                    let rings: Vec<Vec<[f64; 2]>> = lines
+                        .iter()
+                        .map(|(pts, _)| pts.iter().flatten().copied().collect())
+                        .collect();
+                    let centre = rect.centre();
+                    rings.first().is_some_and(|outer| ring_holds(outer, centre))
+                        && !rings.iter().skip(1).any(|hole| ring_holds(hole, centre))
+                };
+                touches || face_holds_centre
+            }
+        };
+        if !taken {
+            continue;
+        }
+        let key = rs_cam_core::selection::MatchKey {
+            source: rs_cam_core::selection::SourceRef::ToolpathModel,
+            ..item.key().clone()
+        };
+        if !keys.iter().any(|k| k.names_same_geometry(&key)) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
 /// A pick-mode hit (P4, reference audit 2026-10-23), and the kind whose
 /// chip is off when the hit came from the second pass.
 #[derive(Debug, Clone)]

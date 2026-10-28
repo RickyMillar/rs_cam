@@ -516,3 +516,40 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
     );
     assert_eq!(hidden, None, "a click gave a loop of a hidden model");
 }
+
+/// B6: a primary drag that starts on a tab mark goes to the tab editor
+/// (`DragState::Tab`, the `TabDrag` action), never to a box, also with the
+/// pick-mode flag on; the release of that drag sends no box.
+#[test]
+fn a_drag_on_a_tab_wins_over_the_box_p4_6() {
+    use rs_cam_viz::interaction::input::{InputAction, InputEnv, InputSample, MouseScheme, step};
+    use rs_cam_viz::state::viewport_input::DragState;
+    let sample = |started: bool, stopped: bool| InputSample {
+        started: started.then_some(egui::PointerButton::Primary),
+        dragging: (!stopped).then_some(egui::PointerButton::Primary),
+        stopped,
+        delta: egui::vec2(12.0, 4.0),
+        press_origin: Some(egui::pos2(50.0, 50.0)),
+        pointer: Some(egui::pos2(62.0, 54.0)),
+        hover_pos: None,
+        modifiers: egui::Modifiers::NONE,
+        clicked: false,
+        secondary_clicked: false,
+        hovered: true,
+        zoom_delta: 1.0,
+        scroll: egui::Vec2::ZERO,
+    };
+    let env = InputEnv {
+        scheme: MouseScheme::LeftOrbit,
+        pick_mode_on: true,
+        press_on_tab: true,
+        drag_anchor: None,
+    };
+    let mut drag = DragState::Idle;
+    let start = step(&mut drag, &sample(true, false), &env);
+    assert_eq!(drag, DragState::Tab, "the tab wins the press");
+    assert_eq!(start, vec![InputAction::TabDrag]);
+    let end = step(&mut drag, &sample(false, true), &env);
+    assert_eq!(end, vec![InputAction::TabDrag], "no box, no orbit");
+    assert_eq!(drag, DragState::Idle);
+}

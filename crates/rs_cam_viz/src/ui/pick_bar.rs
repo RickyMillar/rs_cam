@@ -37,7 +37,37 @@ const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 /// The help line of the bar.
 pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the item. \
      Ctrl-click: remove the item. Right-click: rules from the item. \
-     Ctrl+A: every item of the chip kinds.";
+     Ctrl+A: every item of the chip kinds. Drag: box (left to right encloses, \
+     right to left crosses).";
+
+/// B6: the notice of a box on a boundary whose source is not a selection.
+pub const BOX_NEEDS_SELECTION_BOUNDARY: &str = "Set the boundary source to Selection first.";
+
+/// Paint the selection box from `anchor` to `to` (screen points, B6,
+/// design B §3.2): `tokens::BOX_FILL`, an `ACCENT` 1 pt edge, solid for
+/// enclose (left to right), dashed for crossing (right to left). It paints
+/// in egui; nothing uploads during the drag.
+pub fn paint_box(painter: &egui::Painter, anchor: egui::Pos2, to: egui::Pos2) {
+    use crate::state::viewport_input::{BoxMode, DragState};
+    let rect = egui::Rect::from_two_pos(anchor, to);
+    let stroke = egui::Stroke::new(1.0, tokens::ACCENT);
+    painter.rect_filled(rect, 0.0, tokens::BOX_FILL);
+    match DragState::box_mode(anchor, to) {
+        BoxMode::Enclose => {
+            painter.rect_stroke(rect, 0.0, stroke, egui::StrokeKind::Inside);
+        }
+        BoxMode::Crossing => {
+            let corners = [
+                rect.left_top(),
+                rect.right_top(),
+                rect.right_bottom(),
+                rect.left_bottom(),
+                rect.left_top(),
+            ];
+            painter.extend(egui::Shape::dashed_line(&corners, stroke, 4.0, 3.0));
+        }
+    }
+}
 
 /// The first row of the rule menu: the layer rule of the item (the
 /// right-click act before E5).

@@ -241,6 +241,20 @@ impl SelectionUi {
             .is_some_and(|m| m.target == target)
     }
 
+    /// B6: a first Escape during a box cancels the box and keeps the mode
+    /// (`DragState::Cancelled`: the rest of the drag sends nothing). True
+    /// when it cancelled a box; false otherwise (the caller then ends the
+    /// mode).
+    pub fn cancel_box(&mut self) -> bool {
+        use super::viewport_input::DragState;
+        if matches!(self.drag, DragState::BoxSelect { .. }) {
+            self.drag = DragState::Cancelled;
+            true
+        } else {
+            false
+        }
+    }
+
     /// End the viewport mode that is on (the pick mode or the tab editor;
     /// F4, Escape). The gesture resets with it (L-3).
     pub fn end_mode(&mut self) {

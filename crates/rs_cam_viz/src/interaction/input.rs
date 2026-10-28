@@ -169,7 +169,16 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
             *state = DragState::Tab;
             actions.push(InputAction::TabDrag);
         } else {
-            match classify(env.scheme, button, s.modifiers) {
+            // B6, temporary until B3 replaces the scheme: under
+            // `LeftOrbit` a left drag that starts in pick mode is a box;
+            // outside pick mode it orbits as before.
+            let intent = match (env.scheme, button) {
+                (MouseScheme::LeftOrbit, PointerButton::Primary) if env.pick_mode_on => {
+                    Intent::Select
+                }
+                _ => classify(env.scheme, button, s.modifiers),
+            };
+            match intent {
                 Intent::Orbit => {
                     let pivot = env.drag_anchor.map(|a| a.point);
                     *state = DragState::Orbit { pivot };
@@ -322,6 +331,9 @@ pub fn apply_camera(actions: &[InputAction], camera: &mut CameraState, rect: egu
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseScheme {
     /// Today's buttons: left drag orbits, right or middle drag pans.
+    /// B6 (temporary, until B3): a left drag that starts in pick mode is a
+    /// box (`step` gives `Intent::Select` there); outside pick mode it
+    /// orbits.
     LeftOrbit,
     /// Right drag orbits, middle drag pans, left selects (Onshape).
     WebCad,

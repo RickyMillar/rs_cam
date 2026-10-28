@@ -21,8 +21,9 @@ use crate::ui_command::{NoArgs, UiCommand};
 /// A key the viewport takes as a gesture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewKey {
-    /// End the viewport mode (B6 will make a first Escape cancel a running
-    /// box and only a second one end the mode).
+    /// End the viewport mode. B6: a first Escape during a box cancels the
+    /// box (`SelectionUi::cancel_box`, before this translation runs); the
+    /// next one ends the mode.
     Escape,
 }
 
@@ -138,9 +139,8 @@ pub fn gesture_events(g: &ViewportGesture, cx: &ViewContext<'_>) -> Vec<AppEvent
         ViewportGesture::Key {
             key: ViewKey::Escape,
         } => {
-            // B6: a first Escape will cancel a running box
-            // (`DragState::Cancelled`) and keep the mode; only a second one
-            // ends it.
+            // B6: a box in flight was cancelled before this runs
+            // (`SelectionUi::cancel_box`); this Escape ends the mode.
             if cx.selection_ui.mode.is_some() {
                 vec![AppEvent::Ui(UiCommand::EndViewportMode(NoArgs))]
             } else {
