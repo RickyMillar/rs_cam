@@ -240,7 +240,6 @@ fn wanaka_back_rough_first_and_last_z_layers() {
         initial_stock: None,
         // Removal step R4: Geodesic Adaptive (AgentSearch until then).
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
-        z_blend: false,
     };
 
     let _ = stock_bottom_z;

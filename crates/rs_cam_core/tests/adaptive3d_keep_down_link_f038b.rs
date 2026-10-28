@@ -192,7 +192,6 @@ fn make_params(
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
-        z_blend: false,
     }
 }
 

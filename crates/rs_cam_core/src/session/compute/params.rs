@@ -392,7 +392,7 @@ impl ProjectSession {
                 // Coerce 0/1 -> bool when the existing field is a boolean.
                 // Lets callers that can only produce JSON numbers (e.g. MCP
                 // clients that treat every value as numeric) drive boolean
-                // params like z_blend, detect_flat_areas, slot_clearing.
+                // params like detect_flat_areas, slot_clearing.
                 //
                 // Also coerce numeric strings ("7", "12.5") into JSON
                 // numbers when the existing field is numeric (or absent).

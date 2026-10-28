@@ -130,7 +130,6 @@ fn params(depth_per_pass: f64) -> Adaptive3dParams {
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        z_blend: false,
     }
 }
 

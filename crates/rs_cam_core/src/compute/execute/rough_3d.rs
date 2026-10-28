@@ -157,7 +157,6 @@ impl Adaptive3dRough<'_> {
             // Load-only fields: no 3D Rough strategy reads them.
             trochoid_cap_mult: cfg.trochoid_cap_mult,
             engagement_measure: cfg.engagement_measure,
-            z_blend: cfg.z_blend,
         }
     }
 }

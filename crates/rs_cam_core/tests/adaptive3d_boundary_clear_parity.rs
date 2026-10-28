@@ -147,7 +147,6 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
         initial_stock: None,
         clearing_strategy: strategy,
-        z_blend: false,
     }
 }
 

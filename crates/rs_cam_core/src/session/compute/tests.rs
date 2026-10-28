@@ -291,7 +291,7 @@ fn a_positive_peck_still_has_no_descent_cap() {
 #[test]
 fn set_toolpath_param_coerces_integer_to_bool() {
     // MCP clients that can only produce JSON numbers should still be
-    // able to set boolean params like `climb`, `z_blend`, etc.
+    // able to set boolean params like `climb`, `detect_flat_areas`, etc.
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
     // Pocket default has climb=true; flip it via integer 0.
@@ -2061,7 +2061,6 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         detect_flat_areas: false,
         region_ordering: RegionOrdering::Global,
         clearing_strategy: strategy,
-        z_blend: false,
         spindle_rpm: Some(18_000),
         min_region_cut_length_mm: 0.0,
         max_stay_down_distance_mm: Some(0.0),

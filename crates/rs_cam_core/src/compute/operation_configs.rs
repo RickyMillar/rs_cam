@@ -1689,8 +1689,6 @@ pub struct Adaptive3dConfig {
     #[param(help = "Not read by 3D Rough: the strategy that read it is removed. \
                 Kept so saved projects load unchanged.")]
     pub engagement_measure: crate::adaptive::EngagementMeasure,
-    #[serde(default)]
-    pub z_blend: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
@@ -1760,7 +1758,6 @@ impl Default for Adaptive3dConfig {
             clearing_strategy: ClearingStrategy::ContourParallel,
             trochoid_cap_mult: default_trochoid_cap_mult(),
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
-            z_blend: false,
             spindle_rpm: None,
             min_region_cut_length_mm: default_min_region_cut_length_mm(),
             // F-038b: leave the planner to pick 8×diameter at toolpath

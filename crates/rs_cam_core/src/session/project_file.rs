@@ -207,8 +207,34 @@ const RETIRED_KEYS: &[RetiredKey] = &[
 struct RetiredValue {
     table: &'static [&'static str],
     key: &'static str,
-    value: &'static str,
+    value: RetiredLiteral,
     replacement: &'static str,
+}
+
+/// The value of a [`RetiredValue`] row, compared as the TOML value: a
+/// string (a unit enum variant) or a boolean (G-A: `z_blend = true`).
+#[derive(Clone, Copy)]
+enum RetiredLiteral {
+    Str(&'static str),
+    Bool(bool),
+}
+
+impl RetiredLiteral {
+    /// True when the file value `value` is this literal.
+    fn matches(self, value: &toml::Value) -> bool {
+        match self {
+            Self::Str(s) => value.as_str() == Some(s),
+            Self::Bool(b) => value.as_bool() == Some(b),
+        }
+    }
+
+    /// The literal as the file writes it.
+    fn file_text(self) -> String {
+        match self {
+            Self::Str(s) => format!("\"{s}\""),
+            Self::Bool(b) => b.to_string(),
+        }
+    }
 }
 
 /// Every retired string value. The loader refuses a file that holds one,
@@ -218,7 +244,7 @@ const RETIRED_VALUES: &[RetiredValue] = &[
     RetiredValue {
         table: &["setups", "[]", "toolpaths", "[]", "boundary"],
         key: "source",
-        value: "face_selection",
+        value: RetiredLiteral::Str("face_selection"),
         replacement: "Removed (geometry selection P2.5): a face boundary is a \
                       [boundary.source.selection] with the face picks. Pick the faces again",
     },
@@ -228,25 +254,41 @@ const RETIRED_VALUES: &[RetiredValue] = &[
     RetiredValue {
         table: TOOLPATH_PARAMS,
         key: "clearing_strategy",
-        value: "adaptive",
+        value: RetiredLiteral::Str("adaptive"),
         replacement: CLEARING_STRATEGY_REPLACEMENT,
     },
     RetiredValue {
         table: TOOLPATH_PARAMS,
         key: "clearing_strategy",
-        value: "agent_search",
+        value: RetiredLiteral::Str("agent_search"),
         replacement: CLEARING_STRATEGY_REPLACEMENT,
     },
     RetiredValue {
         table: TOOLPATH_PARAMS,
         key: "clearing_strategy",
-        value: "contour_spiral",
+        value: RetiredLiteral::Str("contour_spiral"),
         replacement: CLEARING_STRATEGY_REPLACEMENT,
+    },
+    // G-A (operator ruling D-3, 2026-10-28): Z Blend left the format. It cut
+    // the inner Contour Parallel rings deeper than one Depth/Pass, and
+    // Geodesic Adaptive never read it. `z_blend = false` (every older 3D
+    // Rough saved it) loads, and the key is ignored: the output is the same.
+    // `true` refuses, because the output of a Contour Parallel op would
+    // change with no word.
+    RetiredValue {
+        table: TOOLPATH_PARAMS,
+        key: "z_blend",
+        value: RetiredLiteral::Bool(true),
+        replacement: Z_BLEND_REPLACEMENT,
     },
 ];
 
 /// The parameter table of every toolpath of a project file.
 const TOOLPATH_PARAMS: &[&str] = &["setups", "[]", "toolpaths", "[]", "operation", "params"];
+
+const Z_BLEND_REPLACEMENT: &str = "Removed (GUI fix G-A, operator ruling 2026-10-28): \
+     Z Blend cut deeper than one Depth/Pass. Delete the key; the op then cuts one Depth/Pass \
+     per level";
 
 const CLEARING_STRATEGY_REPLACEMENT: &str = "Removed (removal step R2, operator ruling \
      2026-10-28): the 3D Adaptive clearing strategies are \"geodesic_adaptive\" and \
@@ -256,11 +298,21 @@ const CLEARING_STRATEGY_REPLACEMENT: &str = "Removed (removal step R2, operator 
 /// (`operation.params.<param> = "<value>"`), or `None`. The parameter
 /// setter reads it (`set_toolpath_param`), so MCP and a job file refuse a
 /// retired value with the same text as the project loader.
+///
+/// A boolean row names a parameter that left the format (G-A `z_blend`):
+/// the setter refuses it with ANY value, because there is no field left to
+/// set. The loader still loads the harmless value (`false`).
 pub(crate) fn retired_param_value(param: &str, value: &serde_json::Value) -> Option<&'static str> {
-    let value = value.as_str()?;
     RETIRED_VALUES
         .iter()
-        .find(|r| r.table == TOOLPATH_PARAMS && r.key == param && r.value == value)
+        .find(|r| {
+            r.table == TOOLPATH_PARAMS
+                && r.key == param
+                && match r.value {
+                    RetiredLiteral::Str(s) => value.as_str() == Some(s),
+                    RetiredLiteral::Bool(_) => true,
+                }
+        })
         .map(|r| r.replacement)
 }
 
@@ -393,12 +445,10 @@ fn check_retired_keys(raw: &toml::Value) -> Result<(), SessionError> {
     }
     for retired in RETIRED_VALUES {
         let mut paths = Vec::new();
-        let hit = |t: &toml::Table| {
-            t.get(retired.key).and_then(toml::Value::as_str) == Some(retired.value)
-        };
+        let hit = |t: &toml::Table| t.get(retired.key).is_some_and(|v| retired.value.matches(v));
         find_retired(raw, retired.table, retired.key, &hit, "", &mut paths);
         found.extend(paths.into_iter().map(|path| super::RetiredKeyFound {
-            path: format!("{path} = \"{}\"", retired.value),
+            path: format!("{path} = {}", retired.value.file_text()),
             replacement: retired.replacement,
         }));
     }

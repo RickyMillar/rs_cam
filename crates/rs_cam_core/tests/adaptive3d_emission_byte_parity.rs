@@ -20,8 +20,8 @@
 //!
 //! ## The five cases
 //!
-//! Contour Parallel three times (plain, with the flat-area and Z-blend
-//! dials, and By Area) and Geodesic Adaptive twice (plain, and with a
+//! Contour Parallel three times (plain, with the flat-area dial, and By
+//! Area) and Geodesic Adaptive twice (plain, and with a
 //! boundary and the F-038 filter). Geodesic Adaptive runs the slice
 //! pipeline that CUT-09 cut (the AgentSearch arm until removal step R4).
 //! The cases deliberately turn the optional dials ON, because a rig that
@@ -30,7 +30,7 @@
 //! | case | strategy | dials exercised |
 //! |---|---|---|
 //! | `contour_parallel` | `ContourParallel` | the plain baseline |
-//! | `contour_parallel_flat_blend` | `ContourParallel` | `detect_flat_areas`, `z_blend` |
+//! | `contour_parallel_flat` | `ContourParallel` | `detect_flat_areas` |
 //! | `contour_parallel_by_area` | `ContourParallel` | `RegionOrdering::ByArea` |
 //! | `geodesic_adaptive` | `GeodesicAdaptive` | its own step split and route (`None` = `StockDepth`, `CutFeed`), stay-down, the feed caps |
 //! | `geodesic_adaptive_boundary` | `GeodesicAdaptive` | `boundary`, stay-down, `min_region_cut_length_mm` |
@@ -70,6 +70,12 @@
 //!   `min_region_cut_length_mm` to `geodesic_adaptive_boundary`, By Area to
 //!   `contour_parallel_by_area` (`trochoid_cap_mult` is read by no strategy
 //!   left). Every other fixture is unchanged.
+//! - GUI fix G-A (operator ruling D-3, 2026-10-28): Z Blend left the
+//!   format, because it cut inner rings deeper than one Depth/Pass. The case
+//!   `contour_parallel_flat_blend` becomes `contour_parallel_flat`
+//!   (`detect_flat_areas` only), blessed alone. Its dump is the Z Blend off
+//!   output: 1197 moves before, 1124 moves after. Every other
+//!   fixture is unchanged.
 
 #![expect(
     clippy::unwrap_used,
@@ -141,17 +147,15 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
         clearing_strategy: strategy,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        z_blend: false,
     }
 }
 
 fn case_params(case: &str) -> Adaptive3dParams {
     match case {
         "contour_parallel" => base_params(ClearingStrategy3d::ContourParallel),
-        "contour_parallel_flat_blend" => {
+        "contour_parallel_flat" => {
             let mut p = base_params(ClearingStrategy3d::ContourParallel);
             p.depth.detect_flat_areas = true;
-            p.z_blend = true;
             p
         }
         "geodesic_adaptive_boundary" => {
@@ -177,7 +181,7 @@ fn case_params(case: &str) -> Adaptive3dParams {
 
 const CASES: [&str; 5] = [
     "contour_parallel",
-    "contour_parallel_flat_blend",
+    "contour_parallel_flat",
     "contour_parallel_by_area",
     "geodesic_adaptive",
     "geodesic_adaptive_boundary",
@@ -286,8 +290,8 @@ fn contour_parallel_emission_is_byte_identical() {
 }
 
 #[test]
-fn contour_parallel_flat_blend_emission_is_byte_identical() {
-    check("contour_parallel_flat_blend");
+fn contour_parallel_flat_emission_is_byte_identical() {
+    check("contour_parallel_flat");
 }
 
 #[test]

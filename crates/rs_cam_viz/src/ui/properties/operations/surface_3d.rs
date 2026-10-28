@@ -231,9 +231,6 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
             });
         ui.end_row();
-        ui.label("Z Blend:");
-        ui.checkbox(&mut cfg.z_blend, "");
-        ui.end_row();
     });
 }
 

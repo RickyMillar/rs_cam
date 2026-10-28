@@ -168,7 +168,6 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
         entry_style: style,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 

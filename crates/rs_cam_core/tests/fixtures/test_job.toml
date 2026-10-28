@@ -736,7 +736,6 @@ fine_stepdown = 0.0
 detect_flat_areas = true
 region_ordering = "global"
 clearing_strategy = "geodesic_adaptive"
-z_blend = true
 
 [setups.toolpaths.dressups]
 entry_style = "none"

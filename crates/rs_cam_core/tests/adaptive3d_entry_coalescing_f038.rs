@@ -181,7 +181,6 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
         entry_style: EntryStyle3d::Plunge,
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::GeodesicAdaptive,
-        z_blend: false,
     }
 }
 

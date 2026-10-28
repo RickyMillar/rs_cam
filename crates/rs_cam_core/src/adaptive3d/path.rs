@@ -1097,7 +1097,6 @@ pub(super) fn adaptive_3d_segments(
         clearing_strategy: params.clearing_strategy,
         trochoid_cap_mult: params.trochoid_cap_mult,
         engagement_measure: params.engagement_measure,
-        z_blend: params.z_blend,
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
@@ -2072,7 +2071,6 @@ mod tests {
             initial_stock: None,
             clearing_strategy: ClearingStrategy3d::ContourParallel,
             engagement_measure: crate::adaptive::EngagementMeasure::DiskArea,
-            z_blend: false,
         }
     }
 

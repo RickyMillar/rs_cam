@@ -125,7 +125,6 @@ fn build_as013_terrain_session() -> ProjectSession {
         detect_flat_areas: false,
         region_ordering: RegionOrdering::Global,
         clearing_strategy: ClearingStrategy::ContourParallel,
-        z_blend: false,
         spindle_rpm: Some(18_000),
         min_region_cut_length_mm: 0.0,
         max_stay_down_distance_mm: Some(0.0),

@@ -367,11 +367,6 @@ pub struct Adaptive3dParams {
     /// Load-only: no strategy reads it. The removed AgentSearch strategy
     /// read it as its 2D engagement quantity (removal step R4).
     pub engagement_measure: crate::adaptive::EngagementMeasure,
-    /// Blend Z toward terrain surface across contour offsets.
-    /// When true, outer contours stay near z_level and inner contours
-    /// progressively descend toward the surface. Best for terrain/relief.
-    /// When false (default), all contours cut at z_level. Best for pockets.
-    pub z_blend: bool,
     /// Pre-machined stock for two-sided machining.
     /// When Some, used as starting material instead of a fresh block at
     /// `Adaptive3dDepth::stock_top_z`.

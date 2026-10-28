@@ -137,7 +137,6 @@ fn params(merge: Option<f64>) -> Adaptive3dParams {
         },
         initial_stock: None,
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 

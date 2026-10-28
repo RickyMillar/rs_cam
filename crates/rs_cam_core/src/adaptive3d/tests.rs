@@ -157,7 +157,6 @@ fn default_params() -> Adaptive3dParams {
         // in production. Tests that specifically validate GeodesicAdaptive
         // override this field explicitly.
         clearing_strategy: ClearingStrategy3d::ContourParallel,
-        z_blend: false,
     }
 }
 

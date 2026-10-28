@@ -84,7 +84,6 @@ fn params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
         clearing_strategy: strategy,
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
-        z_blend: false,
     }
 }
 

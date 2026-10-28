@@ -369,7 +369,6 @@ pub(super) struct ClearZLevelContext<'a> {
     /// Load-only: passed to the slice's 2D params, which do not read it
     /// (`KeepDownLinks::WithinPassLoad`, `adaptive::path::pass_load_for`).
     pub(super) engagement_measure: crate::adaptive::EngagementMeasure,
-    pub(super) z_blend: bool,
     /// Minimum corner radius for `blend_corners_3d` — needed inside
     /// `stamp_emitted_segment` so the planner stamps the SAME path the
     /// simulator will replay (segments_to_toolpath blends Cut paths
@@ -1372,11 +1371,6 @@ pub(super) fn clear_z_level_contour_parallel(
         "Contour-parallel EDT: generating offset contours"
     );
 
-    // Z-blend: when enabled, outer contours stay flat at z_level and inner
-    // contours progressively descend toward the terrain surface.
-    let offset_range = max_dist - tool_radius_cells;
-    let z_blend_enabled = ctx.z_blend;
-
     // The starting threshold determines the outermost contour offset. For wide
     // material regions (max_dist >> tool_radius), start at tool_radius_cells so
     // the tool's outer edge just reaches the boundary. For narrower or annular
@@ -1388,14 +1382,6 @@ pub(super) fn clear_z_level_contour_parallel(
     while threshold < max_dist {
         check_cancel(cancel)?;
 
-        // Blend factor: 0.0 at outermost contour, 1.0 at innermost
-        // Only active when z_blend is enabled; otherwise all passes cut at z_level.
-        let blend = if z_blend_enabled && offset_range > 1e-6 {
-            ((threshold - tool_radius_cells) / offset_range).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
         // Threshold the EDT: cells with distance > threshold are "inside" the offset
         let mask: Vec<bool> = edt.iter().map(|&d| d > threshold).collect();
         let loops = marching_squares_bool_grid(&mask, rows, cols, origin_x, origin_y, cell_size);
@@ -1405,10 +1391,10 @@ pub(super) fn clear_z_level_contour_parallel(
                 continue;
             }
 
-            // Z-blended surface drape: outer passes cut near z_level (flat),
-            // inner passes progressively descend toward the terrain surface.
-            // This spreads Z movement across all passes instead of a sudden
-            // plunge on the innermost pass.
+            // Each ring cuts at its level, or on the surface (plus the stock
+            // to leave) where the surface is above the level. G-A (operator
+            // ruling D-3, 2026-10-28): the Z Blend lerp toward the surface is
+            // gone; it cut inner rings deeper than one Depth/Pass.
             let mut path_3d: Vec<P3> = Vec::with_capacity(loop_pts.len());
             for p in loop_pts {
                 let surf_z = surface_hm.z_or_bbox_floor_at_world(p.x, p.y);
@@ -1417,9 +1403,7 @@ pub(super) fn clear_z_level_contour_parallel(
                 } else {
                     surf_z + ctx.stock_to_leave // actual terrain — may be below z_level
                 };
-                // Lerp: blend=0 → z_level (flat), blend=1 → target_z (terrain)
-                // Clamp so we never cut below the next Z level's floor.
-                let z = (z_level + blend * (target_z - z_level)).max(target_z);
+                let z = z_level.max(target_z);
                 path_3d.push(P3::new(p.x, p.y, z));
             }
 
