@@ -1,0 +1,103 @@
+diff --git a/crates/rs_cam_core/src/compute/operation_configs.rs b/crates/rs_cam_core/src/compute/operation_configs.rs
+index 630e6c6be..37ad036c2 100644
+--- a/crates/rs_cam_core/src/compute/operation_configs.rs
++++ b/crates/rs_cam_core/src/compute/operation_configs.rs
+@@ -1729,7 +1729,8 @@ pub struct Adaptive3dConfig {
+ const HELP_CONTOUR_EACH_LEVEL: &str = "After each level, contour the edge of the machining \
+     boundary where stock the tool can reach still stands above the level, so no later level \
+     cuts deeper than Depth/Pass there. Acts on a rest rough (remaining stock) with a machining \
+-    boundary. Off by default. Costs time where stock stands beyond the boundary.";
++    boundary. With By Area ordering, fresh or rest, it also cuts the walls of each region at \
++    each level. Off by default. Costs time where stock stands beyond the boundary.";
+ 
+ fn default_stay_down_clearance_mm() -> f64 {
+     // F-038b: matches dexel cell-height resolution at standard sim
+diff --git a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+index 3780bd583..d9a263dd7 100644
+--- a/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
++++ b/crates/rs_cam_viz/src/ui/properties/operations/surface_3d.rs
+@@ -198,10 +198,14 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
+         });
+         ui.end_row();
+         // C4 (operator ruling D69): one visible row, shown where it acts: a
+-        // rest rough (remaining stock) with a machining boundary, or while
+-        // it is on (the Pocket "Cut past open sides" rule). The hover is the
+-        // registry help (UI-04: keyed on the parameter name).
+-        if contour_each_level_offered || cfg.contour_each_level {
++        // rest rough (remaining stock) with a machining boundary, any rough
++        // in By Area order (C4b: the walls of each region at each level),
++        // or while it is on (the Pocket "Cut past open sides" rule). The
++        // hover is the registry help (UI-04: keyed on the parameter name).
++        if contour_each_level_offered
++            || cfg.contour_each_level
++            || cfg.region_ordering == RegionOrdering::ByArea
++        {
+             let help = super::super::help_for(OperationType::Adaptive3d, "contour_each_level")
+                 .unwrap_or_default();
+             ui.label("Contour each level:").on_hover_text(help);
+diff --git a/crates/rs_cam_viz/src/ui/properties/tests.rs b/crates/rs_cam_viz/src/ui/properties/tests.rs
+index ea9ceff48..02d9d68f9 100644
+--- a/crates/rs_cam_viz/src/ui/properties/tests.rs
++++ b/crates/rs_cam_viz/src/ui/properties/tests.rs
+@@ -2173,17 +2173,20 @@ fn the_waterline_row_reads_helical_w1b() {
+ }
+ 
+ /// C4: the 3D Rough row "Contour each level" shows where it acts: a rest
+-/// rough with a machining boundary (`offered`), or while it is on. A body
+-/// rough (fresh stock) draws no row. The hover is the registry help.
++/// rough with a machining boundary (`offered`), a By Area rough (C4b), or
++/// while it is on. A Global body rough (fresh stock) draws no row. The
++/// hover is the registry help.
+ #[test]
+ fn contour_each_level_shows_where_it_acts_c4() {
+     use crate::state::toolpath::Adaptive3dConfig;
+-    let rows = |offered: bool, on: bool| {
++    use crate::state::toolpath::RegionOrdering;
++    let rows = |offered: bool, on: bool, ordering: RegionOrdering| {
+         let ctx = egui::Context::default();
+         crate::ui::tokens::apply(&ctx);
+         crate::ui::tokens::apply_fonts(&ctx);
+         let mut cfg = Adaptive3dConfig {
+             contour_each_level: on,
++            region_ordering: ordering,
+             ..Adaptive3dConfig::default()
+         };
+         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+@@ -2200,23 +2203,33 @@ fn contour_each_level_shows_where_it_acts_c4() {
+         out.textures_delta.clear();
+         n
+     };
+-    assert_eq!(rows(false, false), 0, "a body rough draws no row");
++    let global = RegionOrdering::Global;
+     assert_eq!(
+-        rows(true, false),
++        rows(false, false, global),
++        0,
++        "a Global body rough draws no row"
++    );
++    assert_eq!(
++        rows(true, false, global),
+         1,
+         "a rest rough with a boundary draws it"
+     );
+     assert_eq!(
+-        rows(false, true),
++        rows(false, true, global),
+         1,
+         "an op with the option on keeps the row"
+     );
++    assert_eq!(
++        rows(false, false, RegionOrdering::ByArea),
++        1,
++        "C4b: a By Area rough, fresh or rest, draws it"
++    );
+     assert!(
+         super::help_for(
+             crate::state::toolpath::OperationType::Adaptive3d,
+             "contour_each_level"
+         )
+-        .is_some_and(|h| h.contains("Depth/Pass")),
++        .is_some_and(|h| h.contains("Depth/Pass") && h.contains("By Area")),
+         "the hover is the registry help"
+     );
+ }
