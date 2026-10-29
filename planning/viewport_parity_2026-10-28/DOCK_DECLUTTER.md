@@ -190,13 +190,25 @@ precondition. MCP `set_ui_view overlays` and `display_mode` do not change.
 - The bar takes no width from the 3D view (an `egui::Area`, as today) and
   never covers the legend or the gizmo.
 
-## 7. Questions for the operator
+## 7. Questions for the operator — answered (2026-10-29)
 
-1. Collisions on the bar in every workspace (disabled with a reason outside
-   Simulation), or only in Simulation?
-2. "Stock" on the bar: the box only, or a three-way (Off · Box · Solid)
-   that also takes `stock_solid`?
-3. Entry markers: on the bar beside Rapids, or in "More"?
-4. Keep the section popovers as a second way in, or "More" only? The
-   rule "declutter removes a control; it does not hide a duplicate route"
-   (`crates/rs_cam_viz/src/ui/CLAUDE.md`) says "More" only.
+The operator approved the declutter ("declutter sounds good"); the answers
+are the obvious industry ones:
+
+1. Collisions sits on the bar in every viewport workspace, disabled with the
+   row's own reason outside Simulation, so the bar does not move between
+   workspaces.
+2. "Stock" on the bar is a three-way Off · Box · Solid control that owns
+   `stock_box` and `stock_solid` (the display-mode pattern: one segmented
+   control, two rows behind it, one write function `registry::set_stock_display`,
+   the rows' own refusals).
+3. Entry markers stay in "More".
+4. "More" only; the section popovers went (a declutter removes a control, it
+   does not hide a duplicate route). The catalogue stays reachable from the
+   last line of "More" and from `O`.
+
+Built in b3a76e552. The bar holds 6 rows (`viewport_overlay::BAR_ROWS`: `grid`,
+`stock_box`, `stock_solid`, `cutting_moves`, `rapids`, `collisions`) and the
+display-mode control; "More" holds the other 37. The bar is about 665 pt wide
+at 1100 pt, so a full legend sits beside it from 1340 pt and above it when
+narrower (the legend sentry follows).
