@@ -760,6 +760,194 @@ pub fn pick_items_in_rect(
     keys
 }
 
+/// The most rays one item casts in [`visible_keys`] (the box visibility
+/// rule). A design choice: enough to see a face past a partial occluder,
+/// few enough that a box over a large drawing stays cheap.
+pub const BOX_VISIBILITY_SAMPLES: usize = 9;
+
+/// How far a sample on a closed ring or a face moves toward the ring's
+/// centroid, as a share of the way (a design choice). A sample on the very
+/// edge of a face lies on the shared edge of its neighbours, where a ray
+/// grazes the wall; moved inside, it reads the face it belongs to.
+pub const BOX_SAMPLE_INSET: f64 = 0.05;
+
+/// The box keeps the items the eye sees (operator, live look 2026-10-29:
+/// "we should only select things visible"; Fusion and Onshape box-select
+/// what the camera sees). From the geometric candidates of
+/// [`pick_items_in_rect`], an item stays when ANY of its samples is visible:
+///
+/// - a face: its outer-ring centroid and the midpoints of its outer-ring
+///   segments, moved [`BOX_SAMPLE_INSET`] toward the centroid;
+/// - a loop or a circle: the vertices of its lines, moved the same way;
+/// - a path or a point: the vertices of its lines;
+///
+/// at most [`BOX_VISIBILITY_SAMPLES`] per item (evenly strided), each at
+/// its display point (`item_display_point`, the point the drawing draws).
+/// A sample is visible when the ray from the eye to it (along the view
+/// direction in orthographic) meets no model of the viewport
+/// (`LoadedModel::ray_pick`: the BVH when cached, else brute force; a
+/// hidden model takes no ray) nearer than its own distance less the
+/// tolerance: the STEP chord tolerance of the drawn models (the edge
+/// offset's rule), at least 1e-6 of the distance. So the sample's own face
+/// does not hide it, and a face in front does.
+///
+/// The Ctrl (remove) box takes the same rule, so the two boxes agree. A
+/// single click and Tab ("select other") still reach a hidden item on
+/// purpose: they name ONE item under the pointer. A key that names no item
+/// of the model stays (the box does not drop what it cannot test).
+pub fn visible_keys(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+    keys: Vec<rs_cam_core::selection::MatchKey>,
+) -> Vec<rs_cam_core::selection::MatchKey> {
+    let Some((_, tc)) = session.find_toolpath_config_by_id(toolpath_id) else {
+        return keys;
+    };
+    let Some(model) = session.models().iter().find(|m| m.id == tc.model_id) else {
+        return keys;
+    };
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, toolpath_id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    let flat = match (&model.mesh, model.faces_are_flat_regions()) {
+        (Some(mesh), true) => rs_cam_core::maps::geom_cache::peek_flat_regions(mesh),
+        _ => None,
+    };
+    let chord = session
+        .models()
+        .iter()
+        .filter(|m| m.enriched_mesh.is_some() && ctx.shows(m.id))
+        .map(|m| {
+            rs_cam_core::io::STEP_CHORD_TOLERANCE
+                * m.units.as_ref().map_or(1.0, |u| u.scale_factor())
+        })
+        .fold(0.0_f64, f64::max);
+    let basis = ctx.camera.basis();
+    let eye = P3::new(
+        f64::from(basis.eye.x),
+        f64::from(basis.eye.y),
+        f64::from(basis.eye.z),
+    );
+    let forward = V3::new(
+        f64::from(basis.forward.x),
+        f64::from(basis.forward.y),
+        f64::from(basis.forward.z),
+    );
+    let ortho = ctx.camera.projection == crate::render::camera::ProjectionMode::Orthographic;
+    let visible = |q: P3| -> bool {
+        let (origin, dir, own) = if ortho {
+            let own = (q - eye).dot(&forward);
+            (q - forward * own, forward, own)
+        } else {
+            let v = q - eye;
+            let own = v.norm();
+            if own <= f64::EPSILON {
+                return true;
+            }
+            (eye, v / own, own)
+        };
+        let tol = chord.max(own.abs() * 1e-6);
+        let (model_origin, model_dir) = match frame.as_ref() {
+            Some(frame) => {
+                let a = frame.inverse_transform_point(origin, stock);
+                let b = frame.inverse_transform_point(origin + dir, stock);
+                (a, b - a)
+            }
+            None => (origin, dir),
+        };
+        !session
+            .models()
+            .iter()
+            .filter(|m| ctx.shows(m.id))
+            .filter_map(|m| m.ray_pick(&model_origin, &model_dir).map(|(_, t)| t))
+            .any(|t| t < own - tol)
+    };
+    let items: Vec<&rs_cam_core::selection::Item> = model
+        .items
+        .iter()
+        .chain(flat.iter().flat_map(|set| set.iter()))
+        .collect();
+    keys.into_iter()
+        .filter(|key| {
+            let Some(item) = items.iter().find(|i| i.key().names_same_geometry(key)) else {
+                return true;
+            };
+            box_samples(item)
+                .into_iter()
+                .map(|p| item_display_point(frame.as_ref(), stock, item, p, z))
+                .any(visible)
+        })
+        .collect()
+}
+
+/// The sample points of one item for [`visible_keys`], in the drawing
+/// frame (see there).
+fn box_samples(item: &rs_cam_core::selection::Item) -> Vec<P2> {
+    let lines = item.shape().pick_lines();
+    let inset = |p: P2, c: P2| {
+        P2::new(
+            p.x + (c.x - p.x) * BOX_SAMPLE_INSET,
+            p.y + (c.y - p.y) * BOX_SAMPLE_INSET,
+        )
+    };
+    let centroid = |ring: &[P2]| -> Option<P2> {
+        let n = ring.len();
+        (n > 0).then(|| {
+            let (sx, sy) = ring.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+            P2::new(sx / n as f64, sy / n as f64)
+        })
+    };
+    let stride = |points: Vec<P2>, cap: usize| -> Vec<P2> {
+        if points.len() <= cap || cap == 0 {
+            return points;
+        }
+        (0..cap)
+            .filter_map(|i| points.get(i * points.len() / cap).copied())
+            .collect()
+    };
+    match item.kind() {
+        ItemKind::Face => {
+            let Some((outer, _)) = lines.first() else {
+                return Vec::new();
+            };
+            let Some(c) = centroid(outer) else {
+                return Vec::new();
+            };
+            let n = outer.len();
+            let mids: Vec<P2> = (0..n)
+                .filter_map(|i| {
+                    let a = outer.get(i)?;
+                    let b = outer.get((i + 1) % n)?;
+                    Some(inset(P2::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0), c))
+                })
+                .collect();
+            let mut out = vec![c];
+            out.extend(stride(mids, BOX_VISIBILITY_SAMPLES - 1));
+            out
+        }
+        ItemKind::Loop | ItemKind::Circle => {
+            let points: Vec<P2> = lines
+                .iter()
+                .flat_map(|(pts, _)| {
+                    let c = centroid(pts);
+                    pts.iter()
+                        .map(move |p| c.map_or(*p, |c| inset(*p, c)))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            stride(points, BOX_VISIBILITY_SAMPLES)
+        }
+        ItemKind::Path | ItemKind::Point => {
+            let points: Vec<P2> = lines
+                .iter()
+                .flat_map(|(pts, _)| pts.iter().copied())
+                .collect();
+            stride(points, BOX_VISIBILITY_SAMPLES)
+        }
+    }
+}
+
 /// A pick-mode hit (P4, reference audit 2026-10-23), and the kind whose
 /// chip is off when the hit came from the second pass.
 #[derive(Debug, Clone)]

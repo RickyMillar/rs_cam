@@ -756,14 +756,23 @@ impl RsCamApp {
                 f64::from(boxed.max.y - origin.y),
             ],
         );
+        let ctx = self.pick_context(boxed.center());
         let keys = crate::interaction::picking::pick_items_in_rect(
-            &self.pick_context(boxed.center()),
+            &ctx,
             state.session(),
             pick.toolpath_id,
             &pick.filter,
             &pick.kinds,
             local,
             mode,
+        );
+        // The box selects what the eye sees (live look 2026-10-29); the
+        // remove box takes the same rule.
+        let keys = crate::interaction::picking::visible_keys(
+            &ctx,
+            state.session(),
+            pick.toolpath_id,
+            keys,
         );
         let events = crate::interaction::intent::gesture_events(
             &crate::interaction::intent::ViewportGesture::BoxRelease { keys, op },

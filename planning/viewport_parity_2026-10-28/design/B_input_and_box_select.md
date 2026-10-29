@@ -394,10 +394,16 @@ An STL face comes from the flat-region cache, as `face_pick_key_at` reads it
 (`maps/geom_cache.rs:415`, `maps/mod.rs:7`), so viz reads it with no new door. A cold cache gives
 no faces and no notice; the face sweep fills it.
 
-Hidden faces: the CPU test selects through. A face behind another face
-selects when its projected rings meet the rule. A hidden model selects
-nothing (`PickContext::visibility`). The visible-only mode needs the ID
-buffer of D.1 step 10.
+Hidden faces (replaced by the operator's live look, 2026-10-29: "we should
+only select things visible"): the box keeps an item only when the eye sees
+it. `interaction::picking::visible_keys` casts up to 9 rays per item from
+the eye to samples on it (a face: its centroid and its inset outer-ring
+midpoints; a ring: its inset vertices; a path or a point: its vertices)
+through `LoadedModel::ray_pick` (the BVH when cached, else brute force); a
+sample is visible when no model meets the ray nearer than the sample less
+the STEP chord tolerance, and an item is visible when any sample is. The
+remove box takes the same rule. A single click and Tab still reach a hidden
+item on purpose. A hidden model selects nothing (`PickContext::visibility`).
 
 ### 3.4 The release
 
