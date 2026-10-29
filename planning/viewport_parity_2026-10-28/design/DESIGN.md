@@ -158,6 +158,8 @@ from HEAD.
 | — | round 4: pick mode engages with the focused toolpath; feedback by the op's face use (`face_feedback`) | bcf7d6405 | 2026-10-29 |
 | — | round 4: the hole-rim fold of a batch | b5b903961 | 2026-10-29 |
 | — | round 4: STL face keys carry their plane Z; the picked STL face ring | 6fd51227a | 2026-10-29 |
+| — | round 4: a left drag on the orientation gizmo orbits | af5ea02a7 | 2026-10-29 |
+| — | round 4: the deterministic silhouette ring start; the curves row on a STEP-only project | 24aa5bf8f | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel

@@ -40,12 +40,15 @@ that pass:
 
 - ~~Hole-rim folding of a batch~~: done b5b903961 (in the door; a single
   named floor-circle pick still refuses, R-B claim 4).
-- Laptop trackpads: the orientation gizmo gains a drag-to-orbit (the Alt
-  rows exist since B3).
+- ~~Laptop trackpads: the gizmo drag-to-orbit~~: done af5ea02a7.
 - STEP edge items exist only for edges in a horizontal plane; a sloped or
   vertical edge gives no item (an import extension).
-- The `curves` overlay row's precondition text on a STEP-only project.
-- A flaky core lib test under a parallel run (the silhouette memo race).
+- ~~The `curves` row precondition text~~ and ~~the silhouette ring start~~: done
+  24aa5bf8f (the label "Curves (DXF/SVG)" stays; a rename is the operator's).
+- Still flaky: `maps::geom_cache::tests::a_dropped_mesh_releases_its_entry`
+  asserts `cache_len() == 1` while sibling tests write the shared cache
+  without `cache_test_lock`; assert only that the dropped entry is gone, or
+  take the lock in every writer test.
 - The dock declutter: approved by the operator 2026-10-29 ("declutter
   sounds good"); built from `DOCK_DECLUTTER.md` with the obvious answers to
   its four questions (Collisions on the bar everywhere, a three-way Stock
