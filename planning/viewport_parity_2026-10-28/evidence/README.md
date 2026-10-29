@@ -12,3 +12,4 @@ through the MCP proxy (`screenshot_gui`, 1400x900).
 | `07_display_mode_shaded.png` / `08_shaded_no_selection.png` / `09_shaded_with_edges_no_selection.png` | Shaded against Shaded with edges: the INK_65 edges at 1.25 px are nearly invisible on the pale faces. |
 | `10_low_angle_selected_face.png` | The selected middle face at pitch 3 deg turns ink grey-blue: the outline's fold test fires on every pixel of a grazing face. |
 | `11_round2_build_face_selected.png` | The round-2 build (712c7bf24): the picked middle face in blue, dark face edges, the accent outline on its silhouette, the green part outline at the base. |
+| `12_round3_material_headlight.png` | The round-3 build (4c80e5585): one neutral material under the camera headlight, dark face edges, the picked face blue, no height planes while the Geometry tab is open. Compare with 11. |
