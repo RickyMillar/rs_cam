@@ -40,6 +40,12 @@
 //!    `AddPick`, never `PickLayer`. Two shift-clicks give two picks and no
 //!    rule; a shift-click on a picked item keeps it. A right-click sends
 //!    `PickLayer`.
+//! 8. `in_pick_mode_only_a_pickable_face_lights_live1` (live look,
+//!    2026-10-29): `hover_target` is the one hover rule. In pick mode a
+//!    pickable face lights (its key is `Ok`), a pick item rings, and a
+//!    face that is not pickable (a side face) gets no hover. Outside pick
+//!    mode any face under the pointer lights, as before. The pick-mode
+//!    tooltip (`hover_text`) is one short line.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test pick_mode_picks_by_kind_p4_5
@@ -85,7 +91,7 @@ use rs_cam_viz::state::display_frame::drawing_plane_z;
 use rs_cam_viz::state::job::{ModelId, SetupFrame};
 use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
 use rs_cam_viz::state::selection::Selection as UiSelection;
-use rs_cam_viz::state::selection_highlight::{HoverDetector, HoverTarget};
+use rs_cam_viz::state::selection_highlight::{HoverDetector, HoverTarget, hover_target};
 use rs_cam_viz::ui::AppEvent;
 use rs_cam_viz::ui::pick_bar::{PickClick, click_event, kind_chips};
 use rs_cam_viz::ui_command::{SetModelVisibilityArgs, UiCommand};
@@ -939,4 +945,65 @@ fn a_shift_click_adds_one_item_p3shift() {
     );
     assert_eq!(stored(&c).rules().len(), 1, "the TEXT layer rule");
     assert_eq!(state_of(&c, 3), ItemState::Cut);
+}
+
+#[test]
+fn in_pick_mode_only_a_pickable_face_lights_live1() {
+    use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
+    use rs_cam_core::ids::ModelId;
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let mode = pick_on(&mut c);
+    let camera = camera(&c);
+    let key = pick_at(
+        &c,
+        &camera,
+        &mode.filter,
+        drawn(&c, &camera, P2::new(25.0, 10.0)),
+    )
+    .expect("fixture: the loop edge y = 10 gives a key");
+    // The tooltip is one short line: the item and its measure, then the
+    // acts.
+    let tc = c.state().session().toolpath_configs()[0].clone();
+    let tip =
+        rs_cam_viz::ui::pick_bar::hover_text(c.state().session(), &tc, SelectionTarget::Op, &key);
+    assert!(!tip.contains('\n'), "one line: {tip:?}");
+    assert!(
+        tip.starts_with("Closed contour, ") && tip.ends_with(rs_cam_viz::ui::pick_bar::HOVER_ACTS),
+        "the kind and the measure, then the acts: {tip:?}"
+    );
+    assert!(tip.chars().count() <= 90, "a short line: {tip:?}");
+    let top = (ModelId::from_wire(1), FaceGroupId(3));
+    let side = (ModelId::from_wire(1), FaceGroupId(4));
+
+    // Pick mode, a pickable face under the pointer: the face lights.
+    assert_eq!(
+        hover_target(true, Some(top), Some(&key), None, Some(top)),
+        Some(HoverTarget::Face(top.0, top.1))
+    );
+    // Pick mode, an item that is not a face: the ring.
+    assert_eq!(
+        hover_target(true, None, Some(&key), None, Some(side)),
+        Some(HoverTarget::Item(key.clone()))
+    );
+    // Pick mode, a side face (its key is `Err`, or no chip admits it):
+    // no hover at all.
+    assert_eq!(hover_target(true, None, None, None, Some(side)), None);
+    // Pick mode, the Geometry tab row still rings.
+    assert_eq!(
+        hover_target(true, None, None, Some(&key), Some(side)),
+        Some(HoverTarget::Item(key.clone()))
+    );
+    // Outside pick mode any face under the pointer lights.
+    assert_eq!(
+        hover_target(false, None, None, None, Some(side)),
+        Some(HoverTarget::Face(side.0, side.1))
+    );
+    assert_eq!(
+        hover_target(false, None, None, Some(&key), Some(side)),
+        Some(HoverTarget::Item(key))
+    );
 }

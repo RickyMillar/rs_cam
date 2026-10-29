@@ -14,6 +14,10 @@
 //!    then sends nothing, and the next Escape ends the mode.
 //! 6. B3: a left drag is a box in pick mode (`Intent::Select` in both
 //!    schemes); outside pick mode it does nothing (O-1).
+//! 7. The box paints over the scene: in `app/viewport.rs` the
+//!    `paint_box(` call comes after the paint callback push
+//!    (`Callback::new_paint_callback(`). A shape added before the callback
+//!    is under the 3D scene (the live look, 2026-10-29).
 
 #![expect(
     clippy::unwrap_used,
@@ -528,4 +532,22 @@ fn a_left_drag_boxes_in_pick_mode_and_does_nothing_outside_it_sel4() {
         "outside pick mode a left drag does nothing: {actions:?}"
     );
     assert_eq!(drag, DragState::Idle);
+}
+
+#[test]
+fn the_box_paints_after_the_scene_callback_sel4() {
+    let src = include_str!("../src/app/viewport.rs");
+    let callback = src
+        .find("Callback::new_paint_callback(")
+        .expect("the viewport pushes the scene paint callback");
+    let paint = src.find("paint_box(").expect("the viewport paints the box");
+    assert_eq!(
+        src.matches("paint_box(").count(),
+        1,
+        "one box paint in the viewport"
+    );
+    assert!(
+        paint > callback,
+        "the box paints after the scene callback, so the scene does not cover it"
+    );
 }

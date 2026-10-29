@@ -1064,8 +1064,9 @@ mod tests {
     /// - The `list_rule_offers` reply's `edit`, sent back through
     ///   `edit_toolpath_selection` unchanged, stores the offer's rule.
     /// - Ctrl+A (`kind_rule_edit`) and the wire `add_rule` of the
-    ///   `kind_rules` rule store one selection; under the default it
-    ///   writes nothing (O-PICK).
+    ///   `kind_rules` rule store one selection, also under the default:
+    ///   there both doors replace the default by the rule (operator
+    ///   ruling 2026-10-29, O-PICK).
     #[test]
     fn mcp_and_gui_give_one_similar_rule_v11() {
         let keep = project()
@@ -1143,14 +1144,34 @@ mod tests {
         );
         assert_eq!(stored(&mcp, 0), stored(&gui, 0), "Ctrl+A, two doors");
 
-        // Ctrl+A under the default writes nothing.
-        let s = project();
-        let tc = s.toolpath_config_at(3).unwrap().clone();
+        // Ctrl+A under the default: both doors store the rule in place of
+        // the default.
+        let mut gui = project();
+        let tc = gui.toolpath_config_at(3).unwrap().clone();
+        assert!(
+            gui.holds_its_default(&tc, SelectionTarget::Op).unwrap(),
+            "fixture: toolpath 3 holds its default"
+        );
+        let select_all = gui
+            .kind_rule_edit(&tc, SelectionTarget::Op, &kinds, None)
+            .unwrap()
+            .expect("Ctrl+A writes under the default");
+        edit(&mut gui, 3, select_all);
+        let mut mcp = project();
+        wire_edit(
+            &mut mcp,
+            3,
+            &serde_json::json!({ "add_rule": serde_json::to_value(&rule).unwrap() }),
+        );
         assert_eq!(
-            s.kind_rule_edit(&tc, SelectionTarget::Op, &kinds, None)
-                .unwrap(),
-            None,
-            "the default already selects every item that the op cuts"
+            stored(&mcp, 3),
+            stored(&gui, 3),
+            "Ctrl+A on the default, two doors"
+        );
+        assert_eq!(
+            stored(&gui, 3).rules(),
+            std::slice::from_ref(&rule),
+            "the rule replaces the default"
         );
     }
 

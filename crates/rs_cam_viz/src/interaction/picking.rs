@@ -71,6 +71,12 @@ pub struct HoverResult {
         Result<rs_cam_core::selection::MatchKey, String>,
         Option<ItemKind>,
     )>,
+    /// Pick mode: the STEP face of the pick-mode hit when its key is `Ok`
+    /// (a pickable face). The face hover of pick mode reads it.
+    pub pick_face: Option<(
+        crate::state::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )>,
     /// The scene pick (`pick` with `drill_pick: None`): the face hover and
     /// the toolpath tooltip read it.
     pub scene: Option<PickHit>,

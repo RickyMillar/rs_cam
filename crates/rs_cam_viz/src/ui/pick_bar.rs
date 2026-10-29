@@ -8,7 +8,7 @@
 //! click on an item of a kind whose chip is off, but that the op can cut,
 //! turns the chip on and picks the item. P3: a shift-click adds one item.
 //! E5: a right-click on an item opens the rule menu ([`PickMenu`]: its
-//! layer, then the "Rule…" offers of the item); Ctrl+A adds the rules of
+//! layer, then the "Rule…" offers of the item); Ctrl+A selects every item of
 //! the chip kinds ([`select_all_edit`]).
 //!
 //! [`click_event`] is THE map from a pick-mode click to its event.
@@ -37,7 +37,7 @@ const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 /// The help line of the bar.
 pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the item. \
      Ctrl-click: remove the item. Right-click: rules from the item. \
-     Ctrl+A: every item of the chip kinds. Drag: box (left to right encloses, \
+     Ctrl+A: select every item of the chip kinds. Drag: box (left to right encloses, \
      right to left crosses).";
 
 /// B6: the notice of a box on a boundary whose source is not a selection.
@@ -72,10 +72,6 @@ pub fn paint_box(painter: &egui::Painter, anchor: egui::Pos2, to: egui::Pos2) {
 /// The first row of the rule menu: the layer rule of the item (the
 /// right-click act before E5).
 pub const LAYER_ROW: &str = "Add its layer";
-
-/// The notice of Ctrl+A under the default selection (E5, O-PICK).
-pub const SELECT_ALL_UNDER_DEFAULT: &str =
-    "The default already selects every item that the op cuts";
 
 /// The rule menu of a right-click on an item in pick mode (E5): the layer
 /// rule first, then one row per "Rule…" offer of the item (core
@@ -215,9 +211,9 @@ pub fn show_pick_menu(response: &egui::Response, menu: &PickMenu) -> PickMenuOut
 
 /// The edit of Ctrl+A in the pick mode that is on (E5, SEL-13): the rules
 /// of the chip kinds that the selection serves and the model holds, through
-/// core `kind_rule_edit`. `Ok(None)`: no edit (under the default, O-PICK,
-/// the caller shows [`SELECT_ALL_UNDER_DEFAULT`]). `Err`: no chip is on, or
-/// the core refusal text.
+/// core `kind_rule_edit`; under the default the edit replaces the default
+/// (operator ruling 2026-10-29). `Ok(None)`: no pick mode, or no edit.
+/// `Err`: no chip is on, or the core refusal text.
 pub fn select_all_edit(
     state: &AppState,
 ) -> Result<
@@ -623,39 +619,30 @@ fn draw_circle_range(ui: &mut egui::Ui, on: &[ItemKind], filter: &mut PickFilter
     }
 }
 
-/// The tooltip of the item `key` under the pointer in pick mode, for the
-/// selection `target` of `tc`: the kind, the layer and the size of the item
-/// (`ItemRef`, the text of a refusal), and what a click does. `chip_off`
-/// names the kind whose chip the click turns on (P4). The click
-/// result comes from `ProjectSession::click_edit`, the function the click
-/// itself sends through, so the tooltip and the click agree (P4.D: a click
-/// on a boundary that is not a selection sets the source to Selection).
+/// The one-line tooltip of the item `key` under the pointer in pick mode
+/// (live look 2026-10-29): the kind and the measure of the item, then
+/// [`HOVER_ACTS`]. When the selection `target` of `tc` does not resolve,
+/// the line is the refusal (`ProjectSession::click_edit`, the function the
+/// click sends through). The bar keeps the long help ([`PICK_HELP`]).
 pub fn hover_text(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
     target: SelectionTarget,
     key: &rs_cam_core::selection::MatchKey,
-    chip_off: Option<ItemKind>,
 ) -> String {
-    use rs_cam_core::selection::{ItemRef, SelectionEdit};
-    use rs_cam_core::session::ClickEdit;
-    let click = match (session.click_edit(tc, target, key.clone()), chip_off) {
-        (Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))), None) => "click to remove",
-        (Ok(ClickEdit::Selection(SelectionEdit::RemovePick(_))), Some(_)) => "selected",
-        (Ok(ClickEdit::Selection(_)), _) => "click to add",
-        (Ok(ClickEdit::BoundaryToSelection { .. }), _) => "click to set the boundary to Selection",
-        (Err(_), _) => "the selection does not resolve",
+    if let Err(refusal) = session.click_edit(tc, target, key.clone()) {
+        return refusal.to_string();
+    }
+    let m = key.measure;
+    let item = match key.kind {
+        ItemKind::Loop => format!("Closed contour, {m:.1} mm across"),
+        ItemKind::Path => format!("Open contour, {m:.1} mm long"),
+        ItemKind::Circle => format!("Circle, \u{2300} {m:.1} mm"),
+        ItemKind::Face => format!("Face, {m:.1} mm across"),
+        ItemKind::Point => "Point".to_owned(),
     };
-    let chip = chip_off
-        .map(|kind| format!(" The click turns the {} chip on.", chip_label(kind)))
-        .unwrap_or_default();
-    let layer = if key.layer.is_some() {
-        "Right-click: rules from the item (its layer, similar items)."
-    } else {
-        "Right-click: rules from the item (it is on no layer)."
-    };
-    format!(
-        "{} \u{2014} {click}.{chip}\nShift-click: add the item. Ctrl-click: remove the item. {layer}",
-        ItemRef::new(key.clone())
-    )
+    format!("{item} \u{00B7} {HOVER_ACTS}")
 }
+
+/// The acts of the pick-mode tooltip, after the item.
+pub const HOVER_ACTS: &str = "click picks \u{00B7} Ctrl removes \u{00B7} right-click rules";

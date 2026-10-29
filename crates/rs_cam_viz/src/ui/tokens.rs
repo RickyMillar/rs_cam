@@ -183,10 +183,12 @@ pub const CAUTION: Color32 = Color32::from_rgb(0xE0, 0xA8, 0x3C);
 pub const DANGER: Color32 = Color32::from_rgb(0xE8, 0x7B, 0x77);
 /// Informational. The accent reused. Glyph none.
 pub const INFO: Color32 = ACCENT;
-/// B6: the fill of the viewport selection box: ACCENT at alpha 24,
-/// premultiplied (each channel of ACCENT times 24 / 255, rounded:
-/// 0x5B -> 9, 0x9D -> 15, 0xD9 -> 20).
-pub const BOX_FILL: Color32 = Color32::from_rgba_premultiplied(9, 15, 20, 24);
+/// B6: the fill of the viewport selection box: ACCENT at alpha 40,
+/// premultiplied (each channel of ACCENT times 40 / 255, rounded:
+/// 0x5B -> 14, 0x9D -> 25, 0xD9 -> 34). Alpha 40 is a design choice,
+/// not a measurement: alpha 24 was too faint on the dark scene in the
+/// live look (2026-10-29).
+pub const BOX_FILL: Color32 = Color32::from_rgba_premultiplied(14, 25, 34, 40);
 /// NOT MEASURED. Glyph `—`, and never with a number.
 ///
 /// The most important addition in this section. Today "not measured" is drawn

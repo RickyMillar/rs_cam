@@ -185,7 +185,8 @@ fn the_hover_names_its_model_d3() {
     // F4: `last_hover_face` became the face arm of the one hover target
     // (`HoverDetector`); the needle follows the new write.
     let viewport = code(&source("src/app/viewport.rs"));
-    let anchor = "let hover_face = match";
+    // Live look 2026-10-29: the arm gives the face pair to `hover_target`.
+    let anchor = "let scene_face = match";
     let at = viewport
         .find(anchor)
         .unwrap_or_else(|| panic!("anchor `{anchor}` is missing in viewport.rs"));
@@ -197,7 +198,7 @@ fn the_hover_names_its_model_d3() {
         "the hover write does not read both fields of PickHit::ModelFace"
     );
     assert!(
-        arms.contains("HoverTarget::Face(*model_id, *face_id)"),
+        arms.contains("Some((*model_id, *face_id))"),
         "the face hover target does not take the model id"
     );
 }

@@ -1879,10 +1879,11 @@ impl ProjectSession {
     /// in that range). One rule gives `AddRule`, more give one `Replace`
     /// (one command, one undo step).
     ///
-    /// O-PICK: while the selection still holds its default, the default
-    /// already selects every item that the op cuts, so the answer is
-    /// `Ok(None)` (no edit; the GUI gives a notice). No kind gives
-    /// `Ok(None)` too.
+    /// Operator ruling 2026-10-29 (replaces E §3): Ctrl+A always selects
+    /// the items of `kinds`, also while the selection holds its default.
+    /// Then the edit is one `Replace` of the default by the kind rules
+    /// (O-PICK: the first edit replaces the default,
+    /// [`SelectionEdit::add_rules`]). No kind gives `Ok(None)`.
     ///
     /// # Errors
     ///
@@ -1901,9 +1902,6 @@ impl ProjectSession {
             ))
         };
         let current = tc.selection_of(target)?.ok_or_else(no_selection)?;
-        if self.holds_its_default(tc, target)? {
-            return Ok(None);
-        }
         let op_default = self
             .selection_default_of(tc, target)
             .ok_or_else(no_selection)?;

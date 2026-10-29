@@ -87,6 +87,28 @@ impl RsCamApp {
         Result<rs_cam_core::selection::MatchKey, String>,
         Option<rs_cam_core::selection::ItemKind>,
     )> {
+        self.pick_mode_found(pick, pos)
+            .map(|(key, chip_off, _)| (key, chip_off))
+    }
+
+    /// `pick_mode_key` with the STEP face of the hit when the hit is a
+    /// face whose key is `Ok` (a pickable face). The hover reads the face.
+    #[expect(
+        clippy::type_complexity,
+        reason = "one private tuple: the key, the chip-off kind and the face"
+    )]
+    fn pick_mode_found(
+        &self,
+        pick: &ActivePick,
+        pos: egui::Pos2,
+    ) -> Option<(
+        Result<rs_cam_core::selection::MatchKey, String>,
+        Option<rs_cam_core::selection::ItemKind>,
+        Option<(
+            crate::state::job::ModelId,
+            rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+        )>,
+    )> {
         let state = self.controller.state();
         let ctx = self.pick_context(pos);
         let found = crate::interaction::picking::pick_mode_item(
@@ -97,8 +119,15 @@ impl RsCamApp {
             &pick.kinds,
             &pick.cut_kinds,
         )?;
+        let face = match found.hit {
+            crate::interaction::PickHit::ModelFace { model_id, face_id } => {
+                Some((model_id, face_id))
+            }
+            _ => None,
+        };
         let key = self.pick_hit_key(pick, found.hit)?;
-        Some((key, found.chip_off))
+        let face = face.filter(|_| key.is_ok());
+        Some((key, found.chip_off, face))
     }
 
     /// The pick under the pointer, computed once per frame (B1). Every
@@ -122,7 +151,9 @@ impl RsCamApp {
             return HoverResult::default();
         };
         let state = self.controller.state();
-        let pick_mode = pick.and_then(|pick| self.pick_mode_key(pick, pos));
+        let found = pick.and_then(|pick| self.pick_mode_found(pick, pos));
+        let pick_face = found.as_ref().and_then(|(_, _, face)| *face);
+        let pick_mode = found.map(|(key, chip_off, _)| (key, chip_off));
         let has_enriched = state
             .session()
             .models()
@@ -146,6 +177,7 @@ impl RsCamApp {
         HoverResult {
             pos: Some(pos),
             pick_mode,
+            pick_face,
             scene,
         }
     }
@@ -826,36 +858,31 @@ impl RsCamApp {
         // uploads on a change of the item only (`HoverDetector`), never per
         // frame.
         let hovered_item = match (&pick, &hover.pick_mode) {
-            (Some(pick), Some((Ok(key), chip_off))) => Some((pick, key.clone(), *chip_off)),
+            (Some(pick), Some((Ok(key), _))) => Some((pick, key.clone())),
             _ => None,
         };
         if hovered_item.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
-        // F4: ONE hover target per frame. The pick-mode item first; with
-        // none, the row of the Geometry tab list under the pointer (GT-2);
-        // with none, the STEP face under the pointer in Toolpaths.
-        let hover_face = match &hover.scene {
+        // F4: ONE hover target per frame (`hover_target`): in pick mode a
+        // pickable face lights, else the pick-mode item rings, else the
+        // row of the Geometry tab list (GT-2); outside pick mode the STEP
+        // face under the pointer in Toolpaths lights.
+        let scene_face = match &hover.scene {
             Some(crate::interaction::picking::PickHit::ModelFace { model_id, face_id })
                 if self.controller.state().workspace == Workspace::Toolpaths =>
             {
-                Some(HoverTarget::Face(*model_id, *face_id))
+                Some((*model_id, *face_id))
             }
             _ => None,
         };
-        let target = hovered_item
-            .as_ref()
-            .map(|(_, key, _)| HoverTarget::Item(key.clone()))
-            .or_else(|| {
-                self.controller
-                    .state()
-                    .gui
-                    .selection_ui
-                    .row_hover
-                    .clone()
-                    .map(HoverTarget::Item)
-            })
-            .or(hover_face);
+        let target = crate::state::selection_highlight::hover_target(
+            pick.is_some(),
+            hover.pick_face,
+            hovered_item.as_ref().map(|(_, key)| key),
+            self.controller.state().gui.selection_ui.row_hover.as_ref(),
+            scene_face,
+        );
         let before = self.hover_detector.hovered().cloned();
         if self.hover_detector.changed(target.clone()) {
             // The hover ring uploads when an item comes or goes; the face
@@ -875,16 +902,10 @@ impl RsCamApp {
             }
             ui.ctx().request_repaint();
         }
-        if let Some((pick, key, chip_off)) = &hovered_item {
+        if let Some((pick, key)) = &hovered_item {
             let state = self.controller.state();
             if let Some((_, tc)) = state.session().find_toolpath_config_by_id(pick.toolpath_id) {
-                let tip = crate::ui::pick_bar::hover_text(
-                    state.session(),
-                    tc,
-                    pick.target,
-                    key,
-                    *chip_off,
-                );
+                let tip = crate::ui::pick_bar::hover_text(state.session(), tc, pick.target, key);
                 egui::Tooltip::always_open(
                     ui.ctx().clone(),
                     response.layer_id,
@@ -997,12 +1018,6 @@ impl RsCamApp {
                 self.handle_box_release(boxed, mode, op);
             }
         }
-        if let crate::state::viewport_input::DragState::BoxSelect { anchor, to, .. } =
-            self.controller.state().gui.selection_ui.drag
-        {
-            crate::ui::pick_bar::paint_box(&ui.painter_at(rect), anchor, to);
-        }
-
         let aspect = if rect.height() > 0.0 {
             rect.width() / rect.height()
         } else {
@@ -1201,6 +1216,13 @@ impl RsCamApp {
 
         let cb = egui_wgpu::Callback::new_paint_callback(rect, callback);
         ui.painter().add(cb);
+        // B6: the box paints after the scene callback, so it shows over
+        // the 3D scene (a shape added before the callback is under it).
+        if let crate::state::viewport_input::DragState::BoxSelect { anchor, to, .. } =
+            self.controller.state().gui.selection_ui.drag
+        {
+            crate::ui::pick_bar::paint_box(&ui.painter_at(rect), anchor, to);
+        }
 
         if area_regions_drawn {
             self.draw_area_region_labels(ui, rect);

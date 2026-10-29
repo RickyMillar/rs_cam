@@ -482,9 +482,9 @@ impl RsCamApp {
                 self.controller.events_mut().push(event);
             }
         }
-        // E5 (SEL-13): Ctrl+A in pick mode adds the rules of the chip
-        // kinds; under the default it writes nothing and says why (O-PICK,
-        // core `kind_rule_edit`).
+        // E5 (SEL-13): Ctrl+A in pick mode selects every item of the chip
+        // kinds (core `kind_rule_edit`); under the default the rules
+        // replace it (operator ruling 2026-10-29).
         if matches!(
             self.controller.state().gui.selection_ui.mode,
             Some(crate::state::pick::ViewportMode::Pick(_))
@@ -500,10 +500,7 @@ impl RsCamApp {
                             edit,
                         });
                 }
-                Ok(None) => self.controller.push_notification(
-                    crate::ui::pick_bar::SELECT_ALL_UNDER_DEFAULT.to_owned(),
-                    crate::controller::Severity::Info,
-                ),
+                Ok(None) => {}
                 Err(refusal) => self
                     .controller
                     .push_notification(refusal, crate::controller::Severity::Warning),

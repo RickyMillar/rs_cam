@@ -124,14 +124,14 @@ impl ReportDetector {
 }
 
 /// What the pointer hovers in the viewport (F4, design F §4.5): ONE slot
-/// per frame. The viewport resolves the pick-mode item, else the Geometry
-/// tab row (`SelectionUi::row_hover`), else the STEP face under the pointer.
+/// per frame. [`hover_target`] is the one rule that fills it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HoverTarget {
     /// A drawing item, a STEP edge or an STL face key: the hover ring
     /// (`hover_lines`) draws it.
     Item(rs_cam_core::selection::MatchKey),
-    /// A STEP face outside pick mode: the face state words light it.
+    /// A STEP face: the face state words light it. Outside pick mode any
+    /// face under the pointer; in pick mode a pickable face only.
     Face(
         super::job::ModelId,
         rs_cam_core::geometry::enriched_mesh::FaceGroupId,
@@ -147,6 +147,44 @@ impl HoverTarget {
     /// True for a face (the face state words read it).
     pub fn is_face(&self) -> bool {
         matches!(self, Self::Face(..))
+    }
+}
+
+/// THE hover rule (F4; live look 2026-10-29). In pick mode (`pick_mode_on`):
+///
+/// 1. a pickable STEP face under the pointer (`pick_face`: the pick-mode
+///    hit is a face and its key is `Ok`) lights as a face;
+/// 2. else the pick-mode item (`pick_item`, a key that is `Ok`) rings;
+/// 3. else the Geometry tab row under the pointer (`row_hover`) rings;
+/// 4. else nothing: a face that no chip admits, or whose key is `Err`
+///    (a side face), gets no hover.
+///
+/// Outside pick mode the row rings, else the STEP face under the pointer
+/// (`scene_face`) lights, as before.
+pub fn hover_target(
+    pick_mode_on: bool,
+    pick_face: Option<(
+        super::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )>,
+    pick_item: Option<&rs_cam_core::selection::MatchKey>,
+    row_hover: Option<&rs_cam_core::selection::MatchKey>,
+    scene_face: Option<(
+        super::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )>,
+) -> Option<HoverTarget> {
+    let face = |(model, face)| HoverTarget::Face(model, face);
+    if pick_mode_on {
+        pick_face
+            .map(face)
+            .or_else(|| pick_item.cloned().map(HoverTarget::Item))
+            .or_else(|| row_hover.cloned().map(HoverTarget::Item))
+    } else {
+        row_hover
+            .cloned()
+            .map(HoverTarget::Item)
+            .or_else(|| scene_face.map(face))
     }
 }
 
