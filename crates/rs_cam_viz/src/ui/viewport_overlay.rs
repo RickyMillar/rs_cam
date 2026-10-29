@@ -45,7 +45,6 @@
 
 use super::AppEvent;
 use crate::compute::LaneSnapshot;
-use crate::render::camera::{ProjectionMode, ViewPreset};
 use crate::state::overlays::DockSection;
 use crate::state::selection::Selection;
 use crate::state::{AppState, Workspace};
@@ -259,7 +258,6 @@ pub struct DockOutcome {
 pub fn draw(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    projection: ProjectionMode,
     lanes: &[LaneSnapshot; 4],
     events: &mut Vec<AppEvent>,
     viewport_rect: egui::Rect,
@@ -310,7 +308,7 @@ pub fn draw(
             button: bar.more_button,
             bar: bar.frame,
         };
-        draw_more(&ctx, state, projection, events, anchor);
+        draw_more(&ctx, state, events, anchor);
     }
     panel::draw_rest_confirm(&ctx, state, events);
     outcome
@@ -487,7 +485,6 @@ struct PopoverAnchor {
 fn draw_more(
     ctx: &egui::Context,
     state: &mut AppState,
-    projection: ProjectionMode,
     events: &mut Vec<AppEvent>,
     anchor: PopoverAnchor,
 ) {
@@ -534,7 +531,7 @@ fn draw_more(
                                 ))
                                 .show(ui);
                                 match section {
-                                    DockSection::View => view_group(ui, state, projection, events),
+                                    DockSection::View => view_group(ui, state, events),
                                     DockSection::Scene => scene_group(ui, state, events),
                                     DockSection::Paths => paths_group(ui, state, events),
                                     DockSection::Inspect => inspect_group(ui, state, events),
@@ -588,73 +585,12 @@ fn draw_row_as(
     }
 }
 
-/// The camera controls that are not registry rows: presets, projection and
-/// reset. The catalogue draws the same controls under `VIEW`.
-pub(crate) fn draw_view_controls(
-    ui: &mut egui::Ui,
-    state: &AppState,
-    projection: ProjectionMode,
-    events: &mut Vec<AppEvent>,
-) {
-    ui.horizontal_wrapped(|ui| {
-        for (preset, label, hover) in [
-            (ViewPreset::Top, "Top", "Shortcut: 1"),
-            (ViewPreset::Front, "Front", "Shortcut: 2"),
-            (ViewPreset::Right, "Right", "Shortcut: 3"),
-            (ViewPreset::Isometric, "Iso", "Shortcut: 4"),
-        ] {
-            if ui
-                .add(components::Button::new(label))
-                .on_hover_text(hover)
-                .clicked()
-            {
-                events.push(AppEvent::Ui(UiCommand::SetViewPreset(preset)));
-            }
-        }
-    });
-    let mut choice = projection;
-    let changed = ui
-        .add(components::ChoiceRow::new(
-            "Projection",
-            &mut choice,
-            &[
-                (ProjectionMode::Perspective, "Perspective"),
-                (ProjectionMode::Orthographic, "Orthographic"),
-            ],
-        ))
-        .changed();
-    if changed && choice != projection {
-        events.push(AppEvent::Ui(UiCommand::ToggleProjection(NoArgs)));
-    }
-    ui.horizontal_wrapped(|ui| {
-        if ui.add(components::Button::new("Reset view")).clicked() {
-            events.push(AppEvent::Ui(UiCommand::ResetView(NoArgs)));
-        }
-        if ui
-            .add(components::Button::new("Fit selection"))
-            .on_hover_text("Shortcut: F")
-            .clicked()
-        {
-            events.push(AppEvent::Ui(UiCommand::FitSelection(NoArgs)));
-        }
-        if state.workspace == Workspace::Simulation
-            && ui
-                .add(components::Button::new("Reset simulation"))
-                .on_hover_text("Reset the simulation to the start.")
-                .clicked()
-        {
-            events.push(AppEvent::Ui(UiCommand::ResetSimulation(NoArgs)));
-        }
-    });
-}
-
-fn view_group(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    projection: ProjectionMode,
-    events: &mut Vec<AppEvent>,
-) {
-    draw_view_controls(ui, state, projection, events);
+/// R5b: the view cube in the viewport corner turns the view (a face click
+/// gives its preset, a drag orbits) and the toggle under it sets the
+/// projection; the F key fits and the View menu keeps Reset View and the
+/// presets. So the View section holds the rows of its home only: the view
+/// cube row.
+fn view_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     draw_remaining_rows(ui, state, events, DockSection::View, &[]);
 }
 

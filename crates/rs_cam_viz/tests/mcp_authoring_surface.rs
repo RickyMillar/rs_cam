@@ -274,8 +274,11 @@ fn set_ui_view_moves_the_camera_cam9() {
     }
     for token in [
         "top",
+        "bottom",
         "front",
+        "back",
         "right",
+        "left",
         "iso",
         "perspective",
         "orthographic",

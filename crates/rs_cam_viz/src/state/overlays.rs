@@ -51,7 +51,7 @@ impl ModelVisibility {
 /// `crate::ui::overlays::registry::dock_section`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockSection {
-    /// Camera presets, projection, reset and the orientation gizmo.
+    /// The view cube row (R5b: the cube itself turns the view).
     View,
     /// Geometry, stock, fixtures, grid, boundaries and layers.
     Scene,

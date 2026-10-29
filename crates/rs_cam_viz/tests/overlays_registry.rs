@@ -1014,13 +1014,11 @@ fn the_viewport_keeps_a_minimum_width() {
     // The catalogue and the dock are placed on the FLOORED rect, after the
     // allocation, so a narrow window cannot put either outside the view.
     assert!(
-        viewport.contains("draw_catalogue(ui.ctx(), state, projection, events, rect)"),
+        viewport.contains("draw_catalogue(ui.ctx(), state, events, rect)"),
         "the catalogue no longer floats over the floored viewport rect"
     );
     assert!(
-        viewport.contains(
-            "viewport_overlay::draw(ui, state, projection, &lane_snapshots, events, rect)"
-        ),
+        viewport.contains("viewport_overlay::draw(ui, state, &lane_snapshots, events, rect)"),
         "the dock no longer floats over the floored viewport rect"
     );
     assert!(

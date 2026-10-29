@@ -937,7 +937,7 @@ pub const ROWS: &[OverlayRow] = &[
     OverlayRow {
         id: "orientation_gizmo",
         group: OverlayGroup::Geometry,
-        label: "Orientation gizmo",
+        label: "View cube",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_orientation_gizmo"),
@@ -946,7 +946,8 @@ pub const ROWS: &[OverlayRow] = &[
         set: |s, on| s.viewport.show_orientation_gizmo = on,
         precondition: always_ready,
         default_for: no_default,
-        hover: "The camera-axis triad in the viewport corner.",
+        hover: "The view cube in the viewport corner, with the projection toggle \
+                under it. Click a face for that view; drag the cube to orbit.",
     },
     // ── Toolpath ──────────────────────────────────────────────────────────
     OverlayRow {

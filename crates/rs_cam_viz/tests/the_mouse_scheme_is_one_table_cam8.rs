@@ -17,7 +17,7 @@
 //!    cannot build, so the drive stops at those three calls, the ones the
 //!    frame makes, and a `CameraState` takes the actions.
 //! 4. A pinch (`Event::Zoom(1.25)`) changes the distance by 1 / 1.25.
-//! 5. P4: a left drag that starts on the orientation gizmo (`on_gizmo`, the
+//! 5. P4, R5b: a left drag that starts on the view cube (`on_cube`, the
 //!    test the frame makes) orbits about the target in each scheme: the
 //!    camera turns and the target does not move. A left click on the gizmo
 //!    and a left drag that starts outside its disc leave the camera alone.
@@ -25,8 +25,9 @@
 use egui::{Modifiers, PointerButton};
 use rs_cam_core::settings::MouseScheme;
 use rs_cam_viz::interaction::input::{
-    InputEnv, InputSample, Intent, apply_camera, classify, gizmo_disc, on_gizmo, rows, step,
+    InputEnv, InputSample, Intent, apply_camera, classify, rows, step,
 };
+use rs_cam_viz::interaction::view_cube::{cube_rect, on_cube};
 use rs_cam_viz::state::camera::CameraState;
 use rs_cam_viz::state::viewport_input::DragState;
 
@@ -192,7 +193,7 @@ fn drag_from(
             env.press_on_gizmo = sample.started == Some(PointerButton::Primary)
                 && sample
                     .press_origin
-                    .is_some_and(|origin| on_gizmo(response.rect, origin));
+                    .is_some_and(|origin| on_cube(response.rect, origin));
             let actions = step(&mut drag, &sample, &env);
             apply_camera(&actions, &mut camera, rect);
         });
@@ -312,7 +313,8 @@ fn a_pinch_zooms_cam8() {
 #[test]
 fn a_left_drag_on_the_gizmo_orbits_in_each_scheme_cam8() {
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
-    let (centre, radius) = gizmo_disc(screen);
+    let cube = cube_rect(screen);
+    let (centre, radius) = (cube.center(), cube.width() * 0.5);
     for scheme in SCHEMES {
         // The gizmo sits in the top-right corner: the drag goes left and up,
         // so the pointer stays on the screen.

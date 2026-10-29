@@ -3,9 +3,11 @@
 //!
 //! # The claim
 //!
-//! 1. For each preset and each projection, the key path
+//! 1. For each preset (R5b: the six view cube faces and Iso) and each
+//!    projection, the key path
 //!    (`CameraState::preset`) and the MCP door (`apply_camera_request` with
-//!    `preset`) give a bitwise-equal `view_proj(16/9)`.
+//!    `preset`) give a bitwise-equal `view_proj(16/9)`, and the echo names
+//!    the preset. The wire tokens of the three new presets parse to them.
 //! 2. `fit: model` and Reset View (`fit_to_first_model`) give an equal
 //!    camera.
 //! 3. The pose echo replays: degrees on the wire become radians in the
@@ -79,12 +81,7 @@ fn state_with_a_model() -> AppState {
 fn a_view_preset_gives_one_view_by_key_and_by_mcp_cam9() {
     let mut checked = 0;
     for projection in [ProjectionMode::Perspective, ProjectionMode::Orthographic] {
-        for preset in [
-            ViewPreset::Top,
-            ViewPreset::Front,
-            ViewPreset::Right,
-            ViewPreset::Isometric,
-        ] {
+        for preset in ViewPreset::ALL {
             let mut by_key = AppState::new();
             by_key.camera.set_projection(projection);
             by_key.camera.preset(preset, CameraWrite::Instant);
@@ -107,19 +104,14 @@ fn a_view_preset_gives_one_view_by_key_and_by_mcp_cam9() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 8, "every arm ran");
+    assert_eq!(checked, 14, "every arm ran: seven presets, two projections");
 }
 
 /// A C4: the eased key path ends on the same view as the MCP preset.
 #[test]
 fn an_eased_preset_ends_on_the_mcp_view_cam9() {
     let duration = 0.24;
-    for preset in [
-        ViewPreset::Top,
-        ViewPreset::Front,
-        ViewPreset::Right,
-        ViewPreset::Isometric,
-    ] {
+    for preset in ViewPreset::ALL {
         let mut by_key = AppState::new();
         by_key
             .camera
@@ -301,4 +293,23 @@ fn the_f_key_fits_the_selection_as_mcp_does_cam6() {
     let mut reset = state_with_a_model();
     fit_to_first_model(&mut reset, CameraWrite::Instant);
     assert_eq!(by_key.camera.pose(), reset.camera.pose());
+}
+
+/// R5b: the wire tokens of the three new presets parse to them, and a pose
+/// at each preset echoes its preset name.
+#[test]
+fn the_three_new_presets_have_wire_tokens_cam9() {
+    for (token, preset) in [
+        ("bottom", ViewPreset::Bottom),
+        ("back", ViewPreset::Back),
+        ("left", ViewPreset::Left),
+    ] {
+        let param: CameraParam =
+            serde_json::from_value(serde_json::json!({ "preset": token })).expect("a known token");
+        let request: CameraRequest = param.into();
+        assert_eq!(request.preset, Some(preset), "`{token}`");
+        let mut state = AppState::new();
+        let echo = apply_camera_request(&mut state, &request).expect("a preset is never refused");
+        assert_eq!(echo.view_preset, Some(preset), "the echo names `{token}`");
+    }
 }

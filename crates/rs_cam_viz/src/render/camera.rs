@@ -1,12 +1,29 @@
 use nalgebra::{Matrix4, Point3, Vector3};
 
-/// View preset orientations.
+/// View preset orientations: the six faces of the view cube and the
+/// isometric view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewPreset {
     Top,
+    Bottom,
     Front,
+    Back,
     Right,
+    Left,
     Isometric,
+}
+
+impl ViewPreset {
+    /// Every preset, in echo order.
+    pub const ALL: [Self; 7] = [
+        Self::Top,
+        Self::Bottom,
+        Self::Front,
+        Self::Back,
+        Self::Right,
+        Self::Left,
+        Self::Isometric,
+    ];
 }
 
 /// Camera projection mode.
@@ -261,14 +278,19 @@ impl OrbitCamera {
     /// The pose of a view preset. The target and the distance do not change.
     ///
     /// Top looks down with the Front yaw, so +X is to the right and +Y up on
-    /// the screen (the Z-up CAD convention). Isometric takes the yaw
+    /// the screen (the Z-up CAD convention); Bottom looks up with the same
+    /// yaw. Back and Left take [`YAW_BACK`] and [`YAW_LEFT`] of the one yaw
+    /// table. Isometric takes the yaw
     /// [`YAW_ISO`], the mean of the Front and Right yaws (the eye front-right
     /// and above), and keeps the pitch pi/6.
     pub fn preset_pose(&self, preset: ViewPreset) -> CameraPose {
         let (yaw, pitch) = match preset {
             ViewPreset::Top => (YAW_FRONT, PITCH_LIMIT),
+            ViewPreset::Bottom => (YAW_FRONT, -PITCH_LIMIT),
             ViewPreset::Front => (YAW_FRONT, 0.0),
+            ViewPreset::Back => (YAW_BACK, 0.0),
             ViewPreset::Right => (YAW_RIGHT, 0.0),
+            ViewPreset::Left => (YAW_LEFT, 0.0),
             ViewPreset::Isometric => (YAW_ISO, std::f32::consts::FRAC_PI_6),
         };
         CameraPose {

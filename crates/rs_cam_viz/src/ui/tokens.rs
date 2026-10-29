@@ -194,6 +194,10 @@ pub const BOX_FILL: Color32 = Color32::from_rgba_premultiplied(14, 25, 34, 40);
 /// measurement (live look 2026-10-29: the 1 px lines were too thin; round
 /// 2: twice as thick, so a selected line reads beside a selected face).
 pub const LINE_SELECTED_PX: f32 = 5.0;
+/// The size of the view cube square in the top-right corner of the
+/// viewport, in points (R5b; Fusion's ViewCube and Onshape's cube). A
+/// design choice the operator can tune, not a measurement.
+pub const VIEW_CUBE_PX: f32 = 90.0;
 /// The width of the hover ring and the tab marks, in points. A design
 /// choice, not a measurement.
 pub const LINE_HOVER_PX: f32 = 2.0;

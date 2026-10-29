@@ -15,9 +15,12 @@
 //!   popover; a click outside closes the popover; `Escape` closes one
 //!   surface at a time;
 //! - (g) the compact legend (operator ruling 2026-10-02): it never covers
-//!   the dock or the orientation gizmo at any common viewport size, its
+//!   the dock or the view cube corner at any common viewport size, its
 //!   caveat lines paint only while the pointer is on a chip, and folded it
-//!   is one `Legend (n)` chip.
+//!   is one `Legend (n)` chip;
+//! - (h) R5b: the projection toggle under the view cube reads the camera
+//!   projection: a click on the choice not in force sends one
+//!   `ToggleProjection`, a click on the choice in force sends nothing.
 //!
 //! Two mirrored render colours and the rest ramp top are pinned against
 //! their render sources, so the legend cannot drift from the picture.
@@ -854,14 +857,7 @@ fn frame(
     let mut output = ctx.run_ui(
         raw_input(viewport.width(), viewport.height(), events),
         |ui| {
-            outcome = viewport_overlay::draw(
-                ui,
-                state,
-                ProjectionMode::Perspective,
-                &lanes,
-                &mut app_events,
-                viewport,
-            );
+            outcome = viewport_overlay::draw(ui, state, &lanes, &mut app_events, viewport);
         },
     );
     output.textures_delta.clear();
@@ -1057,14 +1053,7 @@ fn painted_frame(
     let mut output = ctx.run_ui(
         raw_input(viewport.width(), viewport.height(), events),
         |ui| {
-            viewport_overlay::draw(
-                ui,
-                state,
-                ProjectionMode::Perspective,
-                &lanes,
-                &mut app_events,
-                viewport,
-            );
+            viewport_overlay::draw(ui, state, &lanes, &mut app_events, viewport);
         },
     );
     output.textures_delta.clear();
@@ -1102,13 +1091,9 @@ fn click_at(pos: egui::Pos2) -> [Vec<egui::Event>; 2] {
     ]
 }
 
-/// The orientation gizmo of `app/viewport.rs`: a 50 pt disc 10 pt in from
-/// the top-right corner.
+/// The view cube corner (R5b): the cube and the projection toggle under it.
 fn gizmo_rect(viewport: egui::Rect) -> egui::Rect {
-    egui::Rect::from_min_size(
-        egui::pos2(viewport.right() - 60.0, viewport.top()),
-        egui::vec2(60.0, 60.0),
-    )
+    rs_cam_viz::interaction::view_cube::corner_rect(viewport)
 }
 
 /// The legend never intersects the dock bar or the gizmo. The sizes cover
@@ -1486,5 +1471,64 @@ fn every_chip_swatch_shows_every_colour_of_its_key_g_legend() {
         legend_rail::swatch_colours(&state, heights).len(),
         5,
         "the height-plane chip must show all five planes"
+    );
+}
+
+/// (h) R5b: the projection toggle reads the projection in force.
+#[test]
+fn the_projection_toggle_reads_the_camera_g_vpstate() {
+    use rs_cam_viz::ui_command::{NoArgs, UiCommand};
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+    let toggles = |projection: ProjectionMode, word: &str| -> usize {
+        let ctx = ctx(800.0, 600.0);
+        let mut events: Vec<AppEvent> = Vec::new();
+        let run = |input: Vec<egui::Event>, events: &mut Vec<AppEvent>| {
+            let mut out = ctx.run_ui(raw_input(800.0, 600.0, input), |ui| {
+                rs_cam_viz::ui::view_cube::draw_toggle(ui.ctx(), viewport, projection, events);
+            });
+            out.textures_delta.clear();
+        };
+        // egui sizes a new area on its first frame; read it after three.
+        for _ in 0..3 {
+            run(Vec::new(), &mut events);
+        }
+        let rect = area(&ctx, rs_cam_viz::ui::view_cube::TOGGLE_AREA_ID).expect("the toggle drew");
+        assert!(
+            rect.intersects(rs_cam_viz::interaction::view_cube::toggle_rect(viewport)),
+            "the toggle sits under the cube: {rect:?}"
+        );
+        // "Persp" is the left half, "Ortho" the right half.
+        let x = if word == "Persp" {
+            rect.left() + rect.width() * 0.25
+        } else {
+            rect.left() + rect.width() * 0.75
+        };
+        for input in click_at(egui::pos2(x, rect.center().y)) {
+            run(input, &mut events);
+        }
+        events
+            .iter()
+            .filter(|e| matches!(e, AppEvent::Ui(UiCommand::ToggleProjection(NoArgs))))
+            .count()
+    };
+    assert_eq!(
+        toggles(ProjectionMode::Perspective, "Ortho"),
+        1,
+        "Persp in force: Ortho toggles"
+    );
+    assert_eq!(
+        toggles(ProjectionMode::Perspective, "Persp"),
+        0,
+        "the choice in force sends nothing"
+    );
+    assert_eq!(
+        toggles(ProjectionMode::Orthographic, "Persp"),
+        1,
+        "Ortho in force: Persp toggles"
+    );
+    assert_eq!(
+        toggles(ProjectionMode::Orthographic, "Ortho"),
+        0,
+        "the choice in force sends nothing"
     );
 }

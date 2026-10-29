@@ -33,6 +33,7 @@ pub mod tokens;
 pub mod tool_library_modal;
 pub mod toolpath_panel;
 pub mod toolpath_row_controls;
+pub mod view_cube;
 pub mod viewport_overlay;
 pub mod workspace_bar;
 

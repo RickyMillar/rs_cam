@@ -25,7 +25,7 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
   with no public source is mirrored in `legend_rail::mirrored`, and the
   vpstate sentry pins the render literal.
 - The dock, legend and catalogue float over the 3D view and take no width.
-  The legend never covers the dock or the gizmo; a caveat moves to hover.
+  The legend never covers the dock or the view cube corner (`GIZMO_CLEARANCE` from `view_cube::corner_rect`); a caveat moves to hover. R5b: More's View section holds the view cube row only (the cube, the toggle, F and the View menu replace the preset buttons).
 - The reach map is an UPPER estimate (`rs_cam_core/src/maps/CLAUDE.md`).
 
 ## Sentries

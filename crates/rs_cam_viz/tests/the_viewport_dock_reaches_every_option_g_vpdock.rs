@@ -27,7 +27,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use rs_cam_viz::compute::{ComputeLane, LaneSnapshot, LaneState};
-use rs_cam_viz::render::camera::ProjectionMode;
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::overlays::{DockSection, OverlayPanelState};
 use rs_cam_viz::ui::overlays::registry;
@@ -96,11 +95,7 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
 
     // The MOCKUPS §1 table, as it stood when the dock was built.
     let count = |section| registry::rows_in_section(section).count();
-    assert_eq!(
-        count(DockSection::View),
-        1,
-        "View holds the orientation gizmo"
-    );
+    assert_eq!(count(DockSection::View), 1, "View holds the view cube row");
     // 15 since the wrong-orientation pin ghost (P7, 2026-10-12) joined
     // Scene beside the pins and the flip axis; 14 since K2 (2026-10-16)
     // merged the Fixtures and Keep-out rows into one Obstacles row; 16
@@ -279,7 +274,8 @@ fn escape_is_consumed_before_the_workspace_handler_g_vpdock() {
 
 /// `ToggleProjection`, `ToggleShowAllToolpaths` and `CancelCompute` had the
 /// strip as their ONLY GUI constructor. The dock took each one over in the
-/// same change (inventory §1.8, §5.4).
+/// same change (inventory §1.8, §5.4). R5b: the projection toggle under the
+/// view cube (`ui/view_cube.rs`) now constructs `ToggleProjection`.
 #[test]
 fn the_dock_constructs_the_three_strip_commands_g_vpdock() {
     let dock = code_only(&source("src/ui/viewport_overlay.rs"));
@@ -287,11 +283,16 @@ fn the_dock_constructs_the_three_strip_commands_g_vpdock() {
         dock.contains("pub fn draw(") && dock.contains("DockSection::ALL"),
         "non-vacuity: the dock file no longer holds the dock"
     );
-    for command in [
-        "ToggleProjection",
-        "ToggleShowAllToolpaths",
-        "CancelCompute",
-    ] {
+    let cube = code_only(&source("src/ui/view_cube.rs"));
+    assert!(
+        cube.contains("pub fn draw_toggle("),
+        "non-vacuity: the view cube file no longer holds the toggle"
+    );
+    assert!(
+        cube.contains("AppEvent::Ui(UiCommand::ToggleProjection(NoArgs))"),
+        "the view cube toggle no longer constructs UiCommand::ToggleProjection"
+    );
+    for command in ["ToggleShowAllToolpaths", "CancelCompute"] {
         let needle = format!("AppEvent::Ui(UiCommand::{command}(NoArgs))");
         assert!(
             dock.contains(&needle),
@@ -397,14 +398,7 @@ fn render_dock(
     let mut events: Vec<AppEvent> = Vec::new();
     for _ in 0..3 {
         let mut output = ctx.run_ui(raw_input(viewport.width(), viewport.height()), |ui| {
-            viewport_overlay::draw(
-                ui,
-                state,
-                ProjectionMode::Perspective,
-                &lanes,
-                &mut events,
-                viewport,
-            );
+            viewport_overlay::draw(ui, state, &lanes, &mut events, viewport);
         });
         output.textures_delta.clear();
     }

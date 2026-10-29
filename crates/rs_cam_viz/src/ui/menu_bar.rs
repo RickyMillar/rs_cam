@@ -270,6 +270,24 @@ pub fn draw(ui: &mut egui::Ui, state: &AppState, events: &mut Vec<AppEvent>) {
                         crate::render::camera::ViewPreset::Right,
                     )));
                 }
+                if ui.button("Bottom").clicked() {
+                    ui.close();
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Bottom,
+                    )));
+                }
+                if ui.button("Back").clicked() {
+                    ui.close();
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Back,
+                    )));
+                }
+                if ui.button("Left").clicked() {
+                    ui.close();
+                    events.push(AppEvent::Ui(UiCommand::SetViewPreset(
+                        crate::render::camera::ViewPreset::Left,
+                    )));
+                }
                 if ui.button("Isometric").clicked() {
                     ui.close();
                     events.push(AppEvent::Ui(UiCommand::SetViewPreset(

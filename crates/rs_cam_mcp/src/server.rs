@@ -937,8 +937,11 @@ pub struct ScreenshotGuiParam {
 #[schemars(inline)]
 pub enum ViewPresetParam {
     Top,
+    Bottom,
     Front,
+    Back,
     Right,
+    Left,
     Iso,
 }
 
@@ -1095,7 +1098,8 @@ pub struct SetUiViewParam {
     /// reports each id under `model_visibility.applied` or
     /// `model_visibility.refused` (an id that names no model).
     pub model_visibility: Option<std::collections::BTreeMap<usize, bool>>,
-    /// A C5: move the camera. `preset` (`top`, `front`, `right`, `iso`),
+    /// A C5: move the camera. `preset` (`top`, `bottom`, `front`, `back`,
+    /// `right`, `left`, `iso`),
     /// `projection` (`perspective`, `orthographic`), `fit` (`model`,
     /// `selection`) and `pose` (`target`, `distance`, `yaw_deg`,
     /// `pitch_deg`). Applied after `frame_items`, in the order fit, preset,

@@ -356,19 +356,11 @@ pub struct CameraEcho {
     pub framed: Option<BoundingBox3>,
 }
 
-/// The view presets, in echo order.
-const PRESETS: [ViewPreset; 4] = [
-    ViewPreset::Top,
-    ViewPreset::Front,
-    ViewPreset::Right,
-    ViewPreset::Isometric,
-];
-
 /// The camera of `state` as an echo, with no framed box.
 pub fn camera_echo(state: &AppState) -> CameraEcho {
     let camera = state.camera.pose();
     let pose = camera.pose();
-    let view_preset = PRESETS.into_iter().find(|p| {
+    let view_preset = ViewPreset::ALL.into_iter().find(|p| {
         let preset = camera.preset_pose(*p);
         preset.yaw == pose.yaw && preset.pitch == pose.pitch
     });
@@ -525,8 +517,11 @@ mod wire {
         fn from(p: ViewPresetParam) -> Self {
             match p {
                 ViewPresetParam::Top => Self::Top,
+                ViewPresetParam::Bottom => Self::Bottom,
                 ViewPresetParam::Front => Self::Front,
+                ViewPresetParam::Back => Self::Back,
                 ViewPresetParam::Right => Self::Right,
+                ViewPresetParam::Left => Self::Left,
                 ViewPresetParam::Iso => Self::Isometric,
             }
         }
@@ -536,8 +531,11 @@ mod wire {
         fn from(p: ViewPreset) -> Self {
             match p {
                 ViewPreset::Top => Self::Top,
+                ViewPreset::Bottom => Self::Bottom,
                 ViewPreset::Front => Self::Front,
+                ViewPreset::Back => Self::Back,
                 ViewPreset::Right => Self::Right,
+                ViewPreset::Left => Self::Left,
                 ViewPreset::Isometric => Self::Iso,
             }
         }
@@ -634,12 +632,7 @@ mod tests {
         assert_eq!(p.pitch, crate::render::camera::PITCH_LIMIT);
 
         // `preset` is `set_pose(preset_pose)`: the matrix is bitwise equal.
-        for preset in [
-            ViewPreset::Top,
-            ViewPreset::Front,
-            ViewPreset::Right,
-            ViewPreset::Isometric,
-        ] {
+        for preset in ViewPreset::ALL {
             let mut state = CameraState::default();
             state.preset(preset, CameraWrite::Instant);
             let mut cam = OrbitCamera::new();

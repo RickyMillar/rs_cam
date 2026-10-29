@@ -375,12 +375,12 @@ impl RsCamApp {
                 .active_tab_edit()
                 .zip(sample.press_origin)
                 .is_some_and(|(id, origin)| self.tab_under(id, origin).is_some());
-        // P4: a primary press on the drawn orientation gizmo orbits.
+        // P4, R5b: a primary press on the drawn view cube orbits.
         let press_on_gizmo = sample.started == Some(egui::PointerButton::Primary)
             && self.controller.state().viewport.show_orientation_gizmo
-            && sample
-                .press_origin
-                .is_some_and(|origin| crate::interaction::input::on_gizmo(response.rect, origin));
+            && sample.press_origin.is_some_and(|origin| {
+                crate::interaction::view_cube::on_cube(response.rect, origin)
+            });
         // A C3a: the point under the press origin, only on a drag start.
         let drag_anchor = sample
             .started
@@ -856,7 +856,6 @@ impl RsCamApp {
     pub(super) fn draw_viewport(&mut self, ui: &mut egui::Ui) {
         let lane_snapshots = self.controller.lane_snapshots();
         let workspace = self.controller.state().workspace;
-        let projection = self.controller.state().camera.pose().projection;
         // Rest-depth heatmap legend info (threshold, peak rest mm) for the
         // currently selected toolpath, if it carries a `rest_grid`. **Any**
         // operation attaches one when its `rest_analysis.enabled` is set and
@@ -888,10 +887,10 @@ impl RsCamApp {
         crate::state::tab_edit::refresh_layout(self.controller.state_mut());
         let dock = {
             let (state, events) = self.controller.state_and_events_mut();
-            crate::ui::overlays::panel::draw_catalogue(ui.ctx(), state, projection, events, rect);
+            crate::ui::overlays::panel::draw_catalogue(ui.ctx(), state, events, rect);
             // P4.5: the pick filter bar, at the top centre (L-4).
             crate::ui::pick_bar::draw(ui.ctx(), state, rect);
-            crate::ui::viewport_overlay::draw(ui, state, projection, &lane_snapshots, events, rect)
+            crate::ui::viewport_overlay::draw(ui, state, &lane_snapshots, events, rect)
         };
         if self.controller.state().viewport.show_tool_deflection {
             self.draw_sim_deflection_overlay(ui, rect);
@@ -909,6 +908,23 @@ impl RsCamApp {
             if let InputAction::Click { pos, modifiers } = *action
                 && !dock.closed_popover_on_click
             {
+                // R5b: a click on the view cube turns the view and picks
+                // nothing in the scene; a face sends its eased preset.
+                if self.controller.state().viewport.show_orientation_gizmo
+                    && crate::interaction::view_cube::on_cube(rect, pos)
+                {
+                    let cube = crate::interaction::view_cube::cube_rect(rect);
+                    if let Some(preset) = crate::interaction::view_cube::face_at(
+                        cube,
+                        self.controller.state().camera.pose(),
+                        pos,
+                    ) {
+                        self.controller
+                            .events_mut()
+                            .push(AppEvent::Ui(UiCommand::SetViewPreset(preset)));
+                    }
+                    continue;
+                }
                 self.handle_viewport_click(pos, crate::ui::pick_bar::PickClick::primary(modifiers));
             }
         }
@@ -1377,9 +1393,25 @@ impl RsCamApp {
             self.draw_pin_numbers(ui, rect);
         }
 
-        // Draw orientation gizmo overlay (2D, on top of the 3D viewport)
+        // R5b: the view cube and the projection toggle (2D, on top of the
+        // 3D viewport).
         if self.controller.state().viewport.show_orientation_gizmo {
-            self.draw_orientation_gizmo(ui, rect);
+            let hover = ui
+                .input(|i| i.pointer.hover_pos())
+                .filter(|_| response.hovered() && !response.dragged());
+            crate::ui::view_cube::paint(
+                ui.painter(),
+                rect,
+                self.controller.state().camera.pose(),
+                hover,
+            );
+            let projection = self.controller.state().camera.pose().projection;
+            crate::ui::view_cube::draw_toggle(
+                ui.ctx(),
+                rect,
+                projection,
+                self.controller.events_mut(),
+            );
         }
 
         if workspace == Workspace::Simulation {
@@ -1566,80 +1598,6 @@ impl RsCamApp {
                 at: [click_pos.x, click_pos.y],
             });
         true
-    }
-
-    /// Draw a small XYZ orientation gizmo in the top-right corner of the viewport.
-    /// Uses the camera view matrix to rotate unit vectors, then draws 2D lines.
-    fn draw_orientation_gizmo(&self, ui: &mut egui::Ui, viewport_rect: egui::Rect) {
-        let (gizmo_center, gizmo_radius) = crate::interaction::input::gizmo_disc(viewport_rect);
-        let axis_len = 20.0;
-
-        let view = self.controller.state().camera.pose().view_matrix();
-        let painter = ui.painter();
-
-        // Background circle for readability
-        painter.circle_filled(
-            gizmo_center,
-            gizmo_radius,
-            egui::Color32::from_rgba_unmultiplied(
-                crate::ui::tokens::DIAGRAM_CANVAS.r(),
-                crate::ui::tokens::DIAGRAM_CANVAS.g(),
-                crate::ui::tokens::DIAGRAM_CANVAS.b(),
-                160,
-            ),
-        );
-
-        // The X/Y/Z triad keeps its literals. It is a CATEGORY wearing hues
-        // that read as DANGER and OK, which §2.6 forbids, but red/green/blue
-        // for X/Y/Z is a CAD convention the operator reads without the
-        // letters, and no scale in §2.9 carries three separable hues.
-        // Ruling R22 makes the axis the one narrow exception: the hues stay,
-        // and what the tokens buy is what `AUDIT.md` §2.10 actually
-        // complained about — the X axis and error text used to be the SAME
-        // constant, so one could not move without the other. They are
-        // separate constants at different values now. An axis colour must
-        // never appear in a panel.
-        let axes: [(nalgebra::Vector3<f32>, egui::Color32, &str); 3] = [
-            (
-                nalgebra::Vector3::new(1.0, 0.0, 0.0),
-                crate::ui::tokens::AXIS_X,
-                "X",
-            ),
-            (
-                nalgebra::Vector3::new(0.0, 1.0, 0.0),
-                crate::ui::tokens::AXIS_Y,
-                "Y",
-            ),
-            (
-                nalgebra::Vector3::new(0.0, 0.0, 1.0),
-                crate::ui::tokens::AXIS_Z,
-                "Z",
-            ),
-        ];
-
-        // Sort axes by depth (draw back-to-front)
-        let mut axis_data: Vec<(f32, egui::Pos2, egui::Color32, &str)> = axes
-            .iter()
-            .map(|(axis, color, label)| {
-                let rotated = view.transform_vector(axis);
-                let screen_end =
-                    gizmo_center + egui::vec2(rotated.x * axis_len, -rotated.y * axis_len);
-                // Use Z for depth sorting (more negative = further back)
-                (rotated.z, screen_end, *color, *label)
-            })
-            .collect();
-        axis_data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-        for (_, end, color, label) in &axis_data {
-            painter.line_segment([gizmo_center, *end], egui::Stroke::new(2.0_f32, *color));
-            painter.text(
-                *end,
-                egui::Align2::CENTER_CENTER,
-                label,
-                egui::FontId::proportional(10.0),
-                *color,
-            );
-        }
     }
 
     /// Draw the order number of each By Area region at its anchor, and its

@@ -27,7 +27,7 @@
 //!   the old rail into this hover detail.
 //! - The legend sits beside the dock when the viewport has the width, and
 //!   above the dock when it does not ([`LegendPlacement`]). It never covers
-//!   the dock bar or the orientation gizmo.
+//!   the dock bar or the view cube corner.
 //! - One quiet button folds the legend to one `Legend (n)` chip.
 //! - The legend has no motion.
 
@@ -65,10 +65,14 @@ pub const DETAIL_MAX_WIDTH: f32 = 320.0;
 /// taller chip list scrolls; it never drops a line.
 pub const LEGEND_MAX_HEIGHT_FRACTION: f32 = 0.25;
 
-/// The space kept free under the top edge of the viewport for the
-/// orientation gizmo (`app/viewport.rs`): its 50 pt disc, its 10 pt margin
-/// and a 10 pt gap.
-pub const GIZMO_CLEARANCE: f32 = 70.0;
+/// The space kept free under the top edge of the viewport for the view
+/// cube and its projection toggle (`interaction::view_cube::corner_rect`):
+/// the margin, the cube, the gap, the toggle and one more gap.
+pub const GIZMO_CLEARANCE: f32 = crate::interaction::view_cube::VIEW_CUBE_MARGIN
+    + tokens::VIEW_CUBE_PX
+    + tokens::SPACE_2
+    + crate::interaction::view_cube::PROJECTION_TOGGLE_HEIGHT
+    + tokens::SPACE_2;
 
 /// The text on the collapsed legend chip.
 pub const COLLAPSED_WORD: &str = "Legend";
@@ -520,15 +524,17 @@ pub fn draw(
                     let row_width: f32 =
                         chips.iter().map(|chip| chip.size.x + gap).sum::<f32>() + fold_width;
                     ui.set_width(row_width.min(chip_width));
+                    // The frame adds its margin and a 1 pt stroke on each
+                    // side. The list scrolls inside the budget: egui's own
+                    // 64 pt floor (`min_scrolled_height`) would grow it over
+                    // the view cube corner in a short viewport (R5b).
+                    let list_height =
+                        (place.max_height - 2.0 * tokens::SPACE_2 - 2.0).max(tokens::ROW_ACTION);
                     egui::ScrollArea::vertical()
                         .id_salt("viewport_legend_chips")
                         .auto_shrink([false, true])
-                        .max_height(
-                            // The frame adds its margin and a 1 pt stroke
-                            // on each side.
-                            (place.max_height - 2.0 * tokens::SPACE_2 - 2.0)
-                                .max(tokens::ROW_ACTION),
-                        )
+                        .max_height(list_height)
+                        .min_scrolled_height(list_height)
                         .show(ui, |ui| {
                             ui.horizontal_wrapped(|ui| {
                                 ui.spacing_mut().item_spacing = egui::vec2(gap, gap);

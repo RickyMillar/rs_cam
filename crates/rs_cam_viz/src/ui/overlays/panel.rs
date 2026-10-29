@@ -18,7 +18,6 @@
 //! [`registry::set_overlay`], so the catalogue is a second view of one
 //! state, not a second writer.
 
-use crate::render::camera::ProjectionMode;
 use crate::state::AppState;
 use crate::state::overlays::{CatalogueFilter, DockSection, PendingShow};
 use crate::state::toolpath::ToolpathId;
@@ -877,7 +876,6 @@ pub(crate) fn section_title(state: &AppState, section: DockSection) -> String {
 pub fn draw_catalogue(
     ctx: &egui::Context,
     state: &mut AppState,
-    projection: ProjectionMode,
     events: &mut Vec<AppEvent>,
     viewport_rect: egui::Rect,
 ) {
@@ -898,7 +896,7 @@ pub fn draw_catalogue(
         .resizable(true)
         .collapsible(false)
         .show(ctx, |ui| {
-            catalogue_body(ui, state, projection, events, list_height);
+            catalogue_body(ui, state, events, list_height);
         });
     if !open {
         state.overlays.open = false;
@@ -908,7 +906,6 @@ pub fn draw_catalogue(
 fn catalogue_body(
     ui: &mut egui::Ui,
     state: &mut AppState,
-    projection: ProjectionMode,
     events: &mut Vec<AppEvent>,
     list_height: f32,
 ) {
@@ -949,16 +946,12 @@ fn catalogue_body(
                         .filter(|row| matches_filter(view, row, &query, filter))
                         .collect()
                 };
-                let extras =
-                    show_extras && matches!(section, DockSection::View | DockSection::Scene);
+                let extras = show_extras && section == DockSection::Scene;
                 if rows.is_empty() && !extras {
                     continue;
                 }
                 components::SectionHeader::new(section_title(state, section)).show(ui);
-                if extras && section == DockSection::View {
-                    crate::ui::viewport_overlay::draw_view_controls(ui, state, projection, events);
-                }
-                if extras && section == DockSection::Scene {
+                if extras {
                     ui.horizontal(|ui| draw_display_mode(ui, state));
                 }
                 for row in rows {

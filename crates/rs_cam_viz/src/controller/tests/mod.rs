@@ -387,7 +387,6 @@ fn render_snapshot(
             crate::ui::viewport_overlay::draw(
                 ui,
                 &mut controller.state,
-                crate::render::camera::ProjectionMode::Perspective,
                 &lanes,
                 events,
                 viewport_rect,
