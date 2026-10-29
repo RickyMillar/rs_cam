@@ -8,7 +8,9 @@
 //! one-click controls, in this order: the display mode, Grid, Stock (Off ·
 //! Box · Solid), Cutting moves, Rapids, Collisions, then `More`. `More`
 //! opens one upward popover with every other row, grouped under the
-//! section titles `View`, `Scene`, `Paths` and `Inspect`; its last line
+//! section titles `View`, `Scene` and `Paths` (R6: Scene holds one
+//! captioned group per scene object: Model, Stock, Tool, Obstacles, Pins);
+//! its last line
 //! opens the All viewport options catalogue
 //! (`crate::ui::overlays::panel`), which lists every registry row. The four
 //! section popovers went (a declutter removes a control; it does not hide
@@ -47,12 +49,13 @@ use super::AppEvent;
 use crate::compute::LaneSnapshot;
 use crate::state::overlays::DockSection;
 use crate::state::selection::Selection;
+use crate::state::viewport::ToolpathColorMode;
 use crate::state::{AppState, Workspace};
 use crate::ui::automation;
 use crate::ui::components;
-use crate::ui::overlays::legend_rail;
 use crate::ui::overlays::panel::{self, RowControl, RowState};
-use crate::ui::overlays::registry::{self, OverlaySurface};
+use crate::ui::overlays::registry::{self, DockGroup, OverlayRow, OverlaySurface};
+use crate::ui::overlays::{context_rail, legend_rail};
 use crate::ui::tokens;
 use crate::ui_command::{NoArgs, UiCommand};
 
@@ -115,19 +118,9 @@ impl SuffixStatus {
             Self::Failed => tokens::GLYPH_DANGER,
         }
     }
-
-    fn of(row_state: &RowState) -> Self {
-        match row_state {
-            RowState::Off | RowState::Showing => Self::Ready,
-            RowState::NeedsCompute { .. } | RowState::Blocked { .. } => Self::Unavailable,
-            RowState::Computing { .. } => Self::Computing,
-            RowState::Stale { .. } => Self::Stale,
-            RowState::Failed { .. } => Self::Failed,
-        }
-    }
 }
 
-/// The word after a section name: `Paths: Selected`, `Inspect: Reach`.
+/// The word after a section name: `Paths: Selected`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SectionSuffix {
     pub word: &'static str,
@@ -143,9 +136,9 @@ pub struct SectionSuffix {
 
 /// The suffix of one section, or `None` for a section without one.
 ///
-/// Paths names the draw scope. Inspect names the PREFERRED colour source of
-/// the workspace's surface: the model surface outside Simulation, the stock
-/// surface in Simulation.
+/// Paths names the draw scope. R6 removed the Inspect section and its
+/// colour suffix: the colour choice of an object is in its group, with the
+/// "Your choice is kept" line under it.
 pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionSuffix> {
     match section {
         DockSection::View | DockSection::Scene => None,
@@ -171,45 +164,6 @@ pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionS
                             .to_owned()
                     }
                 }),
-            })
-        }
-        DockSection::Inspect => {
-            let simulation = state.workspace == Workspace::Simulation;
-            let choices: &[(&str, &'static str)] = if simulation {
-                &[
-                    ("stock_colour_solid", "Solid"),
-                    ("stock_colour_deviation", "Deviation"),
-                    ("stock_colour_by_height", "Height"),
-                ]
-            } else {
-                &[("reach_map", "Reach"), ("rest_heatmap", "Rest")]
-            };
-            for &(id, word) in choices {
-                if let Some(row) = registry::row(id)
-                    && (row.get)(state)
-                {
-                    let row_state = RowState::of(state, row);
-                    let status = SuffixStatus::of(&row_state);
-                    let detail = row_state.reason().map(|reason| {
-                        let what = match status {
-                            SuffixStatus::Ready | SuffixStatus::Unavailable => "unavailable",
-                            SuffixStatus::Computing => panel::COMPUTING_WORD,
-                            SuffixStatus::Stale => "stale",
-                            SuffixStatus::Failed => panel::FAILED_WORD,
-                        };
-                        format!("{word} is {what} \u{2014} {reason}. Your choice is kept.")
-                    });
-                    return Some(SectionSuffix {
-                        word,
-                        status,
-                        detail,
-                    });
-                }
-            }
-            (!simulation).then_some(SectionSuffix {
-                word: "Off",
-                status: SuffixStatus::Ready,
-                detail: None,
             })
         }
     }
@@ -300,7 +254,10 @@ pub fn draw(
     // the dock bar.
     let dock_rect = bar.response.rect;
     let bar = bar.inner;
-    legend_rail::draw(&ctx, state, viewport_rect, dock_rect);
+    let legend_rect = legend_rail::draw(&ctx, state, viewport_rect, dock_rect);
+    // R6 (ruling Q5): the context rail stands on the legend, so it keeps
+    // the legend's clearance of the dock and the view cube corner.
+    context_rail::draw(&ctx, state, viewport_rect, dock_rect, legend_rect);
 
     if state.overlays.more_open {
         let anchor = PopoverAnchor {
@@ -539,7 +496,6 @@ fn draw_more(
                                     DockSection::View => view_group(ui, state, events),
                                     DockSection::Scene => scene_group(ui, state, events),
                                     DockSection::Paths => paths_group(ui, state, events),
-                                    DockSection::Inspect => inspect_group(ui, state, events),
                                 }
                             }
                             ui.separator();
@@ -567,6 +523,12 @@ fn caption(ui: &mut egui::Ui, text: &str) {
     );
 }
 
+/// True when `More` lists `row` in `ws`: the bar does not own it and it
+/// can apply there (R5c).
+fn in_more(row: &OverlayRow, ws: Workspace) -> bool {
+    !BAR_ROWS.contains(&row.id) && row.listed_in(ws)
+}
+
 /// Draw every row of `section` that `handled` does not name and the bar
 /// does not own ([`BAR_ROWS`]). A new row therefore always shows in `More`,
 /// even before its group gives it a special place.
@@ -578,10 +540,7 @@ fn draw_remaining_rows(
     handled: &[&str],
 ) {
     for row in registry::rows_in_section(section) {
-        if !handled.contains(&row.id)
-            && !BAR_ROWS.contains(&row.id)
-            && row.listed_in(state.workspace)
-        {
+        if !handled.contains(&row.id) && in_more(row, state.workspace) {
             panel::draw_row(ui, state, events, row);
         }
     }
@@ -602,6 +561,14 @@ fn draw_row_as(
     }
 }
 
+/// Draw `add` one indent step in (a child row of the row above it).
+fn indented(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.add_space(tokens::SPACE_5);
+        ui.vertical(add);
+    });
+}
+
 /// R5b: the view cube in the viewport corner turns the view (a face click
 /// gives its preset, a drag orbits) and the toggle under it sets the
 /// projection; the F key fits and the View menu keeps Reset View and the
@@ -611,21 +578,128 @@ fn view_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent
     draw_remaining_rows(ui, state, events, DockSection::View, &[]);
 }
 
+/// R6 (ruling Q1): the Scene section is one captioned group per scene
+/// object, in [`DockGroup::ALL`] order, then the single rows. The groups
+/// are registry data (`OverlayRow::group`); this function only draws them.
 fn scene_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    // The display mode, Grid and Stock are on the bar.
-    for row in registry::rows_in_section(DockSection::Scene) {
-        if BAR_ROWS.contains(&row.id) || !row.listed_in(state.workspace) {
-            continue;
-        }
-        panel::draw_row(ui, state, events, row);
-        if row.id == "simulated_stock" {
-            panel::draw_stock_opacity(ui, state);
+    for group in DockGroup::ALL {
+        if group.section() == DockSection::Scene {
+            draw_dock_group(ui, state, events, group);
         }
     }
 }
 
+/// How many rows `More` lists in `group` in `ws`. A group with none shows
+/// no caption (R6).
+#[must_use]
+pub fn more_rows_in_group(ws: Workspace, group: DockGroup) -> usize {
+    registry::rows_in_group(group)
+        .filter(|row| in_more(row, ws))
+        .count()
+}
+
+/// The label of a row inside its group: the part after the colon of a
+/// colour choice (`Model colour: Reach` is `Reach`); `Visible` for the row
+/// that has the name of its group (the `Model` row under `Model`).
+fn label_in_group(row: &OverlayRow) -> &'static str {
+    if row.group.caption() == Some(row.label) {
+        return "Visible";
+    }
+    row.label
+        .rsplit_once(": ")
+        .map_or(row.label, |(_, short)| short)
+}
+
+/// One group of `More`: its caption, then its rows in list order. The
+/// colour choices of one surface draw as one block at the place of the
+/// first of them: a `Plain` choice first where the surface has a plain
+/// state (the model), then the workspace default, then the others.
+/// A group of one row that has the group's name draws that row alone.
+fn draw_dock_group(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    group: DockGroup,
+) {
+    let ws = state.workspace;
+    let rows: Vec<&'static OverlayRow> = registry::rows_in_group(group)
+        .filter(|row| in_more(row, ws))
+        .collect();
+    let Some(first) = rows.first() else {
+        return;
+    };
+    let alone = rows.len() == 1 && group.caption() == Some(first.label);
+    if let Some(text) = group.caption().filter(|_| !alone) {
+        caption(ui, text);
+    }
+    let mut drawn_surfaces: Vec<OverlaySurface> = Vec::new();
+    for row in &rows {
+        if row.surface == OverlaySurface::None {
+            let label = if alone {
+                row.label
+            } else {
+                label_in_group(row)
+            };
+            panel::draw_control(ui, state, row, label, RowControl::Check);
+            panel::draw_reason(ui, state, events, row);
+            if row.id == "simulated_stock" {
+                panel::draw_stock_opacity(ui, state);
+            }
+        } else if !drawn_surfaces.contains(&row.surface) {
+            drawn_surfaces.push(row.surface);
+            colour_block(ui, state, events, &rows, row.surface);
+        }
+    }
+}
+
+/// The colour choices of `surface` among `rows`, as one radio block.
+fn colour_block(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    events: &mut Vec<AppEvent>,
+    rows: &[&'static OverlayRow],
+    surface: OverlaySurface,
+) {
+    let ws = state.workspace;
+    let mut members: Vec<&'static OverlayRow> = rows
+        .iter()
+        .copied()
+        .filter(|row| row.surface == surface)
+        .collect();
+    // The workspace default first; the sort is stable, so the others keep
+    // their list order.
+    members.sort_by_key(|row| registry::effective_default(state, row, ws) != Some(true));
+    let has_plain = !members.iter().any(|row| row.radio);
+    if has_plain {
+        // ruling Q5: `Plain` replaces `Off`. It clears every colour source
+        // of the surface, so the model draws plain.
+        let plain = !members.iter().any(|row| (row.get)(state));
+        if ui
+            .radio(plain, "Plain")
+            .on_hover_text("No colour source: the plain surface.")
+            .clicked()
+            && !plain
+        {
+            registry::clear_surface(state, surface);
+        }
+    }
+    for row in &members {
+        panel::draw_control(ui, state, row, label_in_group(row), RowControl::Choice);
+        panel::draw_reason(ui, state, events, row);
+    }
+    // The preference stays when it cannot draw. The dock says so rather
+    // than show another choice in its place.
+    if has_plain
+        && members
+            .iter()
+            .any(|row| (row.get)(state) && !RowState::of(state, row).draws())
+    {
+        caption(ui, "Your choice is kept. The surface draws plain.");
+    }
+}
+
 /// The rows of Paths that the group places itself (or the bar owns).
-const PATHS_PLACED: [&str; 13] = [
+const PATHS_PLACED: [&str; 15] = [
     "all_toolpaths",
     "cutting_moves",
     "rapids",
@@ -639,12 +713,15 @@ const PATHS_PLACED: [&str; 13] = [
     "span_lead_out",
     "span_link_bridge",
     "span_dressup",
+    "generator_steps",
+    "active_step_highlight",
 ];
 
 fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    let ws = state.workspace;
     // The draw scope writes through `UiCommand::ToggleShowAllToolpaths`,
     // whose handler calls `registry::set_overlay` on `all_toolpaths`.
-    if let Some(scope_row) = registry::row("all_toolpaths") {
+    if let Some(scope_row) = registry::row("all_toolpaths").filter(|r| r.listed_in(ws)) {
         let show_all = state.viewport.show_all_toolpaths;
         let ready = panel::RowState::of(state, scope_row).is_ready();
         let mut choice = show_all;
@@ -668,35 +745,63 @@ fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEven
     }
     // Cutting moves and Rapids are on the bar.
     for id in ["entry_markers", "height_planes", "tool_profile_ghost"] {
-        if let Some(row) = registry::row(id).filter(|r| r.listed_in(state.workspace)) {
+        if let Some(row) = registry::row(id).filter(|r| r.listed_in(ws)) {
             panel::draw_row(ui, state, events, row);
         }
     }
-    caption(ui, "Move colour");
-    for (id, label) in [
-        ("move_colour_palette", "Palette"),
-        ("move_colour_engagement", "Engagement"),
-        ("move_colour_advance_per_tooth", "Advance / tooth"),
-    ] {
-        draw_row_as(ui, state, events, id, label, RowControl::Choice);
-    }
-    caption(ui, "Spans");
-    ui.horizontal_wrapped(|ui| {
-        for (id, label) in [
-            ("span_entry", "Entry"),
-            ("span_lead_out", "Lead-out"),
-            ("span_link_bridge", "Link bridge"),
-            ("span_dressup", "Dressup"),
-        ] {
-            if let Some(row) = registry::row(id) {
-                panel::draw_control(ui, state, row, label, RowControl::Check);
-            }
+    if registry::row("move_colour_palette").is_some_and(|r| r.listed_in(ws)) {
+        caption(ui, "Move colour");
+        draw_row_as(
+            ui,
+            state,
+            events,
+            "move_colour_palette",
+            "Palette",
+            RowControl::Choice,
+        );
+        // Ruling Q9: the span filter applies in Palette only, so its four
+        // checks show under Palette, one step in, while Palette is the
+        // move colour.
+        if matches!(
+            state.viewport.toolpath_color_mode,
+            ToolpathColorMode::Normal
+        ) {
+            indented(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for (id, label) in [
+                        ("span_entry", "Entry"),
+                        ("span_lead_out", "Lead-out"),
+                        ("span_link_bridge", "Link bridge"),
+                        ("span_dressup", "Dressup"),
+                    ] {
+                        if let Some(row) = registry::row(id) {
+                            panel::draw_control(ui, state, row, label, RowControl::Check);
+                        }
+                    }
+                });
+                // The four span rows share one precondition, so one reason
+                // line serves all four.
+                if let Some(row) = registry::row("span_entry") {
+                    panel::draw_reason(ui, state, events, row);
+                }
+            });
         }
-    });
-    // The four span rows share one precondition, so one reason line serves
-    // all four.
-    if let Some(row) = registry::row("span_entry") {
-        panel::draw_reason(ui, state, events, row);
+        for (id, label) in [
+            ("move_colour_engagement", "Engagement"),
+            ("move_colour_advance_per_tooth", "Advance / tooth"),
+        ] {
+            draw_row_as(ui, state, events, id, label, RowControl::Choice);
+        }
+    }
+    // Ruling Q2: Highlight active step is a child of Generator steps. It
+    // shows one step in, only while Generator steps is on.
+    if let Some(steps) = registry::row("generator_steps").filter(|r| r.listed_in(ws)) {
+        panel::draw_row(ui, state, events, steps);
+        if (steps.get)(state)
+            && let Some(child) = registry::row("active_step_highlight").filter(|r| r.listed_in(ws))
+        {
+            indented(ui, |ui| panel::draw_row(ui, state, events, child));
+        }
     }
     draw_remaining_rows(ui, state, events, DockSection::Paths, &PATHS_PLACED);
     ui.label(
@@ -704,80 +809,4 @@ fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEven
             .size(tokens::SIZE_CAPTION)
             .color(tokens::TEXT_MUTED),
     );
-}
-
-/// The rows of Inspect that the group places itself (or the bar owns).
-const INSPECT_PLACED: [&str; 11] = [
-    "reach_map",
-    "rest_heatmap",
-    "tier_map",
-    "planner_islands",
-    "stock_colour_solid",
-    "stock_colour_deviation",
-    "stock_colour_by_height",
-    "collisions",
-    "tool_deflection",
-    "generator_steps",
-    "active_step_highlight",
-];
-
-fn inspect_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    let ws = state.workspace;
-    let listed = |id: &str| registry::row(id).is_some_and(|r| r.listed_in(ws));
-    // R5c: the model colour applies in Toolpaths only, the stock colour in
-    // Simulation only; a group shows where it can apply.
-    if listed("reach_map") || listed("rest_heatmap") {
-        caption(ui, "Model colour");
-        draw_row_as(ui, state, events, "reach_map", "Reach", RowControl::Choice);
-        draw_row_as(
-            ui,
-            state,
-            events,
-            "rest_heatmap",
-            "Rest",
-            RowControl::Choice,
-        );
-        let model_rows: Vec<_> = registry::rows()
-            .iter()
-            .filter(|row| row.surface == OverlaySurface::Model)
-            .collect();
-        let model_off = !model_rows.iter().any(|row| (row.get)(state));
-        if ui.radio(model_off, "Off").clicked() && !model_off {
-            registry::clear_surface(state, OverlaySurface::Model);
-        }
-        // The preference stays when it cannot draw. The dock says so rather
-        // than show another choice in its place.
-        if model_rows
-            .iter()
-            .any(|row| (row.get)(state) && !RowState::of(state, row).draws())
-        {
-            caption(ui, "Your choice is kept. The model draws plain.");
-        }
-    }
-    for id in ["tier_map", "planner_islands"] {
-        if let Some(row) = registry::row(id).filter(|r| r.listed_in(ws)) {
-            panel::draw_row(ui, state, events, row);
-        }
-    }
-    if listed("stock_colour_solid") {
-        caption(ui, "Stock colour");
-        for (id, label) in [
-            ("stock_colour_solid", "Solid"),
-            ("stock_colour_deviation", "Deviation"),
-            ("stock_colour_by_height", "Height"),
-        ] {
-            draw_row_as(ui, state, events, id, label, RowControl::Choice);
-        }
-    }
-    // Collisions is on the bar.
-    for id in [
-        "tool_deflection",
-        "generator_steps",
-        "active_step_highlight",
-    ] {
-        if let Some(row) = registry::row(id).filter(|r| r.listed_in(ws)) {
-            panel::draw_row(ui, state, events, row);
-        }
-    }
-    draw_remaining_rows(ui, state, events, DockSection::Inspect, &INSPECT_PLACED);
 }

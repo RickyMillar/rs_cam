@@ -293,8 +293,8 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
     let state = fresh_state();
     let grid = record(state_of(&state, "grid"), "grid, default on");
     assert_eq!(grid, RowState::Showing);
-    let islands = record(state_of(&state, "planner_islands"), "no renderer");
-    assert!(matches!(islands, RowState::Blocked { .. }), "{islands:?}");
+    let model = record(state_of(&state, "model"), "no 3D model");
+    assert!(matches!(model, RowState::Blocked { .. }), "{model:?}");
 
     // Needs compute: no collision check has run.
     let needs = record(state_of(&state, "collisions"), "no check");

@@ -178,37 +178,22 @@ fn every_registry_id_is_unique_and_wire_safe() {
     }
 }
 
-/// A row with no flag is a row with NO RENDERER, and it must be disabled in
-/// every state — otherwise the panel offers a checkbox that draws nothing.
+/// A row with no flag is a row with NO RENDERER. R6 (operator ruling Q4,
+/// 2026-10-30) deleted the last two (`planner_islands`,
+/// `derived_rest_regions`), so the flagless set is empty: a new row needs
+/// a renderer before it joins the registry.
 #[test]
 fn a_flagless_row_can_never_be_switched_on() {
-    let mut state = AppState::new();
+    assert!(ROWS.len() > 30, "non-vacuity: this arm reads the registry");
     let flagless: Vec<&str> = ROWS
         .iter()
         .filter(|row| row.flag.is_none())
         .map(|row| row.id)
         .collect();
-    assert_eq!(
-        flagless,
-        vec!["planner_islands", "derived_rest_regions"],
-        "the flagless set changed — a new one needs a renderer or a reason"
+    assert!(
+        flagless.is_empty(),
+        "a row with no renderer joined the registry: {flagless:?}"
     );
-    for id in flagless {
-        let row = registry::row(id).unwrap();
-        for workspace in [
-            Workspace::Setup,
-            Workspace::Toolpaths,
-            Workspace::Simulation,
-        ] {
-            state.workspace = workspace;
-            let precondition = row.precondition(&state);
-            assert!(
-                !precondition.is_ready(),
-                "`{id}` reported Ready in {workspace:?} while it has no renderer"
-            );
-            assert!(!(row.get)(&state), "`{id}` reads ON while it cannot draw");
-        }
-    }
 }
 
 // ── upload triggers ────────────────────────────────────────────────────────

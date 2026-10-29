@@ -15,10 +15,14 @@
 //! - (e) at a 320 pt viewport, the dock and `More` stay inside the
 //!   viewport width;
 //! - (f) R5c (the More menu review): `More` lists a row only in the
-//!   workspaces where it can apply (`RowScope`): 24 rows in Setup, 28 in
-//!   Toolpaths, 29 in Simulation, of the 37; out of its scope a row is
-//!   refused with a reason; the two rows with no renderer are listed in
-//!   no workspace; a section with no row there shows no title.
+//!   workspaces where it can apply (`RowScope`). R6 (the operator rulings
+//!   of 2026-10-30): 12 rows in Setup, 28 in Toolpaths, 29 in Simulation,
+//!   of the 35; out of its scope a row is refused with a reason; the two
+//!   rows with no renderer are gone; a section with no row there shows no
+//!   title; the Scene section is one group per scene object;
+//! - (g) R6 (ruling Q5): the context rail lists exactly the context rows
+//!   whose precondition holds, a rail toggle and a `More` toggle give one
+//!   state, and the rail never overlaps the dock.
 
 #![expect(
     clippy::unwrap_used,
@@ -34,7 +38,8 @@ use std::path::Path;
 use rs_cam_viz::compute::{ComputeLane, LaneSnapshot, LaneState};
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::overlays::{DockSection, OverlayPanelState};
-use rs_cam_viz::ui::overlays::registry;
+use rs_cam_viz::ui::overlays::context_rail;
+use rs_cam_viz::ui::overlays::registry::{self, DockGroup};
 use rs_cam_viz::ui::viewport_overlay::{self, BAR_ROWS, DOCK_AREA_ID, POPOVER_AREA_ID};
 use rs_cam_viz::ui::{AppEvent, tokens};
 
@@ -66,8 +71,8 @@ fn code_only(text: &str) -> String {
 
 // ── (a) every row is reachable ───────────────────────────────────────
 
-/// MOCKUPS §1 gives each of the 39 rows ONE dock home. The counts are the
-/// table's; a new row lands in the section of its group.
+/// MOCKUPS §1 gives each row ONE dock home. R6: the home is the section of
+/// the row's group (`OverlayRow::group`), so a new row names its home.
 #[test]
 fn every_registry_row_has_one_dock_home_g_vpdock() {
     let rows = registry::rows();
@@ -101,18 +106,13 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     // The MOCKUPS §1 table, as it stood when the dock was built.
     let count = |section| registry::rows_in_section(section).count();
     assert_eq!(count(DockSection::View), 1, "View holds the view cube row");
-    // 15 since the wrong-orientation pin ghost (P7, 2026-10-12) joined
-    // Scene beside the pins and the flip axis; 14 since K2 (2026-10-16)
-    // merged the Fixtures and Keep-out rows into one Obstacles row; 16
-    // since geometry selection P4.4 (2026-10-20) added the Selection
-    // states and Open path ends rows; 17 since D4 (2026-10-29) added the
-    // Face edges row; 16 since the display mode (FOLLOW_UPS §1,
-    // 2026-10-29) replaced it with the Scene control; 17 since D §4
-    // (2026-10-29) added the Selection outline row.
-    assert_eq!(count(DockSection::Scene), 17, "Scene holds 17 rows");
-    assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
-    // 12 since the By Area regions row (2026-09-24) joined Inspect.
-    assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");
+    // R6 (2026-10-30): the Inspect section went. Scene holds 25 rows: the
+    // 17 of R5c less Derived rest regions (deleted), plus 9 from Inspect
+    // (the two model colours, the tier map, the By Area regions, the three
+    // stock colours, collisions and the tool deflection). Paths holds 15:
+    // the 13 of R5c plus Generator steps and Highlight active step.
+    assert_eq!(count(DockSection::Scene), 25, "Scene holds 25 rows");
+    assert_eq!(count(DockSection::Paths), 15, "Paths holds 15 rows");
     for (id, section) in [
         ("orientation_gizmo", DockSection::View),
         ("simulated_stock", DockSection::Scene),
@@ -122,12 +122,41 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         ("selection_outline", DockSection::Scene),
         ("move_colour_engagement", DockSection::Paths),
         ("all_toolpaths", DockSection::Paths),
-        ("reach_map", DockSection::Inspect),
-        ("area_regions", DockSection::Inspect),
-        ("stock_colour_deviation", DockSection::Inspect),
+        ("reach_map", DockSection::Scene),
+        ("area_regions", DockSection::Scene),
+        ("stock_colour_deviation", DockSection::Scene),
+        ("tool_deflection", DockSection::Scene),
+        ("generator_steps", DockSection::Paths),
+        ("active_step_highlight", DockSection::Paths),
     ] {
         let row = registry::row(id).unwrap_or_else(|| panic!("row `{id}` is gone"));
         assert_eq!(registry::dock_section(row), section, "`{id}` moved section");
+    }
+    // Ruling Q1: the object groups, as data.
+    for (id, group) in [
+        ("model", DockGroup::Model),
+        ("reach_map", DockGroup::Model),
+        ("rest_heatmap", DockGroup::Model),
+        ("tier_map", DockGroup::Model),
+        ("area_regions", DockGroup::Model),
+        ("simulated_stock", DockGroup::Stock),
+        ("stock_colour_solid", DockGroup::Stock),
+        ("stock_colour_deviation", DockGroup::Stock),
+        ("stock_colour_by_height", DockGroup::Stock),
+        ("tool_deflection", DockGroup::Tool),
+        ("obstacles", DockGroup::Obstacles),
+        ("alignment_pins", DockGroup::Pins),
+        ("flip_axis", DockGroup::Pins),
+        ("pin_ghost", DockGroup::Pins),
+        ("origin_axes", DockGroup::Scene),
+        ("datum", DockGroup::Scene),
+        ("curves", DockGroup::Scene),
+        ("selection_outline", DockGroup::Scene),
+        ("selection_states", DockGroup::Scene),
+        ("open_path_ends", DockGroup::Scene),
+        ("boundary_outline", DockGroup::Scene),
+    ] {
+        assert_eq!(registry::row(id).unwrap().group, group, "`{id}` group");
     }
 
     // DOCK_DECLUTTER: the bar owns six rows (Grid, the two Stock rows
@@ -152,7 +181,7 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     }
     let more = rows.iter().filter(|r| !BAR_ROWS.contains(&r.id)).count();
     assert_eq!(more + BAR_ROWS.len(), rows.len());
-    assert_eq!(more, 37, "More holds 37 rows (43 less the 6 bar rows)");
+    assert_eq!(more, 35, "More holds 35 rows (41 less the 6 bar rows)");
 }
 
 /// The catalogue walks every section with the registry's own section list,
@@ -177,18 +206,20 @@ fn the_catalogue_and_more_walk_the_section_lists_g_vpdock() {
         dock.contains("for section in DockSection::ALL"),
         "More no longer walks every section"
     );
-    for section in ["View", "Paths", "Inspect"] {
+    for section in ["View", "Paths"] {
         let call = format!("draw_remaining_rows(ui, state, events, DockSection::{section}");
         assert!(
             dock.contains(&call),
             "the {section} group no longer draws the rows it does not place itself"
         );
     }
+    // R6: Scene walks every group of the registry and draws every row of
+    // each group that `More` lists; a row of the bar is not listed.
     assert!(
-        dock.contains("for row in registry::rows_in_section(DockSection::Scene)")
-            && dock.contains("!BAR_ROWS.contains(&row.id)")
-            && dock.contains("if BAR_ROWS.contains(&row.id)"),
-        "More no longer skips the bar rows (one home per row)"
+        dock.contains("for group in DockGroup::ALL")
+            && dock.contains("registry::rows_in_group(group)")
+            && dock.contains("!BAR_ROWS.contains(&row.id) && row.listed_in(ws)"),
+        "More no longer walks the Scene groups, or no longer skips the bar rows"
     );
     // The bar, in the ruled order: the display mode, Grid, Stock, Cutting
     // moves, Rapids, Collisions, then More.
@@ -468,20 +499,15 @@ fn more_lists_a_row_only_where_it_can_apply_g_vpdock() {
         listed(Workspace::Toolpaths),
         listed(Workspace::Simulation),
     );
-    assert_eq!(setup.len(), 24, "Setup: {setup:?}");
+    // R6: Setup lost the 11 Paths rows (ruling Q3) and the selection
+    // outline (ruling Q6).
+    assert_eq!(setup.len(), 12, "Setup: {setup:?}");
     assert_eq!(toolpaths.len(), 28, "Toolpaths: {toolpaths:?}");
     assert_eq!(simulation.len(), 29, "Simulation: {simulation:?}");
+    // Ruling Q4: the two rows with no renderer are gone, from the registry
+    // and so from the MCP overlay ids.
     for id in ["planner_islands", "derived_rest_regions"] {
-        for ws in [
-            Workspace::Setup,
-            Workspace::Toolpaths,
-            Workspace::Simulation,
-        ] {
-            assert!(
-                !listed(ws).contains(&id),
-                "`{id}` has no renderer: not in {ws:?}"
-            );
-        }
+        assert!(registry::row(id).is_none(), "`{id}` is back");
     }
     for id in [
         "simulated_stock",
@@ -498,25 +524,38 @@ fn more_lists_a_row_only_where_it_can_apply_g_vpdock() {
             "`{id}` only in Simulation"
         );
     }
-    for id in ["reach_map", "rest_heatmap", "tier_map", "area_regions"] {
+    for id in [
+        "reach_map",
+        "rest_heatmap",
+        "tier_map",
+        "area_regions",
+        "selection_outline",
+    ] {
         assert!(toolpaths.contains(&id), "`{id}` is listed in Toolpaths");
         assert!(
             !simulation.contains(&id) && !setup.contains(&id),
             "`{id}` only in Toolpaths"
         );
     }
-    for id in ["model", "selection_outline"] {
-        assert!(
-            !simulation.contains(&id),
-            "`{id}` is replaced in Simulation"
-        );
-    }
-    // A section with no row in a workspace shows no title.
+    assert!(
+        !simulation.contains(&"model"),
+        "the model is replaced in Simulation"
+    );
+    // Ruling Q3: no Paths row in Setup, so Paths shows no title there.
     assert_eq!(
-        viewport_overlay::more_rows(Workspace::Setup, DockSection::Inspect),
+        viewport_overlay::more_rows(Workspace::Setup, DockSection::Paths),
         0
     );
-    assert!(viewport_overlay::more_rows(Workspace::Toolpaths, DockSection::Inspect) > 0);
+    assert!(viewport_overlay::more_rows(Workspace::Toolpaths, DockSection::Paths) > 0);
+    // A group with no row in a workspace shows no caption: the Stock and
+    // the Tool groups have rows in More in Simulation only.
+    for group in [DockGroup::Stock, DockGroup::Tool] {
+        assert_eq!(
+            viewport_overlay::more_rows_in_group(Workspace::Setup, group),
+            0
+        );
+        assert!(viewport_overlay::more_rows_in_group(Workspace::Simulation, group) > 0);
+    }
     // Out of scope a row is refused with a reason; the view cube row is
     // always ready, so it is the control.
     let mut state = AppState::new();
@@ -527,12 +566,159 @@ fn more_lists_a_row_only_where_it_can_apply_g_vpdock() {
             .precondition(&state)
             .is_ready()
     );
-    for id in ["planner_islands", "derived_rest_regions", "reach_map"] {
-        let reason = registry::row(id).unwrap().precondition(&{
-            let mut s = AppState::new();
-            s.workspace = Workspace::Setup;
-            s
+    let mut setup_state = AppState::new();
+    setup_state.workspace = Workspace::Setup;
+    for id in ["reach_map", "entry_markers", "selection_outline"] {
+        let pre = registry::row(id).unwrap().precondition(&setup_state);
+        assert!(!pre.is_ready(), "`{id}` refuses in Setup");
+    }
+    // Ruling Q3: the bar keeps Cutting moves and Rapids, greyed in Setup
+    // with the ruled reason.
+    for id in ["cutting_moves", "rapids"] {
+        let pre = registry::row(id).unwrap().precondition(&setup_state);
+        assert_eq!(
+            pre.reason(),
+            Some("toolpaths draw in Toolpaths and Simulation"),
+            "`{id}` in Setup"
+        );
+    }
+}
+
+// ── (g) the context rail ─────────────────────────────────────────────
+
+/// A state in Setup whose two pins do not key, so the wrong-orientation
+/// ghost (a context row) can draw.
+fn unkeyed_pin_state() -> AppState {
+    use rs_cam_core::compute::alignment_pins::AlignmentPin;
+    let mut state = AppState::new();
+    let stock = state.session().stock_config().clone();
+    let (x0, x1, y) = (0.15 * stock.x, 0.85 * stock.x, 0.5 * stock.y);
+    let _ = state
+        .apply(rs_cam_core::session::Command::SetAlignmentPins(
+            rs_cam_core::session::SetAlignmentPinsArgs {
+                pins: vec![AlignmentPin::new(x0, y, 6.0), AlignmentPin::new(x1, y, 6.0)],
+            },
+        ))
+        .unwrap();
+    registry::switch_workspace(&mut state, rs_cam_viz::state::Workspace::Setup);
+    state
+}
+
+#[test]
+fn the_context_rail_lists_the_ready_context_rows_g_vpdock() {
+    use rs_cam_viz::state::Workspace;
+    // The ruled context rows, held by the `context` field.
+    let context: Vec<&str> = registry::rows()
+        .iter()
+        .filter(|r| r.context)
+        .map(|r| r.id)
+        .collect();
+    let mut expected = vec![
+        "reach_map",
+        "rest_heatmap",
+        "tier_map",
+        "area_regions",
+        "stock_colour_deviation",
+        "generator_steps",
+        "pin_ghost",
+        "tool_deflection",
+    ];
+    let mut got = context.clone();
+    expected.sort_unstable();
+    got.sort_unstable();
+    assert_eq!(got, expected, "the context rows");
+
+    // The rail lists exactly the context rows whose precondition holds.
+    for state in [AppState::new(), unkeyed_pin_state()] {
+        let chips: Vec<&str> = context_rail::chips(&state).iter().map(|r| r.id).collect();
+        let ready: Vec<&str> = registry::rows()
+            .iter()
+            .filter(|r| r.context && r.precondition(&state).is_ready())
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(chips, ready);
+    }
+    let state = unkeyed_pin_state();
+    let chips: Vec<&str> = context_rail::chips(&state).iter().map(|r| r.id).collect();
+    assert!(
+        chips.contains(&"pin_ghost"),
+        "non-vacuity: the unkeyed pins give the ghost chip: {chips:?}"
+    );
+    // The chip goes when the precondition stops holding; the flag stays.
+    let mut gone = unkeyed_pin_state();
+    let flag_before = gone.viewport.show_pin_ghost;
+    let _ = gone
+        .apply(rs_cam_core::session::Command::SetAlignmentPins(
+            rs_cam_core::session::SetAlignmentPinsArgs { pins: Vec::new() },
+        ))
+        .unwrap();
+    assert!(
+        !context_rail::chips(&gone)
+            .iter()
+            .any(|r| r.id == "pin_ghost"),
+        "the ghost chip stays with no pin"
+    );
+    assert_eq!(
+        gone.viewport.show_pin_ghost, flag_before,
+        "the flag keeps its value"
+    );
+    assert_eq!(gone.workspace, Workspace::Setup);
+}
+
+#[test]
+fn a_rail_toggle_and_a_more_toggle_give_one_state_g_vpdock() {
+    let mut state = unkeyed_pin_state();
+    let ghost = registry::row("pin_ghost").unwrap();
+    let before = (ghost.get)(&state);
+    context_rail::toggle(&mut state, ghost);
+    assert_ne!((ghost.get)(&state), before, "the rail toggles the flag");
+    // `More` writes through `set_overlay`; the rail reads the same flag.
+    registry::set_overlay(&mut state, ghost, before);
+    assert_eq!((ghost.get)(&state), before);
+    assert!(
+        context_rail::chip_text(&state, ghost).ends_with(ghost.label),
+        "the chip names the row"
+    );
+
+    // A radio member goes off to the plain choice of its surface.
+    let deviation = registry::row("stock_colour_deviation").unwrap();
+    let solid = registry::row("stock_colour_solid").unwrap();
+    registry::set_overlay(&mut state, deviation, true);
+    context_rail::toggle(&mut state, deviation);
+    assert!((solid.get)(&state) && !(deviation.get)(&state));
+    // A model colour goes off to the plain model.
+    let rest = registry::row("rest_heatmap").unwrap();
+    registry::set_overlay(&mut state, rest, true);
+    context_rail::toggle(&mut state, rest);
+    assert!(!(rest.get)(&state));
+}
+
+#[test]
+fn the_context_rail_never_overlaps_the_dock_g_vpdock() {
+    for (width, height) in [(1400.0, 900.0), (480.0, 600.0), (320.0, 600.0)] {
+        let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+        let mut state = unkeyed_pin_state();
+        let ctx = ctx(width, height);
+        let lanes = busy_lanes();
+        let mut events: Vec<AppEvent> = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(raw_input(width, height), |ui| {
+                viewport_overlay::draw(ui, &mut state, &lanes, &mut events, viewport);
+            });
+            output.textures_delta.clear();
+        }
+        let (dock, rail) = ctx.memory(|m| {
+            (
+                m.area_rect(egui::Id::new(DOCK_AREA_ID)),
+                m.area_rect(egui::Id::new(context_rail::CONTEXT_AREA_ID)),
+            )
         });
-        assert!(!reason.is_ready(), "`{id}` refuses in Setup");
+        let dock = dock.expect("the dock never drew");
+        let rail = rail.unwrap_or_else(|| panic!("non-vacuity: the rail never drew at {width}"));
+        assert!(
+            !rail.intersects(dock),
+            "the context rail {rail:?} overlaps the dock {dock:?} at {width} x {height}"
+        );
+        assert_inside("the context rail", rail, viewport);
     }
 }

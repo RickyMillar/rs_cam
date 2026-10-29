@@ -6,11 +6,14 @@
 //! dock (`crate::ui::viewport_overlay`) shares with it. `live` derives the
 //! computing, stale and failed answers of each row from live state.
 //! `legend_rail` draws one chip per active colour encoding in the bottom-right
-//! corner of the viewport, with the full legend on hover.
+//! corner of the viewport, with the full legend on hover. `context_rail`
+//! stands on the legend: a chip with an eye for each special-case overlay
+//! that can draw now (R6).
 //! The MCP `set_ui_view` `overlays` map and the completeness sentries read
 //! the same list, so the surfaces cannot disagree about what exists, what it
 //! is called, or why it cannot draw.
 
+pub mod context_rail;
 pub mod legend_rail;
 pub mod live;
 pub mod panel;

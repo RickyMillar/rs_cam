@@ -44,26 +44,26 @@ impl ModelVisibility {
 
 /// One section of the viewport options (viewport redesign, MOCKUPS §1).
 ///
-/// Four sections in a fixed order. The dock's one "More" popover and the
-/// catalogue group the rows by section (DOCK_DECLUTTER, 2026-10-29). This
-/// type lives in `state` so that `state` does not depend on `ui`; the
-/// section of each registry row is
+/// Three sections in a fixed order. The dock's one "More" popover and the
+/// catalogue group the rows by section (DOCK_DECLUTTER, 2026-10-29). R6
+/// (2026-10-30) removed the Inspect section: its rows went to the object
+/// groups of Scene and to Paths. This type lives in `state` so that
+/// `state` does not depend on `ui`; the section of each registry row is
 /// `crate::ui::overlays::registry::dock_section`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockSection {
     /// The view cube row (R5b: the cube itself turns the view).
     View,
-    /// Geometry, stock, fixtures, grid, boundaries and layers.
+    /// The object groups (model, stock, tool, obstacles, pins) and the
+    /// single scene rows.
     Scene,
-    /// Draw scope, cutting moves, rapids, spans and move colour.
+    /// Draw scope, move colour, spans, entries and the generator steps.
     Paths,
-    /// Model and stock analysis, collisions, deflection and traces.
-    Inspect,
 }
 
 impl DockSection {
     /// Every section, in the order "More" and the catalogue list them.
-    pub const ALL: [Self; 4] = [Self::View, Self::Scene, Self::Paths, Self::Inspect];
+    pub const ALL: [Self; 3] = [Self::View, Self::Scene, Self::Paths];
 
     /// The section button text, without a suffix.
     pub fn label(self) -> &'static str {
@@ -71,7 +71,6 @@ impl DockSection {
             Self::View => "View",
             Self::Scene => "Scene",
             Self::Paths => "Paths",
-            Self::Inspect => "Inspect",
         }
     }
 }

@@ -7,15 +7,15 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
 
 - `registry.rs` — every overlay, `dock_section`, exclusivity, the legends. P4.4: `selection_states`, `open_path_ends`, `boundary_outline` (drawn). The model look is no row: `set_display_mode` (THE write: dock bar `panel::draw_display_mode` and `set_ui_view`) and `display_mode_refusal`; the Stock control: `set_stock_display` (`panel::draw_stock_display`).
 - `live.rs` — computing, stale and failed per analysis, from live fields.
-- `panel.rs` — the catalogue, the shared row renderer, `RowState` (seven
-  arms), Compute versus Compute & show, the Compute rest confirm.
+- `panel.rs` — the catalogue, the shared row renderer, `RowState` (seven arms), Compute versus Compute & show, the Compute rest confirm.
 - `legend_rail.rs` — the bottom-right legend: a chip per encoding, detail on hover.
+- `context_rail.rs` — R6 (ruling Q5): on the legend, a chip with an eye per `context` row whose precondition holds now; a click is `registry::toggle_overlay`.
 
 ## Invariants
 
 - Registration, MCP, the dock and the catalogue read the SAME registry, and
   every default reader asks `effective_default` (`[display.overlays]`).
-- Every row has ONE dock section (the More group and the catalogue group) and ONE dock home: the bar (`viewport_overlay::BAR_ROWS`, the display mode and Stock controls) or More (DOCK_DECLUTTER). R5c: a row has a `RowScope`; read `OverlayRow::precondition` (own condition, then scope; the field is private), and More lists a row only where `listed_in` (review: `planning/viewport_parity_2026-10-28/MORE_MENU_REVIEW.md`).
+- Every row has ONE `DockGroup` (R6: View, the Scene objects Model/Stock/Tool/Obstacles/Pins, the Scene singles, Paths; its section is `group.section()`) and ONE dock home: the bar (`viewport_overlay::BAR_ROWS`) or More. R5c: a row has a `RowScope`; read `OverlayRow::precondition` (own condition, then scope; the field is private); More lists a row only where `listed_in`, a group only with a listed row (review and rulings: `planning/viewport_parity_2026-10-28/MORE_MENU_REVIEW.md`). No row without a renderer (flag `None`).
 - An unavailable overlay is refused with a reason, never silently accepted.
 - A row state is derived each frame; never store a computing, stale or
   failed flag. `live.rs` names the field that answers.

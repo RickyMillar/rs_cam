@@ -40,22 +40,78 @@ use crate::state::{AppState, Workspace};
 
 // ── the shape of a row ─────────────────────────────────────────────────────
 
-/// The row's family. The old Overlays panel listed a collapsible group per
-/// family; the dock places a row by [`dock_section`], which falls back to
-/// the family for a row it does not name.
+/// The place of a row in `More` and in the catalogue (R6, the More menu
+/// rulings of 2026-10-30). The compiler holds it: every row literal names
+/// one. A group of the Scene section is one object of the scene, so the
+/// rows that draw or colour one object stand together under its caption.
+///
+/// The order of [`DockGroup::ALL`] is the draw order of `More` and the
+/// catalogue. Inside a group the rows keep their order in [`ROWS`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OverlayGroup {
-    Geometry,
-    Toolpath,
-    Regions,
-    Analysis,
+pub enum DockGroup {
+    /// The view cube row.
+    View,
+    /// The model: its switch, its colour and the maps that paint it.
+    Model,
+    /// The stock: the box, the block, the simulated stock and its colour.
+    Stock,
+    /// The tool: collisions and the tool deflection. It is the home for
+    /// a later tool and holder render.
+    Tool,
+    /// The obstacles of the setup.
+    Obstacles,
+    /// The alignment pins, the flip axis and the wrong-orientation ghost.
+    Pins,
+    /// A single row of the Scene section, with no caption.
+    Scene,
+    /// The toolpath rows.
+    Paths,
+}
+
+impl DockGroup {
+    /// Every group, in the order `More` and the catalogue draw them.
+    pub const ALL: [Self; 8] = [
+        Self::View,
+        Self::Model,
+        Self::Stock,
+        Self::Tool,
+        Self::Obstacles,
+        Self::Pins,
+        Self::Scene,
+        Self::Paths,
+    ];
+
+    /// The dock section of the group.
+    #[must_use]
+    pub fn section(self) -> DockSection {
+        match self {
+            Self::View => DockSection::View,
+            Self::Model | Self::Stock | Self::Tool | Self::Obstacles | Self::Pins | Self::Scene => {
+                DockSection::Scene
+            }
+            Self::Paths => DockSection::Paths,
+        }
+    }
+
+    /// The caption of an object group, or `None` for a group that the
+    /// section title names (View, Paths) or that has no caption (Scene).
+    #[must_use]
+    pub fn caption(self) -> Option<&'static str> {
+        match self {
+            Self::Model => Some("Model"),
+            Self::Stock => Some("Stock"),
+            Self::Tool => Some("Tool"),
+            Self::Obstacles => Some("Obstacles"),
+            Self::Pins => Some("Pins"),
+            Self::View | Self::Scene | Self::Paths => None,
+        }
+    }
 }
 
 /// The surface a row paints a per-vertex or per-move SCALAR FIELD on.
 ///
 /// Exclusivity is applied per surface and only among scalar fields (UX §6.5).
-/// A *territory* overlay — the tier map, the planner islands, a boundary
-/// outline — paints a region label over an area, and territories stack by
+/// A *territory* overlay — the tier map, a boundary outline — paints a region label over an area, and territories stack by
 /// design, so those rows carry [`OverlaySurface::None`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlaySurface {
@@ -103,6 +159,11 @@ const UPLOAD_DETECTOR: &str = "the composite `overlay_upload_key` detector in ap
 /// The reason of a drawing overlay while the drawing itself is off: the
 /// three P4.4 rows draw into the polygon buffer, which only `curves` shows.
 const CURVES_OFF: &str = "the drawing is off \u{2014} switch Scene \u{25B8} Curves and edges on";
+
+/// The reason of a toolpath row in the Setup workspace (R6, ruling Q3):
+/// Setup draws no toolpath moves. The bar's Cutting moves and Rapids are
+/// greyed there with it.
+const PATHS_NOT_IN_SETUP: &str = "toolpaths draw in Toolpaths and Simulation";
 
 /// A button the panel offers beside a disabled row, to make it drawable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,19 +263,24 @@ pub struct OverlayRow {
     /// Stable id. It is the MCP wire name, so it does not change with a
     /// label.
     pub id: &'static str,
-    pub group: OverlayGroup,
+    /// The place of the row in `More` and the catalogue (R6).
+    pub group: DockGroup,
     pub label: &'static str,
     pub surface: OverlaySurface,
     pub mechanism: OverlayMechanism,
     /// The state field this row drives, written as a path
-    /// (`"viewport.show_grid"`). `None` means the row has no flag because it
-    /// has NO RENDERER yet — it is listed, permanently disabled, and says so.
-    /// The completeness sentry maps declared state fields onto this.
+    /// (`"viewport.show_grid"`). `None` would mean a row with no renderer;
+    /// R6 deleted the last two, and a sentry keeps the set empty. The
+    /// completeness sentry maps declared state fields onto this.
     pub flag: Option<&'static str>,
     /// `true` for a member of a per-surface radio group whose "off" has no
     /// meaning (Palette, Solid, and their peers). Switching such a row off
     /// is refused rather than silently ignored.
     pub radio: bool,
+    /// `true` for a context row (R6, ruling Q5): a special case that the
+    /// context rail beside the legend offers as a chip with an eye while
+    /// its precondition holds (`super::context_rail`).
+    pub context: bool,
     /// The workspaces in which the row can ever apply (R5c). Out of its
     /// scope the row is refused ([`OverlayRow::precondition`]) and `More`
     /// does not list it; the catalogue lists every row.
@@ -243,8 +309,6 @@ pub enum RowScope {
     Only(Workspace),
     /// Every viewport workspace but this one.
     Not(Workspace),
-    /// No workspace: a listed row with no renderer yet.
-    Never,
 }
 
 impl RowScope {
@@ -255,7 +319,6 @@ impl RowScope {
             Self::Any => true,
             Self::Only(only) => ws == only,
             Self::Not(not) => ws != not,
-            Self::Never => false,
         }
     }
 
@@ -265,7 +328,6 @@ impl RowScope {
             Self::Any => String::new(),
             Self::Only(only) => format!("draws in the {} workspace only", only.label()),
             Self::Not(not) => format!("does not draw in the {} workspace", not.label()),
-            Self::Never => "no renderer draws it yet".to_owned(),
         }
     }
 }
@@ -673,12 +735,13 @@ pub const ROWS: &[OverlayRow] = &[
     // ── Geometry ──────────────────────────────────────────────────────────
     OverlayRow {
         id: "grid",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Grid",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_grid"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_grid,
         set: |s, on| s.viewport.show_grid = on,
@@ -688,12 +751,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "model",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Model,
         label: "Model",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_model"),
         radio: false,
+        context: false,
         scope: RowScope::Not(Workspace::Simulation),
         get: |s| s.viewport.show_model,
         set: |s, on| s.viewport.show_model = on,
@@ -713,12 +777,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "stock_box",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Stock,
         label: "Stock \u{2014} box",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_stock"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_stock,
         set: |s, on| s.viewport.show_stock = on,
@@ -729,12 +794,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "stock_solid",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Stock,
         label: "Stock \u{2014} solid",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_stock_solid"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_stock_solid,
         set: |s, on| s.viewport.show_stock_solid = on,
@@ -744,12 +810,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "origin_axes",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Origin axes",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_origin_axes"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_origin_axes,
         set: |s, on| s.viewport.show_origin_axes = on,
@@ -760,12 +827,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "datum",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Datum crosshair",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_datum"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_datum,
         set: |s, on| s.viewport.show_datum = on,
@@ -784,12 +852,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "obstacles",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Obstacles,
         label: "Obstacles",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_obstacles"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_obstacles,
         set: |s, on| s.viewport.show_obstacles = on,
@@ -809,12 +878,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "alignment_pins",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Pins,
         label: "Alignment pins",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_alignment_pins"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_alignment_pins,
         set: |s, on| s.viewport.show_alignment_pins = on,
@@ -833,12 +903,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "flip_axis",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Pins,
         label: "Flip axis",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_flip_axis"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_flip_axis,
         set: |s, on| s.viewport.show_flip_axis = on,
@@ -866,12 +937,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "pin_ghost",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Pins,
         label: "Wrong-orientation ghost",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_pin_ghost"),
         radio: false,
+        context: true,
         scope: RowScope::Any,
         get: |s| s.viewport.show_pin_ghost,
         set: |s, on| s.viewport.show_pin_ghost = on,
@@ -889,20 +961,18 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: geometry_default,
-        hover: "Red dashed rings where the holes land when the part seats \
-                turned on the dowels. A ring round a real pin means the part \
-                can go on the wrong way round. Each ring sits one hole slop \
-                outside its hole, so it shows round a pin it lands on. It draws only \
-                when the pins do not key.",
+        hover: "The pin holes at the nearest wrong seating, drawn when the pins \
+                do not key the part's orientation.",
     },
     OverlayRow {
         id: "curves",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Curves and edges",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_polygons"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_polygons,
         set: |s, on| s.viewport.show_polygons = on,
@@ -926,13 +996,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "selection_outline",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Selection outline",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_selection_outline"),
         radio: false,
-        scope: RowScope::Not(Workspace::Simulation),
+        context: false,
+        scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_selection_outline,
         set: |s, on| s.viewport.show_selection_outline = on,
         requires: |s| {
@@ -954,12 +1025,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "selection_states",
-        group: OverlayGroup::Geometry,
-        label: "Selection states",
+        group: DockGroup::Scene,
+        label: "Drawing states",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_selection_states"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_selection_states,
         set: |s, on| s.viewport.show_selection_states = on,
@@ -973,20 +1045,20 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: toolpaths_only_default,
-        hover: "The drawing of the selected toolpath, coloured by what its \
-                selection does to each item: green is cut, blue is an island \
-                (cut round), amber is skipped (the operation cannot cut its \
-                kind), dark grey is removed by hand, grey is not selected. A \
-                red ring or cross marks a pick that names no item.",
+        hover: "Colours the drawing items by their selection state: green is \
+                cut, blue is an island (cut round), amber is skipped (the operation \
+                cannot cut its kind), dark grey is removed by hand, grey is not \
+                selected. A red ring or cross marks a pick that names no item.",
     },
     OverlayRow {
         id: "open_path_ends",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::Scene,
         label: "Open path ends",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_open_path_ends"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_open_path_ends,
         set: |s, on| s.viewport.show_open_path_ends = on,
@@ -1013,12 +1085,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "orientation_gizmo",
-        group: OverlayGroup::Geometry,
+        group: DockGroup::View,
         label: "View cube",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_orientation_gizmo"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_orientation_gizmo,
         set: |s, on| s.viewport.show_orientation_gizmo = on,
@@ -1030,13 +1103,14 @@ pub const ROWS: &[OverlayRow] = &[
     // ── Toolpath ──────────────────────────────────────────────────────────
     OverlayRow {
         id: "all_toolpaths",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "All toolpaths",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_all_toolpaths"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_all_toolpaths,
         set: |s, on| s.viewport.show_all_toolpaths = on,
         requires: |s| {
@@ -1054,17 +1128,20 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "cutting_moves",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Cutting moves",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_cutting"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_cutting,
         set: |s, on| s.viewport.show_cutting = on,
         requires: |s| {
-            if any_generated(s) {
+            if s.workspace == Workspace::Setup {
+                Precondition::no(PATHS_NOT_IN_SETUP)
+            } else if any_generated(s) {
                 Precondition::Ready
             } else {
                 Precondition::no_with(
@@ -1078,17 +1155,20 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "rapids",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Rapids",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_rapids"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_rapids,
         set: |s, on| s.viewport.show_rapids = on,
         requires: |s| {
-            if any_generated(s) {
+            if s.workspace == Workspace::Setup {
+                Precondition::no(PATHS_NOT_IN_SETUP)
+            } else if any_generated(s) {
                 Precondition::Ready
             } else {
                 Precondition::no_with(
@@ -1102,13 +1182,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "entry_markers",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Entry markers",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_entry_markers"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_entry_markers,
         set: |s, on| s.viewport.show_entry_markers = on,
         requires: |s| {
@@ -1124,13 +1205,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "height_planes",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Height planes",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_height_planes"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_height_planes,
         set: |s, on| s.viewport.show_height_planes = on,
         requires: |s| {
@@ -1150,13 +1232,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "tool_profile_ghost",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Tool-profile ghost",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_tool_profile_preview"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.show_tool_profile_preview,
         set: |s, on| s.viewport.show_tool_profile_preview = on,
         requires: |s| {
@@ -1171,13 +1254,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "span_entry",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Spans: Entry",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_entry"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.span_kind_filter.show_entry,
         set: |s, on| s.viewport.span_kind_filter.show_entry = on,
         requires: span_filter_precondition,
@@ -1186,13 +1270,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "span_lead_out",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Spans: Lead-out",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_lead_out"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.span_kind_filter.show_lead_out,
         set: |s, on| s.viewport.span_kind_filter.show_lead_out = on,
         requires: span_filter_precondition,
@@ -1201,13 +1286,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "span_link_bridge",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Spans: Link bridge",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_link_bridge"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.span_kind_filter.show_link_bridge,
         set: |s, on| s.viewport.span_kind_filter.show_link_bridge = on,
         requires: span_filter_precondition,
@@ -1216,13 +1302,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "span_dressup",
-        group: OverlayGroup::Toolpath,
+        group: DockGroup::Paths,
         label: "Spans: Dressup",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_dressup"),
         radio: false,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| s.viewport.span_kind_filter.show_dressup,
         set: |s, on| s.viewport.span_kind_filter.show_dressup = on,
         requires: span_filter_precondition,
@@ -1234,12 +1321,13 @@ pub const ROWS: &[OverlayRow] = &[
     // ── Regions ───────────────────────────────────────────────────────────
     OverlayRow {
         id: "rest_heatmap",
-        group: OverlayGroup::Regions,
-        label: "Rest heatmap",
+        group: DockGroup::Model,
+        label: "Model colour: Rest",
         surface: OverlaySurface::Model,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_rest_heatmap"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_rest_heatmap,
         set: |s, on| s.viewport.show_rest_heatmap = on,
@@ -1264,17 +1352,18 @@ pub const ROWS: &[OverlayRow] = &[
         default_for: rest_heatmap_default,
         hover: "How much material this operation leaves. ANY operation \
                 attaches a rest grid once something demands one. Off by \
-                default: switching it on clears Inspect \u{25B8} Model colour: \
+                default: switching it on clears Scene \u{25B8} Model \u{25B8} \
                 Reach, which shares the model surface.",
     },
     OverlayRow {
         id: "tier_map",
-        group: OverlayGroup::Regions,
+        group: DockGroup::Model,
         label: "Tier map",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_tier_preview"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_tier_preview,
         set: |s, on| s.viewport.show_tier_preview = on,
@@ -1308,12 +1397,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "area_regions",
-        group: OverlayGroup::Regions,
+        group: DockGroup::Model,
         label: "By Area regions",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_area_regions"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_area_regions,
         set: |s, on| s.viewport.show_area_regions = on,
@@ -1327,55 +1417,14 @@ pub const ROWS: &[OverlayRow] = &[
                 cuts as Global does.",
     },
     OverlayRow {
-        id: "planner_islands",
-        group: OverlayGroup::Regions,
-        label: "Planner islands",
-        surface: OverlaySurface::None,
-        mechanism: OverlayMechanism::DrawTime,
-        flag: None,
-        radio: false,
-        scope: RowScope::Never,
-        get: |_s| false,
-        set: |_s, _on| {},
-        // Not a fake row and not a second home: the islands ARE the
-        // territory the tier map paints (`gpu_upload` passes
-        // `preview.islands` into the tier mesh), so a flag of their own
-        // would be a duplicate writer of one state. There is no separate
-        // island-outline renderer, and the row says so.
-        requires: |_s| {
-            Precondition::no(
-                "drawn by Inspect \u{25B8} Tier map \u{2014} no separate island outline renderer yet",
-            )
-        },
-        default_for: no_default,
-        hover: "Per-tier island polygons. The numeric table lives in the \
-                multi-tool planner dialog.",
-    },
-    OverlayRow {
-        id: "derived_rest_regions",
-        group: OverlayGroup::Regions,
-        label: "Derived rest regions",
-        surface: OverlaySurface::None,
-        mechanism: OverlayMechanism::DrawTime,
-        flag: None,
-        radio: false,
-        scope: RowScope::Never,
-        get: |_s| false,
-        set: |_s, _on| {},
-        requires: |_s| Precondition::no("not drawn yet (no renderer)"),
-        default_for: no_default,
-        hover: "The islands a rest pass would cut. Authored under \
-                Geometry \u{25B8} Machining Boundary \u{25B8} Source \u{25B8} Rest Regions; \
-                no renderer draws them yet.",
-    },
-    OverlayRow {
         id: "boundary_outline",
-        group: OverlayGroup::Regions,
+        group: DockGroup::Scene,
         label: "Boundary outline",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_boundary_outline"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_boundary_outline,
         set: |s, on| s.viewport.show_boundary_outline = on,
@@ -1409,12 +1458,13 @@ pub const ROWS: &[OverlayRow] = &[
     // ── Analysis ──────────────────────────────────────────────────────────
     OverlayRow {
         id: "reach_map",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Model,
         label: "Model colour: Reach",
         surface: OverlaySurface::Model,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_reach_map"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_reach_map,
         set: |s, on| s.viewport.show_reach_map = on,
@@ -1449,17 +1499,42 @@ pub const ROWS: &[OverlayRow] = &[
         default_for: toolpaths_only_default,
         hover: "Green where this cutter forms the surface inside the \
                 operation's tolerance, red where it cannot, neutral where not \
-                measured. Clears Inspect \u{25B8} Rest heatmap \u{2014} both colour \
+                measured. Clears Scene \u{25B8} Model \u{25B8} Rest \u{2014} both colour \
                 the model.",
     },
     OverlayRow {
+        id: "simulated_stock",
+        group: DockGroup::Stock,
+        label: "Simulated stock",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::DrawTime,
+        flag: Some("viewport.show_sim_stock"),
+        radio: false,
+        context: false,
+        scope: RowScope::Only(Workspace::Simulation),
+        get: |s| s.viewport.show_sim_stock,
+        set: |s, on| s.viewport.show_sim_stock = on,
+        requires: |s| {
+            if s.workspace != Workspace::Simulation {
+                Precondition::no("the simulated stock draws in the Simulation workspace")
+            } else if s.simulation.has_results() {
+                Precondition::Ready
+            } else {
+                Precondition::no("run a simulation")
+            }
+        },
+        default_for: simulation_only_default,
+        hover: "The dexel stock as cut. Its opacity slider is below.",
+    },
+    OverlayRow {
         id: "stock_colour_solid",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Stock,
         label: "Stock colour: Solid",
         surface: OverlaySurface::Stock,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.solid"),
         radio: true,
+        context: false,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::Solid),
         set: |s, on| {
@@ -1473,12 +1548,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "stock_colour_deviation",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Stock,
         label: "Stock colour: Deviation",
         surface: OverlaySurface::Stock,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.deviation"),
         radio: true,
+        context: true,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::Deviation),
         set: |s, on| {
@@ -1502,12 +1578,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "stock_colour_by_height",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Stock,
         label: "Stock colour: By height",
         surface: OverlaySurface::Stock,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.by_height"),
         radio: true,
+        context: false,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::ByHeight),
         set: |s, on| {
@@ -1521,13 +1598,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "move_colour_palette",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Paths,
         label: "Move colour: Palette",
         surface: OverlaySurface::Moves,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.normal"),
         radio: true,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| matches!(s.viewport.toolpath_color_mode, ToolpathColorMode::Normal),
         set: |s, on| {
             if on {
@@ -1541,13 +1619,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "move_colour_engagement",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Paths,
         label: "Move colour: Engagement",
         surface: OverlaySurface::Moves,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.engagement"),
         radio: true,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| {
             matches!(
                 s.viewport.toolpath_color_mode,
@@ -1566,13 +1645,14 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "move_colour_advance_per_tooth",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Paths,
         label: "Move colour: Advance / tooth",
         surface: OverlaySurface::Moves,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.advance_per_tooth"),
         radio: true,
-        scope: RowScope::Any,
+        context: false,
+        scope: RowScope::Not(Workspace::Setup),
         get: |s| {
             matches!(
                 s.viewport.toolpath_color_mode,
@@ -1601,36 +1681,14 @@ pub const ROWS: &[OverlayRow] = &[
                 tool-load gate observes.",
     },
     OverlayRow {
-        id: "simulated_stock",
-        group: OverlayGroup::Analysis,
-        label: "Simulated stock",
-        surface: OverlaySurface::None,
-        mechanism: OverlayMechanism::DrawTime,
-        flag: Some("viewport.show_sim_stock"),
-        radio: false,
-        scope: RowScope::Only(Workspace::Simulation),
-        get: |s| s.viewport.show_sim_stock,
-        set: |s, on| s.viewport.show_sim_stock = on,
-        requires: |s| {
-            if s.workspace != Workspace::Simulation {
-                Precondition::no("the simulated stock draws in the Simulation workspace")
-            } else if s.simulation.has_results() {
-                Precondition::Ready
-            } else {
-                Precondition::no("run a simulation")
-            }
-        },
-        default_for: simulation_only_default,
-        hover: "The dexel stock as cut. Its opacity slider is below.",
-    },
-    OverlayRow {
         id: "collisions",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Tool,
         label: "Collisions",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_collisions"),
         radio: false,
+        context: false,
         scope: RowScope::Any,
         get: |s| s.viewport.show_collisions,
         set: |s, on| s.viewport.show_collisions = on,
@@ -1651,12 +1709,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "tool_deflection",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Tool,
         label: "Tool deflection",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_tool_deflection"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.viewport.show_tool_deflection,
         set: |s, on| s.viewport.show_tool_deflection = on,
@@ -1675,12 +1734,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "generator_steps",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Paths,
         label: "Generator steps",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("simulation.debug.enabled"),
         radio: false,
+        context: true,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.simulation.debug.enabled,
         set: |s, on| s.simulation.debug.enabled = on,
@@ -1700,12 +1760,13 @@ pub const ROWS: &[OverlayRow] = &[
     },
     OverlayRow {
         id: "active_step_highlight",
-        group: OverlayGroup::Analysis,
+        group: DockGroup::Paths,
         label: "Highlight active step",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("simulation.debug.highlight_active_item"),
         radio: false,
+        context: false,
         scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.simulation.debug.highlight_active_item,
         set: |s, on| s.simulation.debug.highlight_active_item = on,
@@ -1786,28 +1847,60 @@ pub fn rows() -> &'static [OverlayRow] {
     ROWS
 }
 
-/// The dock section that is the ONE home of `row` (viewport redesign,
-/// MOCKUPS §1).
-///
-/// One home per row keeps the rule "one state, one writer". The function is
-/// total: a row that the named arms do not list falls to the section of its
-/// group, so a new row always has a home in the dock. The catalogue lists
-/// every row in addition.
+/// The dock section that is the ONE home of `row`: the section of its
+/// group (R6). One home per row keeps the rule "one state, one writer".
+/// The catalogue lists every row in addition.
 pub fn dock_section(row: &OverlayRow) -> DockSection {
-    match row.id {
-        "orientation_gizmo" => DockSection::View,
-        "derived_rest_regions" | "boundary_outline" | "simulated_stock" => DockSection::Scene,
-        _ => match (row.group, row.surface) {
-            (_, OverlaySurface::Moves) | (OverlayGroup::Toolpath, _) => DockSection::Paths,
-            (OverlayGroup::Geometry, _) => DockSection::Scene,
-            (OverlayGroup::Regions | OverlayGroup::Analysis, _) => DockSection::Inspect,
-        },
+    row.group.section()
+}
+
+/// The rows whose dock home is `section`, group by group in
+/// [`DockGroup::ALL`] order, each group in list order.
+pub fn rows_in_section(section: DockSection) -> impl Iterator<Item = &'static OverlayRow> {
+    DockGroup::ALL
+        .into_iter()
+        .filter(move |group| group.section() == section)
+        .flat_map(rows_in_group)
+}
+
+/// The rows of `group`, in list order.
+pub fn rows_in_group(group: DockGroup) -> impl Iterator<Item = &'static OverlayRow> {
+    ROWS.iter().filter(move |r| r.group == group)
+}
+
+/// The plain choice of a radio surface: its first member in list order
+/// (Solid on the stock, Palette on the moves). `None` for a surface with
+/// no radio, where "plain" is no row on (the model drawn plain).
+#[must_use]
+pub fn plain_choice(surface: OverlaySurface) -> Option<&'static OverlayRow> {
+    if surface == OverlaySurface::None {
+        return None;
+    }
+    ROWS.iter().find(|r| r.surface == surface && r.radio)
+}
+
+/// Switch `row` to its other state, through [`set_overlay`] (R6, the
+/// context rail). On goes on. A radio member goes off to the plain choice
+/// of its surface; any other row goes off. `More` and the context rail
+/// write through this one setter, so the two give one state.
+pub fn toggle_overlay(state: &mut AppState, row: &OverlayRow) {
+    if !(row.get)(state) {
+        set_overlay(state, row, true);
+    } else if row.radio {
+        if let Some(plain) = plain_choice(row.surface).filter(|p| p.id != row.id) {
+            set_overlay(state, plain, true);
+        }
+    } else {
+        set_overlay(state, row, false);
     }
 }
 
-/// The rows whose dock home is `section`, in list order.
-pub fn rows_in_section(section: DockSection) -> impl Iterator<Item = &'static OverlayRow> {
-    ROWS.iter().filter(move |r| dock_section(r) == section)
+/// The context rows whose precondition holds now, in list order: the
+/// chips of the context rail (R6, ruling Q5).
+pub fn context_rows_ready(state: &AppState) -> Vec<&'static OverlayRow> {
+    ROWS.iter()
+        .filter(|r| r.context && r.precondition(state).is_ready())
+        .collect()
 }
 
 /// Switch off every row on one surface. This is the `Off` choice of the

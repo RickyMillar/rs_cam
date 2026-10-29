@@ -132,6 +132,7 @@ fn assert_the_row_exists() {
 fn a_fresh_viewport_draws_the_selected_toolpath_only() {
     assert_the_row_exists();
     let filter = ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected: Some(B),
         show_all: ViewportState::new().show_all_toolpaths,
     };
@@ -151,6 +152,7 @@ fn a_fresh_viewport_draws_the_selected_toolpath_only() {
 #[test]
 fn show_all_draws_every_toolpath_in_config_order() {
     let filter = ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected: Some(B),
         show_all: true,
     };
@@ -167,6 +169,7 @@ fn show_all_draws_every_toolpath_in_config_order() {
 #[test]
 fn the_draw_set_follows_selection_and_show_all_overrides_it() {
     let selected_only = |selected: Option<ToolpathId>| ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected,
         show_all: false,
     };
@@ -180,6 +183,7 @@ fn the_draw_set_follows_selection_and_show_all_overrides_it() {
     );
 
     let all = ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected: Some(C),
         show_all: true,
     };
@@ -197,6 +201,7 @@ fn the_draw_set_follows_selection_and_show_all_overrides_it() {
 #[test]
 fn an_ungenerated_or_hidden_toolpath_is_never_drawn() {
     let filter = ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected: Some(B),
         show_all: false,
     };
@@ -223,6 +228,7 @@ fn an_ungenerated_or_hidden_toolpath_is_never_drawn() {
 #[test]
 fn nothing_selected_draws_nothing() {
     let filter = ToolpathDrawFilter {
+        workspace: Workspace::Toolpaths,
         selected: None,
         show_all: false,
     };
@@ -231,6 +237,26 @@ fn nothing_selected_draws_nothing() {
         "nothing selected must draw nothing — the operator ruling, not a \
          fallback to draw-all"
     );
+}
+
+// ── (vi) R6, ruling Q3: Setup draws no toolpath ──────────────────────
+
+/// The operator (2026-10-30): "Should Setup draw toolpaths at all?" "no".
+/// The one draw set is empty in Setup, show-all and a selection included,
+/// so the upload, the pick and the legend agree.
+#[test]
+fn the_setup_workspace_draws_no_toolpath_r6() {
+    let filter = ToolpathDrawFilter {
+        workspace: Workspace::Setup,
+        selected: Some(B),
+        show_all: true,
+    };
+    assert!(toolpaths_to_draw(filter, three_rows()).is_empty());
+    let simulation = ToolpathDrawFilter {
+        workspace: Workspace::Simulation,
+        ..filter
+    };
+    assert_eq!(toolpaths_to_draw(simulation, three_rows()), vec![A, B, C]);
 }
 
 // ── (vi) one rule, two readers ───────────────────────────────────────

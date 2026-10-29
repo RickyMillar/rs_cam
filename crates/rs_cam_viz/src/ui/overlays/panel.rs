@@ -858,8 +858,7 @@ fn matches_filter(
     text_ok && filter_ok
 }
 
-/// The catalogue section header: `VIEW`, `SCENE`, `PATHS: SELECTED`,
-/// `INSPECT: REACH`.
+/// The catalogue section header: `VIEW`, `SCENE`, `PATHS: SELECTED`.
 pub(crate) fn section_title(state: &AppState, section: DockSection) -> String {
     let base = section.label().to_uppercase();
     match crate::ui::viewport_overlay::section_suffix(state, section) {
@@ -954,8 +953,21 @@ fn catalogue_body(
                 if extras {
                     ui.horizontal(|ui| draw_display_mode(ui, state));
                 }
+                let mut last_group = None;
                 for row in rows {
                     listed += 1;
+                    // R6: the object group caption (Model, Stock, Tool,
+                    // Obstacles, Pins) above the first row of its group.
+                    if last_group != Some(row.group) {
+                        last_group = Some(row.group);
+                        if let Some(text) = row.group.caption() {
+                            ui.label(
+                                egui::RichText::new(text)
+                                    .size(tokens::SIZE_CAPTION)
+                                    .color(tokens::TEXT_MUTED),
+                            );
+                        }
+                    }
                     ui.horizontal_wrapped(|ui| {
                         let control = if row.radio {
                             RowControl::Choice

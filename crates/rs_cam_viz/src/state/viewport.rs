@@ -308,13 +308,16 @@ impl Default for ViewportState {
     }
 }
 
-/// The two dials that decide which toolpaths the viewport draws (WP27).
+/// The dials that decide which toolpaths the viewport draws (WP27).
 ///
 /// One value, built in one place, so the GPU upload and the click pick cannot
 /// answer the question differently. A click that selects geometry the viewport
 /// does not draw is the drift a second predicate produces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolpathDrawFilter {
+    /// The workspace. The Setup workspace draws no toolpath moves (R6,
+    /// operator ruling Q3, 2026-10-30).
+    pub workspace: super::Workspace,
     /// The selected toolpath, when the selection names one.
     pub selected: Option<ToolpathId>,
     /// Draw every generated toolpath rather than the selected one alone.
@@ -322,9 +325,10 @@ pub struct ToolpathDrawFilter {
 }
 
 impl ToolpathDrawFilter {
-    /// Read the two dials, each from the one place it lives.
+    /// Read the dials, each from the one place it lives.
     pub fn from_state(state: &super::AppState) -> Self {
         Self {
+            workspace: state.workspace,
             selected: match *state.focus() {
                 super::selection::Selection::Toolpath(id) => Some(id),
                 _ => None,
@@ -343,10 +347,15 @@ impl ToolpathDrawFilter {
 ///
 /// With nothing selected the answer is empty. That is the operator ruling:
 /// the model and the stock still draw, and the operations list is the picker.
+/// In the Setup workspace the answer is empty too (R6, ruling Q3): toolpaths
+/// draw in Toolpaths and Simulation.
 pub fn toolpaths_to_draw<I>(filter: ToolpathDrawFilter, rows: I) -> Vec<ToolpathId>
 where
     I: IntoIterator<Item = (ToolpathId, bool, bool)>,
 {
+    if filter.workspace == super::Workspace::Setup {
+        return Vec::new();
+    }
     rows.into_iter()
         .filter(|&(id, visible, has_result)| {
             visible && has_result && (filter.show_all || filter.selected == Some(id))
@@ -448,6 +457,10 @@ pub fn height_planes_drawn(state: &super::AppState) -> bool {
     let super::selection::Selection::Toolpath(id) = *state.focus() else {
         return false;
     };
+    if state.workspace == super::Workspace::Setup {
+        // R6, ruling Q3: Setup draws no toolpath geometry.
+        return false;
+    }
     let heights_open = state.workspace == super::Workspace::Toolpaths
         && state.gui.active_toolpath_tab == Some((id, crate::ui::properties::ToolpathTab::Heights));
     state.viewport.show_height_planes || heights_open
