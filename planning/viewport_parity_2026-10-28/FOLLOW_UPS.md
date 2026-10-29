@@ -137,3 +137,8 @@ hand cursor. Fixes ordered from the look:
 - **Ruling:** the shading looks cartoony (per-face pastels + a flat
   hemisphere). One neutral material and a camera headlight for the diffuse,
   a modest ambient; the per-face palette goes; the edges delineate faces.
+- **Ruling (live look, 2026-10-29 evening):** the box selects visible items
+  only. From the top, a box over the three step faces must not take the
+  base face underneath (design B §3.3 said the CPU test selects through).
+  Built as a ray visibility test through `LoadedModel::ray_pick` (the BVH),
+  not the GPU ID pass; the click and Tab keep reaching hidden items.
