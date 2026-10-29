@@ -977,6 +977,70 @@ mod tests {
         );
     }
 
+    /// B §3.4, MCP parity of the box: the wire `add_picks` of a hole's
+    /// rim circle and floor circle stores ONE rim pick, as the GUI box
+    /// (`AddPicks` through the same door) does.
+    #[test]
+    fn mcp_and_gui_give_one_rim_pick_for_a_boxed_hole_b34() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../rs_cam_core/tests/fixtures/step/block_with_blind_hole.step");
+        let session = || {
+            let model = rs_cam_core::io::load_model_file(
+                &path,
+                rs_cam_core::ids::ModelId::from_raw(0),
+                ModelKind::Step,
+                ModelUnits::Millimeters,
+                Default::default(),
+            )
+            .expect("the hole fixture loads");
+            let mut s = ProjectSession::new_empty();
+            let _ = apply(
+                &mut s,
+                Command::AddModel(AddModelArgs {
+                    model: Box::new(model),
+                }),
+            );
+            let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+            tool.diameter = 6.0;
+            let tool_index = apply(
+                &mut s,
+                Command::AddTool(AddToolArgs {
+                    tool: Box::new(tool),
+                }),
+            )
+            .created
+            .expect("the tool is created");
+            let tool_id = s.tools()[tool_index].id.raw();
+            let _ = add_op(&mut s, OperationType::Drill, tool_id);
+            s
+        };
+        let circles = |s: &ProjectSession| -> Vec<rs_cam_core::selection::MatchKey> {
+            s.models()[0]
+                .items
+                .iter()
+                .filter(|i| i.kind() == ItemKind::Circle)
+                .map(|i| rs_cam_core::selection::MatchKey {
+                    source: SourceRef::ToolpathModel,
+                    ..i.key().clone()
+                })
+                .collect()
+        };
+        let mut gui = session();
+        let keys = circles(&gui);
+        assert_eq!(keys.len(), 2, "fixture: the rim and the floor circle");
+        edit(&mut gui, 0, SelectionEdit::AddPicks(keys.clone()));
+        let mut mcp = session();
+        wire_edit(
+            &mut mcp,
+            0,
+            &serde_json::json!({
+                "add_picks": keys.iter().map(super::key_json).collect::<Vec<_>>()
+            }),
+        );
+        assert_eq!(stored(&gui, 0).picks().len(), 1, "one rim pick");
+        assert_eq!(stored(&mcp, 0), stored(&gui, 0), "one box, two doors");
+    }
+
     /// Operator rulings O-PICK and GT-Q8 (2026-10-22), MCP parity: on the
     /// default Pocket (toolpath 3) the GUI click (`pick_edit`, then
     /// `EditSelection`) and the wire `add_pick` of the same key store ONE

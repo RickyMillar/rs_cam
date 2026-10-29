@@ -302,9 +302,21 @@ impl ProjectSession {
                 self.check_keys_name_items(tc, target, std::slice::from_ref(key))?;
                 edit
             }
+            // B §3.4: a batch of picks (a box, MCP `add_picks`) folds each
+            // floor circle of a hole into its rim (`hole_rim_key`, THE pick
+            // rule of a hole that a click takes in `pick_edit`) before the
+            // dedup of `Selection::apply`, so a box over a hole stores ONE
+            // rim pick. The fold needs the model items, so it lives here in
+            // the door, not in `Selection::apply` (which holds no session).
+            // A single `AddPick` by key keeps its refusal of a floor circle
+            // (`HoleFloorNotRim`, R-B decision 4).
             (SelectionEdit::AddPicks(keys), Some(tc)) => {
-                self.check_keys_name_items(tc, target, keys)?;
-                edit
+                let keys: Vec<crate::selection::MatchKey> = keys
+                    .iter()
+                    .map(|key| self.hole_rim_key(tc, target, key.clone()))
+                    .collect();
+                self.check_keys_name_items(tc, target, &keys)?;
+                SelectionEdit::AddPicks(keys)
             }
             (SelectionEdit::RemovePick(key), Some(tc)) => self
                 .rule_drop_edit(tc, target, std::slice::from_ref(key))?

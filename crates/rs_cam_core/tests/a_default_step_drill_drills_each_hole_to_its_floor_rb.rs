@@ -16,6 +16,9 @@
 //!    guard finds no gouge.
 //! 4. A click on the floor circle picks the rim (`hole_rim_key`, decision
 //!    4); a pick of the floor circle by key refuses `HoleFloorNotRim`.
+//! 5. B §3.4: a batch of picks (a box over the hole, MCP `add_picks`) that
+//!    holds the rim circle and the floor circle stores ONE rim pick: the
+//!    door folds each key through `hole_rim_key` before the dedup.
 //!
 //! Red proofs (run by hand, 2026-10-23): claim 2 goes red when
 //! `rule::served_by_default` gives the Drill the Q3 Loop rule; claim 3 goes
@@ -269,4 +272,34 @@ fn a_click_on_the_floor_circle_picks_the_rim_rb() {
         panic!("generation must refuse the floor circle");
     };
     assert_eq!(*generated, refusal, "status = generation");
+}
+
+/// Claim 5.
+#[test]
+fn a_box_over_a_hole_stores_one_rim_pick_rb() {
+    let mut session = empty_session();
+    let _ = add_default_drill(&mut session);
+    let model = load();
+    let (_, rim) = circle_at(&model, RIM_Z);
+    let (_, floor) = circle_at(&model, FLOOR_Z);
+    let key_of = |item: &Item| MatchKey {
+        source: SourceRef::ToolpathModel,
+        ..item.key().clone()
+    };
+    let _ = session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::AddPicks(vec![key_of(&rim), key_of(&floor)]),
+        }))
+        .unwrap();
+    let tc = session.toolpath_configs()[0].clone();
+    let picks = tc.operation.selection().unwrap().picks().to_vec();
+    assert_eq!(picks.len(), 1, "one rim pick: {picks:?}");
+    assert!(
+        picks[0].names_same_geometry(rim.key()),
+        "the rim: {picks:?}"
+    );
+    let report = session.selection_status(&tc, SelectionTarget::Op).unwrap();
+    assert!(report.refusal.is_none(), "the rim pick resolves");
 }
