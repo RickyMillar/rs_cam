@@ -368,29 +368,12 @@ pub const MODEL_WIREFRAME: [f32; 3] = token_rgb(tokens::INK_50);
 /// token, one step with the palette accent slot (`FACE_SLOT_ACCENT`).
 pub const OUTLINE_ACCENT: [f32; 3] = token_rgb(tokens::ACCENT);
 
-/// The pastel palette a face group takes by its id.
-const FACE_GROUP_PALETTE: [Rgb; 10] = [
-    Rgb::new(0.75, 0.85, 0.90), // light blue
-    Rgb::new(0.85, 0.75, 0.90), // light purple
-    Rgb::new(0.75, 0.90, 0.80), // light green
-    Rgb::new(0.90, 0.85, 0.75), // light orange
-    Rgb::new(0.90, 0.78, 0.80), // light pink
-    Rgb::new(0.80, 0.90, 0.88), // light teal
-    Rgb::new(0.88, 0.82, 0.75), // light tan
-    Rgb::new(0.78, 0.82, 0.92), // periwinkle
-    Rgb::new(0.88, 0.90, 0.75), // light yellow-green
-    Rgb::new(0.82, 0.75, 0.85), // light mauve
-];
-
-/// The deterministic pastel colour of face group `index`.
-#[must_use]
-#[expect(
-    clippy::indexing_slicing,
-    reason = "modulo indexing into a constant-length palette cannot go out of bounds."
-)]
-pub fn face_group_color(index: usize) -> Rgb {
-    FACE_GROUP_PALETTE[index % FACE_GROUP_PALETTE.len()]
-}
+/// The one material of a model (live look round 3, operator: "the
+/// shading is looking a bit cartoony"): a STEP face with no state and an
+/// STL draw this neutral light grey, `tokens::INK_80` (the body text ink,
+/// light enough to read as a part on the `INK_05` ground), lit by the
+/// headlight. It replaces the per-face pastel palette.
+pub const MODEL_SURFACE: Rgb = Rgb(token_rgb(tokens::INK_80));
 
 // ── The face pipeline palette (D2) ──────────────────────────────────────
 //
@@ -399,36 +382,39 @@ pub fn face_group_color(index: usize) -> Rgb {
 // both the colours and the slot numbers.
 
 /// The number of `vec4` slots in the face palette uniform.
-pub const FACE_PALETTE_LEN: usize = 24;
-/// Slots `0..10` are the face group pastels.
-pub const FACE_SLOT_GROUPS: u32 = 0;
+pub const FACE_PALETTE_LEN: usize = 10;
 /// The slot of a selected face.
-pub const FACE_SLOT_SELECTED: u32 = 10;
-/// The slot of the hovered face.
-pub const FACE_SLOT_HOVER: u32 = 11;
+pub const FACE_SLOT_SELECTED: u32 = 0;
+/// The slot of the hovered face (the rim colour).
+pub const FACE_SLOT_HOVER: u32 = 1;
 /// The first item-state slot. `FACE_SLOT_STATE0 + i` is the colour of
 /// `ItemState` `i` in the order Cut, Island, Skipped, Excluded, NotSelected.
-pub const FACE_SLOT_STATE0: u32 = 12;
-/// The ink slot (face edges and the outline, later commits).
-pub const FACE_SLOT_INK: u32 = 17;
-/// The accent slot (the selection outline, a later commit).
-pub const FACE_SLOT_ACCENT: u32 = 18;
-/// The hemisphere sky slot (Q5 lighting): [`LIGHT_SKY`].
-pub const FACE_SLOT_SKY: u32 = 19;
-/// The hemisphere ground slot: [`LIGHT_GROUND`].
-pub const FACE_SLOT_GROUND: u32 = 20;
+pub const FACE_SLOT_STATE0: u32 = 2;
+/// The ink slot (face edges and the outline).
+pub const FACE_SLOT_INK: u32 = 7;
+/// The accent slot (the selection outline).
+pub const FACE_SLOT_ACCENT: u32 = 8;
 /// The hover rim slot: `(FACE_RIM_STRENGTH, FACE_RIM_POWER, FACE_RIM_F0, 0)`.
-pub const FACE_SLOT_RIM: u32 = 21;
+pub const FACE_SLOT_RIM: u32 = 9;
 
-/// The hemisphere light of a face (Q5): the colour a face takes from
-/// above (+Z). It replaces the flat ambient factor 0.25 of the face shader.
-/// A design choice: the mean of the sky and [`LIGHT_GROUND`] is 0.25 per
-/// channel within 0.005, the old ambient factor, so a vertical face keeps
-/// its old brightness; an up face is lighter and a down face darker, and
-/// no face facing away from the light is black.
-pub const LIGHT_SKY: Rgb = Rgb::new(0.30, 0.30, 0.32);
+/// The mean of the hemisphere light, a fraction of the material (round 3):
+/// a modest ambient, so the headlight diffuse carries the form. A design
+/// choice, not a measurement.
+pub const LIGHT_AMBIENT_MEAN: f32 = 0.18;
+/// The hemisphere light from above (+Z), a fraction of the material: 1.2
+/// times [`LIGHT_AMBIENT_MEAN`] with a cool blue, against 0.8 times it with
+/// a warm blue for [`LIGHT_GROUND`], so the mean of the two is
+/// `LIGHT_AMBIENT_MEAN` on every channel. A design choice.
+pub const LIGHT_SKY: Rgb = Rgb::new(0.216, 0.216, 0.230);
 /// The hemisphere light from below (−Z): see [`LIGHT_SKY`].
-pub const LIGHT_GROUND: Rgb = Rgb::new(0.20, 0.19, 0.18);
+pub const LIGHT_GROUND: Rgb = Rgb::new(0.144, 0.144, 0.130);
+
+/// The headlight (round 3): the direction TO the light in view space (x to
+/// the right of the screen, y up, z toward the eye), above and to the left
+/// of the eye. Each frame turns it into the world frame from the camera
+/// basis (`render::headlight_dir`), so the diffuse follows the orbit and a
+/// face seen face-on is never flat. A design choice, not a measurement.
+pub const HEADLIGHT_VIEW: [f32; 3] = [-0.3, 0.5, 1.0];
 
 /// The hover rim of a face (Q5): `FACE_HOVER` added in the amount
 /// `strength · (F0 + (1 − F0) · (1 − n·v)^power)`, the Schlick (1994)
@@ -455,10 +441,10 @@ pub fn face_state_slot(state: rs_cam_core::session::ItemState) -> u32 {
 }
 
 /// The face palette uniform: each slot an RGBA `vec4` (WGSL array stride
-/// 16 B). Slots `0..10` are [`face_group_color`]; then `FACE_SELECTED`,
-/// `FACE_HOVER`, the five selection state tokens, the ink token, the
-/// accent token, the hemisphere sky and ground and the rim parameters.
-/// The other slots are zero.
+/// 16 B): `FACE_SELECTED`, `FACE_HOVER`, the five selection state tokens,
+/// the ink token, the accent token and the rim parameters. The material and
+/// the hemisphere light are in `MeshUniforms`, which the STL pipeline reads
+/// too.
 pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
     use rs_cam_core::session::ItemState;
     let rgba = |c: [f32; 3]| [c[0], c[1], c[2], 1.0];
@@ -468,9 +454,6 @@ pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
             *entry = rgba(c);
         }
     };
-    for (i, c) in FACE_GROUP_PALETTE.iter().enumerate() {
-        put(FACE_SLOT_GROUPS + i as u32, c.array());
-    }
     put(FACE_SLOT_SELECTED, FACE_SELECTED.array());
     put(FACE_SLOT_HOVER, FACE_HOVER.array());
     for state in [
@@ -484,8 +467,6 @@ pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
     }
     put(FACE_SLOT_INK, MODEL_EDGE);
     put(FACE_SLOT_ACCENT, OUTLINE_ACCENT);
-    put(FACE_SLOT_SKY, LIGHT_SKY.array());
-    put(FACE_SLOT_GROUND, LIGHT_GROUND.array());
     if let Some(entry) = palette.get_mut(FACE_SLOT_RIM as usize) {
         *entry = [FACE_RIM_STRENGTH, FACE_RIM_POWER, FACE_RIM_F0, 0.0];
     }

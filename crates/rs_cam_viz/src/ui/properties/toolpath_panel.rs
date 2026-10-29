@@ -66,7 +66,7 @@ pub(super) fn draw_toolpath_panel(
     // threaded in as `heights_refusal` is.
     containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
     events: &mut Vec<AppEvent>,
-) {
+) -> ToolpathTab {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
     // and only reads the other three, so the four live side by side.
     let entry = &mut snapshot.entry;
@@ -489,6 +489,9 @@ pub(super) fn draw_toolpath_panel(
             }
         });
     }
+    // Live look round 3: the caller records the tab on screen
+    // (`GuiState::active_toolpath_tab`), which the height planes read.
+    active_tab
 }
 
 // ── The tab bodies ──────────────────────────────────────────────────────

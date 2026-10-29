@@ -368,7 +368,9 @@ pub fn active_lines(state: &AppState) -> Vec<RailLine> {
     if drawn && selected && ready_on(state, "entry_markers") {
         out.push(RailLine::Categories(Categories::EntryMarkers));
     }
-    if selected && ready_on(state, "height_planes") {
+    // Live look round 3: the legend names what draws, the row or the
+    // Heights tab (`height_planes_drawn`).
+    if crate::state::viewport::height_planes_drawn(state) {
         out.push(RailLine::Categories(Categories::HeightPlanes));
     }
     if ready_on(state, "collisions") && collision_count(state) > 0 {

@@ -284,7 +284,7 @@ impl ViewportState {
             show_cutting: true,
             show_rapids: true,
             show_entry_markers: true,
-            show_height_planes: true,
+            show_height_planes: false,
             show_collisions: false,
             show_tool_profile_preview: false,
             show_rest_heatmap: false,
@@ -437,4 +437,63 @@ pub fn drawing_draws(state: &super::AppState) -> Vec<DrawingDraw> {
             .map(|m| DrawingDraw::Neutral { model_id: m.id }),
     );
     draws
+}
+
+/// The draw gate of the height planes (live look round 3, operator): the
+/// planes of the selected toolpath draw while the row is on
+/// (`show_height_planes`, which pins them), or while the Heights tab of
+/// that toolpath is on screen (`GuiState::active_toolpath_tab`, Toolpaths
+/// workspace). The row reports the stored flag only; the tab is no flag.
+pub fn height_planes_drawn(state: &super::AppState) -> bool {
+    let super::selection::Selection::Toolpath(id) = *state.focus() else {
+        return false;
+    };
+    let heights_open = state.workspace == super::Workspace::Toolpaths
+        && state.gui.active_toolpath_tab == Some((id, crate::ui::properties::ToolpathTab::Heights));
+    state.viewport.show_height_planes || heights_open
+}
+
+#[cfg(test)]
+mod height_planes_tests {
+    use super::height_planes_drawn;
+    use crate::state::selection::Selection;
+    use crate::state::toolpath::ToolpathId;
+    use crate::state::{AppState, Workspace};
+    use crate::ui::properties::ToolpathTab;
+
+    /// Live look round 3: the planes draw with the row on, or with the
+    /// Heights tab of the selected toolpath open in Toolpaths; the row is
+    /// off by default.
+    #[test]
+    fn the_height_planes_draw_with_the_heights_tab_or_the_row() {
+        let id = ToolpathId::from_raw(3);
+        let mut state = AppState::new();
+        state.workspace = Workspace::Toolpaths;
+        assert!(!state.viewport.show_height_planes, "off by default");
+        assert!(!height_planes_drawn(&state), "no toolpath selected");
+        let _ = state.set_focus(Selection::Toolpath(id));
+        assert!(!height_planes_drawn(&state), "flag off, no tab");
+
+        state.gui.active_toolpath_tab = Some((id, ToolpathTab::Heights));
+        assert!(height_planes_drawn(&state), "the Heights tab shows them");
+        state.gui.active_toolpath_tab = Some((id, ToolpathTab::Cut));
+        assert!(!height_planes_drawn(&state), "another tab hides them");
+        state.gui.active_toolpath_tab = Some((ToolpathId::from_raw(4), ToolpathTab::Heights));
+        assert!(
+            !height_planes_drawn(&state),
+            "the Heights tab of another toolpath does not count"
+        );
+        state.gui.active_toolpath_tab = Some((id, ToolpathTab::Heights));
+        state.workspace = Workspace::Simulation;
+        assert!(
+            !height_planes_drawn(&state),
+            "the properties tab does not show in Simulation"
+        );
+
+        state.viewport.show_height_planes = true;
+        state.gui.active_toolpath_tab = None;
+        assert!(height_planes_drawn(&state), "the row pins them");
+        let _ = state.set_focus(Selection::None);
+        assert!(!height_planes_drawn(&state), "no toolpath, no planes");
+    }
 }

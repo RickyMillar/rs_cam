@@ -22,15 +22,62 @@ use sim_render::{ColoredMeshVertex, SimMeshGpuData, ToolModelGpuData};
 use stock_render::StockGpuData;
 use toolpath_render::ToolpathGpuData;
 
-/// GPU uniform data for mesh rendering (Phong shading).
+/// GPU uniform data for mesh rendering (Phong shading). 144 B; the face and
+/// the STL shaders read every field (round 3: one material, one light).
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshUniforms {
     pub view_proj: [[f32; 4]; 4],
+    /// The direction TO the light, world frame (the headlight,
+    /// [`headlight_dir`]).
     pub light_dir: [f32; 3],
     pub _pad0: f32,
     pub camera_pos: [f32; 3],
     pub _pad1: f32,
+    /// The material (`colors::MODEL_SURFACE`), w = 1.
+    pub surface: [f32; 4],
+    /// The hemisphere light from +Z (`colors::LIGHT_SKY`), w = 1.
+    pub sky: [f32; 4],
+    /// The hemisphere light from −Z (`colors::LIGHT_GROUND`), w = 1.
+    pub ground: [f32; 4],
+}
+
+impl MeshUniforms {
+    /// The uniforms of one frame: the camera, the light and the material
+    /// and hemisphere tokens of `colors.rs`.
+    pub fn new(view_proj: [[f32; 4]; 4], light_dir: [f32; 3], camera_pos: [f32; 3]) -> Self {
+        let rgba = |c: colors::Rgb| {
+            let [r, g, b] = c.array();
+            [r, g, b, 1.0]
+        };
+        Self {
+            view_proj,
+            light_dir,
+            _pad0: 0.0,
+            camera_pos,
+            _pad1: 0.0,
+            surface: rgba(colors::MODEL_SURFACE),
+            sky: rgba(colors::LIGHT_SKY),
+            ground: rgba(colors::LIGHT_GROUND),
+        }
+    }
+}
+
+/// The headlight in the world frame (round 3): `colors::HEADLIGHT_VIEW`
+/// (view space: x right, y up, z toward the eye) through the camera basis
+/// `right`, `up` and `back` (the unit vector from the target to the eye),
+/// normalised.
+pub fn headlight_dir(right: [f32; 3], up: [f32; 3], back: [f32; 3]) -> [f32; 3] {
+    let [x, y, z] = colors::HEADLIGHT_VIEW;
+    let v = [
+        right[0] * x + up[0] * y + back[0] * z,
+        right[1] * x + up[1] * y + back[1] * z,
+        right[2] * x + up[2] * y + back[2] * z,
+    ];
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        .sqrt()
+        .max(f32::MIN_POSITIVE);
+    [v[0] / len, v[1] / len, v[2] / len]
 }
 
 /// GPU uniform data for colored mesh rendering (simulation stock with opacity).
@@ -86,7 +133,9 @@ pub struct LineUniforms {
     /// direction to the eye with w = 0 (orthographic).
     pub eye: [f32; 4],
     /// The quad lines (`vs_wide`, D §3.5): x, y = the viewport size in
-    /// physical pixels, z = the line width in physical pixels, w = 0. The
+    /// physical pixels, z = the line width in physical pixels, w = the lift
+    /// slope (`OUTLINE_FOLD_PX`: the quad moves toward the eye by `w` pixel
+    /// footprints per pixel of half width, live look round 3). The
     /// `LineList` entry point does not read it.
     pub wide: [f32; 4],
 }
@@ -157,8 +206,12 @@ impl LineUniforms {
             ..plain
         };
         let [w, h] = widths.viewport_px;
+        // The lift slope of the quads (`vs_wide`, `lifted`): the fold slope
+        // of the outline, so a quad covers its face up to the angle the
+        // outline still calls a plane (atan 8 = 82.9°).
+        let slope = outline::OUTLINE_FOLD_PX;
         let quad = |points: f32| Self {
-            wide: [w, h, points * widths.pixels_per_point, 0.0],
+            wide: [w, h, points * widths.pixels_per_point, slope],
             ..edge
         };
         LineGroups {
@@ -2212,6 +2265,9 @@ struct Uniforms {
     view_proj: mat4x4<f32>,
     light_dir: vec3<f32>,
     camera_pos: vec3<f32>,
+    surface: vec4<f32>,
+    sky: vec4<f32>,
+    ground: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -2236,30 +2292,22 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
+// Round 3: the lighting of the face shader (one material, the headlight,
+// the hemisphere ambient), so an STL and a STEP part read alike.
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let normal = normalize(in.world_normal);
+    let c = uniforms.surface.rgb;
     let light = normalize(uniforms.light_dir);
-
-    // Ambient
-    let ambient = vec3<f32>(0.15, 0.15, 0.18);
-
-    // Two-sided lighting: flip normal if facing away from light
-    let n = select(normal, -normal, dot(normal, light) < 0.0);
-
-    // Diffuse (Lambert)
-    let ndotl = max(dot(n, light), 0.0);
-    let diffuse_color = vec3<f32>(0.6, 0.55, 0.5);
-    let diffuse = diffuse_color * ndotl;
-
-    // Specular (Blinn-Phong)
     let view_dir = normalize(uniforms.camera_pos - in.world_pos);
+    let normal = normalize(in.world_normal);
+    // The normal on the side the eye sees.
+    let n = select(normal, -normal, dot(normal, view_dir) < 0.0);
+    let hemi = mix(uniforms.ground.rgb, uniforms.sky.rgb, n.z * 0.5 + 0.5);
+    let ndotl = max(dot(n, light), 0.0);
     let half_dir = normalize(light + view_dir);
     let spec = pow(max(dot(n, half_dir), 0.0), 32.0);
     let specular = vec3<f32>(0.25, 0.25, 0.25) * spec;
-
-    let color = ambient + diffuse + specular;
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(c * hemi + c * ndotl + specular, 1.0);
 }
 "#;
 
@@ -2341,13 +2389,22 @@ fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
 /// The face pipeline (D2). The palette slots are `colors::FACE_SLOT_*`;
 /// `face_shader_reads_the_palette_slots` holds the literals to them. The
 /// shading terms 0.2 and 32.0 are the `fs_opaque` terms; Q5 replaced the
-/// flat ambient 0.25 with the hemisphere term (`LIGHT_SKY`, `LIGHT_GROUND`)
-/// and the flat hover tint with the fresnel rim (`FACE_RIM_*`).
+/// flat ambient 0.25 with the hemisphere term and the flat hover tint with
+/// the fresnel rim (`FACE_RIM_*`); round 3 made the base the one material
+/// (`MeshUniforms::surface`, `colors::MODEL_SURFACE`) and the light the
+/// headlight (`headlight_dir`).
 const FACE_MESH_SHADER_SRC: &str = r#"
-struct Uniforms { view_proj: mat4x4<f32>, light_dir: vec3<f32>, camera_pos: vec3<f32> };
+struct Uniforms {
+    view_proj: mat4x4<f32>,
+    light_dir: vec3<f32>,
+    camera_pos: vec3<f32>,
+    surface: vec4<f32>,
+    sky: vec4<f32>,
+    ground: vec4<f32>,
+};
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var<storage, read> face_state: array<u32>;
-@group(1) @binding(1) var<uniform> palette: array<vec4<f32>, 24>;
+@group(1) @binding(1) var<uniform> palette: array<vec4<f32>, 10>;
 
 struct VsIn  { @location(0) pos: vec3<f32>, @location(1) nrm: vec3<f32>, @location(2) face_id: u32 };
 struct VsOut {
@@ -2366,10 +2423,10 @@ struct VsOut {
 
 fn face_colour(id: u32) -> vec3<f32> {
     let s = face_state[id];
-    if ((s & 2u) != 0u) { return palette[10].rgb; }
+    if ((s & 2u) != 0u) { return palette[0].rgb; }
     let st = (s >> 2u) & 63u;
     if (st != 0u) { return palette[st - 1u].rgb; }
-    return palette[id % 10u].rgb;
+    return u.surface.rgb;
 }
 
 @fragment fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
@@ -2380,14 +2437,14 @@ fn face_colour(id: u32) -> vec3<f32> {
     // The normal on the side the eye sees.
     let n = select(n0, -n0, dot(n0, v) < 0.0);
     // Q5: the hemisphere term, the sky from +Z and the ground from -Z.
-    let hemi = mix(palette[20].rgb, palette[19].rgb, n.z * 0.5 + 0.5);
+    let hemi = mix(u.ground.rgb, u.sky.rgb, n.z * 0.5 + 0.5);
     let spec = pow(max(dot(n, normalize(l + v)), 0.0), 32.0);
     var rgb = c * hemi + c * max(dot(n, l), 0.0) + vec3<f32>(0.2) * spec;
     // Q5: the hovered face takes a fresnel rim (Schlick) in the hover colour.
     if ((face_state[i.face_id] & 1u) != 0u) {
-        let rim = palette[21];
+        let rim = palette[9];
         let f = rim.z + (1.0 - rim.z) * pow(1.0 - max(dot(n, v), 0.0), rim.y);
-        rgb = rgb + palette[11].rgb * (rim.x * f);
+        rgb = rgb + palette[1].rgb * (rim.x * f);
     }
     return vec4<f32>(rgb, 1.0);
 }
@@ -2445,6 +2502,30 @@ struct SegmentInput {
     @location(3) b_color: vec3<f32>,
 };
 
+// Live look round 3: a quad pixel half a width from the centre line lies
+// over the face beside the line. Where that face rises toward the eye it
+// is nearer than the line, wins the depth test and shows the outline's ink
+// beside the line. So the quad moves toward the eye by the depth a face at
+// the slope `wide.w` (depth per pixel footprint, `OUTLINE_FOLD_PX`) gains
+// over half the width. The footprint is the world length of one pixel at
+// the vertex, across the eye ray. A vertex behind the eye does not move.
+fn lifted(p: vec3<f32>, half_viewport: vec2<f32>, half_width: f32) -> vec3<f32> {
+    let c = uniforms.view_proj * vec4<f32>(p, 1.0);
+    if (c.w <= 1e-5 || uniforms.wide.w <= 0.0) {
+        return p;
+    }
+    let e = normalize(uniforms.eye.xyz - p * uniforms.eye.w);
+    let axis = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0), abs(e.z) > 0.9);
+    let across = normalize(cross(e, axis));
+    let cu = uniforms.view_proj * vec4<f32>(p + across, 1.0);
+    if (cu.w <= 1e-5) {
+        return p;
+    }
+    let px_per_mm = length((cu.xy / cu.w - c.xy / c.w) * half_viewport);
+    let footprint = 1.0 / max(px_per_mm, 1e-6);
+    return p + e * (half_width * footprint * uniforms.wide.w);
+}
+
 // D §3.5: one segment per instance, six vertices per quad. The quad is
 // `wide.z` physical pixels across in screen space, and each end extends
 // by half the width (a square cap), so a ring closes without a gap.
@@ -2454,8 +2535,10 @@ fn vs_wide(@builtin(vertex_index) vi: u32, s: SegmentInput) -> VertexOutput {
     var sides = array<f32, 6>(-1.0, -1.0, 1.0, 1.0, -1.0, 1.0);
     let t = ends[vi % 6u];
     let side = sides[vi % 6u];
-    var ca = uniforms.view_proj * vec4<f32>(moved(s.a_position), 1.0);
-    var cb = uniforms.view_proj * vec4<f32>(moved(s.b_position), 1.0);
+    let half_viewport = uniforms.wide.xy * 0.5;
+    let half_width = uniforms.wide.z * 0.5;
+    var ca = uniforms.view_proj * vec4<f32>(lifted(moved(s.a_position), half_viewport, half_width), 1.0);
+    var cb = uniforms.view_proj * vec4<f32>(lifted(moved(s.b_position), half_viewport, half_width), 1.0);
     var out: VertexOutput;
     out.color = select(s.a_color, s.b_color, t > 0.5);
     // Clip the segment to the front of the eye (w > 0), so the screen
@@ -2471,8 +2554,6 @@ fn vs_wide(@builtin(vertex_index) vi: u32, s: SegmentInput) -> VertexOutput {
     if (cb.w < w_min) {
         cb = mix(cb, ca, (w_min - cb.w) / (ca.w - cb.w));
     }
-    let half_viewport = uniforms.wide.xy * 0.5;
-    let half_width = uniforms.wide.z * 0.5;
     let sa = ca.xy / ca.w * half_viewport;
     let sb = cb.xy / cb.w * half_viewport;
     var dir = sb - sa;
@@ -2586,7 +2667,7 @@ mod tests {
             assert_eq!(group.eye, base.eye);
             assert_eq!(group.view_proj, base.view_proj);
             let expect = if width > 0.0 {
-                [800.0, 600.0, width, 0.0]
+                [800.0, 600.0, width, outline::OUTLINE_FOLD_PX]
             } else {
                 [0.0; 4]
             };
@@ -2630,19 +2711,21 @@ mod tests {
         assert!(src.contains(&format!("array<vec4<f32>, {len}>")));
         let selected = colors::FACE_SLOT_SELECTED;
         assert!(src.contains(&format!("return palette[{selected}].rgb; }}")));
+        // Round 3: a face with no state is the one material.
+        assert!(src.contains("return u.surface.rgb;"));
+        assert!(!src.contains("palette[id %"), "no per-face pastel");
         // Q5: the hover colour feeds the rim, not a flat tint.
         let hover = colors::FACE_SLOT_HOVER;
         assert!(src.contains(&format!("rgb = rgb + palette[{hover}].rgb * (rim.x * f);")));
-        assert!(!src.contains(&format!("return palette[{hover}].rgb; }}")));
-        let (sky, ground, rim) = (
-            colors::FACE_SLOT_SKY,
-            colors::FACE_SLOT_GROUND,
-            colors::FACE_SLOT_RIM,
-        );
-        assert!(src.contains(&format!(
-            "mix(palette[{ground}].rgb, palette[{sky}].rgb, n.z * 0.5 + 0.5)"
-        )));
+        let rim = colors::FACE_SLOT_RIM;
         assert!(src.contains(&format!("let rim = palette[{rim}];")));
+        // The hemisphere and the material come from `MeshUniforms`, which
+        // the STL shader reads too.
+        for shader in [FACE_MESH_SHADER_SRC, MESH_SHADER_SRC] {
+            assert!(shader.contains("surface: vec4<f32>,"));
+            assert!(shader.contains("ground.rgb, "));
+        }
+        assert_eq!(std::mem::size_of::<MeshUniforms>(), 144);
         let palette = colors::face_palette();
         assert_eq!(
             palette.get(rim as usize).copied(),
@@ -2653,7 +2736,7 @@ mod tests {
                 0.0
             ])
         );
-        // The hemisphere mean is the old flat ambient factor 0.25.
+        // The hemisphere mean is the ambient token.
         for (k, (sky, ground)) in colors::LIGHT_SKY
             .array()
             .into_iter()
@@ -2661,14 +2744,29 @@ mod tests {
             .enumerate()
         {
             let mean = (sky + ground) / 2.0;
-            assert!((mean - 0.25).abs() <= 0.005, "channel {k}: {mean}");
+            assert!(
+                (mean - colors::LIGHT_AMBIENT_MEAN).abs() <= 0.005,
+                "channel {k}: {mean}"
+            );
         }
-        // The group pastels fill the slots below the selected slot.
-        assert_eq!(colors::FACE_SLOT_GROUPS, 0);
-        assert!(src.contains(&format!("palette[id % {selected}u]")));
         assert_eq!(
             std::mem::size_of_val(&colors::face_palette()),
             16 * colors::FACE_PALETTE_LEN
         );
+    }
+
+    /// Round 3: the headlight follows the camera. A camera that looks down
+    /// -Z with +X right and +Y up puts it at `HEADLIGHT_VIEW`, normalised.
+    #[test]
+    fn the_headlight_turns_with_the_camera() {
+        let top = headlight_dir([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+        let [x, y, z] = colors::HEADLIGHT_VIEW;
+        let len = (x * x + y * y + z * z).sqrt();
+        for (a, b) in top.iter().zip([x / len, y / len, z / len]) {
+            assert!((a - b).abs() < 1e-6, "{top:?}");
+        }
+        // A front camera (looking +Y, eye at -Y): back = -Y, up = +Z.
+        let front = headlight_dir([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]);
+        assert!(front[1] < 0.0 && front[2] > 0.0, "{front:?}");
     }
 }

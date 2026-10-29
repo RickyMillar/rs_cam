@@ -1766,7 +1766,7 @@ fn draw_toolpath_selection(
         let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
         let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
         let mut containment_autocorrect = std::mem::take(&mut state.panels.containment_autocorrect);
-        draw_toolpath_panel(
+        let active_tab = draw_toolpath_panel(
             ui,
             &mut snapshot,
             &inputs,
@@ -1778,6 +1778,7 @@ fn draw_toolpath_selection(
         );
 
         state.viewport.show_reach_map = show_reach_map;
+        state.gui.active_toolpath_tab = Some((id, active_tab));
         state.gui.selection_ui = selection_ui;
         state.panels.heights_refusal = heights_refusal;
         state.panels.containment_autocorrect = containment_autocorrect;

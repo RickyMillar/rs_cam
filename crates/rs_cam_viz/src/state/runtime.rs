@@ -692,6 +692,14 @@ pub struct GuiState {
         crate::state::toolpath::ToolpathId,
         crate::ui::properties::ToolpathTab,
     )>,
+    /// The properties tab on screen and its toolpath (live look round 3):
+    /// the toolpath panel writes it each frame it draws. The height planes
+    /// draw while it is the Heights tab of the selected toolpath
+    /// (`state::viewport::height_planes_drawn`).
+    pub active_toolpath_tab: Option<(
+        crate::state::toolpath::ToolpathId,
+        crate::ui::properties::ToolpathTab,
+    )>,
     /// Per-tool reach map for the selected toolpath (P5). Scheduled by
     /// `AppController::process_reach_overlay`, filled by the Reach compute
     /// lane, drawn by `ViewportCallback::show_reach_overlay`.
@@ -727,6 +735,7 @@ impl GuiState {
             #[cfg(feature = "mcp")]
             mcp_highlights: HashMap::new(),
             pending_toolpath_tab: None,
+            active_toolpath_tab: None,
             reach_overlay: ReachOverlayState::new(),
             wizard: crate::state::wizard::WizardState::default(),
             shoe_plan: crate::state::shoe_plan::ShoePlanMemo::default(),

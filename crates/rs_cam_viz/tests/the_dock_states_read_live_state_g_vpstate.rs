@@ -608,6 +608,8 @@ fn legend_fixture() -> AppState {
     registry::set_overlay(&mut state, row("rest_heatmap"), true);
     land_collision_check(&mut state, 3);
     registry::set_overlay(&mut state, row("collisions"), true);
+    // Live look round 3: the height planes row is off by default; pin it.
+    registry::set_overlay(&mut state, row("height_planes"), true);
     state
 }
 

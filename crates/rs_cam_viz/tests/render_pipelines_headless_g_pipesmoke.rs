@@ -48,15 +48,23 @@
 //! quad line of `LINE_SELECTED_PX` (D §3.5): at one pixel per point the
 //! fourth arm reads at least 2 pixels across it.
 //!
+//! The eighth arm is the live look round 3 composition: a selected ring
+//! that coincides with a face edge, on a face that rises toward the eye,
+//! with the outline on. Every pixel of the 5 px green quad is green and no
+//! edge or outline ink sits beside it. Before the fix the quad took the
+//! depth of its centre line, so on the side where the face rose toward the
+//! eye the face won the depth test and the outline's ink pixel showed.
+//!
 //! The seventh arm is the outline fold test on a grazing face (live look
 //! round 2): a face that rises 30 mm over 1 mm of Y steps 1.25 mm of depth
 //! per pixel, more than the 8-footprint threshold. The planarity test (the
 //! second difference) inks none of its interior pixels; the silhouette
 //! still gets ink. Red proof: the first-difference test inked every pixel.
 //!
-//! The sixth arm is the Q5 lighting: a face that faces away from the
-//! light is not black. It takes the hemisphere sky (`colors::LIGHT_SKY`)
-//! times its colour, since the diffuse term is 0 there.
+//! The sixth arms are the lighting (Q5, round 3: one material, the
+//! headlight): a face normal to the view is brighter than a face at 60°
+//! to it, both above zero; a face at 85° to the view takes no diffuse and
+//! is the material times the hemisphere ambient, dim but not black.
 //!
 //! The fifth arm is the selection outline (D §4): with the face selected
 //! (bit 1 of its state word), the pixels just outside its silhouette are
@@ -107,7 +115,7 @@ use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
 use rs_cam_viz::render::outline::OutlineUniforms;
 use rs_cam_viz::render::{
     EdgeOffset, LineUniforms, LineVertex, LineWidths, MSAA_SAMPLES, MeshUniforms, PolygonGpuData,
-    RenderResources, scene_sample_count,
+    RenderResources, headlight_dir, scene_sample_count,
 };
 use wgpu::util::DeviceExt;
 
@@ -428,13 +436,7 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
 
     // The orthographic eye is a direction (w = 0): straight down the Z axis.
     let view_proj = pixel_view();
-    let mesh = MeshUniforms {
-        view_proj,
-        light_dir: [0.0, 0.0, 1.0],
-        _pad0: 0.0,
-        camera_pos: [0.0, 0.0, 100.0],
-        _pad1: 0.0,
-    };
+    let mesh = MeshUniforms::new(view_proj, [0.0, 0.0, 1.0], [0.0, 0.0, 100.0]);
     let lines = LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]);
     let offset = EdgeOffset { tol: 0.5, k: 0.0 };
     // One pixel per point, so a width token is that many pixels.
@@ -552,13 +554,7 @@ fn a_selected_face_gets_an_accent_outline_outside_only_g_pipesmoke() {
     // No model edges and no lines: the outline is the only line drawn.
 
     let view_proj = pixel_view();
-    let mesh = MeshUniforms {
-        view_proj,
-        light_dir: [0.0, 0.0, 1.0],
-        _pad0: 0.0,
-        camera_pos: [0.0, 0.0, 100.0],
-        _pad1: 0.0,
-    };
+    let mesh = MeshUniforms::new(view_proj, [0.0, 0.0, 1.0], [0.0, 0.0, 100.0]);
     resources.write_frame_uniforms(
         &gpu.queue,
         &mesh,
@@ -621,80 +617,19 @@ fn a_selected_face_gets_an_accent_outline_outside_only_g_pipesmoke() {
     assert_no_uncaptured(&uncaptured, "rendering the outline frame");
 }
 
-#[test]
-fn a_face_away_from_the_light_is_not_black_g_pipesmoke() {
-    let gpu = match headless_device("g_pipesmoke_light_device") {
-        Ok(gpu) => gpu,
-        Err(reason) => {
-            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
-            return;
-        }
-    };
-    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
-    let uncaptured = uncaptured_sink(&gpu.device);
-
-    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
-    let enriched = one_face_mesh_at(f64::from(PIXEL_FACE_Z));
-    let face_mesh = face_mesh_gpu_data(
-        &gpu.device,
-        &resources.gpu_limits,
-        &resources.face_state_bgl,
-        &resources.face_palette_buffer,
-        ModelId::from_wire(1),
-        &enriched,
-        &None,
-    )
-    .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
-    resources.face_mesh_data_list.push(face_mesh);
-
-    // The eye looks down from +Z; the light comes from below the face
-    // (not exactly opposite the eye, so the half vector is defined).
-    let view_proj = pixel_view();
-    let mesh = MeshUniforms {
-        view_proj,
-        light_dir: [0.0, 0.6, -0.8],
-        _pad0: 0.0,
-        camera_pos: [0.0, 0.0, 100.0],
-        _pad1: 0.0,
-    };
-    resources.write_frame_uniforms(
-        &gpu.queue,
-        &mesh,
-        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
-        EdgeOffset { tol: 0.5, k: 0.0 },
-        LineWidths {
-            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
-            pixels_per_point: 1.0,
-        },
-        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
-    );
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
-    let px = read_pixel(&gpu, &resources, pixel_of(0.25, 0.25));
-    let empty = read_pixel(&gpu, &resources, pixel_of(0.9, 0.9));
-    eprintln!("G-PIPESMOKE away from the light: face {px:?}, empty {empty:?}");
-    assert_ne!(px, empty, "the face draws");
-    // The diffuse term is 0 (the light is behind the face); the specular
-    // term at n·h = 0.32 is (0.32)^32, under one 8-bit step. So the pixel
-    // is the face colour times the hemisphere sky (the face looks at +Z).
-    let face = rs_cam_viz::render::colors::face_group_color(0).array();
-    let sky = rs_cam_viz::render::colors::LIGHT_SKY.array();
-    let expected = [face[0] * sky[0], face[1] * sky[1], face[2] * sky[2]];
-    assert!(
-        same_colour(px, expected),
-        "the face takes the sky term: {px:?} against {expected:?}"
-    );
-    assert!(px[..3].iter().all(|&c| c > 0), "not black: {px:?}");
-
-    assert_no_uncaptured(&uncaptured, "rendering the lighting frame");
-}
-
 /// A one-triangle STEP mesh whose face rises from Z 10 at Y 0 to Z 40 at
 /// Y 1: a plane at a grazing angle to the top view of `pixel_view`.
 fn grazing_face_mesh() -> EnrichedMesh {
+    sloped_face_mesh(30.0)
+}
+
+/// A one-triangle STEP mesh whose face rises from Z 10 at Y 0 to
+/// Z 10 + `rise` at Y 1 (toward the eye of `pixel_view`).
+fn sloped_face_mesh(rise: f64) -> EnrichedMesh {
     let ring = vec![
         P3::new(0.0, 0.0, 10.0),
         P3::new(1.0, 0.0, 10.0),
-        P3::new(0.0, 1.0, 40.0),
+        P3::new(0.0, 1.0, 10.0 + rise),
     ];
     let face = FaceTessellation {
         vertices: ring.clone(),
@@ -734,13 +669,7 @@ fn a_grazing_face_gets_no_fold_ink_inside_g_pipesmoke() {
     resources.face_mesh_data_list.push(face_mesh);
 
     let view_proj = pixel_view();
-    let mesh = MeshUniforms {
-        view_proj,
-        light_dir: [0.0, 0.0, 1.0],
-        _pad0: 0.0,
-        camera_pos: [0.0, 0.0, 100.0],
-        _pad1: 0.0,
-    };
+    let mesh = MeshUniforms::new(view_proj, [0.0, 0.0, 1.0], [0.0, 0.0, 100.0]);
     // `pixel_view` stores depth 0.5 - z / 100, so one pixel of Y (1/24 mm)
     // steps the depth by 0.0125 and the eye depth (far 50) by 0.625 mm.
     // The threshold is 8 footprints of 2 * 1 / 48 mm = 0.333 mm: the first
@@ -787,4 +716,186 @@ fn a_grazing_face_gets_no_fold_ink_inside_g_pipesmoke() {
     );
 
     assert_no_uncaptured(&uncaptured, "rendering the grazing frame");
+}
+
+#[test]
+fn a_selected_ring_covers_the_edge_and_the_outline_ink_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_ring_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    // The face rises toward the eye away from the edge y = 0: 4 mm over
+    // 1 mm of Y, 0.167 mm per pixel (a slope of 4 footprints per pixel,
+    // within the 8 of the quad lift). The edge offset is 0.05 mm, so before
+    // the fix one pixel inside the edge the face was already nearer than
+    // the line.
+    let enriched = sloped_face_mesh(4.0);
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        &enriched,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the grazing face mesh fits the device limits"));
+    resources.face_mesh_data_list.push(face_mesh);
+    let edges = face_edge_vertices(&enriched, &None);
+    resources.model_edge_lines = Some(line_buffer(&gpu, "g_pipesmoke_edges", &edges));
+    // The selected ring on the edge y = 0, in the cut colour.
+    let green = rs_cam_viz::render::colors::SELECTION_CUT;
+    let ring = [
+        LineVertex {
+            position: [0.0, 0.0, 10.0],
+            color: green,
+        },
+        LineVertex {
+            position: [1.0, 0.0, 10.0],
+            color: green,
+        },
+    ];
+    resources.selection_lines = Some(line_buffer(&gpu, "g_pipesmoke_ring", &ring));
+
+    let view_proj = pixel_view();
+    let mesh = MeshUniforms::new(view_proj, [0.0, 0.0, 1.0], [0.0, 0.0, 100.0]);
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &mesh,
+        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
+        EdgeOffset { tol: 0.05, k: 0.0 },
+        LineWidths {
+            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+            pixels_per_point: 1.0,
+        },
+        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
+    );
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+
+    let (col, edge_row) = pixel_of(0.5, 0.0);
+    let column: Vec<(u32, [u8; 4])> = (edge_row - 5..=edge_row + 5)
+        .map(|r| (r, read_pixel(&gpu, &resources, (col, r))))
+        .collect();
+    eprintln!("G-PIPESMOKE ring column {col}: {column:?}");
+    let ink = rs_cam_viz::render::colors::MODEL_EDGE;
+    let half = (rs_cam_viz::ui::tokens::LINE_SELECTED_PX / 2.0).floor() as u32;
+    for (r, px) in &column {
+        if *r + half >= edge_row && *r <= edge_row + half {
+            assert!(
+                same_colour(*px, green),
+                "row {r} is under the 5 px green quad: {px:?} in {column:?}"
+            );
+        } else {
+            assert!(
+                !same_colour(*px, ink),
+                "no edge or outline ink beside the green quad at row {r}: {column:?}"
+            );
+        }
+    }
+
+    assert_no_uncaptured(&uncaptured, "rendering the ring frame");
+}
+
+/// One frame of `mesh` under the headlight of the `pixel_view` camera (it
+/// looks down -Z, +X right, +Y up); the pixel at world (0.25, 0.25).
+fn lit_face_pixel(gpu: &gpu::HeadlessGpu, mesh: &EnrichedMesh) -> [u8; 4] {
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        mesh,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the face mesh fits the device limits"));
+    resources.face_mesh_data_list.push(face_mesh);
+    let view_proj = pixel_view();
+    let light = headlight_dir([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &MeshUniforms::new(view_proj, light, [0.0, 0.0, 100.0]),
+        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
+        EdgeOffset { tol: 0.5, k: 0.0 },
+        LineWidths {
+            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+            pixels_per_point: 1.0,
+        },
+        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
+    );
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
+    read_pixel(gpu, &resources, pixel_of(0.25, 0.25))
+}
+
+fn brightness(px: [u8; 4]) -> u32 {
+    px[..3].iter().map(|&c| u32::from(c)).sum()
+}
+
+#[test]
+fn the_headlight_lights_a_face_on_face_more_than_one_at_60_degrees_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_headlight_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    let uncaptured = uncaptured_sink(&gpu.device);
+    let face_on = lit_face_pixel(&gpu, &one_face_mesh_at(f64::from(PIXEL_FACE_Z)));
+    // A face whose normal is 60° from the view: it rises tan 60° per mm.
+    let at_60 = lit_face_pixel(&gpu, &sloped_face_mesh(60f64.to_radians().tan()));
+    let empty = [21, 23, 26, 255];
+    eprintln!("G-PIPESMOKE headlight: face-on {face_on:?}, 60 degrees {at_60:?}");
+    assert!(
+        brightness(face_on) > brightness(at_60),
+        "the headlight diffuse: face-on {face_on:?} brighter than 60 degrees {at_60:?}"
+    );
+    assert!(
+        brightness(at_60) > brightness(empty),
+        "the 60 degree face is lit above the ground: {at_60:?}"
+    );
+    assert_no_uncaptured(&uncaptured, "rendering the headlight frames");
+}
+
+#[test]
+fn a_face_at_85_degrees_is_dim_but_not_black_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_light_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    let uncaptured = uncaptured_sink(&gpu.device);
+    let rise = 85f64.to_radians().tan();
+    let px = lit_face_pixel(&gpu, &sloped_face_mesh(rise));
+    let face_on = lit_face_pixel(&gpu, &one_face_mesh_at(f64::from(PIXEL_FACE_Z)));
+    eprintln!("G-PIPESMOKE 85 degrees: {px:?} (face-on {face_on:?})");
+    // The face turns away from the headlight (n.l < 0, n.h < 0): no diffuse,
+    // no specular. The pixel is the material times the hemisphere ambient
+    // at its normal (n.z = 1 / sqrt(1 + rise^2)).
+    let nz = (1.0 / (1.0 + rise * rise).sqrt()) as f32;
+    let surface = rs_cam_viz::render::colors::MODEL_SURFACE.array();
+    let sky = rs_cam_viz::render::colors::LIGHT_SKY.array();
+    let ground = rs_cam_viz::render::colors::LIGHT_GROUND.array();
+    let t = nz * 0.5 + 0.5;
+    let mut expected = [0.0_f32; 3];
+    for (((e, c), s), g) in expected.iter_mut().zip(surface).zip(sky).zip(ground) {
+        *e = c * (g + (s - g) * t);
+    }
+    assert!(
+        same_colour(px, expected),
+        "the ambient of the material: {px:?} against {expected:?}"
+    );
+    assert!(px[..3].iter().all(|&c| c > 0), "not black: {px:?}");
+    assert!(brightness(px) < brightness(face_on), "dim against face-on");
+    assert_no_uncaptured(&uncaptured, "rendering the 85 degree frame");
 }

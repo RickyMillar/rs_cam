@@ -1157,12 +1157,18 @@ impl RsCamApp {
         };
 
         let callback = ViewportCallback {
-            mesh_uniforms: MeshUniforms {
-                view_proj,
-                light_dir: [0.5, 0.3, 0.8],
-                _pad0: 0.0,
-                camera_pos: [eye.x, eye.y, eye.z],
-                _pad1: 0.0,
+            // Round 3: the headlight, turned from view space each frame.
+            mesh_uniforms: {
+                let basis = camera.basis();
+                MeshUniforms::new(
+                    view_proj,
+                    crate::render::headlight_dir(
+                        [basis.right.x, basis.right.y, basis.right.z],
+                        [basis.up.x, basis.up.y, basis.up.z],
+                        [-basis.forward.x, -basis.forward.y, -basis.forward.z],
+                    ),
+                    [eye.x, eye.y, eye.z],
+                )
             },
             line_uniforms: LineUniforms::new(view_proj, line_eye),
             // P6 — `show_model` replaces `RenderMode::Wireframe`, which drew
@@ -1232,8 +1238,9 @@ impl RsCamApp {
                     .iter()
                     .any(|m| m.items.has_drawing() || m.items.has_model_edges()),
             show_solid_stock: state.viewport.show_stock_solid,
-            show_height_planes: state.viewport.show_height_planes
-                && matches!(*state.focus(), Selection::Toolpath(_)),
+            // Live look round 3: the row pins them; the Heights tab shows
+            // them (`height_planes_drawn`).
+            show_height_planes: crate::state::viewport::height_planes_drawn(state),
             show_entry_markers: state.viewport.show_entry_markers,
             show_rest_heatmap: state.viewport.show_rest_heatmap
                 && state.workspace == Workspace::Toolpaths

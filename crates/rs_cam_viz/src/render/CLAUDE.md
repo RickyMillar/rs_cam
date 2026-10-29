@@ -11,7 +11,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - `mesh_render.rs` `FaceMeshVertex` (28 B: position, normal, `face_id`), `face_mesh_gpu_data` — the STEP face
   pipeline (D2). The colour is the face state word + the palette uniform; the buffer holds no colour.
 - `colors.rs` — every colour constant. A selection state colour is its UI token / 255 (`token_rgb`); `DRAWING_NEUTRAL`,
-  P6.7 `PATH_SIDE`, `HOLE_MISFIT`. `face_palette`: the `FACE_SLOT_*` slots the face WGSL reads (`face_shader_reads_the_palette_slots`); Q5: `LIGHT_SKY`/`LIGHT_GROUND` (hemisphere), `FACE_RIM_*` (hover rim).
+  P6.7 `PATH_SIDE`, `HOLE_MISFIT`. `face_palette`: the `FACE_SLOT_*` slots the face WGSL reads (`face_shader_reads_the_palette_slots`); Round 3: one material `MODEL_SURFACE`, the headlight `HEADLIGHT_VIEW` (`render::headlight_dir`), `LIGHT_SKY`/`LIGHT_GROUND` (mean `LIGHT_AMBIENT_MEAN`) in `MeshUniforms` (face + STL), `FACE_RIM_*`.
 - `mod.rs` — the pipeline facade. `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
   `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe; a soft part draws lighter.
@@ -25,7 +25,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - Check a buffer against the device limit before you create it.
 - MSAA (D1): one `sample_count` field feeds every scene pipeline and target; the blit stays single-sample. A mismatch fails at pass time; the G-PIPESMOKE frame arm (`render_headless_frame`) covers it.
 - The face pipeline needs a fragment storage buffer: Vulkan, Metal or DX12 (no GL, D-Q5). Only `app/gpu_upload/face_state.rs` writes its words.
-- `LineUniforms` is 112 B. `frame_set` gives six groups: only plain and dimmed (grid, toolpaths) have `edge_tol` 0; the lines on the model move toward the eye (D4). Quads (`vs_wide`, D §3.5, widths `tokens::LINE_*_PX`): model edges and the wireframe (`wide_edge_line_pipeline`, no depth write), `selection_lines`, `hover_lines`, `tab_lines`; the drawing, grid and moves stay `LineList`.
+- `LineUniforms` is 112 B. `frame_set` gives six groups: only plain and dimmed (grid, toolpaths) have `edge_tol` 0; the lines on the model move toward the eye (D4). Quads (`vs_wide`, D §3.5, widths `tokens::LINE_*_PX`): model edges and the wireframe (`wide_edge_line_pipeline`, no depth write), `selection_lines`, `hover_lines`, `tab_lines`; the drawing, grid and moves stay `LineList`. A quad lifts toward the eye by `wide.w` (`OUTLINE_FOLD_PX`) footprints per pixel of half width (round 3).
 - A move draws and picks through `toolpath_render::move_draw_points_into`: an arc walks core `linearize_arc_into` (R-ARC).
 
 ## Sentries

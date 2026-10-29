@@ -305,6 +305,15 @@ fn draw_scope_default(ws: Workspace) -> Option<bool> {
     }
 }
 
+/// Off in every viewport workspace: a row whose surface shows it at need
+/// (the height planes with the Heights tab).
+fn always_off_default(ws: Workspace) -> Option<bool> {
+    match ws {
+        Workspace::Setup | Workspace::Toolpaths | Workspace::Simulation => Some(false),
+        Workspace::Readiness => None,
+    }
+}
+
 fn no_default(_ws: Workspace) -> Option<bool> {
     None
 }
@@ -983,8 +992,13 @@ pub const ROWS: &[OverlayRow] = &[
                 Precondition::no("select a toolpath to see its Z planes")
             }
         },
-        default_for: toolpaths_only_default,
-        hover: "Clearance, retract, feed, top and bottom Z.",
+        // Live look round 3: off in every workspace. The planes draw
+        // while the Heights tab is open (`viewport::height_planes_drawn`);
+        // the row pins them. `get` and the MCP echo report the stored flag
+        // only, never the tab.
+        default_for: always_off_default,
+        hover: "Clearance, retract, feed, top and bottom Z. Shown while the Heights tab is \
+                open; switch on to keep them.",
     },
     OverlayRow {
         id: "tool_profile_ghost",

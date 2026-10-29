@@ -1142,3 +1142,41 @@ fn a_preference_overlay_value_is_the_default_of_every_viewport_workspace() {
         "Readiness has no viewport"
     );
 }
+
+/// Live look round 3 (operator): the height planes row is off in every
+/// viewport workspace; the planes show while the Heights tab is open
+/// (`state::viewport::height_planes_drawn`, its `--lib` test), and the row
+/// pins them. The row reports the stored flag only.
+#[test]
+fn the_height_planes_row_is_off_by_default_and_shows_with_the_heights_tab() {
+    let row = registry::row("height_planes").unwrap();
+    for workspace in [
+        Workspace::Setup,
+        Workspace::Toolpaths,
+        Workspace::Simulation,
+    ] {
+        assert_eq!((row.default_for)(workspace), Some(false), "{workspace:?}");
+    }
+    assert_eq!((row.default_for)(Workspace::Readiness), None);
+    assert!(
+        row.hover
+            .contains("Shown while the Heights tab is open; switch on to keep them."),
+        "the hover names the tab rule: {}",
+        row.hover
+    );
+    let mut state = AppState::new();
+    assert!(!(row.get)(&state), "the constructed state has it off");
+    // The tab is no flag: the row still reads off with the tab open.
+    let id = rs_cam_viz::state::toolpath::ToolpathId::from_raw(1);
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(id));
+    state.workspace = Workspace::Toolpaths;
+    state.gui.active_toolpath_tab = Some((id, rs_cam_viz::ui::properties::ToolpathTab::Heights));
+    assert!(rs_cam_viz::state::viewport::height_planes_drawn(&state));
+    assert!(!(row.get)(&state), "the row reports the stored flag");
+    // The MCP pin: the overlays map writes the flag.
+    let on = BTreeMap::from([("height_planes".to_owned(), true)]);
+    let report = registry::apply_overlays(&mut state, &on);
+    assert_eq!(report.applied.get("height_planes"), Some(&true));
+    state.gui.active_toolpath_tab = None;
+    assert!(rs_cam_viz::state::viewport::height_planes_drawn(&state));
+}
