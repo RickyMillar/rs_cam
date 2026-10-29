@@ -51,14 +51,19 @@ pub struct MatchKey {
     /// inner loops). Path: the length. Circle: the diameter. Point: 0.
     pub measure: f64,
     /// Face only: the BREP id, a tie-break when two faces share anchor and
-    /// measure. A face key has no Z: a face that moves in Z still matches.
+    /// measure. A STEP face key has no Z: a face that moves in Z still
+    /// matches by its BREP id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brep: Option<u16>,
     /// The Z of a model edge item (geometry selection UX-7, GT-0): a STEP
     /// ring, edge chain, circular edge or vertex, in the model frame.
-    /// `None` for a drawing item, a stock item and a face, so their keys
+    /// `None` for a drawing item, a stock item and a STEP face, so their keys
     /// and their stored form do not change. Two items that coincide in XY
-    /// at two Z (a step wall's top and bottom edge) get two keys.
+    /// at two Z (a step wall's top and bottom edge) get two keys. An STL
+    /// face (a flat region: no BREP id) holds its plane Z here (round 4,
+    /// FOLLOW_UPS §3), so two flat faces with one footprint at two heights
+    /// get two keys. Break: a stored STL face pick with no `z` no longer
+    /// matches; it shows as lost and the operator picks it again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub z: Option<f64>,
 }
@@ -88,6 +93,17 @@ impl MatchKey {
                 face.rings.area().abs().sqrt(),
                 face.brep.map(|b| b.0),
             ),
+        };
+        // An STL face (no BREP id) keys on its plane Z; a STEP face keys on
+        // its BREP id. `Item::build` refuses a face with an item Z, so the
+        // item's own `z` stays `None` for every face.
+        let z = match shape {
+            Shape::Face(face) if face.brep.is_none() => Some(face.plane_z),
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => z,
         };
         Self {
             source,

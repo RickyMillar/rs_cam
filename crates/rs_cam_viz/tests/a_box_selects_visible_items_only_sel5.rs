@@ -4,12 +4,11 @@
 //!
 //! # The claims
 //!
-//! 1. `visible_keys` on a two-face stack (an STL: a 10 mm square at Z 0
-//!    under a 20 mm square at Z 10): from above the upper face is visible
-//!    and the lower face, fully behind it, is not; from below the lower face
-//!    is visible (the upper one shows round it, so it stays too). No egui.
-//!    The two squares differ in size because an STL face key holds no Z:
-//!    two equal footprints at two heights name one key.
+//! 1. `visible_keys` on a two-face stack (an STL: two 20 mm squares, one at
+//!    Z 0 and one at Z 10, one footprint): from above the upper face is
+//!    visible and the lower face is not; from below the reverse. No egui.
+//!    The two faces have two keys because an STL face key holds its plane
+//!    Z (round 4, P3).
 //! 2. The stepped block (`fixtures/gui_step/stepped_block.step`) from the
 //!    Top view: a box over the whole part takes every up-facing step face
 //!    and NOT the base face (it faces down) nor the Z 0 part outline.
@@ -148,15 +147,15 @@ fn holds(keys: &[MatchKey], item: &Item) -> bool {
 
 // ── claim 1: a two-face stack, no egui ───────────────────────────────
 
-/// A 10 mm square at Z 0 (facing down) under a 20 mm square at Z 10
-/// (facing up): seen from above, the lower face is fully behind the upper.
+/// Two 20 mm squares on one footprint: one at Z 0 (facing down), one at
+/// Z 10 (facing up). Each is fully behind the other from one side.
 fn stack_mesh() -> TriangleMesh {
     let v = |x: f64, y: f64, z: f64| P3::new(x, y, z);
     let vertices = vec![
-        v(5.0, 5.0, 0.0),
-        v(15.0, 5.0, 0.0),
-        v(15.0, 15.0, 0.0),
-        v(5.0, 15.0, 0.0),
+        v(0.0, 0.0, 0.0),
+        v(20.0, 0.0, 0.0),
+        v(20.0, 20.0, 0.0),
+        v(0.0, 20.0, 0.0),
         v(0.0, 0.0, 10.0),
         v(20.0, 0.0, 10.0),
         v(20.0, 20.0, 10.0),
@@ -201,10 +200,14 @@ fn a_face_behind_another_is_not_visible_sel5() {
         }
     };
     let (lower, upper) = (face_at(0.0), face_at(10.0));
+    assert!(
+        !lower.names_same_geometry(&upper),
+        "P3: two STL faces on one footprint at two heights have two keys"
+    );
     let visibility = ModelVisibility::default();
     let tc_id = session.toolpath_configs()[0].id;
     let limit = 89.0f32.to_radians();
-    for (pitch, seen, hidden) in [(limit, &upper, Some(&lower)), (-limit, &lower, None)] {
+    for (pitch, seen, hidden) in [(limit, &upper, &lower), (-limit, &lower, &upper)] {
         let camera = camera(&session, -std::f32::consts::FRAC_PI_2, pitch);
         let ctx = PickContext {
             camera: &camera,
@@ -220,12 +223,10 @@ fn a_face_behind_another_is_not_visible_sel5() {
             kept.iter().any(|k| k.names_same_geometry(seen)),
             "pitch {pitch}: the near face is visible: {kept:?}"
         );
-        if let Some(hidden) = hidden {
-            assert!(
-                !kept.iter().any(|k| k.names_same_geometry(hidden)),
-                "pitch {pitch}: the face behind is not visible: {kept:?}"
-            );
-        }
+        assert!(
+            !kept.iter().any(|k| k.names_same_geometry(hidden)),
+            "pitch {pitch}: the face behind is not visible: {kept:?}"
+        );
     }
 }
 

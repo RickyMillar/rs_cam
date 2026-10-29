@@ -266,6 +266,32 @@ mod tests {
         assert_eq!(z, vec![0.0, 0.0, 0.02]);
     }
 
+    /// Round 4 (P3): an STL face key holds its plane Z, so two flat faces
+    /// on one footprint at two heights have two keys.
+    #[test]
+    fn two_faces_on_one_footprint_at_two_heights_have_two_keys() {
+        let mut vertices = Vec::new();
+        let mut triangles = Vec::new();
+        for z in [0.0, 10.0] {
+            let i = u32::try_from(vertices.len()).unwrap();
+            vertices.extend([
+                P3::new(0.0, 0.0, z),
+                P3::new(5.0, 0.0, z),
+                P3::new(0.0, 5.0, z),
+            ]);
+            triangles.push([i, i + 1, i + 2]);
+        }
+        let set = flat_region_items(&TriangleMesh::from_raw(vertices, triangles)).unwrap();
+        let keys: Vec<_> = set.iter().map(|i| i.key().clone()).collect();
+        let [low, high] = keys.as_slice() else {
+            panic!("two faces: {keys:?}");
+        };
+        assert_eq!(low.z, Some(0.0));
+        assert_eq!(high.z, Some(10.0));
+        assert!(!low.names_same_geometry(high));
+        assert!(set.iter().all(|i| i.z().is_none()), "the item Z stays None");
+    }
+
     #[test]
     fn a_down_face_points_down() {
         let mut m = mesh([1.0, 5.0, 9.0]);

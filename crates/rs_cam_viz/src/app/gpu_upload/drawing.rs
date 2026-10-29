@@ -465,6 +465,35 @@ pub(super) fn upload(
             }
         }
 
+        // Round 4: the faces of an STL are its flat regions, not in
+        // `items` (`face_items`, bound, no build). Under a contour op a
+        // selected STL face draws its rings too, as the hover ring does.
+        if ring_faces
+            && model.faces_are_flat_regions()
+            && let (Some(report), Some(faces)) = (highlight.as_ref(), model.face_items())
+        {
+            for item in faces
+                .iter()
+                .filter(|i| i.kind() == ItemKind::Face)
+                .filter(|i| {
+                    report
+                        .selected
+                        .iter()
+                        .any(|k| k.names_same_geometry(i.key()))
+                })
+            {
+                edge_item_lines(
+                    item,
+                    setup_ref,
+                    stock,
+                    planar_z,
+                    colors::SELECTION_CUT,
+                    mark,
+                    &mut selected_verts,
+                );
+            }
+        }
+
         // The rings of an item of another source (L-9): a stock
         // item draws as the stock outline at the drawing plane, an
         // item of another model as its ring, both in this
