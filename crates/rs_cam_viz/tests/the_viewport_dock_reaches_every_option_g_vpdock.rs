@@ -13,7 +13,12 @@
 //! - (c) the dock constructs the three commands the strip alone constructed;
 //! - (d) `O` opens the catalogue and `Shift+O` is bound nowhere;
 //! - (e) at a 320 pt viewport, the dock and `More` stay inside the
-//!   viewport width.
+//!   viewport width;
+//! - (f) R5c (the More menu review): `More` lists a row only in the
+//!   workspaces where it can apply (`RowScope`): 24 rows in Setup, 28 in
+//!   Toolpaths, 29 in Simulation, of the 37; out of its scope a row is
+//!   refused with a reason; the two rows with no renderer are listed in
+//!   no workspace; a section with no row there shows no title.
 
 #![expect(
     clippy::unwrap_used,
@@ -444,4 +449,90 @@ fn the_dock_fits_a_320_pt_viewport_g_vpdock() {
     );
     let popover = popover.unwrap_or_else(|| panic!("More never drew"));
     assert_inside("the More popover", popover, viewport);
+}
+
+// ── (f) the More menu review ─────────────────────────────────────────
+
+#[test]
+fn more_lists_a_row_only_where_it_can_apply_g_vpdock() {
+    use rs_cam_viz::state::Workspace;
+    let listed = |ws: Workspace| -> Vec<&'static str> {
+        registry::rows()
+            .iter()
+            .filter(|r| !BAR_ROWS.contains(&r.id) && r.listed_in(ws))
+            .map(|r| r.id)
+            .collect()
+    };
+    let (setup, toolpaths, simulation) = (
+        listed(Workspace::Setup),
+        listed(Workspace::Toolpaths),
+        listed(Workspace::Simulation),
+    );
+    assert_eq!(setup.len(), 24, "Setup: {setup:?}");
+    assert_eq!(toolpaths.len(), 28, "Toolpaths: {toolpaths:?}");
+    assert_eq!(simulation.len(), 29, "Simulation: {simulation:?}");
+    for id in ["planner_islands", "derived_rest_regions"] {
+        for ws in [
+            Workspace::Setup,
+            Workspace::Toolpaths,
+            Workspace::Simulation,
+        ] {
+            assert!(
+                !listed(ws).contains(&id),
+                "`{id}` has no renderer: not in {ws:?}"
+            );
+        }
+    }
+    for id in [
+        "simulated_stock",
+        "tool_deflection",
+        "stock_colour_solid",
+        "stock_colour_deviation",
+        "stock_colour_by_height",
+        "generator_steps",
+        "active_step_highlight",
+    ] {
+        assert!(simulation.contains(&id), "`{id}` is listed in Simulation");
+        assert!(
+            !toolpaths.contains(&id) && !setup.contains(&id),
+            "`{id}` only in Simulation"
+        );
+    }
+    for id in ["reach_map", "rest_heatmap", "tier_map", "area_regions"] {
+        assert!(toolpaths.contains(&id), "`{id}` is listed in Toolpaths");
+        assert!(
+            !simulation.contains(&id) && !setup.contains(&id),
+            "`{id}` only in Toolpaths"
+        );
+    }
+    for id in ["model", "selection_outline"] {
+        assert!(
+            !simulation.contains(&id),
+            "`{id}` is replaced in Simulation"
+        );
+    }
+    // A section with no row in a workspace shows no title.
+    assert_eq!(
+        viewport_overlay::more_rows(Workspace::Setup, DockSection::Inspect),
+        0
+    );
+    assert!(viewport_overlay::more_rows(Workspace::Toolpaths, DockSection::Inspect) > 0);
+    // Out of scope a row is refused with a reason; the view cube row is
+    // always ready, so it is the control.
+    let mut state = AppState::new();
+    state.workspace = Workspace::Toolpaths;
+    assert!(
+        registry::row("orientation_gizmo")
+            .unwrap()
+            .precondition(&state)
+            .is_ready()
+    );
+    for id in ["planner_islands", "derived_rest_regions", "reach_map"] {
+        let reason = registry::row(id).unwrap().precondition(&{
+            let mut s = AppState::new();
+            s.workspace = Workspace::Setup;
+            s
+        });
+        assert!(!reason.is_ready(), "`{id}` refuses in Setup");
+    }
 }

@@ -672,7 +672,7 @@ impl RsCamApp {
             let state = self.controller.state_mut();
             let on = (row.get)(state);
             // Switching OFF needs no precondition; switching ON does.
-            if on || (row.precondition)(state).is_ready() {
+            if on || row.precondition(state).is_ready() {
                 registry::set_overlay(state, row, !on);
             }
         }

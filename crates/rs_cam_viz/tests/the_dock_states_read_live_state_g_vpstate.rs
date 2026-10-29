@@ -376,7 +376,8 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
     }
     // The MCP refusal carries the same failure, not "select a finishing
     // operation".
-    let reason = (row("reach_map").precondition)(&state)
+    let reason = row("reach_map")
+        .precondition(&state)
         .reason()
         .map(str::to_owned)
         .unwrap_or_default();

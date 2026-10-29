@@ -345,7 +345,7 @@ fn the_ghost_row_is_ready_exactly_while_the_set_does_not_key() {
         "the ghost is on by default in the Setup view"
     );
     let mut state = stock_state();
-    assert!(matches!((row.precondition)(&state), Precondition::Ready));
+    assert!(matches!(row.precondition(&state), Precondition::Ready));
 
     // The ghost of the two axis pins lands ON the real pins (a half turn
     // swaps them). Its ring must not lie on the pin circle, or it hides.
@@ -373,7 +373,7 @@ fn the_ghost_row_is_ready_exactly_while_the_set_does_not_key() {
             rs_cam_core::session::SetAlignmentPinsArgs { pins: keyed },
         ))
         .unwrap();
-    match (row.precondition)(&state) {
+    match row.precondition(&state) {
         Precondition::Disabled { reason, .. } => {
             assert!(reason.contains("key"), "{reason}");
         }

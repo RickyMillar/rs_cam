@@ -15,7 +15,7 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
 
 - Registration, MCP, the dock and the catalogue read the SAME registry, and
   every default reader asks `effective_default` (`[display.overlays]`).
-- Every row has ONE dock section (the More group and the catalogue group) and ONE dock home: the bar (`viewport_overlay::BAR_ROWS`, the display mode and Stock controls) or More (DOCK_DECLUTTER).
+- Every row has ONE dock section (the More group and the catalogue group) and ONE dock home: the bar (`viewport_overlay::BAR_ROWS`, the display mode and Stock controls) or More (DOCK_DECLUTTER). R5c: a row has a `RowScope`; read `OverlayRow::precondition` (own condition, then scope; the field is private), and More lists a row only where `listed_in` (review: `planning/viewport_parity_2026-10-28/MORE_MENU_REVIEW.md`).
 - An unavailable overlay is refused with a reason, never silently accepted.
 - A row state is derived each frame; never store a computing, stale or
   failed flag. `live.rs` names the field that answers.

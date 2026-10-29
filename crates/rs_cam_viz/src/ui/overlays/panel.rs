@@ -101,7 +101,7 @@ impl RowState {
     /// (item 2). A stale result needs a drawable row, so Stale follows a
     /// `Ready` precondition only.
     pub fn of(state: &AppState, row: &OverlayRow) -> Self {
-        let precondition = (row.precondition)(state);
+        let precondition = row.precondition(state);
         match live::live(state, row) {
             Live::Computing(lane) => {
                 return Self::Computing {
@@ -853,7 +853,7 @@ fn matches_filter(
         CatalogueFilter::All => true,
         CatalogueFilter::Changed => super::registry::effective_default(state, row, state.workspace)
             .is_some_and(|default| (row.get)(state) != default),
-        CatalogueFilter::CannotDraw => !(row.precondition)(state).is_ready(),
+        CatalogueFilter::CannotDraw => !row.precondition(state).is_ready(),
     };
     text_ok && filter_ok
 }

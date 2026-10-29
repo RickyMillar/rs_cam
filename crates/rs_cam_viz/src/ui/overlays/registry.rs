@@ -102,7 +102,7 @@ const UPLOAD_DETECTOR: &str = "the composite `overlay_upload_key` detector in ap
 
 /// The reason of a drawing overlay while the drawing itself is off: the
 /// three P4.4 rows draw into the polygon buffer, which only `curves` shows.
-const CURVES_OFF: &str = "the drawing is off \u{2014} switch Scene \u{25B8} Curves on";
+const CURVES_OFF: &str = "the drawing is off \u{2014} switch Scene \u{25B8} Curves and edges on";
 
 /// A button the panel offers beside a disabled row, to make it drawable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,15 +215,81 @@ pub struct OverlayRow {
     /// meaning (Palette, Solid, and their peers). Switching such a row off
     /// is refused rather than silently ignored.
     pub radio: bool,
+    /// The workspaces in which the row can ever apply (R5c). Out of its
+    /// scope the row is refused ([`OverlayRow::precondition`]) and `More`
+    /// does not list it; the catalogue lists every row.
+    pub scope: RowScope,
     pub get: fn(&AppState) -> bool,
     /// Writes the flag. A `false` on a radio member is a no-op here; the
     /// refusal happens in [`apply_overlays`], which can report it.
     pub set: fn(&mut AppState, bool),
-    pub precondition: fn(&AppState) -> Precondition,
+    /// The row's own condition. Read it through
+    /// [`OverlayRow::precondition`], which checks the scope too.
+    requires: fn(&AppState) -> Precondition,
     /// The per-workspace default (UX §6.4). `None` = this workspace names no
     /// default, so the flag keeps whatever value it has.
     pub default_for: fn(Workspace) -> Option<bool>,
     pub hover: &'static str,
+}
+
+/// The workspaces in which a row can ever apply (R5c, the More menu
+/// review). A row whose renderer draws in one workspace only is out of
+/// scope in the others: a greyed row there can never become drawable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowScope {
+    /// Every viewport workspace.
+    Any,
+    /// This workspace only.
+    Only(Workspace),
+    /// Every viewport workspace but this one.
+    Not(Workspace),
+    /// No workspace: a listed row with no renderer yet.
+    Never,
+}
+
+impl RowScope {
+    /// True when the row can apply in `ws`.
+    #[must_use]
+    pub fn applies(self, ws: Workspace) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Only(only) => ws == only,
+            Self::Not(not) => ws != not,
+            Self::Never => false,
+        }
+    }
+
+    /// The refusal of a row out of its scope.
+    fn reason(self) -> String {
+        match self {
+            Self::Any => String::new(),
+            Self::Only(only) => format!("draws in the {} workspace only", only.label()),
+            Self::Not(not) => format!("does not draw in the {} workspace", not.label()),
+            Self::Never => "no renderer draws it yet".to_owned(),
+        }
+    }
+}
+
+impl OverlayRow {
+    /// THE precondition of the row: its own condition, then its scope. The
+    /// row's own reason wins, so a precise reason is kept; a row whose own
+    /// condition holds but which cannot draw in this workspace is refused
+    /// with the scope reason.
+    #[must_use]
+    pub fn precondition(&self, state: &AppState) -> Precondition {
+        let own = (self.requires)(state);
+        if own.is_ready() && !self.scope.applies(state.workspace) {
+            return Precondition::no(&self.scope.reason());
+        }
+        own
+    }
+
+    /// True when `More` lists the row in `ws` (R5c): the row can apply
+    /// there.
+    #[must_use]
+    pub fn listed_in(&self, ws: Workspace) -> bool {
+        self.scope.applies(ws)
+    }
 }
 
 // ── per-workspace default helpers (UX §6.4) ────────────────────────────────
@@ -578,7 +644,7 @@ pub fn stock_display_refusal(
     mode: crate::state::overlays::StockDisplay,
 ) -> Option<String> {
     let target = stock_display_row(mode)?;
-    (target.precondition)(state).reason().map(str::to_owned)
+    target.precondition(state).reason().map(str::to_owned)
 }
 
 /// THE write of the dock's Stock control: one of `Off`, `Box`, `Solid`,
@@ -613,9 +679,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_grid"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_grid,
         set: |s, on| s.viewport.show_grid = on,
-        precondition: always_ready,
+        requires: always_ready,
         default_for: geometry_default,
         hover: "The ground grid.",
     },
@@ -627,9 +694,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_model"),
         radio: false,
+        scope: RowScope::Not(Workspace::Simulation),
         get: |s| s.viewport.show_model,
         set: |s, on| s.viewport.show_model = on,
-        precondition: |s| {
+        requires: |s| {
             if in_simulation(s) {
                 // One of the TWO gates that stay hard (UX §6.4). The dexel
                 // stock replaces the model here, so a checkbox would be dead.
@@ -641,7 +709,7 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: no_default,
-        hover: "The imported STL / STEP surface. Applies to both draw loops.",
+        hover: "The imported STL or STEP surface.",
     },
     OverlayRow {
         id: "stock_box",
@@ -651,14 +719,13 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_stock"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_stock,
         set: |s, on| s.viewport.show_stock = on,
-        precondition: always_ready,
+        requires: always_ready,
         default_for: geometry_default,
-        hover: "The stock wireframe box. It is derived from the stock \
-                config, so it draws on a 2D job too \u{2014} before P6 the gate \
-                required a MESH and the checkbox did nothing on an SVG or DXF \
-                project.",
+        hover: "The stock as a wireframe box, from the stock settings. It \
+                draws on a 2D job too.",
     },
     OverlayRow {
         id: "stock_solid",
@@ -668,12 +735,12 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_stock_solid"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_stock_solid,
         set: |s, on| s.viewport.show_stock_solid = on,
-        precondition: always_ready,
+        requires: always_ready,
         default_for: setup_only_default,
-        hover: "The opaque stock block. Split from the stock box \u{2014} one \
-                checkbox used to remove the box, the block and the axes together.",
+        hover: "The stock as an opaque block.",
     },
     OverlayRow {
         id: "origin_axes",
@@ -683,9 +750,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_origin_axes"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_origin_axes,
         set: |s, on| s.viewport.show_origin_axes = on,
-        precondition: always_ready,
+        requires: always_ready,
         default_for: geometry_default,
         hover: "The XYZ triad at the stock origin. Distinct from the datum \
                 crosshair, which is where the G-code zeroes.",
@@ -698,9 +766,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_datum"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_datum,
         set: |s, on| s.viewport.show_datum = on,
-        precondition: |s| {
+        requires: |s| {
             use rs_cam_core::session::XYDatum;
             match active_setup(s) {
                 None => Precondition::no("no setup in this project"),
@@ -721,9 +790,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_obstacles"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_obstacles,
         set: |s, on| s.viewport.show_obstacles = on,
-        precondition: |s| match active_setup(s) {
+        requires: |s| match active_setup(s) {
             Some(sd) if sd.obstacles.iter().any(|o| o.enabled) => Precondition::Ready,
             Some(_) => Precondition::no("no obstacle in this setup"),
             None => Precondition::no("no setup in this project"),
@@ -745,9 +815,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_alignment_pins"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_alignment_pins,
         set: |s, on| s.viewport.show_alignment_pins = on,
-        precondition: |s| {
+        requires: |s| {
             if s.session().stock_config().alignment_pins.is_empty() {
                 Precondition::no("no alignment pin on this stock")
             } else {
@@ -768,11 +839,12 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_flip_axis"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_flip_axis,
         set: |s, on| s.viewport.show_flip_axis = on,
         // P3: the axis comes from the setups through the one core
         // selector, the same call the viewport draws from.
-        precondition: |s| {
+        requires: |s| {
             let axis = s
                 .session()
                 .stock_config()
@@ -800,12 +872,13 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_pin_ghost"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_pin_ghost,
         set: |s, on| s.viewport.show_pin_ghost = on,
         // P7: the ghost shows why a set does not key. A keyed set has no
         // seating to show, so the row is refused with that reason; the
         // flag stays on, and the ghost returns when an edit un-keys the set.
-        precondition: |s| {
+        requires: |s| {
             if s.session().stock_config().alignment_pins.is_empty() {
                 return Precondition::no("no alignment pin on this stock");
             }
@@ -825,14 +898,15 @@ pub const ROWS: &[OverlayRow] = &[
     OverlayRow {
         id: "curves",
         group: OverlayGroup::Geometry,
-        label: "Curves (DXF/SVG)",
+        label: "Curves and edges",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_polygons"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_polygons,
         set: |s, on| s.viewport.show_polygons = on,
-        precondition: |s| {
+        requires: |s| {
             // The draw gate: `show_polygons` gates the 2D curves and, on a
             // STEP model, the edge item lines. The highlight and the hover
             // ring draw without it.
@@ -858,9 +932,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_selection_outline"),
         radio: false,
+        scope: RowScope::Not(Workspace::Simulation),
         get: |s| s.viewport.show_selection_outline,
         set: |s, on| s.viewport.show_selection_outline = on,
-        precondition: |s| {
+        requires: |s| {
             if in_simulation(s) {
                 Precondition::no("replaced by the simulated stock here")
             } else if !s.viewport.show_model {
@@ -885,9 +960,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_selection_states"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_selection_states,
         set: |s, on| s.viewport.show_selection_states = on,
-        precondition: |s| {
+        requires: |s| {
             if !s.viewport.show_polygons {
                 return Precondition::no(CURVES_OFF);
             }
@@ -911,9 +987,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_open_path_ends"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_open_path_ends,
         set: |s, on| s.viewport.show_open_path_ends = on,
-        precondition: |s| {
+        requires: |s| {
             if !s.viewport.show_polygons {
                 return Precondition::no(CURVES_OFF);
             }
@@ -942,9 +1019,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_orientation_gizmo"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_orientation_gizmo,
         set: |s, on| s.viewport.show_orientation_gizmo = on,
-        precondition: always_ready,
+        requires: always_ready,
         default_for: no_default,
         hover: "The view cube in the viewport corner, with the projection toggle \
                 under it. Click a face for that view; drag the cube to orbit.",
@@ -958,9 +1036,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_all_toolpaths"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_all_toolpaths,
         set: |s, on| s.viewport.show_all_toolpaths = on,
-        precondition: |s| {
+        requires: |s| {
             if any_generated(s) {
                 Precondition::Ready
             } else {
@@ -981,9 +1060,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_cutting"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_cutting,
         set: |s, on| s.viewport.show_cutting = on,
-        precondition: |s| {
+        requires: |s| {
             if any_generated(s) {
                 Precondition::Ready
             } else {
@@ -1004,9 +1084,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_rapids"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_rapids,
         set: |s, on| s.viewport.show_rapids = on,
-        precondition: |s| {
+        requires: |s| {
             if any_generated(s) {
                 Precondition::Ready
             } else {
@@ -1027,9 +1108,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_entry_markers"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_entry_markers,
         set: |s, on| s.viewport.show_entry_markers = on,
-        precondition: |s| {
+        requires: |s| {
             if selected_toolpath(s).is_some() {
                 Precondition::Ready
             } else {
@@ -1048,9 +1130,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_height_planes"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_height_planes,
         set: |s, on| s.viewport.show_height_planes = on,
-        precondition: |s| {
+        requires: |s| {
             if selected_toolpath(s).is_some() {
                 Precondition::Ready
             } else {
@@ -1073,9 +1156,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_tool_profile_preview"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_tool_profile_preview,
         set: |s, on| s.viewport.show_tool_profile_preview = on,
-        precondition: |s| {
+        requires: |s| {
             if selected_toolpath(s).is_some() {
                 Precondition::Ready
             } else {
@@ -1093,51 +1177,55 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_entry"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.span_kind_filter.show_entry,
         set: |s, on| s.viewport.span_kind_filter.show_entry = on,
-        precondition: span_filter_precondition,
+        requires: span_filter_precondition,
         default_for: no_default,
         hover: "Plunge / ramp / helix lead-in segments.",
     },
     OverlayRow {
         id: "span_lead_out",
         group: OverlayGroup::Toolpath,
-        label: "Spans: LeadOut",
+        label: "Spans: Lead-out",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_lead_out"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.span_kind_filter.show_lead_out,
         set: |s, on| s.viewport.span_kind_filter.show_lead_out = on,
-        precondition: span_filter_precondition,
+        requires: span_filter_precondition,
         default_for: no_default,
         hover: "Lead-out / retract transition segments.",
     },
     OverlayRow {
         id: "span_link_bridge",
         group: OverlayGroup::Toolpath,
-        label: "Spans: LinkBridge",
+        label: "Spans: Link bridge",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_link_bridge"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.span_kind_filter.show_link_bridge,
         set: |s, on| s.viewport.span_kind_filter.show_link_bridge = on,
-        precondition: span_filter_precondition,
+        requires: span_filter_precondition,
         default_for: no_default,
         hover: "Linker bridges inserted between regions.",
     },
     OverlayRow {
         id: "span_dressup",
         group: OverlayGroup::Toolpath,
-        label: "Spans: DressupArtifact",
+        label: "Spans: Dressup",
         surface: OverlaySurface::None,
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.span_kind_filter.show_dressup"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.span_kind_filter.show_dressup,
         set: |s, on| s.viewport.span_kind_filter.show_dressup = on,
-        precondition: span_filter_precondition,
+        requires: span_filter_precondition,
         default_for: no_default,
         hover: "Dogbone overcuts and other dressup-introduced bridge segments. \
                 Arc-fit replacements are ordinary cutting geometry and are not \
@@ -1152,9 +1240,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_rest_heatmap"),
         radio: false,
+        scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_rest_heatmap,
         set: |s, on| s.viewport.show_rest_heatmap = on,
-        precondition: |s| {
+        requires: |s| {
             if s.workspace != Workspace::Toolpaths {
                 Precondition::no("the rest heatmap draws in the Toolpaths workspace")
             } else if rest_grid_info(s).is_some() {
@@ -1186,9 +1275,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_tier_preview"),
         radio: false,
+        scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_tier_preview,
         set: |s, on| s.viewport.show_tier_preview = on,
-        precondition: |s| {
+        requires: |s| {
             if s.workspace != Workspace::Toolpaths {
                 return Precondition::no("the tier map draws in the Toolpaths workspace");
             }
@@ -1224,9 +1314,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_area_regions"),
         radio: false,
+        scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_area_regions,
         set: |s, on| s.viewport.show_area_regions = on,
-        precondition: area_regions_precondition,
+        requires: area_regions_precondition,
         default_for: no_default,
         hover: "The regions that the selected 3D Adaptive detected with By Area \
                 ordering. Each region has one colour and one order number. \
@@ -1243,6 +1334,7 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: None,
         radio: false,
+        scope: RowScope::Never,
         get: |_s| false,
         set: |_s, _on| {},
         // Not a fake row and not a second home: the islands ARE the
@@ -1250,7 +1342,7 @@ pub const ROWS: &[OverlayRow] = &[
         // `preview.islands` into the tier mesh), so a flag of their own
         // would be a duplicate writer of one state. There is no separate
         // island-outline renderer, and the row says so.
-        precondition: |_s| {
+        requires: |_s| {
             Precondition::no(
                 "drawn by Inspect \u{25B8} Tier map \u{2014} no separate island outline renderer yet",
             )
@@ -1267,13 +1359,14 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: None,
         radio: false,
+        scope: RowScope::Never,
         get: |_s| false,
         set: |_s, _on| {},
-        precondition: |_s| Precondition::no("not drawn yet (no renderer)"),
+        requires: |_s| Precondition::no("not drawn yet (no renderer)"),
         default_for: no_default,
         hover: "The islands a rest pass would cut. Authored under \
                 Geometry \u{25B8} Machining Boundary \u{25B8} Source \u{25B8} Rest Regions; \
-                the render work is ledgered, not built.",
+                no renderer draws them yet.",
     },
     OverlayRow {
         id: "boundary_outline",
@@ -1283,12 +1376,13 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.show_boundary_outline"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_boundary_outline,
         set: |s, on| s.viewport.show_boundary_outline = on,
         // P4.4: the renderer draws the regions of a `Selection` boundary
         // (its `Cut` and `Island` rings). Another source has no rings
         // before generation, and the row says so.
-        precondition: |s| {
+        requires: |s| {
             if !s.viewport.show_polygons {
                 return Precondition::no(CURVES_OFF);
             }
@@ -1321,9 +1415,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_reach_map"),
         radio: false,
+        scope: RowScope::Only(Workspace::Toolpaths),
         get: |s| s.viewport.show_reach_map,
         set: |s, on| s.viewport.show_reach_map = on,
-        precondition: |s| {
+        requires: |s| {
             if s.workspace != Workspace::Toolpaths {
                 Precondition::no("the reach map draws in the Toolpaths workspace")
             } else if !s.viewport.show_model {
@@ -1365,13 +1460,14 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.solid"),
         radio: true,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::Solid),
         set: |s, on| {
             if on {
                 s.simulation.stock_viz_mode = StockVizMode::Solid;
             }
         },
-        precondition: stock_colour_precondition,
+        requires: stock_colour_precondition,
         default_for: no_default,
         hover: "Default wood-tone gradient. No analysis colouring.",
     },
@@ -1383,13 +1479,14 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.deviation"),
         radio: true,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::Deviation),
         set: |s, on| {
             if on {
                 s.simulation.stock_viz_mode = StockVizMode::Deviation;
             }
         },
-        precondition: |s| {
+        requires: |s| {
             let base = stock_colour_precondition(s);
             if !base.is_ready() {
                 return base;
@@ -1411,13 +1508,14 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("simulation.stock_viz_mode.by_height"),
         radio: true,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| matches!(s.simulation.stock_viz_mode, StockVizMode::ByHeight),
         set: |s, on| {
             if on {
                 s.simulation.stock_viz_mode = StockVizMode::ByHeight;
             }
         },
-        precondition: stock_colour_precondition,
+        requires: stock_colour_precondition,
         default_for: no_default,
         hover: "Colour by Z height: low = blue, high = red.",
     },
@@ -1429,13 +1527,14 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.normal"),
         radio: true,
+        scope: RowScope::Any,
         get: |s| matches!(s.viewport.toolpath_color_mode, ToolpathColorMode::Normal),
         set: |s, on| {
             if on {
                 s.viewport.toolpath_color_mode = ToolpathColorMode::Normal;
             }
         },
-        precondition: move_colour_precondition,
+        requires: move_colour_precondition,
         default_for: no_default,
         hover: "Per-toolpath palette colour with Z-depth blending. The only \
                 mode the span filter applies in.",
@@ -1448,6 +1547,7 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.engagement"),
         radio: true,
+        scope: RowScope::Any,
         get: |s| {
             matches!(
                 s.viewport.toolpath_color_mode,
@@ -1459,7 +1559,7 @@ pub const ROWS: &[OverlayRow] = &[
                 s.viewport.toolpath_color_mode = ToolpathColorMode::Engagement;
             }
         },
-        precondition: move_colour_precondition,
+        requires: move_colour_precondition,
         default_for: no_default,
         hover: "Colour cutting moves by feed rate: green \u{2192} yellow \u{2192} red \
                 for light \u{2192} heavy load.",
@@ -1472,6 +1572,7 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::UploadTime(UPLOAD_DETECTOR),
         flag: Some("viewport.toolpath_color_mode.advance_per_tooth"),
         radio: true,
+        scope: RowScope::Any,
         get: |s| {
             matches!(
                 s.viewport.toolpath_color_mode,
@@ -1483,7 +1584,7 @@ pub const ROWS: &[OverlayRow] = &[
                 s.viewport.toolpath_color_mode = ToolpathColorMode::AdvancePerTooth;
             }
         },
-        precondition: |s| {
+        requires: |s| {
             let base = move_colour_precondition(s);
             if !base.is_ready() {
                 return base;
@@ -1507,9 +1608,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_sim_stock"),
         radio: false,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.viewport.show_sim_stock,
         set: |s, on| s.viewport.show_sim_stock = on,
-        precondition: |s| {
+        requires: |s| {
             if s.workspace != Workspace::Simulation {
                 Precondition::no("the simulated stock draws in the Simulation workspace")
             } else if s.simulation.has_results() {
@@ -1529,9 +1631,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_collisions"),
         radio: false,
+        scope: RowScope::Any,
         get: |s| s.viewport.show_collisions,
         set: |s, on| s.viewport.show_collisions = on,
-        precondition: |s| {
+        requires: |s| {
             let checks = &s.simulation.checks;
             if checks.collision_report.is_some() || !checks.rapid_collisions.is_empty() {
                 Precondition::Ready
@@ -1554,9 +1657,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("viewport.show_tool_deflection"),
         radio: false,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.viewport.show_tool_deflection,
         set: |s, on| s.viewport.show_tool_deflection = on,
-        precondition: |s| {
+        requires: |s| {
             if s.workspace != Workspace::Simulation {
                 Precondition::no("the deflection panel draws in the Simulation workspace")
             } else if s.simulation.has_results() {
@@ -1577,9 +1681,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("simulation.debug.enabled"),
         radio: false,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.simulation.debug.enabled,
         set: |s, on| s.simulation.debug.enabled = on,
-        precondition: |s| {
+        requires: |s| {
             if any_trace_recorded(s) {
                 Precondition::Ready
             } else {
@@ -1601,9 +1706,10 @@ pub const ROWS: &[OverlayRow] = &[
         mechanism: OverlayMechanism::DrawTime,
         flag: Some("simulation.debug.highlight_active_item"),
         radio: false,
+        scope: RowScope::Only(Workspace::Simulation),
         get: |s| s.simulation.debug.highlight_active_item,
         set: |s, on| s.simulation.debug.highlight_active_item = on,
-        precondition: |s| {
+        requires: |s| {
             if !any_trace_recorded(s) {
                 Precondition::no_with(
                     "switch on Record generator trace and regenerate".to_owned(),
@@ -1814,7 +1920,7 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
             continue;
         };
         if *want {
-            let pre = (row.precondition)(state);
+            let pre = row.precondition(state);
             if let Some(reason) = pre.reason() {
                 report.refused.insert(id.clone(), reason.to_owned());
                 continue;
@@ -1975,7 +2081,7 @@ pub fn cycle_surface(state: &mut AppState, surface: OverlaySurface) {
     for step in 1..=stops {
         let next = (start + step) % stops;
         match members.get(next) {
-            Some(row) if (row.precondition)(state).is_ready() => {
+            Some(row) if row.precondition(state).is_ready() => {
                 set_overlay(state, row, true);
                 return;
             }
@@ -2087,7 +2193,7 @@ pub fn sim_stock_drawn(state: &AppState) -> bool {
 pub fn active_legends(state: &AppState) -> Vec<Legend> {
     let mut out = Vec::new();
     let on = |id: &str| -> bool {
-        row(id).is_some_and(|r| (r.get)(state) && (r.precondition)(state).is_ready())
+        row(id).is_some_and(|r| (r.get)(state) && r.precondition(state).is_ready())
     };
     let moves_drawn = state.viewport.show_cutting && any_toolpath_drawn(state);
     if on("rest_heatmap")

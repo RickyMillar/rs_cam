@@ -228,7 +228,7 @@ pub struct StatusLine {
 
 /// Is the row switched on AND able to draw now?
 fn ready_on(state: &AppState, id: &str) -> bool {
-    registry::row(id).is_some_and(|r| (r.get)(state) && (r.precondition)(state).is_ready())
+    registry::row(id).is_some_and(|r| (r.get)(state) && r.precondition(state).is_ready())
 }
 
 /// Is the row's flag on?

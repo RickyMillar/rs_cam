@@ -195,7 +195,8 @@ fn row() -> &'static registry::OverlayRow {
 }
 
 fn reason(state: &AppState) -> String {
-    (row().precondition)(state)
+    row()
+        .precondition(state)
         .reason()
         .unwrap_or_default()
         .to_owned()
@@ -219,7 +220,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
 
     // Nothing selected: the row cannot draw.
     let _ = state.set_focus(Selection::None);
-    assert!(!(row().precondition)(&state).is_ready());
+    assert!(!row().precondition(&state).is_ready());
     assert!(
         reason(&state).contains("select a 3D Adaptive"),
         "{}",
@@ -228,7 +229,7 @@ fn the_row_toggles_and_draws_for_the_selected_toolpath_only() {
 
     // The By Area toolpath is selected: the row switches on and draws.
     let _ = state.set_focus(Selection::Toolpath(by_area));
-    assert!((row().precondition)(&state).is_ready());
+    assert!(row().precondition(&state).is_ready());
     registry::set_overlay(&mut state, row(), true);
     assert!(state.viewport.show_area_regions);
     assert!(registry::area_regions_drawn(&state));

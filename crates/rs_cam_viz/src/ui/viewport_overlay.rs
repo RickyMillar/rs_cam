@@ -526,6 +526,11 @@ fn draw_more(
                         .max_height(max_height)
                         .show(ui, |ui| {
                             for section in DockSection::ALL {
+                                // R5c: a section with no row that can apply
+                                // in this workspace shows no title.
+                                if more_rows(state.workspace, section) == 0 {
+                                    continue;
+                                }
                                 components::SectionHeader::new(panel::section_title(
                                     state, section,
                                 ))
@@ -542,6 +547,15 @@ fn draw_more(
                         });
                 });
         });
+}
+
+/// How many rows `More` lists under `section` in `ws` (R5c): the rows of
+/// the section that the bar does not own and that can apply in `ws`.
+#[must_use]
+pub fn more_rows(ws: Workspace, section: DockSection) -> usize {
+    registry::rows_in_section(section)
+        .filter(|row| !BAR_ROWS.contains(&row.id) && row.listed_in(ws))
+        .count()
 }
 
 /// A group caption inside a popover (`Move colour`, `Model colour`).
@@ -564,7 +578,10 @@ fn draw_remaining_rows(
     handled: &[&str],
 ) {
     for row in registry::rows_in_section(section) {
-        if !handled.contains(&row.id) && !BAR_ROWS.contains(&row.id) {
+        if !handled.contains(&row.id)
+            && !BAR_ROWS.contains(&row.id)
+            && row.listed_in(state.workspace)
+        {
             panel::draw_row(ui, state, events, row);
         }
     }
@@ -579,7 +596,7 @@ fn draw_row_as(
     label: &str,
     control: RowControl,
 ) {
-    if let Some(row) = registry::row(id) {
+    if let Some(row) = registry::row(id).filter(|r| r.listed_in(state.workspace)) {
         panel::draw_control(ui, state, row, label, control);
         panel::draw_reason(ui, state, events, row);
     }
@@ -597,7 +614,7 @@ fn view_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent
 fn scene_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     // The display mode, Grid and Stock are on the bar.
     for row in registry::rows_in_section(DockSection::Scene) {
-        if BAR_ROWS.contains(&row.id) {
+        if BAR_ROWS.contains(&row.id) || !row.listed_in(state.workspace) {
             continue;
         }
         panel::draw_row(ui, state, events, row);
@@ -651,7 +668,7 @@ fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEven
     }
     // Cutting moves and Rapids are on the bar.
     for id in ["entry_markers", "height_planes", "tool_profile_ghost"] {
-        if let Some(row) = registry::row(id) {
+        if let Some(row) = registry::row(id).filter(|r| r.listed_in(state.workspace)) {
             panel::draw_row(ui, state, events, row);
         }
     }
@@ -667,9 +684,9 @@ fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEven
     ui.horizontal_wrapped(|ui| {
         for (id, label) in [
             ("span_entry", "Entry"),
-            ("span_lead_out", "LeadOut"),
-            ("span_link_bridge", "LinkBridge"),
-            ("span_dressup", "DressupArtifact"),
+            ("span_lead_out", "Lead-out"),
+            ("span_link_bridge", "Link bridge"),
+            ("span_dressup", "Dressup"),
         ] {
             if let Some(row) = registry::row(id) {
                 panel::draw_control(ui, state, row, label, RowControl::Check);
@@ -705,44 +722,52 @@ const INSPECT_PLACED: [&str; 11] = [
 ];
 
 fn inspect_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    caption(ui, "Model colour");
-    draw_row_as(ui, state, events, "reach_map", "Reach", RowControl::Choice);
-    draw_row_as(
-        ui,
-        state,
-        events,
-        "rest_heatmap",
-        "Rest",
-        RowControl::Choice,
-    );
-    let model_rows: Vec<_> = registry::rows()
-        .iter()
-        .filter(|row| row.surface == OverlaySurface::Model)
-        .collect();
-    let model_off = !model_rows.iter().any(|row| (row.get)(state));
-    if ui.radio(model_off, "Off").clicked() && !model_off {
-        registry::clear_surface(state, OverlaySurface::Model);
-    }
-    // The preference stays when it cannot draw. The dock says so rather
-    // than show another choice in its place.
-    if model_rows
-        .iter()
-        .any(|row| (row.get)(state) && !RowState::of(state, row).draws())
-    {
-        caption(ui, "Your choice is kept. The model draws plain.");
+    let ws = state.workspace;
+    let listed = |id: &str| registry::row(id).is_some_and(|r| r.listed_in(ws));
+    // R5c: the model colour applies in Toolpaths only, the stock colour in
+    // Simulation only; a group shows where it can apply.
+    if listed("reach_map") || listed("rest_heatmap") {
+        caption(ui, "Model colour");
+        draw_row_as(ui, state, events, "reach_map", "Reach", RowControl::Choice);
+        draw_row_as(
+            ui,
+            state,
+            events,
+            "rest_heatmap",
+            "Rest",
+            RowControl::Choice,
+        );
+        let model_rows: Vec<_> = registry::rows()
+            .iter()
+            .filter(|row| row.surface == OverlaySurface::Model)
+            .collect();
+        let model_off = !model_rows.iter().any(|row| (row.get)(state));
+        if ui.radio(model_off, "Off").clicked() && !model_off {
+            registry::clear_surface(state, OverlaySurface::Model);
+        }
+        // The preference stays when it cannot draw. The dock says so rather
+        // than show another choice in its place.
+        if model_rows
+            .iter()
+            .any(|row| (row.get)(state) && !RowState::of(state, row).draws())
+        {
+            caption(ui, "Your choice is kept. The model draws plain.");
+        }
     }
     for id in ["tier_map", "planner_islands"] {
-        if let Some(row) = registry::row(id) {
+        if let Some(row) = registry::row(id).filter(|r| r.listed_in(ws)) {
             panel::draw_row(ui, state, events, row);
         }
     }
-    caption(ui, "Stock colour");
-    for (id, label) in [
-        ("stock_colour_solid", "Solid"),
-        ("stock_colour_deviation", "Deviation"),
-        ("stock_colour_by_height", "Height"),
-    ] {
-        draw_row_as(ui, state, events, id, label, RowControl::Choice);
+    if listed("stock_colour_solid") {
+        caption(ui, "Stock colour");
+        for (id, label) in [
+            ("stock_colour_solid", "Solid"),
+            ("stock_colour_deviation", "Deviation"),
+            ("stock_colour_by_height", "Height"),
+        ] {
+            draw_row_as(ui, state, events, id, label, RowControl::Choice);
+        }
     }
     // Collisions is on the bar.
     for id in [
@@ -750,7 +775,7 @@ fn inspect_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEv
         "generator_steps",
         "active_step_highlight",
     ] {
-        if let Some(row) = registry::row(id) {
+        if let Some(row) = registry::row(id).filter(|r| r.listed_in(ws)) {
             panel::draw_row(ui, state, events, row);
         }
     }

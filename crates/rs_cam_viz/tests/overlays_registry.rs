@@ -201,7 +201,7 @@ fn a_flagless_row_can_never_be_switched_on() {
             Workspace::Simulation,
         ] {
             state.workspace = workspace;
-            let precondition = (row.precondition)(&state);
+            let precondition = row.precondition(&state);
             assert!(
                 !precondition.is_ready(),
                 "`{id}` reported Ready in {workspace:?} while it has no renderer"
@@ -286,7 +286,7 @@ fn every_disabled_reason_is_a_non_empty_sentence() {
     ] {
         state.workspace = workspace;
         for row in ROWS {
-            if let Precondition::Disabled { reason, .. } = (row.precondition)(&state) {
+            if let Precondition::Disabled { reason, .. } = row.precondition(&state) {
                 disabled_seen += 1;
                 assert!(
                     reason.trim().len() > 4,
@@ -311,7 +311,8 @@ fn the_two_hard_gates_are_disabled_rows_with_reasons() {
     let mut state = AppState::new();
     state.workspace = Workspace::Simulation;
     let model = registry::row("model").unwrap();
-    let reason = (model.precondition)(&state)
+    let reason = model
+        .precondition(&state)
         .reason()
         .expect("the model row must be disabled in Simulation")
         .to_owned();
@@ -326,7 +327,8 @@ fn the_two_hard_gates_are_disabled_rows_with_reasons() {
     // planner fixtures.
     state.workspace = Workspace::Toolpaths;
     let tier = registry::row("tier_map").unwrap();
-    let reason = (tier.precondition)(&state)
+    let reason = tier
+        .precondition(&state)
         .reason()
         .expect("no preview means no tier map")
         .to_owned();
@@ -344,7 +346,8 @@ fn the_two_hard_gates_are_disabled_rows_with_reasons() {
 fn the_curves_row_is_ready_on_a_step_only_project() {
     let curves = registry::row("curves").unwrap();
     let empty = AppState::new();
-    let reason = (curves.precondition)(&empty)
+    let reason = curves
+        .precondition(&empty)
         .reason()
         .expect("an empty project has no curves and no STEP edges")
         .to_owned();
@@ -372,7 +375,7 @@ fn the_curves_row_is_ready_on_a_step_only_project() {
     let mut state = AppState::new();
     state.replace_session(builder.build());
     assert!(
-        (curves.precondition)(&state).is_ready(),
+        curves.precondition(&state).is_ready(),
         "a STEP-only project draws its edge lines and rings under this row"
     );
 }
@@ -399,7 +402,9 @@ fn set_ui_view_refuses_an_unknown_overlay_id() {
 fn set_ui_view_refuses_a_not_ready_id_with_the_panels_own_reason() {
     let mut state = AppState::new();
     state.workspace = Workspace::Toolpaths;
-    let panel_reason = (registry::row("tier_map").unwrap().precondition)(&state)
+    let panel_reason = registry::row("tier_map")
+        .unwrap()
+        .precondition(&state)
         .reason()
         .expect("no planner preview on an empty project")
         .to_owned();
@@ -429,7 +434,12 @@ fn switching_an_overlay_off_is_applied_even_when_it_cannot_draw() {
     // selection, so no map), which is exactly the case that must still
     // accept an "off".
     assert!(state.viewport.show_reach_map, "fixture precondition");
-    assert!(!(registry::row("reach_map").unwrap().precondition)(&state).is_ready());
+    assert!(
+        !registry::row("reach_map")
+            .unwrap()
+            .precondition(&state)
+            .is_ready()
+    );
     let requested = BTreeMap::from([("reach_map".to_owned(), false)]);
     let report = registry::apply_overlays(&mut state, &requested);
     assert_eq!(report.applied.get("reach_map"), Some(&false));
