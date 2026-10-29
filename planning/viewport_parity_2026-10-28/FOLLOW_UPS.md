@@ -145,3 +145,25 @@ hand cursor. Fixes ordered from the look:
   base face underneath (design B §3.3 said the CPU test selects through).
   Built as a ray visibility test through `LoadedModel::ray_pick` (the BVH),
   not the GPU ID pass; the click and Tab keep reaching hidden items.
+
+## 8. Round 4 (operator, 2026-10-29 evening, away): "finish off the rest"
+
+Operator: "its feeling fantastic. finish off the rest and then I can look
+at doing a full review." Two UX rulings, left to the lead's judgement:
+- **Pick mode engages with the toolpath.** "When I select something like
+  profile mode, the picker should already be engaged. Either I should have
+  no selection or all the possible ones for that toolpath." Decision: a
+  focused 2.5D op in Toolpaths is in pick mode at once (its op target; a 3D
+  op with a Selection boundary on its boundary target); the chips start with
+  every kind the op serves; Escape pauses, Pick resumes; a click on nothing
+  changes nothing; a click on another toolpath's path moves the focus and
+  the pick mode to it.
+- **Hover and select feedback follow the op's use of the item.** A Profile
+  cuts a contour, so a face under the pointer lights as its ring (the edge),
+  and a picked face shows as its green ring; an area op (Pocket, Face,
+  Zigzag, Adaptive 2D) lights the fill. The rule is core's item use
+  (`target_item_use`), not the op name.
+
+The rest of the queue for the lead: the hole-rim fold, the STL face key
+plane Z, the gizmo drag-to-orbit, the curves row text, the flaky
+silhouette test. Sloped-edge items and materials stay for a later ruling.
