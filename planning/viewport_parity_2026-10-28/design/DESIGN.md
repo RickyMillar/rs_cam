@@ -163,6 +163,8 @@ from HEAD.
 | — | round 5: a click takes the nearest visible candidate; a display-mode change uploads; the curves row no longer hides the selection | bd1355196 | 2026-10-29 |
 | — | round 5: the view cube with a projection toggle; six click-to-view faces (Bottom, Back, Left added); the preset rows leave More | 21b1dc275 | 2026-10-29 |
 | — | round 5: the More menu review (`MORE_MENU_REVIEW.md`): a workspace scope per row, one precondition door, readable labels | d195a1e80 | 2026-10-29 |
+| — | round 6: a ring op (Profile) keeps a down-facing face and cuts its outline at the face plane (core `OperationConfig::down_faces`) | eadd74a57 | 2026-10-30 |
+| — | round 6: the More menu rulings: object groups, the context rail with eye chips, Setup draws no toolpaths, two renderer-less rows deleted | a7dda8b09 | 2026-10-30 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
