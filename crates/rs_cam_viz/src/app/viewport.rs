@@ -1097,6 +1097,10 @@ impl RsCamApp {
             show_model: state.viewport.show_model && state.workspace != Workspace::Simulation,
             show_model_edges: state.viewport.show_model_edges,
             edge_offset,
+            line_widths: crate::render::LineWidths {
+                viewport_px: [rect.width() * ppp, rect.height() * ppp],
+                pixels_per_point: ppp,
+            },
             show_grid: state.viewport.show_grid,
             // P6 — the model clause is GONE from all three stock
             // consumers (audit §3.2, fix §6.3, first option). It used to

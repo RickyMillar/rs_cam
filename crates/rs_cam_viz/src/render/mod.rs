@@ -63,7 +63,7 @@ const AREA_REGIONS_OPACITY: f32 = 0.55;
 
 /// GPU uniform data for line rendering.
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LineUniforms {
     pub view_proj: [[f32; 4]; 4],
     /// Multiplier applied to every line's colour in the fragment stage.
@@ -83,6 +83,38 @@ pub struct LineUniforms {
     /// xyz = the eye position with w = 1 (perspective), or the unit
     /// direction to the eye with w = 0 (orthographic).
     pub eye: [f32; 4],
+    /// The quad lines (`vs_wide`, D §3.5): x, y = the viewport size in
+    /// physical pixels, z = the line width in physical pixels, w = 0. The
+    /// `LineList` entry point does not read it.
+    pub wide: [f32; 4],
+}
+
+/// The viewport facts of the quad lines: the viewport size in physical
+/// pixels and the pixels per point. `frame_set` turns the width tokens
+/// (`ui::tokens::LINE_*_PX`, in points) into physical pixels with them.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct LineWidths {
+    pub viewport_px: [f32; 2],
+    pub pixels_per_point: f32,
+}
+
+/// The six line uniforms that `prepare` writes each frame (`frame_set`).
+#[derive(Debug, Clone, Copy)]
+pub struct LineGroups {
+    /// The grid, the stock and the toolpath moves: no offset.
+    pub plain: LineUniforms,
+    /// The toolpath moves under the reach overlay: no offset, dimmed.
+    pub dimmed: LineUniforms,
+    /// The 1 px lines on the model (the drawing): the edge offset.
+    pub edge: LineUniforms,
+    /// The model edges as quads: the edge offset, `LINE_EDGE_PX`.
+    pub edge_wide: LineUniforms,
+    /// The selection highlight as quads: the edge offset,
+    /// `LINE_SELECTED_PX`.
+    pub selected: LineUniforms,
+    /// The hover ring and the tab marks as quads: the edge offset,
+    /// `LINE_HOVER_PX`.
+    pub hover: LineUniforms,
 }
 
 impl LineUniforms {
@@ -95,19 +127,22 @@ impl LineUniforms {
             edge_k: 0.0,
             _pad: 0.0,
             eye,
+            wide: [0.0; 4],
         }
     }
 
-    /// The three line uniforms that `prepare` writes each frame: the plain
-    /// group, the dimmed group and the edge group. Only the edge group
-    /// carries the offset. The lines on the model draw with it (the model
-    /// edges and the overlay lines); the grid and the toolpaths do not
-    /// move.
-    pub fn frame_set(self, edges: EdgeOffset) -> [Self; 3] {
+    /// The six line uniforms that `prepare` writes each frame. Only the
+    /// plain and the dimmed groups carry no offset: the grid and the
+    /// toolpaths do not move. The lines on the model (the model edges, the
+    /// drawing and the overlay lines) take the edge offset; the quad groups
+    /// also take their width token in physical pixels.
+    pub fn frame_set(self, edges: EdgeOffset, widths: LineWidths) -> LineGroups {
+        use crate::ui::tokens::{LINE_EDGE_PX, LINE_HOVER_PX, LINE_SELECTED_PX};
         let plain = Self {
             dim: 1.0,
             edge_tol: 0.0,
             edge_k: 0.0,
+            wide: [0.0; 4],
             ..self
         };
         let dimmed = Self {
@@ -119,7 +154,19 @@ impl LineUniforms {
             edge_k: edges.k,
             ..plain
         };
-        [plain, dimmed, edge]
+        let [w, h] = widths.viewport_px;
+        let quad = |points: f32| Self {
+            wide: [w, h, points * widths.pixels_per_point, 0.0],
+            ..edge
+        };
+        LineGroups {
+            plain,
+            dimmed,
+            edge,
+            edge_wide: quad(LINE_EDGE_PX),
+            selected: quad(LINE_SELECTED_PX),
+            hover: quad(LINE_HOVER_PX),
+        }
     }
 }
 
@@ -182,10 +229,10 @@ impl EdgeOffset {
 /// viewport had the same problem and no such treatment.
 ///
 /// **Only the colour factor transfers.** The offscreen renderer draws moves
-/// as TUBES and can thin them; the viewport draws
-/// `PrimitiveTopology::LineList`, which is one pixel wide and has no width
-/// control in wgpu at all. So the live rule is the 0.45 colour factor alone,
-/// and the ribbon half of F4 has no lever here.
+/// as TUBES and can thin them; the viewport draws the moves as
+/// `PrimitiveTopology::LineList`, one pixel wide. The quad lines (D §3.5)
+/// stay off the moves until the WP27 draw set is measured with them, so the
+/// live rule is the 0.45 colour factor alone.
 ///
 /// This is a DRAW-TIME treatment, not a visibility toggle: no registry flag
 /// moves, so the Overlays panel still shows Cutting moves ON and the operator
@@ -316,11 +363,16 @@ pub struct RenderResources {
     /// once; every model's state bind group reads it.
     pub face_palette_buffer: wgpu::Buffer,
     line_pipeline: wgpu::RenderPipeline,
-    /// `line_pipeline` with the depth write off: the model edges only (D4).
-    /// The edges test the depth but write none, so a later overlay line on
-    /// the same segment (the pick highlight, the hover ring, a tab mark)
-    /// is not hidden behind its own edge.
-    edge_line_pipeline: wgpu::RenderPipeline,
+    /// The quad lines (D §3.5): the `LineList` buffers bind as an instance
+    /// buffer (one segment per instance) and `vs_wide` pushes a screen
+    /// space quad of the group's width. The selection highlight, the hover
+    /// ring and the tab marks draw with it.
+    wide_line_pipeline: wgpu::RenderPipeline,
+    /// `wide_line_pipeline` with the depth write off: the model edges only
+    /// (D4). The edges test the depth but write none, so a later overlay
+    /// line on the same segment (the pick highlight, the hover ring, a tab
+    /// mark) is not hidden behind its own edge.
+    wide_edge_line_pipeline: wgpu::RenderPipeline,
     mesh_uniform_buffer: wgpu::Buffer,
     sim_mesh_uniform_buffer: wgpu::Buffer,
     line_uniform_buffer: wgpu::Buffer,
@@ -341,6 +393,15 @@ pub struct RenderResources {
     /// toolpaths do not.
     line_edge_uniform_buffer: wgpu::Buffer,
     line_edge_bind_group: wgpu::BindGroup,
+    /// The quad groups (`LineGroups`): the model edges, the selection
+    /// highlight, and the hover ring with the tab marks. Each holds the
+    /// edge offset and its width.
+    line_edge_wide_uniform_buffer: wgpu::Buffer,
+    line_edge_wide_bind_group: wgpu::BindGroup,
+    line_selected_uniform_buffer: wgpu::Buffer,
+    line_selected_bind_group: wgpu::BindGroup,
+    line_hover_uniform_buffer: wgpu::Buffer,
+    line_hover_bind_group: wgpu::BindGroup,
     /// Dedicated uniform buffer + bind group for the rest-depth heatmap
     /// overlay, carrying its own fixed opacity independent of
     /// `sim_mesh_uniform_buffer`. That buffer is shared by sim mesh, solid
@@ -419,6 +480,10 @@ pub struct RenderResources {
     pub reach_overlay_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
+    /// The selection highlight: the items of the drawing that the
+    /// selection takes (cut and island) and the flashed items, out of
+    /// `polygon_data`, so they draw as quads of `LINE_SELECTED_PX`.
+    pub selection_lines: Option<PolygonGpuData>,
     /// Geometry selection P4.5: the ring of the item under the pointer in
     /// pick mode, in `SELECTION_HOVER`. It is its own small buffer, so a
     /// hover change uploads only this buffer and never the drawing
@@ -916,6 +981,29 @@ impl RenderResources {
             }],
         });
 
+        let line_group = |label: &str| {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: std::mem::size_of::<LineUniforms>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &line_bind_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            (buffer, group)
+        };
+        let (line_edge_wide_uniform_buffer, line_edge_wide_bind_group) =
+            line_group("line_uniforms_edge_wide");
+        let (line_selected_uniform_buffer, line_selected_bind_group) =
+            line_group("line_uniforms_selected");
+        let (line_hover_uniform_buffer, line_hover_bind_group) = line_group("line_uniforms_hover");
+
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("line_pl"),
             bind_group_layouts: &[Some(&line_bind_group_layout)],
@@ -969,8 +1057,74 @@ impl RenderResources {
                 cache: None,
             })
         };
-        let line_pipeline = line_pipeline_with("line_pipeline", depth_stencil);
-        let edge_line_pipeline = line_pipeline_with("edge_line_pipeline", depth_read_only);
+        let line_pipeline = line_pipeline_with("line_pipeline", depth_stencil.clone());
+
+        // The quad lines read the same `LineVertex` buffers, two vertices
+        // (one segment) per instance: stride 48, `a.pos, a.col, b.pos, b.col`.
+        let segment_stride = 2 * std::mem::size_of::<LineVertex>() as u64;
+        let segment_attributes = [
+            wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: 12,
+                shader_location: 1,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: 24,
+                shader_location: 2,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+            wgpu::VertexAttribute {
+                offset: 36,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Float32x3,
+            },
+        ];
+        let segment_layout = wgpu::VertexBufferLayout {
+            array_stride: segment_stride,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &segment_attributes,
+        };
+        let wide_pipeline_with = |label: &str, depth: wgpu::DepthStencilState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&line_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &line_shader,
+                    entry_point: Some("vs_wide"),
+                    buffers: &[Some(segment_layout.clone())],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &line_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                // No culling: a quad's winding follows the segment
+                // direction on screen.
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(depth),
+                multisample: scene_multisample,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let wide_line_pipeline = wide_pipeline_with("wide_line_pipeline", depth_stencil);
+        let wide_edge_line_pipeline =
+            wide_pipeline_with("wide_edge_line_pipeline", depth_read_only);
 
         // --- Blit pipeline (fullscreen triangle, samples offscreen texture) ---
         let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1056,7 +1210,8 @@ impl RenderResources {
             face_state_bgl,
             face_palette_buffer,
             line_pipeline,
-            edge_line_pipeline,
+            wide_line_pipeline,
+            wide_edge_line_pipeline,
             mesh_uniform_buffer,
             sim_mesh_uniform_buffer,
             line_uniform_buffer,
@@ -1067,6 +1222,12 @@ impl RenderResources {
             line_dim_bind_group,
             line_edge_uniform_buffer,
             line_edge_bind_group,
+            line_edge_wide_uniform_buffer,
+            line_edge_wide_bind_group,
+            line_selected_uniform_buffer,
+            line_selected_bind_group,
+            line_hover_uniform_buffer,
+            line_hover_bind_group,
             rest_heatmap_uniform_buffer,
             rest_heatmap_bind_group,
             tier_preview_uniform_buffer,
@@ -1086,6 +1247,7 @@ impl RenderResources {
             solid_stock_data: None,
             fixture_data: None,
             polygon_data: Vec::new(),
+            selection_lines: None,
             hover_lines: None,
             tab_lines: None,
             model_edge_lines: None,
@@ -1143,7 +1305,8 @@ impl RenderResources {
             return;
         };
         // The model arm draws `face_mesh_data_list` and `model_edge_lines`,
-        // and the polygon arm `polygon_data`, so a caller that fills them
+        // and the polygon arm `polygon_data` and `selection_lines`, so a
+        // caller that fills them
         // first gets those draws too. The uniforms are the caller's
         // (`write_frame_uniforms`); with none written, nothing is visible.
         let callback = ViewportCallback {
@@ -1167,7 +1330,8 @@ impl RenderResources {
                 &self.colored_opaque_pipeline,
                 &self.face_mesh_pipeline,
                 &self.line_pipeline,
-                &self.edge_line_pipeline,
+                &self.wide_line_pipeline,
+                &self.wide_edge_line_pipeline,
             ] {
                 pass.set_pipeline(pipeline);
             }
@@ -1183,7 +1347,7 @@ impl RenderResources {
         self.offscreen.as_ref().map(|o| &o.color_texture)
     }
 
-    /// Write the mesh uniforms and the three line uniforms of one frame
+    /// Write the mesh uniforms and the six line uniforms of one frame
     /// (`LineUniforms::frame_set`). `prepare` calls it each frame; a
     /// headless test calls it before `render_headless_frame`.
     #[doc(hidden)]
@@ -1193,26 +1357,22 @@ impl RenderResources {
         mesh: &MeshUniforms,
         lines: LineUniforms,
         edges: EdgeOffset,
+        widths: LineWidths,
     ) {
         queue.write_buffer(&self.mesh_uniform_buffer, 0, bytemuck::bytes_of(mesh));
-        // Plain, dimmed and edge: one camera, written together so the
-        // three can never hold different view matrices.
-        let [plain_lines, dim_lines, edge_lines] = lines.frame_set(edges);
-        queue.write_buffer(
-            &self.line_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&plain_lines),
-        );
-        queue.write_buffer(
-            &self.line_dim_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&dim_lines),
-        );
-        queue.write_buffer(
-            &self.line_edge_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&edge_lines),
-        );
+        // Every line group: one camera, written together so the groups
+        // can never hold different view matrices.
+        let groups = lines.frame_set(edges, widths);
+        for (buffer, uniforms) in [
+            (&self.line_uniform_buffer, &groups.plain),
+            (&self.line_dim_uniform_buffer, &groups.dimmed),
+            (&self.line_edge_uniform_buffer, &groups.edge),
+            (&self.line_edge_wide_uniform_buffer, &groups.edge_wide),
+            (&self.line_selected_uniform_buffer, &groups.selected),
+            (&self.line_hover_uniform_buffer, &groups.hover),
+        ] {
+            queue.write_buffer(buffer, 0, bytemuck::bytes_of(uniforms));
+        }
     }
 
     /// Ensure offscreen render targets exist at the given size.
@@ -1328,6 +1488,8 @@ pub struct ViewportCallback {
     pub show_model_edges: bool,
     /// D4: the move of the model edges toward the eye.
     pub edge_offset: EdgeOffset,
+    /// The viewport facts of the quad lines (D §3.5).
+    pub line_widths: LineWidths,
     pub show_grid: bool,
     pub show_stock: bool,
     /// The one line buffer that carries the obstacles, the alignment pins,
@@ -1411,6 +1573,7 @@ impl ViewportCallback {
             show_model: false,
             show_model_edges: false,
             edge_offset: EdgeOffset::default(),
+            line_widths: LineWidths::default(),
             show_grid: false,
             show_stock: false,
             show_line_marks: false,
@@ -1612,23 +1775,24 @@ impl ViewportCallback {
         }
 
         // D4: the face edges, after every model draw (the reach overlay
-        // too: the edges are geometry, not a colour field). The edge group
-        // moves them toward the eye, so they win the depth test. They
-        // write no depth, so the overlay lines below, on the same group,
-        // draw over them on a shared segment.
+        // too: the edges are geometry, not a colour field). The edge
+        // offset moves them toward the eye, so they win the depth test.
+        // They write no depth, so the overlay lines below, with the same
+        // offset, draw over them on a shared segment. Quads of
+        // `LINE_EDGE_PX` (D §3.5).
         if self.show_model
             && self.show_model_edges
             && let Some(edges) = &resources.model_edge_lines
         {
-            pass.set_pipeline(&resources.edge_line_pipeline);
-            pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
-            pass.set_vertex_buffer(0, edges.vertex_buffer.slice(..));
-            pass.draw(0..edges.vertex_count, 0..1);
+            pass.set_pipeline(&resources.wide_edge_line_pipeline);
+            pass.set_bind_group(0, &resources.line_edge_wide_bind_group, &[]);
+            draw_segments(&mut pass, edges);
         }
 
         // Draw polygon/DXF/SVG lines, the pick highlight of the model edge
         // items and the hover ring. They lie on the faces, so they take the
-        // edge group (the edge offset), as the model edges do.
+        // edge offset, as the model edges do. The drawing stays 1 px
+        // `LineList`; the selection highlight and the hover ring are quads.
         if self.show_polygons {
             pass.set_pipeline(&resources.line_pipeline);
             pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
@@ -1636,20 +1800,24 @@ impl ViewportCallback {
                 pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
                 pass.draw(0..poly_gpu.vertex_count, 0..1);
             }
+            pass.set_pipeline(&resources.wide_line_pipeline);
+            if let Some(selected) = &resources.selection_lines {
+                pass.set_bind_group(0, &resources.line_selected_bind_group, &[]);
+                draw_segments(&mut pass, selected);
+            }
             if let Some(hover) = &resources.hover_lines {
-                pass.set_vertex_buffer(0, hover.vertex_buffer.slice(..));
-                pass.draw(0..hover.vertex_count, 0..1);
+                pass.set_bind_group(0, &resources.line_hover_bind_group, &[]);
+                draw_segments(&mut pass, hover);
             }
         }
 
         // Geometry selection P4.6: the tab marks of the tab editor. The
         // editor is on by an explicit act, so the marks draw with the
-        // curves overlay off too.
+        // curves overlay off too. Quads of `LINE_HOVER_PX`.
         if let Some(tabs) = &resources.tab_lines {
-            pass.set_pipeline(&resources.line_pipeline);
-            pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
-            pass.set_vertex_buffer(0, tabs.vertex_buffer.slice(..));
-            pass.draw(0..tabs.vertex_count, 0..1);
+            pass.set_pipeline(&resources.wide_line_pipeline);
+            pass.set_bind_group(0, &resources.line_hover_bind_group, &[]);
+            draw_segments(&mut pass, tabs);
         }
 
         // Draw collision markers
@@ -1765,6 +1933,13 @@ impl ViewportCallback {
     }
 }
 
+/// Draw a `LineList` buffer as quads: one instance per segment, six
+/// vertices per quad (`vs_wide`). A trailing odd vertex draws nothing.
+fn draw_segments(pass: &mut wgpu::RenderPass<'_>, lines: &PolygonGpuData) {
+    pass.set_vertex_buffer(0, lines.vertex_buffer.slice(..));
+    pass.draw(0..6, 0..lines.vertex_count / 2);
+}
+
 impl egui_wgpu::CallbackTrait for ViewportCallback {
     fn prepare(
         &self,
@@ -1789,6 +1964,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             &self.mesh_uniforms,
             self.line_uniforms,
             self.edge_offset,
+            self.line_widths,
         );
         // Upload the colored mesh uniforms when a colored pipeline draws.
         // The reach overlay draws with `colored_opaque_pipeline` through
@@ -2106,6 +2282,7 @@ struct Uniforms {
     edge_k: f32,
     _pad: f32,
     eye: vec4<f32>,
+    wide: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -2120,20 +2297,77 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
 };
 
-@vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-    // D4: the model edges move toward the eye by max(edge_tol, edge_k * dist^2)
-    // (`EdgeOffset`). edge_tol = 0 for every other line.
-    var p = in.position;
+// D4: the lines on the model move toward the eye by
+// max(edge_tol, edge_k * dist^2) (`EdgeOffset`). edge_tol = 0 for every
+// other line.
+fn moved(position: vec3<f32>) -> vec3<f32> {
+    var p = position;
     if (uniforms.edge_tol > 0.0) {
         let to_eye = uniforms.eye.xyz - p * uniforms.eye.w;
         let dist = length(to_eye);
         let off = max(uniforms.edge_tol, uniforms.edge_k * dist * dist);
         p = p + to_eye / max(dist, 1e-6) * off;
     }
+    return p;
+}
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = uniforms.view_proj * vec4<f32>(p, 1.0);
+    out.clip_position = uniforms.view_proj * vec4<f32>(moved(in.position), 1.0);
     out.color = in.color;
+    return out;
+}
+
+struct SegmentInput {
+    @location(0) a_position: vec3<f32>,
+    @location(1) a_color: vec3<f32>,
+    @location(2) b_position: vec3<f32>,
+    @location(3) b_color: vec3<f32>,
+};
+
+// D §3.5: one segment per instance, six vertices per quad. The quad is
+// `wide.z` physical pixels across in screen space, and each end extends
+// by half the width (a square cap), so a ring closes without a gap.
+@vertex
+fn vs_wide(@builtin(vertex_index) vi: u32, s: SegmentInput) -> VertexOutput {
+    var ends = array<f32, 6>(0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
+    var sides = array<f32, 6>(-1.0, -1.0, 1.0, 1.0, -1.0, 1.0);
+    let t = ends[vi % 6u];
+    let side = sides[vi % 6u];
+    var ca = uniforms.view_proj * vec4<f32>(moved(s.a_position), 1.0);
+    var cb = uniforms.view_proj * vec4<f32>(moved(s.b_position), 1.0);
+    var out: VertexOutput;
+    out.color = select(s.a_color, s.b_color, t > 0.5);
+    // Clip the segment to the front of the eye (w > 0), so the screen
+    // direction is defined. A segment wholly behind the eye draws nothing.
+    let w_min = 1e-5;
+    if (ca.w < w_min && cb.w < w_min) {
+        out.clip_position = vec4<f32>(0.0, 0.0, 2.0, 1.0);
+        return out;
+    }
+    if (ca.w < w_min) {
+        ca = mix(ca, cb, (w_min - ca.w) / (cb.w - ca.w));
+    }
+    if (cb.w < w_min) {
+        cb = mix(cb, ca, (w_min - cb.w) / (ca.w - cb.w));
+    }
+    let half_viewport = uniforms.wide.xy * 0.5;
+    let half_width = uniforms.wide.z * 0.5;
+    let sa = ca.xy / ca.w * half_viewport;
+    let sb = cb.xy / cb.w * half_viewport;
+    var dir = sb - sa;
+    let len = length(dir);
+    if (len > 1e-6) {
+        dir = dir / len;
+    } else {
+        dir = vec2<f32>(1.0, 0.0);
+    }
+    let normal = vec2<f32>(-dir.y, dir.x);
+    let push = normal * side * half_width + dir * (t * 2.0 - 1.0) * half_width;
+    var c = select(ca, cb, t > 0.5);
+    c = vec4<f32>(c.xy + push / half_viewport * c.w, c.z, c.w);
+    out.clip_position = c;
     return out;
 }
 
@@ -2173,17 +2407,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 mod tests {
     use super::*;
 
-    /// The line uniform block is 96 B in Rust; the WGSL struct holds the
+    /// The line uniform block is 112 B in Rust; the WGSL struct holds the
     /// same fields in the same order.
     #[test]
-    fn line_uniforms_are_96_bytes() {
-        assert_eq!(std::mem::size_of::<LineUniforms>(), 96);
+    fn line_uniforms_are_112_bytes() {
+        assert_eq!(std::mem::size_of::<LineUniforms>(), 112);
         for field in [
             "dim: f32,",
             "edge_tol: f32,",
             "edge_k: f32,",
             "_pad: f32,",
             "eye: vec4<f32>,",
+            "wide: vec4<f32>,",
         ] {
             assert!(
                 LINE_SHADER_SRC.contains(field),
@@ -2204,18 +2439,40 @@ mod tests {
             ..LineUniforms::new([[0.0; 4]; 4], [1.0, 2.0, 3.0, 1.0])
         };
         let edges = EdgeOffset::perspective(0.1, 0.1);
-        let [plain, dimmed, edge] = base.frame_set(edges);
+        let widths = LineWidths {
+            viewport_px: [800.0, 600.0],
+            pixels_per_point: 2.0,
+        };
+        let groups = base.frame_set(edges, widths);
+        let (plain, dimmed) = (groups.plain, groups.dimmed);
         assert_eq!((plain.edge_tol, plain.edge_k, plain.dim), (0.0, 0.0, 1.0));
         assert_eq!(
             (dimmed.edge_tol, dimmed.edge_k, dimmed.dim),
             (0.0, 0.0, MOVE_DIM_UNDER_REACH)
         );
-        assert_eq!(
-            (edge.edge_tol, edge.edge_k, edge.dim),
-            (edges.tol, edges.k, 1.0)
-        );
-        assert_eq!(edge.eye, base.eye);
-        assert_eq!(edge.view_proj, base.view_proj);
+        assert_eq!((plain.wide, dimmed.wide), ([0.0; 4], [0.0; 4]));
+        // Every group on the model moves; the quad groups also carry their
+        // width token in physical pixels (points times pixels per point).
+        use crate::ui::tokens::{LINE_EDGE_PX, LINE_HOVER_PX, LINE_SELECTED_PX};
+        for (group, width) in [
+            (groups.edge, 0.0),
+            (groups.edge_wide, LINE_EDGE_PX * 2.0),
+            (groups.selected, LINE_SELECTED_PX * 2.0),
+            (groups.hover, LINE_HOVER_PX * 2.0),
+        ] {
+            assert_eq!(
+                (group.edge_tol, group.edge_k, group.dim),
+                (edges.tol, edges.k, 1.0)
+            );
+            assert_eq!(group.eye, base.eye);
+            assert_eq!(group.view_proj, base.view_proj);
+            let expect = if width > 0.0 {
+                [800.0, 600.0, width, 0.0]
+            } else {
+                [0.0; 4]
+            };
+            assert_eq!(group.wide, expect);
+        }
     }
 
     /// The offset follows the derivation on `EdgeOffset`.

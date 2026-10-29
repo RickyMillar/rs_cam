@@ -189,6 +189,16 @@ pub const INFO: Color32 = ACCENT;
 /// not a measurement: alpha 24 was too faint on the dark scene in the
 /// live look (2026-10-29).
 pub const BOX_FILL: Color32 = Color32::from_rgba_premultiplied(14, 25, 34, 40);
+/// The width of the selection highlight lines in the viewport, in points
+/// (D §3.5 quad lines). A design choice the operator can tune, not a
+/// measurement (live look 2026-10-29: the 1 px lines were too thin).
+pub const LINE_SELECTED_PX: f32 = 2.5;
+/// The width of the hover ring and the tab marks, in points. A design
+/// choice, not a measurement.
+pub const LINE_HOVER_PX: f32 = 2.0;
+/// The width of the STEP face edges, in points. A design choice, not a
+/// measurement.
+pub const LINE_EDGE_PX: f32 = 1.25;
 /// NOT MEASURED. Glyph `—`, and never with a number.
 ///
 /// The most important addition in this section. Today "not measured" is drawn

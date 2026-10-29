@@ -16,10 +16,10 @@
 //!   `line_shader`, `blit_shader`
 //! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
 //!   `blit_bgl`
-//! - 8 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
+//! - 9 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
 //!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
-//!   `line_pipeline`, `edge_line_pipeline` (D4: no depth write),
-//!   `blit_pipeline`
+//!   `line_pipeline`, `wide_line_pipeline` (D §3.5 quads),
+//!   `wide_edge_line_pipeline` (D4: quads, no depth write), `blit_pipeline`
 //!
 //! `app.rs` calls the same function with `render_state.target_format`, and
 //! nothing else in the crate creates a pipeline, a layout, or a shader
@@ -42,7 +42,9 @@
 //! highlight colour must win over the edge and the face on that segment.
 //! Before the fix the edges wrote the depth with their offset, so the
 //! highlight (same segment, no offset) failed the depth test and the
-//! operator saw no highlight on a picked STEP ring.
+//! operator saw no highlight on a picked STEP ring. The highlight is a
+//! quad line of `LINE_SELECTED_PX` (D §3.5): at one pixel per point the
+//! fourth arm reads at least 2 pixels across it.
 //!
 //! ## Not covered
 //!
@@ -86,7 +88,7 @@ use rs_cam_core::geometry::enriched_mesh::{
 use rs_cam_core::ids::ModelId;
 use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
 use rs_cam_viz::render::{
-    EdgeOffset, LineUniforms, LineVertex, MSAA_SAMPLES, MeshUniforms, PolygonGpuData,
+    EdgeOffset, LineUniforms, LineVertex, LineWidths, MSAA_SAMPLES, MeshUniforms, PolygonGpuData,
     RenderResources, scene_sample_count,
 };
 use wgpu::util::DeviceExt;
@@ -409,7 +411,12 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
     };
     let lines = LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]);
     let offset = EdgeOffset { tol: 0.5, k: 0.0 };
-    resources.write_frame_uniforms(&gpu.queue, &mesh, lines, offset);
+    // One pixel per point, so a width token is that many pixels.
+    let widths = LineWidths {
+        viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+        pixels_per_point: 1.0,
+    };
+    resources.write_frame_uniforms(&gpu.queue, &mesh, lines, offset, widths);
 
     let inside = pixel_of(0.25, 0.25);
     let outside = pixel_of(0.9, 0.9);
@@ -448,15 +455,34 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
             color: magenta,
         },
     ];
-    resources
-        .polygon_data
-        .push(line_buffer(&gpu, "g_pipesmoke_highlight", &highlight));
+    resources.selection_lines = Some(line_buffer(&gpu, "g_pipesmoke_highlight", &highlight));
     resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
     let highlight_px = read_pixel(&gpu, &resources, on_edge);
     eprintln!("G-PIPESMOKE pixels: highlight {highlight_px:?}");
     assert!(
         same_colour(highlight_px, magenta),
         "the pick highlight wins over the model edge on a shared segment: {highlight_px:?}"
+    );
+
+    // The width arm: the highlight is a quad of `LINE_SELECTED_PX` (2.5 px
+    // at one pixel per point). The column through the probe holds at least
+    // 2 highlight pixels across the line.
+    let (col, row) = on_edge;
+    let across: Vec<[u8; 4]> = (row.saturating_sub(3)..=row + 3)
+        .map(|r| read_pixel(&gpu, &resources, (col, r)))
+        .collect();
+    let covered = across
+        .iter()
+        .filter(|px| same_colour(**px, magenta))
+        .count();
+    eprintln!(
+        "G-PIPESMOKE width: {covered} highlight pixels across at {} px",
+        rs_cam_viz::ui::tokens::LINE_SELECTED_PX
+    );
+    assert!(
+        covered >= 2,
+        "a {} px line covers at least 2 pixels across: {across:?}",
+        rs_cam_viz::ui::tokens::LINE_SELECTED_PX
     );
 
     assert_no_uncaptured(&uncaptured, "rendering the pixel frames");

@@ -343,8 +343,9 @@ pub fn deviation_color(d: f32) -> [f32; 3] {
 
 // ── Model faces (the face pipeline, D2) ─────────────────────────────────
 
-/// A selected face group (bright blue).
-pub const FACE_SELECTED: Rgb = Rgb::new(0.3, 0.5, 1.0);
+/// A selected face group: the green verdict token `tokens::OK`, the
+/// colour of a cut item (`SELECTION_CUT`; operator, live look 2026-10-29).
+pub const FACE_SELECTED: Rgb = Rgb(SELECTION_CUT);
 /// The hovered face group (soft cyan).
 pub const FACE_HOVER: Rgb = Rgb::new(0.4, 0.7, 0.85);
 

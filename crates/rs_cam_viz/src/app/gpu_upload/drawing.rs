@@ -28,6 +28,7 @@ pub(super) fn upload(
     use egui_wgpu::wgpu::util::DeviceExt;
     let stock = frame.stock();
     resources.polygon_data.clear();
+    resources.selection_lines = None;
 
     // When a drill op is selected, draw its model's drill targets
     // (DXF points / circle centres) as pickable markers — bright when
@@ -361,6 +362,17 @@ pub(super) fn upload(
         };
 
         let mut verts = Vec::new();
+        // The selection highlight (D §3.5): the items the selection takes
+        // (cut and island) draw as quads of `LINE_SELECTED_PX`.
+        let mut selected_verts = Vec::new();
+        let takes = |s: Option<rs_cam_core::session::ItemState>| {
+            matches!(
+                s,
+                Some(
+                    rs_cam_core::session::ItemState::Cut | rs_cam_core::session::ItemState::Island
+                )
+            )
+        };
         // The flashed items draw last, over the rest.
         let mut flash_verts = Vec::new();
         for (index, item) in model.items.iter().enumerate() {
@@ -382,6 +394,8 @@ pub(super) fn upload(
                 };
                 let out = if is_flashed {
                     &mut flash_verts
+                } else if takes(item_state) {
+                    &mut selected_verts
                 } else {
                     &mut verts
                 };
@@ -399,6 +413,8 @@ pub(super) fn upload(
             };
             let out = if is_flashed {
                 &mut flash_verts
+            } else if takes(item_state) {
+                &mut selected_verts
             } else {
                 &mut verts
             };
@@ -579,7 +595,19 @@ pub(super) fn upload(
                 }
             }
         }
-        verts.append(&mut flash_verts);
+        selected_verts.append(&mut flash_verts);
+        if !selected_verts.is_empty() {
+            resources.selection_lines = Some(PolygonGpuData {
+                vertex_buffer: gpu.device.create_buffer_init(
+                    &egui_wgpu::wgpu::util::BufferInitDescriptor {
+                        label: Some("selection_lines"),
+                        contents: bytemuck::cast_slice(&selected_verts),
+                        usage: egui_wgpu::wgpu::BufferUsages::VERTEX,
+                    },
+                ),
+                vertex_count: selected_verts.len() as u32,
+            });
+        }
 
         // Drill hole markers for the active drill op's model. With
         // the selection states on, the item states colour the holes
