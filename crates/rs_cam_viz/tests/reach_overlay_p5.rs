@@ -385,3 +385,175 @@ fn the_legend_strip_names_the_tip_radius_r7() {
         "a ramp that is not the surface's keeps the plain label"
     );
 }
+
+/// The stepped block with its vertices welded by position: one vertex set
+/// for the whole solid, as an STL loads. A wall then shares indices with
+/// the faces it meets, which is the case the copies are for.
+fn welded(mesh: &TriangleMesh) -> TriangleMesh {
+    use std::collections::HashMap;
+    let mut index_of: HashMap<[u64; 3], u32> = HashMap::new();
+    let mut vertices = Vec::new();
+    let remap: Vec<u32> = mesh
+        .vertices
+        .iter()
+        .map(|p| {
+            *index_of
+                .entry([p.x.to_bits(), p.y.to_bits(), p.z.to_bits()])
+                .or_insert_with(|| {
+                    vertices.push(*p);
+                    (vertices.len() - 1) as u32
+                })
+        })
+        .collect();
+    let triangles = mesh
+        .triangles
+        .iter()
+        .map(|t| {
+            [
+                remap[t[0] as usize],
+                remap[t[1] as usize],
+                remap[t[2] as usize],
+            ]
+        })
+        .collect();
+    TriangleMesh::from_raw(vertices, triangles)
+}
+
+/// The round 7c checks on one mesh: every vertex of a not-up-facing
+/// triangle has the model material, no up-facing triangle shares a vertex
+/// with a not-up-facing one, and the up-facing set has no crack. Returns
+/// the surface for the caller's own non-vacuity checks.
+fn assert_walls_are_grey(
+    label: &str,
+    mesh: &TriangleMesh,
+    radius: f64,
+) -> rs_cam_viz::state::runtime::ReachSurface {
+    use rs_cam_viz::render::colors::MODEL_SURFACE;
+    use rs_cam_viz::state::runtime::{reach_overlay_surface, reach_up_facing};
+    use std::collections::{HashMap, HashSet};
+
+    let index = SpatialIndex::build_auto(mesh);
+    let cutter = BallEndmill::new(2.0 * radius, 25.0);
+    let cell = rs_cam_core::maps::reach_map::ReachMapParams::for_cutter(&cutter, 0.01).cell_mm;
+    let map = reach_map_for_mesh(mesh, &cutter, 0.01, cell);
+    let surface = reach_overlay_surface(&map, mesh, &index, radius);
+    let refined = surface
+        .refined_mesh(mesh)
+        .unwrap_or_else(|| panic!("{label}: the surface must replay on its own mesh"));
+    assert_eq!(surface.colors.len(), refined.vertices.len(), "{label}");
+    let up = |t: &[u32; 3]| {
+        let v = |i: u32| refined.vertices[i as usize];
+        reach_up_facing(v(t[0]), v(t[1]), v(t[2]))
+    };
+    let (up_tris, wall_tris): (Vec<[u32; 3]>, Vec<[u32; 3]>) =
+        refined.triangles.iter().partition(|t| up(t));
+    eprintln!(
+        "r7c {label}: {} vertices, {} up-facing triangles, {} not up-facing, {} copied vertices",
+        mesh.vertices.len(),
+        up_tris.len(),
+        wall_tris.len(),
+        surface.copies.len()
+    );
+    assert!(
+        !up_tris.is_empty() && !wall_tris.is_empty(),
+        "{label}: non-vacuity: the block has faces and walls"
+    );
+    let wall_vertices: HashSet<u32> = wall_tris.iter().flatten().copied().collect();
+    let up_vertices: HashSet<u32> = up_tris.iter().flatten().copied().collect();
+    for &i in &wall_vertices {
+        assert_eq!(
+            surface.colors[i as usize],
+            MODEL_SURFACE.array(),
+            "{label}: the not-up-facing vertex {i} carries a measured colour"
+        );
+    }
+    let shared = wall_vertices.intersection(&up_vertices).count();
+    assert_eq!(
+        shared, 0,
+        "{label}: {shared} vertices are shared by an up-facing and a not-up-facing triangle"
+    );
+    // No crack in the up-facing set: each edge that one up-facing triangle
+    // only uses is the rim of a face, so a wall triangle has the same edge
+    // by position. A T-junction between two faces fails this.
+    let bits = |i: u32| {
+        let p = refined.vertices[i as usize];
+        [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]
+    };
+    let edges = |tris: &[[u32; 3]]| {
+        let mut uses: HashMap<[[u64; 3]; 2], usize> = HashMap::new();
+        for t in tris {
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                let (a, b) = (bits(a), bits(b));
+                let key = if a <= b { [a, b] } else { [b, a] };
+                *uses.entry(key).or_default() += 1;
+            }
+        }
+        uses
+    };
+    let up_edges = edges(&up_tris);
+    let wall_edges = edges(&wall_tris);
+    let rim: Vec<_> = up_edges.iter().filter(|(_, n)| **n == 1).collect();
+    assert!(
+        !rim.is_empty(),
+        "{label}: non-vacuity: the faces have a rim"
+    );
+    let cracks = rim
+        .iter()
+        .filter(|(key, _)| !wall_edges.contains_key(*key))
+        .count();
+    assert_eq!(
+        cracks, 0,
+        "{label}: {cracks} open edges of the up-facing set meet no wall edge: a crack"
+    );
+    assert_eq!(
+        open_edges(&refined),
+        0,
+        "{label}: an edge is open: a copy must sit at its source position"
+    );
+    surface
+}
+
+/// Round 7c (evidence/20_round7_reach_as_found.png): a wall showed a colour
+/// gradient. A wall vertex on the top edge of a wall sits at the position
+/// of a measured face vertex, so it took the measured colour (by position
+/// on a STEP mesh, by a shared index on an STL), and the GPU interpolated
+/// it down the wall. Each not-up-facing triangle now has its own vertices
+/// in the model material, and the up-facing set has no crack.
+#[test]
+fn a_wall_takes_no_measured_colour_r7c() {
+    use rs_cam_viz::render::colors::MODEL_SURFACE;
+    use rs_cam_viz::state::runtime::reach_up_facing;
+
+    let (mesh, index, map, radius) = stepped_block_map();
+    // Non-vacuity (the root cause): without the split, some vertex of a
+    // not-up-facing triangle takes a measured colour.
+    let surface = rs_cam_viz::state::runtime::reach_overlay_surface(&map, &mesh, &index, radius);
+    let refined = surface
+        .refined_mesh(&mesh)
+        .unwrap_or_else(|| panic!("the surface must replay on its own mesh"));
+    let refined_index = SpatialIndex::build_auto(&refined);
+    let unsplit = reach_overlay_colors(&map, &refined, &refined_index, surface.ramp);
+    let v = |i: u32| refined.vertices[i as usize];
+    let measured_wall_vertex = refined
+        .triangles
+        .iter()
+        .filter(|t| !reach_up_facing(v(t[0]), v(t[1]), v(t[2])))
+        .flatten()
+        .any(|&i| unsplit[i as usize] != MODEL_SURFACE.array());
+    assert!(
+        measured_wall_vertex,
+        "non-vacuity: some wall vertex must take a measured colour without the split"
+    );
+
+    assert_walls_are_grey("STEP block", &mesh, radius);
+    let welded = welded(&mesh);
+    assert!(
+        welded.vertices.len() < mesh.vertices.len(),
+        "non-vacuity: the weld must merge vertices"
+    );
+    let surface = assert_walls_are_grey("welded block", &welded, radius);
+    assert!(
+        !surface.copies.is_empty(),
+        "non-vacuity: on the welded block a wall shares vertices with a face"
+    );
+}

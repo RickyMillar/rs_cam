@@ -602,6 +602,13 @@ impl Default for ReachOverlayState {
 /// replays it on the DRAWN mesh ([`Self::refined_mesh`]): the display
 /// transform is affine, and an affine map keeps midpoints. So the measured
 /// frame and the display frame need not be the same.
+///
+/// Round 7c: a triangle that is not up-facing (a wall, an underside) is
+/// not measured. It must not share a vertex with a measured triangle, or
+/// the GPU interpolates the measured colour across the wall. So each
+/// vertex that both kinds use gets a copy for the not-up-facing triangles
+/// ([`Self::copies`]), coloured `colors::MODEL_SURFACE`. The upload replays
+/// the copies after the midpoints.
 #[derive(Debug, Clone)]
 pub struct ReachSurface {
     /// The vertex count of the mesh the map was measured on.
@@ -609,6 +616,12 @@ pub struct ReachSurface {
     /// Each added vertex, in order: the midpoint of two earlier vertices.
     /// Added vertex `k` has the index `base_vertices + k`.
     pub midpoints: Vec<[u32; 2]>,
+    /// Each copied vertex, in order: a copy of an earlier vertex (round 7c).
+    /// Copy `k` has the index `base_vertices + midpoints.len() + k`. Only
+    /// the not-up-facing triangles use a copy; only the up-facing ones use
+    /// its source. The count is at most the vertex count before the copies,
+    /// so [`reach_refine_budget`] does not count it.
+    pub copies: Vec<u32>,
     /// The refined triangles, with the winding of the triangles they split.
     pub triangles: Vec<[u32; 3]>,
     /// One colour per refined vertex ([`reach_overlay_colors`]).
@@ -638,14 +651,25 @@ impl ReachSurface {
             return None;
         }
         let mut vertices = mesh.vertices.clone();
-        vertices.reserve(self.midpoints.len());
+        vertices.reserve(self.midpoints.len() + self.copies.len());
         for &[a, b] in &self.midpoints {
             let a = *vertices.get(a as usize)?;
             let b = *vertices.get(b as usize)?;
             vertices.push(midpoint(a, b));
         }
+        for &source in &self.copies {
+            let p = *vertices.get(source as usize)?;
+            vertices.push(p);
+        }
         Some(TriangleMesh::from_raw(vertices, self.triangles.clone()))
     }
+}
+
+/// True when the triangle `a, b, c` faces up (normal Z > 0): the core's
+/// population rule. The refinement and the wall split read this one test.
+#[must_use]
+pub fn reach_up_facing(a: P3, b: P3, c: P3) -> bool {
+    (b - a).cross(&(c - a)).z > 0.0
 }
 
 fn midpoint(a: P3, b: P3) -> P3 {
@@ -764,7 +788,7 @@ fn refine_to_cell(
             ) else {
                 continue;
             };
-            if (b - a).cross(&(c - a)).z <= 0.0 {
+            if !reach_up_facing(a, b, c) {
                 continue;
             }
             for (p, q) in [(a, b), (b, c), (c, a)] {
@@ -884,16 +908,18 @@ pub fn reach_overlay_surface(
             "reach overlay refinement stopped at its vertex budget; the colours are coarser than the cell in places"
         );
     }
-    let colors = if midpoints.is_empty() {
+    let mut colors = if midpoints.is_empty() {
         reach_overlay_colors(map, mesh, index, ramp)
     } else {
-        let refined = TriangleMesh::from_raw(vertices, triangles.clone());
+        let refined = TriangleMesh::from_raw(vertices.clone(), triangles.clone());
         let refined_index = SpatialIndex::build_auto(&refined);
         reach_overlay_colors(map, &refined, &refined_index, ramp)
     };
+    let (copies, triangles) = split_unmeasured(&vertices, triangles, &mut colors);
     ReachSurface {
         base_vertices: mesh.vertices.len(),
         midpoints,
+        copies,
         triangles,
         colors,
         ramp,
@@ -901,6 +927,66 @@ pub fn reach_overlay_surface(
         tip_relative: tip_scale_applies(map, tip_radius_mm),
         budget_hit,
     }
+}
+
+/// Give the not-up-facing triangles their own vertices, coloured
+/// `colors::MODEL_SURFACE` (round 7c): `(copies, triangles)`.
+///
+/// A wall triangle that shares a vertex with a measured (up-facing)
+/// triangle takes that vertex's measured colour, and the GPU interpolates
+/// it across the whole wall. Each vertex that both kinds use gets ONE copy,
+/// which the not-up-facing triangles share; a vertex that only
+/// not-up-facing triangles use keeps its index. Both take the model
+/// material. `colors` gains one entry per copy. A triangle with a corner
+/// out of range keeps its indices, as the refinement leaves it.
+fn split_unmeasured(
+    vertices: &[P3],
+    mut triangles: Vec<[u32; 3]>,
+    colors: &mut Vec<[f32; 3]>,
+) -> (Vec<u32>, Vec<[u32; 3]>) {
+    let grey = crate::render::colors::MODEL_SURFACE.array();
+    let corners = |tri: &[u32; 3]| -> Option<[P3; 3]> {
+        Some([
+            *vertices.get(tri[0] as usize)?,
+            *vertices.get(tri[1] as usize)?,
+            *vertices.get(tri[2] as usize)?,
+        ])
+    };
+    let measured_tri =
+        |tri: &[u32; 3]| corners(tri).is_some_and(|[a, b, c]| reach_up_facing(a, b, c));
+    let mut used_by_measured = vec![false; vertices.len()];
+    for tri in triangles.iter().filter(|tri| measured_tri(tri)) {
+        for &i in tri {
+            if let Some(slot) = used_by_measured.get_mut(i as usize) {
+                *slot = true;
+            }
+        }
+    }
+    let mut copies: Vec<u32> = Vec::new();
+    let mut copy_of: HashMap<u32, u32> = HashMap::new();
+    for tri in &mut triangles {
+        if corners(tri).is_none() || measured_tri(tri) {
+            continue;
+        }
+        for index in tri.iter_mut() {
+            let source = *index;
+            if used_by_measured
+                .get(source as usize)
+                .copied()
+                .unwrap_or(false)
+            {
+                *index = *copy_of.entry(source).or_insert_with(|| {
+                    let copy = (vertices.len() + copies.len()) as u32;
+                    copies.push(source);
+                    copy
+                });
+            } else if let Some(color) = colors.get_mut(source as usize) {
+                *color = grey;
+            }
+        }
+    }
+    colors.extend(std::iter::repeat_n(grey, copies.len()));
+    (copies, triangles)
 }
 
 /// The scale and floor note of the reach overlay, in tool units: where the
@@ -923,8 +1009,11 @@ pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
     } else {
         String::new()
     };
+    // Round 7c: the grey margin round each face is the rim band the map
+    // abstains on (`ReachMap::rim_erosion_mm`), not a rendering gap.
+    let rim = map.rim_erosion_mm;
     format!(
-        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a reported gap under the floor is discretisation, not geometry"
+        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a reported gap under the floor is discretisation, not geometry \u{00B7} grey: not measured (walls, undersides, and the rim band {rim:.2} mm wide)"
     )
 }
 

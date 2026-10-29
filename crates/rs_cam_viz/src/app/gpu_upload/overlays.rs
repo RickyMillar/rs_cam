@@ -307,7 +307,9 @@ impl SlotInputs for ReachInputs<'_> {
 /// ORDER is preserved. The refinement is a list of midpoints of vertex
 /// pairs (`ReachSurface::refined_mesh`), and an affine map keeps a
 /// midpoint, so the refined drawn mesh is the image of the refined measured
-/// mesh: colour `i` belongs to drawn vertex `i`. The two frames'
+/// mesh: colour `i` belongs to drawn vertex `i`. The wall copies (round
+/// 7c, `ReachSurface::copies`) replay after the midpoints at the position
+/// of their source, so the same holds for them. The two frames'
 /// COORDINATES differ on an identity setup with a non-zero stock origin;
 /// the ordering does not. The vertex-count check is the tripwire if that
 /// ever stops holding.
