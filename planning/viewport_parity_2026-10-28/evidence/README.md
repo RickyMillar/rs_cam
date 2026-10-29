@@ -14,3 +14,5 @@ through the MCP proxy (`screenshot_gui`, 1400x900).
 | `11_round2_build_face_selected.png` | The round-2 build (712c7bf24): the picked middle face in blue, dark face edges, the accent outline on its silhouette, the green part outline at the base. |
 | `12_round3_material_headlight.png` | The round-3 build (4c80e5585): one neutral material under the camera headlight, dark face edges, the picked face blue, no height planes while the Geometry tab is open. Compare with 11. |
 | `13_declutter_bar.png` | The declutter build (f8b6e4045): the six-control bar (display mode, Grid, Stock Off/Box/Solid, Cutting moves, Rapids, Collisions) and More; the legend sits above the bar at 1400 pt. |
+| `14_profile_picked_face_as_ring.png` | Round 4 build (24aa5bf8f): the Profile is in pick mode at once (the compact pick bar, no Pick press; `get_ui_view` reported the pick after `set_ui_view toolpath_index`), and its picked face shows as the green ring. |
+| `15_pocket_picked_face_as_fill.png` | The same face picked on a Pocket: the blue fill. The Fill/Ring rule follows the op's item use. |
