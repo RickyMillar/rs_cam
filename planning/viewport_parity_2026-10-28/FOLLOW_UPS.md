@@ -52,6 +52,9 @@ that pass:
   sounds good"); built from `DOCK_DECLUTTER.md` with the obvious answers to
   its four questions (Collisions on the bar everywhere, a three-way Stock
   control, Entry markers in More, More only).
+- Two STL flat faces with the same XY footprint at two heights share one
+  `MatchKey` (an STL face key holds no Z): a pick of one names both. Found by
+  the sel5 test fixture (2026-10-29); the key needs the plane Z for STL faces.
 - Materials and a lighting ruling beyond the headlight (a material table
   per model, imported STEP colours) are a later pass.
 
