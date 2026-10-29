@@ -1012,6 +1012,45 @@ fn face_faces_down() {
     );
 }
 
+/// R6a (operator ruling 2026-10-30): a Profile reads a face as its ring,
+/// so the same down face gives no refusal: the status and generation
+/// both keep it. The Pocket above keeps its refusal.
+#[test]
+fn a_profile_keeps_a_down_face_r6a() {
+    let mut s = single_op_session_with(
+        step_stock(),
+        endmill_tool_config(TOOL_DIAMETER),
+        step_part(),
+        "p2_4 profile",
+        OperationConfig::Profile(rs_cam_core::compute::operation_configs::ProfileConfig {
+            floor: Floor::EachFace { depth: 0.0 },
+            ..Default::default()
+        }),
+        |_| {},
+    );
+    pick_faces(&mut s, 0, &[0]).unwrap();
+    let _ = s
+        .apply(Command::SetSetupFace(SetSetupFaceArgs {
+            setup_index: 0,
+            face_up: FaceUp::Bottom,
+        }))
+        .unwrap();
+    let tc = s.toolpath_configs()[0].clone();
+    let report = s
+        .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
+        .unwrap();
+    assert_eq!(
+        report.refusal.as_ref().map(ToString::to_string),
+        None,
+        "a Profile keeps a down face"
+    );
+    assert_eq!(report.faces_by_facing.down, 1);
+    let cancel = AtomicBool::new(false);
+    if let Err(e) = s.generate_toolpath(0, &cancel) {
+        panic!("generation refused: {e}");
+    }
+}
+
 // ── The floor "each picked face" (geometry selection P3.5) ───────────
 
 /// Set the floor of toolpath 0 through the `SetToolpathFloor` door.
@@ -1244,6 +1283,7 @@ fn faces_not_ready() {
             mesh_faces: &cold,
             item_use: ItemUse::Regions,
             outline_use: rs_cam_core::compute::catalog::OutlineUse::Refuse,
+            down_faces: rs_cam_core::selection::DownFaces::Refuse,
         },
     );
     let r = view(&resolved, ItemUse::Regions)

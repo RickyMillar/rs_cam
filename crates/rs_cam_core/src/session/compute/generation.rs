@@ -888,6 +888,7 @@ impl ProjectSession {
                 (
                     super::super::selection_status::BOUNDARY_ITEM_USE,
                     super::super::selection_status::BOUNDARY_OUTLINE_USE,
+                    super::super::selection_status::BOUNDARY_DOWN_FACES,
                 ),
             )
             .map_err(|e| refuse(e.to_string()))?

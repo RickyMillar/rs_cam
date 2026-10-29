@@ -953,6 +953,33 @@ impl OperationConfig {
         }
     }
 
+    /// R6a (operator ruling 2026-10-30, "facing down shouldn't really be
+    /// an issue"): what this op does with a picked face that points down
+    /// in the setup. THE answer; `selection::view` reads it from the
+    /// resolution. It follows [`Self::face_feedback`]:
+    ///
+    /// - a ring reader keeps the face and cuts its outline at the face
+    ///   plane Z (a Profile on every side, Trace, Project Curve);
+    /// - a fill reader refuses `FaceFacesDown`: a fill needs a top to
+    ///   stand on;
+    /// - an edge reader (Chamfer, `ItemUse::Edges`) refuses too, although
+    ///   it lights the ring: a bevel needs the material below the edge
+    ///   (R-C, SAFETY).
+    pub fn down_faces(&self) -> crate::selection::DownFaces {
+        use crate::selection::DownFaces;
+        match (self.face_feedback(), self.capabilities().item_use) {
+            (FaceFeedback::Fill, _) | (FaceFeedback::Ring, ItemUse::Edges) => DownFaces::Refuse,
+            (
+                FaceFeedback::Ring,
+                ItemUse::Regions
+                | ItemUse::RegionsExtendOpen { .. }
+                | ItemUse::Curves
+                | ItemUse::Holes { .. }
+                | ItemUse::None,
+            ) => DownFaces::Keep,
+        }
+    }
+
     /// R-A: true when a Profile Outside on the part outline frees the part
     /// from the stock: no tab (no automatic tab, no hand tab) and a floor
     /// at or below the model bottom (`Floor::ModelBottom` with a depth of

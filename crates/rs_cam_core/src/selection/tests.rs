@@ -119,6 +119,7 @@ fn resolve_in(
             // (R-C); these tests view the Q3 default.
             item_use: ItemUse::Regions,
             outline_use: crate::compute::catalog::OutlineUse::PickOnly,
+            down_faces: super::DownFaces::Refuse,
         },
     )
 }

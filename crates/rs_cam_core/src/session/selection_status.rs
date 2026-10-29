@@ -67,10 +67,10 @@ use crate::geometry::enriched_mesh::FaceGroupId;
 use crate::ids::{ModelId, ToolpathId};
 use crate::selection::hole_fit::DrillSize;
 use crate::selection::{
-    FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, HoleFitRule, ItemError,
-    ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame, OpItems,
-    RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit, SelectionNote,
-    SelectionRefusal, SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
+    DownFaces, FLAT_REGION_Z_BAND_MM, FacesByFacing, Hole, HoleDepth, HoleFit, HoleFitRule,
+    ItemError, ItemKind, ItemRef, ItemRole, ItemSet, MatchKey, MatchedBy, MeshFaces, ModelFrame,
+    OpItems, RefusalCause, ResolveScope, ResolvedSelection, Selection, SelectionEdit,
+    SelectionNote, SelectionRefusal, SetupFrame, Shape, SourceRef, fit_holes, hole_fit,
 };
 use crate::session::{LoadedModel, ProjectSession, SessionError, ToolpathConfig};
 
@@ -134,15 +134,24 @@ pub const BOUNDARY_ITEM_USE: ItemUse = ItemUse::Regions;
 /// outline of the part is a valid machining boundary).
 pub const BOUNDARY_OUTLINE_USE: OutlineUse = OutlineUse::PickOnly;
 
-/// The item use and the outline use (R-A) of the reader of the selection
-/// `target` of `tc`: the op, or the boundary.
-pub(crate) fn target_uses(tc: &ToolpathConfig, target: SelectionTarget) -> (ItemUse, OutlineUse) {
+/// R6a: what a boundary selection does with a face that points down in
+/// the setup: it keeps the outline (geometry selection P3.4, DESIGN 6
+/// rule 4; `selection::view_boundary`).
+pub const BOUNDARY_DOWN_FACES: DownFaces = DownFaces::Keep;
+
+/// The item use, the outline use (R-A) and the down-face answer (R6a) of
+/// the reader of the selection `target` of `tc`: the op, or the boundary.
+pub(crate) fn target_uses(
+    tc: &ToolpathConfig,
+    target: SelectionTarget,
+) -> (ItemUse, OutlineUse, DownFaces) {
     match target {
         SelectionTarget::Op => (
             tc.operation.capabilities().item_use,
             tc.operation.outline_use(),
+            tc.operation.down_faces(),
         ),
-        SelectionTarget::Boundary => (BOUNDARY_ITEM_USE, BOUNDARY_OUTLINE_USE),
+        SelectionTarget::Boundary => (BOUNDARY_ITEM_USE, BOUNDARY_OUTLINE_USE, BOUNDARY_DOWN_FACES),
     }
 }
 
@@ -270,8 +279,8 @@ pub struct SelectionReport {
     pub counts: BTreeMap<ItemKind, usize>,
     /// The faces of the selection that the reader uses, by facing in the
     /// SETUP frame (geometry selection P3.4): up and down. `counts` holds
-    /// the total of the faces; an op refuses a down face
-    /// (`FaceFacesDown`), and a boundary keeps it.
+    /// the total of the faces; a fill op refuses a down face
+    /// (`FaceFacesDown`), and a ring op (R6a) and a boundary keep it.
     pub faces_by_facing: FacesByFacing,
     /// The islands of the closed areas that the op cuts (the inner rings
     /// after containment). 0 for an op that cuts no closed area, and when
@@ -562,16 +571,17 @@ impl ProjectSession {
     ///
     /// P4.7: when `spec` names a face, each mesh model it reads resolves
     /// against its flat-region faces ([`Self::mesh_faces_of`]); `faces`
-    /// says whether a cold cache builds. `(item_use, outline_use)` is the
-    /// use of the reader: the default rule reads it on a model edge item
-    /// (R-C) and on the part outline (R-A).
+    /// says whether a cold cache builds. `(item_use, outline_use,
+    /// down_faces)` is the use of the reader: the default rule reads it on
+    /// a model edge item (R-C) and on the part outline (R-A); `view` reads
+    /// the down-face answer (R6a).
     pub(crate) fn resolve_spec_frames(
         &self,
         tc: &ToolpathConfig,
         spec: &Selection,
         ctx: &SetupEvalContext,
         faces: FaceAccess,
-        (item_use, outline_use): (ItemUse, OutlineUse),
+        (item_use, outline_use, down_faces): (ItemUse, OutlineUse, DownFaces),
     ) -> Result<SelectionFrames, ItemError> {
         let mesh_faces = self.mesh_faces_of(tc, spec, faces);
         let resolved = crate::selection::resolve(
@@ -584,6 +594,7 @@ impl ProjectSession {
                 mesh_faces: &mesh_faces,
                 item_use,
                 outline_use,
+                down_faces,
             },
         );
         let setup = resolved
@@ -966,8 +977,9 @@ impl ProjectSession {
             resolution_states(&mut report, None, &[]);
             return Ok(report);
         }
-        // P3.4: a boundary keeps a down face (its outline); an op refuses
-        // it. Each reads the view that its generation reads.
+        // P3.4: a boundary keeps a down face (its outline); an op follows
+        // `OperationConfig::down_faces` (R6a). Each reads the view that its
+        // generation reads.
         let viewed = match target {
             // R-A: the "frees the part" note by the prologue rule.
             SelectionTarget::Op => {
@@ -2282,7 +2294,7 @@ impl StatusKey {
         target: SelectionTarget,
         ctx: &SetupEvalContext,
     ) -> Option<Self> {
-        let (item_use, outline_use) = target_uses(tc, target);
+        let (item_use, outline_use, _) = target_uses(tc, target);
         let spec = tc.selection_of(target).ok()?;
         // UX-8: the face key of the floor "A picked face" resolves as a
         // one-pick selection, so its model's flat faces are a key part too.

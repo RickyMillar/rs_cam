@@ -489,11 +489,13 @@ pub enum RefusalCause {
     /// item), or a Face item that the setup turns on its side (the item
     /// names it).
     FaceNotFlat { face: Option<FaceGroupId> },
-    /// A face in the closed areas of an op that points down in the setup
-    /// frame (geometry selection P3.4, lead ruling L-9). Its material is
-    /// above its plane, so the tool cannot stand on it and its plane is not
-    /// a floor. The same face points up in a flipped setup and cuts there.
-    /// A machining boundary keeps a down face (`view_boundary`).
+    /// A face in the closed areas of a fill op (or the edges of a Chamfer)
+    /// that points down in the setup frame (geometry selection P3.4, lead
+    /// ruling L-9). Its material is above its plane, so the tool cannot
+    /// stand on it and its plane is not a floor. The same face points up in
+    /// a flipped setup and cuts there. A machining boundary
+    /// (`view_boundary`) and a ring op (a Profile, R6a,
+    /// `OperationConfig::down_faces`) keep a down face.
     FaceFacesDown,
     /// The floor of the op is "each picked face" (geometry selection P3.5),
     /// and the exterior of one of its closed areas is not a face: a loop, a

@@ -63,6 +63,10 @@ pub struct ResolveScope<'a> {
     /// it (`rule::served_by_default`) and `view` refuses a named outline
     /// under `OutlineUse::Refuse`.
     pub outline_use: crate::compute::catalog::OutlineUse,
+    /// R6a: what `view` does with a face that points down in the setup
+    /// frame (`OperationConfig::down_faces`; the boundary reads
+    /// `selection_status::BOUNDARY_DOWN_FACES`).
+    pub down_faces: super::DownFaces,
 }
 
 /// The flat-region face items of one mesh model (geometry selection P4.7),
@@ -246,6 +250,8 @@ pub struct ResolvedSelection<F: SelectionFrame> {
     rims_off_default: Vec<MatchKey>,
     /// R-A: the outline use of the reader (`ResolveScope::outline_use`).
     outline_use: crate::compute::catalog::OutlineUse,
+    /// R6a: the down-face answer of the reader (`ResolveScope::down_faces`).
+    down_faces: super::DownFaces,
     frame: PhantomData<F>,
 }
 
@@ -292,6 +298,8 @@ impl ResolvedSelection<SetupFrame> {
             rims_off_default: Vec::new(),
             // A hand-built list holds no part outline.
             outline_use: crate::compute::catalog::OutlineUse::PickOnly,
+            // A hand-built list holds no face of a model.
+            down_faces: super::DownFaces::Refuse,
             frame: PhantomData,
         }
     }
@@ -389,6 +397,12 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
         self.outline_use
     }
 
+    /// R6a: what `view` does with a face that points down in the setup
+    /// frame, for the reader of this selection.
+    pub fn down_faces(&self) -> super::DownFaces {
+        self.down_faces
+    }
+
     /// F29: the keys of the convex top circular edges that a default rule
     /// saw and did not take, in the model frame.
     pub fn rims_off_default(&self) -> &[MatchKey] {
@@ -446,6 +460,7 @@ impl<F: SelectionFrame> ResolvedSelection<F> {
             upright: self.upright,
             rims_off_default: self.rims_off_default,
             outline_use: self.outline_use,
+            down_faces: self.down_faces,
             frame: PhantomData,
         }
     }
@@ -867,6 +882,7 @@ pub fn resolve(sel: &Selection, scope: &ResolveScope<'_>) -> ResolvedSelection<M
         upright: true,
         rims_off_default,
         outline_use: scope.outline_use,
+        down_faces: scope.down_faces,
         frame: PhantomData,
     }
 }

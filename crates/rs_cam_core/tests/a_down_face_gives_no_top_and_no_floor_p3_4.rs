@@ -19,7 +19,11 @@
 //!    face and the fix. The report counts the face as down.
 //! 4. Bottom setup: the same face points up, and the Pocket cuts from its
 //!    setup-frame Z. The report counts the face as up.
-//! 5. `--features step`: the STEP door gives each flat face the normal that
+//! 5. R6a (operator ruling 2026-10-30): a Profile reads a face as its
+//!    ring, so it keeps the down face on a Top setup. The status gives no
+//!    refusal and the row holds the face plane Z; under the floor "each
+//!    picked face" generation cuts the outline down to that plane.
+//! 6. `--features step`: the STEP door gives each flat face the normal that
 //!    points out of the solid (`io::brep_face_items`). Two fixtures
 //!    tessellate inward; before the fix their top faces read down.
 //!
@@ -58,7 +62,7 @@ use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::compute::config::{
     BoundaryConfig, BoundaryContainment, BoundarySource, HeightMode,
 };
-use rs_cam_core::compute::operation_configs::{DropCutterConfig, PocketConfig};
+use rs_cam_core::compute::operation_configs::{DropCutterConfig, PocketConfig, ProfileConfig};
 use rs_cam_core::compute::transform::FaceUp;
 use rs_cam_core::geo::{P3, V3};
 use rs_cam_core::geometry::enriched_mesh::{
@@ -365,6 +369,34 @@ fn a_pocket_pick_of_the_down_face_refuses_on_a_top_setup() {
             "faces {faces:?}"
         );
     }
+}
+
+/// R6a: a Profile keeps the down face (a ring reader), where the Pocket
+/// above refuses it (a fill reader).
+#[test]
+fn a_profile_keeps_the_down_face_on_a_top_setup_r6a() {
+    let op = OperationConfig::Profile(ProfileConfig {
+        floor: rs_cam_core::compute::floor::Floor::EachFace { depth: 0.0 },
+        depth_per_pass: POCKET_DEPTH,
+        ..ProfileConfig::default()
+    });
+    let mut s = session_with(op, BoundaryConfig::default(), FaceUp::Top);
+    pick_faces_in(&mut s, 0, SelectionTarget::Op, &[DOWN_FACE]).unwrap();
+    let (facing, refusal) = status(&s, SelectionTarget::Op);
+    assert_eq!(refusal, None, "a Profile keeps a down face");
+    assert_eq!(facing, FacesByFacing { up: 0, down: 1 });
+    let tc = s.toolpath_configs()[0].clone();
+    let report = s.selection_status(&tc, SelectionTarget::Op).unwrap();
+    let plane_z = report.rows[0].plane_z.expect("a face row holds its plane");
+    assert!(
+        (plane_z - DOWN_FACE_Z).abs() < EPS,
+        "the row plane Z is {plane_z}, want {DOWN_FACE_Z}"
+    );
+    let low = lowest_cut_z(&mut s);
+    assert!(
+        (low - DOWN_FACE_Z).abs() < EPS,
+        "the Profile floor is {low}, want the down face plane {DOWN_FACE_Z}"
+    );
 }
 
 #[test]

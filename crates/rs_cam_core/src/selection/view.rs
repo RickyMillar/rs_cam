@@ -482,8 +482,10 @@ impl OpItems {
 /// 4. An item the user named and the op cannot cut (`KindNotCut`), or a
 ///    face that is not flat and horizontal in the frame of the selection
 ///    (`FaceNotFlat`; call `view` after the frame door), or a face in the
-///    closed areas of the op that points down in the setup frame
-///    (`FaceFacesDown`, P3.4).
+///    closed areas or the edges of the op that points down in the setup
+///    frame (`FaceFacesDown`, P3.4), when the op refuses a down face
+///    ([`DownFaces::Refuse`], from `ResolvedSelection::down_faces`). A
+///    Profile reads a face as its ring and keeps a down face (R6a).
 /// 5. Nothing left to cut (`Empty`), unless the op may be empty. `Empty`
 ///    names the skipped items of every kind.
 ///
@@ -500,7 +502,7 @@ pub fn view<F: SelectionFrame>(
     resolved: &ResolvedSelection<F>,
     item_use: ItemUse,
 ) -> Result<(OpItems, Vec<SelectionNote>), SelectionRefusal> {
-    view_with(resolved, item_use, DownFaces::Refuse)
+    view_with(resolved, item_use, resolved.down_faces())
 }
 
 /// The view of a machining boundary selection: [`view`] with
@@ -519,13 +521,19 @@ pub fn view_boundary(
     )
 }
 
-/// What [`view_with`] does with a face of a `Regions` reader that points
-/// down in the setup frame.
+/// What [`view`] does with a face of an area or an edge reader that points
+/// down in the setup frame. A down face has its material above its plane.
+/// `OperationConfig::down_faces` is THE answer for an op; the session
+/// carries it on the resolution (`ResolveScope::down_faces`), so
+/// generation and the status report read one value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DownFaces {
-    /// An op selection: the face refuses `FaceFacesDown`.
+pub enum DownFaces {
+    /// A fill reader (Pocket and the like) or an edge reader (Chamfer): the
+    /// face refuses `FaceFacesDown`. A fill needs a top to stand on, and a
+    /// bevel needs the material below the edge.
     Refuse,
-    /// A boundary selection: the face gives its outline.
+    /// A ring reader (Profile, operator ruling R6a 2026-10-30) or a
+    /// boundary: the face gives its outline at its own plane Z.
     Keep,
 }
 
@@ -627,7 +635,8 @@ fn view_with<F: SelectionFrame>(
                 ));
             }
             // P3.4 (L-9): a down face has its material above its plane. It
-            // gives no closed area to an op; a boundary keeps its outline.
+            // gives no closed area to a fill or an edge op; a ring op (R6a)
+            // and a boundary keep its outline.
             if let Shape::Face(face) = shape
                 && matches!(
                     item_use,

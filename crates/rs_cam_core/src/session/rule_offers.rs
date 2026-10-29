@@ -47,8 +47,8 @@ impl ProjectSession {
     ///
     /// - A circle: the circles of its diameter, then every circle.
     /// - An up face: the up faces at its plane Z. Every face: every up face
-    ///   of the model. A down face on a boundary: the down faces at its
-    ///   plane Z (SEL-7).
+    ///   of the model. A down face on a boundary or a ring op (R6a): the
+    ///   down faces at its plane Z (SEL-7).
     /// - A model ring, edge chain or vertex (a Z item): the items of its
     ///   kind at its Z, then every item of its kind.
     /// - A drawing loop, path or point: the items of its kind on its layer
@@ -137,9 +137,14 @@ impl ProjectSession {
                         ..only(ItemKind::Face)
                     },
                 ));
-                // SEL-7: the down faces at the plane Z, for a boundary only
-                // (`view` refuses a down face in an op area, `FaceFacesDown`).
-                if target == SelectionTarget::Boundary && Facing::Down.admits(face.normal.z) {
+                // SEL-7: the down faces at the plane Z, for a reader that
+                // keeps a down face only: a boundary, or a ring op (R6a,
+                // `OperationConfig::down_faces`). A fill op refuses it
+                // (`FaceFacesDown`).
+                if super::selection_status::target_uses(tc, target).2
+                    == crate::selection::DownFaces::Keep
+                    && Facing::Down.admits(face.normal.z)
+                {
                     filters.push((
                         format!("All down {plural} at Z {:.2}", face.plane_z),
                         Filter {

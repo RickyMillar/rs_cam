@@ -150,6 +150,7 @@ fn differences(label: &str, model: &LoadedModel, setup: Option<&SetupTransformIn
             // R-A: the default of every op but Profile Outside leaves the
             // part outline out.
             outline_use: rs_cam_core::compute::catalog::OutlineUse::PickOnly,
+            down_faces: rs_cam_core::selection::DownFaces::Refuse,
         },
     );
     let resolved = resolved.to_setup_frame(setup).unwrap();
@@ -498,6 +499,7 @@ fn an_open_path_keeps_its_drawn_direction_in_the_view() {
             mesh_faces: &[],
             item_use: ItemUse::Curves,
             outline_use: rs_cam_core::compute::catalog::OutlineUse::PickOnly,
+            down_faces: rs_cam_core::selection::DownFaces::Refuse,
         },
     );
     let (items, _) = view(&resolved, ItemUse::Curves).unwrap();

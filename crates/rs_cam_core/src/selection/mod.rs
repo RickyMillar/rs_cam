@@ -58,6 +58,6 @@ pub use rule::{
 };
 pub use stock::stock_items;
 pub use view::{
-    Curves, EdgeLine, Edges, Hole, Holes, ItemRole, OpItems, Regions, drop_part_free_note, view,
-    view_boundary,
+    Curves, DownFaces, EdgeLine, Edges, Hole, Holes, ItemRole, OpItems, Regions,
+    drop_part_free_note, view, view_boundary,
 };
