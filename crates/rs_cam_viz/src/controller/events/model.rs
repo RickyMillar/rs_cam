@@ -32,6 +32,11 @@ impl<B: ComputeBackend> AppController<B> {
         if change.changed || change.setup_changed {
             self.pending_upload = true;
         }
+        // Round 4: a focused toolpath in Toolpaths is in pick mode at once
+        // (`state::pick::engage_pick_for_focus`, THE rule).
+        if change.changed {
+            crate::state::pick::engage_pick_for_focus(&mut self.state);
+        }
     }
 
     /// Find the setup that owns a given toolpath ID.

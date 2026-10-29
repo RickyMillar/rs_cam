@@ -13,6 +13,11 @@
 //!    `AddPicks` (or `RemovePicks`); no key gives nothing.
 //! 4. Escape in a viewport mode gives `EndViewportMode`; with no mode,
 //!    nothing.
+//! 6. Round 4 (pick mode engages with the toolpath): in pick mode a click
+//!    on nothing, an item or a model face gives nothing (the pick mode
+//!    judged them); a click on another toolpath's path gives
+//!    `Select(Toolpath)`, which engages its pick mode; the stock keeps its
+//!    meaning.
 //! 5. Source arm (anchor `gesture_events(`): `app/viewport.rs` holds no
 //!    `set_focus(` call. The click path sends `UiCommand::Select` and the
 //!    controller writes the focus (the F2 door).
@@ -132,6 +137,49 @@ fn a_gesture_gives_events_not_writes_v9() {
         SelectionTarget::Op,
         rs_cam_core::compute::catalog::ItemUse::Regions,
     )));
+
+    // 6. Round 4: clicks in pick mode that no item took.
+    assert!(
+        events(&click(None), &picking).is_empty(),
+        "a miss changes nothing"
+    );
+    for hit in [
+        PickHit::Item {
+            toolpath_id: tp,
+            key: key(1.0),
+        },
+        PickHit::ModelFace {
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            face_id: rs_cam_core::geometry::enriched_mesh::FaceGroupId(2),
+        },
+    ] {
+        assert!(
+            events(&click(Some(hit)), &picking).is_empty(),
+            "the pick mode judged the item or face"
+        );
+    }
+    let other = rs_cam_core::ToolpathId::from_raw(9);
+    assert!(matches!(
+        events(
+            &click(Some(PickHit::Toolpath {
+                id: other,
+                move_index: 0,
+            })),
+            &picking
+        )
+        .as_slice(),
+        [AppEvent::Ui(UiCommand::Select(Selection::Toolpath(id)))] if *id == other
+    ));
+    assert!(matches!(
+        events(
+            &click(Some(PickHit::StockFace {
+                face_normal: [0.0, 0.0, 1.0]
+            })),
+            &picking
+        )
+        .as_slice(),
+        [AppEvent::Ui(UiCommand::Select(Selection::Stock))]
+    ));
     let boxed = |op| ViewportGesture::BoxRelease {
         keys: vec![key(1.0), key(2.0)],
         op,

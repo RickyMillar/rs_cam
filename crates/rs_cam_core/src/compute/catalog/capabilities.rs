@@ -362,6 +362,18 @@ pub enum OutlineUse {
     Refuse,
 }
 
+/// How the viewport shows a face of an op's selection (operator ruling,
+/// round 4, 2026-10-29: "hover and select feedback follow the op's use of
+/// the item"): an area op lights the face as its fill, a contour op as its
+/// ring. `OperationConfig::face_feedback` is THE answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaceFeedback {
+    /// The op cuts the area: the face lights as its fill.
+    Fill,
+    /// The op cuts along a line: the face lights as its outer ring.
+    Ring,
+}
+
 /// How an operation cuts the drawing items it gets (P1; geometry selection
 /// `DESIGN.md` 4.2). It is a config answer, so a config field can change
 /// it. P6.2: Trace follows closed and open paths with every compensation.

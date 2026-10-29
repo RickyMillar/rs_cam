@@ -1907,6 +1907,9 @@ pub fn switch_workspace(state: &mut AppState, target: Workspace) {
     }
     state.workspace = target;
     apply_workspace_defaults(state, target);
+    // Round 4: entering Toolpaths with a toolpath focus engages its pick
+    // mode; leaving Toolpaths ends it (`state::pick::engage_pick_for_focus`).
+    crate::state::pick::engage_pick_for_focus(state);
 }
 
 /// Apply `target`'s per-workspace defaults, restoring whatever the previous

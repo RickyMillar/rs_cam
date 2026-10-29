@@ -188,6 +188,23 @@ pub fn hover_target(
     }
 }
 
+/// The pickable face of the pick-mode hit that may light as a face (round
+/// 4): an area op (`FaceFeedback::Fill`) lights the face; a contour op
+/// (`Ring`) does not, so the hover rings the face's item key instead
+/// ([`hover_target`] then takes the pick item).
+pub fn pick_mode_face(
+    feedback: rs_cam_core::compute::catalog::FaceFeedback,
+    pick_face: Option<(
+        super::job::ModelId,
+        rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+    )>,
+) -> Option<(
+    super::job::ModelId,
+    rs_cam_core::geometry::enriched_mesh::FaceGroupId,
+)> {
+    pick_face.filter(|_| feedback == rs_cam_core::compute::catalog::FaceFeedback::Fill)
+}
+
 /// The upload trigger of the hover (geometry selection P4.5, F4): the
 /// target that the hover buffers last drew. The viewport asks for one
 /// upload on a CHANGE of the target only, never per frame (V13, G-LV.1):

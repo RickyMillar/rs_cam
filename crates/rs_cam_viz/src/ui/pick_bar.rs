@@ -39,7 +39,7 @@ pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the
      Ctrl-click: remove the item. Right-click: rules from the item. \
      Ctrl+A: select every item of the chip kinds. Tab: the next candidate \
      under the pointer. Drag: box (left to right encloses, \
-     right to left crosses).";
+     right to left crosses). Escape pauses picking; the Pick button resumes it.";
 
 /// B6: the notice of a box on a boundary whose source is not a selection.
 pub const BOX_NEEDS_SELECTION_BOUNDARY: &str = "Set the boundary source to Selection first.";
@@ -417,8 +417,7 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
         .find(|m| m.id == tc.model_id)
         .is_some_and(|m| !m.faces_ready());
     let title = format!(
-        "Pick for {} \u{25B8} {}",
-        tc.name,
+        "Picking \u{25B8} {}",
         match target {
             SelectionTarget::Op => "Selection",
             SelectionTarget::Boundary => "Machining boundary",
@@ -444,10 +443,20 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
                 .inner_margin(egui::Margin::same(tokens::SPACE_3 as i8))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = tokens::SPACE_2;
-                    ui.label(egui::RichText::new(title).color(tokens::TEXT_STRONG));
+                    // Round 4 (declutter): one compact row, the chips and
+                    // Done; the long help is the bar's hover.
                     ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new(&title).color(tokens::TEXT_STRONG))
+                            .on_hover_text(PICK_HELP);
                         for chip in kind_chips(&filter, item_use, &held) {
                             draw_chip(ui, &chip, &mut filter);
+                        }
+                        if ui
+                            .add(Button::new("Done"))
+                            .on_hover_text("Pause picking (Esc). The Pick button resumes it.")
+                            .clicked()
+                        {
+                            done = true;
                         }
                     });
                     let on = filter.effective_kinds(item_use, &held);
@@ -455,17 +464,9 @@ pub fn draw(ctx: &egui::Context, state: &mut AppState, viewport_rect: egui::Rect
                     if faces_pending && on.contains(&ItemKind::Face) {
                         ui.label(egui::RichText::new(COMPUTING_FACES).color(tokens::TEXT_MUTED));
                     }
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(PICK_HELP).color(tokens::TEXT_MUTED));
-                        if ui
-                            .add(Button::new("Done"))
-                            .on_hover_text("End the pick mode (Esc).")
-                            .clicked()
-                        {
-                            done = true;
-                        }
-                    });
-                });
+                })
+                .response
+                .on_hover_text(PICK_HELP);
         });
 
     if done {

@@ -332,6 +332,11 @@ impl RsCamApp {
                 format!("Could not pick the face: {refusal}"),
                 crate::controller::Severity::Warning,
             ),
+            // Round 4: a primary click on no item falls through to the
+            // scene pick, so a click on another toolpath's path moves the
+            // focus (`gesture_events` gives nothing for a miss in pick
+            // mode). A right-click on no item stays here.
+            None if click != crate::ui::pick_bar::PickClick::Secondary => return false,
             None => {}
         }
         true
@@ -956,13 +961,25 @@ impl RsCamApp {
             }
             _ => None,
         };
+        let feedback = pick
+            .as_ref()
+            .and_then(|p| {
+                self.controller
+                    .state()
+                    .session()
+                    .find_toolpath_config_by_id(p.toolpath_id)
+                    .map(|(_, tc)| crate::state::pick::face_feedback(tc, p.target))
+            })
+            .unwrap_or(rs_cam_core::compute::catalog::FaceFeedback::Fill);
         let target = crate::state::selection_highlight::hover_target(
             pick.is_some(),
             // E-Q6: while a cycle is on, the candidate rings; no face tint.
+            // Round 4: a contour op (`FaceFeedback::Ring`) rings a face
+            // too; an area op lights its fill.
             if cycled.is_some() {
                 None
             } else {
-                hover.pick_face
+                crate::state::selection_highlight::pick_mode_face(feedback, hover.pick_face)
             },
             hovered_item.as_ref().map(|(_, key)| key),
             self.controller.state().gui.selection_ui.row_hover.as_ref(),

@@ -125,6 +125,75 @@ impl PickMode {
     }
 }
 
+/// THE auto pick rule (operator ruling, round 4, 2026-10-29: "when I select
+/// something like profile mode, the picker should already be engaged"). In
+/// the Toolpaths workspace with a toolpath focus, the pick mode of that
+/// toolpath is on:
+///
+/// - a mode of the focused toolpath (a pick or the tab editor) is kept, so
+///   the chip memory of the toolpath stays while it is focused;
+/// - else the op target, for an op that holds a selection;
+/// - else the boundary target, for an op whose boundary source is
+///   `Selection` (a 3D op);
+/// - else no mode (a 3D op with another boundary source: the L-8 click
+///   still switches its boundary).
+///
+/// Any other focus or workspace ends the mode (L-3: one mode). The chips
+/// start with every kind the op serves (`PickMode::new`). Escape PAUSES
+/// picking: `EndViewportMode` ends the mode, and nothing engages it again
+/// until the next focus or workspace change; the Pick button resumes it.
+/// The two callers are the controller focus door (`AppController::set_focus`)
+/// and the workspace switch (`registry::switch_workspace`).
+pub fn engage_pick_for_focus(state: &mut super::AppState) {
+    let target = match (state.workspace, state.focus().clone()) {
+        (super::Workspace::Toolpaths, super::selection::Selection::Toolpath(id)) => Some(id),
+        _ => None,
+    };
+    let Some(id) = target else {
+        state.gui.selection_ui.end_mode();
+        return;
+    };
+    let keeps = state
+        .gui
+        .selection_ui
+        .mode
+        .as_ref()
+        .is_some_and(|mode| mode.toolpath_id() == id);
+    if keeps {
+        return;
+    }
+    let mode = state
+        .session()
+        .find_toolpath_config_by_id(id)
+        .and_then(|(_, tc)| {
+            let target = if tc.operation.selection().is_some() {
+                SelectionTarget::Op
+            } else if matches!(
+                tc.boundary.source,
+                rs_cam_core::compute::config::BoundarySource::Selection { .. }
+            ) {
+                SelectionTarget::Boundary
+            } else {
+                return None;
+            };
+            Some(PickMode::new(id, target, target_item_use(tc, target)))
+        });
+    state.gui.selection_ui.set_pick(mode);
+}
+
+/// How the viewport shows a face of the selection `target` of `tc` (round
+/// 4): the op target reads core `OperationConfig::face_feedback`; the
+/// boundary is an area, so it lights the fill.
+pub fn face_feedback(
+    tc: &ToolpathConfig,
+    target: SelectionTarget,
+) -> rs_cam_core::compute::catalog::FaceFeedback {
+    match target {
+        SelectionTarget::Op => tc.operation.face_feedback(),
+        SelectionTarget::Boundary => rs_cam_core::compute::catalog::FaceFeedback::Fill,
+    }
+}
+
 /// How the selection `target` of `tc` uses its items: the op's `ItemUse`
 /// for the op selection, [`BOUNDARY_ITEM_USE`] for the boundary.
 pub fn target_item_use(tc: &ToolpathConfig, target: SelectionTarget) -> ItemUse {
@@ -208,7 +277,8 @@ pub enum ViewportMode {
 }
 
 impl ViewportMode {
-    fn toolpath_id(&self) -> ToolpathId {
+    /// The toolpath of the mode.
+    pub fn toolpath_id(&self) -> ToolpathId {
         match self {
             Self::Pick(mode) => mode.toolpath_id,
             Self::Tabs(mode) => mode.toolpath_id,

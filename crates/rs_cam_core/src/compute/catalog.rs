@@ -17,9 +17,9 @@ mod schema;
 
 pub use capabilities::{
     AIR_CUT_BAR_CLEARING_PCT, AIR_CUT_BAR_PROJECT_CURVE_PCT, AIR_CUT_BAR_SURFACE_FINISH_PCT,
-    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceTopRule,
-    FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, OutlineUse, RestUse,
-    RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+    AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceFeedback,
+    FaceTopRule, FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, OutlineUse,
+    RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
 };
 
 pub use schema::{
@@ -932,6 +932,24 @@ impl OperationConfig {
                 }
             },
             other => other.op_type().outline_use(),
+        }
+    }
+
+    /// How the viewport shows a face of this op's selection (round 4): an
+    /// area use (`Regions`, `RegionsExtendOpen`) lights the fill, every
+    /// line use (`Curves`, `Edges`, `Holes`, `None`) the ring. One
+    /// correction that the item use cannot give: a Profile cuts along the
+    /// outline of its region on every side (Inside and Outside read
+    /// `Regions`, On reads `Curves`), so it lights the ring.
+    pub fn face_feedback(&self) -> FaceFeedback {
+        match self {
+            OperationConfig::Profile(_) => FaceFeedback::Ring,
+            other => match other.capabilities().item_use {
+                ItemUse::Regions | ItemUse::RegionsExtendOpen { .. } => FaceFeedback::Fill,
+                ItemUse::Curves | ItemUse::Edges | ItemUse::Holes { .. } | ItemUse::None => {
+                    FaceFeedback::Ring
+                }
+            },
         }
     }
 

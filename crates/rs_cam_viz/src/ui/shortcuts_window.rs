@@ -68,7 +68,10 @@ pub fn draw(ctx: &egui::Context, show: &mut bool, scheme: rs_cam_core::settings:
                     ("F", "Fit the selection"),
                     ("Ctrl+A", "Pick mode: select every item of the chip kinds"),
                     ("Tab", "Pick mode: the next candidate under the pointer"),
-                    ("Escape", "Cancel the box, then end pick mode"),
+                    (
+                        "Escape",
+                        "Cancel the box, then pause picking (Pick resumes)",
+                    ),
                 ],
             );
             ui.add_space(8.0);

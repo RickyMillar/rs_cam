@@ -1205,3 +1205,145 @@ fn tab_reaches_the_gesture_translation_e_q6() {
         "Tab reaches gesture_events"
     );
 }
+
+/// Round 4 (operator ruling): a focused toolpath in Toolpaths is in pick
+/// mode at once, through THE rule `engage_pick_for_focus` that the focus
+/// door and the workspace switch reach. Escape pauses it: nothing engages
+/// again until the next focus or workspace change. A 3D op picks its
+/// boundary when the boundary source is a selection, else nothing.
+#[test]
+fn a_focused_toolpath_is_in_pick_mode_at_once_round4() {
+    use rs_cam_core::compute::config::BoundarySource;
+    use rs_cam_core::session::AddToolpathArgs;
+    use rs_cam_viz::state::pick::{ViewportMode, engage_pick_for_focus};
+    use rs_cam_viz::ui_command::{NoArgs, UiCommand};
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let pocket = c.state().session().toolpath_configs()[0].id;
+    let select = |c: &mut AppController<SilentBackend>, s: UiSelection| {
+        c.handle_internal_event(AppEvent::Ui(UiCommand::Select(s)));
+    };
+    let mode_of = |c: &AppController<SilentBackend>| match &c.state().gui.selection_ui.mode {
+        Some(ViewportMode::Pick(m)) => Some((m.toolpath_id, m.target)),
+        _ => None,
+    };
+    select(&mut c, UiSelection::None);
+    assert_eq!(mode_of(&c), None, "no toolpath focus, no mode");
+    select(&mut c, UiSelection::Toolpath(pocket));
+    assert_eq!(
+        mode_of(&c),
+        Some((pocket, SelectionTarget::Op)),
+        "engaged at once"
+    );
+    // Every served kind is on.
+    let tc = c.state().session().toolpath_configs()[0].clone();
+    let served = PickFilter::served(tc.operation.capabilities().item_use);
+    assert_eq!(
+        c.state().gui.selection_ui.pick_mode(pocket).unwrap().filter,
+        served
+    );
+
+    // Escape pauses: the mode ends and the same focus does not engage it.
+    c.handle_internal_event(AppEvent::Ui(UiCommand::EndViewportMode(NoArgs)));
+    assert_eq!(mode_of(&c), None);
+    select(&mut c, UiSelection::Toolpath(pocket));
+    assert_eq!(mode_of(&c), None, "paused until the next change");
+
+    // The workspace switch: leaving Toolpaths ends it, coming back engages.
+    rs_cam_viz::ui::overlays::registry::switch_workspace(c.state_mut(), Workspace::Setup);
+    assert_eq!(mode_of(&c), None);
+    rs_cam_viz::ui::overlays::registry::switch_workspace(c.state_mut(), Workspace::Toolpaths);
+    assert_eq!(mode_of(&c), Some((pocket, SelectionTarget::Op)));
+
+    // A 3D op: no mode on a stock boundary; the boundary target on a
+    // selection boundary.
+    let mut drop = toolpath(OperationConfig::DropCutter(Default::default()));
+    drop.model_id = tc.model_id;
+    let _ = c
+        .state_mut()
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(drop),
+        }))
+        .unwrap();
+    let drop_id = c.state().session().toolpath_configs()[1].id;
+    select(&mut c, UiSelection::Toolpath(drop_id));
+    assert_eq!(
+        mode_of(&c),
+        None,
+        "a 3D op on a stock boundary has no pick mode"
+    );
+    let mut with_selection = c.state().session().toolpath_configs()[1].clone();
+    with_selection.boundary.source = BoundarySource::Selection {
+        selection: rs_cam_core::selection::Selection::drawing(),
+        holes: false,
+    };
+    let _ = c
+        .state_mut()
+        .apply(Command::ReplaceToolpathConfig(
+            rs_cam_core::session::ReplaceToolpathConfigArgs {
+                index: 1,
+                config: Box::new(with_selection),
+            },
+        ))
+        .unwrap();
+    select(&mut c, UiSelection::None);
+    select(&mut c, UiSelection::Toolpath(drop_id));
+    assert_eq!(mode_of(&c), Some((drop_id, SelectionTarget::Boundary)));
+    // The rule runs on demand too; a mode of the focused toolpath is kept.
+    engage_pick_for_focus(c.state_mut());
+    assert_eq!(mode_of(&c), Some((drop_id, SelectionTarget::Boundary)));
+}
+
+/// Round 4 (operator ruling): the hover follows the op's use of the item. A
+/// Profile cuts a contour, so a pickable face under the pointer rings (the
+/// hover slot holds the face's item key); a Pocket cuts the area, so the
+/// face lights as a face.
+#[test]
+fn a_face_hover_follows_the_item_use_round4() {
+    use rs_cam_core::compute::catalog::FaceFeedback;
+    use rs_cam_core::geometry::enriched_mesh::FaceGroupId;
+    use rs_cam_core::ids::ModelId;
+    use rs_cam_viz::state::pick::face_feedback;
+    use rs_cam_viz::state::selection_highlight::pick_mode_face;
+    let face = (ModelId::from_wire(1), FaceGroupId(2));
+    let key = MatchKey {
+        source: rs_cam_core::selection::SourceRef::ToolpathModel,
+        kind: ItemKind::Face,
+        layer: None,
+        anchor: [10.0, 10.0],
+        measure: 20.0,
+        brep: Some(2),
+        z: None,
+    };
+    for (operation, want) in [
+        (
+            OperationConfig::Profile(Default::default()),
+            HoverTarget::Item(key.clone()),
+        ),
+        (
+            OperationConfig::Pocket(Default::default()),
+            HoverTarget::Face(face.0, face.1),
+        ),
+    ] {
+        let tc = toolpath(operation);
+        let feedback = face_feedback(&tc, SelectionTarget::Op);
+        let target = hover_target(
+            true,
+            pick_mode_face(feedback, Some(face)),
+            Some(&key),
+            None,
+            Some(face),
+        );
+        assert_eq!(target, Some(want), "{feedback:?}");
+    }
+    // The boundary is an area.
+    let tc = toolpath(OperationConfig::Profile(Default::default()));
+    assert_eq!(
+        face_feedback(&tc, SelectionTarget::Boundary),
+        FaceFeedback::Fill
+    );
+}

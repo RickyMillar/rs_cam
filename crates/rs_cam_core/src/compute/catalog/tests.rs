@@ -1017,3 +1017,36 @@ fn project_curve_projection_defaults_to_cutter_and_reads_point() {
     );
     assert_eq!(op.param_type_name("projection"), Some("enum:cutter|point"));
 }
+
+/// Round 4: a face lights as its fill for an area op and as its ring for a
+/// contour op; Profile is a contour on every side.
+#[test]
+fn face_feedback_follows_the_item_use() {
+    use crate::compute::catalog::{FaceFeedback, OperationConfig, OperationType};
+    for (op, want) in [
+        (OperationType::Pocket, FaceFeedback::Fill),
+        (OperationType::Face, FaceFeedback::Fill),
+        (OperationType::Zigzag, FaceFeedback::Fill),
+        (OperationType::Adaptive, FaceFeedback::Fill),
+        (OperationType::Profile, FaceFeedback::Ring),
+        (OperationType::Trace, FaceFeedback::Ring),
+        (OperationType::Chamfer, FaceFeedback::Ring),
+    ] {
+        assert_eq!(
+            OperationConfig::new_default(op).face_feedback(),
+            want,
+            "{op:?}"
+        );
+    }
+    for side in [
+        crate::ops::profile::ProfileSide::Inside,
+        crate::ops::profile::ProfileSide::Outside,
+        crate::ops::profile::ProfileSide::On,
+    ] {
+        let mut config = OperationConfig::new_default(OperationType::Profile);
+        if let OperationConfig::Profile(c) = &mut config {
+            c.side = side;
+        }
+        assert_eq!(config.face_feedback(), FaceFeedback::Ring, "{side:?}");
+    }
+}

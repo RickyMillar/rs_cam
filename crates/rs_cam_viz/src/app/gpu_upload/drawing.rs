@@ -361,6 +361,10 @@ pub(super) fn upload(
             ring_mark(display(centre), tool_radius, colors::PATH_SIDE, verts);
         };
 
+        // Round 4: a contour op shows a picked face as its ring.
+        let ring_faces =
+            crate::state::pick::face_feedback(&toolpath, rs_cam_core::session::SelectionTarget::Op)
+                == rs_cam_core::compute::catalog::FaceFeedback::Ring;
         let mut verts = Vec::new();
         // The selection highlight (D §3.5): the items the selection takes
         // (cut and island) draw as quads of `LINE_SELECTED_PX`.
@@ -443,6 +447,11 @@ pub(super) fn upload(
                 // mark (the drill markers below then do not draw).
                 Shape::Point(p) if item_state.is_some() => {
                     ring_mark(display(*p), mark, color, out);
+                }
+                // Round 4: a face of a contour op's selection draws as its
+                // rings, at the face Z, in the state colour (green when cut).
+                Shape::Face(_) if ring_faces && (takes(item_state) || is_flashed) => {
+                    edge_item_lines(item, setup_ref, stock, planar_z, color, mark, out);
                 }
                 Shape::Point(_) | Shape::Face(_) => {}
             }

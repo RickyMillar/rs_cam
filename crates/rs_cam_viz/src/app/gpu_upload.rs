@@ -40,6 +40,18 @@ impl RsCamApp {
         else {
             return Vec::new();
         };
+        // Round 4: a contour op shows a picked face as its green ring (the
+        // drawing upload), not as the blue fill.
+        let rings = state
+            .session()
+            .find_toolpath_config_by_id(toolpath_id)
+            .is_some_and(|(_, tc)| {
+                crate::state::pick::face_feedback(tc, rs_cam_core::session::SelectionTarget::Op)
+                    == rs_cam_core::compute::catalog::FaceFeedback::Ring
+            });
+        if rings {
+            return Vec::new();
+        }
         let toolpath_model = state
             .session()
             .find_toolpath_config_by_id(toolpath_id)

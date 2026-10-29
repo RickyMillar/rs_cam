@@ -67,12 +67,22 @@ pub struct ViewContext<'a> {
 ///   `AddPicks` or `RemovePicks`; no key or no pick mode gives nothing.
 /// - Escape gives `EndViewportMode`.
 ///
-/// A pick-mode click does not come here: it goes through
-/// `pick_bar::click_event`, which also turns a chip on.
+/// A pick-mode click on an item does not come here: it goes through
+/// `pick_bar::click_event`, which also turns a chip on. Round 4: a
+/// pick-mode click on no item comes here; then a click on nothing, an item
+/// or a model face gives nothing (the pick mode already judged them), a
+/// click on another toolpath's path moves the focus (and its pick mode) to
+/// it, and the stock, a pin or an obstacle keep their meaning.
 pub fn gesture_events(g: &ViewportGesture, cx: &ViewContext<'_>) -> Vec<AppEvent> {
     let select = |selection: Selection| vec![AppEvent::Ui(UiCommand::Select(selection))];
+    let picking = matches!(cx.selection_ui.mode, Some(ViewportMode::Pick(_)));
     match g {
+        ViewportGesture::Click { hit: None, .. } if picking => Vec::new(),
         ViewportGesture::Click { hit: None, .. } => select(Selection::None),
+        ViewportGesture::Click {
+            hit: Some(PickHit::Item { .. } | PickHit::ModelFace { .. } | PickHit::MeshFace { .. }),
+            ..
+        } if picking => Vec::new(),
         ViewportGesture::Click {
             hit: Some(hit),
             click: _,
