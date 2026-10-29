@@ -755,7 +755,7 @@ fn draw_detail(
                     ui.spacing_mut().item_spacing.y = tokens::SPACE_1;
                     name_label(ui, &line_name(state, line));
                     match line {
-                        RailLine::Scale(legend) => draw_key(ui, &scale_key(*legend)),
+                        RailLine::Scale(legend) => draw_key(ui, &scale_key(state, *legend)),
                         RailLine::Categories(kind) => draw_key(ui, &categories_key(state, *kind)),
                         RailLine::Status(_) => {}
                     }
@@ -956,7 +956,7 @@ impl Key {
 fn line_key(state: &AppState, line: &RailLine) -> Option<Key> {
     match line {
         RailLine::Scale(legend) => {
-            let key = scale_key(*legend);
+            let key = scale_key(state, *legend);
             let moves = matches!(legend, Legend::Engagement | Legend::AdvancePerTooth);
             Some(if moves && capped_moves_drawn(state) {
                 with_capped_move_entry(key)
@@ -1072,8 +1072,9 @@ fn entry_row(ui: &mut egui::Ui, entries: &[(String, Option<[f32; 3]>)]) {
     });
 }
 
-/// The colour key of one scale legend.
-fn scale_key(legend: Legend) -> Key {
+/// The colour key of one scale legend. `state` gives the reach surface:
+/// the top label of a tool-relative reach strip names the tip radius.
+fn scale_key(state: &AppState, legend: Legend) -> Key {
     match legend {
         Legend::RestHeatmap(threshold, top) => {
             use rs_cam_core::maps::rest_heatmap_mesh::rest_ramp_color;
@@ -1106,16 +1107,25 @@ fn scale_key(legend: Legend) -> Key {
             let top = reach.max_gap_mm.max(bar);
             let ratio = (top / bar).max(1.0);
             let tolerance = reach.tolerance_mm;
-            let miss = ramp(
-                format!("miss {bar:.3} mm"),
-                format!("{top:.2} mm"),
-                move |t| {
-                    // Inverse of `ReachRamp::depth_t`, nudged past the bar so
-                    // t = 0 samples the first MISS colour and not the green.
-                    let gap = bar * ratio.powf(f64::from(t)) * 1.001;
-                    reach_color(gap as f32, f32::NAN, reach)
-                },
-            );
+            // Round 7: a tool-relative strip ends at one tip radius, the
+            // `reach_scale_note` words. The ramp must be the surface's own.
+            let tip_relative = state
+                .gui
+                .reach_overlay
+                .surface
+                .as_ref()
+                .is_some_and(|surface| surface.tip_relative && surface.ramp == reach);
+            let top_label = if tip_relative {
+                format!("R = {top:.2} mm")
+            } else {
+                format!("{top:.2} mm")
+            };
+            let miss = ramp(format!("miss {bar:.3} mm"), top_label, move |t| {
+                // Inverse of `ReachRamp::depth_t`, nudged past the bar so
+                // t = 0 samples the first MISS colour and not the green.
+                let gap = bar * ratio.powf(f64::from(t)) * 1.001;
+                reach_color(gap as f32, f32::NAN, reach)
+            });
             // A gap over the bar and at or under its cell's floor paints the
             // unresolved grey.
             let unresolved_gap = (tolerance * 2.0).max(1e-3) as f32;

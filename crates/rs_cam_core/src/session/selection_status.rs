@@ -1876,10 +1876,11 @@ impl ProjectSession {
     /// the source to `Selection` with that one pick
     /// ([`ClickEdit::BoundaryToSelection`]). Every other field of the
     /// boundary but the offset stays as stored, `enabled` and the
-    /// containment too. The offset becomes 0 (operator ruling 2026-10-30):
-    /// the tool diameter offset of `BoundaryConfig::for_3d_op` is the
-    /// derivation of the model silhouette, and a face boundary grows past
-    /// its open sides by THE open-sides rule
+    /// containment too. The offset becomes 0 (operator ruling 2026-10-30,
+    /// THE rule `BoundaryConfig::with_source`): the tool diameter offset
+    /// of `BoundaryConfig::for_3d_op` is the derivation of the model
+    /// silhouette, and a face boundary grows past its open sides by THE
+    /// open-sides rule
     /// ([`Self::grow_boundary_open_sides`]). Every other click is
     /// [`Self::pick_edit`].
     pub fn click_edit(
@@ -1891,12 +1892,14 @@ impl ProjectSession {
         let boundary_is_selection = matches!(tc.boundary.source, BoundarySource::Selection { .. });
         if target == SelectionTarget::Boundary && !boundary_is_selection {
             let kind = key.kind;
-            let mut boundary = tc.boundary.clone();
-            boundary.source = BoundarySource::Selection {
-                selection: Selection::from_picks(vec![key]).for_toolpath_model(tc.model_id),
-                holes: false,
-            };
-            boundary.offset = 0.0;
+            // THE source-change rule: the offset becomes 0.
+            let boundary = tc.boundary.with_source(
+                BoundarySource::Selection {
+                    selection: Selection::from_picks(vec![key]).for_toolpath_model(tc.model_id),
+                    holes: false,
+                },
+                None,
+            );
             return Ok(ClickEdit::BoundaryToSelection {
                 boundary: Box::new(boundary),
                 kind,

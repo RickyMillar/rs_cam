@@ -673,6 +673,13 @@ pub(super) fn draw_cut_tab(
                  Moves outside the boundary are converted to rapids at safe Z.",
             );
         if entry.boundary.enabled {
+            // R7a: the source buttons write the offset of THE source-change
+            // rule (`BoundaryConfig::with_source`), which reads the tool
+            // diameter of the op.
+            let tool_diameter = entry
+                .tool_id
+                .and_then(|tool_id| tools.iter().find(|(id, _, _)| *id == tool_id))
+                .map(|(_, _, diameter)| *diameter);
             // UX-R03-009 (G-BOUNDARYINHERIT): the stored source is the
             // one generation uses (`session/compute.rs` clones
             // `tc.boundary` unconditionally). G-D (ruling D-1): its name is
@@ -709,7 +716,9 @@ pub(super) fn draw_cut_tab(
                             )
                             .clicked()
                         {
-                            entry.boundary.source = BoundarySource::ModelSilhouette;
+                            entry.boundary = entry
+                                .boundary
+                                .with_source(BoundarySource::ModelSilhouette, tool_diameter);
                         }
                         // P4.3: the one door to a `Selection` boundary. It
                         // is enabled when a model holds a drawing item or a
@@ -741,11 +750,15 @@ pub(super) fn draw_cut_tab(
                             // already a selection; else write the value that a
                             // boundary Reset restores: the closed shapes of the
                             // first model with a closed shape, else no item.
+                            // The source change writes offset 0 (R7a).
                             if !matches!(entry.boundary.source, BoundarySource::Selection { .. }) {
-                                entry.boundary.source = BoundarySource::Selection {
-                                    selection: inputs.boundary_default.clone(),
-                                    holes: false,
-                                };
+                                entry.boundary = entry.boundary.with_source(
+                                    BoundarySource::Selection {
+                                        selection: inputs.boundary_default.clone(),
+                                        holes: false,
+                                    },
+                                    tool_diameter,
+                                );
                             }
                         }
                         let has_rest_candidates = !boundary_source_candidates.is_empty();

@@ -291,7 +291,7 @@ pub struct StateParts<'a> {
 
 /// Work a properties panel owes the frame loop.
 ///
-/// A draw site holds an [`AppState`] and nothing else. The three things
+/// A draw site holds an [`AppState`] and nothing else. The things
 /// below live on the controller, so a panel cannot do them itself. It
 /// raises the flag; `AppController::discharge_panel_side_effects` runs
 /// the work once per frame.
@@ -302,7 +302,7 @@ pub struct StateParts<'a> {
 /// view work and project bookkeeping, not a core rule. WP19 added the
 /// third for the same reason: the core answer says the session dropped
 /// its simulation, and clearing the view's is controller work.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PanelSideEffects {
     /// The viewport's GPU buffers read something the panel moved — the
     /// stock box, a fixture, a keep-out zone, or a height plane.
@@ -320,6 +320,12 @@ pub struct PanelSideEffects {
     /// view. `AppController::apply` clears the view at once and lowers
     /// the flag (F096).
     pub invalidate_simulation: bool,
+    /// The notices that a panel write owes the operator, in order. The
+    /// notifications live on the controller, so the frame loop shows each
+    /// one at `Severity::Info`. R7b: a model change through the panel
+    /// (`write_entry_config_to_session`) gives
+    /// `Effects::picks_dropped_note` here.
+    pub notes: Vec<String>,
 }
 
 impl PanelSideEffects {

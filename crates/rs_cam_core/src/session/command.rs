@@ -1378,16 +1378,20 @@ pub struct DroppedPicks {
 
 impl Effects {
     /// The note of [`Effects::picks_dropped`]: "The model change dropped
-    /// 2 picks that name no item on the new model." and, for each
-    /// selection that went back to its default, "The boundary is back to
-    /// its default." `None` when no pick was dropped. Every surface reads
-    /// this one text.
+    /// 2 picks that name no item on the new model." ("1 pick that names"
+    /// for one pick) and, for each selection that went back to its
+    /// default, "The boundary is back to its default." `None` when no pick
+    /// was dropped. Every surface reads this one text.
     #[must_use]
     pub fn picks_dropped_note(&self) -> Option<String> {
         let dropped = self.picks_dropped.as_ref()?;
-        let noun = if dropped.count == 1 { "pick" } else { "picks" };
+        let (noun, verb) = if dropped.count == 1 {
+            ("pick", "names")
+        } else {
+            ("picks", "name")
+        };
         let mut note = format!(
-            "The model change dropped {} {noun} that name no item on the new model.",
+            "The model change dropped {} {noun} that {verb} no item on the new model.",
             dropped.count
         );
         for target in &dropped.reset {

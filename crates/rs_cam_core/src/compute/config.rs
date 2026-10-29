@@ -796,6 +796,38 @@ impl BoundaryConfig {
             offset: tool_diameter_mm,
         }
     }
+
+    /// This boundary with the source `source`, and the offset that the
+    /// source change gives (operator ruling R7a, 2026-10-30). THE rule of
+    /// the viewport click (`ProjectSession::click_edit`) and the GUI
+    /// source buttons:
+    ///
+    /// - A change to `Selection` from another source writes offset 0. The
+    ///   tool diameter offset of [`Self::for_3d_op`] is the derivation of
+    ///   the model silhouette. A face boundary grows past its open sides
+    ///   by the open-sides rule.
+    /// - A change from `Selection` to `ModelSilhouette` writes the offset
+    ///   of [`Self::for_3d_op`]: `tool_diameter_mm`, or 0 when the op has
+    ///   no tool.
+    /// - Every other change keeps the stored offset.
+    ///
+    /// `enabled` and the containment stay as stored.
+    #[must_use]
+    pub fn with_source(&self, source: BoundarySource, tool_diameter_mm: Option<f64>) -> Self {
+        let was_selection = matches!(self.source, BoundarySource::Selection { .. });
+        let offset = match &source {
+            BoundarySource::Selection { .. } if !was_selection => 0.0,
+            BoundarySource::ModelSilhouette if was_selection => {
+                tool_diameter_mm.map_or(0.0, |d| Self::for_3d_op(d).offset)
+            }
+            _ => self.offset,
+        };
+        Self {
+            source,
+            offset,
+            ..self.clone()
+        }
+    }
 }
 
 /// Op-agnostic rest analysis: any toolpath can turn this on to run the

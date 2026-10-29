@@ -1141,6 +1141,13 @@ pub(crate) fn write_entry_config_to_session(
     // `AppState::apply` stamps `Effects::stale`, raises the simulation
     // flag and logs a refusal (F096, F056).
     let effects = state.apply(command).ok()?;
+    // R7b: a model change (the Input combo) dropped the picks that name
+    // no item on the new model; core gives the one note. The next frame
+    // rebuilds the entry from the session, so the dropped picks do not
+    // come back.
+    if let Some(note) = effects.picks_dropped_note() {
+        state.panel_side_effects.notes.push(note);
+    }
     // An empty set is a write that moved no generation input (a name or a
     // coolant edit, for example). Dirtying there would mark a healthy
     // project edited for a write the signature does not see (G-HEIGHTSTAB).

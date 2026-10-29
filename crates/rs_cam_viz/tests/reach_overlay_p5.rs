@@ -344,3 +344,44 @@ fn the_colour_scale_is_one_tip_radius_r7() {
     let fallback = reach_display_ramp(&map, ramp.bar_mm() * 0.5);
     assert!((fallback.max_gap_mm - map.max_gap_mm).abs() < 1e-12);
 }
+
+/// The legend strip names the tip radius: the top label of a
+/// tool-relative strip reads "R = <radius> mm", the words of
+/// `reach_scale_note`. A ramp that is not the surface's own (or no
+/// surface) keeps the plain "<top> mm".
+#[test]
+fn the_legend_strip_names_the_tip_radius_r7() {
+    use rs_cam_viz::state::AppState;
+    use rs_cam_viz::state::runtime::reach_overlay_surface;
+    use rs_cam_viz::ui::overlays::legend_rail::{self, RailLine};
+    use rs_cam_viz::ui::overlays::registry::Legend;
+    use std::sync::Arc;
+
+    let (mesh, index, map, radius) = stepped_block_map();
+    let surface = reach_overlay_surface(&map, &mesh, &index, radius);
+    assert!(
+        surface.tip_relative,
+        "non-vacuity: the scale is tool-relative"
+    );
+    let line = RailLine::Scale(Legend::Reach(surface.ramp));
+    let map_line = RailLine::Scale(Legend::Reach(map.ramp()));
+    let tip_label = format!("R = {radius:.2} mm");
+
+    let mut state = AppState::new();
+    assert!(
+        !legend_rail::key_labels(&state, &line).contains(&tip_label),
+        "no surface: no R"
+    );
+    state.gui.reach_overlay.surface = Some(Arc::new(surface));
+    let labels = legend_rail::key_labels(&state, &line);
+    assert!(
+        labels.contains(&tip_label),
+        "the strip names the tip radius {tip_label:?}: {labels:?}"
+    );
+    assert!(
+        !legend_rail::key_labels(&state, &map_line)
+            .iter()
+            .any(|l| l.starts_with("R = ")),
+        "a ramp that is not the surface's keeps the plain label"
+    );
+}

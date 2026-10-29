@@ -197,7 +197,7 @@ fn a_model_change_drops_the_lost_face_pick_r7b() {
     assert_eq!(
         effects.picks_dropped_note().as_deref(),
         Some(
-            "The model change dropped 1 pick that name no item on the new model. \
+            "The model change dropped 1 pick that names no item on the new model. \
              The boundary is back to its default."
         )
     );

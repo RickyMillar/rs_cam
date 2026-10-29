@@ -1004,6 +1004,141 @@ fn w4_a_3d_op_face_click_switches_the_boundary_to_selection_p4_d() {
     ));
 }
 
+/// Operator ruling R7b (2026-10-30), the GUI arm. A 3D op on the STEP
+/// cube holds a boundary of one STEP face pick. The Input combo of the
+/// panel changes the model to an STL of the same mesh (its flat faces
+/// computed, so the resolution judges the pick): the panel write
+/// (`write_entry_config_to_session`, one `ReplaceToolpathConfig`) drops
+/// the pick, the boundary returns to the boundary of a fresh 3D op, and
+/// the frame loop shows `Effects::picks_dropped_note` as a notice.
+///
+/// The combo path re-reads: the next frame rebuilds the entry from the
+/// session (`toolpath_panel_snapshot`), so a later edit does not send the
+/// dropped pick back.
+///
+/// Red proof: with the `picks_dropped_note` push of
+/// `write_entry_config_to_session` removed, no notice shows.
+#[test]
+fn a_model_change_in_the_panel_drops_the_lost_picks_r7b() {
+    use rs_cam_core::compute::config::{BoundaryConfig, BoundaryContainment, BoundarySource};
+    use rs_cam_core::session::{BuildModelFacesArgs, Job, JobHandle, execute_build_model_faces};
+    use std::sync::atomic::AtomicBool;
+
+    let mut c = AppController::with_backend(ScriptedBackend::new());
+    let tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
+    let diameter = tool.diameter;
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let step = step_model();
+    let stl = LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(1),
+        path: PathBuf::from("cube.stl"),
+        name: "cube.stl".to_owned(),
+        kind: Some(ModelKind::Stl),
+        mesh: step.mesh.clone(),
+        items: Default::default(),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    };
+    let _ = builder.add_model(step);
+    let stl_id = builder.add_model(stl);
+    let mut session = builder.build();
+    // The flat faces of the STL, as the GUI job computes them off the
+    // frame. A cold face cache keeps the pick (R7b).
+    let handle = match session
+        .start(
+            Job::BuildModelFaces(BuildModelFacesArgs { model_id: stl_id }),
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+    {
+        JobHandle::BuildModelFaces(handle) => Some(handle),
+        _ => None,
+    }
+    .expect("the build_model_faces row answers its own handle");
+    let _ = execute_build_model_faces(&handle, &AtomicBool::new(false)).unwrap();
+    c.state.replace_session(session);
+
+    let tp_id = add_3d_rough(
+        &mut c,
+        BoundaryConfig {
+            enabled: true,
+            source: BoundarySource::Selection {
+                selection: rs_cam_core::selection::Selection::empty(),
+                holes: false,
+            },
+            containment: BoundaryContainment::Center,
+            offset: 0.0,
+        },
+    );
+    let step_id = c.state.session().models()[0].id;
+    let face_a = find_horizontal_face(
+        c.state.session().models()[0]
+            .enriched_mesh
+            .as_ref()
+            .unwrap(),
+    );
+    click_face(&mut c, tp_id, step_id, face_a);
+    assert_eq!(
+        boundary_face_picks(&c, tp_id),
+        vec![face_a.0],
+        "non-vacuity: the boundary holds the STEP face pick"
+    );
+
+    // The Input combo writes the entry's model; the panel writes the
+    // entry back.
+    let notes_before = c.notifications().len();
+    let mut snapshot =
+        crate::ui::properties::toolpath_panel_snapshot(tp_id, c.state.session(), &c.state.gui)
+            .unwrap();
+    snapshot.entry.model_id = stl_id;
+    let effects =
+        crate::ui::properties::write_entry_config_to_session(&snapshot.entry, &mut c.state)
+            .expect("the model change applies");
+    assert_eq!(
+        effects.picks_dropped.as_ref().map(|d| d.count),
+        Some(1),
+        "the model change drops the STEP face pick"
+    );
+    c.discharge_panel_side_effects();
+    let note = "The model change dropped 1 pick that names no item on the new model. \
+                The boundary is back to its default.";
+    assert!(
+        c.notifications()[notes_before..]
+            .iter()
+            .any(|n| n.message == note),
+        "the notice gives the core note: {:?}",
+        c.notifications()[notes_before..]
+            .iter()
+            .map(|n| n.message.as_str())
+            .collect::<Vec<_>>()
+    );
+    let stored = |c: &AppController<ScriptedBackend>| {
+        let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
+        (tc.model_id, tc.boundary.clone(), tc.name.clone())
+    };
+    let fresh = BoundaryConfig::for_3d_op(diameter);
+    assert_eq!(stored(&c).0, stl_id, "the model changed");
+    assert_eq!(stored(&c).1, fresh, "the boundary of a fresh 3D op");
+
+    // The next frame: a fresh entry, another edit.
+    let mut snapshot =
+        crate::ui::properties::toolpath_panel_snapshot(tp_id, c.state.session(), &c.state.gui)
+            .unwrap();
+    snapshot.entry.name = "Renamed".to_owned();
+    let _ = crate::ui::properties::write_entry_config_to_session(&snapshot.entry, &mut c.state)
+        .expect("the rename applies");
+    assert_eq!(
+        stored(&c),
+        (stl_id, fresh, "Renamed".to_owned()),
+        "the dropped pick stays dropped after the next edit"
+    );
+}
+
 /// Geometry selection P4.D, fix 3: a DXF draws on import, with no
 /// toolpath, as a neutral drawing; the eye of its model row hides it and
 /// shows it again, with an upload on a change only; a selected op that

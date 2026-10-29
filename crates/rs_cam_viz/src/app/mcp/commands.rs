@@ -2299,8 +2299,15 @@ impl RsCamApp {
                         })
                         .unwrap_or(serde_json::Value::Null)
                 };
+                // R7b: the model change dropped the picks that name no
+                // item on the new model; core gives the one note.
+                let dropped_note = effects
+                    .picks_dropped_note()
+                    .map_or_else(String::new, |note| format!(" {note}"));
                 let reply = self.mcp_mutation_result(
-                    format!("Bound toolpath {index} to model id {model_id}. Regenerate to apply."),
+                    format!(
+                        "Bound toolpath {index} to model id {model_id}.{dropped_note} Regenerate to apply."
+                    ),
                     serde_json::json!({ "index": index, "model": model }),
                     stale,
                     &before.diagnostics,

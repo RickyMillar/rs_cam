@@ -2233,3 +2233,124 @@ fn contour_each_level_shows_where_it_acts_c4() {
         "the hover is the registry help"
     );
 }
+
+/// R7a (operator ruling 2026-10-30): the Cut-tab boundary source buttons
+/// write the offset of THE source-change rule,
+/// `BoundaryConfig::with_source`, which the viewport click
+/// (`click_edit`) reads too.
+///
+/// - Model Silhouette (offset one tool diameter) → Selection: offset 0.
+/// - Selection → Model Silhouette: offset one tool diameter again
+///   (`BoundaryConfig::for_3d_op`).
+///
+/// Red proof: the old Selection button wrote the source alone, so the
+/// diameter offset stayed.
+#[test]
+fn the_selection_source_button_drops_the_diameter_offset_r7a() {
+    use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
+    use rs_cam_core::compute::config::BoundaryConfig;
+
+    /// Draw the Cut tab until `label` paints, click it on the next pass,
+    /// and draw two more passes. Panics when `label` never paints.
+    fn click_label(
+        ctx: &egui::Context,
+        entry: &mut ToolpathEntry,
+        inputs: &super::ToolpathPanelInputs,
+        label: &str,
+    ) {
+        let mut at: Option<egui::Pos2> = None;
+        let mut clicked = false;
+        for _ in 0..8 {
+            let mut input = egui::RawInput::default();
+            if let Some(pos) = at.filter(|_| !clicked) {
+                clicked = true;
+                input.events.push(egui::Event::PointerMoved(pos));
+                for pressed in [true, false] {
+                    input.events.push(egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+            let mut events = Vec::new();
+            let mut out = ctx.run_ui(input, |ui| {
+                super::toolpath_panel::draw_cut_tab(
+                    ui,
+                    entry,
+                    inputs,
+                    None,
+                    None,
+                    &mut crate::state::pick::SelectionUi::default(),
+                    &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                    &mut events,
+                );
+            });
+            if !clicked {
+                for shape in &out.shapes {
+                    if let egui::epaint::Shape::Text(text) = &shape.shape
+                        && text.galley.job.text == label
+                    {
+                        at = Some(shape.shape.visual_bounding_rect().center());
+                    }
+                }
+            }
+            out.textures_delta.clear();
+        }
+        assert!(clicked, "the label {label:?} never painted");
+    }
+
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let mut inputs = super::toolpath_panel_inputs(
+        tc.id,
+        &session,
+        &crate::state::runtime::GuiState::default(),
+        None,
+        Some(ToolpathTab::Cut),
+        false,
+    );
+    // The flat STL holds no drawing item and no face; the button is drawn
+    // enabled here so the click reaches it.
+    inputs.boundary_selection_enabled = true;
+    let tool_id = tc.tool_id.expect("the case tool");
+    let diameter = inputs
+        .tools
+        .iter()
+        .find(|(id, _, _)| *id == tool_id)
+        .map(|(_, _, d)| *d)
+        .expect("the case tool is in the inputs");
+    assert!(diameter > 0.0, "non-vacuity: the tool has a diameter");
+    let mut entry = ToolpathEntry::for_operation(
+        tc.id,
+        "Case".to_owned(),
+        tool_id,
+        tc.model_id,
+        OperationType::Pocket,
+    );
+    entry.boundary = BoundaryConfig::for_3d_op(diameter);
+
+    let ctx = egui::Context::default();
+    crate::ui::tokens::apply(&ctx);
+    crate::ui::tokens::apply_fonts(&ctx);
+
+    // The combo shows the stored source; the click opens it.
+    click_label(&ctx, &mut entry, &inputs, "Model Silhouette");
+    click_label(&ctx, &mut entry, &inputs, "Selection");
+    assert!(
+        matches!(entry.boundary.source, BoundarySource::Selection { .. }),
+        "the click sets the source to Selection: {:?}",
+        entry.boundary.source
+    );
+    assert_eq!(entry.boundary.offset, 0.0, "Selection takes offset 0");
+    assert!(entry.boundary.enabled, "the boundary stays on");
+
+    click_label(&ctx, &mut entry, &inputs, "Selection");
+    click_label(&ctx, &mut entry, &inputs, "Model Silhouette");
+    assert_eq!(
+        entry.boundary,
+        BoundaryConfig::for_3d_op(diameter),
+        "Model Silhouette takes the tool diameter offset again"
+    );
+}

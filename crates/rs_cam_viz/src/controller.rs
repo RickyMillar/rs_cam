@@ -499,6 +499,9 @@ impl<B: ComputeBackend> AppController<B> {
     /// [`Self::invalidate_simulation`]. The panel raises a flag for
     /// each; this runs them once per frame and clears them.
     ///
+    /// R7b added the notes: a panel write owes the operator a notice
+    /// (`Effects::picks_dropped_note`), and the notifications live here.
+    ///
     /// WP19 added the third. `Effects::simulation_cleared` says the
     /// session dropped its simulation, and the session and the viewport
     /// hold ONE simulation (WP11b, N12 item 10).
@@ -515,6 +518,9 @@ impl<B: ComputeBackend> AppController<B> {
         }
         if owed.invalidate_simulation {
             self.invalidate_simulation();
+        }
+        for note in owed.notes {
+            self.push_notification(note, Severity::Info);
         }
     }
 
