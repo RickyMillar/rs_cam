@@ -94,3 +94,10 @@ hand cursor. Fixes ordered from the look:
 - **Ruling:** the selected ring is too thin and too low in contrast on a
   white part: the quad line pipeline (D §3.5) is pulled forward from phase
   4 with width tokens, and the selected colour tries the green token.
+- Flaky core lib test under a parallel run: `compute::obstacle::tests::
+  a_mesh_obstacle_resolves_to_the_same_outline_twice_k2` failed once inside
+  `cargo test -p rs_cam_core --lib mesh` (2026-10-29) with the same ring
+  rotated to another start vertex, and passed 3 of 3 alone. The shared
+  silhouette memo (`geom_cache`, capacity 4) is evicted by sibling tests, and
+  a rebuilt silhouette starts at another vertex: make the silhouette builder
+  deterministic (no HashMap order) or key the test on a private cache.
