@@ -5,7 +5,7 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
 
 ## Files
 
-- `registry.rs` — every overlay, `dock_section`, exclusivity, the legends. P4.4: `selection_states`, `open_path_ends`, `boundary_outline` (drawn). The model look is no row: `set_display_mode` (THE write: dock control `panel::draw_display_mode` and `set_ui_view`) and `display_mode_refusal`.
+- `registry.rs` — every overlay, `dock_section`, exclusivity, the legends. P4.4: `selection_states`, `open_path_ends`, `boundary_outline` (drawn). The model look is no row: `set_display_mode` (THE write: dock bar `panel::draw_display_mode` and `set_ui_view`) and `display_mode_refusal`; the Stock control: `set_stock_display` (`panel::draw_stock_display`).
 - `live.rs` — computing, stale and failed per analysis, from live fields.
 - `panel.rs` — the catalogue, the shared row renderer, `RowState` (seven
   arms), Compute versus Compute & show, the Compute rest confirm.
@@ -15,7 +15,7 @@ and the catalogue read it. Entry: `ui::overlays::mod`.
 
 - Registration, MCP, the dock and the catalogue read the SAME registry, and
   every default reader asks `effective_default` (`[display.overlays]`).
-- Every row has ONE dock section and is listed in the catalogue.
+- Every row has ONE dock section (the More group and the catalogue group) and ONE dock home: the bar (`viewport_overlay::BAR_ROWS`, the display mode and Stock controls) or More (DOCK_DECLUTTER).
 - An unavailable overlay is refused with a reason, never silently accepted.
 - A row state is derived each frame; never store a computing, stale or
   failed flag. `live.rs` names the field that answers.

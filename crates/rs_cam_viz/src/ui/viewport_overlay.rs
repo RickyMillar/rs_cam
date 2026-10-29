@@ -4,12 +4,17 @@
 //! is a separate area in the bottom-right corner
 //! (`crate::ui::overlays::legend_rail`); it never covers the dock.
 //!
-//! The dock has four text-labelled sections in a fixed order: `View`,
-//! `Scene`, `Paths` and `Inspect`. A click on a section opens its upward
-//! popover. One popover is open at a time; a click on a second section
-//! closes the first. `Escape` or a click outside the dock and the popover
-//! closes it. The last button opens the All viewport options catalogue
-//! (`crate::ui::overlays::panel`), which lists every registry row.
+//! DOCK_DECLUTTER (operator approval, 2026-10-29): the bar holds the
+//! one-click controls, in this order: the display mode, Grid, Stock (Off ·
+//! Box · Solid), Cutting moves, Rapids, Collisions, then `More`. `More`
+//! opens one upward popover with every other row, grouped under the
+//! section titles `View`, `Scene`, `Paths` and `Inspect`; its last line
+//! opens the All viewport options catalogue
+//! (`crate::ui::overlays::panel`), which lists every registry row. The four
+//! section popovers went (a declutter removes a control; it does not hide
+//! a duplicate route). A row has ONE home: on the bar ([`BAR_ROWS`]) or in
+//! `More`. `Escape` or a click outside the dock and the popover closes
+//! `More`.
 //!
 //! The dock is an `egui::Area`, not a panel, so it takes no width from the
 //! 3D view. It takes pointer input only inside its own rects: a drag that
@@ -33,8 +38,8 @@
 //!   (`panel::RowState`, `overlays::live`). The dock stores no copy of it.
 //! - A selection change moves the TARGET. It never changes the preferred
 //!   mode. When the preferred mode cannot apply to the new target, the
-//!   section suffix carries the `—` glyph and the popover gives the reason;
-//!   the dock never shows another mode in its place.
+//!   section title in `More` carries the `—` glyph and the row gives the
+//!   reason; the dock never shows another mode in its place.
 //! - A `Compute & show` result applies only when the target and the mode
 //!   still match the request (`panel::settle_pending_show`).
 
@@ -58,14 +63,16 @@ pub const DOCK_AREA_ID: &str = "viewport_dock";
 /// The egui id of the popover area.
 pub const POPOVER_AREA_ID: &str = "viewport_dock_popover";
 
-/// At or above this viewport width, the dock shows the section suffixes
-/// (`Paths: Selected`). MOCKUPS §7, rule 1.
-pub const FULL_DOCK_MIN_VIEWPORT_WIDTH: f32 = 420.0;
-
-/// At or above this available width, the catalogue button carries the word
-/// `All` and the count. Under it, the button is the glyph alone.
-/// MOCKUPS §7, rule 3.
-pub const LABELLED_CATALOGUE_MIN_WIDTH: f32 = 300.0;
+/// The rows the bar owns (DOCK_DECLUTTER). Each has its home on the bar
+/// and is not listed in `More`; the catalogue still lists it.
+pub const BAR_ROWS: [&str; 6] = [
+    "grid",
+    "stock_box",
+    "stock_solid",
+    "cutting_moves",
+    "rapids",
+    "collisions",
+];
 
 /// The widest popover.
 pub const POPOVER_MAX_WIDTH: f32 = 320.0;
@@ -82,26 +89,6 @@ pub const DOCK_STACK_MAX_HEIGHT_FRACTION: f32 = 0.6;
 /// The smallest height a popover's scroll area gets. Under it, the list
 /// would show less than one row.
 const POPOVER_MIN_LIST_HEIGHT: f32 = 24.0;
-
-/// Which parts of the dock fit at one viewport width.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DockLayout {
-    /// Show `Paths: Selected` rather than `Paths`.
-    pub show_suffixes: bool,
-    /// Show `All ⌕ (n)` rather than `⌕`.
-    pub labelled_catalogue: bool,
-}
-
-impl DockLayout {
-    /// The width rules of MOCKUPS §7, applied in order. The four section
-    /// buttons never hide.
-    pub fn for_viewport_width(width: f32) -> Self {
-        Self {
-            show_suffixes: width >= FULL_DOCK_MIN_VIEWPORT_WIDTH,
-            labelled_catalogue: width - 2.0 * DOCK_GUTTER >= LABELLED_CATALOGUE_MIN_WIDTH,
-        }
-    }
-}
 
 /// How the preferred choice of a section stands against its target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,25 +216,6 @@ pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionS
     }
 }
 
-/// The text on one section button.
-pub fn section_button_text(state: &AppState, section: DockSection, layout: DockLayout) -> String {
-    let label = section.label();
-    match section_suffix(state, section) {
-        Some(suffix) => {
-            let glyph = match suffix.status.glyph() {
-                "" => String::new(),
-                glyph => format!(" {glyph}"),
-            };
-            if layout.show_suffixes {
-                format!("{label}: {}{glyph}", suffix.word)
-            } else {
-                format!("{label}{glyph}")
-            }
-        }
-        None => label.to_owned(),
-    }
-}
-
 /// The target line above the dock bar (MOCKUPS §2).
 pub fn target_text(state: &AppState) -> String {
     let numbered = |id: crate::state::toolpath::ToolpathId| {
@@ -281,12 +249,12 @@ pub fn target_text(state: &AppState) -> String {
 /// What the dock did with the pointer this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DockOutcome {
-    /// A click outside the dock and the popover closed the popover. The
+    /// A click outside the dock and the popover closed `More`. The
     /// viewport does not also select with that click (MOCKUPS §12, Q1).
     pub closed_popover_on_click: bool,
 }
 
-/// Draw the dock, the target line, the legend and the open popover over
+/// Draw the dock, the target line, the legend and the `More` popover over
 /// `viewport_rect`.
 pub fn draw(
     ui: &mut egui::Ui,
@@ -305,7 +273,6 @@ pub fn draw(
     let outcome = DockOutcome {
         closed_popover_on_click: close_on_outside_click(&ctx, state),
     };
-    let layout = DockLayout::for_viewport_width(viewport_rect.width());
     let max_width = (viewport_rect.width() - 2.0 * DOCK_GUTTER).max(1.0);
 
     let bar = egui::Area::new(egui::Id::new(DOCK_AREA_ID))
@@ -329,7 +296,7 @@ pub fn draw(
                 .truncate(),
             )
             .on_hover_text(target.as_str());
-            dock_bar(ui, state, lanes, events, layout)
+            dock_bar(ui, state, lanes, events)
         });
     // The legend reads the dock rect of THIS frame, so it can never sit on
     // the dock bar.
@@ -337,15 +304,13 @@ pub fn draw(
     let bar = bar.inner;
     legend_rail::draw(&ctx, state, viewport_rect, dock_rect);
 
-    if let Some(section) = state.overlays.open_section
-        && let Some(button) = bar.open_button
-    {
+    if state.overlays.more_open {
         let anchor = PopoverAnchor {
             viewport: viewport_rect,
-            button,
+            button: bar.more_button,
             bar: bar.frame,
         };
-        draw_popover(&ctx, state, projection, events, section, anchor);
+        draw_more(&ctx, state, projection, events, anchor);
     }
     panel::draw_rest_confirm(&ctx, state, events);
     outcome
@@ -355,18 +320,21 @@ pub fn draw(
 struct BarRects {
     /// The dock frame.
     frame: egui::Rect,
-    /// The button of the open section, when one is open.
-    open_button: Option<egui::Rect>,
+    /// The `More` button.
+    more_button: egui::Rect,
 }
 
+/// The bar: the display mode, Grid, Stock, Cutting moves, Rapids,
+/// Collisions, then `More` (DOCK_DECLUTTER). Every toggle is the row's own
+/// control (`panel::draw_control`): its precondition, its reason on hover
+/// and its workspace default stay the row's.
 fn dock_bar(
     ui: &mut egui::Ui,
     state: &mut AppState,
     lanes: &[LaneSnapshot; 4],
     events: &mut Vec<AppEvent>,
-    layout: DockLayout,
 ) -> BarRects {
-    let mut open_button = None;
+    let mut more_button = egui::Rect::NOTHING;
     let frame = egui::Frame::default()
         .fill(tokens::SURFACE_OVERLAY)
         .stroke(egui::Stroke::new(1.0, tokens::HAIRLINE))
@@ -375,79 +343,78 @@ fn dock_bar(
         .inner_margin(egui::Margin::same(tokens::SPACE_2 as i8))
         .show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                for section in DockSection::ALL {
-                    let open = state.overlays.open_section == Some(section);
-                    let text = section_button_text(state, section, layout);
-                    let detail = section_suffix(state, section).and_then(|suffix| suffix.detail);
-                    let mut response = ui.add(egui::Button::selectable(
+                panel::draw_display_mode(ui, state);
+                ui.separator();
+                bar_toggle(ui, state, "grid");
+                panel::draw_stock_display(ui, state);
+                bar_toggle(ui, state, "cutting_moves");
+                bar_toggle(ui, state, "rapids");
+                if let Some(response) = bar_toggle(ui, state, "collisions") {
+                    // The automation harness locates the collision toggle
+                    // through this label (UX §8, "two automation labels
+                    // must survive").
+                    automation::record(ui, "overlay_collision_check", &response, "Collisions");
+                }
+                ui.separator();
+                let open = state.overlays.more_open;
+                let response = ui
+                    .add(egui::Button::selectable(
                         open,
-                        egui::RichText::new(text)
+                        egui::RichText::new("More \u{25B4}")
                             .size(tokens::SIZE_BODY)
                             .color(if open {
                                 tokens::TEXT_STRONG
                             } else {
                                 tokens::TEXT_BODY
                             }),
-                    ));
-                    if let Some(detail) = detail {
-                        response = response.on_hover_text(detail);
-                    }
-                    if response.clicked() {
-                        state.overlays.toggle_section(section);
-                    }
-                    if section == DockSection::Inspect {
-                        // The automation harness locates the collision
-                        // toggle through this label. The Collisions row
-                        // lives in Inspect, so the label moves with it
-                        // (UX §8, "two automation labels must survive").
-                        automation::record(
-                            ui,
-                            "overlay_collision_check",
-                            &response,
-                            "Inspect (collisions)",
-                        );
-                    }
-                    if state.overlays.open_section == Some(section) {
-                        open_button = Some(response.rect);
-                    }
+                    ))
+                    .on_hover_text(
+                        "Every other viewport option, by section, and All viewport options.",
+                    );
+                if response.clicked() {
+                    state.overlays.toggle_more();
                 }
-                ui.separator();
-                catalogue_button(ui, state, layout);
+                more_button = response.rect;
                 compute_activity(ui, lanes, events);
             });
         });
     BarRects {
         frame: frame.response.rect,
-        open_button,
+        more_button,
     }
 }
 
-/// The button that opens the All viewport options catalogue.
-fn catalogue_button(ui: &mut egui::Ui, state: &mut AppState, layout: DockLayout) {
+/// One bar toggle: the row's own checkbox with its registry label.
+fn bar_toggle(ui: &mut egui::Ui, state: &mut AppState, id: &str) -> Option<egui::Response> {
+    let row = registry::row(id)?;
+    Some(panel::draw_control(
+        ui,
+        state,
+        row,
+        row.label,
+        RowControl::Check,
+    ))
+}
+
+/// The last line of `More`: the All viewport options catalogue.
+fn catalogue_line(ui: &mut egui::Ui, state: &mut AppState) {
     let count = registry::non_default_count(state);
-    let text = match (layout.labelled_catalogue, count) {
-        (true, 0) => "All \u{2315}".to_owned(),
-        (true, n) => format!("All \u{2315} ({n})"),
-        (false, _) => "\u{2315}".to_owned(),
-    };
-    let hover = if layout.labelled_catalogue || count == 0 {
-        "Every viewport option, searchable, with the reason for any that cannot draw (shortcut: O)."
-            .to_owned()
-    } else {
-        format!(
-            "Every viewport option, searchable, with the reason for any that cannot draw (shortcut: O). {count} changed from this workspace's defaults."
-        )
+    let text = match count {
+        0 => "All viewport options \u{2315}".to_owned(),
+        n => format!("All viewport options \u{2315} ({n})"),
     };
     let response = ui
         .add(egui::Button::selectable(
             state.overlays.open,
             egui::RichText::new(text).size(tokens::SIZE_BODY),
         ))
-        .on_hover_text(hover);
+        .on_hover_text(
+            "Every viewport option, searchable, with the reason for any that cannot draw (shortcut: O). The count is the options changed from this workspace's defaults.",
+        );
     automation::record(ui, "viewport_catalogue", &response, "All viewport options");
     if response.clicked() {
         state.overlays.open = !state.overlays.open;
-        state.overlays.close_section();
+        state.overlays.close_more();
     }
 }
 
@@ -485,7 +452,7 @@ fn compute_activity(ui: &mut egui::Ui, lanes: &[LaneSnapshot; 4], events: &mut V
 /// click still reaches whatever is under it, except that the viewport does
 /// not select with it (see [`DockOutcome`]).
 fn close_on_outside_click(ctx: &egui::Context, state: &mut AppState) -> bool {
-    if state.overlays.open_section.is_none() {
+    if !state.overlays.more_open {
         return false;
     }
     let (clicked, pos) = ctx.input(|i| (i.pointer.any_click(), i.pointer.interact_pos()));
@@ -501,7 +468,7 @@ fn close_on_outside_click(ctx: &egui::Context, state: &mut AppState) -> bool {
     if inside {
         return false;
     }
-    state.overlays.close_section();
+    state.overlays.close_more();
     true
 }
 
@@ -509,19 +476,19 @@ fn close_on_outside_click(ctx: &egui::Context, state: &mut AppState) -> bool {
 #[derive(Debug, Clone, Copy)]
 struct PopoverAnchor {
     viewport: egui::Rect,
-    /// The button of the open section.
+    /// The `More` button.
     button: egui::Rect,
     /// The dock frame.
     bar: egui::Rect,
 }
 
-/// The popover of the open section, above its button.
-fn draw_popover(
+/// The `More` popover, above its button: every row that is not on the bar,
+/// under its section title, then the catalogue line.
+fn draw_more(
     ctx: &egui::Context,
     state: &mut AppState,
     projection: ProjectionMode,
     events: &mut Vec<AppEvent>,
-    section: DockSection,
     anchor: PopoverAnchor,
 ) {
     let PopoverAnchor {
@@ -532,8 +499,7 @@ fn draw_popover(
     let width = POPOVER_MAX_WIDTH
         .min(viewport_rect.width() - 2.0 * DOCK_GUTTER)
         .max(1.0);
-    let left = button
-        .left()
+    let left = (button.right() - width)
         .min(viewport_rect.right() - DOCK_GUTTER - width)
         .max(viewport_rect.left() + DOCK_GUTTER);
     let bottom = bar.top() - tokens::SPACE_2;
@@ -561,11 +527,21 @@ fn draw_popover(
                     egui::ScrollArea::vertical()
                         .id_salt("viewport_dock_popover_scroll")
                         .max_height(max_height)
-                        .show(ui, |ui| match section {
-                            DockSection::View => view_popover(ui, state, projection, events),
-                            DockSection::Scene => scene_popover(ui, state, events),
-                            DockSection::Paths => paths_popover(ui, state, events),
-                            DockSection::Inspect => inspect_popover(ui, state, events),
+                        .show(ui, |ui| {
+                            for section in DockSection::ALL {
+                                components::SectionHeader::new(panel::section_title(
+                                    state, section,
+                                ))
+                                .show(ui);
+                                match section {
+                                    DockSection::View => view_group(ui, state, projection, events),
+                                    DockSection::Scene => scene_group(ui, state, events),
+                                    DockSection::Paths => paths_group(ui, state, events),
+                                    DockSection::Inspect => inspect_group(ui, state, events),
+                                }
+                            }
+                            ui.separator();
+                            catalogue_line(ui, state);
                         });
                 });
         });
@@ -580,9 +556,9 @@ fn caption(ui: &mut egui::Ui, text: &str) {
     );
 }
 
-/// Draw every row of `section` that `handled` does not name. A new row
-/// therefore always shows in its dock section, even before the section
-/// gives it a special place.
+/// Draw every row of `section` that `handled` does not name and the bar
+/// does not own ([`BAR_ROWS`]). A new row therefore always shows in `More`,
+/// even before its group gives it a special place.
 fn draw_remaining_rows(
     ui: &mut egui::Ui,
     state: &mut AppState,
@@ -591,7 +567,7 @@ fn draw_remaining_rows(
     handled: &[&str],
 ) {
     for row in registry::rows_in_section(section) {
-        if !handled.contains(&row.id) {
+        if !handled.contains(&row.id) && !BAR_ROWS.contains(&row.id) {
             panel::draw_row(ui, state, events, row);
         }
     }
@@ -672,7 +648,7 @@ pub(crate) fn draw_view_controls(
     });
 }
 
-fn view_popover(
+fn view_group(
     ui: &mut egui::Ui,
     state: &mut AppState,
     projection: ProjectionMode,
@@ -682,10 +658,12 @@ fn view_popover(
     draw_remaining_rows(ui, state, events, DockSection::View, &[]);
 }
 
-fn scene_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
-    // FOLLOW_UPS §1: the model look first, then the rows.
-    panel::draw_display_mode(ui, state);
+fn scene_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // The display mode, Grid and Stock are on the bar.
     for row in registry::rows_in_section(DockSection::Scene) {
+        if BAR_ROWS.contains(&row.id) {
+            continue;
+        }
         panel::draw_row(ui, state, events, row);
         if row.id == "simulated_stock" {
             panel::draw_stock_opacity(ui, state);
@@ -693,7 +671,7 @@ fn scene_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEv
     }
 }
 
-/// The rows of Paths that the popover places itself.
+/// The rows of Paths that the group places itself (or the bar owns).
 const PATHS_PLACED: [&str; 13] = [
     "all_toolpaths",
     "cutting_moves",
@@ -710,7 +688,7 @@ const PATHS_PLACED: [&str; 13] = [
     "span_dressup",
 ];
 
-fn paths_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+fn paths_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     // The draw scope writes through `UiCommand::ToggleShowAllToolpaths`,
     // whose handler calls `registry::set_overlay` on `all_toolpaths`.
     if let Some(scope_row) = registry::row("all_toolpaths") {
@@ -735,13 +713,8 @@ fn paths_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEv
         }
         panel::draw_reason(ui, state, events, scope_row);
     }
-    for id in [
-        "cutting_moves",
-        "rapids",
-        "entry_markers",
-        "height_planes",
-        "tool_profile_ghost",
-    ] {
+    // Cutting moves and Rapids are on the bar.
+    for id in ["entry_markers", "height_planes", "tool_profile_ghost"] {
         if let Some(row) = registry::row(id) {
             panel::draw_row(ui, state, events, row);
         }
@@ -780,7 +753,7 @@ fn paths_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEv
     );
 }
 
-/// The rows of Inspect that the popover places itself.
+/// The rows of Inspect that the group places itself (or the bar owns).
 const INSPECT_PLACED: [&str; 11] = [
     "reach_map",
     "rest_heatmap",
@@ -795,7 +768,7 @@ const INSPECT_PLACED: [&str; 11] = [
     "active_step_highlight",
 ];
 
-fn inspect_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+fn inspect_group(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
     caption(ui, "Model colour");
     draw_row_as(ui, state, events, "reach_map", "Reach", RowControl::Choice);
     draw_row_as(
@@ -835,8 +808,8 @@ fn inspect_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<App
     ] {
         draw_row_as(ui, state, events, id, label, RowControl::Choice);
     }
+    // Collisions is on the bar.
     for id in [
-        "collisions",
         "tool_deflection",
         "generator_steps",
         "active_step_highlight",
@@ -846,10 +819,4 @@ fn inspect_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<App
         }
     }
     draw_remaining_rows(ui, state, events, DockSection::Inspect, &INSPECT_PLACED);
-    ui.horizontal_wrapped(|ui| {
-        caption(ui, "Move colour is in Paths.");
-        if ui.add(components::Button::new("Open Paths")).clicked() {
-            state.overlays.open_section = Some(DockSection::Paths);
-        }
-    });
 }

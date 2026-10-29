@@ -753,10 +753,10 @@ fn the_retired_controls_have_no_second_home() {
         !toolbar.contains("RenderMode"),
         "the render-mode menu is back — its Wireframe arm drew nothing"
     );
-    // The viewport redesign: the dock replaced the strip, and its last
-    // button opens the All viewport options catalogue.
+    // The viewport redesign: the dock replaced the strip. DOCK_DECLUTTER:
+    // the last line of `More` opens the All viewport options catalogue.
     assert!(
-        toolbar.contains("fn catalogue_button(")
+        toolbar.contains("fn catalogue_line(")
             && toolbar.contains("state.overlays.open = !state.overlays.open"),
         "the dock no longer opens the All viewport options catalogue"
     );
@@ -1179,4 +1179,36 @@ fn the_height_planes_row_is_off_by_default_and_shows_with_the_heights_tab() {
     assert_eq!(report.applied.get("height_planes"), Some(&true));
     state.gui.active_toolpath_tab = None;
     assert!(rs_cam_viz::state::viewport::height_planes_drawn(&state));
+}
+
+/// DOCK_DECLUTTER (answer 2): the dock's Stock control is one three-way
+/// choice over `stock_box` and `stock_solid`, written through ONE function
+/// with the rows' own setter; the MCP overlay ids keep working.
+#[test]
+fn the_stock_control_owns_the_two_stock_rows() {
+    use rs_cam_viz::state::overlays::StockDisplay;
+    let mut state = AppState::new();
+    state.workspace = Workspace::Toolpaths;
+    let read = |s: &AppState| (s.viewport.show_stock, s.viewport.show_stock_solid);
+    for (mode, flags) in [
+        (StockDisplay::Solid, (false, true)),
+        (StockDisplay::Box, (true, false)),
+        (StockDisplay::Off, (false, false)),
+    ] {
+        assert_eq!(registry::stock_display_refusal(&state, mode), None);
+        assert_eq!(registry::set_stock_display(&mut state, mode), Ok(()));
+        assert_eq!(read(&state), flags, "{mode:?}");
+        assert_eq!(registry::stock_display(&state), mode);
+    }
+    // The control reads a state the overlay ids made, Solid first.
+    let both = BTreeMap::from([
+        ("stock_box".to_owned(), true),
+        ("stock_solid".to_owned(), true),
+    ]);
+    let report = registry::apply_overlays(&mut state, &both);
+    assert!(report.refused.is_empty());
+    assert_eq!(registry::stock_display(&state), StockDisplay::Solid);
+    // The dock source writes the stock through the one function.
+    let panel = source("src/ui/overlays/panel.rs");
+    assert!(panel.contains("registry::set_stock_display(state, mode)"));
 }

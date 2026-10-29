@@ -5,12 +5,14 @@
 //! the Overlays panel. These arms hold the promises the redesign made:
 //!
 //! - (a) every registry row has exactly one dock section, and the catalogue
-//!   walks every section, so every row is reachable;
-//! - (b) at most one popover is open, and `Escape` closes one surface at a
+//!   walks every section, so every row is reachable. DOCK_DECLUTTER
+//!   (2026-10-29): every row has ONE dock home, the bar (`BAR_ROWS`, 6
+//!   rows) or `More` (the other rows, under their section titles);
+//! - (b) `More` is the one popover, and `Escape` closes one surface at a
 //!   time;
 //! - (c) the dock constructs the three commands the strip alone constructed;
 //! - (d) `O` opens the catalogue and `Shift+O` is bound nowhere;
-//! - (e) at a 320 pt viewport, the dock and each popover stay inside the
+//! - (e) at a 320 pt viewport, the dock and `More` stay inside the
 //!   viewport width.
 
 #![expect(
@@ -29,7 +31,7 @@ use rs_cam_viz::render::camera::ProjectionMode;
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::overlays::{DockSection, OverlayPanelState};
 use rs_cam_viz::ui::overlays::registry;
-use rs_cam_viz::ui::viewport_overlay::{self, DOCK_AREA_ID, DockLayout, POPOVER_AREA_ID};
+use rs_cam_viz::ui::viewport_overlay::{self, BAR_ROWS, DOCK_AREA_ID, POPOVER_AREA_ID};
 use rs_cam_viz::ui::{AppEvent, tokens};
 
 // ── fixtures ─────────────────────────────────────────────────────────
@@ -127,13 +129,38 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         let row = registry::row(id).unwrap_or_else(|| panic!("row `{id}` is gone"));
         assert_eq!(registry::dock_section(row), section, "`{id}` moved section");
     }
+
+    // DOCK_DECLUTTER: the bar owns six rows (Grid, the two Stock rows
+    // behind the Stock control, Cutting moves, Rapids, Collisions), each a
+    // registry row; `More` lists the other 37 under their section titles.
+    assert_eq!(
+        BAR_ROWS,
+        [
+            "grid",
+            "stock_box",
+            "stock_solid",
+            "cutting_moves",
+            "rapids",
+            "collisions"
+        ]
+    );
+    for id in BAR_ROWS {
+        assert!(
+            registry::row(id).is_some(),
+            "bar row `{id}` is not a registry row"
+        );
+    }
+    let more = rows.iter().filter(|r| !BAR_ROWS.contains(&r.id)).count();
+    assert_eq!(more + BAR_ROWS.len(), rows.len());
+    assert_eq!(more, 37, "More holds 37 rows (43 less the 6 bar rows)");
 }
 
 /// The catalogue walks every section with the registry's own section list,
-/// and each popover draws the rows it does not place itself. So a row can
-/// never exist in the registry and be missing from both surfaces.
+/// and `More` walks every section too, drawing each row the bar does not
+/// own. So a row can never exist in the registry and be missing from the
+/// dock or the catalogue.
 #[test]
-fn the_catalogue_and_the_popovers_walk_the_section_lists_g_vpdock() {
+fn the_catalogue_and_more_walk_the_section_lists_g_vpdock() {
     let catalogue = code_only(&source("src/ui/overlays/panel.rs"));
     assert!(
         catalogue.contains("for section in DockSection::ALL")
@@ -146,43 +173,67 @@ fn the_catalogue_and_the_popovers_walk_the_section_lists_g_vpdock() {
     );
 
     let dock = code_only(&source("src/ui/viewport_overlay.rs"));
+    assert!(
+        dock.contains("for section in DockSection::ALL"),
+        "More no longer walks every section"
+    );
     for section in ["View", "Paths", "Inspect"] {
         let call = format!("draw_remaining_rows(ui, state, events, DockSection::{section}");
         assert!(
             dock.contains(&call),
-            "the {section} popover no longer draws the rows it does not place itself"
+            "the {section} group no longer draws the rows it does not place itself"
         );
     }
     assert!(
-        dock.contains("for row in registry::rows_in_section(DockSection::Scene)"),
-        "the Scene popover no longer walks its section list"
+        dock.contains("for row in registry::rows_in_section(DockSection::Scene)")
+            && dock.contains("!BAR_ROWS.contains(&row.id)")
+            && dock.contains("if BAR_ROWS.contains(&row.id)"),
+        "More no longer skips the bar rows (one home per row)"
+    );
+    // The bar, in the ruled order: the display mode, Grid, Stock, Cutting
+    // moves, Rapids, Collisions, then More.
+    let bar_at = dock.find("fn dock_bar(").expect("the bar is gone");
+    let bar = &dock[bar_at..];
+    let mut at = 0;
+    for needle in [
+        "panel::draw_display_mode(ui, state)",
+        "bar_toggle(ui, state, \"grid\")",
+        "panel::draw_stock_display(ui, state)",
+        "bar_toggle(ui, state, \"cutting_moves\")",
+        "bar_toggle(ui, state, \"rapids\")",
+        "bar_toggle(ui, state, \"collisions\")",
+        "\"More \\u{25B4}\"",
+    ] {
+        let found = bar[at..]
+            .find(needle)
+            .unwrap_or_else(|| panic!("the bar lost `{needle}` or its order"));
+        at += found + needle.len();
+    }
+    // The section popovers went: no section button, no section state.
+    let state = code_only(&source("src/state/overlays.rs"));
+    assert!(
+        !state.contains("open_section") && !dock.contains("toggle_section"),
+        "a section popover is back"
     );
 }
 
-// ── (b) one popover at a time ────────────────────────────────────────
+// ── (b) More is the one popover ──────────────────────────────────────
 
 #[test]
-fn at_most_one_popover_is_open_g_vpdock() {
+fn more_is_the_one_popover_g_vpdock() {
     let mut overlays = OverlayPanelState::new();
-    assert_eq!(overlays.open_section, None, "the dock opens closed");
+    assert!(!overlays.more_open, "the dock opens closed");
+    overlays.toggle_more();
+    assert!(overlays.more_open);
+    overlays.toggle_more();
+    assert!(!overlays.more_open, "More again closes it");
 
-    overlays.toggle_section(DockSection::Scene);
-    assert_eq!(overlays.open_section, Some(DockSection::Scene));
-
-    // A second section closes the first and opens the second.
-    overlays.toggle_section(DockSection::Inspect);
-    assert_eq!(overlays.open_section, Some(DockSection::Inspect));
-
-    // The same section again closes it.
-    overlays.toggle_section(DockSection::Inspect);
-    assert_eq!(overlays.open_section, None);
-
-    // Escape closes the popover first, then the catalogue, then nothing.
+    // Escape closes More first, then the catalogue, then nothing.
     overlays.open = true;
-    overlays.toggle_section(DockSection::Paths);
+    overlays.toggle_more();
     assert!(overlays.close_one_for_escape());
-    assert_eq!(overlays.open_section, None);
-    assert!(overlays.open, "the first Escape closes the popover only");
+    assert!(!overlays.more_open);
+    assert!(overlays.open, "the first Escape closes More only");
     assert!(overlays.close_one_for_escape());
     assert!(!overlays.open, "the second Escape closes the catalogue");
     assert!(
@@ -381,33 +432,22 @@ fn the_dock_fits_a_320_pt_viewport_g_vpdock() {
         egui::vec2(rs_cam_viz::ui::overlays::panel::MIN_VIEWPORT_WIDTH, 600.0),
     );
 
-    // MOCKUPS §7: at 320 pt the suffixes hide and the catalogue button is
-    // the glyph alone. The four sections never hide.
-    let layout = DockLayout::for_viewport_width(viewport.width());
-    assert!(!layout.show_suffixes, "320 pt is under the suffix limit");
-    assert!(
-        !layout.labelled_catalogue,
-        "288 pt available is under the labelled catalogue limit"
-    );
-    let wide = DockLayout::for_viewport_width(1000.0);
-    assert!(wide.show_suffixes && wide.labelled_catalogue);
-
+    // DOCK_DECLUTTER: the bar wraps to a second line at 320 pt; it never
+    // hides a control.
     let mut state = AppState::new();
     let (dock, popover) = render_dock(&mut state, viewport);
     let dock = dock.expect("the dock area never drew");
     assert_inside("the dock", dock, viewport);
-    assert!(popover.is_none(), "a popover drew with no section open");
+    assert!(popover.is_none(), "a popover drew with More closed");
 
-    for section in DockSection::ALL {
-        let mut state = AppState::new();
-        state.overlays.open_section = Some(section);
-        let (dock, popover) = render_dock(&mut state, viewport);
-        assert_inside(
-            "the dock",
-            dock.expect("the dock area never drew"),
-            viewport,
-        );
-        let popover = popover.unwrap_or_else(|| panic!("the {section:?} popover never drew"));
-        assert_inside(&format!("the {section:?} popover"), popover, viewport);
-    }
+    let mut state = AppState::new();
+    state.overlays.more_open = true;
+    let (dock, popover) = render_dock(&mut state, viewport);
+    assert_inside(
+        "the dock",
+        dock.expect("the dock area never drew"),
+        viewport,
+    );
+    let popover = popover.unwrap_or_else(|| panic!("More never drew"));
+    assert_inside("the More popover", popover, viewport);
 }

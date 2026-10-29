@@ -266,7 +266,11 @@ pub(crate) fn draw_control(
             resp
         }
     };
-    response.on_hover_text(hover)
+    // A disabled control (the dock bar's Collisions outside Simulation)
+    // gives its reason on hover too.
+    response
+        .on_hover_text(hover.clone())
+        .on_disabled_hover_text(hover)
 }
 
 /// One indented caption line under a row.
@@ -759,40 +763,78 @@ pub(crate) fn draw_display_mode(ui: &mut egui::Ui, state: &mut AppState) {
     let refusal = registry::display_mode_refusal(state);
     let current = state.viewport.display_mode;
     let mut chosen = None;
-    let response = ui
-        .add_enabled_ui(refusal.is_none(), |ui| {
-            ui.horizontal(|ui| {
-                for (mode, word, hover) in [
-                    (
-                        DisplayMode::Wireframe,
-                        "Wireframe",
-                        "No face fill: the triangle edges of every model.",
-                    ),
-                    (DisplayMode::Shaded, "Shaded", "The faces with no edges."),
-                    (
-                        DisplayMode::ShadedWithEdges,
-                        "Edges",
-                        "The faces and the STEP face edges.",
-                    ),
-                ] {
-                    let selected = current == mode;
-                    if ui
-                        .add(egui::Button::selectable(selected, word))
-                        .on_hover_text(hover)
-                        .clicked()
-                        && !selected
-                    {
-                        chosen = Some(mode);
-                    }
-                }
-            });
-        })
-        .response;
-    if let Some(reason) = refusal {
-        response.on_disabled_hover_text(reason);
+    // The buttons go straight into the caller's layout, so a wrapping bar
+    // can wrap between them; a caller that wants one strip wraps the call
+    // in `ui.horizontal`.
+    for (mode, word, hover) in [
+        (
+            DisplayMode::Wireframe,
+            "Wireframe",
+            "No face fill: the triangle edges of every model.",
+        ),
+        (DisplayMode::Shaded, "Shaded", "The faces with no edges."),
+        (
+            DisplayMode::ShadedWithEdges,
+            "Edges",
+            "The faces and the STEP face edges.",
+        ),
+    ] {
+        let selected = current == mode;
+        let disabled_hover = match refusal {
+            Some(reason) => format!("{hover}\n\n{} {reason}", tokens::GLYPH_UNKNOWN),
+            None => hover.to_owned(),
+        };
+        let response = ui
+            .add_enabled(refusal.is_none(), egui::Button::selectable(selected, word))
+            .on_hover_text(hover)
+            .on_disabled_hover_text(disabled_hover);
+        if response.clicked() && !selected {
+            chosen = Some(mode);
+        }
     }
     if let Some(mode) = chosen {
         let _ = registry::set_display_mode(state, mode);
+    }
+}
+
+/// The dock's Stock control (DOCK_DECLUTTER, answer 2): one segmented
+/// control, Off · Box · Solid, over the `stock_box` and `stock_solid` rows.
+/// It writes through `registry::set_stock_display`. A choice its row cannot
+/// draw is disabled, and its hover gives the row's own text and reason.
+pub(crate) fn draw_stock_display(ui: &mut egui::Ui, state: &mut AppState) {
+    use crate::state::overlays::StockDisplay;
+    let current = registry::stock_display(state);
+    let mut chosen = None;
+    // Straight into the caller's layout, as `draw_display_mode`.
+    {
+        for (mode, word, row_id) in [
+            (StockDisplay::Off, "Off", None),
+            (StockDisplay::Box, "Box", Some("stock_box")),
+            (StockDisplay::Solid, "Solid", Some("stock_solid")),
+        ] {
+            let refusal = registry::stock_display_refusal(state, mode);
+            let hover = match row_id.and_then(registry::row) {
+                Some(row) => match &refusal {
+                    Some(reason) => format!("{}\n\n{} {reason}", row.hover, tokens::GLYPH_UNKNOWN),
+                    None => row.hover.to_owned(),
+                },
+                None => "No stock drawn.".to_owned(),
+            };
+            let selected = current == mode;
+            let response = ui
+                .add_enabled(
+                    refusal.is_none() || selected,
+                    egui::Button::selectable(selected, word),
+                )
+                .on_hover_text(hover.clone())
+                .on_disabled_hover_text(hover);
+            if response.clicked() && !selected {
+                chosen = Some(mode);
+            }
+        }
+    }
+    if let Some(mode) = chosen {
+        let _ = registry::set_stock_display(state, mode);
     }
 }
 
@@ -819,7 +861,7 @@ fn matches_filter(
 
 /// The catalogue section header: `VIEW`, `SCENE`, `PATHS: SELECTED`,
 /// `INSPECT: REACH`.
-fn section_title(state: &AppState, section: DockSection) -> String {
+pub(crate) fn section_title(state: &AppState, section: DockSection) -> String {
     let base = section.label().to_uppercase();
     match crate::ui::viewport_overlay::section_suffix(state, section) {
         Some(suffix) => format!("{base}: {}", suffix.word.to_uppercase()),
@@ -917,7 +959,7 @@ fn catalogue_body(
                     crate::ui::viewport_overlay::draw_view_controls(ui, state, projection, events);
                 }
                 if extras && section == DockSection::Scene {
-                    draw_display_mode(ui, state);
+                    ui.horizontal(|ui| draw_display_mode(ui, state));
                 }
                 for row in rows {
                     listed += 1;

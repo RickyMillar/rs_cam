@@ -54,7 +54,7 @@ use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 use rs_cam_viz::compute::{ComputeLane, LaneSnapshot};
 use rs_cam_viz::render::camera::ProjectionMode;
 use rs_cam_viz::state::job::{ModelKind, ModelUnits};
-use rs_cam_viz::state::overlays::{DockSection, OverlayPanelState};
+use rs_cam_viz::state::overlays::OverlayPanelState;
 use rs_cam_viz::state::runtime::{ReachStatus, ToolpathRun, ToolpathRuntime};
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::state::toolpath::ToolpathResult;
@@ -875,12 +875,10 @@ fn area(ctx: &egui::Context, id: &str) -> Option<egui::Rect> {
 #[test]
 fn the_dock_keeps_its_height_budget_at_320_by_600_g_vpstate() {
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(320.0, 600.0));
-    for section in [None]
-        .into_iter()
-        .chain(DockSection::ALL.into_iter().map(Some))
-    {
+    // DOCK_DECLUTTER: the bar alone, then the bar with `More` open.
+    for more in [false, true] {
         let mut state = legend_fixture();
-        state.overlays.open_section = section;
+        state.overlays.more_open = more;
         let ctx = ctx(viewport.width(), viewport.height());
         for _ in 0..3 {
             frame(&ctx, &mut state, viewport, Vec::new());
@@ -897,12 +895,12 @@ fn the_dock_keeps_its_height_budget_at_320_by_600_g_vpstate() {
             "measured: the dock is {:.1} pt wide; 288 pt is available at 320 pt",
             dock.width()
         );
-        if let Some(section) = section {
+        if more {
             let popover = area(&ctx, POPOVER_AREA_ID)
-                .unwrap_or_else(|| panic!("the {section:?} popover never drew"));
+                .unwrap_or_else(|| panic!("the More popover never drew"));
             assert!(
                 viewport.contains_rect(popover.shrink(0.5)),
-                "measured: the {section:?} popover {popover:?} overflows the 320 × 600 viewport"
+                "measured: the More popover {popover:?} overflows the 320 × 600 viewport"
             );
         }
     }
@@ -912,20 +910,17 @@ fn the_dock_keeps_its_height_budget_at_320_by_600_g_vpstate() {
 #[test]
 fn a_popover_scrolls_inside_a_short_viewport_g_vpstate() {
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(320.0, 300.0));
-    for section in DockSection::ALL {
-        let mut state = legend_fixture();
-        state.overlays.open_section = Some(section);
-        let ctx = ctx(viewport.width(), viewport.height());
-        for _ in 0..3 {
-            frame(&ctx, &mut state, viewport, Vec::new());
-        }
-        let popover = area(&ctx, POPOVER_AREA_ID)
-            .unwrap_or_else(|| panic!("the {section:?} popover never drew"));
-        assert!(
-            popover.top() >= viewport.top() - 0.5 && popover.bottom() <= viewport.bottom() + 0.5,
-            "measured: the {section:?} popover {popover:?} leaves a 320 × 300 viewport"
-        );
+    let mut state = legend_fixture();
+    state.overlays.more_open = true;
+    let ctx = ctx(viewport.width(), viewport.height());
+    for _ in 0..3 {
+        frame(&ctx, &mut state, viewport, Vec::new());
     }
+    let popover = area(&ctx, POPOVER_AREA_ID).unwrap_or_else(|| panic!("More never drew"));
+    assert!(
+        popover.top() >= viewport.top() - 0.5 && popover.bottom() <= viewport.bottom() + 0.5,
+        "measured: the More popover {popover:?} leaves a 320 × 300 viewport"
+    );
 }
 
 // ── (f) interaction ──────────────────────────────────────────────────
@@ -941,10 +936,10 @@ fn tab() -> egui::Event {
 }
 
 #[test]
-fn tab_walks_the_sections_in_order_then_the_popover_g_vpstate() {
+fn tab_walks_the_bar_in_order_then_more_g_vpstate() {
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 700.0));
     let mut state = fresh_state();
-    state.overlays.open_section = Some(DockSection::Inspect);
+    state.overlays.more_open = true;
     let ctx = ctx(viewport.width(), viewport.height());
     for _ in 0..3 {
         frame(&ctx, &mut state, viewport, Vec::new());
@@ -954,7 +949,7 @@ fn tab_walks_the_sections_in_order_then_the_popover_g_vpstate() {
 
     let mut dock_lefts = Vec::new();
     let mut reached_popover = false;
-    for _ in 0..12 {
+    for _ in 0..30 {
         frame(&ctx, &mut state, viewport, vec![tab()]);
         let Some(id) = ctx.memory(|m| m.focused()) else {
             continue;
@@ -973,21 +968,24 @@ fn tab_walks_the_sections_in_order_then_the_popover_g_vpstate() {
     }
     assert!(
         dock_lefts.len() >= 4,
-        "Tab reached only {} dock buttons before the popover",
+        "Tab reached only {} bar controls before More",
         dock_lefts.len()
     );
     assert!(
         dock_lefts.windows(2).all(|w| w[0] < w[1]),
-        "Tab must walk the sections left to right: {dock_lefts:?}"
+        "Tab must walk the bar left to right: {dock_lefts:?}"
     );
-    assert!(reached_popover, "Tab never moved into the open popover");
+    assert!(
+        reached_popover,
+        "Tab never moved into the open More popover"
+    );
 }
 
 #[test]
 fn an_outside_click_closes_the_popover_and_selects_nothing_g_vpstate() {
     let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
     let mut state = fresh_state();
-    state.overlays.open_section = Some(DockSection::Scene);
+    state.overlays.more_open = true;
     let ctx = ctx(viewport.width(), viewport.height());
     for _ in 0..3 {
         frame(&ctx, &mut state, viewport, Vec::new());
@@ -1016,7 +1014,7 @@ fn an_outside_click_closes_the_popover_and_selects_nothing_g_vpstate() {
         vec![egui::Event::PointerMoved(outside), press(true)],
     );
     let outcome = frame(&ctx, &mut state, viewport, vec![press(false)]);
-    assert_eq!(state.overlays.open_section, None, "the popover stayed open");
+    assert!(!state.overlays.more_open, "More stayed open");
     assert!(
         outcome.closed_popover_on_click,
         "the closing click must not also select in the viewport (MOCKUPS Q1)"
@@ -1027,14 +1025,14 @@ fn an_outside_click_closes_the_popover_and_selects_nothing_g_vpstate() {
 fn escape_closes_one_surface_at_a_time_g_vpstate() {
     let mut overlays = OverlayPanelState::new();
     overlays.open = true;
-    overlays.open_section = Some(DockSection::Inspect);
+    overlays.more_open = true;
     overlays.rest_confirm = Some(ToolpathId::from_raw(3));
     assert!(overlays.takes_escape_first());
     assert!(overlays.close_one_for_escape());
     assert_eq!(overlays.rest_confirm, None, "the confirm closes first");
-    assert!(overlays.open_section.is_some());
+    assert!(overlays.more_open);
     assert!(overlays.close_one_for_escape());
-    assert_eq!(overlays.open_section, None, "then the popover");
+    assert!(!overlays.more_open, "then More");
     assert!(!overlays.takes_escape_first());
     assert!(overlays.close_one_for_escape());
     assert!(!overlays.open, "then the catalogue");
@@ -1168,16 +1166,23 @@ fn the_legend_never_covers_the_dock_or_the_gizmo_g_legend() {
             if legend.bottom() > dock.top() {
                 beside += 1;
             }
-            if width >= 860.0 && !collapsed {
+            // DOCK_DECLUTTER (2026-10-29): the bar holds six one-click
+            // controls and is about 665 pt wide, so a full legend sits
+            // beside it from 1340 pt (it was 860 pt with the four section
+            // buttons); under that it sits above the dock, never on it.
+            if width >= 1340.0 && !collapsed {
                 assert!(
                     legend.bottom() > dock.top(),
-                    "at {case} the legend must sit beside the dock, on the viewport bottom"
+                    "at {case} the legend must sit beside the dock, on the viewport bottom: \
+                     legend {legend:?}, dock {dock:?}"
                 );
             }
         }
     }
+    // DOCK_DECLUTTER: at least the three widest sizes, both legend states
+    // (it was 8 with the narrower four-section bar).
     assert!(
-        beside >= 8,
+        beside >= 6,
         "non-vacuity: the legend sat beside the dock only {beside} times"
     );
 }

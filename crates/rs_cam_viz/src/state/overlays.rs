@@ -42,11 +42,12 @@ impl ModelVisibility {
     }
 }
 
-/// One section of the viewport dock (viewport redesign, MOCKUPS §1).
+/// One section of the viewport options (viewport redesign, MOCKUPS §1).
 ///
-/// The dock owns four sections in a fixed order. Each section opens one
-/// upward popover. This type lives in `state` so that `state` does not
-/// depend on `ui`; the section of each registry row is
+/// Four sections in a fixed order. The dock's one "More" popover and the
+/// catalogue group the rows by section (DOCK_DECLUTTER, 2026-10-29). This
+/// type lives in `state` so that `state` does not depend on `ui`; the
+/// section of each registry row is
 /// `crate::ui::overlays::registry::dock_section`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DockSection {
@@ -61,7 +62,7 @@ pub enum DockSection {
 }
 
 impl DockSection {
-    /// Every section, in dock order. The Tab order follows this order.
+    /// Every section, in the order "More" and the catalogue list them.
     pub const ALL: [Self; 4] = [Self::View, Self::Scene, Self::Paths, Self::Inspect];
 
     /// The section button text, without a suffix.
@@ -73,6 +74,19 @@ impl DockSection {
             Self::Inspect => "Inspect",
         }
     }
+}
+
+/// The stock look of the dock's Stock control (DOCK_DECLUTTER, operator
+/// answer 2): one three-way choice over the `stock_box` and `stock_solid`
+/// rows. The write is `registry::set_stock_display`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StockDisplay {
+    /// Neither row draws.
+    Off,
+    /// The stock wireframe box (`stock_box`).
+    Box,
+    /// The opaque stock block (`stock_solid`).
+    Solid,
 }
 
 /// Which rows the catalogue lists (MOCKUPS §10).
@@ -117,9 +131,9 @@ pub struct OverlayPanelState {
     /// `true` while the All viewport options catalogue is on screen. The
     /// dock's catalogue button and the `O` shortcut both toggle it.
     pub open: bool,
-    /// The dock section whose popover is open. An `Option`, so the dock
-    /// can never hold two open popovers at once.
-    pub open_section: Option<DockSection>,
+    /// `true` while the dock's one "More" popover is open (DOCK_DECLUTTER:
+    /// the four section popovers went; "More" groups the rows by section).
+    pub more_open: bool,
     /// The catalogue search text. It is a draft with content, so it lives
     /// here and not in egui temporary memory (`state/CLAUDE.md`).
     pub catalogue_query: String,
@@ -154,7 +168,7 @@ impl OverlayPanelState {
     pub fn new() -> Self {
         Self {
             open: false,
-            open_section: None,
+            more_open: false,
             catalogue_query: String::new(),
             catalogue_filter: CatalogueFilter::All,
             defaults_applied_for: None,
@@ -166,20 +180,14 @@ impl OverlayPanelState {
         }
     }
 
-    /// A click on a section button. It opens that section's popover, or
-    /// closes it when it is already open. A click on a second section
-    /// closes the first and opens the second.
-    pub fn toggle_section(&mut self, section: DockSection) {
-        self.open_section = if self.open_section == Some(section) {
-            None
-        } else {
-            Some(section)
-        };
+    /// A click on "More": open the popover, or close it when it is open.
+    pub fn toggle_more(&mut self) {
+        self.more_open = !self.more_open;
     }
 
-    /// Close the open popover, if one is open.
-    pub fn close_section(&mut self) {
-        self.open_section = None;
+    /// Close the "More" popover.
+    pub fn close_more(&mut self) {
+        self.more_open = false;
     }
 
     /// Is a surface open that takes `Escape` before any other handler?
@@ -188,7 +196,7 @@ impl OverlayPanelState {
     /// widget has focus. The catalogue takes it only when no widget has
     /// focus, so its search field keeps its own `Escape`.
     pub fn takes_escape_first(&self) -> bool {
-        self.rest_confirm.is_some() || self.open_section.is_some()
+        self.rest_confirm.is_some() || self.more_open
     }
 
     /// Escape closes the `Compute rest` confirm first, then the open
@@ -199,8 +207,8 @@ impl OverlayPanelState {
         if self.rest_confirm.is_some() {
             self.rest_confirm = None;
             true
-        } else if self.open_section.is_some() {
-            self.open_section = None;
+        } else if self.more_open {
+            self.more_open = false;
             true
         } else if self.open {
             self.open = false;

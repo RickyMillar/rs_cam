@@ -544,6 +544,62 @@ pub fn set_display_mode(
     Ok(())
 }
 
+// ── the stock look (DOCK_DECLUTTER, answer 2) ──────────────────────────────
+
+/// The stock look the two stock rows give: `Solid` when the solid block is
+/// on, else `Box` when the box is on, else `Off`.
+#[must_use]
+pub fn stock_display(state: &AppState) -> crate::state::overlays::StockDisplay {
+    use crate::state::overlays::StockDisplay;
+    if state.viewport.show_stock_solid {
+        StockDisplay::Solid
+    } else if state.viewport.show_stock {
+        StockDisplay::Box
+    } else {
+        StockDisplay::Off
+    }
+}
+
+/// The row a stock look switches on, or `None` for `Off`.
+fn stock_display_row(mode: crate::state::overlays::StockDisplay) -> Option<&'static OverlayRow> {
+    use crate::state::overlays::StockDisplay;
+    match mode {
+        StockDisplay::Off => None,
+        StockDisplay::Box => row("stock_box"),
+        StockDisplay::Solid => row("stock_solid"),
+    }
+}
+
+/// Why `mode` cannot apply now, or `None`: the precondition of the row it
+/// switches on (`Off` always applies, as an "off" of a row does).
+#[must_use]
+pub fn stock_display_refusal(
+    state: &AppState,
+    mode: crate::state::overlays::StockDisplay,
+) -> Option<String> {
+    let target = stock_display_row(mode)?;
+    (target.precondition)(state).reason().map(str::to_owned)
+}
+
+/// THE write of the dock's Stock control: one of `Off`, `Box`, `Solid`,
+/// through the two rows' own setter, so the refusals and the workspace
+/// defaults stay the rows'. `Err` is the refusal; nothing changes then.
+pub fn set_stock_display(
+    state: &mut AppState,
+    mode: crate::state::overlays::StockDisplay,
+) -> Result<(), String> {
+    if let Some(reason) = stock_display_refusal(state, mode) {
+        return Err(reason);
+    }
+    let target = stock_display_row(mode).map(|r| r.id);
+    for id in ["stock_box", "stock_solid"] {
+        if let Some(r) = row(id) {
+            set_overlay(state, r, Some(id) == target);
+        }
+    }
+    Ok(())
+}
+
 // ── the list ───────────────────────────────────────────────────────────────
 
 /// Every overlay, in panel order.
