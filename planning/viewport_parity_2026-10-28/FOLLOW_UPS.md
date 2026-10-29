@@ -74,3 +74,7 @@ that pass:
   modes + the quad line pipeline (fixes the thin edges and removes dock
   rows) → the ID pass outline → "select other" → materials and lighting →
   the dock declutter.
+- The `curves` overlay row says "this project carries no 2D curves" for a
+  STEP-only project, but `viewport.show_polygons` now also gates the STEP
+  highlight and the hover ring there (the draw-gate fix of 2026-10-29).
+  Reword the precondition or split the row.
