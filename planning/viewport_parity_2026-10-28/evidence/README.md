@@ -11,3 +11,4 @@ through the MCP proxy (`screenshot_gui`, 1400x900).
 | `06_faces_selected_edges_on.png` | Four faces and three loops selected: the green face fill and the green rings merge (operator: faces need their own colour). |
 | `07_display_mode_shaded.png` / `08_shaded_no_selection.png` / `09_shaded_with_edges_no_selection.png` | Shaded against Shaded with edges: the INK_65 edges at 1.25 px are nearly invisible on the pale faces. |
 | `10_low_angle_selected_face.png` | The selected middle face at pitch 3 deg turns ink grey-blue: the outline's fold test fires on every pixel of a grazing face. |
+| `11_round2_build_face_selected.png` | The round-2 build (712c7bf24): the picked middle face in blue, dark face edges, the accent outline on its silhouette, the green part outline at the base. |
