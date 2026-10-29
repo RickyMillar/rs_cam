@@ -13,10 +13,11 @@
 //! - A second click picks it again: one pick, stored as `ToolpathModel`.
 //! - The agent pick of the same item after that adds nothing.
 //!
-//! - DESIGN 9.2: the stored pick follows a re-target of the toolpath. On a
-//!   model with no such circle it is lost and flagged. A pick on ANOTHER
-//!   model keeps its `Model(id)` source and still resolves after the
-//!   re-target.
+//! - DESIGN 9.2: the stored pick follows a re-target of the toolpath.
+//!   Operator ruling R7b (2026-10-30): on a model with no such circle the
+//!   re-target drops it, and the selection with no pick left is back to
+//!   its default (no lost pick, no refusal). A pick on ANOTHER model keeps
+//!   its `Model(id)` source and still resolves after the re-target.
 //!
 //! Before P2.7 the command stored each key as given. `MatchKey::matches`
 //! compares the source, so the click's `RemovePick` matched no pick and
@@ -228,13 +229,12 @@ fn add_plain_model(s: &mut ProjectSession) {
     );
 }
 
-fn retarget(s: &mut ProjectSession, model_id: usize) {
-    let _ = s
-        .apply(Command::SetToolpathModel(SetToolpathModelArgs {
-            index: 0,
-            model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
-        }))
-        .expect("the toolpath takes the model");
+fn retarget(s: &mut ProjectSession, model_id: usize) -> rs_cam_core::session::Effects {
+    s.apply(Command::SetToolpathModel(SetToolpathModelArgs {
+        index: 0,
+        model_id: rs_cam_core::ids::ModelId::from_raw(model_id),
+    }))
+    .expect("the toolpath takes the model")
 }
 
 #[test]
@@ -243,17 +243,24 @@ fn a_pick_on_the_own_model_follows_a_retarget_and_flags() {
     let listed = listed_key(&s);
     edit(&mut s, SelectionEdit::AddPick(listed));
     add_plain_model(&mut s);
-    retarget(&mut s, 1);
+    let effects = retarget(&mut s, 1);
+    // R7b: the pick reads the new model, which has no such circle, so the
+    // re-target drops it and the selection is back to its default.
+    assert_eq!(
+        effects.picks_dropped.as_ref().map(|d| d.count),
+        Some(1),
+        "the re-target drops the lost pick: {effects:?}"
+    );
     let tc = s.toolpath_configs()[0].clone();
+    assert!(
+        s.holds_its_default(&tc, rs_cam_core::session::SelectionTarget::Op)
+            .expect("the op holds a selection"),
+        "the selection with no pick left is back to its default"
+    );
     let report = s
         .selection_status(&tc, rs_cam_core::session::SelectionTarget::Op)
         .expect("the selection resolves");
-    assert_eq!(
-        report.lost.len(),
-        1,
-        "the pick reads the new model, which has no such circle: {report:?}"
-    );
-    assert!(report.refusal.is_some(), "a lost pick refuses");
+    assert!(report.lost.is_empty(), "no lost pick stays: {report:?}");
 }
 
 #[test]
@@ -262,7 +269,7 @@ fn a_pick_on_another_model_stays_bound_to_it() {
     add_plain_model(&mut s);
     let listed = listed_key(&s);
     // The toolpath reads model 1; the pick names a circle of model 0.
-    retarget(&mut s, 1);
+    let _ = retarget(&mut s, 1);
     edit(&mut s, SelectionEdit::AddPick(listed));
     let sel = stored(&s);
     assert_eq!(sel.picks().len(), 1);

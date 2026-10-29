@@ -200,8 +200,9 @@ pub enum ClickEdit {
     /// `Command::EditSelection`.
     Selection(SelectionEdit),
     /// Ruling L-8 revised: the boundary source was not `Selection`. The
-    /// new boundary has the source `Selection` with the one pick; every
-    /// other field is as stored. Apply it with ONE
+    /// new boundary has the source `Selection` with the one pick and the
+    /// offset 0 (ruling 2026-10-30); every other field is as stored. Apply
+    /// it with ONE
     /// `Command::SetBoundaryConfig`, so it is one undo step.
     BoundaryToSelection {
         boundary: Box<BoundaryConfig>,
@@ -353,8 +354,10 @@ pub struct SelectionReport {
     /// drawing, as `holes`), in the order of the areas. The path itself is
     /// `Cut` in `item_states`. "Cut past open sides" (operator ruling
     /// 2026-10-23): also the outer ring of each face area that the setting
-    /// grew to the stock edge. Empty for every other op and when the
-    /// selection refuses. The GUI preview (P6.7) draws it.
+    /// grew to the stock edge, and (ruling 2026-10-30) of each face area
+    /// of a boundary selection that grew past its open sides by the tool
+    /// radius. Empty for every other op and when the selection refuses.
+    /// The GUI preview (P6.7) draws it.
     pub extended: Vec<Vec<P2>>,
     /// Geometry selection GT-2: one row per item of `selected`, in the same
     /// order: what holds the item (the default rule, a named rule, a pick)
@@ -1010,6 +1013,12 @@ impl ProjectSession {
                 )?);
                 Ok((items, notes))
             }
+            // Operator ruling 2026-10-30: the boundary generation grows
+            // each face past its open sides by the tool radius.
+            (Ok((mut items, notes)), SelectionTarget::Boundary) => {
+                self.grow_boundary_open_sides(tc, ctx, &frames.setup, &mut items)?;
+                Ok((items, notes))
+            }
             (viewed, _) => viewed,
         };
         // P3.5: under "each picked face" every closed area needs a face.
@@ -1253,7 +1262,7 @@ impl ProjectSession {
         };
         let probe = crate::compute::open_sides::OpenSidesProbe {
             mesh: &mesh,
-            stock,
+            reach: crate::compute::open_sides::OpenSidesReach::Stock(stock),
             tool_radius: radius,
             face_depth: depth,
         };
@@ -1268,6 +1277,55 @@ impl ProjectSession {
     /// toolpath has no valid tool.
     fn open_sides_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
         if !tc.operation.cuts_past_open_sides() {
+            return None;
+        }
+        let tool = self.toolpath_tool(tc)?;
+        crate::compute::cutter::build_cutter(tool)
+            .ok()
+            .map(|cutter| crate::tool::MillingCutter::diameter(&cutter) / 2.0)
+    }
+
+    /// Operator ruling 2026-10-30: THE open-sides rule of a
+    /// `BoundarySource::Selection` boundary. Each face area of the
+    /// boundary view grows one tool radius past each open side (an edge
+    /// where the neighbouring surface lies at or below the face plane) and
+    /// never past a side against a wall (`compute::open_sides`,
+    /// [`OpenSidesReach::ToolRadius`](crate::compute::open_sides::OpenSidesReach)).
+    /// The boundary generation (`resolve_boundary_selection_polys`) and
+    /// the boundary report call this one helper, so the two give one
+    /// area. A drawing ring has no plane Z and does not change. No tool,
+    /// no cutter or no mesh: no change (generation refuses the tool
+    /// itself).
+    pub(crate) fn grow_boundary_open_sides(
+        &self,
+        tc: &ToolpathConfig,
+        ctx: &SetupEvalContext,
+        setup: &crate::selection::ResolvedSelection<SetupFrame>,
+        items: &mut OpItems,
+    ) -> Result<(), SessionError> {
+        let Some(radius) = self.boundary_open_sides_radius(tc) else {
+            return Ok(());
+        };
+        let Some(mesh) = self.setup_mesh(tc, ctx)? else {
+            return Ok(());
+        };
+        let probe = crate::compute::open_sides::OpenSidesProbe {
+            mesh: &mesh,
+            reach: crate::compute::open_sides::OpenSidesReach::ToolRadius,
+            tool_radius: radius,
+            face_depth: 0.0,
+        };
+        // The tool radius reach gives no note.
+        let _ = crate::compute::open_sides::grow_past_open_sides(setup, items, &probe);
+        Ok(())
+    }
+
+    /// The tool radius by which [`Self::grow_boundary_open_sides`] grows
+    /// a face of the boundary (`ToolDefinition::diameter` of the built
+    /// cutter), or `None` when the boundary is not a selection or the
+    /// toolpath has no valid tool.
+    fn boundary_open_sides_radius(&self, tc: &ToolpathConfig) -> Option<f64> {
+        if !matches!(tc.boundary.source, BoundarySource::Selection { .. }) {
             return None;
         }
         let tool = self.toolpath_tool(tc)?;
@@ -1817,7 +1875,12 @@ impl ProjectSession {
     /// target of a toolpath whose boundary source is not `Selection` sets
     /// the source to `Selection` with that one pick
     /// ([`ClickEdit::BoundaryToSelection`]). Every other field of the
-    /// boundary stays as stored, `enabled` too. Every other click is
+    /// boundary but the offset stays as stored, `enabled` and the
+    /// containment too. The offset becomes 0 (operator ruling 2026-10-30):
+    /// the tool diameter offset of `BoundaryConfig::for_3d_op` is the
+    /// derivation of the model silhouette, and a face boundary grows past
+    /// its open sides by THE open-sides rule
+    /// ([`Self::grow_boundary_open_sides`]). Every other click is
     /// [`Self::pick_edit`].
     pub fn click_edit(
         &self,
@@ -1833,6 +1896,7 @@ impl ProjectSession {
                 selection: Selection::from_picks(vec![key]).for_toolpath_model(tc.model_id),
                 holes: false,
             };
+            boundary.offset = 0.0;
             return Ok(ClickEdit::BoundaryToSelection {
                 boundary: Box::new(boundary),
                 kind,
@@ -2282,6 +2346,8 @@ struct StatusKey {
     /// "Cut past open sides": the bits of the tool radius of THE area rule
     /// (`ProjectSession::open_sides_radius`), so a tool edit or the
     /// setting builds the report again. `None` when the setting is off.
+    /// For the boundary target (ruling 2026-10-30) the bits of
+    /// `ProjectSession::boundary_open_sides_radius`.
     open_sides: Option<u64>,
 }
 
@@ -2364,7 +2430,9 @@ impl StatusKey {
             },
             open_sides: match target {
                 SelectionTarget::Op => session.open_sides_radius(tc).map(f64::to_bits),
-                SelectionTarget::Boundary => None,
+                SelectionTarget::Boundary => {
+                    session.boundary_open_sides_radius(tc).map(f64::to_bits)
+                }
             },
         })
     }

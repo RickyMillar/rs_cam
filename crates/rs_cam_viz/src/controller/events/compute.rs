@@ -660,6 +660,7 @@ impl<B: ComputeBackend> AppController<B> {
             floor_set: _,
             planned: _,
             modulated,
+            picks_dropped: _,
         } = effects;
         let stored_trace = self
             .state

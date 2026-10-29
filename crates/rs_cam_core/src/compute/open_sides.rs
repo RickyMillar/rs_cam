@@ -55,13 +55,32 @@
 //! picked face"), and the area of a higher face can lie over a lower face,
 //! where it cuts only down to the higher Z.
 //!
+//! # The reach
+//!
+//! [`OpenSidesReach`] states how far an area grows past an open side:
+//!
+//! - [`OpenSidesReach::Stock`] (the Pocket): to the stock edge grown by
+//!   the tool radius (step 3).
+//! - [`OpenSidesReach::ToolRadius`] (a machining boundary of faces,
+//!   operator ruling 2026-10-30): one tool radius past the face. Step 3
+//!   then also intersects the allowed area with the face grown by the tool
+//!   radius. Under `Center` containment the tool centre runs one radius
+//!   past each open side, so the tool clears the edge at the face plane,
+//!   and stops at each side against a wall. Each face grows alone (no
+//!   merge at one Z): the boundary unions the areas, so two faces that
+//!   touch give one area. A face whose grown area is not one polygon keeps
+//!   the polygon that holds the face. This reach gives no note.
+//!
 //! # The readers
 //!
 //! The prologue runs the rule after the view (`execute::prologue`), so the
 //! per-face floors, the generation and the gouge guard read the grown
 //! areas. `selection_status` runs the same rule on the same mesh and tool,
 //! so the viewport highlight (`SelectionReport::extended`) shows the area
-//! that the op cuts.
+//! that the op cuts. A `BoundarySource::Selection` boundary runs the rule
+//! with [`OpenSidesReach::ToolRadius`] in the session
+//! (`ProjectSession::grow_boundary_open_sides`): the boundary generation
+//! and the boundary report call that one helper.
 
 use std::collections::BTreeMap;
 
@@ -73,15 +92,27 @@ use crate::selection::{
     SelectionNote, StockXy,
 };
 
+/// How far THE area rule grows a face past an open side (see the module
+/// doc, "The reach").
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OpenSidesReach {
+    /// The Pocket: to the stock rectangle of the selection as resolved
+    /// (`ResolvedSelection::stock_xy`), NOT grown by the P6.4 extend. The
+    /// rule grows it by the tool radius once.
+    Stock(StockXy),
+    /// A machining boundary of faces: one tool radius past the face.
+    ToolRadius,
+}
+
 /// The inputs of THE area rule: the model mesh in the frame of the
-/// selection, the stock rectangle and the tool radius of the op.
+/// selection, the reach and the tool radius of the op.
 pub struct OpenSidesProbe<'a> {
     pub mesh: &'a TriangleMesh,
-    /// The stock rectangle of the selection as resolved
-    /// (`ResolvedSelection::stock_xy`), NOT grown by the P6.4 extend: the
-    /// rule grows it by the tool radius once.
-    pub stock: StockXy,
-    /// The tool radius (mm). The stock rectangle grows by it.
+    /// How far an area grows past an open side.
+    pub reach: OpenSidesReach,
+    /// The tool radius (mm). The stock rectangle of
+    /// [`OpenSidesReach::Stock`] grows by it; a face of
+    /// [`OpenSidesReach::ToolRadius`] grows by it.
     pub tool_radius: f64,
     /// The depth below each face of the floor "Each picked face"
     /// (`Floor::EachFace { depth }`): each area cuts down to its face Z
@@ -119,18 +150,37 @@ pub fn grow_past_open_sides<F: SelectionFrame>(
     if faces.is_empty() {
         return Vec::new();
     }
-    let grown_stock = probe.stock.grown(probe.tool_radius);
-    let stock_ring = Polygon2::rectangle(
-        grown_stock.x_min,
-        grown_stock.y_min,
-        grown_stock.x_max,
-        grown_stock.y_max,
-    );
+    let stock_ring = match probe.reach {
+        OpenSidesReach::Stock(stock) => {
+            let grown_stock = stock.grown(probe.tool_radius);
+            Polygon2::rectangle(
+                grown_stock.x_min,
+                grown_stock.y_min,
+                grown_stock.x_max,
+                grown_stock.y_max,
+            )
+        }
+        // The box of the faces grown by twice the tool radius: it holds
+        // each face grown by the radius, so it limits nothing.
+        OpenSidesReach::ToolRadius => faces_ring(regions, &faces, 2.0 * probe.tool_radius),
+    };
     let mut grown: Vec<(usize, Polygon2)> = Vec::new();
     let mut merged: Vec<usize> = Vec::new();
     for plane in planes(&faces) {
         let material = material_above(probe.mesh, plane.z - probe.face_depth + CAD_ROUNDING_MM);
         let allowed = difference_all(std::slice::from_ref(&stock_ring), &material);
+        if probe.reach == OpenSidesReach::ToolRadius {
+            for &index in &plane.members {
+                if let Some(polygon) = regions
+                    .as_slice()
+                    .get(index)
+                    .and_then(|face| grown_by_radius(face, &allowed, probe.tool_radius))
+                {
+                    grown.push((index, polygon));
+                }
+            }
+            continue;
+        }
         // For each part of the allowed area: the faces it holds, in index
         // order.
         let mut by_part: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
@@ -156,7 +206,7 @@ pub fn grow_past_open_sides<F: SelectionFrame>(
             merged.extend_from_slice(rest);
         }
     }
-    let notes = if grown.is_empty() {
+    let notes = if grown.is_empty() && probe.reach != OpenSidesReach::ToolRadius {
         no_open_side_note(resolved, regions, &faces)
     } else {
         Vec::new()
@@ -281,8 +331,13 @@ fn grown_area(regions: &Regions, area: &Polygon2, members: &[usize]) -> Option<P
         .iter()
         .filter_map(|&i| regions.as_slice().get(i))
         .collect();
+    // A face ring may be stored clockwise; the union reads the winding.
     let outlines: Vec<Polygon2> = std::iter::once(area.clone())
-        .chain(faces.iter().map(|f| Polygon2::new(f.exterior.clone())))
+        .chain(faces.iter().map(|f| {
+            let mut outline = Polygon2::new(f.exterior.clone());
+            outline.ensure_winding();
+            outline
+        }))
         .collect();
     let holes: Vec<Polygon2> = faces
         .iter()
@@ -294,6 +349,62 @@ fn grown_area(regions: &Regions, area: &Polygon2, members: &[usize]) -> Option<P
     let face_area: f64 = faces.iter().map(|f| f.area()).sum();
     let perimeter: f64 = faces.iter().map(|f| ring_length(&f.exterior)).sum();
     (polygon.area() - face_area > perimeter * CAD_ROUNDING_MM).then_some(polygon)
+}
+
+/// [`OpenSidesReach::ToolRadius`]: the area of `face` grown by `radius`
+/// past each open side. It is the face, plus the part of `allowed` that
+/// holds the face (`part_of`) within `radius` of the face, less the holes
+/// of the face. When that is not one polygon, the polygon that holds the
+/// face most stays. `None` when no side is open (the area grows by no
+/// more than a band of `CAD_ROUNDING_MM` along the sides).
+fn grown_by_radius(face: &Polygon2, allowed: &[Polygon2], radius: f64) -> Option<Polygon2> {
+    // A face ring may be stored clockwise; the union reads the winding.
+    let mut outline = Polygon2::new(face.exterior.clone());
+    outline.ensure_winding();
+    let part = allowed.get(part_of(allowed, face)?)?;
+    // `offset_polygon`: a negative distance grows the polygon.
+    let reach = offset_polygon(&outline, -radius);
+    let outlines: Vec<Polygon2> = std::iter::once(outline.clone())
+        .chain(reach.iter().flat_map(|r| part.intersection(r)))
+        .collect();
+    let holes: Vec<Polygon2> = face
+        .holes
+        .iter()
+        .map(|h| Polygon2::new(h.clone()))
+        .collect();
+    let result = difference_all(&Polygon2::union_all(&outlines), &holes);
+    let polygon = result
+        .into_iter()
+        .map(|p| {
+            let overlap: f64 = p.intersection(&outline).iter().map(Polygon2::area).sum();
+            (p, overlap)
+        })
+        .filter(|(_, overlap)| *overlap > 0.0)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(p, _)| p)?;
+    (polygon.area() - face.area() > ring_length(&face.exterior) * CAD_ROUNDING_MM)
+        .then_some(polygon)
+}
+
+/// The rectangle of the box of the face areas `faces`, grown by `margin`
+/// on each side.
+fn faces_ring(regions: &Regions, faces: &[FaceArea], margin: f64) -> Polygon2 {
+    let [x0, y0, x1, y1] = faces
+        .iter()
+        .filter_map(|f| regions.as_slice().get(f.index))
+        .map(Polygon2::bbox)
+        .fold(
+            [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ],
+            |[ax0, ay0, ax1, ay1], [x0, y0, x1, y1]| {
+                [ax0.min(x0), ay0.min(y0), ax1.max(x1), ay1.max(y1)]
+            },
+        );
+    Polygon2::rectangle(x0 - margin, y0 - margin, x1 + margin, y1 + margin)
 }
 
 /// The length of the closed ring `ring`.

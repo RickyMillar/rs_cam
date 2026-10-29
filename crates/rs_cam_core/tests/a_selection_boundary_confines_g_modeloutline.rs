@@ -45,7 +45,10 @@
 //! 6. The holes option on a model with closed shapes but no hole refuses,
 //!    and the message names the model.
 //! 7. A face pick (the old `FaceSelection` boundary): every cutting move
-//!    lies inside the picked face.
+//!    lies inside the picked face grown by the tool radius, and some move
+//!    leaves the face. Operator ruling R7a (2026-10-30): a face boundary
+//!    grows one tool radius past each open side; the plate of model A
+//!    lies at the face plane, so no side has a wall.
 
 #![expect(
     clippy::unwrap_used,
@@ -449,7 +452,8 @@ fn the_holes_option_on_a_model_with_no_hole_refuses_and_names_it_g_modeloutline(
 }
 
 /// The old `FaceSelection` boundary: a pick of one flat face. Every
-/// cutting sample lies inside the face.
+/// cutting sample lies inside the face grown by the tool radius (R7a:
+/// every side is open), and some sample lies outside the face.
 #[test]
 fn a_face_pick_boundary_cuts_only_inside_the_face_g_modeloutline() {
     let mut fx = fixture(|_| None);
@@ -472,6 +476,9 @@ fn a_face_pick_boundary_cuts_only_inside_the_face_g_modeloutline() {
     generate(&mut fx.session).expect("a face-pick boundary must generate");
 
     let face = square_polygon(RING_HOLE_HALF);
+    // The tool of the fixture is the 3 mm ball (`ball_tool_config(3.0)`).
+    let reach = rs_cam_core::polygon::offset_polygon(&face, -1.5);
+    assert_eq!(reach.len(), 1, "a square grows into one polygon");
     let samples = cutting_samples(&fx.session);
     assert!(
         samples.len() > 20,
@@ -480,13 +487,18 @@ fn a_face_pick_boundary_cuts_only_inside_the_face_g_modeloutline() {
     );
     let outside: Vec<&P2> = samples
         .iter()
-        .filter(|p| !face.contains_point_eps(p, EPS_MM))
+        .filter(|p| !reach[0].contains_point_eps(p, EPS_MM))
         .collect();
     assert!(
         outside.is_empty(),
-        "{} of {} cutting samples lie outside the picked face. First: {:?}",
+        "{} of {} cutting samples lie outside the picked face grown by the tool radius. \
+         First: {:?}",
         outside.len(),
         samples.len(),
         outside.first()
+    );
+    assert!(
+        samples.iter().any(|p| !face.contains_point_eps(p, EPS_MM)),
+        "every side of the face is open, so the cut runs past the face"
     );
 }

@@ -841,8 +841,11 @@ impl ProjectSession {
     /// toolpath), THE frame door into the setup frame, then
     /// [`crate::selection::view_boundary`] (`ItemUse::Regions`; a down face
     /// gives its outline, P3.4). A Bottom setup
-    /// mirrors Y here exactly as it mirrors the toolpath's drawing. The
-    /// regions are then joined into one union, holes kept.
+    /// mirrors Y here exactly as it mirrors the toolpath's drawing. Each
+    /// face area then grows one tool radius past its open sides and stops
+    /// at a wall (operator ruling 2026-10-30,
+    /// [`Self::grow_boundary_open_sides`]). The regions are then joined
+    /// into one union, holes kept.
     ///
     /// A boundary has no findings sink. The open paths that a `Served`
     /// rule matches are left out, as a closed-area op leaves them out; the
@@ -893,7 +896,7 @@ impl ProjectSession {
             )
             .map_err(|e| refuse(e.to_string()))?
             .setup;
-        let (items, _open_path_notes) =
+        let (mut items, _open_path_notes) =
             crate::selection::view_boundary(&resolved).map_err(|refusal| {
                 let missing = matches!(
                     refusal.cause,
@@ -912,6 +915,11 @@ impl ProjectSession {
                 }
                 refuse(reason)
             })?;
+        // Operator ruling 2026-10-30: each face grows one tool radius past
+        // its open sides and stops at a wall (THE open-sides rule, the one
+        // helper that the boundary report calls too). The union below
+        // then links two faces that touch into one area.
+        self.grow_boundary_open_sides(tc, &ctx, &resolved, &mut items)?;
         let regions = items.regions().map_or(&[][..], |r| r.as_slice());
 
         let union = crate::polygon::Polygon2::union_all(regions);
@@ -970,6 +978,33 @@ impl ProjectSession {
             )));
         }
         Ok(Arc::new(hole_regions))
+    }
+
+    /// The region set of the `BoundarySource::Selection` boundary of the
+    /// toolpath at `index`, as generation clips to it
+    /// ([`Self::resolve_boundary_selection_polys`]), or `None` when the
+    /// boundary is off or not a selection.
+    ///
+    /// **Test door.** The harnesses under `crates/rs_cam_core/tests` are
+    /// the only callers, so it sits behind `test-support` (F085).
+    #[cfg(feature = "test-support")]
+    pub fn boundary_selection_regions(
+        &self,
+        index: usize,
+    ) -> Result<Option<Arc<Vec<crate::polygon::Polygon2>>>, SessionError> {
+        let tc = self
+            .toolpath_configs
+            .get(index)
+            .ok_or(SessionError::ToolpathNotFound(index))?;
+        match &tc.boundary.source {
+            crate::compute::config::BoundarySource::Selection { selection, holes }
+                if tc.boundary.enabled =>
+            {
+                self.resolve_boundary_selection_polys(index, selection, *holes)
+                    .map(Some)
+            }
+            _ => Ok(None),
+        }
     }
 
     /// The sources that `selection` reads, for a refusal: each model by

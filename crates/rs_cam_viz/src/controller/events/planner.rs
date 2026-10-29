@@ -87,6 +87,7 @@ impl<B: ComputeBackend> AppController<B> {
             floor_set: _,
             planned,
             modulated: _,
+            picks_dropped: _,
         } = effects;
         let Some(outcome) = planned else {
             return Err("the planner reported no outcome".to_owned());

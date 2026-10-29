@@ -877,8 +877,10 @@ impl ProjectSession {
     ///
     /// A pick of the op selection names its item by geometry
     /// (`MatchKey`), not by a face id. After a rebind each pick resolves
-    /// against the new model, and a pick that names no item there is
-    /// `LostPick` (geometry selection DESIGN 9.2).
+    /// against the new model. Operator ruling R7b (2026-10-30): a pick of
+    /// the op selection or the boundary selection that names no item
+    /// there goes ([`Self::drop_lost_picks`]); [`Effects::picks_dropped`]
+    /// names the count.
     ///
     /// A rebind to the model already bound is a no-op and invalidates
     /// nothing.
@@ -888,7 +890,8 @@ impl ProjectSession {
         index: usize,
         model_id: crate::ids::ModelId,
     ) -> Result<Effects, SessionError> {
-        self.try_with_effects(Some(index), move |session| {
+        let mut dropped = None;
+        let mut effects = self.try_with_effects(Some(index), |session| {
             if !session.models.iter().any(|m| m.id == model_id) {
                 return Err(SessionError::ModelNotFound {
                     id: model_id,
@@ -904,9 +907,122 @@ impl ProjectSession {
             }
             tc.model_id = model_id;
             let enabled = tc.enabled;
+            dropped = session.drop_lost_picks(index);
             session.invalidate_result_chain(index, enabled);
             Ok(())
-        })
+        })?;
+        effects.picks_dropped = dropped;
+        Ok(effects)
+    }
+
+    /// Operator ruling R7b (2026-10-30): THE rule of a model change. Each
+    /// pick of the op selection and of the boundary selection of the
+    /// toolpath at `index` that names no item on its (new) model goes:
+    /// THE resolution (`resolve_selection_frames`, `Peek` faces, as
+    /// `check_keys_name_items` reads it) reports it lost with no match. An
+    /// ambiguous pick (two or more matches) stays and refuses as before. A
+    /// pick on a model whose faces are not computed yet (a cold cache)
+    /// stays: the resolution reports no lost pick for it. A pick on
+    /// another model than the toolpath model stays.
+    ///
+    /// A selection that loses every pick and holds no rule goes back to
+    /// its default, the shape a fresh op gets: the op selection to
+    /// `OperationConfig::default_selection`, the boundary to
+    /// `draft_boundary` (the containment stays the user's choice).
+    ///
+    /// The caller runs it inside its effects window, after the rebind.
+    /// `None` when no pick went.
+    pub(crate) fn drop_lost_picks(&mut self, index: usize) -> Option<crate::session::DroppedPicks> {
+        use crate::session::SelectionTarget;
+        use crate::session::selection_status::FaceAccess;
+        let tc = self.toolpath_configs.get(index)?.clone();
+        let setup = self.find_setup_for_toolpath_id(tc.id);
+        let ctx = crate::session::SetupEvalContext::build_for_setup(self, setup);
+        let model = tc.model_id;
+        let mut count = 0;
+        let mut reset = Vec::new();
+        let mut next = tc.clone();
+        for target in [SelectionTarget::Op, SelectionTarget::Boundary] {
+            let Ok(Some(selection)) = tc.selection_of(target) else {
+                continue;
+            };
+            if selection.picks().is_empty() {
+                continue;
+            }
+            let Ok(frames) = self.resolve_selection_frames(&tc, target, &ctx, FaceAccess::Peek)
+            else {
+                continue;
+            };
+            let lost: Vec<crate::selection::MatchKey> = frames
+                .model
+                .lost()
+                .iter()
+                .filter(|lost| lost.matches == 0)
+                .map(|lost| lost.key.clone().for_toolpath_model(model))
+                .filter(|key| key.source == crate::selection::SourceRef::ToolpathModel)
+                .collect();
+            let picks: Vec<crate::selection::MatchKey> = selection
+                .picks()
+                .iter()
+                .filter(|pick| {
+                    let pick = (*pick).clone().for_toolpath_model(model);
+                    !lost.iter().any(|key| key.matches(&pick))
+                })
+                .cloned()
+                .collect();
+            let gone = selection.picks().len() - picks.len();
+            if gone == 0 {
+                continue;
+            }
+            count += gone;
+            let rules = selection.rules().to_vec();
+            let empty = picks.is_empty() && rules.is_empty();
+            let kept = crate::selection::Selection::from_parts(
+                rules,
+                picks,
+                selection.excludes().to_vec(),
+            );
+            match target {
+                SelectionTarget::Op => {
+                    let value = if empty {
+                        reset.push(target);
+                        tc.operation.default_selection().unwrap_or(kept)
+                    } else {
+                        kept
+                    };
+                    if let Some(slot) = next.operation.selection_slot() {
+                        *slot = value;
+                    }
+                }
+                SelectionTarget::Boundary => {
+                    if empty {
+                        reset.push(target);
+                        let has_mesh = self.models.iter().any(|m| m.mesh.is_some());
+                        let diameter = self.toolpath_tool(&tc).map(|t| t.diameter);
+                        let containment = next.boundary.containment;
+                        next.boundary = crate::session::op_draft::draft_boundary(
+                            tc.operation.op_type(),
+                            has_mesh,
+                            diameter,
+                        );
+                        next.boundary.containment = containment;
+                    } else if let crate::compute::config::BoundarySource::Selection {
+                        selection,
+                        ..
+                    } = &mut next.boundary.source
+                    {
+                        *selection = kept;
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            return None;
+        }
+        if let Some(slot) = self.toolpath_configs.get_mut(index) {
+            *slot = next;
+        }
+        Some(crate::session::DroppedPicks { count, reset })
     }
 
     /// Overwrite a toolpath's feeds provenance (W2.1). Does not touch the

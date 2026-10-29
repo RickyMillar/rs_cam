@@ -1356,9 +1356,49 @@ pub struct Effects {
     /// in [`Self::stale`]. A surface that holds its own copy of a
     /// toolpath re-reads these indices from the session.
     pub modulated: BTreeSet<usize>,
+    /// The picks that a model change dropped (operator ruling R7b,
+    /// 2026-10-30), or `None` when it dropped none. `SetToolpathModel`
+    /// and a `ReplaceToolpathConfig` that changes `model_id` set it: each
+    /// pick of the op selection and of the boundary selection that names
+    /// no item on the new model goes. Each surface words it with
+    /// [`Effects::picks_dropped_note`].
+    pub picks_dropped: Option<DroppedPicks>,
+}
+
+/// What a model change dropped from the selections of one toolpath
+/// (operator ruling R7b, `ProjectSession::drop_lost_picks`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DroppedPicks {
+    /// The count of the dropped picks, both selections together.
+    pub count: usize,
+    /// The selections that lost every pick and went back to their
+    /// default (the shape a fresh op gets), in `[Op, Boundary]` order.
+    pub reset: Vec<super::SelectionTarget>,
 }
 
 impl Effects {
+    /// The note of [`Effects::picks_dropped`]: "The model change dropped
+    /// 2 picks that name no item on the new model." and, for each
+    /// selection that went back to its default, "The boundary is back to
+    /// its default." `None` when no pick was dropped. Every surface reads
+    /// this one text.
+    #[must_use]
+    pub fn picks_dropped_note(&self) -> Option<String> {
+        let dropped = self.picks_dropped.as_ref()?;
+        let noun = if dropped.count == 1 { "pick" } else { "picks" };
+        let mut note = format!(
+            "The model change dropped {} {noun} that name no item on the new model.",
+            dropped.count
+        );
+        for target in &dropped.reset {
+            note.push_str(match target {
+                super::SelectionTarget::Op => " The selection is back to its default.",
+                super::SelectionTarget::Boundary => " The boundary is back to its default.",
+            });
+        }
+        Some(note)
+    }
+
     /// The one-line note of operator ruling Q2: the GUI notice and the MCP
     /// reply give it when [`Effects::floor_set`] is `Some`.
     /// R-B: the one-line note when the floor becomes "Each hole floor".
@@ -3056,17 +3096,25 @@ impl ProjectSession {
                 // F033: an edit that adds a refusing break of the
                 // height-plane order refuses before the write.
                 self.height_order_door(index, &config)?;
-                Ok(self.with_effects(Some(index), move |session| {
+                let mut dropped = None;
+                let mut effects = self.with_effects(Some(index), |session| {
                     let after = config.generation_inputs_signature();
                     let Some(slot) = session.toolpath_configs.get_mut(index) else {
                         return;
                     };
                     let before = slot.generation_inputs_signature();
+                    let model_changed = slot.model_id != config.model_id;
                     // The write is unconditional. Name, coolant, the pre
                     // and post G-code and the debug options are outside
                     // the signature, so they must land on a frame that
                     // drops nothing.
                     *slot = *config;
+                    // R7b: a model change (the GUI model combo) drops the
+                    // picks that name no item on the new model, as
+                    // `SetToolpathModel` does.
+                    if model_changed {
+                        dropped = session.drop_lost_picks(index);
+                    }
                     if after == before {
                         return;
                     }
@@ -3079,7 +3127,9 @@ impl ProjectSession {
                         .get(index)
                         .is_some_and(|tc| tc.enabled);
                     session.invalidate_result_chain(index, enabled);
-                }))
+                });
+                effects.picks_dropped = dropped;
+                Ok(effects)
             }
         }
     }
@@ -3270,6 +3320,7 @@ impl ProjectSession {
             floor_set: None,
             planned: None,
             modulated: BTreeSet::new(),
+            picks_dropped: None,
         })
     }
 

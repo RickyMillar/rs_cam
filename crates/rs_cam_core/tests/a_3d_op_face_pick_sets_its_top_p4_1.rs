@@ -13,7 +13,10 @@
 //! 1. On an identity setup, a pick of the up face at model Z
 //!    [`TOP_FACE_Z`] gives the op the top [`TOP_FACE_Z`] (the request
 //!    snapshot of the generation: the heights the op receives), and every
-//!    cutting move lies inside the face.
+//!    cutting move lies inside the face grown by the tool radius. Operator
+//!    ruling 2026-10-30: each side of face 0 is open (face 2 lies below
+//!    it), so the boundary grows one tool radius past each side, and the
+//!    cut leaves the face there (`face_reach`).
 //! 2. Non-vacuity: with the boundary off, the top is the stock top and the
 //!    op cuts outside the face.
 //! 3. On a `FaceUp::Bottom` setup, a pick of the down face at model Z
@@ -40,8 +43,10 @@
 //!
 //! 7. P4.D (ruling L-8 revised): a viewport click (`click_edit`) on such a
 //!    boundary sets the source to `Selection` with that one face. The new
-//!    boundary keeps every other field; applied with ONE
-//!    `SetBoundaryConfig`, it sets the top and confines the cut as claim 1.
+//!    boundary keeps every other field but the offset, which becomes 0
+//!    (ruling 2026-10-30: the diameter offset belongs to the silhouette);
+//!    applied with ONE `SetBoundaryConfig`, it sets the top and confines
+//!    the cut as claim 1.
 //!    A second click is a plain selection edit.
 //!
 //! Red proof: the auto top read only the op selection (the P2.6 state):
@@ -268,6 +273,40 @@ fn cutting_samples(session: &mut ProjectSession) -> Vec<P2> {
     samples
 }
 
+/// Claim 1 (ruling 2026-10-30): the picked face grown by the tool radius,
+/// the area that the face boundary gives on this part (every side open).
+fn face_reach() -> Polygon2 {
+    let mut grown = rs_cam_core::polygon::offset_polygon(&face_square(), -TOOL_DIAMETER / 2.0);
+    assert_eq!(grown.len(), 1, "a square grows into one polygon");
+    grown.remove(0)
+}
+
+/// The tolerance of a sample on the chord of a grown corner (mm).
+const REACH_EPS: f64 = 1e-3;
+
+/// Claim 1: every sample lies in `face_reach`, and some sample lies
+/// outside the face (the open sides grew).
+fn assert_in_reach(samples: &[P2]) {
+    let reach = face_reach();
+    let outside: Vec<&P2> = samples
+        .iter()
+        .filter(|p| !reach.contains_point_eps(p, REACH_EPS))
+        .collect();
+    assert!(
+        outside.is_empty(),
+        "{} of {} cutting samples lie outside the picked face grown by the tool radius. \
+         First: {:?}",
+        outside.len(),
+        samples.len(),
+        outside.first()
+    );
+    let face = face_square();
+    assert!(
+        samples.iter().any(|p| !face.contains_point_eps(p, EPS)),
+        "each side of the face is open, so the cut runs past the face"
+    );
+}
+
 fn face_square() -> Polygon2 {
     Polygon2::new(vec![
         P2::new(0.0, 0.0),
@@ -294,24 +333,13 @@ fn a_face_pick_on_an_identity_setup_sets_the_top_and_confines_the_cut_p4_1() {
         "the auto top is {top}, want the picked face Z {TOP_FACE_Z}"
     );
 
-    let face = face_square();
     let samples = cutting_samples(&mut s);
     assert!(
         samples.len() > 20,
         "a confined op that emits almost no cutting motion proves nothing: {} samples",
         samples.len()
     );
-    let outside: Vec<&P2> = samples
-        .iter()
-        .filter(|p| !face.contains_point_eps(p, EPS))
-        .collect();
-    assert!(
-        outside.is_empty(),
-        "{} of {} cutting samples lie outside the picked face. First: {:?}",
-        outside.len(),
-        samples.len(),
-        outside.first()
-    );
+    assert_in_reach(&samples);
 }
 
 #[test]
@@ -471,7 +499,12 @@ fn the_boundary_report_holds_the_face_and_the_memo_keeps_the_targets_apart_p4_1(
 
 #[test]
 fn a_click_on_a_boundary_that_is_not_a_selection_switches_it_p4_d() {
-    let stock_boundary = boundary(BoundarySource::Stock);
+    // A stored offset (the silhouette's tool diameter) that the switch
+    // drops (ruling 2026-10-30).
+    let stock_boundary = BoundaryConfig {
+        offset: TOOL_DIAMETER,
+        ..boundary(BoundarySource::Stock)
+    };
     let mut s = session(stock_boundary.clone(), HeightMode::Auto, FaceUp::Top);
     let tc = s.toolpath_configs()[0].clone();
     let key = s.face_pick_key(&tc, tc.model_id, FaceGroupId(0)).unwrap();
@@ -497,9 +530,11 @@ fn a_click_on_a_boundary_that_is_not_a_selection_switches_it_p4_d() {
         selection: Selection::from_picks(vec![key.clone()]),
         holes: false,
     };
+    want.offset = 0.0;
     assert_eq!(
         **new_boundary, want,
-        "the source becomes Selection with the one face; every other field stays"
+        "the source becomes Selection with the one face and the offset 0; every other \
+         field stays"
     );
 
     let _ = s
@@ -513,13 +548,9 @@ fn a_click_on_a_boundary_that_is_not_a_selection_switches_it_p4_d() {
         (top - TOP_FACE_Z).abs() < EPS,
         "after the switch the auto top is {top}, want the face Z {TOP_FACE_Z}"
     );
-    let face = face_square();
     let samples = cutting_samples(&mut s);
     assert!(samples.len() > 20, "{} samples", samples.len());
-    assert!(
-        samples.iter().all(|p| face.contains_point_eps(p, EPS)),
-        "after the switch every cutting sample lies inside the picked face"
-    );
+    assert_in_reach(&samples);
 
     // The boundary is a selection now: a second click on the face is a
     // plain selection edit that removes the pick.

@@ -76,7 +76,7 @@ use crate::compute::catalog::{
 use crate::compute::config::ResolvedHeights;
 use crate::compute::edge_clear::{EdgeClearProbe, clear_edge_walls};
 use crate::compute::floor::{Floor, HoleFloorInputs, HoleSpan, hole_floors, region_floors};
-use crate::compute::open_sides::{OpenSidesProbe, grow_past_open_sides};
+use crate::compute::open_sides::{OpenSidesProbe, OpenSidesReach, grow_past_open_sides};
 use crate::compute::toolpath_stats::SelectionNoteFinding;
 use crate::dexel_stock::FRESH_MATERIAL_THRESHOLD_MM;
 use crate::mesh::{SpatialIndex, TriangleMesh};
@@ -565,7 +565,7 @@ fn grow_open_sides(
     };
     let probe = OpenSidesProbe {
         mesh,
-        stock,
+        reach: OpenSidesReach::Stock(stock),
         tool_radius: ctx.tool_def.diameter() / 2.0,
         face_depth: depth,
     };

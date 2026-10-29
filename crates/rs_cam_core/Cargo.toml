@@ -243,6 +243,14 @@ name = "stl_flat_regions_are_face_items_p4_7"
 required-features = ["test-support"]
 
 [[test]]
+name = "a_face_boundary_spills_into_air_only_r7a"
+required-features = ["step", "test-support"]
+
+[[test]]
+name = "a_model_change_drops_the_lost_picks_r7b"
+required-features = ["step", "test-support"]
+
+[[test]]
 name = "a_reimport_drops_the_pick_index_sel2"
 required-features = ["test-support"]
 
