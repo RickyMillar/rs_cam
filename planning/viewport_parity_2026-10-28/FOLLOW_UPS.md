@@ -124,3 +124,6 @@ hand cursor. Fixes ordered from the look:
   the two lines (evidence 11 shows both).
 - **Ruling:** the height planes show only while the Heights tab is open, by
   default; the overlay row switches them on for good.
+- **Ruling:** the shading looks cartoony (per-face pastels + a flat
+  hemisphere). One neutral material and a camera headlight for the diffuse,
+  a modest ambient; the per-face palette goes; the edges delineate faces.
