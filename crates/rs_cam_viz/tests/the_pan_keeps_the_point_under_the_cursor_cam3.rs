@@ -94,9 +94,8 @@ fn the_old_step_is_the_rule_at_one_height_c8() {
 /// moves the anchor by the drag delta.
 #[test]
 fn a_drag_pans_with_the_point_under_the_press_cam3() {
-    use rs_cam_viz::interaction::input::{
-        DragAnchor, InputEnv, InputSample, MouseScheme, apply_camera, step,
-    };
+    use rs_cam_core::settings::MouseScheme;
+    use rs_cam_viz::interaction::input::{DragAnchor, InputEnv, InputSample, apply_camera, step};
     use rs_cam_viz::state::camera::CameraState;
     use rs_cam_viz::state::viewport_input::DragState;
 
@@ -119,7 +118,7 @@ fn a_drag_pans_with_the_point_under_the_press_cam3() {
         let anchor = origin + dir * t;
         let basis = base.basis();
         let env = InputEnv {
-            scheme: MouseScheme::LeftOrbit,
+            scheme: MouseScheme::DesktopCad,
             pick_mode_on: false,
             press_on_tab: false,
             drag_anchor: Some(DragAnchor {
@@ -142,8 +141,8 @@ fn a_drag_pans_with_the_point_under_the_press_cam3() {
                 (-4.0, 9.0)
             };
             let sample = InputSample {
-                started: (round == 0).then_some(egui::PointerButton::Middle),
-                dragging: Some(egui::PointerButton::Middle),
+                started: (round == 0).then_some(egui::PointerButton::Secondary),
+                dragging: Some(egui::PointerButton::Secondary),
                 stopped: false,
                 delta: egui::vec2(dx, dy),
                 press_origin: Some(egui::pos2(vw * 0.3, vh * 0.7)),

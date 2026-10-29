@@ -16,8 +16,9 @@ File ▸ Preferences writes it (operator request 2026-10-02).
 
 ## Invariants
 
-- A missing key is the behaviour before the key existed. The one change
-  is `save_cut_trace`: OFF (operator ruling 2026-10-02).
+- A missing key is the behaviour before the key existed. The changes:
+  `save_cut_trace` OFF (operator ruling 2026-10-02); `mouse_scheme`
+  `desktop_cad` (ruling 2026-10-29), not the old left-drag orbit.
 - A bad value gives the default for THAT key and a warning; a file that is
   not TOML gives all defaults. The writer refuses a file that is not TOML.
 - The writer keeps every key and table it does not own, writes through a

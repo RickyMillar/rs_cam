@@ -13,6 +13,7 @@
 use crate::state::camera::CameraState;
 use crate::state::viewport_input::{BoxMode, BoxOp, DragState};
 use egui::PointerButton;
+use rs_cam_core::settings::MouseScheme;
 
 /// The buttons that [`InputSample::read`] tests, in order.
 const BUTTONS: [PointerButton; 5] = [
@@ -169,15 +170,7 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
             *state = DragState::Tab;
             actions.push(InputAction::TabDrag);
         } else {
-            // B6, temporary until B3 replaces the scheme: under
-            // `LeftOrbit` a left drag that starts in pick mode is a box;
-            // outside pick mode it orbits as before.
-            let intent = match (env.scheme, button) {
-                (MouseScheme::LeftOrbit, PointerButton::Primary) if env.pick_mode_on => {
-                    Intent::Select
-                }
-                _ => classify(env.scheme, button, s.modifiers),
-            };
+            let intent = classify(env.scheme, button, s.modifiers);
             match intent {
                 Intent::Orbit => {
                     let pivot = env.drag_anchor.map(|a| a.point);
@@ -325,22 +318,10 @@ pub fn apply_camera(actions: &[InputAction], camera: &mut CameraState, rect: egu
 }
 
 // ── the mouse scheme ───────────────────────────────────────────────────
-
-/// The viewport mouse scheme. B3 moves it to a core setting and deletes
-/// `LeftOrbit`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseScheme {
-    /// Today's buttons: left drag orbits, right or middle drag pans.
-    /// B6 (temporary, until B3): a left drag that starts in pick mode is a
-    /// box (`step` gives `Intent::Select` there); outside pick mode it
-    /// orbits.
-    LeftOrbit,
-    /// Right drag orbits, middle drag pans, left selects (Onshape).
-    WebCad,
-    /// Middle drag orbits, Ctrl + middle drag pans, left selects
-    /// (SolidWorks).
-    DesktopCad,
-}
+//
+// The scheme is the core setting `settings::MouseScheme` (`[display]
+// mouse_scheme`, default `DesktopCad`, operator ruling 2026-10-29). The
+// frame reads it from `AppSettings` each frame.
 
 /// What a drag does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,12 +332,14 @@ pub enum Intent {
     None,
 }
 
-/// One row of a scheme: the button, the modifier, the intent, the text.
+/// One row of a scheme: the button, the modifiers, the intent, the text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemeRow {
     pub button: PointerButton,
     /// Ctrl (Cmd on macOS): egui `Modifiers::command`.
     pub command: bool,
+    /// Alt (Option on macOS): egui `Modifiers::alt`. The laptop rows.
+    pub alt: bool,
     pub intent: Intent,
     pub keys: &'static str,
     pub does: &'static str,
@@ -365,6 +348,7 @@ pub struct SchemeRow {
 const fn row(
     button: PointerButton,
     command: bool,
+    alt: bool,
     intent: Intent,
     keys: &'static str,
     does: &'static str,
@@ -372,88 +356,93 @@ const fn row(
     SchemeRow {
         button,
         command,
+        alt,
         intent,
         keys,
         does,
     }
 }
 
-const LEFT_ORBIT: [SchemeRow; 6] = [
+/// The rows both schemes share: the left button selects (a box in pick
+/// mode; Ctrl removes, B §4), and the laptop rows Alt + left orbits and
+/// Alt + right pans (Alt never collides with the pick modifiers Shift and
+/// Ctrl).
+const LEFT_SELECT: SchemeRow = row(
+    PointerButton::Primary,
+    false,
+    false,
+    Intent::Select,
+    "Left drag",
+    "Box select (pick mode)",
+);
+const CTRL_LEFT_SELECT: SchemeRow = row(
+    PointerButton::Primary,
+    true,
+    false,
+    Intent::Select,
+    "Ctrl + left drag",
+    "Box remove (pick mode)",
+);
+const ALT_LEFT_ORBIT: SchemeRow = row(
+    PointerButton::Primary,
+    false,
+    true,
+    Intent::Orbit,
+    "Alt + left drag",
+    "Orbit (laptop)",
+);
+const ALT_RIGHT_PAN: SchemeRow = row(
+    PointerButton::Secondary,
+    false,
+    true,
+    Intent::Pan,
+    "Alt + right drag",
+    "Pan (laptop)",
+);
+
+const DESKTOP_CAD: [SchemeRow; 7] = [
     row(
-        PointerButton::Primary,
+        PointerButton::Middle,
+        false,
         false,
         Intent::Orbit,
-        "Left drag",
+        "Middle drag",
         "Orbit",
     ),
     row(
-        PointerButton::Primary,
+        PointerButton::Middle,
         true,
-        Intent::Orbit,
-        "Ctrl + left drag",
-        "Orbit",
+        false,
+        Intent::Pan,
+        "Ctrl + middle drag",
+        "Pan",
     ),
     row(
         PointerButton::Secondary,
+        false,
         false,
         Intent::Pan,
         "Right drag",
         "Pan",
     ),
-    row(
-        PointerButton::Secondary,
-        true,
-        Intent::Pan,
-        "Ctrl + right drag",
-        "Pan",
-    ),
-    row(
-        PointerButton::Middle,
-        false,
-        Intent::Pan,
-        "Middle drag",
-        "Pan",
-    ),
-    row(
-        PointerButton::Middle,
-        true,
-        Intent::Pan,
-        "Ctrl + middle drag",
-        "Pan",
-    ),
+    ALT_LEFT_ORBIT,
+    ALT_RIGHT_PAN,
+    LEFT_SELECT,
+    CTRL_LEFT_SELECT,
 ];
 
-const WEB_CAD: [SchemeRow; 6] = [
-    row(
-        PointerButton::Primary,
-        false,
-        Intent::Select,
-        "Left drag",
-        "Box select (pick mode)",
-    ),
-    row(
-        PointerButton::Primary,
-        true,
-        Intent::Select,
-        "Ctrl + left drag",
-        "Box remove (pick mode)",
-    ),
+const WEB_CAD: [SchemeRow; 8] = [
     row(
         PointerButton::Secondary,
+        false,
         false,
         Intent::Orbit,
         "Right drag",
         "Orbit",
     ),
     row(
-        PointerButton::Secondary,
-        true,
-        Intent::Pan,
-        "Ctrl + right drag",
-        "Pan",
-    ),
-    row(
         PointerButton::Middle,
+        false,
         false,
         Intent::Pan,
         "Middle drag",
@@ -462,74 +451,42 @@ const WEB_CAD: [SchemeRow; 6] = [
     row(
         PointerButton::Middle,
         true,
+        false,
         Intent::Pan,
         "Ctrl + middle drag",
         "Pan",
     ),
-];
-
-const DESKTOP_CAD: [SchemeRow; 6] = [
-    row(
-        PointerButton::Primary,
-        false,
-        Intent::Select,
-        "Left drag",
-        "Box select (pick mode)",
-    ),
-    row(
-        PointerButton::Primary,
-        true,
-        Intent::Select,
-        "Ctrl + left drag",
-        "Box remove (pick mode)",
-    ),
-    row(
-        PointerButton::Secondary,
-        false,
-        Intent::Pan,
-        "Right drag",
-        "Pan",
-    ),
     row(
         PointerButton::Secondary,
         true,
+        false,
         Intent::Pan,
         "Ctrl + right drag",
         "Pan",
     ),
-    row(
-        PointerButton::Middle,
-        false,
-        Intent::Orbit,
-        "Middle drag",
-        "Orbit",
-    ),
-    row(
-        PointerButton::Middle,
-        true,
-        Intent::Pan,
-        "Ctrl + middle drag",
-        "Pan",
-    ),
+    ALT_LEFT_ORBIT,
+    ALT_RIGHT_PAN,
+    LEFT_SELECT,
+    CTRL_LEFT_SELECT,
 ];
 
 /// THE table of `scheme`. `classify` and the shortcuts window both read
 /// it, so the text and the behaviour cannot differ.
 pub fn rows(scheme: MouseScheme) -> &'static [SchemeRow] {
     match scheme {
-        MouseScheme::LeftOrbit => &LEFT_ORBIT,
-        MouseScheme::WebCad => &WEB_CAD,
         MouseScheme::DesktopCad => &DESKTOP_CAD,
+        MouseScheme::WebCad => &WEB_CAD,
     }
 }
 
 /// The intent of a drag that starts with `button` and `modifiers`. The
-/// first row whose button and `command` match wins; no row gives `None`.
-/// Shift and Alt do not change the intent.
+/// first row whose button, `command` and `alt` match wins; no row gives
+/// `None`. Shift does not change the intent (it chooses nothing for a
+/// drag).
 pub fn classify(scheme: MouseScheme, button: PointerButton, modifiers: egui::Modifiers) -> Intent {
     rows(scheme)
         .iter()
-        .find(|r| r.button == button && r.command == modifiers.command)
+        .find(|r| r.button == button && r.command == modifiers.command && r.alt == modifiers.alt)
         .map_or(Intent::None, |r| r.intent)
 }
 
@@ -542,7 +499,7 @@ mod tests {
     use super::*;
 
     const ENV: InputEnv = InputEnv {
-        scheme: MouseScheme::LeftOrbit,
+        scheme: MouseScheme::DesktopCad,
         pick_mode_on: false,
         press_on_tab: false,
         drag_anchor: None,
@@ -592,7 +549,7 @@ mod tests {
     #[test]
     fn step_an_orbit_intent_orbits_with_the_delta() {
         let mut state = DragState::Idle;
-        let actions = step(&mut state, &drag(PointerButton::Primary, true), &ENV);
+        let actions = step(&mut state, &drag(PointerButton::Middle, true), &ENV);
         assert_eq!(state, DragState::Orbit { pivot: None });
         assert_eq!(
             actions,
@@ -606,19 +563,18 @@ mod tests {
 
     #[test]
     fn step_a_pan_intent_pans_with_the_delta() {
-        for button in [PointerButton::Secondary, PointerButton::Middle] {
-            let mut state = DragState::Idle;
-            let actions = step(&mut state, &drag(button, true), &ENV);
-            assert_eq!(state, DragState::Pan { grab_depth: None });
-            assert_eq!(
-                actions,
-                vec![InputAction::Pan {
-                    dx: 3.0,
-                    dy: -2.0,
-                    grab_depth: None
-                }]
-            );
-        }
+        let button = PointerButton::Secondary;
+        let mut state = DragState::Idle;
+        let actions = step(&mut state, &drag(button, true), &ENV);
+        assert_eq!(state, DragState::Pan { grab_depth: None });
+        assert_eq!(
+            actions,
+            vec![InputAction::Pan {
+                dx: 3.0,
+                dy: -2.0,
+                grab_depth: None
+            }]
+        );
     }
 
     #[test]
@@ -887,7 +843,7 @@ mod tests {
             ..ENV
         };
         let mut state = DragState::Idle;
-        let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
+        let actions = step(&mut state, &drag(PointerButton::Middle, true), &env);
         let pivot = Some(anchor.point);
         assert_eq!(state, DragState::Orbit { pivot });
         assert_eq!(
@@ -899,7 +855,7 @@ mod tests {
             }]
         );
         // The later frames keep the pivot of the start, whatever the env.
-        let actions = step(&mut state, &drag(PointerButton::Primary, false), &ENV);
+        let actions = step(&mut state, &drag(PointerButton::Middle, false), &ENV);
         assert_eq!(
             actions,
             vec![InputAction::Orbit {
@@ -921,7 +877,7 @@ mod tests {
             ..ENV
         };
         let mut state = DragState::Idle;
-        let actions = step(&mut state, &drag(PointerButton::Middle, true), &env);
+        let actions = step(&mut state, &drag(PointerButton::Secondary, true), &env);
         assert_eq!(
             state,
             DragState::Pan {
@@ -936,7 +892,7 @@ mod tests {
                 grab_depth: Some(120.0)
             }]
         );
-        let actions = step(&mut state, &drag(PointerButton::Middle, false), &ENV);
+        let actions = step(&mut state, &drag(PointerButton::Secondary, false), &ENV);
         assert_eq!(
             actions,
             vec![InputAction::Pan {

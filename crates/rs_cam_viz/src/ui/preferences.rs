@@ -39,8 +39,8 @@ use std::path::PathBuf;
 
 use rs_cam_core::budget::{MemoryBudget, MemoryLimit, format_bytes, format_exact_size};
 use rs_cam_core::settings::{
-    AppSettings, LoadedSettings, LogLevel, PresentModeSetting, SettingToken, StockViewDefault,
-    ToolpathColourDefault, limits,
+    AppSettings, LoadedSettings, LogLevel, MouseScheme, PresentModeSetting, SettingToken,
+    StockViewDefault, ToolpathColourDefault, limits,
 };
 
 use super::AppEvent;
@@ -878,6 +878,13 @@ fn draw_display(ui: &mut egui::Ui, prefs: &mut PreferencesState) {
         "The toolpath colour mode the viewport starts in.",
     );
     caption(ui, RESTART_NOTE);
+    token_row::<MouseScheme>(
+        ui,
+        "Mouse",
+        &mut prefs.draft.display.mouse_scheme,
+        "Which button orbits the viewport camera. In both: left selects, \
+         Alt + left orbits and Alt + right pans (a laptop). Applies at once.",
+    );
 
     ui.add_space(tokens::SPACE_3);
     SectionHeader::new("Overlay defaults").show(ui);

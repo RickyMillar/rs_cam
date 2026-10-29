@@ -12,8 +12,8 @@
 //!    egui's `max_click_dist` (6 pt) is a click, not a box.
 //! 5. Escape during a box cancels it and keeps the pick mode; the release
 //!    then sends nothing, and the next Escape ends the mode.
-//! 6. Under `LeftOrbit` (temporary until B3) a left drag that starts in
-//!    pick mode is a box; outside pick mode it orbits.
+//! 6. B3: a left drag is a box in pick mode (`Intent::Select` in both
+//!    schemes); outside pick mode it does nothing (O-1).
 
 #![expect(
     clippy::unwrap_used,
@@ -33,12 +33,13 @@ use rs_cam_core::geo::{P2, P3};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::selection::{Item, ItemKind, ItemSet, SelectionEdit, Shape, SourceRef};
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, SelectionTarget, ToolpathConfig};
+use rs_cam_core::settings::MouseScheme;
 use rs_cam_viz::compute::{
     CollisionRequest, ComputeBackend, ComputeLane, ComputeMessage, ComputeRequest,
     GenerationControl, LaneSnapshot, SimulationRequest, ToolpathSubmitOutcome,
 };
 use rs_cam_viz::controller::AppController;
-use rs_cam_viz::interaction::input::{InputAction, InputEnv, InputSample, MouseScheme, step};
+use rs_cam_viz::interaction::input::{InputAction, InputEnv, InputSample, step};
 use rs_cam_viz::interaction::intent::{ViewContext, ViewKey, ViewportGesture, gesture_events};
 use rs_cam_viz::interaction::picking::{PickContext, ScreenRect, pick_items_in_rect};
 use rs_cam_viz::render::camera::OrbitCamera;
@@ -399,7 +400,7 @@ fn released() -> InputSample {
 }
 
 const PICK_ENV: InputEnv = InputEnv {
-    scheme: MouseScheme::LeftOrbit,
+    scheme: MouseScheme::DesktopCad,
     pick_mode_on: true,
     press_on_tab: false,
     drag_anchor: None,
@@ -503,7 +504,7 @@ fn escape_cancels_a_box_and_keeps_pick_mode_sel4() {
 }
 
 #[test]
-fn a_left_drag_boxes_in_pick_mode_and_orbits_outside_it_sel4() {
+fn a_left_drag_boxes_in_pick_mode_and_does_nothing_outside_it_sel4() {
     let mut drag = DragState::Idle;
     let actions = step(
         &mut drag,
@@ -522,5 +523,9 @@ fn a_left_drag_boxes_in_pick_mode_and_orbits_outside_it_sel4() {
         &press(egui::PointerButton::Primary, egui::Modifiers::NONE),
         &outside,
     );
-    assert!(matches!(actions.as_slice(), [InputAction::Orbit { .. }]));
+    assert!(
+        actions.is_empty(),
+        "outside pick mode a left drag does nothing: {actions:?}"
+    );
+    assert_eq!(drag, DragState::Idle);
 }

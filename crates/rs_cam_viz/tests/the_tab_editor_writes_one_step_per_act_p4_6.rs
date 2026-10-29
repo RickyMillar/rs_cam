@@ -522,7 +522,8 @@ fn the_viewport_picks_and_draws_tabs_where_the_loop_is_drawn_p4_6() {
 /// pick-mode flag on; the release of that drag sends no box.
 #[test]
 fn a_drag_on_a_tab_wins_over_the_box_p4_6() {
-    use rs_cam_viz::interaction::input::{InputAction, InputEnv, InputSample, MouseScheme, step};
+    use rs_cam_core::settings::MouseScheme;
+    use rs_cam_viz::interaction::input::{InputAction, InputEnv, InputSample, step};
     use rs_cam_viz::state::viewport_input::DragState;
     let sample = |started: bool, stopped: bool| InputSample {
         started: started.then_some(egui::PointerButton::Primary),
@@ -540,7 +541,7 @@ fn a_drag_on_a_tab_wins_over_the_box_p4_6() {
         scroll: egui::Vec2::ZERO,
     };
     let env = InputEnv {
-        scheme: MouseScheme::LeftOrbit,
+        scheme: MouseScheme::DesktopCad,
         pick_mode_on: true,
         press_on_tab: true,
         drag_anchor: None,

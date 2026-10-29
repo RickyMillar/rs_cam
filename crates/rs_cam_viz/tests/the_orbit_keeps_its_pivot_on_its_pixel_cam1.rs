@@ -100,9 +100,8 @@ fn an_orbit_about_the_target_is_the_old_step_cam1() {
 /// the camera about it.
 #[test]
 fn a_drag_orbits_about_the_point_under_the_press_cam1() {
-    use rs_cam_viz::interaction::input::{
-        DragAnchor, InputEnv, InputSample, MouseScheme, apply_camera, step,
-    };
+    use rs_cam_core::settings::MouseScheme;
+    use rs_cam_viz::interaction::input::{DragAnchor, InputEnv, InputSample, apply_camera, step};
     use rs_cam_viz::state::camera::CameraState;
     use rs_cam_viz::state::viewport_input::DragState;
 
@@ -115,7 +114,7 @@ fn a_drag_orbits_about_the_point_under_the_press_cam1() {
         let pivot = Point3::new(30.0_f32, -10.0, 6.0);
         let basis = state.pose().basis();
         let env = InputEnv {
-            scheme: MouseScheme::LeftOrbit,
+            scheme: MouseScheme::DesktopCad,
             pick_mode_on: false,
             press_on_tab: false,
             drag_anchor: Some(DragAnchor {
@@ -132,8 +131,8 @@ fn a_drag_orbits_about_the_point_under_the_press_cam1() {
                 (-9.0, -25.0)
             };
             let sample = InputSample {
-                started: (round == 0).then_some(egui::PointerButton::Primary),
-                dragging: Some(egui::PointerButton::Primary),
+                started: (round == 0).then_some(egui::PointerButton::Middle),
+                dragging: Some(egui::PointerButton::Middle),
                 stopped: false,
                 delta: egui::vec2(dx, dy),
                 press_origin: Some(egui::pos2(start[0], start[1])),

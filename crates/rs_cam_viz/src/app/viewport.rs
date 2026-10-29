@@ -287,7 +287,7 @@ impl RsCamApp {
         ui: &egui::Ui,
         response: &egui::Response,
     ) -> Vec<InputAction> {
-        use crate::interaction::input::{InputEnv, InputSample, MouseScheme, step};
+        use crate::interaction::input::{InputEnv, InputSample, step};
         let sample = InputSample::read(ui, response);
         // The tab test runs only on a primary drag start, as before.
         let press_on_tab = sample.started == Some(egui::PointerButton::Primary)
@@ -301,8 +301,9 @@ impl RsCamApp {
             .and(sample.press_origin)
             .and_then(|origin| self.drag_anchor(origin));
         let env = InputEnv {
-            // B3: the setting.
-            scheme: MouseScheme::LeftOrbit,
+            // B3: the setting, read each frame (no GUI copy; Apply takes
+            // effect on the next frame).
+            scheme: self.controller.state().app_settings.display.mouse_scheme,
             pick_mode_on: self.active_pick().is_some(),
             press_on_tab,
             drag_anchor,

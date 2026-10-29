@@ -56,6 +56,7 @@ fn every_key_changed() -> AppSettings {
         display: DisplaySettings {
             show_all_toolpaths: true,
             toolpath_colour_mode: ToolpathColourDefault::AdvancePerTooth,
+            mouse_scheme: MouseScheme::WebCad,
             overlays,
         },
         simulation: SimulationSettings {
@@ -104,6 +105,9 @@ fn the_defaults_are_the_behaviour_before_the_keys_existed() {
         ToolpathColourDefault::Normal
     );
     assert!(d.display.overlays.is_empty());
+    // The one other change (operator ruling 2026-10-29): a file with no
+    // `mouse_scheme` starts in `DesktopCad`, not the left-drag orbit.
+    assert_eq!(d.display.mouse_scheme, MouseScheme::DesktopCad);
     assert_eq!(d.simulation.playback_speed, 500.0);
     assert_eq!(d.simulation.stock_view, StockViewDefault::Solid);
     assert_eq!(d.simulation.stock_opacity, 1.0);

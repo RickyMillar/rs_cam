@@ -1224,7 +1224,8 @@ impl RsCamApp {
         // Keyboard shortcuts reference window
         if self.controller.state().show_shortcuts {
             let mut show = true;
-            crate::ui::shortcuts_window::draw(ctx, &mut show);
+            let scheme = self.controller.state().app_settings.display.mouse_scheme;
+            crate::ui::shortcuts_window::draw(ctx, &mut show, scheme);
             if !show {
                 self.controller.state_mut().show_shortcuts = false;
             }

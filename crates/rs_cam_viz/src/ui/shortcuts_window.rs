@@ -1,5 +1,8 @@
 use crate::ui::components::UiExt as _;
-pub fn draw(ctx: &egui::Context, show: &mut bool) {
+/// The shortcuts window. `scheme` is the mouse scheme of the settings
+/// (B3): the "Viewport mouse" section prints its rows
+/// (`interaction::input::rows`, the table `classify` reads).
+pub fn draw(ctx: &egui::Context, show: &mut bool, scheme: rs_cam_core::settings::MouseScheme) {
     egui::Window::new("Keyboard Shortcuts")
         .open(show)
         .resizable(false)
@@ -36,6 +39,34 @@ pub fn draw(ctx: &egui::Context, show: &mut bool) {
                     ("1 / 2 / 3 / 4", "Top / Front / Right / Iso view"),
                     ("F", "Fit the selection (else the model)"),
                     ("Ctrl+A", "Pick mode: every item of the chip kinds"),
+                ],
+            );
+            ui.add_space(8.0);
+
+            // B3: the viewport mouse. The drag rows are the rows `classify`
+            // reads, so the text and the behaviour cannot differ.
+            ui.heading("Viewport mouse");
+            {
+                use rs_cam_core::settings::SettingToken as _;
+                ui.label(scheme.label());
+            }
+            let drags: Vec<(&str, &str)> = crate::interaction::input::rows(scheme)
+                .iter()
+                .map(|row| (row.keys, row.does))
+                .collect();
+            draw_shortcut_grid(ui, &drags);
+            draw_shortcut_grid(
+                ui,
+                &[
+                    ("Click", "Pick mode: add or remove the item"),
+                    ("Shift+click", "Pick mode: add the item"),
+                    ("Ctrl+click", "Pick mode: remove the item"),
+                    ("Right-click", "Pick mode: the rule menu"),
+                    ("Drag", "Pick mode: box (left to right encloses)"),
+                    ("Wheel / pinch", "Zoom toward the pointer"),
+                    ("F", "Fit the selection"),
+                    ("Ctrl+A", "Pick mode: every item of the chip kinds"),
+                    ("Escape", "Cancel the box, then end pick mode"),
                 ],
             );
             ui.add_space(8.0);

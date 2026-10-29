@@ -12,6 +12,7 @@
 //! | Value | When |
 //! |---|---|
 //! | undo depth, confirm on quit, library folders | at once |
+//! | mouse scheme | at once (the frame reads it each frame) |
 //! | toast durations | the next toast |
 //! | overlay defaults | the next workspace switch |
 //! | simulation defaults | the next start or project open |

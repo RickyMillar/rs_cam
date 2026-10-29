@@ -19,6 +19,7 @@
 //! [display]
 //! show_all_toolpaths = false        # operator ruling WP27: selected only
 //! toolpath_colour_mode = "normal"   # "engagement", "advance_per_tooth"
+//! mouse_scheme = "desktop_cad"      # "web_cad"
 //!
 //! [display.overlays]                # an overlay id = on or off in every
 //! grid = false                      # viewport workspace
@@ -132,6 +133,20 @@ setting_token! {
 }
 
 setting_token! {
+    /// The viewport mouse scheme (design B §2.1, operator ruling
+    /// 2026-10-29). The GUI maps a button and the modifiers to an intent
+    /// with `interaction::input::classify`. Both schemes: left selects,
+    /// Alt + left orbits and Alt + right pans (the laptop rows).
+    pub enum MouseScheme {
+        /// Middle drag orbits, Ctrl + middle and right drag pan
+        /// (SolidWorks). The default.
+        DesktopCad => ("desktop_cad", "Middle drag orbits (SolidWorks)"),
+        /// Right drag orbits, middle drag pans (Onshape).
+        WebCad => ("web_cad", "Right drag orbits (Onshape)"),
+    }
+}
+
+setting_token! {
     /// The stock view the simulation starts in. The GUI maps it to its own
     /// `StockVizMode`.
     pub enum StockViewDefault {
@@ -233,6 +248,10 @@ pub struct DisplaySettings {
     pub show_all_toolpaths: bool,
     /// The toolpath colour mode the viewport starts in.
     pub toolpath_colour_mode: ToolpathColourDefault,
+    /// The viewport mouse scheme. Default `DesktopCad` (operator ruling
+    /// 2026-10-29): a file with no key starts there, not in the left-drag
+    /// orbit before the key existed.
+    pub mouse_scheme: MouseScheme,
     /// `[display.overlays]`: an overlay id and the value it takes in every
     /// viewport workspace, in place of that workspace's default. An id that
     /// is not in the map keeps the workspace default. The map keeps an id
@@ -245,6 +264,7 @@ impl Default for DisplaySettings {
         Self {
             show_all_toolpaths: false,
             toolpath_colour_mode: ToolpathColourDefault::Normal,
+            mouse_scheme: MouseScheme::DesktopCad,
             overlays: BTreeMap::new(),
         }
     }
@@ -612,6 +632,7 @@ pub fn parse_lenient(text: &str) -> Result<(AppSettings, Vec<String>), String> {
         DisplaySettings {
             show_all_toolpaths: s.bool("show_all_toolpaths", d.show_all_toolpaths),
             toolpath_colour_mode: s.token("toolpath_colour_mode", d.toolpath_colour_mode),
+            mouse_scheme: s.token("mouse_scheme", d.mouse_scheme),
             overlays: s.bool_table("overlays"),
         }
     };
@@ -895,6 +916,7 @@ pub fn merged_text(existing: &str, settings: &AppSettings) -> Result<String, Str
             s.toolpath_colour_mode,
             d.toolpath_colour_mode,
         );
+        w.put_token("mouse_scheme", s.mouse_scheme, d.mouse_scheme);
         let overlays: toml::Table = s
             .overlays
             .iter()
