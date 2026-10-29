@@ -308,3 +308,10 @@ Round 7 rulings (operator, 2026-10-30):
   mesh and colours nothing on the STEP ("this does need a look") → the reach
   overlay replaces every model's draw (render/mod.rs if/else chain); fix per
   model through the face pipeline; tool-relative gap scale.
+
+Round 7 landed: core 2dc5e5130, render a5366bb7c, tail (see git log).
+Open after round 7: the inspector undo snapshot holds no `model_id`, so an
+undo after a model change can put the old picks back on the new model; an
+MCP model change shows the GUI only the "Bound model" toast, not the
+dropped-picks note; the Z10 and Z30 faces give two polygons (the Z20 step
+between them is wider than two radii), faces that touch give one.
