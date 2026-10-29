@@ -375,6 +375,12 @@ impl RsCamApp {
                 .active_tab_edit()
                 .zip(sample.press_origin)
                 .is_some_and(|(id, origin)| self.tab_under(id, origin).is_some());
+        // P4: a primary press on the drawn orientation gizmo orbits.
+        let press_on_gizmo = sample.started == Some(egui::PointerButton::Primary)
+            && self.controller.state().viewport.show_orientation_gizmo
+            && sample
+                .press_origin
+                .is_some_and(|origin| crate::interaction::input::on_gizmo(response.rect, origin));
         // A C3a: the point under the press origin, only on a drag start.
         let drag_anchor = sample
             .started
@@ -386,6 +392,7 @@ impl RsCamApp {
             scheme: self.controller.state().app_settings.display.mouse_scheme,
             pick_mode_on: self.active_pick().is_some(),
             press_on_tab,
+            press_on_gizmo,
             drag_anchor,
         };
         let drag = &mut self.controller.state_mut().gui.selection_ui.drag;
@@ -1564,12 +1571,7 @@ impl RsCamApp {
     /// Draw a small XYZ orientation gizmo in the top-right corner of the viewport.
     /// Uses the camera view matrix to rotate unit vectors, then draws 2D lines.
     fn draw_orientation_gizmo(&self, ui: &mut egui::Ui, viewport_rect: egui::Rect) {
-        let gizmo_size = 50.0;
-        let margin = 10.0;
-        let gizmo_center = egui::pos2(
-            viewport_rect.max.x - margin - gizmo_size * 0.5,
-            viewport_rect.min.y + margin + gizmo_size * 0.5,
-        );
+        let (gizmo_center, gizmo_radius) = crate::interaction::input::gizmo_disc(viewport_rect);
         let axis_len = 20.0;
 
         let view = self.controller.state().camera.pose().view_matrix();
@@ -1578,7 +1580,7 @@ impl RsCamApp {
         // Background circle for readability
         painter.circle_filled(
             gizmo_center,
-            gizmo_size * 0.5,
+            gizmo_radius,
             egui::Color32::from_rgba_unmultiplied(
                 crate::ui::tokens::DIAGRAM_CANVAS.r(),
                 crate::ui::tokens::DIAGRAM_CANVAS.g(),

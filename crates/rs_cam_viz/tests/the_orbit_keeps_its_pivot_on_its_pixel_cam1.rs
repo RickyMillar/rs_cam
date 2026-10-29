@@ -117,6 +117,7 @@ fn a_drag_orbits_about_the_point_under_the_press_cam1() {
             scheme: MouseScheme::DesktopCad,
             pick_mode_on: false,
             press_on_tab: false,
+            press_on_gizmo: false,
             drag_anchor: Some(DragAnchor {
                 point: [pivot.x, pivot.y, pivot.z],
                 depth: (pivot - basis.eye).dot(&basis.forward),

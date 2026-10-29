@@ -407,6 +407,7 @@ const PICK_ENV: InputEnv = InputEnv {
     scheme: MouseScheme::DesktopCad,
     pick_mode_on: true,
     press_on_tab: false,
+    press_on_gizmo: false,
     drag_anchor: None,
 };
 

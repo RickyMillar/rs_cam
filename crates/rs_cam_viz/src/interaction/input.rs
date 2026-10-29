@@ -151,10 +151,31 @@ pub struct InputEnv {
     pub pick_mode_on: bool,
     /// The tab editor is on and the press origin is on a tab mark.
     pub press_on_tab: bool,
+    /// The press origin is on the orientation gizmo (`on_gizmo`). A left
+    /// drag from there orbits about the target in every scheme.
+    pub press_on_gizmo: bool,
     /// The point under the press origin. The frame computes it only on the
     /// frame a drag starts; `None` on every other frame, and when the
     /// pointer ray finds no point (the camera then uses the target).
     pub drag_anchor: Option<DragAnchor>,
+}
+
+/// The orientation gizmo disc in the viewport `rect`: the centre and the
+/// radius. The gizmo drawing and the press test read this one disc.
+pub fn gizmo_disc(rect: egui::Rect) -> (egui::Pos2, f32) {
+    const SIZE: f32 = 50.0;
+    const MARGIN: f32 = 10.0;
+    let centre = egui::pos2(
+        rect.max.x - MARGIN - SIZE * 0.5,
+        rect.min.y + MARGIN + SIZE * 0.5,
+    );
+    (centre, SIZE * 0.5)
+}
+
+/// The screen point `pos` is on the orientation gizmo disc of `rect`.
+pub fn on_gizmo(rect: egui::Rect, pos: egui::Pos2) -> bool {
+    let (centre, radius) = gizmo_disc(rect);
+    pos.distance(centre) <= radius
 }
 
 /// THE transition. The order in one frame is: drag start, drag, release,
@@ -169,6 +190,15 @@ pub fn step(state: &mut DragState, s: &InputSample, env: &InputEnv) -> Vec<Input
         if button == PointerButton::Primary && env.press_on_tab {
             *state = DragState::Tab;
             actions.push(InputAction::TabDrag);
+        } else if button == PointerButton::Primary && env.press_on_gizmo {
+            // The gizmo orbits about the target, as a middle drag with no
+            // point under the press origin does.
+            *state = DragState::Orbit { pivot: None };
+            actions.push(InputAction::Orbit {
+                dx,
+                dy,
+                pivot: None,
+            });
         } else {
             let intent = classify(env.scheme, button, s.modifiers);
             match intent {
@@ -502,6 +532,7 @@ mod tests {
         scheme: MouseScheme::DesktopCad,
         pick_mode_on: false,
         press_on_tab: false,
+        press_on_gizmo: false,
         drag_anchor: None,
     };
 
@@ -539,6 +570,7 @@ mod tests {
         let mut state = DragState::Idle;
         let env = InputEnv {
             press_on_tab: true,
+            press_on_gizmo: false,
             ..ENV
         };
         let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);
@@ -584,6 +616,7 @@ mod tests {
             scheme: MouseScheme::WebCad,
             pick_mode_on: true,
             press_on_tab: false,
+            press_on_gizmo: false,
             drag_anchor: None,
         };
         let actions = step(&mut state, &drag(PointerButton::Primary, true), &env);

@@ -17,11 +17,15 @@
 //!    cannot build, so the drive stops at those three calls, the ones the
 //!    frame makes, and a `CameraState` takes the actions.
 //! 4. A pinch (`Event::Zoom(1.25)`) changes the distance by 1 / 1.25.
+//! 5. P4: a left drag that starts on the orientation gizmo (`on_gizmo`, the
+//!    test the frame makes) orbits about the target in each scheme: the
+//!    camera turns and the target does not move. A left click on the gizmo
+//!    and a left drag that starts outside its disc leave the camera alone.
 
 use egui::{Modifiers, PointerButton};
 use rs_cam_core::settings::MouseScheme;
 use rs_cam_viz::interaction::input::{
-    InputEnv, InputSample, Intent, apply_camera, classify, rows, step,
+    InputEnv, InputSample, Intent, apply_camera, classify, gizmo_disc, on_gizmo, rows, step,
 };
 use rs_cam_viz::state::camera::CameraState;
 use rs_cam_viz::state::viewport_input::DragState;
@@ -126,13 +130,26 @@ const START: egui::Pos2 = egui::Pos2::new(400.0, 300.0);
 /// full-screen `click_and_drag` area (the viewport's sense) through
 /// `InputSample::read`, runs `step` and applies the camera actions.
 fn drag(scheme: MouseScheme, button: PointerButton, modifiers: Modifiers) -> CameraState {
+    drag_from(scheme, button, modifiers, START, 1.0)
+}
+
+/// The drive of `drag` from `start`, each move scaled by `scale` (0 = a
+/// click, a negative scale drags left and up). The frame sets `press_on_gizmo` as `viewport_input_actions` does.
+fn drag_from(
+    scheme: MouseScheme,
+    button: PointerButton,
+    modifiers: Modifiers,
+    start: egui::Pos2,
+    scale: f32,
+) -> CameraState {
     let ctx = egui::Context::default();
     let mut camera = CameraState::default();
     let mut drag = DragState::Idle;
-    let env = InputEnv {
+    let mut env = InputEnv {
         scheme,
         pick_mode_on: false,
         press_on_tab: false,
+        press_on_gizmo: false,
         drag_anchor: None,
     };
     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
@@ -140,10 +157,10 @@ fn drag(scheme: MouseScheme, button: PointerButton, modifiers: Modifiers) -> Cam
     let mut frames: Vec<Vec<egui::Event>> = vec![
         vec![
             egui::Event::ModifiersChanged(modifiers),
-            egui::Event::PointerMoved(START),
+            egui::Event::PointerMoved(start),
         ],
         vec![egui::Event::PointerButton {
-            pos: START,
+            pos: start,
             button,
             pressed: true,
             modifiers,
@@ -152,10 +169,10 @@ fn drag(scheme: MouseScheme, button: PointerButton, modifiers: Modifiers) -> Cam
     for k in 1..=6 {
         let k = k as f32;
         frames.push(vec![egui::Event::PointerMoved(
-            START + egui::vec2(10.0 * k, 10.0 * k / 3.0),
+            start + egui::vec2(10.0 * k, 10.0 * k / 3.0) * scale,
         )]);
     }
-    let end = START + egui::vec2(60.0, 20.0);
+    let end = start + egui::vec2(60.0, 20.0) * scale;
     frames.push(vec![egui::Event::PointerButton {
         pos: end,
         button,
@@ -172,6 +189,10 @@ fn drag(scheme: MouseScheme, button: PointerButton, modifiers: Modifiers) -> Cam
         let mut out = ctx.run_ui(input, |ui| {
             let (_, response) = ui.allocate_exact_size(SCREEN, egui::Sense::click_and_drag());
             let sample = InputSample::read(ui, &response);
+            env.press_on_gizmo = sample.started == Some(PointerButton::Primary)
+                && sample
+                    .press_origin
+                    .is_some_and(|origin| on_gizmo(response.rect, origin));
             let actions = step(&mut drag, &sample, &env);
             apply_camera(&actions, &mut camera, rect);
         });
@@ -256,6 +277,7 @@ fn a_pinch_zooms_cam8() {
         scheme: MouseScheme::DesktopCad,
         pick_mode_on: false,
         press_on_tab: false,
+        press_on_gizmo: false,
         drag_anchor: None,
     };
     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
@@ -285,4 +307,44 @@ fn a_pinch_zooms_cam8() {
         (ratio - 1.0 / 1.25).abs() < 1e-4,
         "the pinch changed the distance by {ratio}, not 1 / 1.25"
     );
+}
+
+#[test]
+fn a_left_drag_on_the_gizmo_orbits_in_each_scheme_cam8() {
+    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
+    let (centre, radius) = gizmo_disc(screen);
+    for scheme in SCHEMES {
+        // The gizmo sits in the top-right corner: the drag goes left and up,
+        // so the pointer stays on the screen.
+        let on = drag_from(
+            scheme,
+            PointerButton::Primary,
+            Modifiers::NONE,
+            centre,
+            -1.0,
+        );
+        // `orbit_about(target, ..)` keeps the target up to float rounding.
+        let drift = (on.pose().target - CameraState::default().pose().target).norm();
+        assert!(
+            turned(&on) && drift < 1e-3,
+            "{scheme:?}: a left drag from the gizmo orbits about the target (drift {drift})"
+        );
+        let click = drag_from(scheme, PointerButton::Primary, Modifiers::NONE, centre, 0.0);
+        assert!(
+            !turned(&click) && !moved(&click),
+            "{scheme:?}: a left click on the gizmo leaves the camera alone"
+        );
+        let outside = centre - egui::vec2(radius + 2.0, 0.0);
+        let off = drag_from(
+            scheme,
+            PointerButton::Primary,
+            Modifiers::NONE,
+            outside,
+            1.0,
+        );
+        assert!(
+            !turned(&off) && !moved(&off),
+            "{scheme:?}: a left drag outside the gizmo disc leaves the camera alone"
+        );
+    }
 }

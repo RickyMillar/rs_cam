@@ -59,6 +59,7 @@ pub fn draw(ctx: &egui::Context, show: &mut bool, scheme: rs_cam_core::settings:
             draw_shortcut_grid(
                 ui,
                 &[
+                    ("Left drag on the gizmo", "Orbit (any scheme)"),
                     ("Click", "Pick mode: add or remove the item"),
                     ("Shift+click", "Pick mode: add the item"),
                     ("Ctrl+click", "Pick mode: remove the item"),

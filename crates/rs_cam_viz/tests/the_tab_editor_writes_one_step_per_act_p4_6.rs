@@ -544,6 +544,7 @@ fn a_drag_on_a_tab_wins_over_the_box_p4_6() {
         scheme: MouseScheme::DesktopCad,
         pick_mode_on: true,
         press_on_tab: true,
+        press_on_gizmo: false,
         drag_anchor: None,
     };
     let mut drag = DragState::Idle;
