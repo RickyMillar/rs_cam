@@ -315,3 +315,18 @@ undo after a model change can put the old picks back on the new model; an
 MCP model change shows the GUI only the "Bound model" toast, not the
 dropped-picks note; the Z10 and Z30 faces give two polygons (the Z20 step
 between them is wider than two radii), faces that touch give one.
+
+## 13. Round 7 live look (operator, 2026-10-30, build 519f27063)
+
+"looking better!" Two questions on the reach map (evidence 20):
+- The colour does not reach the full width of a face: the grey margin is
+  the reach measure's rim erosion, one tip radius wide inside the part
+  outline (`rim_erosion_mm` = 3.0 for the Ø6 ball), NOT MEASURED by the
+  instrument's own rule (walls and undersides too). Not a rendering gap.
+  Question: the band is conservative (the cutter can pass an outer edge
+  into air when the stock is wider than the part); a narrower band needs a
+  derivation in the core measure.
+- The vertical walls lose colour "to the grey" in wedges: the wall
+  triangles are not refined and share vertices with the refined top
+  faces, so the GPU interpolates a measured colour across the wall.
+  Defect; fix = own grey vertices for every non-up-facing triangle.
