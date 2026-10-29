@@ -336,6 +336,46 @@ fn the_two_hard_gates_are_disabled_rows_with_reasons() {
     );
 }
 
+/// P5: the `curves` row gates what `show_polygons` draws: the 2D curves and,
+/// on a STEP model, the edge lines, the highlight and the hover rings. A
+/// STEP-only project makes the row ready; a project with neither names both.
+#[test]
+fn the_curves_row_is_ready_on_a_step_only_project() {
+    let curves = registry::row("curves").unwrap();
+    let empty = AppState::new();
+    let reason = (curves.precondition)(&empty)
+        .reason()
+        .expect("an empty project has no curves and no STEP edges")
+        .to_owned();
+    assert!(
+        reason.contains("2D curves") && reason.contains("STEP edges"),
+        "the reason names both things the row draws, got {reason:?}"
+    );
+
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/gui_step/stepped_block.step");
+    let model = rs_cam_core::io::load_model_file(
+        &path,
+        rs_cam_core::ids::ModelId::from_raw(0),
+        rs_cam_core::compute::stock_config::ModelKind::Step,
+        rs_cam_core::compute::stock_config::ModelUnits::Millimeters,
+        Default::default(),
+    )
+    .expect("the STEP fixture loads");
+    assert!(
+        !model.items.has_drawing() && model.items.has_model_edges(),
+        "fixture: a STEP model with edges and no 2D curves"
+    );
+    let mut builder = rs_cam_core::session::ProjectSessionBuilder::new();
+    let _ = builder.add_model(model);
+    let mut state = AppState::new();
+    state.replace_session(builder.build());
+    assert!(
+        (curves.precondition)(&state).is_ready(),
+        "a STEP-only project draws its edge lines and rings under this row"
+    );
+}
+
 // ── the MCP surface ────────────────────────────────────────────────────────
 
 #[test]

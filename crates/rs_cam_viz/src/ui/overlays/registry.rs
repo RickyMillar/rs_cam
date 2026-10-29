@@ -833,14 +833,21 @@ pub const ROWS: &[OverlayRow] = &[
         get: |s| s.viewport.show_polygons,
         set: |s, on| s.viewport.show_polygons = on,
         precondition: |s| {
-            if s.session().models().iter().any(|m| m.items.has_drawing()) {
+            // The draw gate: `show_polygons` gates the 2D curves and, on a
+            // STEP model, the edge lines, the highlight and the hover rings.
+            if s.session()
+                .models()
+                .iter()
+                .any(|m| m.items.has_drawing() || m.items.has_model_edges())
+            {
                 Precondition::Ready
             } else {
-                Precondition::no("this project carries no 2D curves")
+                Precondition::no("this project carries no 2D curves and no STEP edges")
             }
         },
         default_for: no_default,
-        hover: "Imported 2D polygons.",
+        hover: "The imported 2D curves. On a STEP model: the edge lines, the \
+                highlight and the hover rings.",
     },
     OverlayRow {
         id: "selection_outline",

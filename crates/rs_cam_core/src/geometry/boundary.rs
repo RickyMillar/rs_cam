@@ -928,7 +928,13 @@ fn marching_squares_grid(
 
     let mut loops: Vec<Vec<P2>> = Vec::new();
 
-    for start_key in adj.keys().copied().collect::<Vec<_>>() {
+    // The walk starts at the lowest edge key (row, then column, then
+    // orientation), not in the map order. So each loop starts at its
+    // lowest-Y, then lowest-X edge, the loops come in one order, and a
+    // rebuild gives the same rings as the `geom_cache` silhouette memo.
+    let mut start_keys: Vec<EdgeKey> = adj.keys().copied().collect();
+    start_keys.sort_unstable();
+    for start_key in start_keys {
         let Some(flags) = used_edges.get(&start_key) else {
             continue;
         };
@@ -1406,6 +1412,22 @@ mod tests {
     }
 
     // --- model_silhouette tests ---
+
+    /// Each build of one mesh gives the same rings in the same order, each
+    /// ring from the same start point. A build reads a fresh `HashMap`
+    /// order, so eight builds catch a ring start that follows the map.
+    #[test]
+    fn silhouette_rings_start_at_the_same_point_each_build() {
+        let mesh = crate::mesh::make_test_hemisphere(8.0, 12);
+        let rings = |polys: &[Polygon2]| -> Vec<Vec<P2>> {
+            polys.iter().map(|p| p.exterior.clone()).collect()
+        };
+        let first = rings(&model_silhouette(&mesh, None));
+        assert!(!first.is_empty(), "the hemisphere has a silhouette");
+        for _ in 0..8 {
+            assert_eq!(rings(&model_silhouette(&mesh, None)), first);
+        }
+    }
 
     #[test]
     fn silhouette_flat_square() {
