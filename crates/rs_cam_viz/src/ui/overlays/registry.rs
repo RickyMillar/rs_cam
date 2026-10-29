@@ -499,6 +499,42 @@ fn in_simulation(state: &AppState) -> bool {
     state.workspace == Workspace::Simulation
 }
 
+// ── the model look (FOLLOW_UPS §1) ─────────────────────────────────────────
+
+/// Why the model look cannot change now, or `None`. The rules of the old
+/// `model_edges` row: the Readiness workspace renders no viewport, the
+/// simulated stock replaces the model in Simulation, the look needs the
+/// model on and a 3D model. The dock control prints the reason; the MCP
+/// reply carries it.
+#[must_use]
+pub fn display_mode_refusal(state: &AppState) -> Option<&'static str> {
+    if state.workspace == Workspace::Readiness {
+        Some("the Readiness workspace renders no viewport")
+    } else if in_simulation(state) {
+        Some("replaced by the simulated stock here")
+    } else if !state.viewport.show_model {
+        Some("the model is off")
+    } else if !has_model_mesh(state) {
+        Some("this project carries no 3D model")
+    } else {
+        None
+    }
+}
+
+/// THE write of the model look: the dock control and `set_ui_view
+/// display_mode` both call it. `Err` is the refusal; the look then keeps
+/// its value.
+pub fn set_display_mode(
+    state: &mut AppState,
+    mode: rs_cam_core::settings::DisplayMode,
+) -> Result<(), &'static str> {
+    if let Some(reason) = display_mode_refusal(state) {
+        return Err(reason);
+    }
+    state.viewport.display_mode = mode;
+    Ok(())
+}
+
 // ── the list ───────────────────────────────────────────────────────────────
 
 /// Every overlay, in panel order.
@@ -541,36 +577,6 @@ pub const ROWS: &[OverlayRow] = &[
         },
         default_for: no_default,
         hover: "The imported STL / STEP surface. Applies to both draw loops.",
-    },
-    OverlayRow {
-        id: "model_edges",
-        group: OverlayGroup::Geometry,
-        label: "Face edges",
-        surface: OverlaySurface::None,
-        // The slot is keyed on geometry; the flag gates the draw.
-        mechanism: OverlayMechanism::DrawTime,
-        flag: Some("viewport.show_model_edges"),
-        radio: false,
-        get: |s| s.viewport.show_model_edges,
-        set: |s, on| s.viewport.show_model_edges = on,
-        precondition: |s| {
-            if in_simulation(s) {
-                Precondition::no("replaced by the simulated stock here")
-            } else if !s.viewport.show_model {
-                Precondition::no("the model is off")
-            } else if !s
-                .session()
-                .models()
-                .iter()
-                .any(|m| m.enriched_mesh.is_some())
-            {
-                Precondition::no("no STEP model: an STL has no face edges")
-            } else {
-                Precondition::Ready
-            }
-        },
-        default_for: geometry_default,
-        hover: "The boundary of each STEP face, drawn in ink over the part.",
     },
     OverlayRow {
         id: "stock_box",
@@ -1740,7 +1746,6 @@ pub fn apply_overlays(state: &mut AppState, requested: &BTreeMap<String, bool>) 
 pub const PREFERENCE_OVERLAYS: &[&str] = &[
     "grid",
     "model",
-    "model_edges",
     "stock_box",
     "origin_axes",
     "datum",

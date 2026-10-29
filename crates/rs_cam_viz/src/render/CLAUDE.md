@@ -25,7 +25,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - Check a buffer against the device limit before you create it.
 - MSAA (D1): one `sample_count` field feeds every scene pipeline and target; the blit stays single-sample. A mismatch fails at pass time; the G-PIPESMOKE frame arm (`render_headless_frame`) covers it.
 - The face pipeline needs a fragment storage buffer: Vulkan, Metal or DX12 (no GL, D-Q5). Only `app/gpu_upload/face_state.rs` writes its words.
-- `LineUniforms` is 112 B. `frame_set` gives six groups: only plain and dimmed (grid, toolpaths) have `edge_tol` 0; the lines on the model move toward the eye (D4). Quads (`vs_wide`, D §3.5, widths `tokens::LINE_*_PX`): model edges (`wide_edge_line_pipeline`, no depth write), `selection_lines`, `hover_lines`, `tab_lines`; the drawing, grid and moves stay `LineList`.
+- `LineUniforms` is 112 B. `frame_set` gives six groups: only plain and dimmed (grid, toolpaths) have `edge_tol` 0; the lines on the model move toward the eye (D4). Quads (`vs_wide`, D §3.5, widths `tokens::LINE_*_PX`): model edges and the wireframe (`wide_edge_line_pipeline`, no depth write), `selection_lines`, `hover_lines`, `tab_lines`; the drawing, grid and moves stay `LineList`.
 - A move draws and picks through `toolpath_render::move_draw_points_into`: an arc walks core `linearize_arc_into` (R-ARC).
 
 ## Sentries

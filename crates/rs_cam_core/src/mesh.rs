@@ -884,6 +884,24 @@ pub fn make_test_flat(size: f64) -> TriangleMesh {
     TriangleMesh::from_raw(vertices, triangles)
 }
 
+impl TriangleMesh {
+    /// The unique edges of the triangles, each as its two vertex indices
+    /// (lower first), sorted. An edge that two triangles share is one
+    /// edge. The viewport wireframe draws them (FOLLOW_UPS §1).
+    #[must_use]
+    pub fn unique_edges(&self) -> Vec<[u32; 2]> {
+        let mut edges: Vec<[u32; 2]> = self
+            .triangles
+            .iter()
+            .flat_map(|&[a, b, c]| [[a, b], [b, c], [c, a]])
+            .map(|[p, q]| if p <= q { [p, q] } else { [q, p] })
+            .collect();
+        edges.sort_unstable();
+        edges.dedup();
+        edges
+    }
+}
+
 #[cfg(test)]
 #[expect(
     clippy::indexing_slicing,
@@ -891,6 +909,53 @@ pub fn make_test_flat(size: f64) -> TriangleMesh {
 )]
 mod tests {
     use super::*;
+
+    /// The unique edges of a mesh: an edge that two triangles share counts
+    /// once. On the terrain fixture every triangle side is one use of one
+    /// edge key, and the unique edges are exactly those keys. The test
+    /// prints the count (the wireframe line count, FOLLOW_UPS §1).
+    #[test]
+    #[expect(
+        clippy::print_stderr,
+        clippy::panic,
+        reason = "the test prints the measured line count for the commit; a panic is how a test reports a failure"
+    )]
+    fn the_unique_edges_count_each_shared_edge_once() {
+        let flat = make_test_flat(10.0);
+        // Two triangles over a square: four sides and one diagonal.
+        assert_eq!(flat.unique_edges().len(), 5);
+
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/terrain_small.stl");
+        let terrain = TriangleMesh::from_stl(&path).unwrap_or_else(|e| panic!("{e:?}"));
+        let edges = terrain.unique_edges();
+        let mut uses = std::collections::BTreeMap::<[u32; 2], usize>::new();
+        for &[a, b, c] in &terrain.triangles {
+            for [p, q] in [[a, b], [b, c], [c, a]] {
+                *uses
+                    .entry(if p <= q { [p, q] } else { [q, p] })
+                    .or_default() += 1;
+            }
+        }
+        let boundary = uses.values().filter(|&&n| n == 1).count();
+        let shared = uses.values().filter(|&&n| n == 2).count();
+        let more = uses.values().filter(|&&n| n > 2).count();
+        let triangles = terrain.triangles.len();
+        eprintln!(
+            "terrain_small.stl: {triangles} triangles, {} unique edges \
+             ({boundary} boundary, {shared} shared, {more} used 3 or more times)",
+            edges.len()
+        );
+        // The unique edges are the edge keys of the triangles, and every
+        // triangle side is one use of one key.
+        assert_eq!(edges.len(), uses.len());
+        assert_eq!(edges.len(), boundary + shared + more);
+        assert_eq!(uses.values().sum::<usize>(), 3 * triangles);
+        assert!(edges.len() < 3 * triangles, "shared edges count once");
+        // Measured by this test on 2026-10-29: the wireframe of the
+        // terrain draws 60 580 segments (40 342 triangles).
+        assert_eq!((triangles, edges.len()), (40_342, 60_580));
+    }
 
     #[test]
     fn test_make_hemisphere() {

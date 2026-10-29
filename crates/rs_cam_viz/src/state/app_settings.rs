@@ -71,6 +71,7 @@ impl AppState {
         let display = &self.app_settings.display;
         self.viewport.show_all_toolpaths = display.show_all_toolpaths;
         self.viewport.toolpath_color_mode = toolpath_colour_mode(display.toolpath_colour_mode);
+        self.viewport.display_mode = display.display_mode;
         let has_overlay_values = !display.overlays.is_empty();
         apply_simulation_defaults(&mut self.simulation, &self.app_settings.simulation);
         if has_overlay_values {
@@ -113,6 +114,7 @@ mod tests {
             started.viewport.toolpath_color_mode,
             fresh.viewport.toolpath_color_mode
         );
+        assert_eq!(started.viewport.display_mode, fresh.viewport.display_mode);
         assert_eq!(
             started.simulation.playback.speed,
             fresh.simulation.playback.speed
@@ -138,6 +140,7 @@ mod tests {
         settings.general.undo_depth = 7;
         settings.display.show_all_toolpaths = true;
         settings.display.toolpath_colour_mode = ToolpathColourDefault::Engagement;
+        settings.display.display_mode = rs_cam_core::settings::DisplayMode::Wireframe;
         settings.simulation.playback_speed = 1234.0;
         settings.simulation.stock_view = StockViewDefault::Deviation;
         settings.simulation.stock_opacity = 0.25;
@@ -145,6 +148,10 @@ mod tests {
         state.apply_startup_settings(settings);
         assert_eq!(state.history.limit(), 7);
         assert!(state.viewport.show_all_toolpaths);
+        assert_eq!(
+            state.viewport.display_mode,
+            rs_cam_core::settings::DisplayMode::Wireframe
+        );
         assert_eq!(
             state.viewport.toolpath_color_mode,
             ToolpathColorMode::Engagement

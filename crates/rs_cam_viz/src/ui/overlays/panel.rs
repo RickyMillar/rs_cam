@@ -749,6 +749,53 @@ pub(crate) fn draw_stock_opacity(ui: &mut egui::Ui, state: &mut AppState) {
     });
 }
 
+/// The model look (FOLLOW_UPS §1): one segmented control of three short
+/// words and no label, at the top of the Scene section. It writes through
+/// `registry::set_display_mode`, the write `set_ui_view display_mode`
+/// makes too. While the look cannot change, the control is disabled and
+/// its hover gives the reason.
+pub(crate) fn draw_display_mode(ui: &mut egui::Ui, state: &mut AppState) {
+    use rs_cam_core::settings::DisplayMode;
+    let refusal = registry::display_mode_refusal(state);
+    let current = state.viewport.display_mode;
+    let mut chosen = None;
+    let response = ui
+        .add_enabled_ui(refusal.is_none(), |ui| {
+            ui.horizontal(|ui| {
+                for (mode, word, hover) in [
+                    (
+                        DisplayMode::Wireframe,
+                        "Wireframe",
+                        "No face fill: the triangle edges of every model, and the STEP face edges.",
+                    ),
+                    (DisplayMode::Shaded, "Shaded", "The faces with no edges."),
+                    (
+                        DisplayMode::ShadedWithEdges,
+                        "Edges",
+                        "The faces and the STEP face edges.",
+                    ),
+                ] {
+                    let selected = current == mode;
+                    if ui
+                        .add(egui::Button::selectable(selected, word))
+                        .on_hover_text(hover)
+                        .clicked()
+                        && !selected
+                    {
+                        chosen = Some(mode);
+                    }
+                }
+            });
+        })
+        .response;
+    if let Some(reason) = refusal {
+        response.on_disabled_hover_text(reason);
+    }
+    if let Some(mode) = chosen {
+        let _ = registry::set_display_mode(state, mode);
+    }
+}
+
 // ── the catalogue ──────────────────────────────────────────────────────────
 
 /// Does `row` pass the search text and the filter?
@@ -860,13 +907,17 @@ fn catalogue_body(
                         .filter(|row| matches_filter(view, row, &query, filter))
                         .collect()
                 };
-                let extras = show_extras && section == DockSection::View;
+                let extras =
+                    show_extras && matches!(section, DockSection::View | DockSection::Scene);
                 if rows.is_empty() && !extras {
                     continue;
                 }
                 components::SectionHeader::new(section_title(state, section)).show(ui);
-                if extras {
+                if extras && section == DockSection::View {
                     crate::ui::viewport_overlay::draw_view_controls(ui, state, projection, events);
+                }
+                if extras && section == DockSection::Scene {
+                    draw_display_mode(ui, state);
                 }
                 for row in rows {
                     listed += 1;

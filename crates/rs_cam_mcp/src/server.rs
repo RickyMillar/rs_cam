@@ -953,6 +953,44 @@ pub enum ProjectionParam {
     Orthographic,
 }
 
+/// The model look `set_ui_view display_mode` sets (FOLLOW_UPS §1): the
+/// core `settings::DisplayMode`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schemars(inline)]
+pub enum DisplayModeParam {
+    /// No face fill: the triangle edges of every drawn mesh model, and the
+    /// STEP face edges on top.
+    Wireframe,
+    /// The faces with no edges.
+    Shaded,
+    /// The faces and the STEP face edges.
+    ShadedWithEdges,
+}
+
+impl From<DisplayModeParam> for rs_cam_core::settings::DisplayMode {
+    fn from(p: DisplayModeParam) -> Self {
+        match p {
+            DisplayModeParam::Wireframe => Self::Wireframe,
+            DisplayModeParam::Shaded => Self::Shaded,
+            DisplayModeParam::ShadedWithEdges => Self::ShadedWithEdges,
+        }
+    }
+}
+
+impl From<rs_cam_core::settings::DisplayMode> for DisplayModeParam {
+    fn from(m: rs_cam_core::settings::DisplayMode) -> Self {
+        use rs_cam_core::settings::DisplayMode;
+        match m {
+            DisplayMode::Wireframe => Self::Wireframe,
+            DisplayMode::Shaded => Self::Shaded,
+            DisplayMode::ShadedWithEdges => Self::ShadedWithEdges,
+        }
+    }
+}
+
 /// What `set_ui_view camera.fit` frames: `model` is Reset View (the first
 /// model); `selection` is the picked items of the selected toolpath.
 #[derive(
@@ -1065,6 +1103,13 @@ pub struct SetUiViewParam {
     /// applies; a refusal changes nothing. The camera moves at once (no
     /// animation). The reply always carries the `camera` echo.
     pub camera: Option<CameraParam>,
+    /// The model look (FOLLOW_UPS §1): `wireframe`, `shaded` or
+    /// `shaded_with_edges`, the three-way control of the dock Scene
+    /// section. It is refused, with the reason the dock prints, in the
+    /// Readiness and Simulation workspaces, while the model is off and on a
+    /// project with no 3D model. The reply echoes `display_mode` (the mode
+    /// in force) and `display_mode_refused` (the reason, or null).
+    pub display_mode: Option<DisplayModeParam>,
 }
 
 /// GRBL `$$` settings dump to import onto the live machine profile.

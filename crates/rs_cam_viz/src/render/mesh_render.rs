@@ -378,6 +378,30 @@ pub fn face_edge_vertices(
     vertices
 }
 
+/// The wireframe of one mesh (FOLLOW_UPS §1): each unique triangle edge
+/// (`TriangleMesh::unique_edges`) as one `LineList` pair in
+/// `colors::MODEL_WIREFRAME`, through the transform the mesh draws with.
+pub fn wireframe_vertices(
+    mesh: &rs_cam_core::mesh::TriangleMesh,
+    transform: &VertexTransform<'_>,
+) -> Vec<super::LineVertex> {
+    let color = super::colors::MODEL_WIREFRAME;
+    let point = |index: u32| {
+        mesh.vertices.get(index as usize).map(|&p| {
+            let p = if let Some(xf) = transform { xf(p) } else { p };
+            super::LineVertex {
+                position: [p.x as f32, p.y as f32, p.z as f32],
+                color,
+            }
+        })
+    };
+    mesh.unique_edges()
+        .into_iter()
+        .filter_map(|[a, b]| Some([point(a)?, point(b)?]))
+        .flatten()
+        .collect()
+}
+
 /// Build the face-pipeline GPU data of one STEP model: the geometry and a
 /// zeroed state buffer. It takes no selection and no hover input.
 ///

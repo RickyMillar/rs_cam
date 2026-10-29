@@ -104,8 +104,9 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
     // merged the Fixtures and Keep-out rows into one Obstacles row; 16
     // since geometry selection P4.4 (2026-10-20) added the Selection
     // states and Open path ends rows; 17 since D4 (2026-10-29) added the
-    // Face edges row.
-    assert_eq!(count(DockSection::Scene), 17, "Scene holds 17 rows");
+    // Face edges row; 16 since the display mode (FOLLOW_UPS §1,
+    // 2026-10-29) replaced it with the Scene control.
+    assert_eq!(count(DockSection::Scene), 16, "Scene holds 16 rows");
     assert_eq!(count(DockSection::Paths), 13, "Paths holds 13 rows");
     // 12 since the By Area regions row (2026-09-24) joined Inspect.
     assert_eq!(count(DockSection::Inspect), 12, "Inspect holds 12 rows");
@@ -115,7 +116,6 @@ fn every_registry_row_has_one_dock_home_g_vpdock() {
         ("boundary_outline", DockSection::Scene),
         ("selection_states", DockSection::Scene),
         ("open_path_ends", DockSection::Scene),
-        ("model_edges", DockSection::Scene),
         ("move_colour_engagement", DockSection::Paths),
         ("all_toolpaths", DockSection::Paths),
         ("reach_map", DockSection::Inspect),

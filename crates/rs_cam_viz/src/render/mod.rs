@@ -11,6 +11,7 @@ pub mod toolpath_render;
 pub mod upload_cache;
 
 use egui_wgpu::wgpu;
+use rs_cam_core::settings::DisplayMode;
 
 use fixture_render::FixtureGpuData;
 use grid_render::GridGpuData;
@@ -499,6 +500,12 @@ pub struct RenderResources {
     pub model_edge_lines: Option<PolygonGpuData>,
     /// Inputs `model_edge_lines` was last built from.
     pub model_edges_key: Option<upload_cache::ModelEdgesKey>,
+    /// FOLLOW_UPS §1: the unique triangle edges of every drawn mesh model,
+    /// in `MODEL_WIREFRAME` (`app/gpu_upload/wireframe.rs`). Built only in
+    /// the `Wireframe` display mode.
+    pub model_wireframe_lines: Option<PolygonGpuData>,
+    /// Inputs `model_wireframe_lines` was last built from.
+    pub model_wireframe_key: Option<upload_cache::MeshUploadKey>,
     pub collision_vertex_buffer: Option<wgpu::Buffer>,
     pub collision_vertex_count: u32,
     pub origin_axes_data: Option<grid_render::OriginAxesGpuData>,
@@ -1252,6 +1259,8 @@ impl RenderResources {
             tab_lines: None,
             model_edge_lines: None,
             model_edges_key: None,
+            model_wireframe_lines: None,
+            model_wireframe_key: None,
             toolpath_data: Vec::new(),
             sim_mesh_data: None,
             height_planes_data: None,
@@ -1312,7 +1321,7 @@ impl RenderResources {
         let callback = ViewportCallback {
             show_grid: true,
             show_model: true,
-            show_model_edges: true,
+            display_mode: DisplayMode::ShadedWithEdges,
             show_polygons: true,
             ..ViewportCallback::empty(width, height)
         };
@@ -1484,8 +1493,10 @@ pub struct ViewportCallback {
     /// nothing at all to a STEP one — one control, two behaviours, neither of
     /// them a wireframe (audit §3.1, fix §6.2).
     pub show_model: bool,
-    /// D4: the face edges of the STEP models. Gated with `show_model`.
-    pub show_model_edges: bool,
+    /// FOLLOW_UPS §1: the model look. `Wireframe` draws no face fill and
+    /// the triangle edges; `ShadedWithEdges` and `Wireframe` draw the STEP
+    /// face edges (D4). Gated with `show_model`.
+    pub display_mode: DisplayMode,
     /// D4: the move of the model edges toward the eye.
     pub edge_offset: EdgeOffset,
     /// The viewport facts of the quad lines (D §3.5).
@@ -1571,7 +1582,7 @@ impl ViewportCallback {
             line_uniforms: bytemuck::Zeroable::zeroed(),
             has_mesh: false,
             show_model: false,
-            show_model_edges: false,
+            display_mode: DisplayMode::Shaded,
             edge_offset: EdgeOffset::default(),
             line_widths: LineWidths::default(),
             show_grid: false,
@@ -1685,7 +1696,7 @@ impl ViewportCallback {
             pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
             pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..reach.index_count, 0, 0..1);
-        } else if self.show_model {
+        } else if self.show_model && self.display_mode != DisplayMode::Wireframe {
             // Draw all STEP models with the face pipeline (D2): group 1
             // is the model's own face state.
             for face_mesh in &resources.face_mesh_data_list {
@@ -1780,8 +1791,19 @@ impl ViewportCallback {
         // They write no depth, so the overlay lines below, with the same
         // offset, draw over them on a shared segment. Quads of
         // `LINE_EDGE_PX` (D §3.5).
+        // FOLLOW_UPS §1: the wireframe (no face fill) draws the triangle
+        // edges first, as quads of `LINE_EDGE_PX`; the face edges draw on
+        // top of it.
         if self.show_model
-            && self.show_model_edges
+            && self.display_mode == DisplayMode::Wireframe
+            && let Some(wire) = &resources.model_wireframe_lines
+        {
+            pass.set_pipeline(&resources.wide_edge_line_pipeline);
+            pass.set_bind_group(0, &resources.line_edge_wide_bind_group, &[]);
+            draw_segments(&mut pass, wire);
+        }
+        if self.show_model
+            && self.display_mode != DisplayMode::Shaded
             && let Some(edges) = &resources.model_edge_lines
         {
             pass.set_pipeline(&resources.wide_edge_line_pipeline);

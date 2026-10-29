@@ -39,8 +39,8 @@ use std::path::PathBuf;
 
 use rs_cam_core::budget::{MemoryBudget, MemoryLimit, format_bytes, format_exact_size};
 use rs_cam_core::settings::{
-    AppSettings, LoadedSettings, LogLevel, MouseScheme, PresentModeSetting, SettingToken,
-    StockViewDefault, ToolpathColourDefault, limits,
+    AppSettings, DisplayMode, LoadedSettings, LogLevel, MouseScheme, PresentModeSetting,
+    SettingToken, StockViewDefault, ToolpathColourDefault, limits,
 };
 
 use super::AppEvent;
@@ -876,6 +876,13 @@ fn draw_display(ui: &mut egui::Ui, prefs: &mut PreferencesState) {
         "Toolpath colour",
         &mut prefs.draft.display.toolpath_colour_mode,
         "The toolpath colour mode the viewport starts in.",
+    );
+    token_row::<DisplayMode>(
+        ui,
+        "Model look",
+        &mut prefs.draft.display.display_mode,
+        "The model look the viewport starts in: wireframe, shaded, or shaded \
+         with the STEP face edges. The dock Scene section changes it at once.",
     );
     caption(ui, RESTART_NOTE);
     token_row::<MouseScheme>(

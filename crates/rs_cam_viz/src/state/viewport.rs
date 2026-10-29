@@ -72,9 +72,11 @@ pub struct ViewportState {
     /// STEP model untouched (audit §3.1, fix §6.2). One flag, both loops,
     /// one honest meaning.
     pub show_model: bool,
-    /// D4: the boundary of each STEP face, in ink over the part. It draws
-    /// only with `show_model`.
-    pub show_model_edges: bool,
+    /// The model look (FOLLOW_UPS §1): wireframe, shaded, or shaded with
+    /// the STEP face edges (D4). It applies only with `show_model`. The one
+    /// write is `registry::set_display_mode` (the dock control and
+    /// `set_ui_view display_mode`).
+    pub display_mode: rs_cam_core::settings::DisplayMode,
     /// The stock wireframe box.
     pub show_stock: bool,
     /// The opaque stock block. Split from `show_stock` (audit §3.2 — one
@@ -261,7 +263,7 @@ impl ViewportState {
         Self {
             show_grid: true,
             show_model: true,
-            show_model_edges: true,
+            display_mode: rs_cam_core::settings::DisplayMode::ShadedWithEdges,
             show_stock: true,
             show_stock_solid: false,
             show_origin_axes: true,

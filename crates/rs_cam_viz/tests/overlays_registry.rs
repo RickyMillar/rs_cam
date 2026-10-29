@@ -396,28 +396,85 @@ fn switching_an_overlay_off_is_applied_even_when_it_cannot_draw() {
     assert!(!state.viewport.show_reach_map);
 }
 
-/// D4: the face edges row goes through `set_ui_view` by its id with no MCP
-/// change. "Off" is applied on any project; "on" is refused on a project
-/// with no STEP model, with the row's own reason.
+/// FOLLOW_UPS §1: the model look replaces the D4 face edges row. The row,
+/// its flag and its preference entry are gone (no legacy). The dock control
+/// and `set_ui_view display_mode` both write through ONE function,
+/// `registry::set_display_mode`, so the two doors set one state and refuse
+/// with one reason.
 #[test]
-fn set_ui_view_switches_the_face_edges_row_d4() {
+fn the_dock_and_the_wire_set_one_display_mode() {
+    use rs_cam_core::settings::DisplayMode;
+    assert!(
+        registry::row("model_edges").is_none(),
+        "the edge row is gone"
+    );
+    assert!(!registry::PREFERENCE_OVERLAYS.contains(&"model_edges"));
+
     let mut state = AppState::new();
     state.workspace = Workspace::Toolpaths;
-    assert!(state.viewport.show_model_edges, "the row is on by default");
+    assert_eq!(state.viewport.display_mode, DisplayMode::ShadedWithEdges);
 
-    let off = BTreeMap::from([("model_edges".to_owned(), false)]);
-    let report = registry::apply_overlays(&mut state, &off);
-    assert_eq!(report.applied.get("model_edges"), Some(&false));
-    assert!(!state.viewport.show_model_edges);
+    // An empty project: refused with the reason the dock prints.
+    let reason = registry::display_mode_refusal(&state).expect("no 3D model");
+    assert_eq!(
+        registry::set_display_mode(&mut state, DisplayMode::Wireframe),
+        Err(reason)
+    );
+    assert_eq!(state.viewport.display_mode, DisplayMode::ShadedWithEdges);
 
-    let panel_reason = (registry::row("model_edges").unwrap().precondition)(&state)
-        .reason()
-        .expect("an empty project holds no STEP model")
-        .to_owned();
-    let on = BTreeMap::from([("model_edges".to_owned(), true)]);
-    let report = registry::apply_overlays(&mut state, &on);
-    assert_eq!(report.refused.get("model_edges"), Some(&panel_reason));
-    assert!(!state.viewport.show_model_edges);
+    // A project with a mesh model: the write applies.
+    let mut builder = rs_cam_core::session::ProjectSessionBuilder::new();
+    let _ = builder.add_model(rs_cam_core::session::LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
+        name: "flat.stl".to_owned(),
+        mesh: Some(std::sync::Arc::new(rs_cam_core::mesh::make_test_flat(10.0))),
+        items: Default::default(),
+        path: std::path::PathBuf::from("flat.stl"),
+        kind: Some(rs_cam_core::compute::stock_config::ModelKind::Stl),
+        units: Some(rs_cam_core::compute::stock_config::ModelUnits::Millimeters),
+        enriched_mesh: None,
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    });
+    state.replace_session(builder.build());
+    assert_eq!(registry::display_mode_refusal(&state), None);
+    assert_eq!(
+        registry::set_display_mode(&mut state, DisplayMode::Wireframe),
+        Ok(())
+    );
+    assert_eq!(state.viewport.display_mode, DisplayMode::Wireframe);
+
+    // The model off, Simulation and Readiness refuse and keep the look.
+    state.viewport.show_model = false;
+    assert_eq!(
+        registry::set_display_mode(&mut state, DisplayMode::Shaded),
+        Err("the model is off")
+    );
+    state.viewport.show_model = true;
+    for workspace in [Workspace::Simulation, Workspace::Readiness] {
+        state.workspace = workspace;
+        assert!(registry::set_display_mode(&mut state, DisplayMode::Shaded).is_err());
+    }
+    assert_eq!(state.viewport.display_mode, DisplayMode::Wireframe);
+
+    // The two doors call the one write: the dock control and the MCP
+    // handler. Each anchor is a call, not a comment.
+    let dock = source("src/ui/overlays/panel.rs");
+    let wire = source("src/app/mcp/view.rs");
+    for (name, text) in [("the dock control", &dock), ("set_ui_view", &wire)] {
+        assert!(
+            text.contains("registry::set_display_mode(self.controller.state_mut(), mode)")
+                || text.contains("registry::set_display_mode(state, mode)"),
+            "{name} no longer writes the look through registry::set_display_mode"
+        );
+    }
+    assert!(
+        !dock.contains("viewport.display_mode =") && !wire.contains("viewport.display_mode ="),
+        "a door writes the look past set_display_mode"
+    );
 }
 
 /// "Off" has no meaning for a member of a radio group, so it is refused

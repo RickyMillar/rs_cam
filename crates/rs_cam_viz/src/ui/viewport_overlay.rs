@@ -683,6 +683,8 @@ fn view_popover(
 }
 
 fn scene_popover(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    // FOLLOW_UPS §1: the model look first, then the rows.
+    panel::draw_display_mode(ui, state);
     for row in registry::rows_in_section(DockSection::Scene) {
         panel::draw_row(ui, state, events, row);
         if row.id == "simulated_stock" {

@@ -353,6 +353,10 @@ pub const FACE_HOVER: Rgb = Rgb::new(0.4, 0.7, 0.85);
 /// palette ink slot (`FACE_SLOT_INK`).
 pub const MODEL_EDGE: [f32; 3] = token_rgb(tokens::INK_65);
 
+/// The wireframe of a mesh model (FOLLOW_UPS §1): an ink token one step
+/// lighter than `MODEL_EDGE`, so the STEP face edges read on top of it.
+pub const MODEL_WIREFRAME: [f32; 3] = token_rgb(tokens::INK_50);
+
 /// The pastel palette a face group takes by its id.
 const FACE_GROUP_PALETTE: [Rgb; 10] = [
     Rgb::new(0.75, 0.85, 0.90), // light blue

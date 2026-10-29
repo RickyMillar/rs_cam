@@ -30,6 +30,7 @@ use crate::state::AppState;
 use crate::state::job::transform_mesh;
 
 use super::model_edges::ModelEdgeInputs;
+use super::wireframe::WireframeInputs;
 use super::{Gpu, PassFrame};
 
 /// Everything `mesh_data_list` is built from.
@@ -95,7 +96,12 @@ impl SlotInputs for EnrichedInputs<'_> {
 pub(super) fn inputs<'a>(
     state: &'a AppState,
     frame: &'a PassFrame,
-) -> (MeshInputs<'a>, EnrichedInputs<'a>, ModelEdgeInputs<'a>) {
+) -> (
+    MeshInputs<'a>,
+    EnrichedInputs<'a>,
+    ModelEdgeInputs<'a>,
+    WireframeInputs<'a>,
+) {
     let obstacle_model_ids: Vec<rs_cam_core::ids::ModelId> = frame
         .setup_id()
         .and_then(|sid| {
@@ -126,6 +132,16 @@ pub(super) fn inputs<'a>(
             plain.push(mesh);
         }
     }
+    // FOLLOW_UPS §1: the wireframe takes the triangle mesh of every model
+    // that draws a mesh here, STEP and STL, in model order.
+    let wire = WireframeInputs {
+        frame,
+        meshes: enriched
+            .iter()
+            .map(|(_, mesh)| &mesh.mesh)
+            .chain(plain.iter().copied())
+            .collect(),
+    };
     (
         MeshInputs {
             frame,
@@ -139,6 +155,7 @@ pub(super) fn inputs<'a>(
             frame,
             meshes: enriched,
         },
+        wire,
     )
 }
 

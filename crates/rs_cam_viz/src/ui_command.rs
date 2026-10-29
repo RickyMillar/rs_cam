@@ -212,6 +212,9 @@ pub struct SetUiViewArgs {
     /// A C5: the camera request (preset, projection, fit, pose), applied
     /// after `frame_items`.
     pub camera: Option<crate::state::camera::CameraRequest>,
+    /// FOLLOW_UPS §1: the model look, applied after the workspace through
+    /// `registry::set_display_mode` (the dock control's one write).
+    pub display_mode: Option<rs_cam_core::settings::DisplayMode>,
 }
 
 /// Whether the project feeds rollup is on screen.

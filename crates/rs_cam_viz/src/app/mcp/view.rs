@@ -454,6 +454,7 @@ impl RsCamApp {
         frame_items: Option<Vec<rs_cam_core::selection::MatchKey>>,
         model_visibility: Option<&std::collections::BTreeMap<usize, bool>>,
         camera: Option<crate::state::camera::CameraRequest>,
+        display_mode: Option<rs_cam_core::settings::DisplayMode>,
     ) -> String {
         // 0. The camera request (A C5) is checked before anything applies,
         //    so a refusal changes nothing. It is checked against the focus
@@ -639,6 +640,11 @@ impl RsCamApp {
         let overlay_report = overlays.map(|requested| {
             crate::ui::overlays::registry::apply_overlays(self.controller.state_mut(), requested)
         });
+        // 5a. The model look (FOLLOW_UPS §1): the one write the dock
+        //     control makes, after the overlays (the `model` row gates it).
+        let display_mode_refused = display_mode.and_then(|mode| {
+            crate::ui::overlays::registry::set_display_mode(self.controller.state_mut(), mode).err()
+        });
 
         // 5b. Model visibility (geometry selection P4.D): the same write as
         //     the eye of a GUI model row (`UiCommand::SetModelVisibility`).
@@ -750,6 +756,8 @@ impl RsCamApp {
             })),
             "framed": framed,
             "model_visibility": visibility_report,
+            "display_mode": display_mode_json(state.viewport.display_mode),
+            "display_mode_refused": display_mode_refused,
             "camera": camera_echo_json(&echo),
             "note": "view changes render on the next frame; call screenshot_gui to capture",
         }))
@@ -777,11 +785,17 @@ pub(super) fn camera_echo_json(echo: &crate::state::camera::CameraEcho) -> serde
     })
 }
 
-/// The `get_ui_view` answer (F3): the focus summary and the camera echo.
-/// The `set_ui_view` reply reads the same two values.
+/// The wire token of the model look (`DisplayModeParam`).
+fn display_mode_json(mode: rs_cam_core::settings::DisplayMode) -> serde_json::Value {
+    serde_json::json!(rs_cam_mcp::server::DisplayModeParam::from(mode))
+}
+
+/// The `get_ui_view` answer (F3): the focus summary, the camera echo and
+/// the model look. The `set_ui_view` reply reads the same values.
 pub(super) fn get_ui_view_json(state: &crate::state::AppState) -> String {
     json_str(serde_json::json!({
         "selection": crate::state::selection::focus_summary(state),
         "camera": camera_echo_json(&crate::state::camera::camera_echo(state)),
+        "display_mode": display_mode_json(state.viewport.display_mode),
     }))
 }

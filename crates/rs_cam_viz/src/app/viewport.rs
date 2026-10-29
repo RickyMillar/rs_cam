@@ -1095,7 +1095,7 @@ impl RsCamApp {
                 && state.viewport.show_model
                 && state.workspace != Workspace::Simulation,
             show_model: state.viewport.show_model && state.workspace != Workspace::Simulation,
-            show_model_edges: state.viewport.show_model_edges,
+            display_mode: state.viewport.display_mode,
             edge_offset,
             line_widths: crate::render::LineWidths {
                 viewport_px: [rect.width() * ppp, rect.height() * ppp],

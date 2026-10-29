@@ -18,6 +18,7 @@ mod overlays;
 mod reference;
 mod sim;
 mod toolpaths;
+mod wireframe;
 
 impl RsCamApp {
     /// The selected BREP faces, each with its model (D3).
@@ -276,9 +277,12 @@ impl RsCamApp {
         let state = self.controller.state();
         let pass = PassFrame::of(state);
 
-        let (plain, enriched, edges) = meshes::inputs(state, &pass);
+        let (plain, enriched, edges, wire) = meshes::inputs(state, &pass);
         meshes::upload(plain, &enriched, &gpu, resources);
         model_edges::upload(edges, &gpu, resources);
+        let wire_drawn = state.viewport.show_model
+            && state.viewport.display_mode == rs_cam_core::settings::DisplayMode::Wireframe;
+        wireframe::upload(wire_drawn.then_some(wire), &gpu, resources);
         // D3: after the meshes, so a rebuilt mesh gets its words this pass.
         face_state::upload(
             face_state::FaceStateInputs {

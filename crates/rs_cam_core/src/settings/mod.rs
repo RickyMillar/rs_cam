@@ -20,6 +20,7 @@
 //! show_all_toolpaths = false        # operator ruling WP27: selected only
 //! toolpath_colour_mode = "normal"   # "engagement", "advance_per_tooth"
 //! mouse_scheme = "desktop_cad"      # "web_cad"
+//! display_mode = "shaded_with_edges" # "shaded", "wireframe"
 //!
 //! [display.overlays]                # an overlay id = on or off in every
 //! grid = false                      # viewport workspace
@@ -147,6 +148,21 @@ setting_token! {
 }
 
 setting_token! {
+    /// The model look of the viewport (FOLLOW_UPS §1, as Fusion and
+    /// Blender): one three-way control in the dock Scene section. The GUI
+    /// holds it on `ViewportState::display_mode`.
+    pub enum DisplayMode {
+        /// No face fill: the unique triangle edges of every drawn mesh
+        /// model, and the face edges of a STEP model on top.
+        Wireframe => ("wireframe", "Wireframe"),
+        /// The faces with no edges.
+        Shaded => ("shaded", "Shaded"),
+        /// The faces and the STEP face edges (D4). The default.
+        ShadedWithEdges => ("shaded_with_edges", "Shaded with edges"),
+    }
+}
+
+setting_token! {
     /// The stock view the simulation starts in. The GUI maps it to its own
     /// `StockVizMode`.
     pub enum StockViewDefault {
@@ -252,6 +268,10 @@ pub struct DisplaySettings {
     /// 2026-10-29): a file with no key starts there, not in the left-drag
     /// orbit before the key existed.
     pub mouse_scheme: MouseScheme,
+    /// The model look the viewport starts in. Default `ShadedWithEdges`:
+    /// the look before the key existed (the face edges row on). The key
+    /// replaces `[display.overlays] model_edges`.
+    pub display_mode: DisplayMode,
     /// `[display.overlays]`: an overlay id and the value it takes in every
     /// viewport workspace, in place of that workspace's default. An id that
     /// is not in the map keeps the workspace default. The map keeps an id
@@ -265,6 +285,7 @@ impl Default for DisplaySettings {
             show_all_toolpaths: false,
             toolpath_colour_mode: ToolpathColourDefault::Normal,
             mouse_scheme: MouseScheme::DesktopCad,
+            display_mode: DisplayMode::ShadedWithEdges,
             overlays: BTreeMap::new(),
         }
     }
@@ -633,6 +654,7 @@ pub fn parse_lenient(text: &str) -> Result<(AppSettings, Vec<String>), String> {
             show_all_toolpaths: s.bool("show_all_toolpaths", d.show_all_toolpaths),
             toolpath_colour_mode: s.token("toolpath_colour_mode", d.toolpath_colour_mode),
             mouse_scheme: s.token("mouse_scheme", d.mouse_scheme),
+            display_mode: s.token("display_mode", d.display_mode),
             overlays: s.bool_table("overlays"),
         }
     };
@@ -917,6 +939,7 @@ pub fn merged_text(existing: &str, settings: &AppSettings) -> Result<String, Str
             d.toolpath_colour_mode,
         );
         w.put_token("mouse_scheme", s.mouse_scheme, d.mouse_scheme);
+        w.put_token("display_mode", s.display_mode, d.display_mode);
         let overlays: toml::Table = s
             .overlays
             .iter()
