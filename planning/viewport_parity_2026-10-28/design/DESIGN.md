@@ -155,6 +155,9 @@ from HEAD.
 | — | live look round 3: the selection quad covers the edge (depth placement), height planes with the Heights tab, one neutral material with a camera headlight | 4c80e5585 | 2026-10-29 |
 | 4 | the dock declutter: a six-control bar and one More popover (`DOCK_DECLUTTER.md` built) | b3a76e552 | 2026-10-29 |
 | — | the box selects visible items only (ray visibility through `ray_pick`) | f8b6e4045 | 2026-10-29 |
+| — | round 4: pick mode engages with the focused toolpath; feedback by the op's face use (`face_feedback`) | bcf7d6405 | 2026-10-29 |
+| — | round 4: the hole-rim fold of a batch | b5b903961 | 2026-10-29 |
+| — | round 4: STL face keys carry their plane Z; the picked STL face ring | 6fd51227a | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel

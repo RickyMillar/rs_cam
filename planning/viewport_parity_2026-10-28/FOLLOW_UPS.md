@@ -38,10 +38,8 @@ that pass:
 
 ## 3. Open items (kept current; 2026-10-29 evening)
 
-- B §3.4 hole-rim folding of a batch: `AddPicks` does not run `hole_rim_key`
-  per key, so a box over a Drill hole sends the rim circle and the floor
-  circle as two keys. Fold them in core (`Selection::apply(AddPicks)`), so
-  MCP gives the same result; one test on a Drill fixture. Ruled yes (§4).
+- ~~Hole-rim folding of a batch~~: done b5b903961 (in the door; a single
+  named floor-circle pick still refuses, R-B claim 4).
 - Laptop trackpads: the orientation gizmo gains a drag-to-orbit (the Alt
   rows exist since B3).
 - STEP edge items exist only for edges in a horizontal plane; a sloped or
@@ -52,9 +50,8 @@ that pass:
   sounds good"); built from `DOCK_DECLUTTER.md` with the obvious answers to
   its four questions (Collisions on the bar everywhere, a three-way Stock
   control, Entry markers in More, More only).
-- Two STL flat faces with the same XY footprint at two heights share one
-  `MatchKey` (an STL face key holds no Z): a pick of one names both. Found by
-  the sel5 test fixture (2026-10-29); the key needs the plane Z for STL faces.
+- ~~STL face keys share a footprint~~: done 6fd51227a (an STL face key carries
+  its plane Z; stored picks without z show as lost).
 - Materials and a lighting ruling beyond the headlight (a material table
   per model, imported STEP colours) are a later pass.
 
@@ -167,7 +164,5 @@ at doing a full review." Two UX rulings, left to the lead's judgement:
 The rest of the queue for the lead: the hole-rim fold, the STL face key
 plane Z, the gizmo drag-to-orbit, the curves row text, the flaky
 silhouette test. Sloped-edge items and materials stay for a later ruling.
-- An STL flat-region face picked under a Ring op (Profile) shows no green
-  ring: the face is not in `model.items`, so the drawing upload has no ring
-  for it (the hover ring works). Draw the picked STL face's ring from
-  `face_items` as the hover does.
+- ~~The picked STL face ring under a Ring op~~: done 6fd51227a (no pixel test;
+  the drawing upload needs a GPU).
