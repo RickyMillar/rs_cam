@@ -116,3 +116,11 @@ hand cursor. Fixes ordered from the look:
   difference) test.
 - The operator could not tell whether the selection outline works: with the
   fold fix, it is the accent line just outside a selected face's silhouette.
+
+## 7. Live look round 3 (operator, 2026-10-29, build 712c7bf24)
+
+"Nice. Few small details."
+- **Ruling:** the green selected line replaces the dark edge; no overlap of
+  the two lines (evidence 11 shows both).
+- **Ruling:** the height planes show only while the Heights tab is open, by
+  default; the overlay row switches them on for good.
