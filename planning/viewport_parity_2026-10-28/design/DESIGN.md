@@ -142,6 +142,12 @@ from HEAD.
 | 3 | F4 one hover slot (`HoverTarget`), the `EndViewportMode` row, the gesture facade `interaction/intent.rs` | 786fdcd58 | 2026-10-29 |
 | 3 | B6 box select (under `LeftOrbit`: a left drag in pick mode is a box until B3) | 87fae1431 | 2026-10-29 |
 | 3 | B3 the MouseScheme setting (DesktopCad default by the operator ruling; Alt+left orbit and Alt+right pan on a laptop) | a12878ae3 | 2026-10-29 |
+| — | the pick highlight draw gate and the edge depth fix (live look) | ec419f648 | 2026-10-29 |
+| — | live look fixes: box paint order, one-line note, pickable-only hover, Ctrl+A always | 6c3c69b53 | 2026-10-29 |
+| 4 | quad-expanded overlay lines with width tokens; selected = green | 19fa933a1 | 2026-10-29 |
+| 4 | display modes Wireframe / Shaded / Shaded with edges (one control, one setting, `display_mode` on the wire) | ab346fab7 | 2026-10-29 |
+| 4 | D6 the ID pass, the selection outline, the readback ring | ab94c5a3e | 2026-10-29 |
+| 4 | "select other": Tab cycles the candidates under the pointer | 53c98d426 | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
