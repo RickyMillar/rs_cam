@@ -17,7 +17,7 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - `export_wizard.rs`, `pin_wizard.rs` (R4: two steps, the only pin editor), `multitool_planner.rs`, `*_modal.rs`.
 - `import_modal.rs` — the drawing import dialog (declared size, scale, result, join, report; S11: it asks the stock thickness while the stock has none, `ImportDialog::stock_z`). A number reads
   the file again on commit only (`committed_number`; its draft is in `state.panels.number_drafts`).
-- `viewport_overlay.rs`, `automation.rs`, `shortcuts_window.rs`, `preferences.rs` — dock (legend: `overlays/`), automation, shortcuts, prefs.
+- `viewport_overlay.rs`, `view_cube.rs`, `automation.rs`, `shortcuts_window.rs`, `preferences.rs` — dock (legend: `overlays/`), view cube corner (logic: `../interaction/view_cube.rs`), automation, shortcuts, prefs.
 - `pick_bar.rs` — the pick-mode filter bar and the tab editor bar, top centre, no width (L-4). A disabled
   chip names the core reason; a chip is a view filter (P4). `click_event` is THE click map (P3). `COMPUTING_FACES`.
 
