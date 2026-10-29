@@ -11,7 +11,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - `mesh_render.rs` `FaceMeshVertex` (28 B: position, normal, `face_id`), `face_mesh_gpu_data` — the STEP face
   pipeline (D2). The colour is the face state word + the palette uniform; the buffer holds no colour.
 - `colors.rs` — every colour constant. A selection state colour is its UI token / 255 (`token_rgb`); `DRAWING_NEUTRAL`,
-  P6.7 `PATH_SIDE`, `HOLE_MISFIT`. `face_palette`: the `FACE_SLOT_*` slots the face WGSL reads (`face_shader_reads_the_palette_slots`).
+  P6.7 `PATH_SIDE`, `HOLE_MISFIT`. `face_palette`: the `FACE_SLOT_*` slots the face WGSL reads (`face_shader_reads_the_palette_slots`); Q5: `LIGHT_SKY`/`LIGHT_GROUND` (hemisphere), `FACE_RIM_*` (hover rim).
 - `mod.rs` — the pipeline facade. `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
   `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe; a soft part draws lighter.

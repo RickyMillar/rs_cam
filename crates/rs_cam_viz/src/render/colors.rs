@@ -406,6 +406,33 @@ pub const FACE_SLOT_STATE0: u32 = 12;
 pub const FACE_SLOT_INK: u32 = 17;
 /// The accent slot (the selection outline, a later commit).
 pub const FACE_SLOT_ACCENT: u32 = 18;
+/// The hemisphere sky slot (Q5 lighting): [`LIGHT_SKY`].
+pub const FACE_SLOT_SKY: u32 = 19;
+/// The hemisphere ground slot: [`LIGHT_GROUND`].
+pub const FACE_SLOT_GROUND: u32 = 20;
+/// The hover rim slot: `(FACE_RIM_STRENGTH, FACE_RIM_POWER, FACE_RIM_F0, 0)`.
+pub const FACE_SLOT_RIM: u32 = 21;
+
+/// The hemisphere light of a face (Q5): the colour a face takes from
+/// above (+Z). It replaces the flat ambient factor 0.25 of the face shader.
+/// A design choice: the mean of the sky and [`LIGHT_GROUND`] is 0.25 per
+/// channel within 0.005, the old ambient factor, so a vertical face keeps
+/// its old brightness; an up face is lighter and a down face darker, and
+/// no face facing away from the light is black.
+pub const LIGHT_SKY: Rgb = Rgb::new(0.30, 0.30, 0.32);
+/// The hemisphere light from below (−Z): see [`LIGHT_SKY`].
+pub const LIGHT_GROUND: Rgb = Rgb::new(0.20, 0.19, 0.18);
+
+/// The hover rim of a face (Q5): `FACE_HOVER` added in the amount
+/// `strength · (F0 + (1 − F0) · (1 − n·v)^power)`, the Schlick (1994)
+/// fresnel form, whose exponent is 5. F0 keeps a weak tint on a face seen
+/// face-on (most CAM faces are flat); the rim grows toward the silhouette.
+/// The strength and F0 are design choices, not measurements.
+pub const FACE_RIM_STRENGTH: f32 = 0.6;
+/// The Schlick fresnel exponent.
+pub const FACE_RIM_POWER: f32 = 5.0;
+/// The face-on share of the rim (a design choice).
+pub const FACE_RIM_F0: f32 = 0.25;
 
 /// The palette slot of one item state.
 pub fn face_state_slot(state: rs_cam_core::session::ItemState) -> u32 {
@@ -422,8 +449,9 @@ pub fn face_state_slot(state: rs_cam_core::session::ItemState) -> u32 {
 
 /// The face palette uniform: each slot an RGBA `vec4` (WGSL array stride
 /// 16 B). Slots `0..10` are [`face_group_color`]; then `FACE_SELECTED`,
-/// `FACE_HOVER`, the five selection state tokens, the ink token and the
-/// accent token. The other slots are zero.
+/// `FACE_HOVER`, the five selection state tokens, the ink token, the
+/// accent token, the hemisphere sky and ground and the rim parameters.
+/// The other slots are zero.
 pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
     use rs_cam_core::session::ItemState;
     let rgba = |c: [f32; 3]| [c[0], c[1], c[2], 1.0];
@@ -449,5 +477,10 @@ pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
     }
     put(FACE_SLOT_INK, MODEL_EDGE);
     put(FACE_SLOT_ACCENT, OUTLINE_ACCENT);
+    put(FACE_SLOT_SKY, LIGHT_SKY.array());
+    put(FACE_SLOT_GROUND, LIGHT_GROUND.array());
+    if let Some(entry) = palette.get_mut(FACE_SLOT_RIM as usize) {
+        *entry = [FACE_RIM_STRENGTH, FACE_RIM_POWER, FACE_RIM_F0, 0.0];
+    }
     palette
 }

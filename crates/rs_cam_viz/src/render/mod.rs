@@ -2336,7 +2336,9 @@ fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
 
 /// The face pipeline (D2). The palette slots are `colors::FACE_SLOT_*`;
 /// `face_shader_reads_the_palette_slots` holds the literals to them. The
-/// shading terms 0.25, 0.2 and 32.0 are the `fs_opaque` terms.
+/// shading terms 0.2 and 32.0 are the `fs_opaque` terms; Q5 replaced the
+/// flat ambient 0.25 with the hemisphere term (`LIGHT_SKY`, `LIGHT_GROUND`)
+/// and the flat hover tint with the fresnel rim (`FACE_RIM_*`).
 const FACE_MESH_SHADER_SRC: &str = r#"
 struct Uniforms { view_proj: mat4x4<f32>, light_dir: vec3<f32>, camera_pos: vec3<f32> };
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -2361,7 +2363,6 @@ struct VsOut {
 fn face_colour(id: u32) -> vec3<f32> {
     let s = face_state[id];
     if ((s & 2u) != 0u) { return palette[10].rgb; }
-    if ((s & 1u) != 0u) { return palette[11].rgb; }
     let st = (s >> 2u) & 63u;
     if (st != 0u) { return palette[st - 1u].rgb; }
     return palette[id % 10u].rgb;
@@ -2370,11 +2371,21 @@ fn face_colour(id: u32) -> vec3<f32> {
 @fragment fn fs_main(i: VsOut) -> @location(0) vec4<f32> {
     let c = face_colour(i.face_id);
     let l = normalize(u.light_dir);
-    let n0 = normalize(i.nrm);
-    let n = select(n0, -n0, dot(n0, l) < 0.0);
     let v = normalize(u.camera_pos - i.world);
+    let n0 = normalize(i.nrm);
+    // The normal on the side the eye sees.
+    let n = select(n0, -n0, dot(n0, v) < 0.0);
+    // Q5: the hemisphere term, the sky from +Z and the ground from -Z.
+    let hemi = mix(palette[20].rgb, palette[19].rgb, n.z * 0.5 + 0.5);
     let spec = pow(max(dot(n, normalize(l + v)), 0.0), 32.0);
-    return vec4<f32>(c * 0.25 + c * max(dot(n, l), 0.0) + vec3<f32>(0.2) * spec, 1.0);
+    var rgb = c * hemi + c * max(dot(n, l), 0.0) + vec3<f32>(0.2) * spec;
+    // Q5: the hovered face takes a fresnel rim (Schlick) in the hover colour.
+    if ((face_state[i.face_id] & 1u) != 0u) {
+        let rim = palette[21];
+        let f = rim.z + (1.0 - rim.z) * pow(1.0 - max(dot(n, v), 0.0), rim.y);
+        rgb = rgb + palette[11].rgb * (rim.x * f);
+    }
+    return vec4<f32>(rgb, 1.0);
 }
 "#;
 
@@ -2615,8 +2626,39 @@ mod tests {
         assert!(src.contains(&format!("array<vec4<f32>, {len}>")));
         let selected = colors::FACE_SLOT_SELECTED;
         assert!(src.contains(&format!("return palette[{selected}].rgb; }}")));
+        // Q5: the hover colour feeds the rim, not a flat tint.
         let hover = colors::FACE_SLOT_HOVER;
-        assert!(src.contains(&format!("return palette[{hover}].rgb; }}")));
+        assert!(src.contains(&format!("rgb = rgb + palette[{hover}].rgb * (rim.x * f);")));
+        assert!(!src.contains(&format!("return palette[{hover}].rgb; }}")));
+        let (sky, ground, rim) = (
+            colors::FACE_SLOT_SKY,
+            colors::FACE_SLOT_GROUND,
+            colors::FACE_SLOT_RIM,
+        );
+        assert!(src.contains(&format!(
+            "mix(palette[{ground}].rgb, palette[{sky}].rgb, n.z * 0.5 + 0.5)"
+        )));
+        assert!(src.contains(&format!("let rim = palette[{rim}];")));
+        let palette = colors::face_palette();
+        assert_eq!(
+            palette.get(rim as usize).copied(),
+            Some([
+                colors::FACE_RIM_STRENGTH,
+                colors::FACE_RIM_POWER,
+                colors::FACE_RIM_F0,
+                0.0
+            ])
+        );
+        // The hemisphere mean is the old flat ambient factor 0.25.
+        for (k, (sky, ground)) in colors::LIGHT_SKY
+            .array()
+            .into_iter()
+            .zip(colors::LIGHT_GROUND.array())
+            .enumerate()
+        {
+            let mean = (sky + ground) / 2.0;
+            assert!((mean - 0.25).abs() <= 0.005, "channel {k}: {mean}");
+        }
         // The group pastels fill the slots below the selected slot.
         assert_eq!(colors::FACE_SLOT_GROUPS, 0);
         assert!(src.contains(&format!("palette[id % {selected}u]")));

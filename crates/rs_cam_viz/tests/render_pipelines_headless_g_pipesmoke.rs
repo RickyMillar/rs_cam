@@ -48,6 +48,10 @@
 //! quad line of `LINE_SELECTED_PX` (D §3.5): at one pixel per point the
 //! fourth arm reads at least 2 pixels across it.
 //!
+//! The sixth arm is the Q5 lighting: a face that faces away from the
+//! light is not black. It takes the hemisphere sky (`colors::LIGHT_SKY`)
+//! times its colour, since the diffuse term is 0 there.
+//!
 //! The fifth arm is the selection outline (D §4): with the face selected
 //! (bit 1 of its state word), the pixels just outside its silhouette are
 //! the accent colour and no pixel inside is. The id readback ring returns
@@ -609,4 +613,71 @@ fn a_selected_face_gets_an_accent_outline_outside_only_g_pipesmoke() {
     );
 
     assert_no_uncaptured(&uncaptured, "rendering the outline frame");
+}
+
+#[test]
+fn a_face_away_from_the_light_is_not_black_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_light_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    let enriched = one_face_mesh_at(f64::from(PIXEL_FACE_Z));
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        &enriched,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
+    resources.face_mesh_data_list.push(face_mesh);
+
+    // The eye looks down from +Z; the light comes from below the face
+    // (not exactly opposite the eye, so the half vector is defined).
+    let view_proj = pixel_view();
+    let mesh = MeshUniforms {
+        view_proj,
+        light_dir: [0.0, 0.6, -0.8],
+        _pad0: 0.0,
+        camera_pos: [0.0, 0.0, 100.0],
+        _pad1: 0.0,
+    };
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &mesh,
+        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
+        EdgeOffset { tol: 0.5, k: 0.0 },
+        LineWidths {
+            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+            pixels_per_point: 1.0,
+        },
+        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
+    );
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
+    let px = read_pixel(&gpu, &resources, pixel_of(0.25, 0.25));
+    let empty = read_pixel(&gpu, &resources, pixel_of(0.9, 0.9));
+    eprintln!("G-PIPESMOKE away from the light: face {px:?}, empty {empty:?}");
+    assert_ne!(px, empty, "the face draws");
+    // The diffuse term is 0 (the light is behind the face); the specular
+    // term at n·h = 0.32 is (0.32)^32, under one 8-bit step. So the pixel
+    // is the face colour times the hemisphere sky (the face looks at +Z).
+    let face = rs_cam_viz::render::colors::face_group_color(0).array();
+    let sky = rs_cam_viz::render::colors::LIGHT_SKY.array();
+    let expected = [face[0] * sky[0], face[1] * sky[1], face[2] * sky[2]];
+    assert!(
+        same_colour(px, expected),
+        "the face takes the sky term: {px:?} against {expected:?}"
+    );
+    assert!(px[..3].iter().all(|&c| c > 0), "not black: {px:?}");
+
+    assert_no_uncaptured(&uncaptured, "rendering the lighting frame");
 }
