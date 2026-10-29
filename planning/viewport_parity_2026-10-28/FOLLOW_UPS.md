@@ -36,18 +36,28 @@ that pass:
   move the rare rows behind one "More" popover.
 - The wizard rule applies: no clutter in main panels (operator 2026-10-22).
 
-## 3. Small items left open by the build
+## 3. Open items (kept current; 2026-10-29 evening)
 
 - B §3.4 hole-rim folding of a batch: `AddPicks` does not run `hole_rim_key`
   per key, so a box over a Drill hole sends the rim circle and the floor
   circle as two keys. Fold them in core (`Selection::apply(AddPicks)`), so
-  MCP gives the same result; one test on a Drill fixture.
-- The pick-mode right-click menu (E5), the box (B6), the eased presets and
-  the face edges have not been seen on screen. Take screenshot pairs on a
-  quiet GUI (`planning/viewport_parity_2026-10-28/evidence/`).
-- B3 (the `MouseScheme` setting, right-drag orbit default) waits for the
-  operator's live look (A-Q9, B-O2). D6 (ID pass, outline) and the "select
-  other" cycle are phase 4.
+  MCP gives the same result; one test on a Drill fixture. Ruled yes (§4).
+- Laptop trackpads: the orientation gizmo gains a drag-to-orbit (the Alt
+  rows exist since B3).
+- STEP edge items exist only for edges in a horizontal plane; a sloped or
+  vertical edge gives no item (an import extension).
+- The `curves` overlay row's precondition text on a STEP-only project.
+- A flaky core lib test under a parallel run (the silhouette memo race).
+- The dock declutter: approved by the operator 2026-10-29 ("declutter
+  sounds good"); built from `DOCK_DECLUTTER.md` with the obvious answers to
+  its four questions (Collisions on the bar everywhere, a three-way Stock
+  control, Entry markers in More, More only).
+- Materials and a lighting ruling beyond the headlight (a material table
+  per model, imported STEP colours) are a later pass.
+
+Done since the list was first written: every phase of DESIGN.md, B3, D6,
+"select other", the screenshot pairs (evidence 01-12), three live-look fix
+rounds.
 
 ## 4. Operator rulings of 2026-10-29 (after phases 0-3)
 
