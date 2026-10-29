@@ -1261,9 +1261,9 @@ impl RsCamApp {
                 || state.viewport.show_flip_axis
                 || state.viewport.show_pin_ghost
                 || state.viewport.show_datum,
-            // The drawing buffer also carries the pick highlight of the
-            // model edge items (UX-7, `drawing_draws`) and the hover ring,
-            // so a STEP model with no 2D drawing draws them too.
+            // The curves row: the drawing lines of a 2D drawing and of the
+            // STEP edge items (UX-7, `drawing_draws`). The pick highlight
+            // and the hover ring draw without it (live look round 5).
             show_polygons: state.viewport.show_polygons
                 && state
                     .session()

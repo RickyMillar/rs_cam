@@ -279,6 +279,7 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
                 FRAME_WIDTH,
                 FRAME_HEIGHT,
                 true,
+                true,
             );
             let error = block_on(scope.pop());
             assert!(
@@ -463,7 +464,14 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
     );
 
     // Frame 1: the face and its edges.
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        false,
+        true,
+    );
     let face_px = read_pixel(&gpu, &resources, inside);
     let empty_px = read_pixel(&gpu, &resources, outside);
     let edge_px = read_pixel(&gpu, &resources, on_edge);
@@ -491,12 +499,43 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
         },
     ];
     resources.selection_lines = Some(line_buffer(&gpu, "g_pipesmoke_highlight", &highlight));
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        false,
+        true,
+    );
     let highlight_px = read_pixel(&gpu, &resources, on_edge);
     eprintln!("G-PIPESMOKE pixels: highlight {highlight_px:?}");
     assert!(
         same_colour(highlight_px, magenta),
         "the pick highlight wins over the model edge on a shared segment: {highlight_px:?}"
+    );
+
+    // R5a (live look round 5): the curves row off hides the drawing, not
+    // the highlight: the same pixel stays the highlight colour.
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        false,
+        false,
+    );
+    let curves_off_px = read_pixel(&gpu, &resources, on_edge);
+    assert!(
+        same_colour(curves_off_px, magenta),
+        "the pick highlight draws with the curves row off: {curves_off_px:?}"
+    );
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        false,
+        true,
     );
 
     // The width arm: the highlight is a quad of `LINE_SELECTED_PX` (5 px
@@ -569,7 +608,14 @@ fn a_selected_face_gets_an_accent_outline_outside_only_g_pipesmoke() {
 
     let inside = pixel_of(0.25, 0.25);
     resources.request_id_pixel(7, [inside.0, inside.1]);
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        true,
+        true,
+    );
     let accent = rs_cam_viz::render::colors::OUTLINE_ACCENT;
 
     // The column through the middle of the edge y = 0 (row 36): the face
@@ -693,7 +739,14 @@ fn a_grazing_face_gets_no_fold_ink_inside_g_pipesmoke() {
         },
         &outline,
     );
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        true,
+        true,
+    );
     let ink = rs_cam_viz::render::colors::MODEL_EDGE;
 
     // Inside the face: no ink.
@@ -777,7 +830,14 @@ fn a_selected_ring_covers_the_edge_and_the_outline_ink_g_pipesmoke() {
         },
         &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
     );
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        true,
+        true,
+    );
 
     let (col, edge_row) = pixel_of(0.5, 0.0);
     let column: Vec<(u32, [u8; 4])> = (edge_row - 5..=edge_row + 5)
@@ -831,7 +891,14 @@ fn lit_face_pixel(gpu: &gpu::HeadlessGpu, mesh: &EnrichedMesh) -> [u8; 4] {
         },
         &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
     );
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
+    resources.render_headless_frame(
+        &gpu.device,
+        &gpu.queue,
+        FRAME_WIDTH,
+        FRAME_HEIGHT,
+        false,
+        true,
+    );
     read_pixel(gpu, &resources, pixel_of(0.25, 0.25))
 }
 

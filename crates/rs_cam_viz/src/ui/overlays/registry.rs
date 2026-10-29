@@ -834,7 +834,8 @@ pub const ROWS: &[OverlayRow] = &[
         set: |s, on| s.viewport.show_polygons = on,
         precondition: |s| {
             // The draw gate: `show_polygons` gates the 2D curves and, on a
-            // STEP model, the edge lines, the highlight and the hover rings.
+            // STEP model, the edge item lines. The highlight and the hover
+            // ring draw without it.
             if s.session()
                 .models()
                 .iter()
@@ -846,8 +847,8 @@ pub const ROWS: &[OverlayRow] = &[
             }
         },
         default_for: no_default,
-        hover: "The imported 2D curves. On a STEP model: the edge lines, the \
-                highlight and the hover rings.",
+        hover: "The imported 2D curves, and the edge lines of a STEP model. \
+                The selection highlight and the hover ring show without it.",
     },
     OverlayRow {
         id: "selection_outline",

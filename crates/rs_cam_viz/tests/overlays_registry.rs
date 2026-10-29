@@ -337,8 +337,9 @@ fn the_two_hard_gates_are_disabled_rows_with_reasons() {
 }
 
 /// P5: the `curves` row gates what `show_polygons` draws: the 2D curves and,
-/// on a STEP model, the edge lines, the highlight and the hover rings. A
-/// STEP-only project makes the row ready; a project with neither names both.
+/// on a STEP model, the edge item lines (R5a: not the highlight and not the
+/// hover ring). A STEP-only project makes the row ready; a project with
+/// neither names both.
 #[test]
 fn the_curves_row_is_ready_on_a_step_only_project() {
     let curves = registry::row("curves").unwrap();

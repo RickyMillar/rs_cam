@@ -1366,7 +1366,8 @@ impl RenderResources {
     /// pass time, not at pipeline creation. So the door runs
     /// `ensure_offscreen` and records the frame's own scene pass with an
     /// empty callback that draws the grid, the face meshes, the model
-    /// edges and the polygon lines. A first pass from the same
+    /// edges and the polygon lines (`show_polygons` is the curves row: it
+    /// gates `polygon_data` only). A first pass from the same
     /// `begin_scene_pass` sets each scene pipeline once. The door then
     /// submits, so a validation error reaches the caller's error scope.
     #[doc(hidden)]
@@ -1377,6 +1378,7 @@ impl RenderResources {
         width: u32,
         height: u32,
         selection_outline: bool,
+        show_polygons: bool,
     ) {
         self.ensure_offscreen(device, width, height);
         let Some(offscreen) = self.offscreen.as_ref() else {
@@ -1391,7 +1393,7 @@ impl RenderResources {
             show_grid: true,
             show_model: true,
             display_mode: DisplayMode::ShadedWithEdges,
-            show_polygons: true,
+            show_polygons,
             show_selection_outline: selection_outline,
             ..ViewportCallback::empty(width, height)
         };
@@ -1947,10 +1949,13 @@ impl ViewportCallback {
             draw_segments(&mut pass, edges);
         }
 
-        // Draw polygon/DXF/SVG lines, the pick highlight of the model edge
-        // items and the hover ring. They lie on the faces, so they take the
-        // edge offset, as the model edges do. The drawing stays 1 px
-        // `LineList`; the selection highlight and the hover ring are quads.
+        // Draw polygon/DXF/SVG lines, then the pick highlight and the hover
+        // ring. They lie on the faces, so they take the edge offset, as the
+        // model edges do. The drawing stays 1 px `LineList`; the selection
+        // highlight and the hover ring are quads. The curves row
+        // (`show_polygons`) gates the drawing only: the highlight and the
+        // hover ring draw whenever their buffers exist (live look round 5;
+        // a hidden model uploads neither).
         if self.show_polygons {
             pass.set_pipeline(&resources.line_pipeline);
             pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
@@ -1958,15 +1963,15 @@ impl ViewportCallback {
                 pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
                 pass.draw(0..poly_gpu.vertex_count, 0..1);
             }
-            pass.set_pipeline(&resources.wide_line_pipeline);
-            if let Some(selected) = &resources.selection_lines {
-                pass.set_bind_group(0, &resources.line_selected_bind_group, &[]);
-                draw_segments(&mut pass, selected);
-            }
-            if let Some(hover) = &resources.hover_lines {
-                pass.set_bind_group(0, &resources.line_hover_bind_group, &[]);
-                draw_segments(&mut pass, hover);
-            }
+        }
+        pass.set_pipeline(&resources.wide_line_pipeline);
+        if let Some(selected) = &resources.selection_lines {
+            pass.set_bind_group(0, &resources.line_selected_bind_group, &[]);
+            draw_segments(&mut pass, selected);
+        }
+        if let Some(hover) = &resources.hover_lines {
+            pass.set_bind_group(0, &resources.line_hover_bind_group, &[]);
+            draw_segments(&mut pass, hover);
         }
 
         // Geometry selection P4.6: the tab marks of the tab editor. The

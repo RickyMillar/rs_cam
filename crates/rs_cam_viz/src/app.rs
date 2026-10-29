@@ -1570,6 +1570,11 @@ pub(crate) struct OverlayUploadKey {
     /// P4.4: "Show me" flashes its items; the start and the end of the
     /// flash each upload once.
     selection_flash: bool,
+    /// R5a: the model look. The wireframe slot builds in the upload
+    /// (`gpu_upload.rs`), and `registry::set_display_mode` (the dock control
+    /// and `set_ui_view display_mode`) fires no upload of its own, so
+    /// without this field Wireframe drew nothing until an unrelated upload.
+    display_mode: rs_cam_core::settings::DisplayMode,
 }
 
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
@@ -1604,5 +1609,27 @@ pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploa
         open_path_ends: state.viewport.show_open_path_ends,
         boundary_outline: state.viewport.show_boundary_outline,
         selection_flash: state.viewport.selection_flash.is_some(),
+        display_mode: state.viewport.display_mode,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overlay_upload_key;
+    use rs_cam_core::settings::DisplayMode;
+
+    /// R5a (live look round 5): a display mode change moves the upload key,
+    /// so the frame loop fires the upload that builds the wireframe slot.
+    #[test]
+    fn a_display_mode_change_fires_the_upload() {
+        let mut state = crate::state::AppState::new();
+        let before = overlay_upload_key(&state);
+        assert_ne!(state.viewport.display_mode, DisplayMode::Wireframe);
+        state.viewport.display_mode = DisplayMode::Wireframe;
+        assert_ne!(
+            overlay_upload_key(&state),
+            before,
+            "Wireframe must fire an upload: its slot builds there"
+        );
     }
 }

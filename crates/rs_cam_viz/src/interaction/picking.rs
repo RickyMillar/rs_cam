@@ -355,19 +355,33 @@ pub fn surface_hit(
 /// (geometry selection P4.5). It wins over every other pick: the toolpath,
 /// the stock, the pins.
 ///
-/// - The drawing items of the toolpath model that `filter` admits
-///   ([`PickFilter::admits`] with `kinds`): the item whose drawn lines
-///   ([`Shape::pick_lines`], through [`item_display_xy`] on the
-///   [`drawing_plane_z`] plane) pass nearest the pointer on the screen,
-///   within [`PICK_THRESHOLD_TOOLPATH`] pixels ([`PICK_THRESHOLD_POINT`]
-///   for a point). The distance is [`polyline_distance`], the rule of
-///   MCP `list_model_items { near }`. So with the loop chip off, this
-///   pass picks nothing of a loop and the next item under the pointer
-///   wins; [`pick_mode_item`] then tries the kinds whose chip is off.
-/// - With no such item and the face chip on: the BREP face under the ray
-///   (a STEP face; `ProjectSession::face_pick_key` names its item), or the
-///   mesh point under the ray (an STL, P4.7;
-///   `ProjectSession::face_pick_key_at` names its flat-region face).
+/// The click takes the first VISIBLE candidate of [`pick_candidates`]
+/// (operator ruling, live look round 5: "only select what is visible" is
+/// generic for selection, not only the box):
+///
+/// 1. With the face chip on: the face that the ray hits first, when it is
+///    a pickable face (a STEP face with an item, `ProjectSession::
+///    face_pick_key`; an STL hit point, P4.7,
+///    `ProjectSession::face_pick_key_at`). The ray's first face is visible
+///    by definition.
+/// 2. The drawing items of the toolpath model that `filter` admits
+///    ([`PickFilter::admits`] with `kinds`) whose drawn lines
+///    ([`Shape::pick_lines`], at their display points) pass within
+///    [`PICK_THRESHOLD_TOOLPATH`] pixels of the pointer
+///    ([`PICK_THRESHOLD_POINT`] for a point), and whose nearest drawn
+///    point to the pointer is visible: the ray test of [`visible_keys`]
+///    (`EyeTest`) at that point. A ring under the part that only passes
+///    near the pointer on the screen is not picked. Among them
+///    `choose_item` picks (the nearest on the screen; the UX-7 tie rule).
+///    The distance is [`polyline_distance`], the rule of MCP
+///    `list_model_items { near }`.
+/// 3. The ray's first face when it is not pickable (a wall): the click
+///    then names the refusal (`FaceNotFlat`).
+///
+/// The faces behind the first face are hidden, so a click never takes
+/// them; Tab ("select other", [`pick_candidates`]) still reaches them.
+/// With the loop chip off, step 2 picks nothing of a loop;
+/// [`pick_mode_item`] then tries the kinds whose chip is off.
 ///
 /// [`Shape::pick_lines`]: rs_cam_core::selection::Shape::pick_lines
 /// [`polyline_distance`]: rs_cam_core::selection::polyline_distance
@@ -379,43 +393,121 @@ pub fn pick_items(
     kinds: &[ItemKind],
 ) -> Option<PickHit> {
     let (hits, frame) = drawn_item_hits(ctx, session, toolpath_id, filter, kinds)?;
+    let ray = ctx
+        .camera
+        .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)
+        .map(|(o, d)| {
+            (
+                P3::new(f64::from(o.x), f64::from(o.y), f64::from(o.z)),
+                V3::new(f64::from(d.x), f64::from(d.y), f64::from(d.z)),
+            )
+        });
+    let first_face = if kinds.contains(&ItemKind::Face) {
+        ray.and_then(|(origin, dir)| {
+            pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+        })
+    } else {
+        None
+    };
+    if let Some(face) = first_face
+        .as_ref()
+        .filter(|hit| face_is_candidate(session, toolpath_id, hit))
+    {
+        return Some(face.clone());
+    }
+    let eye = EyeTest::new(ctx, session, frame.as_ref());
+    let visible: Vec<ItemHit<'_>> = hits.into_iter().filter(|h| eye.visible(h.near)).collect();
     let surface_z = || {
-        let (o, d) =
-            ctx.camera
-                .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
-        let origin = P3::new(f64::from(o.x), f64::from(o.y), f64::from(o.z));
-        let dir = V3::new(f64::from(d.x), f64::from(d.y), f64::from(d.z));
+        let (origin, dir) = ray?;
         pick_model_face(ctx, session, frame.as_ref(), origin, dir, false)
             .map(|(t, _)| (origin + dir * t).z)
     };
-    if let Some(key) = choose_item(&hits, surface_z) {
+    if let Some(key) = choose_item(&visible, surface_z) {
         return Some(PickHit::Item {
             toolpath_id,
             key: key.clone(),
         });
     }
-    if !kinds.contains(&ItemKind::Face) {
-        return None;
-    }
-    let (ray_origin, ray_dir) =
-        ctx.camera
-            .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)?;
-    let origin = P3::new(
-        ray_origin.x as f64,
-        ray_origin.y as f64,
-        ray_origin.z as f64,
-    );
-    let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
-    pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+    first_face
 }
 
-/// One drawn item near the pointer: (screen distance, display Z, item).
-type ItemHit<'s> = (f64, f64, &'s rs_cam_core::selection::Item);
+/// True when the face hit `hit` names a pickable face: a STEP face with a
+/// face item of the toolpath's model, or any STL hit point (its key door,
+/// `face_pick_key_at`, names a cold cache itself).
+fn face_is_candidate(session: &ProjectSession, toolpath_id: ToolpathId, hit: &PickHit) -> bool {
+    match hit {
+        PickHit::ModelFace { model_id, face_id } => session
+            .find_toolpath_config_by_id(toolpath_id)
+            .is_some_and(|(_, tc)| session.face_pick_key(tc, *model_id, *face_id).is_ok()),
+        PickHit::MeshFace { .. } => true,
+        PickHit::CollisionMarker { .. }
+        | PickHit::AlignmentPin { .. }
+        | PickHit::Obstacle { .. }
+        | PickHit::StockFace { .. }
+        | PickHit::Toolpath { .. }
+        | PickHit::Item { .. } => false,
+    }
+}
+
+/// One drawn item near the pointer.
+struct ItemHit<'s> {
+    /// The screen distance from the pointer to the drawn lines.
+    distance: f64,
+    /// The display Z of the item anchor (the UX-7 tie rule).
+    display_z: f64,
+    item: &'s rs_cam_core::selection::Item,
+    /// The display point of the drawn lines nearest the pointer on the
+    /// screen (on a closed ring moved [`BOX_SAMPLE_INSET`] toward its
+    /// centroid): the visibility sample of a click.
+    near: P3,
+}
+
+/// The point of the polyline `pts` (drawing-frame point, screen point)
+/// nearest `pointer` on the screen: (screen distance, drawing-frame
+/// point). The drawing-frame point is interpolated with the screen
+/// parameter, which is close enough for a visibility sample.
+fn nearest_on_lines(pointer: [f64; 2], pts: &[(P2, [f64; 2])], closed: bool) -> Option<(f64, P2)> {
+    let (first_src, first_scr) = *pts.first()?;
+    let mut best = (
+        (pointer[0] - first_scr[0]).hypot(pointer[1] - first_scr[1]),
+        first_src,
+    );
+    let n = pts.len();
+    let segments = if closed && n > 2 {
+        n
+    } else {
+        n.saturating_sub(1)
+    };
+    for i in 0..segments {
+        let (Some(&(a_src, a)), Some(&(b_src, b))) = (pts.get(i), pts.get((i + 1) % n)) else {
+            continue;
+        };
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 <= f64::EPSILON {
+            0.0
+        } else {
+            (((pointer[0] - a[0]) * dx + (pointer[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let (qx, qy) = (a[0] + dx * t, a[1] + dy * t);
+        let d = (pointer[0] - qx).hypot(pointer[1] - qy);
+        if d < best.0 {
+            best = (
+                d,
+                P2::new(
+                    a_src.x + (b_src.x - a_src.x) * t,
+                    a_src.y + (b_src.y - a_src.y) * t,
+                ),
+            );
+        }
+    }
+    Some(best)
+}
 
 /// Every drawn item of the toolpath model that `filter` admits and whose
-/// drawn lines pass within its pick threshold of the pointer: (screen
-/// distance, display Z, item), in import order; with the setup frame of
-/// the toolpath. `pick_items` chooses one; `pick_candidates` lists them.
+/// drawn lines pass within its pick threshold of the pointer, in import
+/// order; with the setup frame of the toolpath. `pick_items` chooses one;
+/// `pick_candidates` lists them.
 fn drawn_item_hits<'s>(
     ctx: &PickContext<'_>,
     session: &'s ProjectSession,
@@ -443,10 +535,9 @@ fn drawn_item_hits<'s>(
             .map(|s| [f64::from(s[0]), f64::from(s[1])])
     };
     let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
-    // Every item within its threshold: (screen distance, display Z, item).
     let mut hits: Vec<ItemHit<'_>> = Vec::new();
     for item in items {
-        // A face is a surface, not a drawn line: the ray arm below.
+        // A face is a surface, not a drawn line: the ray arm.
         if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
             continue;
         }
@@ -456,31 +547,65 @@ fn drawn_item_hits<'s>(
                 PICK_THRESHOLD_TOOLPATH
             }
         };
-        let distance = item
+        let nearest = item
             .shape()
             .pick_lines()
             .into_iter()
-            .map(|(pts, closed)| {
-                let projected: Vec<[f64; 2]> = pts.iter().filter_map(|p| screen(item, p)).collect();
-                rs_cam_core::selection::polyline_distance(pointer, projected, closed)
+            .filter_map(|(pts, closed)| {
+                let projected: Vec<(P2, [f64; 2])> = pts
+                    .iter()
+                    .filter_map(|p| screen(item, p).map(|s| (*p, s)))
+                    .collect();
+                let (distance, at) = nearest_on_lines(pointer, &projected, closed)?;
+                // A closed ring's sample moves toward its centroid, as a
+                // box sample does (`BOX_SAMPLE_INSET`): on the very edge a
+                // ray grazes the wall or a chord of the faceted surface.
+                let n = pts.len();
+                if !closed || n == 0 {
+                    return Some((distance, at));
+                }
+                let (sx, sy) = pts.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+                let (cx, cy) = (sx / n as f64, sy / n as f64);
+                Some((
+                    distance,
+                    P2::new(
+                        at.x + (cx - at.x) * BOX_SAMPLE_INSET,
+                        at.y + (cy - at.y) * BOX_SAMPLE_INSET,
+                    ),
+                ))
             })
-            .fold(f64::INFINITY, f64::min);
-        if distance <= f64::from(threshold) {
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((distance, at)) = nearest
+            && distance <= f64::from(threshold)
+        {
             let [ax, ay] = item.key().anchor;
             let display_z = item_display_point(frame.as_ref(), stock, item, P2::new(ax, ay), z).z;
-            hits.push((distance, display_z, item));
+            let near = item_display_point(frame.as_ref(), stock, item, at, z);
+            hits.push(ItemHit {
+                distance,
+                display_z,
+                item,
+                near,
+            });
         }
     }
     Some((hits, frame))
 }
 
 /// E-Q6 "select other": every candidate under the pointer in pick mode,
-/// in order. First the drawn items within their pick threshold, nearest on
-/// the screen first (`drawn_item_hits`); then, with the face chip on, the
-/// faces along the ray, nearest first: each STEP face once
-/// (`LoadedModel::ray_pick_all`), and the hit points of an STL. The caller
-/// names each hit with the click's own key door (`pick_hit_key`), so a
-/// candidate picks exactly as a click on it would.
+/// in order, hidden ones included (a click takes the first visible one,
+/// [`pick_items`]):
+///
+/// 1. with the face chip on, the face the ray hits first when it is a
+///    pickable face (`face_is_candidate`);
+/// 2. the drawn items within their pick threshold, nearest on the screen
+///    first (`drawn_item_hits`);
+/// 3. with the face chip on, the other faces along the ray, nearest first:
+///    each STEP face once (`LoadedModel::ray_pick_all`), and the hit
+///    points of an STL.
+///
+/// The caller names each hit with the click's own key door
+/// (`pick_hit_key`), so a candidate picks exactly as a click on it would.
 pub fn pick_candidates(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -491,22 +616,19 @@ pub fn pick_candidates(
     let Some((mut hits, frame)) = drawn_item_hits(ctx, session, toolpath_id, filter, kinds) else {
         return Vec::new();
     };
-    hits.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out: Vec<PickHit> = hits
-        .into_iter()
-        .map(|(_, _, item)| PickHit::Item {
-            toolpath_id,
-            key: item.key().clone(),
-        })
-        .collect();
+    hits.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+    let drawn = hits.into_iter().map(|h| PickHit::Item {
+        toolpath_id,
+        key: h.item.key().clone(),
+    });
     if !kinds.contains(&ItemKind::Face) {
-        return out;
+        return drawn.collect();
     }
     let Some((o, d)) =
         ctx.camera
             .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)
     else {
-        return out;
+        return drawn.collect();
     };
     let origin = P3::new(f64::from(o.x), f64::from(o.y), f64::from(o.z));
     let dir = V3::new(f64::from(d.x), f64::from(d.y), f64::from(d.z));
@@ -551,7 +673,13 @@ pub fn pick_candidates(
         }
     }
     faces.sort_by(|a, b| a.0.total_cmp(&b.0));
-    out.extend(faces.into_iter().map(|(_, hit)| hit));
+    let mut faces = faces.into_iter().map(|(_, hit)| hit).peekable();
+    let mut out: Vec<PickHit> = Vec::new();
+    if let Some(first) = faces.next_if(|hit| face_is_candidate(session, toolpath_id, hit)) {
+        out.push(first);
+    }
+    out.extend(drawn);
+    out.extend(faces);
     out
 }
 
@@ -792,9 +920,10 @@ pub const BOX_SAMPLE_INSET: f64 = 0.05;
 /// does not hide it, and a face in front does.
 ///
 /// The Ctrl (remove) box takes the same rule, so the two boxes agree. A
-/// single click and Tab ("select other") still reach a hidden item on
-/// purpose: they name ONE item under the pointer. A key that names no item
-/// of the model stays (the box does not drop what it cannot test).
+/// click takes the same ray test (`EyeTest`) at the drawn point nearest
+/// the pointer ([`pick_items`]); Tab ("select other") still reaches a
+/// hidden item on purpose. A key that names no item of the model stays
+/// (the box does not drop what it cannot test).
 pub fn visible_keys(
     ctx: &PickContext<'_>,
     session: &ProjectSession,
@@ -814,55 +943,8 @@ pub fn visible_keys(
         (Some(mesh), true) => rs_cam_core::maps::geom_cache::peek_flat_regions(mesh),
         _ => None,
     };
-    let chord = session
-        .models()
-        .iter()
-        .filter(|m| m.enriched_mesh.is_some() && ctx.shows(m.id))
-        .map(|m| {
-            rs_cam_core::io::STEP_CHORD_TOLERANCE
-                * m.units.as_ref().map_or(1.0, |u| u.scale_factor())
-        })
-        .fold(0.0_f64, f64::max);
-    let basis = ctx.camera.basis();
-    let eye = P3::new(
-        f64::from(basis.eye.x),
-        f64::from(basis.eye.y),
-        f64::from(basis.eye.z),
-    );
-    let forward = V3::new(
-        f64::from(basis.forward.x),
-        f64::from(basis.forward.y),
-        f64::from(basis.forward.z),
-    );
-    let ortho = ctx.camera.projection == crate::render::camera::ProjectionMode::Orthographic;
-    let visible = |q: P3| -> bool {
-        let (origin, dir, own) = if ortho {
-            let own = (q - eye).dot(&forward);
-            (q - forward * own, forward, own)
-        } else {
-            let v = q - eye;
-            let own = v.norm();
-            if own <= f64::EPSILON {
-                return true;
-            }
-            (eye, v / own, own)
-        };
-        let tol = chord.max(own.abs() * 1e-6);
-        let (model_origin, model_dir) = match frame.as_ref() {
-            Some(frame) => {
-                let a = frame.inverse_transform_point(origin, stock);
-                let b = frame.inverse_transform_point(origin + dir, stock);
-                (a, b - a)
-            }
-            None => (origin, dir),
-        };
-        !session
-            .models()
-            .iter()
-            .filter(|m| ctx.shows(m.id))
-            .filter_map(|m| m.ray_pick(&model_origin, &model_dir).map(|(_, t)| t))
-            .any(|t| t < own - tol)
-    };
+    let eye = EyeTest::new(ctx, session, frame.as_ref());
+    let visible = |q: P3| eye.visible(q);
     let items: Vec<&rs_cam_core::selection::Item> = model
         .items
         .iter()
@@ -879,6 +961,88 @@ pub fn visible_keys(
                 .any(visible)
         })
         .collect()
+}
+
+/// THE visibility test of a display point (the box, [`visible_keys`], and
+/// the click, [`pick_items`]): the ray from the eye to the point (along the
+/// view direction in orthographic) meets no shown model nearer than the
+/// point's own distance less the tolerance (the STEP chord tolerance of
+/// the drawn models, at least 1e-6 of the distance).
+struct EyeTest<'a> {
+    ctx: &'a PickContext<'a>,
+    session: &'a ProjectSession,
+    frame: Option<&'a SetupFrame>,
+    chord: f64,
+    eye: P3,
+    forward: V3,
+    ortho: bool,
+}
+
+impl<'a> EyeTest<'a> {
+    fn new(
+        ctx: &'a PickContext<'a>,
+        session: &'a ProjectSession,
+        frame: Option<&'a SetupFrame>,
+    ) -> Self {
+        let chord = session
+            .models()
+            .iter()
+            .filter(|m| m.enriched_mesh.is_some() && ctx.shows(m.id))
+            .map(|m| {
+                rs_cam_core::io::STEP_CHORD_TOLERANCE
+                    * m.units.as_ref().map_or(1.0, |u| u.scale_factor())
+            })
+            .fold(0.0_f64, f64::max);
+        let basis = ctx.camera.basis();
+        Self {
+            ctx,
+            session,
+            frame,
+            chord,
+            eye: P3::new(
+                f64::from(basis.eye.x),
+                f64::from(basis.eye.y),
+                f64::from(basis.eye.z),
+            ),
+            forward: V3::new(
+                f64::from(basis.forward.x),
+                f64::from(basis.forward.y),
+                f64::from(basis.forward.z),
+            ),
+            ortho: ctx.camera.projection == crate::render::camera::ProjectionMode::Orthographic,
+        }
+    }
+
+    fn visible(&self, q: P3) -> bool {
+        let (origin, dir, own) = if self.ortho {
+            let own = (q - self.eye).dot(&self.forward);
+            (q - self.forward * own, self.forward, own)
+        } else {
+            let v = q - self.eye;
+            let own = v.norm();
+            if own <= f64::EPSILON {
+                return true;
+            }
+            (self.eye, v / own, own)
+        };
+        let tol = self.chord.max(own.abs() * 1e-6);
+        let stock = self.session.stock_config();
+        let (model_origin, model_dir) = match self.frame {
+            Some(frame) => {
+                let a = frame.inverse_transform_point(origin, stock);
+                let b = frame.inverse_transform_point(origin + dir, stock);
+                (a, b - a)
+            }
+            None => (origin, dir),
+        };
+        !self
+            .session
+            .models()
+            .iter()
+            .filter(|m| self.ctx.shows(m.id))
+            .filter_map(|m| m.ray_pick(&model_origin, &model_dir).map(|(_, t)| t))
+            .any(|t| t < own - tol)
+    }
 }
 
 /// The sample points of one item for [`visible_keys`], in the drawing
@@ -1007,36 +1171,43 @@ pub fn pick_mode_item(
     })
 }
 
-/// The item a click picks among `hits` (screen distance, display Z, item;
-/// in import order). The nearest on the screen wins. Two or more within
-/// [`PICK_TIE_PX`] of the nearest coincide to the eye (a STEP ring at Z 32
-/// over a ring at Z 24, UX-7): the one whose Z is nearest the model
-/// surface under the pointer (`surface_z`) wins; with no surface hit, the
-/// highest. Equal Z keeps the import order, so the choice is fixed.
+/// The item a click picks among `hits` (in import order). The nearest on
+/// the screen wins. Two or more within [`PICK_TIE_PX`] of the nearest
+/// coincide to the eye (a STEP ring at Z 32 over a ring at Z 24, UX-7): the
+/// one whose Z is nearest the model surface under the pointer
+/// (`surface_z`) wins; with no surface hit, the highest. Equal Z keeps the
+/// import order, so the choice is fixed.
 fn choose_item<'a>(
-    hits: &[(f64, f64, &'a rs_cam_core::selection::Item)],
+    hits: &[ItemHit<'a>],
     surface_z: impl FnOnce() -> Option<f64>,
 ) -> Option<&'a rs_cam_core::selection::MatchKey> {
-    let nearest = hits.iter().map(|h| h.0).fold(f64::INFINITY, f64::min);
-    let tied: Vec<&(f64, f64, &rs_cam_core::selection::Item)> = hits
+    let nearest = hits
         .iter()
-        .filter(|h| h.0 <= nearest + PICK_TIE_PX)
+        .map(|h| h.distance)
+        .fold(f64::INFINITY, f64::min);
+    let tied: Vec<&ItemHit<'a>> = hits
+        .iter()
+        .filter(|h| h.distance <= nearest + PICK_TIE_PX)
         .collect();
     let first = *tied.first()?;
-    if tied.len() == 1 || tied.iter().all(|h| h.1 == first.1) {
+    if tied.len() == 1 || tied.iter().all(|h| h.display_z == first.display_z) {
         // One candidate, or all on one plane: the nearest on the screen.
         return tied
             .iter()
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|h| h.2.key());
+            .min_by(|a, b| a.distance.total_cmp(&b.distance))
+            .map(|h| h.item.key());
     }
     let score = match surface_z() {
-        Some(at) => tied
+        Some(at) => tied.iter().min_by(|a, b| {
+            (a.display_z - at)
+                .abs()
+                .total_cmp(&(b.display_z - at).abs())
+        }),
+        None => tied
             .iter()
-            .min_by(|a, b| (a.1 - at).abs().total_cmp(&(b.1 - at).abs())),
-        None => tied.iter().min_by(|a, b| b.1.total_cmp(&a.1)),
+            .min_by(|a, b| b.display_z.total_cmp(&a.display_z)),
     };
-    score.map(|h| h.2.key())
+    score.map(|h| h.item.key())
 }
 
 fn pick_collision_markers(ctx: &PickContext<'_>, positions: &[[f32; 3]]) -> Option<PickHit> {
