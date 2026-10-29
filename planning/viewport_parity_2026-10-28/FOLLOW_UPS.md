@@ -101,3 +101,18 @@ hand cursor. Fixes ordered from the look:
   silhouette memo (`geom_cache`, capacity 4) is evicted by sibling tests, and
   a rebuilt silhouette starts at another vertex: make the silhouette builder
   deterministic (no HashMap order) or key the test on a private cache.
+
+## 6. Live look round 2 (operator, 2026-10-29, build 76fb3a2f4)
+
+"Mostly looking good." Rulings and findings:
+- **Ruling:** selected faces blue, selected lines green (they merged in one
+  green; evidence 06). Selected lines twice as thick (5 px).
+- Shaded and Shaded with edges looked the same: the INK_65 edges at 1.25 px
+  are nearly invisible on the pale faces (evidence 08/09). Edges become the
+  darkest ink at 1.5 px.
+- A selected face seen at a grazing angle turned ink grey-blue (evidence
+  10): the outline's fold test compared adjacent depths, which a planar face
+  at a low angle exceeds on every pixel. Fix: a planarity (second
+  difference) test.
+- The operator could not tell whether the selection outline works: with the
+  fold fix, it is the accent line just outside a selected face's silhouette.
