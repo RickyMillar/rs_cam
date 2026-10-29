@@ -252,3 +252,44 @@ instead of 37 everywhere.
   rework?" → context chip only while the pins do not key; one-sentence hover;
   a rework note in MORE_MENU_REVIEW.md §5.
 - Q8 "Drawing states": ok. Q9 spans under Palette: yes. Q10 Collisions bar: no.
+
+## 12. Round 7 findings (operator live look, 2026-10-30, build a8598ca32)
+
+Evidence 19 shows the state as found: Parallel finish 2 on the STEP with a
+face boundary (faces Z10 and Z30), tool 3mm End Mill 2F.
+
+1. **The translucent solid stock hides the toolpaths.** `render/mod.rs`:
+   the solid stock draws with `sim_mesh_pipeline` (alpha blend, depth WRITE
+   on) before the toolpath lines (drawn after line 2007). A line behind the
+   stock's front face fails the depth test and vanishes instead of showing
+   through. Fix: draw the solid stock with the read-only depth state (as the
+   height planes do) after the lines, so a line behind the surface tints
+   through it.
+2. **The face finish spills past the faces.** `get_toolpath_params`: the
+   boundary is `selection` (two faces), containment `center`, offset 3.0.
+   The offset is the tool DIAMETER copied by `BoundaryConfig::for_3d_op`
+   for the silhouette default; `click_edit` (L-8 revised) keeps "every
+   other field" when a face click turns the source into a selection, so the
+   face boundary inherits the diameter offset: the tool centre runs 3 mm
+   past each face edge and the drop cutter follows the walls down (the
+   green strips on the walls in evidence 19). Fix (proposed): when the
+   source becomes a selection, set the offset to 0 (the diameter offset is
+   the silhouette's own derivation); question: containment for a face
+   boundary (Center keeps the cutter one radius past the edge at an open
+   side and against the wall at a closed side).
+3. **A model change keeps the picks of the old model.** `set_toolpath_model`
+   changes `model_id` and invalidates; the selection and boundary picks
+   stay (DESIGN 9.2: a pick that names no item on the new model is
+   `LostPick`), so the face boundary of the STEP refuses on the mesh.
+   Question: on a model change, drop every pick that names no item on the
+   new model (with a note), or keep the refusal.
+4. **The reach map shows no unreachable corner on the stepped block.**
+   `reach_map` for index 1: tool 0 is the 3 mm END MILL (a flat tool
+   reaches a square inside corner, so 0 % is right for it). For the Ø2.3
+   ball the corner gap is at most its radius 1.15 mm at the wall and 0.14 mm
+   one cell (0.6 mm) out, under the grid's own resolution floor (1.25 mm,
+   `discretisation_floor_mm`, from the sharp edges' curvature term) and far
+   under the 5 mm max-gap colour scale, and the report already says
+   `tolerance_below_floor: true`. The terrain mesh has multi-mm gaps, so
+   the map lights there. Not a defect of the walk; a scale question: a
+   tool-relative gap scale (gap over tool radius) and a visible floor note.
