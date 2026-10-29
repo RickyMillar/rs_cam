@@ -7,3 +7,7 @@ through the MCP proxy (`screenshot_gui`, 1400x900).
 |---|---|
 | `01_default_view_after_import.png` | `stepped_block.step` after import plus a Pocket: 4x MSAA on the edges, the ink face edges (D4), smooth faces (D2), the selection states. |
 | `02_preset_front_via_mcp.png` | `set_ui_view {camera: {preset: "front"}}`; the echo gave yaw -90, pitch 0, `view_preset: "front"`. Another session was working in the same GUI at that moment (a second setup and a Profile 2 appeared), and the selected toolpath is in that setup, so the picture also carries that setup's display frame. Take the preset pairs again on a quiet GUI. |
+| `05_phase4_review_start.png` | The phase 4 build (76fb3a2f4): the Profile's default outline as the green 2.5 px ring. |
+| `06_faces_selected_edges_on.png` | Four faces and three loops selected: the green face fill and the green rings merge (operator: faces need their own colour). |
+| `07_display_mode_shaded.png` / `08_shaded_no_selection.png` / `09_shaded_with_edges_no_selection.png` | Shaded against Shaded with edges: the INK_65 edges at 1.25 px are nearly invisible on the pale faces. |
+| `10_low_angle_selected_face.png` | The selected middle face at pitch 3 deg turns ink grey-blue: the outline's fold test fires on every pixel of a grazing face. |
