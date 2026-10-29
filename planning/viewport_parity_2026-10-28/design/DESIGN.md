@@ -148,6 +148,8 @@ from HEAD.
 | 4 | display modes Wireframe / Shaded / Shaded with edges (one control, one setting, `display_mode` on the wire) | ab346fab7 | 2026-10-29 |
 | 4 | D6 the ID pass, the selection outline, the readback ring | ab94c5a3e | 2026-10-29 |
 | 4 | "select other": Tab cycles the candidates under the pointer | 53c98d426 | 2026-10-29 |
+| 4 | face lighting: hemisphere term, Schlick rim on the hovered face | 76fb3a2f4 | 2026-10-29 |
+| 4 | the dock declutter proposal (`DOCK_DECLUTTER.md`, no product change) | (planning) | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
