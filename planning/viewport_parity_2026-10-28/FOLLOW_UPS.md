@@ -293,3 +293,18 @@ face boundary (faces Z10 and Z30), tool 3mm End Mill 2F.
    `tolerance_below_floor: true`. The terrain mesh has multi-mm gaps, so
    the map lights there. Not a defect of the walk; a scale question: a
    tool-relative gap scale (gap over tool radius) and a visible floor note.
+
+Round 7 rulings (operator, 2026-10-30):
+- §12.1 solid stock: build (read-only depth after the lines).
+- §12.2 face finish: "the finish can spill over but only on that flat plane
+  where it can, into air"; the user still chooses containment; adjacent
+  selected faces link into one region; "a generic solve not a super
+  case-by-case code" → a face boundary resolves through THE open-sides rule
+  (grow past open sides by the tool radius, never past a wall), the faces
+  union; the inherited diameter offset resets to 0 on the face click.
+- §12.3 model change: "sounds good" → drop the picks that name no item on
+  the new model, with a note.
+- §12.4 reach: with a Ø10 ball the Reach toggle only shows/hides the other
+  mesh and colours nothing on the STEP ("this does need a look") → the reach
+  overlay replaces every model's draw (render/mod.rs if/else chain); fix per
+  model through the face pipeline; tool-relative gap scale.
