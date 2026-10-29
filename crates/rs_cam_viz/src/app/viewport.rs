@@ -1097,6 +1097,26 @@ impl RsCamApp {
             show_model: state.viewport.show_model && state.workspace != Workspace::Simulation,
             display_mode: state.viewport.display_mode,
             edge_offset,
+            // D §4: the outline draws while its row is on (the pass also
+            // needs the model shaded, `record_scene_pass`).
+            show_selection_outline: state.viewport.show_selection_outline,
+            outline_uniforms: match camera.projection {
+                crate::render::camera::ProjectionMode::Perspective => {
+                    crate::render::outline::OutlineUniforms::perspective(
+                        camera.near,
+                        camera.far,
+                        camera.fov,
+                        rect.height() * ppp,
+                    )
+                }
+                crate::render::camera::ProjectionMode::Orthographic => {
+                    crate::render::outline::OutlineUniforms::orthographic(
+                        camera.far,
+                        camera.distance * (camera.fov * 0.5).tan(),
+                        rect.height() * ppp,
+                    )
+                }
+            },
             line_widths: crate::render::LineWidths {
                 viewport_px: [rect.width() * ppp, rect.height() * ppp],
                 pixels_per_point: ppp,

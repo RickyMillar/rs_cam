@@ -15,7 +15,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 - `mod.rs` — the pipeline facade. `hover_lines` (the pick hover ring) and `tab_lines` (the tab editor marks, `TAB_AUTO`, `TAB_HAND`,
   `TAB_DRAGGED`) — each its own buffer, drawn after the drawing. The tab marks draw with the curves off too.
 - `sim_render.rs` `head_draw_parts` — the H2 machine head and shoe; a soft part draws lighter.
-- `upload_cache.rs` — the content-addressed keys for the GPU upload pass.
+- `upload_cache.rs` — the content-addressed keys for the GPU upload pass. `outline.rs` — D §4: the `R32Uint` ID pass (slot = draw instance), the outline draw in the scene pass (ink, accent), `IdReadback`.
 - `gpu_safety.rs` — buffer size guards; `offscreen_bytes` + `log_offscreen_budget` (scene target bytes, a log, not a gate).
 
 ## Invariants

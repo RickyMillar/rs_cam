@@ -103,6 +103,9 @@ pub struct ViewportState {
     /// not selected), and draw its lost picks. Off draws the drawing in
     /// one colour. Consumed at GPU-upload time.
     pub show_selection_states: bool,
+    /// D §4: the selection outline: ink on silhouettes and folds, accent
+    /// just outside a selected face (the ID pass, `render::outline`).
+    pub show_selection_outline: bool,
     /// Geometry selection P4.4: a triangle at the start and a square at
     /// the end of each open path. Consumed at GPU-upload time.
     pub show_open_path_ends: bool,
@@ -274,6 +277,7 @@ impl ViewportState {
             show_pin_ghost: true,
             show_polygons: true,
             show_selection_states: true,
+            show_selection_outline: true,
             show_open_path_ends: true,
             show_boundary_outline: false,
             show_orientation_gizmo: true,

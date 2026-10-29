@@ -778,6 +778,33 @@ pub const ROWS: &[OverlayRow] = &[
         hover: "Imported 2D polygons.",
     },
     OverlayRow {
+        id: "selection_outline",
+        group: OverlayGroup::Geometry,
+        label: "Selection outline",
+        surface: OverlaySurface::None,
+        mechanism: OverlayMechanism::DrawTime,
+        flag: Some("viewport.show_selection_outline"),
+        radio: false,
+        get: |s| s.viewport.show_selection_outline,
+        set: |s, on| s.viewport.show_selection_outline = on,
+        precondition: |s| {
+            if in_simulation(s) {
+                Precondition::no("replaced by the simulated stock here")
+            } else if !s.viewport.show_model {
+                Precondition::no("the model is off")
+            } else if !has_model_mesh(s) {
+                Precondition::no("this project carries no 3D model")
+            } else if s.viewport.display_mode == rs_cam_core::settings::DisplayMode::Wireframe {
+                Precondition::no("the wireframe draws no faces")
+            } else {
+                Precondition::Ready
+            }
+        },
+        default_for: toolpaths_only_default,
+        hover: "An ink line on the silhouette and the folds of each model, and \
+                an accent line just outside each selected face.",
+    },
+    OverlayRow {
         id: "selection_states",
         group: OverlayGroup::Geometry,
         label: "Selection states",

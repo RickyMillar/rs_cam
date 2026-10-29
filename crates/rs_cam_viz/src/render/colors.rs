@@ -357,6 +357,10 @@ pub const MODEL_EDGE: [f32; 3] = token_rgb(tokens::INK_65);
 /// lighter than `MODEL_EDGE`, so the STEP face edges read on top of it.
 pub const MODEL_WIREFRAME: [f32; 3] = token_rgb(tokens::INK_50);
 
+/// The selection outline outside a selected face (D §4.2): the accent
+/// token, one step with the palette accent slot (`FACE_SLOT_ACCENT`).
+pub const OUTLINE_ACCENT: [f32; 3] = token_rgb(tokens::ACCENT);
+
 /// The pastel palette a face group takes by its id.
 const FACE_GROUP_PALETTE: [Rgb; 10] = [
     Rgb::new(0.75, 0.85, 0.90), // light blue
@@ -444,6 +448,6 @@ pub fn face_palette() -> [[f32; 4]; FACE_PALETTE_LEN] {
         put(face_state_slot(state), selection_state_color(state));
     }
     put(FACE_SLOT_INK, MODEL_EDGE);
-    put(FACE_SLOT_ACCENT, token_rgb(tokens::ACCENT));
+    put(FACE_SLOT_ACCENT, OUTLINE_ACCENT);
     palette
 }

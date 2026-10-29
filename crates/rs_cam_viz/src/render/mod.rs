@@ -5,6 +5,7 @@ pub mod gpu_safety;
 pub mod grid_render;
 pub mod height_planes;
 pub mod mesh_render;
+pub mod outline;
 pub mod sim_render;
 pub mod stock_render;
 pub mod toolpath_render;
@@ -283,6 +284,8 @@ struct OffscreenTargets {
     color_texture: wgpu::Texture,
     /// The depth target at the scene sample count.
     depth_view: wgpu::TextureView,
+    /// The ID target, its depth and the outline bind group (D §4).
+    outline: outline::OutlineTargets,
     blit_bind_group: wgpu::BindGroup,
     width: u32,
     height: u32,
@@ -430,6 +433,8 @@ pub struct RenderResources {
 
     // Blit pipeline (copy offscreen to egui render pass)
     blit_pipeline: wgpu::RenderPipeline,
+    /// The ID pass, the outline and the id readback ring (D §4).
+    outline: outline::OutlinePipelines,
     blit_bind_group_layout: wgpu::BindGroupLayout,
     blit_sampler: wgpu::Sampler,
 
@@ -1134,6 +1139,15 @@ impl RenderResources {
             wide_pipeline_with("wide_edge_line_pipeline", depth_read_only);
 
         // --- Blit pipeline (fullscreen triangle, samples offscreen texture) ---
+        // --- The ID pass and the selection outline (D §4) ---
+        let outline = outline::OutlinePipelines::new(
+            device,
+            target_format,
+            scene_multisample,
+            &mesh_bind_group_layout,
+            &face_state_bgl,
+        );
+
         let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("blit_shader"),
             source: wgpu::ShaderSource::Wgsl(BLIT_SHADER_SRC.into()),
@@ -1242,6 +1256,7 @@ impl RenderResources {
             area_regions_uniform_buffer,
             area_regions_bind_group,
             blit_pipeline,
+            outline,
             blit_bind_group_layout,
             blit_sampler,
             offscreen: None,
@@ -1308,6 +1323,7 @@ impl RenderResources {
         queue: &wgpu::Queue,
         width: u32,
         height: u32,
+        selection_outline: bool,
     ) {
         self.ensure_offscreen(device, width, height);
         let Some(offscreen) = self.offscreen.as_ref() else {
@@ -1323,6 +1339,7 @@ impl RenderResources {
             show_model: true,
             display_mode: DisplayMode::ShadedWithEdges,
             show_polygons: true,
+            show_selection_outline: selection_outline,
             ..ViewportCallback::empty(width, height)
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1341,12 +1358,38 @@ impl RenderResources {
                 &self.line_pipeline,
                 &self.wide_line_pipeline,
                 &self.wide_edge_line_pipeline,
+                self.outline.outline_pipeline(),
             ] {
                 pass.set_pipeline(pipeline);
             }
         }
         callback.record_scene_pass(self, offscreen, &mut encoder);
         queue.submit(Some(encoder.finish()));
+    }
+
+    /// Ask the id readback ring for the id at pixel `px` (D §4.3). The next
+    /// frame with the outline on copies it.
+    #[doc(hidden)]
+    pub fn request_id_pixel(&self, request: u64, px: [u32; 2]) {
+        self.outline
+            .readback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .request(request, px);
+    }
+
+    /// Advance the id readback ring and return the last answer. `wait`
+    /// polls the device until the maps land (a test); the frame does not
+    /// wait.
+    #[doc(hidden)]
+    pub fn collect_id_readback(&self, device: &wgpu::Device, wait: bool) -> Option<(u64, u32)> {
+        let mut ring = self
+            .outline
+            .readback
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ring.collect(device, wait);
+        ring.answer()
     }
 
     /// The single-sample colour of the last headless frame, or `None`
@@ -1356,8 +1399,8 @@ impl RenderResources {
         self.offscreen.as_ref().map(|o| &o.color_texture)
     }
 
-    /// Write the mesh uniforms and the six line uniforms of one frame
-    /// (`LineUniforms::frame_set`). `prepare` calls it each frame; a
+    /// Write the mesh uniforms, the six line uniforms of one frame
+    /// (`LineUniforms::frame_set`) and the outline uniforms (D §4). `prepare` calls it each frame; a
     /// headless test calls it before `render_headless_frame`.
     #[doc(hidden)]
     pub fn write_frame_uniforms(
@@ -1367,8 +1410,10 @@ impl RenderResources {
         lines: LineUniforms,
         edges: EdgeOffset,
         widths: LineWidths,
+        outline: &outline::OutlineUniforms,
     ) {
         queue.write_buffer(&self.mesh_uniform_buffer, 0, bytemuck::bytes_of(mesh));
+        self.outline.write_uniforms(queue, outline);
         // Every line group: one camera, written together so the groups
         // can never hold different view matrices.
         let groups = lines.frame_set(edges, widths);
@@ -1465,11 +1510,13 @@ impl RenderResources {
             ],
         });
 
+        let outline = outline::OutlineTargets::new(device, &self.outline, width, height);
         self.offscreen = Some(OffscreenTargets {
             msaa_color_view,
             color_view,
             color_texture,
             depth_view,
+            outline,
             blit_bind_group,
             width,
             height,
@@ -1501,6 +1548,10 @@ pub struct ViewportCallback {
     pub edge_offset: EdgeOffset,
     /// The viewport facts of the quad lines (D §3.5).
     pub line_widths: LineWidths,
+    /// D §4: the `selection_outline` row (the ID pass and the outline).
+    pub show_selection_outline: bool,
+    /// D §4.2: the camera facts and colours of the outline.
+    pub outline_uniforms: outline::OutlineUniforms,
     pub show_grid: bool,
     pub show_stock: bool,
     /// The one line buffer that carries the obstacles, the alignment pins,
@@ -1585,6 +1636,8 @@ impl ViewportCallback {
             display_mode: DisplayMode::Shaded,
             edge_offset: EdgeOffset::default(),
             line_widths: LineWidths::default(),
+            show_selection_outline: false,
+            outline_uniforms: bytemuck::Zeroable::zeroed(),
             show_grid: false,
             show_stock: false,
             show_line_marks: false,
@@ -1619,6 +1672,24 @@ impl ViewportCallback {
         offscreen: &OffscreenTargets,
         encoder: &mut wgpu::CommandEncoder,
     ) {
+        // D §4: the ID pass runs before the scene pass, only while the
+        // outline draws (the row on, the model shaded).
+        let outline = self.show_selection_outline
+            && self.show_model
+            && self.display_mode != DisplayMode::Wireframe;
+        if outline {
+            resources.outline.record_id_pass(
+                encoder,
+                &offscreen.outline,
+                &resources.mesh_bind_group,
+                &resources.face_mesh_data_list,
+                if self.has_mesh {
+                    &resources.mesh_data_list
+                } else {
+                    &[]
+                },
+            );
+        }
         let mut pass = offscreen.begin_scene_pass(encoder);
 
         pass.set_viewport(
@@ -1717,6 +1788,14 @@ impl ViewportCallback {
                     pass.draw_indexed(0..mesh.index_count, 0, 0..1);
                 }
             }
+        }
+
+        // D §4.2: the selection outline, after the model and before every
+        // line, so a highlight line or the hover ring stays on top.
+        if outline {
+            resources
+                .outline
+                .draw_outline(&mut pass, &offscreen.outline);
         }
 
         // Draw solid stock (semi-transparent, after mesh so model renders first)
@@ -1979,6 +2058,8 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
 
         // Ensure offscreen targets are the right size
         resources.ensure_offscreen(device, self.viewport_width, self.viewport_height);
+        // D §4.3: map the readback copies of earlier frames; no wait.
+        let _ = resources.collect_id_readback(device, false);
 
         // Upload uniforms: the mesh and the three line groups.
         resources.write_frame_uniforms(
@@ -1987,6 +2068,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             self.line_uniforms,
             self.edge_offset,
             self.line_widths,
+            &self.outline_uniforms,
         );
         // Upload the colored mesh uniforms when a colored pipeline draws.
         // The reach overlay draws with `colored_opaque_pipeline` through

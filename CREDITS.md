@@ -221,6 +221,21 @@ Key repo references:
 - `crates/rs_cam_core/src/surface/merge_tree.rs`
 - `crates/rs_cam_core/src/selection/flat_regions.rs`
 
+### Viewport ID pass and selection outline
+
+The viewport selection outline (design D §4, 2026-10-29) draws an `R32Uint`
+ID pass (model slot and face id per pixel) and an edge test on the ID and
+its depth. The one-pixel readback ring for a later visible-only pick
+follows the idea of two sources. No code is copied from either:
+
+- rerun `re_renderer`: the GPU readback belt and the picking layer
+  (MIT or Apache-2.0): <https://github.com/rerun-io/rerun>
+- WebGPU Fundamentals, "GPU picking": <https://webgpufundamentals.org/>
+
+Repo reference:
+
+- `crates/rs_cam_viz/src/render/outline.rs`
+
 ## Data sources and formulas
 
 ### Vendor LUT source manifest

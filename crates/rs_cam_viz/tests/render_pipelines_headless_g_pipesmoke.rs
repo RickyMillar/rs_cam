@@ -16,10 +16,12 @@
 //!   `line_shader`, `blit_shader`
 //! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
 //!   `blit_bgl`
-//! - 9 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
+//! - 12 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
 //!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
 //!   `line_pipeline`, `wide_line_pipeline` (D §3.5 quads),
-//!   `wide_edge_line_pipeline` (D4: quads, no depth write), `blit_pipeline`
+//!   `wide_edge_line_pipeline` (D4: quads, no depth write), `id_face_pipeline`,
+//!   `id_mesh_pipeline`, `outline_pipeline` (D §4: `render::outline`),
+//!   `blit_pipeline`
 //!
 //! `app.rs` calls the same function with `render_state.target_format`, and
 //! nothing else in the crate creates a pipeline, a layout, or a shader
@@ -45,6 +47,11 @@
 //! operator saw no highlight on a picked STEP ring. The highlight is a
 //! quad line of `LINE_SELECTED_PX` (D §3.5): at one pixel per point the
 //! fourth arm reads at least 2 pixels across it.
+//!
+//! The fifth arm is the selection outline (D §4): with the face selected
+//! (bit 1 of its state word), the pixels just outside its silhouette are
+//! the accent colour and no pixel inside is. The id readback ring returns
+//! the id of a pixel inside: selected, model slot 1, face 0.
 //!
 //! ## Not covered
 //!
@@ -87,6 +94,7 @@ use rs_cam_core::geometry::enriched_mesh::{
 };
 use rs_cam_core::ids::ModelId;
 use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
+use rs_cam_viz::render::outline::OutlineUniforms;
 use rs_cam_viz::render::{
     EdgeOffset, LineUniforms, LineVertex, LineWidths, MSAA_SAMPLES, MeshUniforms, PolygonGpuData,
     RenderResources, scene_sample_count,
@@ -245,7 +253,15 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
                     }),
                 vertex_count: edges.len() as u32,
             });
-            resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+            // The outline on, so the frame also runs the ID pass and the
+            // outline draw (D §4) at this sample count.
+            resources.render_headless_frame(
+                &gpu.device,
+                &gpu.queue,
+                FRAME_WIDTH,
+                FRAME_HEIGHT,
+                true,
+            );
             let error = block_on(scope.pop());
             assert!(
                 error.is_none(),
@@ -416,7 +432,14 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
         viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
         pixels_per_point: 1.0,
     };
-    resources.write_frame_uniforms(&gpu.queue, &mesh, lines, offset, widths);
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &mesh,
+        lines,
+        offset,
+        widths,
+        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
+    );
 
     let inside = pixel_of(0.25, 0.25);
     let outside = pixel_of(0.9, 0.9);
@@ -428,7 +451,7 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
     );
 
     // Frame 1: the face and its edges.
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
     let face_px = read_pixel(&gpu, &resources, inside);
     let empty_px = read_pixel(&gpu, &resources, outside);
     let edge_px = read_pixel(&gpu, &resources, on_edge);
@@ -456,7 +479,7 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
         },
     ];
     resources.selection_lines = Some(line_buffer(&gpu, "g_pipesmoke_highlight", &highlight));
-    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, false);
     let highlight_px = read_pixel(&gpu, &resources, on_edge);
     eprintln!("G-PIPESMOKE pixels: highlight {highlight_px:?}");
     assert!(
@@ -486,4 +509,104 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
     );
 
     assert_no_uncaptured(&uncaptured, "rendering the pixel frames");
+}
+
+#[test]
+fn a_selected_face_gets_an_accent_outline_outside_only_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_outline_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    let enriched = one_face_mesh_at(f64::from(PIXEL_FACE_Z));
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        &enriched,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
+    // Face 0 selected: bit 1 of its state word.
+    gpu.queue
+        .write_buffer(&face_mesh.face_state, 0, bytemuck::bytes_of(&2u32));
+    resources.face_mesh_data_list.push(face_mesh);
+    // No model edges and no lines: the outline is the only line drawn.
+
+    let view_proj = pixel_view();
+    let mesh = MeshUniforms {
+        view_proj,
+        light_dir: [0.0, 0.0, 1.0],
+        _pad0: 0.0,
+        camera_pos: [0.0, 0.0, 100.0],
+        _pad1: 0.0,
+    };
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &mesh,
+        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
+        EdgeOffset { tol: 0.5, k: 0.0 },
+        LineWidths {
+            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+            pixels_per_point: 1.0,
+        },
+        &OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32),
+    );
+
+    let inside = pixel_of(0.25, 0.25);
+    resources.request_id_pixel(7, [inside.0, inside.1]);
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+    let accent = rs_cam_viz::render::colors::OUTLINE_ACCENT;
+
+    // The column through the middle of the edge y = 0 (row 36): the face
+    // is above the edge (smaller rows), the background below.
+    let (col, edge_row) = pixel_of(0.5, 0.0);
+    let column: Vec<(u32, [u8; 4])> = (edge_row - 6..=edge_row + 6)
+        .map(|r| (r, read_pixel(&gpu, &resources, (col, r))))
+        .collect();
+    eprintln!("G-PIPESMOKE outline column {col}: {column:?}");
+    let accent_rows: Vec<u32> = column
+        .iter()
+        .filter(|(_, px)| same_colour(*px, accent))
+        .map(|(r, _)| *r)
+        .collect();
+    assert!(
+        !accent_rows.is_empty(),
+        "the pixels just outside the selected face are accent: {column:?}"
+    );
+    assert!(
+        accent_rows
+            .iter()
+            .all(|r| *r >= edge_row && *r <= edge_row + 2),
+        "accent only just outside the silhouette (rows {edge_row}..={}): {accent_rows:?}",
+        edge_row + 2
+    );
+    // Inside the face: no accent.
+    for (x, y) in [(0.25, 0.25), (0.1, 0.1), (0.4, 0.3), (0.2, 0.6)] {
+        let px = read_pixel(&gpu, &resources, pixel_of(x, y));
+        assert!(
+            !same_colour(px, accent),
+            "no accent inside the selected face at ({x}, {y}): {px:?}"
+        );
+    }
+
+    // The readback ring: the id under the inside pixel.
+    let answer = resources.collect_id_readback(&gpu.device, true);
+    let expected = (1u32 << 31) | (1u32 << 16);
+    eprintln!("G-PIPESMOKE id readback: {answer:?}");
+    assert_eq!(
+        answer,
+        Some((7, expected)),
+        "selected, model slot 1, face 0"
+    );
+
+    assert_no_uncaptured(&uncaptured, "rendering the outline frame");
 }
