@@ -153,7 +153,7 @@ setting_token! {
     /// holds it on `ViewportState::display_mode`.
     pub enum DisplayMode {
         /// No face fill: the unique triangle edges of every drawn mesh
-        /// model, and the face edges of a STEP model on top.
+        /// model (a STEP face boundary is one of them).
         Wireframe => ("wireframe", "Wireframe"),
         /// The faces with no edges.
         Shaded => ("shaded", "Shaded"),

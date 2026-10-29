@@ -961,8 +961,8 @@ pub enum ProjectionParam {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum DisplayModeParam {
-    /// No face fill: the triangle edges of every drawn mesh model, and the
-    /// STEP face edges on top.
+    /// No face fill: the triangle edges of every drawn mesh model (a STEP
+    /// face boundary is one of them).
     Wireframe,
     /// The faces with no edges.
     Shaded,
@@ -1058,7 +1058,7 @@ pub struct SetUiViewParam {
     /// panel renders, so anything the operator can switch, an agent can:
     /// `grid`, `model`, `stock_box`, `stock_solid`, `origin_axes`, `datum`,
     /// `obstacles`, `alignment_pins`, `flip_axis`, `curves`,
-    /// `orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,
+    /// `selection_outline`, `orientation_gizmo`, `cutting_moves`, `rapids`, `entry_markers`,
     /// `height_planes`, `tool_profile_ghost`, `span_entry`,
     /// `span_lead_out`, `span_link_bridge`, `span_dressup`,
     /// `rest_heatmap`, `tier_map`, `reach_map`, `simulated_stock`,

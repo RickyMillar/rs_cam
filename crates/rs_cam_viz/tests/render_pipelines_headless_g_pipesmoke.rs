@@ -48,6 +48,12 @@
 //! quad line of `LINE_SELECTED_PX` (D §3.5): at one pixel per point the
 //! fourth arm reads at least 2 pixels across it.
 //!
+//! The seventh arm is the outline fold test on a grazing face (live look
+//! round 2): a face that rises 30 mm over 1 mm of Y steps 1.25 mm of depth
+//! per pixel, more than the 8-footprint threshold. The planarity test (the
+//! second difference) inks none of its interior pixels; the silhouette
+//! still gets ink. Red proof: the first-difference test inked every pixel.
+//!
 //! The sixth arm is the Q5 lighting: a face that faces away from the
 //! light is not black. It takes the hemisphere sky (`colors::LIGHT_SKY`)
 //! times its colour, since the diffuse term is 0 there.
@@ -491,7 +497,7 @@ fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
         "the pick highlight wins over the model edge on a shared segment: {highlight_px:?}"
     );
 
-    // The width arm: the highlight is a quad of `LINE_SELECTED_PX` (2.5 px
+    // The width arm: the highlight is a quad of `LINE_SELECTED_PX` (5 px
     // at one pixel per point). The column through the probe holds at least
     // 2 highlight pixels across the line.
     let (col, row) = on_edge;
@@ -680,4 +686,105 @@ fn a_face_away_from_the_light_is_not_black_g_pipesmoke() {
     assert!(px[..3].iter().all(|&c| c > 0), "not black: {px:?}");
 
     assert_no_uncaptured(&uncaptured, "rendering the lighting frame");
+}
+
+/// A one-triangle STEP mesh whose face rises from Z 10 at Y 0 to Z 40 at
+/// Y 1: a plane at a grazing angle to the top view of `pixel_view`.
+fn grazing_face_mesh() -> EnrichedMesh {
+    let ring = vec![
+        P3::new(0.0, 0.0, 10.0),
+        P3::new(1.0, 0.0, 10.0),
+        P3::new(0.0, 1.0, 40.0),
+    ];
+    let face = FaceTessellation {
+        vertices: ring.clone(),
+        triangles: vec![[0, 1, 2]],
+        surface_type: SurfaceType::Unknown,
+        surface_params: SurfaceParams::Unknown,
+        boundary_loops: vec![ring],
+    };
+    build_enriched_mesh(vec![face], Vec::new(), Vec::new())
+        .unwrap_or_else(|e| panic!("the grazing face mesh builds: {e}"))
+}
+
+#[test]
+fn a_grazing_face_gets_no_fold_ink_inside_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_grazing_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    let enriched = grazing_face_mesh();
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        &enriched,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the grazing face mesh fits the device limits"));
+    resources.face_mesh_data_list.push(face_mesh);
+
+    let view_proj = pixel_view();
+    let mesh = MeshUniforms {
+        view_proj,
+        light_dir: [0.0, 0.0, 1.0],
+        _pad0: 0.0,
+        camera_pos: [0.0, 0.0, 100.0],
+        _pad1: 0.0,
+    };
+    // `pixel_view` stores depth 0.5 - z / 100, so one pixel of Y (1/24 mm)
+    // steps the depth by 0.0125 and the eye depth (far 50) by 0.625 mm.
+    // The threshold is 8 footprints of 2 * 1 / 48 mm = 0.333 mm: the first
+    // difference fires on every pixel, the second difference is 0.
+    let outline = OutlineUniforms::orthographic(50.0, 1.0, FRAME_HEIGHT as f32);
+    // 30 mm over 1 mm of Y = 24 pixels; depth 0.01 per mm; eye depth = far · d.
+    let step_mm = 0.01 * (30.0 / (FRAME_HEIGHT as f32 / 2.0)) * outline.far;
+    assert!(
+        step_mm > outline.fold_px * outline.px_ratio,
+        "fixture: the depth step per pixel ({step_mm}) is above the threshold ({})",
+        outline.fold_px * outline.px_ratio
+    );
+    resources.write_frame_uniforms(
+        &gpu.queue,
+        &mesh,
+        LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]),
+        EdgeOffset { tol: 0.5, k: 0.0 },
+        LineWidths {
+            viewport_px: [FRAME_WIDTH as f32, FRAME_HEIGHT as f32],
+            pixels_per_point: 1.0,
+        },
+        &outline,
+    );
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT, true);
+    let ink = rs_cam_viz::render::colors::MODEL_EDGE;
+
+    // Inside the face: no ink.
+    for (x, y) in [(0.25, 0.25), (0.1, 0.1), (0.4, 0.3), (0.2, 0.6), (0.1, 0.8)] {
+        let px = read_pixel(&gpu, &resources, pixel_of(x, y));
+        assert!(
+            !same_colour(px, ink),
+            "no fold ink inside the grazing face at ({x}, {y}): {px:?}"
+        );
+    }
+    // The silhouette still gets ink: the column through the edge y = 0.
+    let (col, edge_row) = pixel_of(0.5, 0.0);
+    let column: Vec<[u8; 4]> = (edge_row - 3..=edge_row + 3)
+        .map(|r| read_pixel(&gpu, &resources, (col, r)))
+        .collect();
+    eprintln!("G-PIPESMOKE grazing column {col}: {column:?}");
+    assert!(
+        column.iter().any(|px| same_colour(*px, ink)),
+        "the silhouette of the grazing face is ink: {column:?}"
+    );
+
+    assert_no_uncaptured(&uncaptured, "rendering the grazing frame");
 }

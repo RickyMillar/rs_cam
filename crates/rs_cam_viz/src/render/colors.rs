@@ -343,18 +343,25 @@ pub fn deviation_color(d: f32) -> [f32; 3] {
 
 // ── Model faces (the face pipeline, D2) ─────────────────────────────────
 
-/// A selected face group: the green verdict token `tokens::OK`, the
-/// colour of a cut item (`SELECTION_CUT`; operator, live look 2026-10-29).
-pub const FACE_SELECTED: Rgb = Rgb(SELECTION_CUT);
+/// A selected face group: the blue `tokens::ACCENT_PRESSED`, so a selected
+/// face and a selected (green, `SELECTION_CUT`) line read apart (operator
+/// ruling, live look round 2, 2026-10-29: "make the face select a blue, so
+/// you can see them both"). It is not `ACCENT`, the hue of the selection
+/// outline (`OUTLINE_ACCENT`), so the outline still reads round the fill.
+pub const FACE_SELECTED: Rgb = Rgb(token_rgb(tokens::ACCENT_PRESSED));
 /// The hovered face group (soft cyan).
 pub const FACE_HOVER: Rgb = Rgb::new(0.4, 0.7, 0.85);
 
-/// The face edges of a STEP model (D4): the ink token, one step with the
-/// palette ink slot (`FACE_SLOT_INK`).
-pub const MODEL_EDGE: [f32; 3] = token_rgb(tokens::INK_65);
+/// The face edges of a STEP model (D4): the darkest ink token, so an edge
+/// is a dark line on the pastel faces, as Fusion draws it (live look round
+/// 2: INK_65 was nearly invisible on the pale faces). One step with the
+/// palette ink slot (`FACE_SLOT_INK`), which the outline's ink reads too.
+pub const MODEL_EDGE: [f32; 3] = token_rgb(tokens::INK_00);
 
-/// The wireframe of a mesh model (FOLLOW_UPS §1): an ink token one step
-/// lighter than `MODEL_EDGE`, so the STEP face edges read on top of it.
+/// The wireframe of a mesh model (FOLLOW_UPS §1): an ink token lighter than
+/// `MODEL_EDGE`. The wireframe draws on the viewport ground
+/// (`SURFACE_SUNKEN` = `INK_05`), not on a face, so it keeps `INK_50`: the
+/// ink one step lighter than `INK_00` is `INK_05`, the ground itself.
 pub const MODEL_WIREFRAME: [f32; 3] = token_rgb(tokens::INK_50);
 
 /// The selection outline outside a selected face (D §4.2): the accent

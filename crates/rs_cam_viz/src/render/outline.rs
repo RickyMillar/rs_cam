@@ -13,8 +13,10 @@
 //! - `accent` on a pixel that is not on a selected face and has a neighbour
 //!   that is (just outside a selected face);
 //! - `ink` on a silhouette (a neighbour of another model, or the background)
-//!   and on a fold of one model (a depth step above [`OUTLINE_FOLD_PX`]
-//!   pixel footprints);
+//!   and on a fold of one model: the planarity test, the second difference
+//!   of the depth across two opposite neighbours above [`OUTLINE_FOLD_PX`]
+//!   pixel footprints (a plane at any angle gives 0, so a grazing face is
+//!   not inked; live look round 2);
 //! - nothing on every other pixel (`discard`).
 //!
 //! Design D §4.2 puts the edge test in the blit. It moved into the scene
@@ -32,13 +34,15 @@ use egui_wgpu::wgpu;
 
 use super::mesh_render::{FaceMeshGpuData, FaceMeshVertex, MeshGpuData, MeshVertex};
 
-/// The fold threshold of the outline, in pixel footprints: a neighbour
-/// deeper than this many pixel footprints is across a fold. A smooth face
-/// steps by `footprint · tan θ` per pixel at the angle θ between its normal
-/// and the view, so 8 footprints is a face steeper than atan 8 = 82.9°.
-/// Only the rim of a curved face reaches that. A design choice (D §4.2:
-/// the threshold is a ratio of the depth step to the depth), not a
-/// measurement; it follows the eight depth steps of `EdgeOffset`.
+/// The fold threshold of the outline, in pixel footprints: a second
+/// difference of the eye depth across two opposite neighbours above this
+/// many pixel footprints is a fold. A plane gives 0 at any angle; a curved
+/// face gives the change of its depth slope over two pixels, which reaches
+/// 8 footprints only at its rim. A design choice (D §4.2: the threshold is
+/// a ratio of the depth step to the depth), not a measurement; it follows
+/// the eight depth steps of `EdgeOffset`. Live look round 2 replaced the
+/// first difference: a planar face at a grazing angle exceeded it on every
+/// pixel.
 pub const OUTLINE_FOLD_PX: f32 = 8.0;
 
 /// The id format of the ID pass.
@@ -180,29 +184,48 @@ fn eye_depth(d: f32) -> f32 {
     return 2.0 * o.far * o.near / ((o.far + o.near) - d * (o.far - o.near));
 }
 
+// The eye depth per unit of stored depth at eye depth z (1 / (dd/dz)).
+// Perspective: d = (f+n)/(f-n) - 2fn / ((f-n) z), so dz/dd = (f-n) z^2 / (2fn).
+fn eye_per_depth(z: f32) -> f32 {
+    if (o.ortho != 0u) {
+        return o.far;
+    }
+    return (o.far - o.near) * z * z / (2.0 * o.far * o.near);
+}
+
 @fragment fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let dim = vec2<i32>(textureDimensions(t_id));
     let p = clamp(vec2<i32>(pos.xy), vec2<i32>(0), dim - 1);
     let c = textureLoad(t_id, p, 0).r;
     let cm = (c >> 16u) & 0x7FFFu;
-    let zc = eye_depth(textureLoad(t_depth, p, 0));
+    let dc = textureLoad(t_depth, p, 0);
+    let zc = eye_depth(dc);
     let step = o.fold_px * o.px_ratio * select(zc, 1.0, o.ortho != 0u);
+    // Right, left, down, up: the two pairs of opposite neighbours.
     var offs = array<vec2<i32>, 4>(vec2<i32>(1, 0), vec2<i32>(-1, 0), vec2<i32>(0, 1), vec2<i32>(0, -1));
+    var ids: array<u32, 4>;
+    var ds: array<f32, 4>;
     var ink = false;
     var accent = false;
     for (var k = 0; k < 4; k++) {
         let q = clamp(p + offs[k], vec2<i32>(0), dim - 1);
         let n = textureLoad(t_id, q, 0).r;
-        let nm = (n >> 16u) & 0x7FFFu;
-        if (nm != cm) {
-            // A silhouette: another model, or the background.
-            ink = true;
-        } else if (cm != 0u) {
-            // A fold of one model.
-            let zn = eye_depth(textureLoad(t_depth, q, 0));
-            if (abs(zn - zc) > step) { ink = true; }
-        }
+        ids[k] = n;
+        ds[k] = textureLoad(t_depth, q, 0);
+        // A silhouette: another model, or the background.
+        if (((n >> 16u) & 0x7FFFu) != cm) { ink = true; }
         if ((n >> 31u) == 1u && (c >> 31u) == 0u) { accent = true; }
+    }
+    // A fold of one model: the planarity test. The stored depth of a plane
+    // is linear on the screen (perspective too: d is linear in 1/z), so the
+    // second difference d_a + d_b - 2 d_c of a plane at any angle is 0. A
+    // fold gives a step; it is measured in eye depth against the threshold.
+    if (cm != 0u) {
+        for (var a = 0; a < 4; a += 2) {
+            let same = ((ids[a] >> 16u) & 0x7FFFu) == cm && ((ids[a + 1] >> 16u) & 0x7FFFu) == cm;
+            let second = abs(ds[a] + ds[a + 1] - 2.0 * dc) * eye_per_depth(zc);
+            if (same && second > step) { ink = true; }
+        }
     }
     if (accent) { return vec4<f32>(o.accent.rgb, 1.0); }
     if (ink) { return vec4<f32>(o.ink.rgb, 1.0); }

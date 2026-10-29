@@ -1541,8 +1541,8 @@ pub struct ViewportCallback {
     /// them a wireframe (audit §3.1, fix §6.2).
     pub show_model: bool,
     /// FOLLOW_UPS §1: the model look. `Wireframe` draws no face fill and
-    /// the triangle edges; `ShadedWithEdges` and `Wireframe` draw the STEP
-    /// face edges (D4). Gated with `show_model`.
+    /// the triangle edges; `ShadedWithEdges` draws the STEP face edges
+    /// (D4). Gated with `show_model`.
     pub display_mode: DisplayMode,
     /// D4: the move of the model edges toward the eye.
     pub edge_offset: EdgeOffset,
@@ -1881,8 +1881,12 @@ impl ViewportCallback {
             pass.set_bind_group(0, &resources.line_edge_wide_bind_group, &[]);
             draw_segments(&mut pass, wire);
         }
+        // The face edges draw with Shaded with edges only. In Wireframe the
+        // dark edge ink (`MODEL_EDGE`) cannot read on the dark ground, and
+        // every face boundary is a triangle edge the wireframe already
+        // draws (live look round 2).
         if self.show_model
-            && self.display_mode != DisplayMode::Shaded
+            && self.display_mode == DisplayMode::ShadedWithEdges
             && let Some(edges) = &resources.model_edge_lines
         {
             pass.set_pipeline(&resources.wide_edge_line_pipeline);

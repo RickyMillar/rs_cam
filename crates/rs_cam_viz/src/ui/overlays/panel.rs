@@ -766,7 +766,7 @@ pub(crate) fn draw_display_mode(ui: &mut egui::Ui, state: &mut AppState) {
                     (
                         DisplayMode::Wireframe,
                         "Wireframe",
-                        "No face fill: the triangle edges of every model, and the STEP face edges.",
+                        "No face fill: the triangle edges of every model.",
                     ),
                     (DisplayMode::Shaded, "Shaded", "The faces with no edges."),
                     (
