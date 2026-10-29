@@ -78,3 +78,19 @@ that pass:
   STEP-only project, but `viewport.show_polygons` now also gates the STEP
   highlight and the hover ring there (the draw-gate fix of 2026-10-29).
   Reword the precondition or split the row.
+
+## 5. Live look round 1 (operator, 2026-10-29, build ec419f648)
+
+Works: orbit about the point, pan, zoom to the cursor, presets, F, undo per
+click, the ring pick (after the draw-gate fix), the right-click menu, the
+hand cursor. Fixes ordered from the look:
+- The box was invisible: `paint_box` ran before the 3D paint callback, so
+  the scene composited over it (selection still happened on release).
+- The pick-mode hover note is one line, not a paragraph.
+- Inverse hover: in pick mode only a pickable face lights; a vertical side
+  face gets no tint.
+- **Ruling:** Ctrl+A always selects every item of the chip kinds, also on
+  the default selection (no "default already selects" notice); MCP parity.
+- **Ruling:** the selected ring is too thin and too low in contrast on a
+  white part: the quad line pipeline (D §3.5) is pulled forward from phase
+  4 with width tokens, and the selected colour tries the green token.
