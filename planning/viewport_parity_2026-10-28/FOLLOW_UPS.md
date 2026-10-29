@@ -167,3 +167,7 @@ at doing a full review." Two UX rulings, left to the lead's judgement:
 The rest of the queue for the lead: the hole-rim fold, the STL face key
 plane Z, the gizmo drag-to-orbit, the curves row text, the flaky
 silhouette test. Sloped-edge items and materials stay for a later ruling.
+- An STL flat-region face picked under a Ring op (Profile) shows no green
+  ring: the face is not in `model.items`, so the drawing upload has no ring
+  for it (the hover ring works). Draw the picked STL face's ring from
+  `face_items` as the hover does.
