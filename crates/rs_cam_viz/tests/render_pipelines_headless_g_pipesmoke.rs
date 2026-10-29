@@ -16,9 +16,10 @@
 //!   `line_shader`, `blit_shader`
 //! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
 //!   `blit_bgl`
-//! - 7 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
+//! - 8 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
 //!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
-//!   `line_pipeline`, `blit_pipeline`
+//!   `line_pipeline`, `edge_line_pipeline` (D4: no depth write),
+//!   `blit_pipeline`
 //!
 //! `app.rs` calls the same function with `render_state.target_format`, and
 //! nothing else in the crate creates a pipeline, a layout, or a shader
@@ -35,6 +36,13 @@
 //! picks `Rgba8Unorm` or `Bgra8Unorm` when the surface offers one, else the
 //! surface's first format — which on Linux is commonly an sRGB variant. The
 //! test builds for all four.
+//!
+//! The third arm reads pixels back. It draws one STEP face at Z 20, its
+//! model edges, and a pick highlight line on one edge segment. The pick
+//! highlight colour must win over the edge and the face on that segment.
+//! Before the fix the edges wrote the depth with their offset, so the
+//! highlight (same segment, no offset) failed the depth test and the
+//! operator saw no highlight on a picked STEP ring.
 //!
 //! ## Not covered
 //!
@@ -77,7 +85,10 @@ use rs_cam_core::geometry::enriched_mesh::{
 };
 use rs_cam_core::ids::ModelId;
 use rs_cam_viz::render::mesh_render::{face_edge_vertices, face_mesh_gpu_data};
-use rs_cam_viz::render::{MSAA_SAMPLES, PolygonGpuData, RenderResources, scene_sample_count};
+use rs_cam_viz::render::{
+    EdgeOffset, LineUniforms, LineVertex, MSAA_SAMPLES, MeshUniforms, PolygonGpuData,
+    RenderResources, scene_sample_count,
+};
 use wgpu::util::DeviceExt;
 
 /// The surface formats the app can be handed, in `egui_wgpu`'s own priority
@@ -96,7 +107,12 @@ const FRAME_HEIGHT: u32 = 48;
 
 /// A one-triangle STEP mesh with one face and its boundary loop.
 fn one_face_mesh() -> EnrichedMesh {
-    let p = |x: f64, y: f64| P3::new(x, y, 0.0);
+    one_face_mesh_at(0.0)
+}
+
+/// The one-triangle mesh with its face at `z`.
+fn one_face_mesh_at(z: f64) -> EnrichedMesh {
+    let p = |x: f64, y: f64| P3::new(x, y, z);
     let ring = vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)];
     let face = FaceTessellation {
         vertices: ring.clone(),
@@ -239,4 +255,209 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
     }
 
     assert_no_uncaptured(&uncaptured, "rendering the headless scene frame");
+}
+
+/// The face Z of the pixel arm: the Z of the stepped block ring.
+const PIXEL_FACE_Z: f32 = 20.0;
+
+/// The pixel arm's view: an orthographic top view, column-major. World X
+/// and Y map to NDC with a shift `(cx, cy)` that puts the edge `y = 0`
+/// on the centre of row 36 and the edge `x = 0` on the centre of column
+/// 20. Depth is `0.5 - z / 100`, so a higher Z is nearer.
+fn pixel_view() -> [[f32; 4]; 4] {
+    // Pixel centre of column c: x_ndc = (c + 0.5) * 2 / W - 1.
+    let cx = (20.5 * 2.0 / FRAME_WIDTH as f32) - 1.0;
+    // Pixel centre of row r (from the top): y_ndc = 1 - (r + 0.5) * 2 / H.
+    let cy = 1.0 - (36.5 * 2.0 / FRAME_HEIGHT as f32);
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, -0.01, 0.0],
+        [cx, cy, 0.5, 1.0],
+    ]
+}
+
+/// The pixel `(column, row)` of world `(x, y)` in `pixel_view`.
+fn pixel_of(x: f32, y: f32) -> (u32, u32) {
+    let v = pixel_view();
+    let x_ndc = x + v[3][0];
+    let y_ndc = y + v[3][1];
+    let col = (x_ndc + 1.0) * 0.5 * FRAME_WIDTH as f32 - 0.5;
+    let row = (1.0 - y_ndc) * 0.5 * FRAME_HEIGHT as f32 - 0.5;
+    (col.round() as u32, row.round() as u32)
+}
+
+/// One pixel of the last headless frame, RGBA8. `FRAME_WIDTH` × 4 is
+/// 256 B, so a row needs no padding to `COPY_BYTES_PER_ROW_ALIGNMENT`.
+fn read_pixel(
+    gpu: &gpu::HeadlessGpu,
+    resources: &RenderResources,
+    (col, row): (u32, u32),
+) -> [u8; 4] {
+    let bytes_per_row = FRAME_WIDTH * 4;
+    assert_eq!(bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
+    let texture = resources
+        .headless_color_texture()
+        .unwrap_or_else(|| panic!("a headless frame ran"));
+    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("g_pipesmoke_readback"),
+        size: u64::from(bytes_per_row * FRAME_HEIGHT),
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("g_pipesmoke_readback"),
+        });
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(FRAME_HEIGHT),
+            },
+        },
+        wgpu::Extent3d {
+            width: FRAME_WIDTH,
+            height: FRAME_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    gpu.queue.submit(Some(encoder.finish()));
+    buffer.map_async(wgpu::MapMode::Read, .., |r| {
+        r.unwrap_or_else(|e| panic!("the readback buffer maps: {e}"));
+    });
+    gpu.device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .unwrap_or_else(|e| panic!("the device poll ends: {e}"));
+    let view = buffer
+        .get_mapped_range(..)
+        .unwrap_or_else(|e| panic!("the mapped range reads: {e}"));
+    let at = (row * bytes_per_row + col * 4) as usize;
+    let mut px = [0_u8; 4];
+    px.copy_from_slice(
+        view.get(at..at + 4)
+            .unwrap_or_else(|| panic!("the pixel {col},{row} lies in the frame")),
+    );
+    px
+}
+
+/// An RGB colour as the RGBA8 bytes `Rgba8Unorm` stores, ±1 for rounding.
+fn same_colour(px: [u8; 4], rgb: [f32; 3]) -> bool {
+    rgb.iter()
+        .zip(px)
+        .all(|(c, b)| (f32::from(b) - c * 255.0).abs() <= 1.0)
+}
+
+fn line_buffer(gpu: &gpu::HeadlessGpu, label: &str, verts: &[LineVertex]) -> PolygonGpuData {
+    PolygonGpuData {
+        vertex_buffer: gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(verts),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+        vertex_count: verts.len() as u32,
+    }
+}
+
+#[test]
+fn the_pick_highlight_wins_over_the_model_edge_g_pipesmoke() {
+    let gpu = match headless_device("g_pipesmoke_pixel_device") {
+        Ok(gpu) => gpu,
+        Err(reason) => {
+            eprintln!("G-PIPESMOKE SKIPPED — {reason}");
+            return;
+        }
+    };
+    eprintln!("G-PIPESMOKE adapter: {}", adapter_line(&gpu.adapter));
+    let uncaptured = uncaptured_sink(&gpu.device);
+
+    // One sample and a linear format: one pixel is one colour.
+    let mut resources = RenderResources::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, 1);
+    let enriched = one_face_mesh_at(f64::from(PIXEL_FACE_Z));
+    let face_mesh = face_mesh_gpu_data(
+        &gpu.device,
+        &resources.gpu_limits,
+        &resources.face_state_bgl,
+        &resources.face_palette_buffer,
+        ModelId::from_wire(1),
+        &enriched,
+        &None,
+    )
+    .unwrap_or_else(|| panic!("the one-face mesh fits the device limits"));
+    resources.face_mesh_data_list.push(face_mesh);
+    let edges = face_edge_vertices(&enriched, &None);
+    let edge_colour = edges
+        .first()
+        .map(|v| v.color)
+        .unwrap_or_else(|| panic!("the loop gives edge vertices"));
+    resources.model_edge_lines = Some(line_buffer(&gpu, "g_pipesmoke_edges", &edges));
+
+    // The orthographic eye is a direction (w = 0): straight down the Z axis.
+    let view_proj = pixel_view();
+    let mesh = MeshUniforms {
+        view_proj,
+        light_dir: [0.0, 0.0, 1.0],
+        _pad0: 0.0,
+        camera_pos: [0.0, 0.0, 100.0],
+        _pad1: 0.0,
+    };
+    let lines = LineUniforms::new(view_proj, [0.0, 0.0, 1.0, 0.0]);
+    let offset = EdgeOffset { tol: 0.5, k: 0.0 };
+    resources.write_frame_uniforms(&gpu.queue, &mesh, lines, offset);
+
+    let inside = pixel_of(0.25, 0.25);
+    let outside = pixel_of(0.9, 0.9);
+    let on_edge = pixel_of(0.5, 0.0);
+    assert_eq!(
+        on_edge,
+        (36, 36),
+        "the probe sits mid-segment, on pixel centres"
+    );
+
+    // Frame 1: the face and its edges.
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+    let face_px = read_pixel(&gpu, &resources, inside);
+    let empty_px = read_pixel(&gpu, &resources, outside);
+    let edge_px = read_pixel(&gpu, &resources, on_edge);
+    eprintln!("G-PIPESMOKE pixels: face {face_px:?}, empty {empty_px:?}, edge {edge_px:?}");
+    assert_ne!(
+        face_px, empty_px,
+        "the face draws: its pixel is not the background"
+    );
+    assert!(
+        same_colour(edge_px, edge_colour),
+        "the model edge wins over its own face: {edge_px:?} against {edge_colour:?}"
+    );
+
+    // Frame 2: the pick highlight on the same segment, in a colour that is
+    // neither the face nor the edge.
+    let magenta = [1.0, 0.0, 1.0];
+    let highlight = [
+        LineVertex {
+            position: [0.0, 0.0, PIXEL_FACE_Z],
+            color: magenta,
+        },
+        LineVertex {
+            position: [1.0, 0.0, PIXEL_FACE_Z],
+            color: magenta,
+        },
+    ];
+    resources
+        .polygon_data
+        .push(line_buffer(&gpu, "g_pipesmoke_highlight", &highlight));
+    resources.render_headless_frame(&gpu.device, &gpu.queue, FRAME_WIDTH, FRAME_HEIGHT);
+    let highlight_px = read_pixel(&gpu, &resources, on_edge);
+    eprintln!("G-PIPESMOKE pixels: highlight {highlight_px:?}");
+    assert!(
+        same_colour(highlight_px, magenta),
+        "the pick highlight wins over the model edge on a shared segment: {highlight_px:?}"
+    );
+
+    assert_no_uncaptured(&uncaptured, "rendering the pixel frames");
 }

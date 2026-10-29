@@ -1101,12 +1101,15 @@ impl RsCamApp {
                 || state.viewport.show_flip_axis
                 || state.viewport.show_pin_ghost
                 || state.viewport.show_datum,
+            // The drawing buffer also carries the pick highlight of the
+            // model edge items (UX-7, `drawing_draws`) and the hover ring,
+            // so a STEP model with no 2D drawing draws them too.
             show_polygons: state.viewport.show_polygons
                 && state
                     .session()
                     .models()
                     .iter()
-                    .any(|m| m.items.has_drawing()),
+                    .any(|m| m.items.has_drawing() || m.items.has_model_edges()),
             show_solid_stock: state.viewport.show_stock_solid,
             show_height_planes: state.viewport.show_height_planes
                 && matches!(*state.focus(), Selection::Toolpath(_)),

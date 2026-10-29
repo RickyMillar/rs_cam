@@ -99,8 +99,10 @@ impl LineUniforms {
     }
 
     /// The three line uniforms that `prepare` writes each frame: the plain
-    /// group, the dimmed group and the model edge group. Only the edge
-    /// group carries the offset, so no other line moves.
+    /// group, the dimmed group and the edge group. Only the edge group
+    /// carries the offset. The lines on the model draw with it (the model
+    /// edges and the overlay lines); the grid and the toolpaths do not
+    /// move.
     pub fn frame_set(self, edges: EdgeOffset) -> [Self; 3] {
         let plain = Self {
             dim: 1.0,
@@ -228,6 +230,9 @@ struct OffscreenTargets {
     msaa_color_view: Option<wgpu::TextureView>,
     /// The single-sample colour: the resolve target and the blit source.
     color_view: wgpu::TextureView,
+    /// The texture of `color_view`. It allows a copy out, so a headless
+    /// test reads the frame back (`headless_color_texture`).
+    color_texture: wgpu::Texture,
     /// The depth target at the scene sample count.
     depth_view: wgpu::TextureView,
     blit_bind_group: wgpu::BindGroup,
@@ -311,6 +316,11 @@ pub struct RenderResources {
     /// once; every model's state bind group reads it.
     pub face_palette_buffer: wgpu::Buffer,
     line_pipeline: wgpu::RenderPipeline,
+    /// `line_pipeline` with the depth write off: the model edges only (D4).
+    /// The edges test the depth but write none, so a later overlay line on
+    /// the same segment (the pick highlight, the hover ring, a tab mark)
+    /// is not hidden behind its own edge.
+    edge_line_pipeline: wgpu::RenderPipeline,
     mesh_uniform_buffer: wgpu::Buffer,
     sim_mesh_uniform_buffer: wgpu::Buffer,
     line_uniform_buffer: wgpu::Buffer,
@@ -325,7 +335,10 @@ pub struct RenderResources {
     line_dim_uniform_buffer: wgpu::Buffer,
     line_dim_bind_group: wgpu::BindGroup,
     /// Third uniform + bind group: the same camera with the edge offset
-    /// set (D4). Only the model edges draw with it.
+    /// set (D4). The model edges and the overlay lines on the model (the
+    /// drawing and its pick highlight, the hover ring, the tab marks) draw
+    /// with it, so they pass the depth test of the faces. The grid and the
+    /// toolpaths do not.
     line_edge_uniform_buffer: wgpu::Buffer,
     line_edge_bind_group: wgpu::BindGroup,
     /// Dedicated uniform buffer + bind group for the rest-depth heatmap
@@ -789,7 +802,7 @@ impl RenderResources {
                     cull_mode: None,
                     ..Default::default()
                 },
-                depth_stencil: Some(depth_read_only),
+                depth_stencil: Some(depth_read_only.clone()),
                 multisample: scene_multisample,
                 multiview_mask: None,
                 cache: None,
@@ -926,34 +939,38 @@ impl RenderResources {
             ],
         };
 
-        let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("line_pipeline"),
-            layout: Some(&line_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &line_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(line_vertex_layout)],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &line_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                ..Default::default()
-            },
-            depth_stencil: Some(depth_stencil),
-            multisample: scene_multisample,
-            multiview_mask: None,
-            cache: None,
-        });
+        let line_pipeline_with = |label: &str, depth: wgpu::DepthStencilState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&line_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &line_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[Some(line_vertex_layout.clone())],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &line_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: target_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::LineList,
+                    ..Default::default()
+                },
+                depth_stencil: Some(depth),
+                multisample: scene_multisample,
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let line_pipeline = line_pipeline_with("line_pipeline", depth_stencil);
+        let edge_line_pipeline = line_pipeline_with("edge_line_pipeline", depth_read_only);
 
         // --- Blit pipeline (fullscreen triangle, samples offscreen texture) ---
         let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1039,6 +1056,7 @@ impl RenderResources {
             face_state_bgl,
             face_palette_buffer,
             line_pipeline,
+            edge_line_pipeline,
             mesh_uniform_buffer,
             sim_mesh_uniform_buffer,
             line_uniform_buffer,
@@ -1108,8 +1126,8 @@ impl RenderResources {
     /// A pipeline and an attachment with different sample counts fail at
     /// pass time, not at pipeline creation. So the door runs
     /// `ensure_offscreen` and records the frame's own scene pass with an
-    /// empty callback that draws the grid, the face meshes and the model
-    /// edges. A second pass from the same
+    /// empty callback that draws the grid, the face meshes, the model
+    /// edges and the polygon lines. A first pass from the same
     /// `begin_scene_pass` sets each scene pipeline once. The door then
     /// submits, so a validation error reaches the caller's error scope.
     #[doc(hidden)]
@@ -1125,17 +1143,21 @@ impl RenderResources {
             return;
         };
         // The model arm draws `face_mesh_data_list` and `model_edge_lines`,
-        // so a caller that fills them first gets those draws too.
+        // and the polygon arm `polygon_data`, so a caller that fills them
+        // first gets those draws too. The uniforms are the caller's
+        // (`write_frame_uniforms`); with none written, nothing is visible.
         let callback = ViewportCallback {
             show_grid: true,
             show_model: true,
             show_model_edges: true,
+            show_polygons: true,
             ..ViewportCallback::empty(width, height)
         };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless_frame"),
         });
-        callback.record_scene_pass(self, offscreen, &mut encoder);
+        // The pipeline pass runs first: each pass clears the targets, so
+        // the scene pass runs last and its frame stays for a readback.
         {
             let mut pass = offscreen.begin_scene_pass(&mut encoder);
             for pipeline in [
@@ -1145,11 +1167,52 @@ impl RenderResources {
                 &self.colored_opaque_pipeline,
                 &self.face_mesh_pipeline,
                 &self.line_pipeline,
+                &self.edge_line_pipeline,
             ] {
                 pass.set_pipeline(pipeline);
             }
         }
+        callback.record_scene_pass(self, offscreen, &mut encoder);
         queue.submit(Some(encoder.finish()));
+    }
+
+    /// The single-sample colour of the last headless frame, or `None`
+    /// before the first frame. A test copies it out to read a pixel.
+    #[doc(hidden)]
+    pub fn headless_color_texture(&self) -> Option<&wgpu::Texture> {
+        self.offscreen.as_ref().map(|o| &o.color_texture)
+    }
+
+    /// Write the mesh uniforms and the three line uniforms of one frame
+    /// (`LineUniforms::frame_set`). `prepare` calls it each frame; a
+    /// headless test calls it before `render_headless_frame`.
+    #[doc(hidden)]
+    pub fn write_frame_uniforms(
+        &self,
+        queue: &wgpu::Queue,
+        mesh: &MeshUniforms,
+        lines: LineUniforms,
+        edges: EdgeOffset,
+    ) {
+        queue.write_buffer(&self.mesh_uniform_buffer, 0, bytemuck::bytes_of(mesh));
+        // Plain, dimmed and edge: one camera, written together so the
+        // three can never hold different view matrices.
+        let [plain_lines, dim_lines, edge_lines] = lines.frame_set(edges);
+        queue.write_buffer(
+            &self.line_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&plain_lines),
+        );
+        queue.write_buffer(
+            &self.line_dim_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&dim_lines),
+        );
+        queue.write_buffer(
+            &self.line_edge_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&edge_lines),
+        );
     }
 
     /// Ensure offscreen render targets exist at the given size.
@@ -1198,7 +1261,9 @@ impl RenderResources {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: self.target_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -1234,6 +1299,7 @@ impl RenderResources {
         self.offscreen = Some(OffscreenTargets {
             msaa_color_view,
             color_view,
+            color_texture,
             depth_view,
             blit_bind_group,
             width,
@@ -1547,21 +1613,25 @@ impl ViewportCallback {
 
         // D4: the face edges, after every model draw (the reach overlay
         // too: the edges are geometry, not a colour field). The edge group
-        // moves them toward the eye, so they win the depth test.
+        // moves them toward the eye, so they win the depth test. They
+        // write no depth, so the overlay lines below, on the same group,
+        // draw over them on a shared segment.
         if self.show_model
             && self.show_model_edges
             && let Some(edges) = &resources.model_edge_lines
         {
-            pass.set_pipeline(&resources.line_pipeline);
+            pass.set_pipeline(&resources.edge_line_pipeline);
             pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
             pass.set_vertex_buffer(0, edges.vertex_buffer.slice(..));
             pass.draw(0..edges.vertex_count, 0..1);
         }
 
-        // Draw polygon/DXF/SVG lines
+        // Draw polygon/DXF/SVG lines, the pick highlight of the model edge
+        // items and the hover ring. They lie on the faces, so they take the
+        // edge group (the edge offset), as the model edges do.
         if self.show_polygons {
             pass.set_pipeline(&resources.line_pipeline);
-            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
             for poly_gpu in &resources.polygon_data {
                 pass.set_vertex_buffer(0, poly_gpu.vertex_buffer.slice(..));
                 pass.draw(0..poly_gpu.vertex_count, 0..1);
@@ -1577,7 +1647,7 @@ impl ViewportCallback {
         // curves overlay off too.
         if let Some(tabs) = &resources.tab_lines {
             pass.set_pipeline(&resources.line_pipeline);
-            pass.set_bind_group(0, &resources.line_bind_group, &[]);
+            pass.set_bind_group(0, &resources.line_edge_bind_group, &[]);
             pass.set_vertex_buffer(0, tabs.vertex_buffer.slice(..));
             pass.draw(0..tabs.vertex_count, 0..1);
         }
@@ -1713,11 +1783,12 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
         // Ensure offscreen targets are the right size
         resources.ensure_offscreen(device, self.viewport_width, self.viewport_height);
 
-        // Upload uniforms
-        queue.write_buffer(
-            &resources.mesh_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&self.mesh_uniforms),
+        // Upload uniforms: the mesh and the three line groups.
+        resources.write_frame_uniforms(
+            queue,
+            &self.mesh_uniforms,
+            self.line_uniforms,
+            self.edge_offset,
         );
         // Upload the colored mesh uniforms when a colored pipeline draws.
         // The reach overlay draws with `colored_opaque_pipeline` through
@@ -1794,25 +1865,6 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
                 bytemuck::bytes_of(&area_uniforms),
             );
         }
-        // Plain, dimmed and edge: one camera, written every frame together
-        // so the three can never hold different view matrices.
-        let [plain_lines, dim_lines, edge_lines] = self.line_uniforms.frame_set(self.edge_offset);
-        queue.write_buffer(
-            &resources.line_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&plain_lines),
-        );
-        queue.write_buffer(
-            &resources.line_dim_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&dim_lines),
-        );
-        queue.write_buffer(
-            &resources.line_edge_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&edge_lines),
-        );
-
         // Render 3D scene to offscreen texture with depth buffer.
         // After ensure_offscreen and write_buffer, we only need immutable access.
         #[expect(
@@ -2141,7 +2193,9 @@ mod tests {
     }
 
     /// Only the edge group carries the offset: the plain and the dimmed
-    /// groups write edge_tol = 0, so no other line moves.
+    /// groups write edge_tol = 0, so the grid and the toolpaths do not
+    /// move. The edge group is for the lines on the model: the model
+    /// edges and the overlay lines (`record_scene_pass`).
     #[test]
     fn only_the_edge_group_moves() {
         let base = LineUniforms {
