@@ -186,3 +186,7 @@ silhouette test. Sloped-edge items and materials stay for a later ruling.
   More, and an ortho/perspective toggle sits in that corner.
 - **Ruling:** review the whole More menu: what is valid when, and how the UI
   could be polished. Fix the clear findings; list the questionable ones.
+- Questionable (R5a): with the Faces chip on, a click over a pickable face
+  always takes the face; a STEP edge ring on that face is reachable only
+  with Tab or with the chip off. Alternative: rank a visible ring within a
+  few pixels of the pointer above the face. Operator's call.
