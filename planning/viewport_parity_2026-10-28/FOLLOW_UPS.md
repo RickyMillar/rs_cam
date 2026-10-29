@@ -211,3 +211,17 @@ instead of 37 everywhere.
 6. Materials: one neutral material only; per-model colour is not built.
 7. `a_dropped_mesh_releases_its_entry` is flaky (`cache_len` race).
 
+8. **Profile: a click on the bottom face rarely gives the outline (operator,
+   2026-10-30, build d195a1e80).** Probed through MCP (`add_pick` of face
+   brep 1 on Profile 1 of `stepped_block.step`): the door accepts the pick
+   and refuses it with "this face faces down in this setup. Fix: Pick it in
+   a setup that faces it, or pick the face above it."; both rows (the face
+   and the default outline loop) then read `skipped` and the op is blocked.
+   In the viewport the Faces chip is on, so a click over that face takes
+   the face (R5a ranking); only a click within the line tolerance of the
+   edge takes the outline loop, which works. This is the ring-versus-face
+   ranking question (item 2 above) with a sharper case: a face the op
+   refuses should not win the click over a ring it serves. Candidate fixes:
+   rank a served ring above a refused face; or drop refused faces from the
+   click candidates in pick mode; or keep the default outline cut when a
+   later pick is refused.
