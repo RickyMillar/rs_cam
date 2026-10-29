@@ -141,6 +141,7 @@ from HEAD.
 | — | the two branches merged into master | 1343e37d0 | 2026-10-29 |
 | 3 | F4 one hover slot (`HoverTarget`), the `EndViewportMode` row, the gesture facade `interaction/intent.rs` | 786fdcd58 | 2026-10-29 |
 | 3 | B6 box select (under `LeftOrbit`: a left drag in pick mode is a box until B3) | 87fae1431 | 2026-10-29 |
+| 3 | B3 the MouseScheme setting (DesktopCad default by the operator ruling; Alt+left orbit and Alt+right pan on a laptop) | a12878ae3 | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
