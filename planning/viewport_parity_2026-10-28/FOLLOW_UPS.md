@@ -169,3 +169,20 @@ plane Z, the gizmo drag-to-orbit, the curves row text, the flaky
 silhouette test. Sloped-edge items and materials stay for a later ruling.
 - ~~The picked STL face ring under a Ring op~~: done 6fd51227a (no pixel test;
   the drawing upload needs a GPU).
+
+## 9. Live look round 5 (operator, 2026-10-29 night, build 24aa5bf8f)
+
+"The bottom nav bar is good." Findings and rulings:
+- **Ruling:** "only select what is visible" is generic for selection, not
+  only the box: a click on the middle step face in a Profile picked the
+  base face under it. The click takes the nearest VISIBLE candidate; Tab
+  still reaches hidden ones.
+- Bug: Wireframe rendered nothing until a click (the mode change raised no
+  upload, so the wireframe slot built on the next unrelated upload).
+- Bug: hiding the curves row hid the selected edges (the draw-gate fix of
+  ec419f648 put the selection and hover rings behind `show_polygons`).
+- **Ruling:** the gizmo becomes a larger view cube whose faces click to the
+  six views (Top, Bottom, Front, Back, Left, Right), the preset rows leave
+  More, and an ortho/perspective toggle sits in that corner.
+- **Ruling:** review the whole More menu: what is valid when, and how the UI
+  could be polished. Fix the clear findings; list the questionable ones.
