@@ -482,6 +482,33 @@ impl RsCamApp {
                 self.controller.events_mut().push(event);
             }
         }
+        // E-Q6 "select other": Tab in pick mode cycles the candidates under
+        // the pointer. The key is consumed and goes through the one gesture
+        // translation (`UiCommand::CyclePickCandidate`); the viewport frame
+        // makes the list (`state::pick::step_cycle`).
+        if matches!(
+            self.controller.state().gui.selection_ui.mode,
+            Some(crate::state::pick::ViewportMode::Pick(_))
+        ) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab))
+        {
+            let events = {
+                let state = self.controller.state();
+                crate::interaction::intent::gesture_events(
+                    &crate::interaction::intent::ViewportGesture::Key {
+                        key: crate::interaction::intent::ViewKey::Tab,
+                    },
+                    &crate::interaction::intent::ViewContext {
+                        workspace: state.workspace,
+                        focus: state.focus(),
+                        selection_ui: &state.gui.selection_ui,
+                        session: state.session(),
+                    },
+                )
+            };
+            for event in events {
+                self.controller.events_mut().push(event);
+            }
+        }
         // E5 (SEL-13): Ctrl+A in pick mode selects every item of the chip
         // kinds (core `kind_rule_edit`); under the default the rules
         // replace it (operator ruling 2026-10-29).

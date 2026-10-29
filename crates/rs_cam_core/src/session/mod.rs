@@ -910,6 +910,31 @@ impl LoadedModel {
         }
     }
 
+    /// Every triangle under the ray, sorted by `(t, index)`, in the model
+    /// frame: the candidate list of "select other" (E-Q6). The BVH when
+    /// cached (`MeshBvh::cast_ray_all`), else brute force with the same
+    /// box gate and the same order: one answer, two speeds. It never builds
+    /// (SEL-2). The first entry is [`Self::ray_pick`].
+    pub fn ray_pick_all(&self, origin: &P3, dir: &crate::geo::V3) -> Vec<(usize, f64)> {
+        let Some(mesh) = self.pick_mesh() else {
+            return Vec::new();
+        };
+        if let Some(bvh) = crate::maps::geom_cache::peek_bvh(mesh) {
+            return bvh.cast_ray_all(mesh, origin, dir);
+        }
+        if mesh.bbox.ray_intersect(origin, dir).is_none() {
+            return Vec::new();
+        }
+        let mut hits: Vec<(usize, f64)> = mesh
+            .faces
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| f.ray_intersect(origin, dir).map(|t| (i, t)))
+            .collect();
+        hits.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        hits
+    }
+
     /// [`Self::face_items`], with a build on a cold cache. Call it where a
     /// build is allowed: generation, an explicit face listing, the GUI job
     /// that fills the cache.

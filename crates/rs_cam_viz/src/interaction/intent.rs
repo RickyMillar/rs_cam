@@ -25,6 +25,9 @@ pub enum ViewKey {
     /// box (`SelectionUi::cancel_box`, before this translation runs); the
     /// next one ends the mode.
     Escape,
+    /// E-Q6 "select other": in pick mode, the next candidate under the
+    /// pointer (`UiCommand::CyclePickCandidate`).
+    Tab,
 }
 
 /// One viewport gesture.
@@ -143,6 +146,13 @@ pub fn gesture_events(g: &ViewportGesture, cx: &ViewContext<'_>) -> Vec<AppEvent
             // (`SelectionUi::cancel_box`); this Escape ends the mode.
             if cx.selection_ui.mode.is_some() {
                 vec![AppEvent::Ui(UiCommand::EndViewportMode(NoArgs))]
+            } else {
+                Vec::new()
+            }
+        }
+        ViewportGesture::Key { key: ViewKey::Tab } => {
+            if matches!(cx.selection_ui.mode, Some(ViewportMode::Pick(_))) {
+                vec![AppEvent::Ui(UiCommand::CyclePickCandidate(NoArgs))]
             } else {
                 Vec::new()
             }

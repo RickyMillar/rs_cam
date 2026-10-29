@@ -39,6 +39,7 @@ pub fn draw(ctx: &egui::Context, show: &mut bool, scheme: rs_cam_core::settings:
                     ("1 / 2 / 3 / 4", "Top / Front / Right / Iso view"),
                     ("F", "Fit the selection (else the model)"),
                     ("Ctrl+A", "Pick mode: select every item of the chip kinds"),
+                    ("Tab", "Pick mode: the next candidate under the pointer"),
                 ],
             );
             ui.add_space(8.0);
@@ -66,6 +67,7 @@ pub fn draw(ctx: &egui::Context, show: &mut bool, scheme: rs_cam_core::settings:
                     ("Wheel / pinch", "Zoom toward the pointer"),
                     ("F", "Fit the selection"),
                     ("Ctrl+A", "Pick mode: select every item of the chip kinds"),
+                    ("Tab", "Pick mode: the next candidate under the pointer"),
                     ("Escape", "Cancel the box, then end pick mode"),
                 ],
             );

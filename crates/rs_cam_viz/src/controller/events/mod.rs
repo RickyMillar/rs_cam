@@ -930,6 +930,14 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::EndViewportMode(NoArgs) => {
                     self.state.gui.selection_ui.end_mode();
                 }
+                // E-Q6: Tab asks the viewport frame for the next candidate
+                // under the pointer (`state::pick::step_cycle`).
+                UiCommand::CyclePickCandidate(NoArgs) => {
+                    let ui = &mut self.state.gui.selection_ui;
+                    if ui.pick_mut().is_some() {
+                        ui.cycle_request = true;
+                    }
+                }
                 UiCommand::SwitchWorkspace(_) => {}
                 UiCommand::ShowShortcuts(NoArgs) => {}
                 UiCommand::SetToolLoadOverride(SetToolLoadOverrideArgs { .. }) => {}

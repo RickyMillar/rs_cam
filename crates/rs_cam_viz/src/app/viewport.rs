@@ -130,6 +130,34 @@ impl RsCamApp {
         Some((key, found.chip_off, face))
     }
 
+    /// E-Q6: the keys of every candidate under `pos`, in the order of
+    /// `picking::pick_candidates`, each named by the click's own key door
+    /// (`pick_hit_key`). A refused face is no candidate; a repeat is
+    /// dropped.
+    fn pick_candidate_keys(
+        &self,
+        pick: &ActivePick,
+        pos: egui::Pos2,
+    ) -> Vec<rs_cam_core::selection::MatchKey> {
+        let state = self.controller.state();
+        let hits = crate::interaction::picking::pick_candidates(
+            &self.pick_context(pos),
+            state.session(),
+            pick.toolpath_id,
+            &pick.filter,
+            &pick.kinds,
+        );
+        let mut keys: Vec<rs_cam_core::selection::MatchKey> = Vec::new();
+        for hit in hits {
+            if let Some(Ok(key)) = self.pick_hit_key(pick, hit)
+                && !keys.contains(&key)
+            {
+                keys.push(key);
+            }
+        }
+        keys
+    }
+
     /// The pick under the pointer, computed once per frame (B1). Every
     /// hover reader in `draw_viewport` reads it.
     ///
@@ -239,7 +267,22 @@ impl RsCamApp {
         let Some(pick) = self.active_pick() else {
             return false;
         };
-        match self.pick_mode_key(&pick, click_pos) {
+        // E-Q6: while Tab cycles the candidates at this point, the click
+        // takes the candidate in force (it is of an on chip).
+        let cycled = self
+            .controller
+            .state()
+            .gui
+            .selection_ui
+            .cycle
+            .as_ref()
+            .filter(|c| c.holds([click_pos.x, click_pos.y]))
+            .and_then(|c| c.current().cloned());
+        let found = match cycled {
+            Some(key) => Some((Ok(key), None)),
+            None => self.pick_mode_key(&pick, click_pos),
+        };
+        match found {
             // E5: a right-click on an item opens the rule menu (its layer,
             // then the "Rule…" offers); the menu sends the edit.
             Some((Ok(key), chip_off)) if click == crate::ui::pick_bar::PickClick::Secondary => {
@@ -854,11 +897,39 @@ impl RsCamApp {
         let pick = self.active_pick();
         let hover = self.hover_result(ui, &response, pick.as_ref());
 
+        // E-Q6 "select other": a pointer move ends the cycle; a Tab (the
+        // request of `UiCommand::CyclePickCandidate`) makes or steps it.
+        let pointer = hover.pos.map(|p| [p.x, p.y]);
+        {
+            let selection_ui = &mut self.controller.state_mut().gui.selection_ui;
+            selection_ui.cycle = crate::state::pick::keep_cycle(selection_ui.cycle.take(), pointer);
+        }
+        if std::mem::take(&mut self.controller.state_mut().gui.selection_ui.cycle_request)
+            && let (Some(active), Some(pos)) = (pick.as_ref(), hover.pos)
+        {
+            let cycle = self.controller.state_mut().gui.selection_ui.cycle.take();
+            let next = crate::state::pick::step_cycle(cycle, [pos.x, pos.y], || {
+                self.pick_candidate_keys(active, pos)
+            });
+            self.controller.state_mut().gui.selection_ui.cycle = next;
+            ui.ctx().request_repaint();
+        }
+        let cycled = self
+            .controller
+            .state()
+            .gui
+            .selection_ui
+            .cycle
+            .as_ref()
+            .and_then(|c| c.current().cloned().map(|key| (key, c.position())));
+
         // P4.5: the item under the pointer in pick mode. The hover buffer
         // uploads on a change of the item only (`HoverDetector`), never per
         // frame.
-        let hovered_item = match (&pick, &hover.pick_mode) {
-            (Some(pick), Some((Ok(key), _))) => Some((pick, key.clone())),
+        let hovered_item = match (&pick, &cycled, &hover.pick_mode) {
+            // E-Q6: the candidate in force takes the hover ring.
+            (Some(pick), Some((key, _)), _) => Some((pick, key.clone())),
+            (Some(pick), None, Some((Ok(key), _))) => Some((pick, key.clone())),
             _ => None,
         };
         if hovered_item.is_some() {
@@ -878,7 +949,12 @@ impl RsCamApp {
         };
         let target = crate::state::selection_highlight::hover_target(
             pick.is_some(),
-            hover.pick_face,
+            // E-Q6: while a cycle is on, the candidate rings; no face tint.
+            if cycled.is_some() {
+                None
+            } else {
+                hover.pick_face
+            },
             hovered_item.as_ref().map(|(_, key)| key),
             self.controller.state().gui.selection_ui.row_hover.as_ref(),
             scene_face,
@@ -905,7 +981,13 @@ impl RsCamApp {
         if let Some((pick, key)) = &hovered_item {
             let state = self.controller.state();
             if let Some((_, tc)) = state.session().find_toolpath_config_by_id(pick.toolpath_id) {
-                let tip = crate::ui::pick_bar::hover_text(state.session(), tc, pick.target, key);
+                let tip = crate::ui::pick_bar::hover_text(
+                    state.session(),
+                    tc,
+                    pick.target,
+                    key,
+                    cycled.as_ref().map(|(_, position)| *position),
+                );
                 egui::Tooltip::always_open(
                     ui.ctx().clone(),
                     response.layer_id,

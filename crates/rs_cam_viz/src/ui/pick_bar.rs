@@ -37,7 +37,8 @@ const PICK_BAR_AREA_ID: &str = "pick_filter_bar";
 /// The help line of the bar.
 pub const PICK_HELP: &str = "Click: add or remove the item. Shift-click: add the item. \
      Ctrl-click: remove the item. Right-click: rules from the item. \
-     Ctrl+A: select every item of the chip kinds. Drag: box (left to right encloses, \
+     Ctrl+A: select every item of the chip kinds. Tab: the next candidate \
+     under the pointer. Drag: box (left to right encloses, \
      right to left crosses).";
 
 /// B6: the notice of a box on a boundary whose source is not a selection.
@@ -624,11 +625,14 @@ fn draw_circle_range(ui: &mut egui::Ui, on: &[ItemKind], filter: &mut PickFilter
 /// [`HOVER_ACTS`]. When the selection `target` of `tc` does not resolve,
 /// the line is the refusal (`ProjectSession::click_edit`, the function the
 /// click sends through). The bar keeps the long help ([`PICK_HELP`]).
+/// E-Q6: while Tab cycles the candidates under the pointer, `position`
+/// (1-based, count) replaces the acts with "2 of 3 · Tab for the next".
 pub fn hover_text(
     session: &rs_cam_core::session::ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,
     target: SelectionTarget,
     key: &rs_cam_core::selection::MatchKey,
+    position: Option<(usize, usize)>,
 ) -> String {
     if let Err(refusal) = session.click_edit(tc, target, key.clone()) {
         return refusal.to_string();
@@ -641,7 +645,16 @@ pub fn hover_text(
         ItemKind::Face => format!("Face, {m:.1} mm across"),
         ItemKind::Point => "Point".to_owned(),
     };
-    format!("{item} \u{00B7} {HOVER_ACTS}")
+    match position {
+        Some((at, of)) => format!("{item} \u{00B7} {}", cycle_note(at, of)),
+        None => format!("{item} \u{00B7} {HOVER_ACTS}"),
+    }
+}
+
+/// E-Q6: the note of the "select other" cycle, as "2 of 3 · Tab for the
+/// next".
+pub fn cycle_note(at: usize, of: usize) -> String {
+    format!("{at} of {of} \u{00B7} Tab for the next")
 }
 
 /// The acts of the pick-mode tooltip, after the item.

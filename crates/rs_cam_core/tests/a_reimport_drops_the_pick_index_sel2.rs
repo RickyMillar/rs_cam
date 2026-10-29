@@ -14,6 +14,10 @@
 //!    scaled mesh. The old mesh stays alive in this test, so its entry
 //!    stays in the table; only the identity check keeps it out.
 //!
+//! E-Q6: `ray_pick_all` (the "select other" list) equals
+//!    `MeshBvh::cast_ray_all` on the BVH and a brute-force sorted list
+//!    without it; its first entry is `ray_pick`.
+//!
 //! 4. The `build_model_pick_index` job (`start`, then
 //!    `execute_build_model_pick_index`) fills the cache for the new mesh:
 //!    with a set cancel flag it builds nothing; then it counts one build,
@@ -164,6 +168,10 @@ fn a_reimport_drops_the_pick_index_sel2() {
         let pick = model(&session).ray_pick(&o, &d);
         assert_eq!(pick, bvh.cast_ray(&old_mesh, &o, &d));
         assert_eq!(pick, ray_pick_triangle(&old_mesh, &o, &d));
+        // E-Q6: every hit, on the BVH; the nearest first.
+        let all = model(&session).ray_pick_all(&o, &d);
+        assert_eq!(all, bvh.cast_ray_all(&old_mesh, &o, &d));
+        assert_eq!(all.first().copied(), pick);
         hits += usize::from(pick.is_some());
     }
     assert!(hits > 0, "no ray hit the model: the check is vacuous");
@@ -198,6 +206,17 @@ fn a_reimport_drops_the_pick_index_sel2() {
     for (o, d) in rays(&new_mesh) {
         let pick = model(&session).ray_pick(&o, &d);
         assert_eq!(pick, ray_pick_triangle(&new_mesh, &o, &d));
+        // E-Q6: every hit, by brute force with no BVH; the same order.
+        let all = model(&session).ray_pick_all(&o, &d);
+        let mut brute: Vec<(usize, f64)> = new_mesh
+            .faces
+            .iter()
+            .enumerate()
+            .filter_map(|(i, f)| f.ray_intersect(&o, &d).map(|t| (i, t)))
+            .collect();
+        brute.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
+        assert_eq!(all, brute);
+        assert_eq!(all.first().copied(), pick);
         hits += usize::from(pick.is_some());
     }
     assert!(

@@ -46,6 +46,13 @@
 //!    face that is not pickable (a side face) gets no hover. Outside pick
 //!    mode any face under the pointer lights, as before. The pick-mode
 //!    tooltip (`hover_text`) is one short line.
+//! 9. E-Q6 "select other" (GUI only): `step_cycle_*` hold the pure cycle
+//!    (a Tab at a new point starts on the second candidate, the same point
+//!    steps and wraps, a move or no pointer ends it, a mode change clears
+//!    it); `a_tab_lists_every_candidate_under_the_pointer_e_q6` lists the
+//!    circle and the loop at the ring point nearest first, and a click on
+//!    the cycled loop picks the loop through the ordinary `TogglePick`;
+//!    `tab_reaches_the_gesture_translation_e_q6` holds the key path.
 //!
 //! ```text
 //! cargo test -p rs_cam_viz -q --test pick_mode_picks_by_kind_p4_5
@@ -83,13 +90,15 @@ use rs_cam_viz::compute::{
 };
 use rs_cam_viz::controller::AppController;
 use rs_cam_viz::interaction::picking::{
-    PickContext, PickHit, pick_items, pick_mode_item, pick_open_path,
+    PickContext, PickHit, pick_candidates, pick_items, pick_mode_item, pick_open_path,
 };
 use rs_cam_viz::render::camera::OrbitCamera;
 use rs_cam_viz::state::Workspace;
 use rs_cam_viz::state::display_frame::drawing_plane_z;
 use rs_cam_viz::state::job::{ModelId, SetupFrame};
-use rs_cam_viz::state::pick::{PickFilter, PickMode, held_kinds};
+use rs_cam_viz::state::pick::{
+    CYCLE_STAY_PX, PickCycle, PickFilter, PickMode, held_kinds, keep_cycle, step_cycle,
+};
 use rs_cam_viz::state::selection::Selection as UiSelection;
 use rs_cam_viz::state::selection_highlight::{HoverDetector, HoverTarget, hover_target};
 use rs_cam_viz::ui::AppEvent;
@@ -968,8 +977,13 @@ fn in_pick_mode_only_a_pickable_face_lights_live1() {
     // The tooltip is one short line: the item and its measure, then the
     // acts.
     let tc = c.state().session().toolpath_configs()[0].clone();
-    let tip =
-        rs_cam_viz::ui::pick_bar::hover_text(c.state().session(), &tc, SelectionTarget::Op, &key);
+    let tip = rs_cam_viz::ui::pick_bar::hover_text(
+        c.state().session(),
+        &tc,
+        SelectionTarget::Op,
+        &key,
+        None,
+    );
     assert!(!tip.contains('\n'), "one line: {tip:?}");
     assert!(
         tip.starts_with("Closed contour, ") && tip.ends_with(rs_cam_viz::ui::pick_bar::HOVER_ACTS),
@@ -1005,5 +1019,189 @@ fn in_pick_mode_only_a_pickable_face_lights_live1() {
     assert_eq!(
         hover_target(false, None, None, Some(&key), Some(side)),
         Some(HoverTarget::Item(key))
+    );
+}
+
+fn key_of(c: &AppController<SilentBackend>, index: usize) -> MatchKey {
+    c.state().session().models()[0]
+        .items
+        .iter()
+        .nth(index)
+        .unwrap()
+        .key()
+        .clone()
+}
+
+#[test]
+fn step_cycle_starts_on_the_second_candidate_and_wraps_e_q6() {
+    let c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let (a, b, d) = (key_of(&c, 0), key_of(&c, 1), key_of(&c, 2));
+    let list = || vec![a.clone(), b.clone(), d.clone()];
+    let at = [100.0, 80.0];
+    // A Tab at a new point: the list, on the second candidate (the hover
+    // already shows the first).
+    let one = step_cycle(None, at, list).unwrap();
+    assert_eq!((one.index, one.position()), (1, (2, 3)));
+    assert_eq!(one.current(), Some(&b));
+    // The same point (within the stay): the next, then the wrap.
+    let near = [at[0] + CYCLE_STAY_PX * 0.5, at[1]];
+    let two = step_cycle(Some(one), near, || panic!("no new list at the same point")).unwrap();
+    assert_eq!(two.current(), Some(&d));
+    let three = step_cycle(Some(two), at, || panic!("no new list")).unwrap();
+    assert_eq!(three.current(), Some(&a), "the cycle wraps");
+    // A Tab beyond the stay makes a new list there.
+    let far = [at[0] + CYCLE_STAY_PX * 2.0, at[1]];
+    let fresh = step_cycle(Some(three), far, || vec![d.clone()]).unwrap();
+    assert_eq!((fresh.at, fresh.index, fresh.position()), (far, 0, (1, 1)));
+    // No candidate: no cycle.
+    assert_eq!(step_cycle(None, at, Vec::new), None);
+}
+
+#[test]
+fn step_cycle_ends_on_a_move_and_on_a_mode_change_e_q6() {
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let cycle = PickCycle {
+        at: [10.0, 10.0],
+        candidates: vec![key_of(&c, 0), key_of(&c, 1)],
+        index: 1,
+    };
+    assert_eq!(
+        keep_cycle(Some(cycle.clone()), Some([11.0, 10.0])),
+        Some(cycle.clone()),
+        "a hand shake keeps it"
+    );
+    assert_eq!(keep_cycle(Some(cycle.clone()), Some([20.0, 10.0])), None);
+    assert_eq!(
+        keep_cycle(Some(cycle.clone()), None),
+        None,
+        "the pointer left"
+    );
+    let _ = pick_on(&mut c);
+    let ui = &mut c.state_mut().gui.selection_ui;
+    ui.cycle = Some(cycle);
+    ui.cycle_request = true;
+    ui.end_mode();
+    assert_eq!((ui.cycle.clone(), ui.cycle_request), (None, false));
+}
+
+#[test]
+fn a_tab_lists_every_candidate_under_the_pointer_e_q6() {
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Bottom,
+        ZRotation::Deg0,
+    );
+    let mode = pick_on(&mut c);
+    let camera = camera(&c);
+    // On the circle ring, 1 mm from the loop edge x = 10 (claim 2).
+    let at = drawn(&c, &camera, P2::new(11.0, 20.0));
+    let state = c.state();
+    let tc = &state.session().toolpath_configs()[0];
+    let kinds = mode
+        .filter
+        .effective_kinds(tc.operation.capabilities().item_use, &held(&c));
+    let ctx = PickContext {
+        camera: &camera,
+        screen_x: at[0],
+        screen_y: at[1],
+        aspect: VIEW_W / VIEW_H,
+        vw: VIEW_W,
+        vh: VIEW_H,
+        visibility: &state.overlays.model_visibility,
+    };
+    let keys: Vec<MatchKey> = pick_candidates(&ctx, state.session(), tc.id, &mode.filter, &kinds)
+        .into_iter()
+        .map(|hit| match hit {
+            PickHit::Item { key, .. } => key,
+            other => panic!("a drawing gives item candidates only: {other:?}"),
+        })
+        .collect();
+    let (lp, circle) = (key_of(&c, 0), key_of(&c, 1));
+    assert_eq!(
+        keys,
+        vec![circle.clone(), lp.clone()],
+        "the circle (on the pointer) first, then the loop (1 mm away)"
+    );
+    // The first candidate is the hover's own pick.
+    assert_eq!(pick_at(&c, &camera, &mode.filter, at), Some(circle));
+    // One Tab: the loop is in force; a click picks it through the
+    // ordinary `TogglePick` (`pick_edit`).
+    let cycle = step_cycle(None, at, || keys.clone()).unwrap();
+    assert_eq!(cycle.current(), Some(&lp));
+    c.handle_internal_event(AppEvent::TogglePick {
+        toolpath_id: mode.toolpath_id,
+        target: mode.target,
+        key: cycle.current().unwrap().clone(),
+    });
+    assert_eq!(
+        state_of(&c, 0),
+        ItemState::Cut,
+        "the cycled loop is the pick"
+    );
+    assert_eq!(state_of(&c, 1), ItemState::NotSelected);
+    assert!(
+        rs_cam_viz::ui::pick_bar::cycle_note(2, 3) == "2 of 3 \u{00B7} Tab for the next",
+        "the one-line note"
+    );
+}
+
+#[test]
+fn tab_reaches_the_gesture_translation_e_q6() {
+    use rs_cam_viz::interaction::intent::{ViewContext, ViewKey, ViewportGesture, gesture_events};
+    use rs_cam_viz::ui_command::{NoArgs, UiCommand};
+    let mut c = controller(
+        OperationConfig::Pocket(Default::default()),
+        FaceUp::Top,
+        ZRotation::Deg0,
+    );
+    let tab = |c: &AppController<SilentBackend>| {
+        let state = c.state();
+        gesture_events(
+            &ViewportGesture::Key { key: ViewKey::Tab },
+            &ViewContext {
+                workspace: state.workspace,
+                focus: state.focus(),
+                selection_ui: &state.gui.selection_ui,
+                session: state.session(),
+            },
+        )
+    };
+    assert!(tab(&c).is_empty(), "no pick mode: Tab does nothing");
+    let _ = pick_on(&mut c);
+    let events = tab(&c);
+    assert!(matches!(
+        events.as_slice(),
+        [AppEvent::Ui(UiCommand::CyclePickCandidate(NoArgs))]
+    ));
+    // The handler asks the viewport frame for the next candidate.
+    for event in events {
+        c.handle_internal_event(event);
+    }
+    assert!(c.state().gui.selection_ui.cycle_request);
+
+    // The key path: the keyboard handler sends Tab through the gesture
+    // translation, in pick mode, and consumes the key.
+    let input = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/input.rs"),
+    )
+    .unwrap();
+    let at = input
+        .find("i.consume_key(egui::Modifiers::NONE, egui::Key::Tab)")
+        .expect("the keyboard handler consumes Tab");
+    let rest = &input[at..];
+    let gesture = rest
+        .find("ViewKey::Tab")
+        .expect("Tab goes through gesture_events");
+    assert!(
+        rest[..gesture].contains("gesture_events("),
+        "Tab reaches gesture_events"
     );
 }

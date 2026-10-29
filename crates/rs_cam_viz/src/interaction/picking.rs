@@ -378,54 +378,7 @@ pub fn pick_items(
     filter: &PickFilter,
     kinds: &[ItemKind],
 ) -> Option<PickHit> {
-    let (_, tc) = session.find_toolpath_config_by_id(toolpath_id)?;
-    let model = session.models().iter().find(|m| m.id == tc.model_id)?;
-    let stock = session.stock_config();
-    let frame = toolpath_setup_frame(session, toolpath_id);
-    let z = drawing_plane_z(session, tc, frame.as_ref());
-    // A hidden model draws no drawing, so none of its items is picked.
-    let shown = ctx.shows(model.id);
-    let items = model.items.iter().filter(|_| shown);
-    let screen = |item: &rs_cam_core::selection::Item, p: &P2| -> Option<[f64; 2]> {
-        let q = item_display_point(frame.as_ref(), stock, item, *p, z);
-        ctx.camera
-            .project_to_screen(
-                [q.x as f32, q.y as f32, q.z as f32],
-                ctx.aspect,
-                ctx.vw,
-                ctx.vh,
-            )
-            .map(|s| [f64::from(s[0]), f64::from(s[1])])
-    };
-    let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
-    // Every item within its threshold: (screen distance, display Z, item).
-    let mut hits: Vec<(f64, f64, &rs_cam_core::selection::Item)> = Vec::new();
-    for item in items {
-        // A face is a surface, not a drawn line: the ray arm below.
-        if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
-            continue;
-        }
-        let threshold = match item.kind() {
-            ItemKind::Point => PICK_THRESHOLD_POINT,
-            ItemKind::Loop | ItemKind::Path | ItemKind::Circle | ItemKind::Face => {
-                PICK_THRESHOLD_TOOLPATH
-            }
-        };
-        let distance = item
-            .shape()
-            .pick_lines()
-            .into_iter()
-            .map(|(pts, closed)| {
-                let projected: Vec<[f64; 2]> = pts.iter().filter_map(|p| screen(item, p)).collect();
-                rs_cam_core::selection::polyline_distance(pointer, projected, closed)
-            })
-            .fold(f64::INFINITY, f64::min);
-        if distance <= f64::from(threshold) {
-            let [ax, ay] = item.key().anchor;
-            let display_z = item_display_point(frame.as_ref(), stock, item, P2::new(ax, ay), z).z;
-            hits.push((distance, display_z, item));
-        }
-    }
+    let (hits, frame) = drawn_item_hits(ctx, session, toolpath_id, filter, kinds)?;
     let surface_z = || {
         let (o, d) =
             ctx.camera
@@ -454,6 +407,152 @@ pub fn pick_items(
     );
     let dir = V3::new(ray_dir.x as f64, ray_dir.y as f64, ray_dir.z as f64);
     pick_model_face(ctx, session, frame.as_ref(), origin, dir, true).map(|(_, hit)| hit)
+}
+
+/// One drawn item near the pointer: (screen distance, display Z, item).
+type ItemHit<'s> = (f64, f64, &'s rs_cam_core::selection::Item);
+
+/// Every drawn item of the toolpath model that `filter` admits and whose
+/// drawn lines pass within its pick threshold of the pointer: (screen
+/// distance, display Z, item), in import order; with the setup frame of
+/// the toolpath. `pick_items` chooses one; `pick_candidates` lists them.
+fn drawn_item_hits<'s>(
+    ctx: &PickContext<'_>,
+    session: &'s ProjectSession,
+    toolpath_id: ToolpathId,
+    filter: &PickFilter,
+    kinds: &[ItemKind],
+) -> Option<(Vec<ItemHit<'s>>, Option<SetupFrame>)> {
+    let (_, tc) = session.find_toolpath_config_by_id(toolpath_id)?;
+    let model = session.models().iter().find(|m| m.id == tc.model_id)?;
+    let stock = session.stock_config();
+    let frame = toolpath_setup_frame(session, toolpath_id);
+    let z = drawing_plane_z(session, tc, frame.as_ref());
+    // A hidden model draws no drawing, so none of its items is picked.
+    let shown = ctx.shows(model.id);
+    let items = model.items.iter().filter(|_| shown);
+    let screen = |item: &rs_cam_core::selection::Item, p: &P2| -> Option<[f64; 2]> {
+        let q = item_display_point(frame.as_ref(), stock, item, *p, z);
+        ctx.camera
+            .project_to_screen(
+                [q.x as f32, q.y as f32, q.z as f32],
+                ctx.aspect,
+                ctx.vw,
+                ctx.vh,
+            )
+            .map(|s| [f64::from(s[0]), f64::from(s[1])])
+    };
+    let pointer = [f64::from(ctx.screen_x), f64::from(ctx.screen_y)];
+    // Every item within its threshold: (screen distance, display Z, item).
+    let mut hits: Vec<ItemHit<'_>> = Vec::new();
+    for item in items {
+        // A face is a surface, not a drawn line: the ray arm below.
+        if item.kind() == ItemKind::Face || !filter.admits(kinds, item) {
+            continue;
+        }
+        let threshold = match item.kind() {
+            ItemKind::Point => PICK_THRESHOLD_POINT,
+            ItemKind::Loop | ItemKind::Path | ItemKind::Circle | ItemKind::Face => {
+                PICK_THRESHOLD_TOOLPATH
+            }
+        };
+        let distance = item
+            .shape()
+            .pick_lines()
+            .into_iter()
+            .map(|(pts, closed)| {
+                let projected: Vec<[f64; 2]> = pts.iter().filter_map(|p| screen(item, p)).collect();
+                rs_cam_core::selection::polyline_distance(pointer, projected, closed)
+            })
+            .fold(f64::INFINITY, f64::min);
+        if distance <= f64::from(threshold) {
+            let [ax, ay] = item.key().anchor;
+            let display_z = item_display_point(frame.as_ref(), stock, item, P2::new(ax, ay), z).z;
+            hits.push((distance, display_z, item));
+        }
+    }
+    Some((hits, frame))
+}
+
+/// E-Q6 "select other": every candidate under the pointer in pick mode,
+/// in order. First the drawn items within their pick threshold, nearest on
+/// the screen first (`drawn_item_hits`); then, with the face chip on, the
+/// faces along the ray, nearest first: each STEP face once
+/// (`LoadedModel::ray_pick_all`), and the hit points of an STL. The caller
+/// names each hit with the click's own key door (`pick_hit_key`), so a
+/// candidate picks exactly as a click on it would.
+pub fn pick_candidates(
+    ctx: &PickContext<'_>,
+    session: &ProjectSession,
+    toolpath_id: ToolpathId,
+    filter: &PickFilter,
+    kinds: &[ItemKind],
+) -> Vec<PickHit> {
+    let Some((mut hits, frame)) = drawn_item_hits(ctx, session, toolpath_id, filter, kinds) else {
+        return Vec::new();
+    };
+    hits.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out: Vec<PickHit> = hits
+        .into_iter()
+        .map(|(_, _, item)| PickHit::Item {
+            toolpath_id,
+            key: item.key().clone(),
+        })
+        .collect();
+    if !kinds.contains(&ItemKind::Face) {
+        return out;
+    }
+    let Some((o, d)) =
+        ctx.camera
+            .unproject_ray(ctx.screen_x, ctx.screen_y, ctx.aspect, ctx.vw, ctx.vh)
+    else {
+        return out;
+    };
+    let origin = P3::new(f64::from(o.x), f64::from(o.y), f64::from(o.z));
+    let dir = V3::new(f64::from(d.x), f64::from(d.y), f64::from(d.z));
+    let stock = session.stock_config();
+    let (model_origin, model_dir) = match frame.as_ref() {
+        Some(frame) => {
+            let a = frame.inverse_transform_point(origin, stock);
+            let b = frame.inverse_transform_point(origin + dir, stock);
+            (a, b - a)
+        }
+        None => (origin, dir),
+    };
+    // (t, hit) over every shown model, nearest first.
+    let mut faces: Vec<(f64, PickHit)> = Vec::new();
+    for model in session.models().iter().filter(|m| ctx.shows(m.id)) {
+        let all = model.ray_pick_all(&model_origin, &model_dir);
+        if let Some(enriched) = &model.enriched_mesh {
+            let mut seen = Vec::new();
+            for (tri, t) in all {
+                let face_id = enriched.face_for_triangle(tri);
+                if !seen.contains(&face_id) {
+                    seen.push(face_id);
+                    faces.push((
+                        t,
+                        PickHit::ModelFace {
+                            model_id: model.id,
+                            face_id,
+                        },
+                    ));
+                }
+            }
+        } else if model.faces_are_flat_regions() {
+            faces.extend(all.into_iter().map(|(_, t)| {
+                (
+                    t,
+                    PickHit::MeshFace {
+                        model_id: model.id,
+                        point: model_origin + model_dir * t,
+                    },
+                )
+            }));
+        }
+    }
+    faces.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out.extend(faces.into_iter().map(|(_, hit)| hit));
+    out
 }
 
 /// A screen rectangle in viewport-local points (B6, box select).

@@ -232,6 +232,85 @@ pub struct SelectionUi {
     /// The pointer gesture in the viewport (B2). A change or the end of the
     /// mode sets it to `Idle`, so a gesture never outlives its mode.
     pub drag: super::viewport_input::DragState,
+    /// E-Q6 "select other": the candidates under the pointer and the one
+    /// in force, while Tab cycles them. A change of the mode or a pointer
+    /// move ends it ([`keep_cycle`]).
+    pub cycle: Option<PickCycle>,
+    /// E-Q6: a Tab asked for the next candidate
+    /// (`UiCommand::CyclePickCandidate`); the viewport frame takes it, as
+    /// only the frame knows the pointer and the camera ([`step_cycle`]).
+    pub cycle_request: bool,
+}
+
+/// How far the pointer may move, in points, before the "select other"
+/// cycle ends and the hover picks again. A design choice, not a
+/// measurement: the hand shake of a pointer at rest, well under the
+/// 15 px pick threshold.
+pub const CYCLE_STAY_PX: f32 = 3.0;
+
+/// E-Q6 "select other": the candidates under one pointer position, in
+/// order (the drawn items nearest first, then the faces along the ray,
+/// nearest first), and the index of the one in force.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PickCycle {
+    /// The pointer position the list was made at (viewport points).
+    pub at: [f32; 2],
+    pub candidates: Vec<MatchKey>,
+    pub index: usize,
+}
+
+impl PickCycle {
+    /// The candidate in force.
+    pub fn current(&self) -> Option<&MatchKey> {
+        self.candidates.get(self.index)
+    }
+
+    /// The 1-based position and the count, for the one-line note.
+    pub fn position(&self) -> (usize, usize) {
+        (self.index + 1, self.candidates.len())
+    }
+
+    /// True when `pointer` is within [`CYCLE_STAY_PX`] of the list point.
+    pub fn holds(&self, pointer: [f32; 2]) -> bool {
+        let dx = pointer[0] - self.at[0];
+        let dy = pointer[1] - self.at[1];
+        dx.hypot(dy) <= CYCLE_STAY_PX
+    }
+}
+
+/// THE cycle step of a Tab at `pointer` (pure). A cycle at the same point
+/// moves to the next candidate and wraps. Else `candidates` makes the list
+/// at the pointer and the cycle starts on the SECOND candidate: the first
+/// is the one the hover already shows. No candidate gives `None`.
+pub fn step_cycle(
+    cycle: Option<PickCycle>,
+    pointer: [f32; 2],
+    candidates: impl FnOnce() -> Vec<MatchKey>,
+) -> Option<PickCycle> {
+    match cycle {
+        Some(cycle) if cycle.holds(pointer) && !cycle.candidates.is_empty() => {
+            let index = (cycle.index + 1) % cycle.candidates.len();
+            Some(PickCycle { index, ..cycle })
+        }
+        _ => {
+            let candidates = candidates();
+            if candidates.is_empty() {
+                return None;
+            }
+            let index = 1 % candidates.len();
+            Some(PickCycle {
+                at: pointer,
+                candidates,
+                index,
+            })
+        }
+    }
+}
+
+/// The cycle of the next frame (pure): it ends when the pointer left the
+/// list point or is not over the viewport.
+pub fn keep_cycle(cycle: Option<PickCycle>, pointer: Option<[f32; 2]>) -> Option<PickCycle> {
+    cycle.filter(|c| pointer.is_some_and(|p| c.holds(p)))
 }
 
 impl SelectionUi {
@@ -271,6 +350,8 @@ impl SelectionUi {
     fn set_mode(&mut self, mode: Option<ViewportMode>) {
         if self.mode != mode {
             self.drag = super::viewport_input::DragState::Idle;
+            self.cycle = None;
+            self.cycle_request = false;
         }
         self.mode = mode;
     }

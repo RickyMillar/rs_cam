@@ -430,6 +430,12 @@ macro_rules! for_each_ui_command {
                  mcp: Reach::Skip("the agent names keys; it has no pick mode"),
                  cli: Reach::Skip("the batch CLI draws no viewport"),
              }),
+            (UiCommand, CyclePickCandidate, "cycle_pick_candidate", NoArgs, (),
+             Surfaces {
+                 gui: Reach::Reached,
+                 mcp: Reach::Skip("the agent names keys; list_model_items near gives the candidates"),
+                 cli: Reach::Skip("the batch CLI draws no viewport"),
+             }),
             (UiCommand, SwitchWorkspace, "switch_workspace", SwitchWorkspaceArgs, (),
              Surfaces {
                  gui: Reach::Reached,
