@@ -46,14 +46,32 @@ impl RsCamApp {
         let cancel_fn = || cancel.load(std::sync::atomic::Ordering::SeqCst);
         let map = rs_cam_core::maps::reach_map_cache::cached_reach_map(&spec, &cancel_fn)
             .map_err(|e| format!("Reach map for toolpath {index} could not be built — {e}"))?;
-        let gaps = map.vertex_gaps(spec.mesh.as_ref(), spec.index.as_ref());
-        let floors = map.vertex_floors(spec.mesh.as_ref());
-        Ok(rs_cam_core::maps::reach_map::reach_overlay_stock_mesh(
+        // Round 7: the surface the viewport draws (the mesh refined to the
+        // map cell, the tool-relative ramp), so a screenshot and the
+        // screen show one colour field.
+        let tip_radius_mm = {
+            use rs_cam_core::tool::MillingCutter;
+            spec.cutter.cusp_radius_mm()
+        };
+        let surface = crate::state::runtime::reach_overlay_surface(
+            map.as_ref(),
             spec.mesh.as_ref(),
-            &gaps,
-            &floors,
-            map.ramp(),
-        ))
+            spec.index.as_ref(),
+            tip_radius_mm,
+        );
+        let refined = surface
+            .refined_mesh(spec.mesh.as_ref())
+            .ok_or_else(|| format!("Reach surface for toolpath {index} does not match its mesh"))?;
+        Ok(rs_cam_core::stock::stock_mesh::StockMesh {
+            vertices: refined
+                .vertices
+                .iter()
+                .flat_map(|v| [v.x as f32, v.y as f32, v.z as f32])
+                .collect(),
+            indices: refined.triangles.iter().flatten().copied().collect(),
+            colors: surface.colors.iter().flatten().copied().collect(),
+            material_slots: Vec::new(),
+        })
     }
 
     /// P5 — the reach map as numbers.

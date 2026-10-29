@@ -22,7 +22,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 
 - A colour belongs in `colors.rs`. Do not write a literal colour in a pipeline. Only `colors.rs` makes an `Rgb` (F173).
 - Every upload goes through `upload_cache.rs`. `refresh` is the one compare-then-rebuild guard; it takes a `SlotInputs` value (F132).
-- Check a buffer against the device limit before you create it.
+- Check a buffer against the device limit before you create it. Round 7 order: the translucent solid stock draws LAST, depth read-only, so a line behind it shows. The reach overlay (`reach_mesh_pipeline`, the model lighting) replaces the draw of its own model only.
 - MSAA (D1): one `sample_count` field feeds every scene pipeline and target; the blit stays single-sample. A mismatch fails at pass time; the G-PIPESMOKE frame arm (`render_headless_frame`) covers it.
 - The face pipeline needs a fragment storage buffer: Vulkan, Metal or DX12 (no GL, D-Q5). Only `app/gpu_upload/face_state.rs` writes its words.
 - `LineUniforms` is 112 B. `frame_set` gives six groups: only plain and dimmed (grid, toolpaths) have `edge_tol` 0; the lines on the model move toward the eye (D4). Quads (`vs_wide`, D §3.5, widths `tokens::LINE_*_PX`): model edges and the wireframe (`wide_edge_line_pipeline`, no depth write), `selection_lines`, `hover_lines`, `tab_lines`; the drawing, grid and moves stay `LineList`. A quad lifts toward the eye by `wide.w` (`OUTLINE_FOLD_PX`) footprints per pixel of half width (round 3).
@@ -30,7 +30,7 @@ Every viewport pipeline. The entry point is `render::mod`, called from `app/view
 
 ## Sentries
 
-- `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke --test reach_overlay_p5`
+- `cargo test -p rs_cam_viz -q --test render_pipelines_headless_g_pipesmoke --test reach_overlay_p5 --test translucent_stock_and_reach_draw_order_r7`
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27 --test an_arc_move_draws_on_its_arc_r_arc`
 - `cargo test -p rs_cam_viz -q --test the_selection_colours_live_in_colors_p4_4 --test panels_read_the_token_module_up1` (arm 5: no literal colour)
 - `cargo test -p rs_cam_viz -q --test a_hover_rewrites_face_state_not_the_mesh_d3`

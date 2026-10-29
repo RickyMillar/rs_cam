@@ -1534,7 +1534,7 @@ impl<B: ComputeBackend> AppController<B> {
                     overlay.generation = overlay.generation.saturating_add(1);
                 }
                 overlay.last_map = Some(Arc::clone(&map));
-                overlay.colors = Some(result.colors);
+                overlay.surface = result.surface;
                 overlay.status = ReachStatus::Ready(map);
                 self.pending_upload = true;
             }
@@ -1545,14 +1545,14 @@ impl<B: ComputeBackend> AppController<B> {
                 );
             }
             Err(ComputeError::Message(message)) => {
-                overlay.colors = None;
+                overlay.surface = None;
                 overlay.status = ReachStatus::Failed(message);
                 self.pending_upload = true;
             }
             // The Reach lane runs no budget guard, so this arm is for a
             // future guard. A budget stop is a failure the overlay shows.
             Err(error @ ComputeError::OverBudget { .. }) => {
-                overlay.colors = None;
+                overlay.surface = None;
                 overlay.status = ReachStatus::Failed(error.to_string());
                 self.pending_upload = true;
             }

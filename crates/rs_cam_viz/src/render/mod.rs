@@ -12,6 +12,7 @@ pub mod toolpath_render;
 pub mod upload_cache;
 
 use egui_wgpu::wgpu;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::settings::DisplayMode;
 
 use fixture_render::FixtureGpuData;
@@ -407,9 +408,11 @@ pub struct RenderResources {
     mesh_pipeline: wgpu::RenderPipeline,
     sim_mesh_pipeline: wgpu::RenderPipeline,
     height_plane_pipeline: wgpu::RenderPipeline,
-    /// Opaque colored mesh pipeline — same vertex format as sim_mesh but no
-    /// alpha blending. The reach overlay draws with it.
-    colored_opaque_pipeline: wgpu::RenderPipeline,
+    /// The reach overlay pipeline (round 7): `ColoredMeshVertex`, group 0
+    /// the mesh uniforms. It lights a vertex colour with the terms of the
+    /// model shaders (the headlight and the hemisphere), so a recoloured
+    /// model reads as the plain model does.
+    reach_mesh_pipeline: wgpu::RenderPipeline,
     /// The face pipeline of the STEP models (D2): `FaceMeshVertex`, group 0
     /// the mesh uniforms, group 1 the model's face state and the palette.
     face_mesh_pipeline: wgpu::RenderPipeline,
@@ -527,15 +530,13 @@ pub struct RenderResources {
     /// `SimMeshGpuData` machinery and same depth-read-only pipeline as the
     /// tier preview.
     pub area_regions_data: Option<SimMeshGpuData>,
-    /// Per-tool reach-map overlay (P5) — the MODEL mesh uploaded with one
-    /// reach colour per vertex.
+    /// Per-tool reach-map overlay (P5) — the mesh of ONE model, refined to
+    /// the map cell, with one reach colour per vertex.
     ///
-    /// Not a drape like the two overlays above. It REPLACES the plain and
-    /// enriched model draws for the frame, so the two cannot z-fight, and it
-    /// therefore uses the opaque `colored_opaque_pipeline` rather than the
-    /// depth-read-only height-plane pipeline. `EnrichedMeshGpuData` is the
-    /// container because it is already exactly one indexed
-    /// `ColoredMeshVertex` buffer pair.
+    /// Not a drape like the two overlays above. It replaces the model draw
+    /// of its own model only (`model_id`), so the two cannot z-fight. Every
+    /// other model draws as usual. It draws with the opaque
+    /// `reach_mesh_pipeline`.
     pub reach_overlay_data: Option<mesh_render::EnrichedMeshGpuData>,
     pub tool_model_data: Option<ToolModelGpuData>,
     pub polygon_data: Vec<PolygonGpuData>,
@@ -938,40 +939,45 @@ impl RenderResources {
                 cache: None,
             });
 
-        // --- Opaque colored mesh pipeline (STEP face colors, no alpha blending) ---
-        // Uses fs_opaque which outputs alpha=1.0, decoupled from the shared
-        // opacity uniform that height planes and sim stock use.
-        let colored_opaque_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("colored_opaque_pipeline"),
-                layout: Some(&sim_mesh_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &sim_mesh_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(ColoredMeshVertex::layout())],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &sim_mesh_shader,
-                    entry_point: Some("fs_opaque"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: target_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    ..Default::default()
-                },
-                depth_stencil: Some(depth_stencil.clone()),
-                multisample: scene_multisample,
-                multiview_mask: None,
-                cache: None,
-            });
+        // --- Reach overlay pipeline (round 7) ---
+        // The vertex colour of `ColoredMeshVertex`, lit with the terms of
+        // the model shaders through the mesh uniforms (group 0). So the
+        // recoloured model and every other model take one headlight and
+        // one hemisphere.
+        let reach_mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("reach_mesh_shader"),
+            source: wgpu::ShaderSource::Wgsl(REACH_MESH_SHADER_SRC.into()),
+        });
+        let reach_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("reach_mesh_pipeline"),
+            layout: Some(&mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &reach_mesh_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(ColoredMeshVertex::layout())],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &reach_mesh_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(depth_stencil.clone()),
+            multisample: scene_multisample,
+            multiview_mask: None,
+            cache: None,
+        });
 
         // --- Line pipeline (renders to offscreen with depth) ---
         let line_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1279,7 +1285,7 @@ impl RenderResources {
             mesh_pipeline,
             sim_mesh_pipeline,
             height_plane_pipeline,
-            colored_opaque_pipeline,
+            reach_mesh_pipeline,
             face_mesh_pipeline,
             face_state_bgl,
             face_palette_buffer,
@@ -1380,10 +1386,6 @@ impl RenderResources {
         selection_outline: bool,
         show_polygons: bool,
     ) {
-        self.ensure_offscreen(device, width, height);
-        let Some(offscreen) = self.offscreen.as_ref() else {
-            return;
-        };
         // The model arm draws `face_mesh_data_list` and `model_edge_lines`,
         // and the polygon arm `polygon_data` and `selection_lines`, so a
         // caller that fills them
@@ -1397,6 +1399,26 @@ impl RenderResources {
             show_selection_outline: selection_outline,
             ..ViewportCallback::empty(width, height)
         };
+        self.render_headless_callback(device, queue, &callback);
+    }
+
+    /// Test door: renders one scene frame of `callback` without egui. The
+    /// frame size is the callback's viewport size. The door writes the
+    /// overlay uniforms from the callback (`write_overlay_uniforms`, as
+    /// `prepare` does); the mesh and line uniforms are the caller's
+    /// (`write_frame_uniforms`).
+    #[doc(hidden)]
+    pub fn render_headless_callback(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        callback: &ViewportCallback,
+    ) {
+        self.ensure_offscreen(device, callback.viewport_width, callback.viewport_height);
+        callback.write_overlay_uniforms(queue, self);
+        let Some(offscreen) = self.offscreen.as_ref() else {
+            return;
+        };
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("headless_frame"),
         });
@@ -1408,7 +1430,7 @@ impl RenderResources {
                 &self.mesh_pipeline,
                 &self.sim_mesh_pipeline,
                 &self.height_plane_pipeline,
-                &self.colored_opaque_pipeline,
+                &self.reach_mesh_pipeline,
                 &self.face_mesh_pipeline,
                 &self.line_pipeline,
                 &self.wide_line_pipeline,
@@ -1719,6 +1741,84 @@ impl ViewportCallback {
         }
     }
 
+    /// Writes the uniforms of the colored overlay pipelines (the sim mesh,
+    /// the solid stock, the height planes and the three drapes) for this
+    /// frame. `prepare` and the headless door both call it, so the two
+    /// paths draw from one set of uniforms.
+    fn write_overlay_uniforms(&self, queue: &wgpu::Queue, resources: &RenderResources) {
+        // Upload the colored mesh uniforms when a colored pipeline draws.
+        // The reach overlay reads the mesh uniforms (`reach_mesh_pipeline`),
+        // not these.
+        let needs_colored_uniforms =
+            self.show_sim_mesh || self.show_solid_stock || self.show_height_planes;
+        if needs_colored_uniforms {
+            let opacity = if self.show_sim_mesh {
+                self.sim_mesh_opacity
+            } else {
+                0.15 // solid stock / height planes translucency
+            };
+            let sim_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity,
+            };
+            queue.write_buffer(
+                &resources.sim_mesh_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&sim_uniforms),
+            );
+        }
+        // Rest-depth heatmap: own uniform buffer/bind-group (see the
+        // `rest_heatmap_uniform_buffer` field doc) so its opacity never
+        // inherits the 0.15 solid-stock/height-plane translucency above.
+        if self.show_rest_heatmap {
+            let heatmap_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: REST_HEATMAP_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.rest_heatmap_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&heatmap_uniforms),
+            );
+        }
+        // Multi-tool tier preview: its own buffer for the same reason, so
+        // the two overlays can be up together without sharing an opacity.
+        if self.show_tier_preview {
+            let tier_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: TIER_PREVIEW_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.tier_preview_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&tier_uniforms),
+            );
+        }
+        if self.show_area_regions {
+            let area_uniforms = ColoredMeshUniforms {
+                view_proj: self.mesh_uniforms.view_proj,
+                light_dir: self.mesh_uniforms.light_dir,
+                _pad0: 0.0,
+                camera_pos: self.mesh_uniforms.camera_pos,
+                opacity: AREA_REGIONS_OPACITY,
+            };
+            queue.write_buffer(
+                &resources.area_regions_uniform_buffer,
+                0,
+                bytemuck::bytes_of(&area_uniforms),
+            );
+        }
+    }
+
     /// Records the 3D scene pass into `encoder`: the pass from
     /// [`OffscreenTargets::begin_scene_pass`] and every draw of this frame.
     fn record_scene_pass(
@@ -1807,41 +1907,27 @@ impl ViewportCallback {
                     pass.draw_indexed(0..chunk.index_count, 0, 0..1);
                 }
             }
-        } else if self.show_reach_overlay
-            && let Some(reach) = &resources.reach_overlay_data
-        {
-            // P5 — the reach overlay IS the model, re-coloured per
-            // vertex. It draws INSTEAD of the two model lists below, not
-            // over them: two copies of one surface at the same depth
-            // z-fight, and the reach answer is the one the operator asked
-            // for. Opaque pipeline, so it also writes depth exactly as
-            // the plain model does and the toolpath lines occlude the
-            // same way.
-            pass.set_pipeline(&resources.colored_opaque_pipeline);
-            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-            pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
-            pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..reach.index_count, 0, 0..1);
-        } else if self.show_model && self.display_mode != DisplayMode::Wireframe {
-            // Draw all STEP models with the face pipeline (D2): group 1
-            // is the model's own face state.
-            for face_mesh in &resources.face_mesh_data_list {
-                pass.set_pipeline(&resources.face_mesh_pipeline);
-                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
-                pass.set_bind_group(1, &face_mesh.state_bind_group, &[]);
-                pass.set_vertex_buffer(0, face_mesh.vertex_buffer.slice(..));
-                pass.set_index_buffer(face_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..face_mesh.index_count, 0, 0..1);
+        } else {
+            // P5, round 7: the reach overlay IS its model, recoloured per
+            // vertex. It draws INSTEAD of that one model, not over it: two
+            // copies of one surface at the same depth z-fight. Every other
+            // model draws as usual. The overlay pipeline is opaque, so it
+            // writes depth as the plain model does.
+            let reach = resources
+                .reach_overlay_data
+                .as_ref()
+                .filter(|_| self.show_reach_overlay);
+            let reach_model = reach.map(|reach| reach.model_id);
+            let drawn = |model: ModelId| Some(model) != reach_model;
+            if self.show_model && self.display_mode != DisplayMode::Wireframe {
+                self.draw_model_meshes(resources, &mut pass, &drawn);
             }
-            // Draw all plain (STL) models
-            if self.has_mesh {
-                for mesh in &resources.mesh_data_list {
-                    pass.set_pipeline(&resources.mesh_pipeline);
-                    pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
-                    pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-                }
+            if let Some(reach) = reach {
+                pass.set_pipeline(&resources.reach_mesh_pipeline);
+                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, reach.vertex_buffer.slice(..));
+                pass.set_index_buffer(reach.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..reach.index_count, 0, 0..1);
             }
         }
 
@@ -1853,16 +1939,8 @@ impl ViewportCallback {
                 .draw_outline(&mut pass, &offscreen.outline);
         }
 
-        // Draw solid stock (semi-transparent, after mesh so model renders first)
-        if self.show_solid_stock
-            && let Some(solid) = &resources.solid_stock_data
-        {
-            pass.set_pipeline(&resources.sim_mesh_pipeline);
-            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
-            pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
-            pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..solid.index_count, 0, 0..1);
-        }
+        // (The translucent solid stock draws last, after every line: see
+        // the end of this pass.)
 
         // Draw height plane overlays AFTER opaque geometry so they
         // alpha-blend over the model instead of blocking it via depth writes.
@@ -2093,6 +2171,58 @@ impl ViewportCallback {
                 pass.draw(0..tp_gpu.tool_profile_preview_count, 0..1);
             }
         }
+
+        // Round 7 (FOLLOW_UPS §12.1): the translucent solid stock draws
+        // LAST, with the read-only depth state of the height planes. A line
+        // behind a stock face passes the depth test and shows through it,
+        // tinted. A line in front wrote its depth, so the stock does not
+        // cover it. With depth write on, the stock face hid every line
+        // behind it.
+        if self.show_solid_stock
+            && let Some(solid) = &resources.solid_stock_data
+        {
+            pass.set_pipeline(&resources.height_plane_pipeline);
+            pass.set_bind_group(0, &resources.sim_mesh_bind_group, &[]);
+            pass.set_vertex_buffer(0, solid.vertex_buffer.slice(..));
+            pass.set_index_buffer(solid.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..solid.index_count, 0, 0..1);
+        }
+    }
+
+    /// Draws the face meshes (STEP, the face pipeline D2: group 1 is the
+    /// model's own face state) and the plain meshes (STL) of every model
+    /// for which `drawn` is true.
+    fn draw_model_meshes(
+        &self,
+        resources: &RenderResources,
+        pass: &mut wgpu::RenderPass<'_>,
+        drawn: &dyn Fn(ModelId) -> bool,
+    ) {
+        for face_mesh in resources
+            .face_mesh_data_list
+            .iter()
+            .filter(|mesh| drawn(mesh.model_id))
+        {
+            pass.set_pipeline(&resources.face_mesh_pipeline);
+            pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+            pass.set_bind_group(1, &face_mesh.state_bind_group, &[]);
+            pass.set_vertex_buffer(0, face_mesh.vertex_buffer.slice(..));
+            pass.set_index_buffer(face_mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..face_mesh.index_count, 0, 0..1);
+        }
+        if self.has_mesh {
+            for mesh in resources
+                .mesh_data_list
+                .iter()
+                .filter(|mesh| mesh.model_id.is_none_or(drawn))
+            {
+                pass.set_pipeline(&resources.mesh_pipeline);
+                pass.set_bind_group(0, &resources.mesh_bind_group, &[]);
+                pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..mesh.index_count, 0, 0..1);
+            }
+        }
     }
 }
 
@@ -2132,81 +2262,7 @@ impl egui_wgpu::CallbackTrait for ViewportCallback {
             self.line_widths,
             &self.outline_uniforms,
         );
-        // Upload the colored mesh uniforms when a colored pipeline draws.
-        // The reach overlay draws with `colored_opaque_pipeline` through
-        // `sim_mesh_bind_group`, so it needs these uniforms even on a project
-        // that holds no STEP part and runs no simulation. That pipeline uses
-        // REPLACE blend, so the opacity written below does not reach it.
-        let needs_colored_uniforms = self.show_sim_mesh
-            || self.show_solid_stock
-            || self.show_height_planes
-            || self.show_reach_overlay;
-        if needs_colored_uniforms {
-            let opacity = if self.show_sim_mesh {
-                self.sim_mesh_opacity
-            } else {
-                0.15 // solid stock / height planes translucency
-            };
-            let sim_uniforms = ColoredMeshUniforms {
-                view_proj: self.mesh_uniforms.view_proj,
-                light_dir: self.mesh_uniforms.light_dir,
-                _pad0: 0.0,
-                camera_pos: self.mesh_uniforms.camera_pos,
-                opacity,
-            };
-            queue.write_buffer(
-                &resources.sim_mesh_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&sim_uniforms),
-            );
-        }
-        // Rest-depth heatmap: own uniform buffer/bind-group (see the
-        // `rest_heatmap_uniform_buffer` field doc) so its opacity never
-        // inherits the 0.15 solid-stock/height-plane translucency above.
-        if self.show_rest_heatmap {
-            let heatmap_uniforms = ColoredMeshUniforms {
-                view_proj: self.mesh_uniforms.view_proj,
-                light_dir: self.mesh_uniforms.light_dir,
-                _pad0: 0.0,
-                camera_pos: self.mesh_uniforms.camera_pos,
-                opacity: REST_HEATMAP_OPACITY,
-            };
-            queue.write_buffer(
-                &resources.rest_heatmap_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&heatmap_uniforms),
-            );
-        }
-        // Multi-tool tier preview: its own buffer for the same reason, so
-        // the two overlays can be up together without sharing an opacity.
-        if self.show_tier_preview {
-            let tier_uniforms = ColoredMeshUniforms {
-                view_proj: self.mesh_uniforms.view_proj,
-                light_dir: self.mesh_uniforms.light_dir,
-                _pad0: 0.0,
-                camera_pos: self.mesh_uniforms.camera_pos,
-                opacity: TIER_PREVIEW_OPACITY,
-            };
-            queue.write_buffer(
-                &resources.tier_preview_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&tier_uniforms),
-            );
-        }
-        if self.show_area_regions {
-            let area_uniforms = ColoredMeshUniforms {
-                view_proj: self.mesh_uniforms.view_proj,
-                light_dir: self.mesh_uniforms.light_dir,
-                _pad0: 0.0,
-                camera_pos: self.mesh_uniforms.camera_pos,
-                opacity: AREA_REGIONS_OPACITY,
-            };
-            queue.write_buffer(
-                &resources.area_regions_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&area_uniforms),
-            );
-        }
+        self.write_overlay_uniforms(queue, resources);
         // Render 3D scene to offscreen texture with depth buffer.
         // After ensure_offscreen and write_buffer, we only need immutable access.
         #[expect(
@@ -2373,27 +2429,68 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color = ambient + diffuse + specular;
     return vec4<f32>(color, uniforms.opacity);
 }
+"#;
+
+/// The reach overlay shader (round 7). The uniforms are `MeshUniforms`
+/// and the lighting is the lighting of [`MESH_SHADER_SRC`] line for line
+/// (`the_reach_shader_lights_as_the_model_shader`). Only the base colour
+/// differs: the vertex colour, not `surface`. So a not-measured vertex
+/// that carries `colors::MODEL_SURFACE` reads as the plain model.
+const REACH_MESH_SHADER_SRC: &str = r#"
+struct Uniforms {
+    view_proj: mat4x4<f32>,
+    light_dir: vec3<f32>,
+    camera_pos: vec3<f32>,
+    surface: vec4<f32>,
+    sky: vec4<f32>,
+    ground: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) color: vec3<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) world_normal: vec3<f32>,
+    @location(1) world_pos: vec3<f32>,
+    @location(2) vertex_color: vec3<f32>,
+};
+
+@vertex
+fn vs_main(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.clip_position = uniforms.view_proj * vec4<f32>(in.position, 1.0);
+    out.world_normal = in.normal;
+    out.world_pos = in.position;
+    out.vertex_color = in.color;
+    return out;
+}
 
 @fragment
-fn fs_opaque(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let c = in.vertex_color;
     let light = normalize(uniforms.light_dir);
-    let normal = normalize(in.world_normal);
-    let ambient = in.vertex_color * 0.25;
-    let n = select(normal, -normal, dot(normal, light) < 0.0);
-    let ndotl = max(dot(n, light), 0.0);
-    let diffuse = in.vertex_color * ndotl;
     let view_dir = normalize(uniforms.camera_pos - in.world_pos);
+    let normal = normalize(in.world_normal);
+    // The normal on the side the eye sees.
+    let n = select(normal, -normal, dot(normal, view_dir) < 0.0);
+    let hemi = mix(uniforms.ground.rgb, uniforms.sky.rgb, n.z * 0.5 + 0.5);
+    let ndotl = max(dot(n, light), 0.0);
     let half_dir = normalize(light + view_dir);
     let spec = pow(max(dot(n, half_dir), 0.0), 32.0);
-    let specular = vec3<f32>(0.2, 0.2, 0.2) * spec;
-    let color = ambient + diffuse + specular;
-    return vec4<f32>(color, 1.0);
+    let specular = vec3<f32>(0.25, 0.25, 0.25) * spec;
+    return vec4<f32>(c * hemi + c * ndotl + specular, 1.0);
 }
 "#;
 
 /// The face pipeline (D2). The palette slots are `colors::FACE_SLOT_*`;
 /// `face_shader_reads_the_palette_slots` holds the literals to them. The
-/// shading terms 0.2 and 32.0 are the `fs_opaque` terms; Q5 replaced the
+/// shading terms 0.2 and 32.0 are the colored shader's `fs_main` terms; Q5 replaced the
 /// flat ambient 0.25 with the hemisphere term and the flat hover tint with
 /// the fresnel rim (`FACE_RIM_*`); round 3 made the base the one material
 /// (`MeshUniforms::surface`, `colors::MODEL_SURFACE`) and the light the
@@ -2758,6 +2855,25 @@ mod tests {
             std::mem::size_of_val(&colors::face_palette()),
             16 * colors::FACE_PALETTE_LEN
         );
+    }
+
+    /// Round 7: the reach overlay lights its vertex colour with the
+    /// lighting of the STL model shader, so a recoloured model and a plain
+    /// model take one headlight and one hemisphere. The lighting is every
+    /// line of `fs_main` after the base colour.
+    #[test]
+    fn the_reach_shader_lights_as_the_model_shader() {
+        let lighting = |src: &'static str| -> &'static str {
+            let start = src
+                .find("let light = normalize(uniforms.light_dir);")
+                .unwrap_or(src.len());
+            src.get(start..).unwrap_or_default()
+        };
+        let model = lighting(MESH_SHADER_SRC);
+        assert!(model.contains("c * hemi + c * ndotl"), "anchor: {model}");
+        assert_eq!(lighting(REACH_MESH_SHADER_SRC), model);
+        assert!(MESH_SHADER_SRC.contains("let c = uniforms.surface.rgb;"));
+        assert!(REACH_MESH_SHADER_SRC.contains("let c = in.vertex_color;"));
     }
 
     /// Round 3: the headlight follows the camera. A camera that looks down

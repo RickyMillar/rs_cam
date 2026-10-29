@@ -269,7 +269,7 @@ mod reach_overlay_key_g_cachekeys {
                     toolpath_id: id,
                     key: old_key,
                     result: Err(crate::compute::ComputeError::Message("old walk".to_owned())),
-                    colors: Arc::new(Vec::new()),
+                    surface: None,
                 },
             )));
         controller.drain_compute_results();
@@ -293,7 +293,7 @@ mod reach_overlay_key_g_cachekeys {
                     toolpath_id: id,
                     key: live_key,
                     result: Err(crate::compute::ComputeError::Message("new walk".to_owned())),
-                    colors: Arc::new(Vec::new()),
+                    surface: None,
                 },
             )));
         controller.drain_compute_results();

@@ -36,8 +36,9 @@ use super::{Gpu, PassFrame};
 /// Everything `mesh_data_list` is built from.
 pub(super) struct MeshInputs<'a> {
     frame: &'a PassFrame,
-    /// Each part model's plain mesh, in model order.
-    meshes: Vec<&'a Arc<TriangleMesh>>,
+    /// Each part model's id and plain mesh, in model order. The id rides
+    /// to the GPU data, so the reach overlay can skip its own model.
+    meshes: Vec<(ModelId, &'a Arc<TriangleMesh>)>,
 }
 
 impl SlotInputs for MeshInputs<'_> {
@@ -49,7 +50,9 @@ impl SlotInputs for MeshInputs<'_> {
             frame: frame.key(),
             meshes: meshes
                 .iter()
-                .map(|mesh| upload_cache::ArcId::new(mesh))
+                // The id is not in the key: a mesh `Arc` belongs to one
+                // model, so the pinned identity already names the model.
+                .map(|(_, mesh)| upload_cache::ArcId::new(mesh))
                 .collect(),
         }
     }
@@ -129,7 +132,7 @@ pub(super) fn inputs<'a>(
         if let Some(mesh) = &model.enriched_mesh {
             enriched.push((model.id, mesh));
         } else if let Some(mesh) = &model.mesh {
-            plain.push(mesh);
+            plain.push((model.id, mesh));
         }
     }
     // FOLLOW_UPS §1: the wireframe takes the triangle mesh of every model
@@ -139,7 +142,7 @@ pub(super) fn inputs<'a>(
         meshes: enriched
             .iter()
             .map(|(_, mesh)| &mesh.mesh)
-            .chain(plain.iter().copied())
+            .chain(plain.iter().map(|(_, mesh)| *mesh))
             .collect(),
     };
     (
@@ -206,7 +209,7 @@ fn build_enriched(inputs: &EnrichedInputs<'_>, gpu: &Gpu<'_>, resources: &mut Re
 
 fn build_plain(inputs: MeshInputs<'_>, gpu: &Gpu<'_>, resources: &mut RenderResources) {
     let MeshInputs { frame, meshes } = inputs;
-    for mesh in meshes {
+    for (model_id, mesh) in meshes {
         let gpu_data = match frame.frame() {
             Some(setup) => {
                 let transformed = transform_mesh(mesh, setup, frame.stock());
@@ -214,7 +217,8 @@ fn build_plain(inputs: MeshInputs<'_>, gpu: &Gpu<'_>, resources: &mut RenderReso
             }
             None => MeshGpuData::from_mesh(gpu.device, &resources.gpu_limits, mesh),
         };
-        if let Some(gpu_data) = gpu_data {
+        if let Some(mut gpu_data) = gpu_data {
+            gpu_data.model_id = Some(model_id);
             resources.mesh_data_list.push(gpu_data);
         }
     }

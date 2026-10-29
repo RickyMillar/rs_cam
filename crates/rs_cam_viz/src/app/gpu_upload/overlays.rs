@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use rs_cam_core::geo::P3;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::TriangleMesh;
 use rs_cam_core::session::MultitoolPreview;
 use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
@@ -14,6 +15,7 @@ use crate::render::sim_render::SimMeshGpuData;
 use crate::render::upload_cache::{self, Refresh, SlotInputs};
 use crate::state::AppState;
 use crate::state::job::transform_mesh;
+use crate::state::runtime::ReachSurface;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
 
@@ -255,10 +257,13 @@ pub(super) struct ReachInputs<'a> {
     /// The overlay state's counter, bumped only when a map arrives that is
     /// not the one already held.
     generation: u64,
+    /// The model the overlay recolours.
+    model_id: ModelId,
     /// The MODEL mesh the overlay is drawn over.
     mesh: Arc<TriangleMesh>,
-    /// The per-vertex colours the Reach lane built beside the map.
-    colors: Arc<Vec<[f32; 3]>>,
+    /// The refined surface and its colours, built by the Reach lane beside
+    /// the map.
+    surface: Arc<ReachSurface>,
     frame: &'a PassFrame,
 }
 
@@ -268,10 +273,13 @@ impl SlotInputs for ReachInputs<'_> {
     fn key(&self) -> Self::Key {
         let Self {
             generation,
+            // The mesh `Arc` belongs to one model, so its identity names
+            // the model.
+            model_id: _,
             mesh,
-            // The Reach lane builds them with the map, so `generation`
-            // moves with them.
-            colors: _,
+            // The Reach lane builds it with the map, so `generation`
+            // moves with it.
+            surface: _,
             frame,
         } = self;
         upload_cache::ReachOverlayUploadKey {
@@ -296,10 +304,15 @@ impl SlotInputs for ReachInputs<'_> {
 /// mesh for an identity setup), while the viewport draws that same mesh
 /// through `transform_mesh`. Both are `SetupTransformInfo::apply_to_mesh`,
 /// which maps vertices one to one and clones the triangle list, so vertex
-/// ORDER is preserved: colour `i` belongs to displayed vertex `i`. The two
-/// frames' COORDINATES differ on an identity setup with a non-zero stock
-/// origin; the ordering does not, and the ordering is all the colours need.
-/// The length check below is the tripwire if that ever stops holding.
+/// ORDER is preserved. The refinement is a list of midpoints of vertex
+/// pairs (`ReachSurface::refined_mesh`), and an affine map keeps a
+/// midpoint, so the refined drawn mesh is the image of the refined measured
+/// mesh: colour `i` belongs to drawn vertex `i`. The two frames'
+/// COORDINATES differ on an identity setup with a non-zero stock origin;
+/// the ordering does not. The vertex-count check is the tripwire if that
+/// ever stops holding.
+///
+/// Round 7: a hidden model draws no overlay, as it draws no mesh.
 pub(super) fn upload_reach(
     state: &AppState,
     frame: &PassFrame,
@@ -309,17 +322,21 @@ pub(super) fn upload_reach(
     let overlay = &state.gui.reach_overlay;
     let inputs = overlay.ready_map().and_then(|map| {
         let model_id = map.model_id?;
+        if !state.overlays.model_visibility.is_visible(model_id) {
+            return None;
+        }
         let mesh = state
             .session()
             .models()
             .iter()
             .find(|model| model.id == model_id)
             .and_then(|model| model.mesh.clone())?;
-        let colors = overlay.colors.as_ref().map(Arc::clone)?;
+        let surface = overlay.surface.as_ref().map(Arc::clone)?;
         Some(ReachInputs {
             generation: overlay.generation,
+            model_id,
             mesh,
-            colors,
+            surface,
             frame,
         })
     });
@@ -331,27 +348,29 @@ pub(super) fn upload_reach(
     resources.reach_overlay_data = inputs.and_then(|inputs| {
         let ReachInputs {
             generation: _,
+            model_id,
             mesh,
-            colors,
+            surface,
             frame,
         } = inputs;
         let displayed = match frame.frame() {
             Some(setup) => std::borrow::Cow::Owned(transform_mesh(&mesh, setup, frame.stock())),
             None => std::borrow::Cow::Borrowed(mesh.as_ref()),
         };
-        if colors.len() != displayed.vertices.len() {
+        let Some(refined) = surface.refined_mesh(&displayed) else {
             tracing::warn!(
-                colors = colors.len(),
+                measured = surface.base_vertices,
                 vertices = displayed.vertices.len(),
-                "reach overlay colours do not match the drawn mesh — overlay skipped"
+                "reach overlay surface does not match the drawn mesh — overlay skipped"
             );
             return None;
-        }
+        };
         crate::render::mesh_render::colored_mesh_gpu_data(
             gpu.device,
             &resources.gpu_limits,
-            &displayed,
-            &colors,
+            model_id,
+            &refined,
+            &surface.colors,
         )
     });
 }

@@ -355,14 +355,14 @@ pub struct ReachResult {
     /// a tool or parameter edit must not show the previous tool's map.
     pub key: rs_cam_core::maps::reach_map_cache::ReachRequestKey,
     pub result: Result<Arc<rs_cam_core::maps::reach_map::ReachMap>, ComputeError>,
-    /// One colour per vertex of the mesh the map was measured over, in that
-    /// mesh's vertex order. Empty when the walk failed.
+    /// The refined overlay surface and its colours
+    /// (`state::runtime::reach_overlay_surface`). `None` when the walk
+    /// failed.
     ///
-    /// The mesh itself does NOT ride back. The upload pass draws the model in
-    /// the DISPLAY frame, which it derives from the session, and checks this
-    /// vector's length against that mesh — carrying a second copy of the mesh
-    /// here would only invite the two to be confused.
-    pub colors: Arc<Vec<[f32; 3]>>,
+    /// It holds midpoints, not coordinates. The upload pass draws the model
+    /// in the DISPLAY frame, which it derives from the session, and replays
+    /// the midpoints on that mesh (`ReachSurface::refined_mesh`).
+    pub surface: Option<Arc<crate::state::runtime::ReachSurface>>,
 }
 
 /// One core `Job` row's work step, on its way to the [`ComputeLane::Job`]
@@ -1867,16 +1867,18 @@ fn spawn_reach_lane(
                 } else {
                     built
                 };
-                let colors = built.as_ref().map_or_else(
-                    |_| Vec::new(),
-                    |map| {
-                        crate::state::runtime::reach_overlay_colors(
-                            map.as_ref(),
-                            mesh.as_ref(),
-                            index.as_ref(),
-                        )
-                    },
-                );
+                let tip_radius_mm = {
+                    use rs_cam_core::tool::MillingCutter;
+                    request.spec.cutter.cusp_radius_mm()
+                };
+                let surface = built.as_ref().ok().map(|map| {
+                    Arc::new(crate::state::runtime::reach_overlay_surface(
+                        map.as_ref(),
+                        mesh.as_ref(),
+                        index.as_ref(),
+                        tip_radius_mm,
+                    ))
+                });
 
                 {
                     let mut inner = lane.inner.lock().unwrap_or_else(|e| e.into_inner());
@@ -1895,7 +1897,7 @@ fn spawn_reach_lane(
                     toolpath_id,
                     key,
                     result: built,
-                    colors: Arc::new(colors),
+                    surface,
                 })));
             }));
 

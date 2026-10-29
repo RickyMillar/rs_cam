@@ -1,5 +1,6 @@
 use egui_wgpu::wgpu;
 use rs_cam_core::geometry::enriched_mesh::EnrichedMesh;
+use rs_cam_core::ids::ModelId;
 use rs_cam_core::mesh::TriangleMesh;
 
 use super::gpu_safety::{self, GpuLimits};
@@ -52,6 +53,10 @@ pub struct MeshGpuData {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// The model this mesh draws (round 7: the reach overlay skips the
+    /// draw of its own model only). `None` from [`Self::from_mesh`]; the
+    /// model upload sets it.
+    pub model_id: Option<ModelId>,
 }
 
 impl MeshGpuData {
@@ -130,6 +135,7 @@ impl MeshGpuData {
             vertex_buffer,
             index_buffer,
             index_count: indices.len() as u32,
+            model_id: None,
         })
     }
 }
@@ -138,8 +144,8 @@ impl MeshGpuData {
 ///
 /// [`MeshGpuData::from_mesh`]'s construction exactly — the same area-weighted
 /// smooth normals and the same native index buffer — but emitting
-/// [`ColoredMeshVertex`], so the result draws with `colored_opaque_pipeline`
-/// instead of the plain mesh pipeline whose diffuse colour is a WGSL literal.
+/// [`ColoredMeshVertex`], so the result draws with `reach_mesh_pipeline`
+/// (the model lighting with a vertex colour) for the model `model_id`.
 ///
 /// Returns `None` when `colors` does not carry exactly one entry per mesh
 /// vertex, and when a buffer exceeds the device limits. A length mismatch is
@@ -152,6 +158,7 @@ impl MeshGpuData {
 pub fn colored_mesh_gpu_data(
     device: &wgpu::Device,
     limits: &GpuLimits,
+    model_id: ModelId,
     mesh: &TriangleMesh,
     colors: &[[f32; 3]],
 ) -> Option<EnrichedMeshGpuData> {
@@ -215,6 +222,7 @@ pub fn colored_mesh_gpu_data(
         vertex_buffer,
         index_buffer,
         index_count: indices.len() as u32,
+        model_id,
     })
 }
 
@@ -469,11 +477,14 @@ pub fn face_mesh_gpu_data(
 }
 
 /// GPU data of an indexed `ColoredMeshVertex` mesh: the reach overlay
-/// ([`colored_mesh_gpu_data`]). It draws with `colored_opaque_pipeline`.
+/// ([`colored_mesh_gpu_data`]). It draws with `reach_mesh_pipeline`.
 pub struct EnrichedMeshGpuData {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// The model the overlay recolours. The scene pass skips the plain or
+    /// face draw of this model only.
+    pub model_id: ModelId,
 }
 
 #[cfg(test)]

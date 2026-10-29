@@ -9,7 +9,7 @@ The view-side state; the core owns the project, so it is not an alternate data m
 - `freshness.rs` — `FreshnessState` per toolpath and `SimFreshness`: both DERIVED, never stored.
 - `stale.rs` — the one place the GUI stamps `stale_since` from a core answer.
 - `toolpath.rs` and `toolpath/` — the toolpath rows, their catalogue entries and configuration support. R2: `ToolpathEntry.tool_id` is `Option` (an op with no tool), as `ShoePlanRow.tool_id` and `RunLine.tool_id`.
-- `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime; `FeedsMemo::refresh` is the one `feeds_result` writer (F216);
+- `simulation.rs`, `job.rs`, `runtime.rs` — sim, job lanes, GUI runtime (round 7: `ReachSurface`, the reach mesh refined to the map cell, ramp to one tip radius); `FeedsMemo::refresh` is the one `feeds_result` writer (F216);
   `ToolpathRun` is the run and its result as one value (F031), `status()` derives `ComputeStatus`.
 - `simulation/` — `playback_state.rs`, `issue_triage.rs`, `semantic_trace.rs`. `viewport_input.rs` — `DragState` (B2), held on `SelectionUi::drag`.
 - `camera.rs` — `CameraState` (A C2): the pose is private; `pose()` reads, the methods write (`CameraWrite::Instant` or `Eased`, C4: `CameraMotion`, `advance` once per frame, the frame repaints only while it runs); `first_model_bounds`, `fit_to_first_model`, `face_up_orientation` (one yaw table with the presets).

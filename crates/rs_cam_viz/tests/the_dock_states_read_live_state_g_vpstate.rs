@@ -1371,9 +1371,9 @@ fn the_legend_settles_without_a_slide_g_legend() {
 
 /// The reach key shows the WHOLE reach colour key (operator, 2026-10-02:
 /// "it does not have green on the scale which is the 'can reach' state"):
-/// the reached green, the miss ramp, the unresolved grey and the
-/// not-measured colour, each from `reach_color`, in the hover key and in
-/// the chip swatch.
+/// the reached green, the miss ramp and the unresolved grey, each from
+/// `reach_color`, and the not-measured colour (the model material, round
+/// 7), in the hover key and in the chip swatch.
 #[test]
 fn the_reach_key_shows_reached_miss_and_unresolved_g_legend() {
     use rs_cam_core::maps::reach_map::{ReachRamp, reach_color};
@@ -1393,7 +1393,9 @@ fn the_reach_key_shows_reached_miss_and_unresolved_g_legend() {
         "non-vacuity: the reached colour {reached:?} is not green"
     );
     let unresolved = reach_color(0.3, 0.3, ramp);
-    let not_measured = reach_color(f32::NAN, f32::NAN, ramp);
+    // Round 7: a not-measured vertex takes the model material, so the
+    // overlay reads as the plain model there (`reach_overlay_colors`).
+    let not_measured = rs_cam_viz::render::colors::MODEL_SURFACE.array();
     let shallow_miss = reach_color(0.6, f32::NAN, ramp);
     let deep_miss = reach_color(5.05, f32::NAN, ramp);
     assert_ne!(unresolved, not_measured, "non-vacuity: two greys");

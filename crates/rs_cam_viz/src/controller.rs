@@ -814,7 +814,7 @@ impl<B: ComputeBackend> AppController<B> {
         let overlay = &mut self.state.gui.reach_overlay;
         overlay.toolpath = Some(id);
         overlay.key = key;
-        overlay.colors = None;
+        overlay.surface = None;
         match spec {
             Some(spec) => {
                 overlay.status = ReachStatus::Computing;

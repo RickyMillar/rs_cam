@@ -1095,12 +1095,13 @@ fn scale_key(legend: Legend) -> Key {
         }
         Legend::Reach(reach) => {
             use rs_cam_core::maps::reach_map::reach_color;
-            // The strip draws the DEPTH band — the bar to the deepest gap,
-            // on the ramp's own log scale. Green (reached), grey
-            // (unresolved) and the neutral colour (not measured) are single
+            // The strip draws the DEPTH band — the bar to one tip radius
+            // (round 7), on the ramp's own log scale. Green (reached), grey
+            // (unresolved) and the model colour (not measured) are single
             // colours, so they are entries before and after the strip.
-            // Every colour is a call to `reach_color`, the overlay's own
-            // function.
+            // Every miss, reached and unresolved colour is a call to
+            // `reach_color`, the overlay's own function. A not-measured
+            // vertex takes the model material (`reach_overlay_colors`).
             let bar = reach.bar_mm();
             let top = reach.max_gap_mm.max(bar);
             let ratio = (top / bar).max(1.0);
@@ -1131,7 +1132,7 @@ fn scale_key(legend: Legend) -> Key {
                     ),
                     (
                         "not measured".to_owned(),
-                        Some(reach_color(f32::NAN, f32::NAN, reach)),
+                        Some(colors::MODEL_SURFACE.array()),
                     ),
                 ],
             )
@@ -1236,6 +1237,14 @@ fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
             }
             if let Some(map) = state.gui.reach_overlay.ready_map() {
                 let measured = map.is_measured();
+                // Round 7: the scale in tool units and the grid floor
+                // against the tip radius, the line the Geometry tab shows.
+                if measured && let Some(surface) = state.gui.reach_overlay.surface.as_ref() {
+                    caveats.push(
+                        crate::state::runtime::reach_scale_note(map, surface),
+                        tokens::TEXT_FAINT,
+                    );
+                }
                 caveats.push(
                     if measured {
                         format!(

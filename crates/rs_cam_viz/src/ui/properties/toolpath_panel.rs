@@ -406,6 +406,7 @@ pub(super) fn draw_toolpath_panel(
                 area_basis_note,
                 over_statement_note,
                 tolerance_below_floor,
+                scale_note,
             } => {
                 // The base comes from `ReachMap::area_basis_note`, not
                 // from a sentence written here. This line said "of
@@ -422,6 +423,11 @@ pub(super) fn draw_toolpath_panel(
                     .row(
                         DataRow::measured("Max gap", format!("{max_gap_mm:.2}"), "mm").hover(hover),
                     );
+                // Round 7: the scale and the floor in tool units, on its
+                // own row, so a small corner gap is read against the floor.
+                if let Some(note) = scale_note {
+                    table = table.row(DataRow::note(Role::Info, note.clone()));
+                }
                 if *tolerance_below_floor {
                     // The shared sentence, quoted - not a fourth
                     // hand-written paraphrase of the same bias.

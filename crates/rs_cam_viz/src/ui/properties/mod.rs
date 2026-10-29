@@ -840,6 +840,9 @@ pub(crate) fn toolpath_panel_inputs(
                             area_basis_note: map.area_basis_note(),
                             over_statement_note: map.over_statement_note(),
                             tolerance_below_floor: map.tolerance_below_floor(),
+                            scale_note: overlay.surface.as_ref().map(|surface| {
+                                crate::state::runtime::reach_scale_note(map, surface)
+                            }),
                         }
                     } else {
                         ReachPanelSummary::NotMeasured
@@ -1216,6 +1219,10 @@ pub(crate) enum ReachPanelSummary {
         /// and the truth is at or below it — see
         /// [`rs_cam_core::maps::reach_map::ReachMap::tolerance_below_floor`].
         tolerance_below_floor: bool,
+        /// Round 7: [`crate::state::runtime::reach_scale_note`] — the
+        /// colour scale in tip radii and the grid floor against the tip
+        /// radius. `None` while no overlay surface is held.
+        scale_note: Option<String>,
     },
     Failed(String),
 }

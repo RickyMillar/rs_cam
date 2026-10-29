@@ -12,12 +12,12 @@
 //! `RenderResources::new(&device, format, sample_count)`. That function is the app's ONE
 //! construction site for the viewport's GPU state, and it builds:
 //!
-//! - 5 shader modules: `mesh_shader`, `face_mesh_shader`, `sim_mesh_shader`,
-//!   `line_shader`, `blit_shader`
+//! - 6 shader modules: `mesh_shader`, `face_mesh_shader`, `sim_mesh_shader`,
+//!   `reach_mesh_shader`, `line_shader`, `blit_shader`
 //! - 4 bind group layouts: `mesh_bgl`, `face_state_bgl`, `line_bgl`,
 //!   `blit_bgl`
 //! - 12 render pipelines: `mesh_pipeline`, `face_mesh_pipeline` (D2),
-//!   `sim_mesh_pipeline`, `height_plane_pipeline`, `colored_opaque_pipeline`,
+//!   `sim_mesh_pipeline`, `height_plane_pipeline`, `reach_mesh_pipeline`,
 //!   `line_pipeline`, `wide_line_pipeline` (D §3.5 quads),
 //!   `wide_edge_line_pipeline` (D4: quads, no depth write), `id_face_pipeline`,
 //!   `id_mesh_pipeline`, `outline_pipeline` (D §4: `render::outline`),
@@ -102,10 +102,11 @@
 #[path = "fixtures/gpu.rs"]
 mod gpu;
 
-use std::sync::{Arc, Mutex};
-
 use egui_wgpu::wgpu;
-use gpu::{adapter_line, block_on, headless_device};
+use gpu::{
+    FRAME_HEIGHT, FRAME_WIDTH, PIXEL_FACE_Z, adapter_line, assert_no_uncaptured, block_on,
+    headless_device, line_buffer, pixel_of, pixel_view, read_pixel, same_colour, uncaptured_sink,
+};
 use rs_cam_core::geo::P3;
 use rs_cam_core::geometry::enriched_mesh::{
     EnrichedMesh, FaceTessellation, SurfaceParams, SurfaceType, build_enriched_mesh,
@@ -128,11 +129,6 @@ const APP_TARGET_FORMATS: &[wgpu::TextureFormat] = &[
     wgpu::TextureFormat::Rgba8UnormSrgb,
 ];
 
-/// The headless frame size: small, and not square, so a swapped width and
-/// height cannot pass.
-const FRAME_WIDTH: u32 = 64;
-const FRAME_HEIGHT: u32 = 48;
-
 /// A one-triangle STEP mesh with one face and its boundary loop.
 fn one_face_mesh() -> EnrichedMesh {
     one_face_mesh_at(0.0)
@@ -151,29 +147,6 @@ fn one_face_mesh_at(z: f64) -> EnrichedMesh {
     };
     build_enriched_mesh(vec![face], Vec::new(), Vec::new())
         .unwrap_or_else(|e| panic!("the one-face mesh builds: {e}"))
-}
-
-/// Collects the errors that no error scope filters. Install it before the
-/// first construction.
-fn uncaptured_sink(device: &wgpu::Device) -> Arc<Mutex<Vec<String>>> {
-    let uncaptured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&uncaptured);
-    device.on_uncaptured_error(Arc::new(move |error: wgpu::Error| {
-        if let Ok(mut messages) = sink.lock() {
-            messages.push(error.to_string());
-        }
-    }));
-    uncaptured
-}
-
-fn assert_no_uncaptured(uncaptured: &Arc<Mutex<Vec<String>>>, what: &str) {
-    let messages = uncaptured
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    assert!(
-        messages.is_empty(),
-        "uncaptured wgpu errors while {what}: {messages:?}"
-    );
 }
 
 #[test]
@@ -292,114 +265,6 @@ fn the_scene_pass_renders_at_the_adapter_sample_count_g_pipesmoke() {
     }
 
     assert_no_uncaptured(&uncaptured, "rendering the headless scene frame");
-}
-
-/// The face Z of the pixel arm: the Z of the stepped block ring.
-const PIXEL_FACE_Z: f32 = 20.0;
-
-/// The pixel arm's view: an orthographic top view, column-major. World X
-/// and Y map to NDC with a shift `(cx, cy)` that puts the edge `y = 0`
-/// on the centre of row 36 and the edge `x = 0` on the centre of column
-/// 20. Depth is `0.5 - z / 100`, so a higher Z is nearer.
-fn pixel_view() -> [[f32; 4]; 4] {
-    // Pixel centre of column c: x_ndc = (c + 0.5) * 2 / W - 1.
-    let cx = (20.5 * 2.0 / FRAME_WIDTH as f32) - 1.0;
-    // Pixel centre of row r (from the top): y_ndc = 1 - (r + 0.5) * 2 / H.
-    let cy = 1.0 - (36.5 * 2.0 / FRAME_HEIGHT as f32);
-    [
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, -0.01, 0.0],
-        [cx, cy, 0.5, 1.0],
-    ]
-}
-
-/// The pixel `(column, row)` of world `(x, y)` in `pixel_view`.
-fn pixel_of(x: f32, y: f32) -> (u32, u32) {
-    let v = pixel_view();
-    let x_ndc = x + v[3][0];
-    let y_ndc = y + v[3][1];
-    let col = (x_ndc + 1.0) * 0.5 * FRAME_WIDTH as f32 - 0.5;
-    let row = (1.0 - y_ndc) * 0.5 * FRAME_HEIGHT as f32 - 0.5;
-    (col.round() as u32, row.round() as u32)
-}
-
-/// One pixel of the last headless frame, RGBA8. `FRAME_WIDTH` × 4 is
-/// 256 B, so a row needs no padding to `COPY_BYTES_PER_ROW_ALIGNMENT`.
-fn read_pixel(
-    gpu: &gpu::HeadlessGpu,
-    resources: &RenderResources,
-    (col, row): (u32, u32),
-) -> [u8; 4] {
-    let bytes_per_row = FRAME_WIDTH * 4;
-    assert_eq!(bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0);
-    let texture = resources
-        .headless_color_texture()
-        .unwrap_or_else(|| panic!("a headless frame ran"));
-    let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("g_pipesmoke_readback"),
-        size: u64::from(bytes_per_row * FRAME_HEIGHT),
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("g_pipesmoke_readback"),
-        });
-    encoder.copy_texture_to_buffer(
-        texture.as_image_copy(),
-        wgpu::TexelCopyBufferInfo {
-            buffer: &buffer,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(FRAME_HEIGHT),
-            },
-        },
-        wgpu::Extent3d {
-            width: FRAME_WIDTH,
-            height: FRAME_HEIGHT,
-            depth_or_array_layers: 1,
-        },
-    );
-    gpu.queue.submit(Some(encoder.finish()));
-    buffer.map_async(wgpu::MapMode::Read, .., |r| {
-        r.unwrap_or_else(|e| panic!("the readback buffer maps: {e}"));
-    });
-    gpu.device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .unwrap_or_else(|e| panic!("the device poll ends: {e}"));
-    let view = buffer
-        .get_mapped_range(..)
-        .unwrap_or_else(|e| panic!("the mapped range reads: {e}"));
-    let at = (row * bytes_per_row + col * 4) as usize;
-    let mut px = [0_u8; 4];
-    px.copy_from_slice(
-        view.get(at..at + 4)
-            .unwrap_or_else(|| panic!("the pixel {col},{row} lies in the frame")),
-    );
-    px
-}
-
-/// An RGB colour as the RGBA8 bytes `Rgba8Unorm` stores, ±1 for rounding.
-fn same_colour(px: [u8; 4], rgb: [f32; 3]) -> bool {
-    rgb.iter()
-        .zip(px)
-        .all(|(c, b)| (f32::from(b) - c * 255.0).abs() <= 1.0)
-}
-
-fn line_buffer(gpu: &gpu::HeadlessGpu, label: &str, verts: &[LineVertex]) -> PolygonGpuData {
-    PolygonGpuData {
-        vertex_buffer: gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytemuck::cast_slice(verts),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-        vertex_count: verts.len() as u32,
-    }
 }
 
 #[test]

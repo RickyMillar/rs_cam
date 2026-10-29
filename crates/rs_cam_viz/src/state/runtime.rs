@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rs_cam_core::feeds::{FeedsError, FeedsResult};
-use rs_cam_core::maps::reach_map::ReachMap;
+use rs_cam_core::geo::P3;
+use rs_cam_core::maps::reach_map::{ReachMap, ReachRamp};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 
 use crate::render::upload_cache::{self, Refresh, SlotInputs};
@@ -533,13 +534,14 @@ pub struct ReachOverlayState {
     /// (every scripted test double) reports an idle lane the instant after a
     /// submit, so an unbounded recovery would resubmit on every pump for ever.
     pub requested_at: Option<std::time::Instant>,
-    /// One colour per mesh vertex, computed on the worker beside the map.
+    /// The refined surface and its colours, built on the worker beside
+    /// the map ([`reach_overlay_surface`]).
     ///
     /// **On the worker, not in the upload pass**: `vertex_gaps` runs one
     /// spatial-index query per vertex, which on a board-sized terrain is a
     /// visible hitch if it lands on the frame loop. The upload pass only
-    /// checks the length against the mesh it is about to draw.
-    pub colors: Option<Arc<Vec<[f32; 3]>>>,
+    /// replays the refinement on the drawn mesh.
+    pub surface: Option<Arc<ReachSurface>>,
 }
 
 impl ReachOverlayState {
@@ -552,7 +554,7 @@ impl ReachOverlayState {
             last_map: None,
             key: None,
             requested_at: None,
-            colors: None,
+            surface: None,
         }
     }
 
@@ -576,7 +578,7 @@ impl ReachOverlayState {
         self.status = ReachStatus::Idle;
         self.key = None;
         self.requested_at = None;
-        self.colors = None;
+        self.surface = None;
     }
 }
 
@@ -586,20 +588,344 @@ impl Default for ReachOverlayState {
     }
 }
 
-/// One colour per mesh vertex for the reach overlay.
+/// The reach overlay surface: the measured mesh refined to the map cell,
+/// with one colour per refined vertex (round 7, FOLLOW_UPS §12).
 ///
-/// The single construction site for the overlay's colours, so the worker, the
-/// upload pass and the sentry test cannot drift apart. `NaN` gaps — an
-/// underside, an overhang, anything off the measured population — come back
-/// as the model shader's own neutral diffuse colour, so a not-measured vertex
-/// looks exactly like the plain model rather than like a reachable one.
+/// A colour per vertex of the MODEL mesh cannot carry the cell field on a
+/// coarse tessellation. A STEP block has 48 vertices, and each one lies on
+/// the part outline (inside the rim band, not measured) or at the foot of a
+/// wall (not topmost). So every vertex took the not-measured colour, while
+/// the map held 4067 measured cells. The refinement adds vertices at the
+/// map cell, so the field shows on the faces.
+///
+/// The refinement is a list of midpoints, not coordinates. The upload pass
+/// replays it on the DRAWN mesh ([`Self::refined_mesh`]): the display
+/// transform is affine, and an affine map keeps midpoints. So the measured
+/// frame and the display frame need not be the same.
+#[derive(Debug, Clone)]
+pub struct ReachSurface {
+    /// The vertex count of the mesh the map was measured on.
+    pub base_vertices: usize,
+    /// Each added vertex, in order: the midpoint of two earlier vertices.
+    /// Added vertex `k` has the index `base_vertices + k`.
+    pub midpoints: Vec<[u32; 2]>,
+    /// The refined triangles, with the winding of the triangles they split.
+    pub triangles: Vec<[u32; 3]>,
+    /// One colour per refined vertex ([`reach_overlay_colors`]).
+    pub colors: Vec<[f32; 3]>,
+    /// The ramp of these colours. The legend draws from the same value.
+    pub ramp: ReachRamp,
+    /// The tip radius (mm) of the cutter, `MillingCutter::cusp_radius_mm`.
+    pub tip_radius_mm: f64,
+    /// True when the colour scale is tool-relative: full colour at one tip
+    /// radius. False when the tip radius is not above the bar, and the
+    /// scale keeps the deepest gap of the map ([`reach_display_ramp`]).
+    pub tip_relative: bool,
+    /// True when the vertex budget stopped the refinement
+    /// ([`reach_refine_budget`]). The colours are then coarser than the
+    /// cell in some places.
+    pub budget_hit: bool,
+}
+
+impl ReachSurface {
+    /// The refined mesh on the vertices of `mesh`. `mesh` is the measured
+    /// mesh, or its image under one affine map (the display transform). It
+    /// keeps the vertex order. `None` when the vertex count is not
+    /// [`Self::base_vertices`].
+    #[must_use]
+    pub fn refined_mesh(&self, mesh: &TriangleMesh) -> Option<TriangleMesh> {
+        if mesh.vertices.len() != self.base_vertices {
+            return None;
+        }
+        let mut vertices = mesh.vertices.clone();
+        vertices.reserve(self.midpoints.len());
+        for &[a, b] in &self.midpoints {
+            let a = *vertices.get(a as usize)?;
+            let b = *vertices.get(b as usize)?;
+            vertices.push(midpoint(a, b));
+        }
+        Some(TriangleMesh::from_raw(vertices, self.triangles.clone()))
+    }
+}
+
+fn midpoint(a: P3, b: P3) -> P3 {
+    P3::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5)
+}
+
+/// The ramp of the overlay colours: the map's own bar and floor, and the
+/// full colour at ONE TIP RADIUS of the cutter (round 7).
+///
+/// The core ramp ends at the deepest gap of the map. On the stepped block
+/// that is 8.04 mm against a Ø10 ball, so a 0.5 mm corner gap sat in the
+/// first sliver of the ramp. A gap in units of the tip radius reads the
+/// same for each tool: a gap of one radius is a whole tip that does not
+/// fit, and a gap past it is clamped to the full colour
+/// (`ReachRamp::depth_t`). When the tip radius is not above the bar (the
+/// bar or the floor), the log ramp has no span, so the scale keeps the
+/// map's deepest gap.
+#[must_use]
+pub fn reach_display_ramp(map: &ReachMap, tip_radius_mm: f64) -> ReachRamp {
+    let ramp = map.ramp();
+    if tip_scale_applies(map, tip_radius_mm) {
+        ReachRamp {
+            max_gap_mm: tip_radius_mm,
+            ..ramp
+        }
+    } else {
+        ramp
+    }
+}
+
+/// True when the tip radius is above the bar of `map`, so a log ramp from
+/// the bar to one radius has a span.
+fn tip_scale_applies(map: &ReachMap, tip_radius_mm: f64) -> bool {
+    tip_radius_mm.is_finite() && tip_radius_mm > map.ramp().bar_mm()
+}
+
+/// The most vertices the refinement may ADD for `map`: eight per grid
+/// cell. It is a guard against a run-away (a mesh with many up-facing
+/// layers), not a target.
+///
+/// The cell field is constant over a cell. A vertex pitch of half a cell
+/// samples a feature one cell wide, which is four vertices per cell. The
+/// conforming bisection does not place vertices on a lattice, so the guard
+/// allows twice that. The stepped block of the round 7 sentry
+/// (`a_step_block_shows_the_reach_field_on_its_faces_r7`) prints its count
+/// against this budget and asserts that it stays under it.
+pub fn reach_refine_budget(map: &ReachMap) -> usize {
+    map.grid.nx.saturating_mul(map.grid.ny).saturating_mul(8)
+}
+
+/// The XY length of the edge from `a` to `b`. The cell field varies in XY
+/// only, so a steep edge that is short in XY needs no split.
+fn xy_len(a: P3, b: P3) -> f64 {
+    (a.x - b.x).hypot(a.y - b.y)
+}
+
+fn edge_key(a: u32, b: u32) -> [u32; 2] {
+    [a.min(b), a.max(b)]
+}
+
+/// The bits of one vertex position: a key that is equal only for equal
+/// coordinates.
+type PointBits = [u64; 3];
+
+fn point_bits(p: P3) -> PointBits {
+    [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()]
+}
+
+/// The key of the edge from `a` to `b` by POSITION, not by index. A STEP
+/// mesh holds one vertex set per face, so two faces on one edge share
+/// positions and not indices.
+fn position_key(a: P3, b: P3) -> [PointBits; 2] {
+    let (a, b) = (point_bits(a), point_bits(b));
+    if a <= b { [a, b] } else { [b, a] }
+}
+
+/// The refinement of `mesh` to the cell `cell_mm`: `(vertices, midpoints,
+/// triangles, budget_hit)`.
+///
+/// Conforming longest-edge bisection, in rounds:
+///
+/// 1. Mark each edge of an up-facing triangle whose XY length is more than
+///    one cell. Up-facing is the core's population rule (normal Z > 0); a
+///    wall or an underside is not measured, so it needs no vertices of its
+///    own. The mark is by position, so it holds for each face on the edge.
+/// 2. Split each triangle that holds a marked edge on its longest marked
+///    edge, until no triangle holds one. Each index pair takes one
+///    midpoint, and each face on a marked edge splits at the same position
+///    (a wall too), so the result has no T-junction.
+/// 3. Repeat until no edge is marked, or until the added vertices pass
+///    `max_added` (checked before each round).
+#[expect(
+    clippy::type_complexity,
+    reason = "a private return tuple, destructured at its one call site"
+)]
+fn refine_to_cell(
+    mesh: &TriangleMesh,
+    cell_mm: f64,
+    max_added: usize,
+) -> (Vec<P3>, Vec<[u32; 2]>, Vec<[u32; 3]>, bool) {
+    let mut vertices = mesh.vertices.clone();
+    let mut midpoints: Vec<[u32; 2]> = Vec::new();
+    let mut triangles = mesh.triangles.clone();
+    if !(cell_mm.is_finite() && cell_mm > 0.0) {
+        return (vertices, midpoints, triangles, false);
+    }
+    let corner = |vertices: &[P3], i: u32| vertices.get(i as usize).copied();
+    loop {
+        let mut marked: std::collections::HashSet<[PointBits; 2]> =
+            std::collections::HashSet::new();
+        for tri in &triangles {
+            let (Some(a), Some(b), Some(c)) = (
+                corner(&vertices, tri[0]),
+                corner(&vertices, tri[1]),
+                corner(&vertices, tri[2]),
+            ) else {
+                continue;
+            };
+            if (b - a).cross(&(c - a)).z <= 0.0 {
+                continue;
+            }
+            for (p, q) in [(a, b), (b, c), (c, a)] {
+                if xy_len(p, q) > cell_mm {
+                    marked.insert(position_key(p, q));
+                }
+            }
+        }
+        if marked.is_empty() {
+            return (vertices, midpoints, triangles, false);
+        }
+        // The budget is checked before each round on the vertices added
+        // so far, so the last round may pass it once. The guard is for a
+        // run-away, not a hard count. A marked edge adds at most one
+        // vertex per face on it: one on a manifold surface, and one per
+        // side on a crease of a mesh with one vertex set per face.
+        let next_vertices = vertices
+            .len()
+            .saturating_add(marked.len().saturating_mul(2));
+        if midpoints.len() > max_added || next_vertices >= u32::MAX as usize {
+            return (vertices, midpoints, triangles, true);
+        }
+        let mut mid_of: HashMap<[u32; 2], u32> = HashMap::new();
+        let mut work = std::mem::take(&mut triangles);
+        while let Some(tri) = work.pop() {
+            // The longest marked edge, as (length, start, end, opposite).
+            let mut best: Option<(f64, u32, u32, u32)> = None;
+            for (i, j, k) in [
+                (tri[0], tri[1], tri[2]),
+                (tri[1], tri[2], tri[0]),
+                (tri[2], tri[0], tri[1]),
+            ] {
+                let (Some(p), Some(q)) = (corner(&vertices, i), corner(&vertices, j)) else {
+                    continue;
+                };
+                if !marked.contains(&position_key(p, q)) {
+                    continue;
+                }
+                let len = xy_len(p, q);
+                if best.is_none_or(|(held, ..)| len > held) {
+                    best = Some((len, i, j, k));
+                }
+            }
+            let Some((_, i, j, k)) = best else {
+                triangles.push(tri);
+                continue;
+            };
+            let key = edge_key(i, j);
+            let mid = match mid_of.get(&key) {
+                Some(&mid) => mid,
+                None => {
+                    let (Some(p), Some(q)) = (corner(&vertices, key[0]), corner(&vertices, key[1]))
+                    else {
+                        triangles.push(tri);
+                        continue;
+                    };
+                    let mid = vertices.len() as u32;
+                    vertices.push(midpoint(p, q));
+                    midpoints.push(key);
+                    mid_of.insert(key, mid);
+                    mid
+                }
+            };
+            // (i, j, k) is a rotation of the triangle, so both halves keep
+            // its winding. The two half edges are new positions, so they
+            // carry no mark in this round.
+            work.push([i, mid, k]);
+            work.push([mid, j, k]);
+        }
+    }
+}
+
+/// One colour per vertex of `mesh` for the reach overlay, on the ramp
+/// `ramp`.
+///
+/// The single construction site for the overlay's colours, so the worker,
+/// the screenshot and the sentry test cannot drift apart. A `NaN` gap (an
+/// underside, the foot of a wall, the rim band, anything off the measured
+/// population) takes `colors::MODEL_SURFACE`, the material of the model
+/// shaders. The overlay shader lights it as the model shader does, so a
+/// not-measured vertex reads exactly as the plain model.
 #[must_use]
 pub fn reach_overlay_colors(
     map: &ReachMap,
     mesh: &TriangleMesh,
     index: &SpatialIndex,
+    ramp: ReachRamp,
 ) -> Vec<[f32; 3]> {
-    map.vertex_colors(mesh, index)
+    let gaps = map.vertex_gaps(mesh, index);
+    let floors = map.vertex_floors(mesh);
+    let mut colors = rs_cam_core::maps::reach_map::reach_colors(&gaps, &floors, ramp);
+    for (color, gap) in colors.iter_mut().zip(&gaps) {
+        if !gap.is_finite() {
+            *color = crate::render::colors::MODEL_SURFACE.array();
+        }
+    }
+    colors
+}
+
+/// The reach overlay surface of `map` over `mesh` (the mesh the map was
+/// measured on, with its spatial index `index`), for a cutter of tip
+/// radius `tip_radius_mm`. See [`ReachSurface`].
+#[must_use]
+pub fn reach_overlay_surface(
+    map: &ReachMap,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    tip_radius_mm: f64,
+) -> ReachSurface {
+    let ramp = reach_display_ramp(map, tip_radius_mm);
+    let (vertices, midpoints, triangles, budget_hit) =
+        refine_to_cell(mesh, map.grid.cell_mm, reach_refine_budget(map));
+    if budget_hit {
+        tracing::warn!(
+            added_vertices = midpoints.len(),
+            budget = reach_refine_budget(map),
+            "reach overlay refinement stopped at its vertex budget; the colours are coarser than the cell in places"
+        );
+    }
+    let colors = if midpoints.is_empty() {
+        reach_overlay_colors(map, mesh, index, ramp)
+    } else {
+        let refined = TriangleMesh::from_raw(vertices, triangles.clone());
+        let refined_index = SpatialIndex::build_auto(&refined);
+        reach_overlay_colors(map, &refined, &refined_index, ramp)
+    };
+    ReachSurface {
+        base_vertices: mesh.vertices.len(),
+        midpoints,
+        triangles,
+        colors,
+        ramp,
+        tip_radius_mm,
+        tip_relative: tip_scale_applies(map, tip_radius_mm),
+        budget_hit,
+    }
+}
+
+/// The scale and floor note of the reach overlay, in tool units: where the
+/// colour is full, and how large the grid floor is against the tip radius.
+/// The Geometry tab and the legend chip print this one string.
+#[must_use]
+pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
+    let radius = surface.tip_radius_mm;
+    let floor = map.discretisation_floor_mm;
+    let scale = if surface.tip_relative {
+        format!("full colour at one tip radius R = {radius:.2} mm")
+    } else {
+        format!(
+            "full colour at the deepest gap {:.2} mm (the tip radius {radius:.2} mm is not above the bar)",
+            surface.ramp.max_gap_mm
+        )
+    };
+    let floor_in_r = if radius > 0.0 {
+        format!(" = {:.2} R", floor / radius)
+    } else {
+        String::new()
+    };
+    format!(
+        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a reported gap under the floor is discretisation, not geometry"
+    )
 }
 
 // ── Project-level GUI state ───────────────────────────────────────────

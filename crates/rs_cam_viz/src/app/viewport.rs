@@ -1311,10 +1311,12 @@ impl RsCamApp {
             // requires the Toolpaths workspace and a region map on the
             // SELECTED toolpath (WP27: the selected toolpath only).
             show_area_regions: area_regions_drawn,
-            // P5 — the reach overlay REPLACES the model draw, so its gate
-            // also carries `show_model`: with the model hidden there is no
-            // surface to re-colour, and drawing a coloured copy would
-            // contradict the row the operator switched off. (Before P6 the
+            // P5 — the reach overlay replaces the draw of its own model
+            // (round 7: that model only; every other model draws as
+            // usual), so its gate also carries `show_model`: with the
+            // model hidden there is no surface to re-colour, and drawing a
+            // coloured copy would contradict the row the operator switched
+            // off. (Before P6 the
             // clause read `render_mode == Shaded`, the same intent expressed
             // through a mode whose other arm drew nothing at all.)
             //

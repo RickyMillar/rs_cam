@@ -2223,8 +2223,8 @@ pub enum Legend {
     RestHeatmap(f64, f32),
     /// The reach ramp's stops; colours from `reach_map::reach_color`. The
     /// whole ramp, not just the bar, because the ramp is LOG-scaled from the
-    /// bar to the deepest gap and a legend built from the bar alone could not
-    /// draw it (P5.2).
+    /// bar to one tip radius (round 7, `state::runtime::reach_display_ramp`)
+    /// and a legend built from the bar alone could not draw it (P5.2).
     Reach(rs_cam_core::maps::reach_map::ReachRamp),
     /// Colours from `render::sim_render::deviation_colors`.
     Deviation,
@@ -2296,11 +2296,14 @@ pub fn active_legends(state: &AppState) -> Vec<Legend> {
     }
     // The same identity check as the draw gate: a map held for an earlier
     // selection is never drawn, so it gives no legend.
+    // Round 7: the legend takes the ramp of the drawn colours (the
+    // surface), which is tool-relative, not the map's own ramp.
     if on("reach_map")
         && state.gui.reach_overlay.toolpath == selected_toolpath(state)
-        && let Some(map) = state.gui.reach_overlay.ready_map()
+        && state.gui.reach_overlay.ready_map().is_some()
+        && let Some(surface) = state.gui.reach_overlay.surface.as_ref()
     {
-        out.push(Legend::Reach(map.ramp()));
+        out.push(Legend::Reach(surface.ramp));
     }
     if on("tier_map")
         && let Some(planner) = state.multitool_planner.as_ref()
