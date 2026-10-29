@@ -190,3 +190,24 @@ silhouette test. Sloped-edge items and materials stay for a later ruling.
   always takes the face; a STEP edge ring on that face is reachable only
   with Tab or with the chip off. Alternative: rank a visible ring within a
   few pixels of the pointer above the face. Operator's call.
+
+Landed: R5a bd1355196 (click visibility, wireframe upload, curves gate), R5b
+21b1dc275 (view cube, projection toggle, Bottom/Back/Left presets, the preset
+rows leave More), R5c d195a1e80 (More menu review; `MORE_MENU_REVIEW.md` §4
+holds ten questions for the operator). Breaks stated in the commits: MCP
+`set_ui_view overlays` refuses a row that is out of scope for the current
+workspace; the More menu lists 24/28/29 rows (Setup/Toolpaths/Simulation)
+instead of 37 everywhere.
+
+## 10. Open questions for the operator's full review
+
+1. The ten questions in `MORE_MENU_REVIEW.md` §4.
+2. Ring versus face ranking under a click (R5a, above; also 961c2684f).
+3. The label of the curves row ("Curves and edges"): keep or rename.
+4. MCP `add_pick` of a single floor circle on the stepped block folds no
+   rim; the GUI click on the same rim folds (the asymmetry is the batch
+   fold door, by design; confirm).
+5. Sloped-edge items (a ring on a non-planar face) have no pickable key.
+6. Materials: one neutral material only; per-model colour is not built.
+7. `a_dropped_mesh_releases_its_entry` is flaky (`cache_len` race).
+

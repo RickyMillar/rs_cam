@@ -160,6 +160,9 @@ from HEAD.
 | — | round 4: STL face keys carry their plane Z; the picked STL face ring | 6fd51227a | 2026-10-29 |
 | — | round 4: a left drag on the orientation gizmo orbits | af5ea02a7 | 2026-10-29 |
 | — | round 4: the deterministic silhouette ring start; the curves row on a STEP-only project | 24aa5bf8f | 2026-10-29 |
+| — | round 5: a click takes the nearest visible candidate; a display-mode change uploads; the curves row no longer hides the selection | bd1355196 | 2026-10-29 |
+| — | round 5: the view cube with a projection toggle; six click-to-view faces (Bottom, Back, Left added); the preset rows leave More | 21b1dc275 | 2026-10-29 |
+| — | round 5: the More menu review (`MORE_MENU_REVIEW.md`): a workspace scope per row, one precondition door, readable labels | d195a1e80 | 2026-10-29 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
