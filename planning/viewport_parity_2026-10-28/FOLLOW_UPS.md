@@ -225,3 +225,30 @@ instead of 37 everywhere.
    rank a served ring above a refused face; or drop refused faces from the
    click candidates in pick mode; or keep the default outline cut when a
    later pick is refused.
+
+## 11. Round 6 rulings (operator, 2026-10-30, on §10 and MORE_MENU_REVIEW.md §4)
+
+- Down-facing face in a Profile: "facing down shouldn't really be an issue."
+  → a ring-use op keeps a down face and reads its outline at the face plane;
+  fill-use ops keep the refusal (R6a, core).
+- Q1 stock colour with the stock: "put it in stock. or just generic rendering
+  space that can be shared by other things.. like tools/clamps/models" → the
+  Scene section becomes per-object groups (Model, Stock, Tool, Obstacles,
+  Pins); Inspect dissolves into them.
+- Q2 "sounds like so? should be simple UI" → Highlight active step is a child
+  check under Generator steps.
+- Q3 Setup draws toolpaths: "no" → the Setup workspace draws no moves; the
+  Paths rows leave More in Setup; the bar greys Cutting moves and Rapids there.
+- Q4 renderer-less rows: "we used to just shade the stock with this? It was
+  useful... maybe check again?" → the shading is the rest heat map (still
+  there, Model colour ▸ Rest); the two rows are deleted; the derived
+  rest-region islands are investigated for the Boundary outline row.
+- Q5 Model colour Off: "special cases like this... should come up as more
+  prominent options with an eye visibility toggle next to them. maybe next
+  to the legend." → a context rail beside the legend: an eye chip per
+  context row whose precondition holds now.
+- Q6 Selection outline: "not in setup".
+- Q7 pin ghost: "I don't know what a pin ghost is, that whole UX might need
+  rework?" → context chip only while the pins do not key; one-sentence hover;
+  a rework note in MORE_MENU_REVIEW.md §5.
+- Q8 "Drawing states": ok. Q9 spans under Palette: yes. Q10 Collisions bar: no.
