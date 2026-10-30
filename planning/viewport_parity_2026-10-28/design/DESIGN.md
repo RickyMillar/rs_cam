@@ -167,6 +167,9 @@ from HEAD.
 | — | round 6: the More menu rulings: object groups, the context rail with eye chips, Setup draws no toolpaths, two renderer-less rows deleted | a7dda8b09 | 2026-10-30 |
 | — | round 7: a face boundary spills into air only (one open-sides rule, `OpenSidesReach::ToolRadius`); a model change drops the lost picks | 2dc5e5130 | 2026-10-30 |
 | — | round 7: the reach map recolours its own model only, refined to the map cell, scaled to one tip radius; the translucent stock draws after the lines | a5366bb7c | 2026-10-30 |
+| — | round 7 tail: the dropped-picks note in the banner and the MCP reply; `BoundaryConfig::with_source`; the legend names R | 7967de861 | 2026-10-30 |
+| — | round 7c: a wall takes no measured colour under the reach map | ce32777f3 | 2026-10-30 |
+| — | round 7d: the reach map measures up to the part outline (rim erosion deleted); the published floor over full-stencil interior cells; a vertex reads a cell on its own face | b6c3def50 | 2026-10-30 |
 
 Phase 0 took every recommendation; the `RULINGS.md` column was still
 empty. E4 also fixed a latent defect no design file names: the panel
