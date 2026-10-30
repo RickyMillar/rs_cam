@@ -465,7 +465,7 @@ pub(crate) fn draw_chart_c(
                     //    window mark on the axis went too: it had no label.
                     //    `draw_machine_envelope`
                     //    keeps them for the project scatter.
-                    for wall in walls(env, rpm_axis_max) {
+                    for wall in walls(env) {
                         plot_ui.line(
                             Line::new("", PlotPoints::from(wall.to_vec()))
                                 .color(wash(tokens::DANGER, WALL_ALPHA))
@@ -627,7 +627,7 @@ pub(crate) fn draw_chart_c(
         push_line(iso_screen(lo), BAND_LIMIT_WIDTH, true);
         push_line(iso_screen(hi), BAND_LIMIT_WIDTH, true);
     }
-    let [rpm_wall, feed_wall] = walls(env, rpm_axis_max);
+    let [rpm_wall, feed_wall] = walls(env);
     push_line(
         rpm_wall.iter().copied().map(at).collect(),
         WALL_WIDTH,
@@ -843,8 +843,9 @@ fn min_wall(env: &rs_cam_core::feeds::MachineEnvelope) -> Option<[[f64; 2]; 2]> 
 
 /// The two machine walls, in plot coordinates: the spindle maximum (an
 /// upright line up to the feed maximum, see [`min_wall`]) and the feed
-/// maximum (a level line to the end of the RPM axis).
-fn walls(env: &rs_cam_core::feeds::MachineEnvelope, rpm_axis_max: f64) -> [[[f64; 2]; 2]; 2] {
+/// maximum (a level line from RPM 0 to the spindle maximum). The walls meet
+/// at the corner and close the machine envelope (lead, 2026-10-31).
+fn walls(env: &rs_cam_core::feeds::MachineEnvelope) -> [[[f64; 2]; 2]; 2] {
     [
         [
             [env.spindle_max_rpm, 0.0],
@@ -852,7 +853,7 @@ fn walls(env: &rs_cam_core::feeds::MachineEnvelope, rpm_axis_max: f64) -> [[[f64
         ],
         [
             [0.0, env.max_feed_mm_min],
-            [rpm_axis_max, env.max_feed_mm_min],
+            [env.spindle_max_rpm, env.max_feed_mm_min],
         ],
     ]
 }
