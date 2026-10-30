@@ -1817,7 +1817,7 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
 /// glyph is in the app fonts (a missing glyph paints a box).
 #[test]
 fn the_rest_refusal_faces_are_short_g_e() {
-    use super::toolpath_panel::{GENERATE_SOURCE_GLYPH, rest_refusal_face};
+    use super::toolpath_panel::issues::{GENERATE_SOURCE_GLYPH, rest_refusal_face};
     use rs_cam_core::session::RestBoundaryRefusal;
     let source = rs_cam_core::ToolpathId::from_raw(7);
     let name = "Body rough".to_owned();
@@ -1880,7 +1880,7 @@ fn larger_consumer(
 /// another toolpath drops it.
 #[test]
 fn the_rest_pick_sets_inside_with_a_badge_d2() {
-    use super::toolpath_panel::pick_sets_inside;
+    use super::toolpath_panel::tabs::geometry::pick_sets_inside;
     use crate::state::runtime::InsideAnswer;
     use crate::state::toolpath::BoundaryContainment;
     let source = rs_cam_core::ToolpathId::from_raw(3);
@@ -1944,7 +1944,7 @@ fn the_rest_pick_sets_inside_with_a_badge_d2() {
 /// count reads `· N regions` (one phrase, §6).
 #[test]
 fn the_containment_hover_and_the_region_count_g_c() {
-    use super::toolpath_panel::{regions_phrase, rest_source_label};
+    use super::toolpath_panel::tabs::geometry::{regions_phrase, rest_source_label};
     use crate::state::runtime::InsideAnswer;
     let source = rs_cam_core::ToolpathId::from_raw(3);
     assert_eq!(
@@ -2049,7 +2049,7 @@ fn use_inside_sits_on_the_containment_row_g_c() {
             });
             for clipped in &out.shapes {
                 if let egui::epaint::Shape::Text(text) = &clipped.shape
-                    && text.galley.job.text == super::toolpath_panel::USE_INSIDE
+                    && text.galley.job.text == super::toolpath_panel::tabs::geometry::USE_INSIDE
                 {
                     painted = true;
                     act_at = Some(clipped.shape.visual_bounding_rect().center());

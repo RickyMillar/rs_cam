@@ -76,6 +76,22 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+/// W7 (2026-10-30) split `toolpath_panel.rs` into the module root and the
+/// children under `toolpath_panel/`. They are one module of the inspector, so
+/// the reader takes the sub-folder too.
+fn push_panel_children(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            push_panel_children(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
 /// Every `.rs` file directly in `src/ui/properties/`, concatenated in
 /// file-name order.
 ///
@@ -91,6 +107,7 @@ fn properties_src() -> String {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .collect();
+    push_panel_children(&dir.join("toolpath_panel"), &mut paths);
     paths.sort();
     assert!(!paths.is_empty(), "no source under {}", dir.display());
     let mut out = String::new();
@@ -120,11 +137,18 @@ fn function_body<'a>(src: &'a str, name: &str) -> &'a str {
         .find(&needle)
         .unwrap_or_else(|| panic!("no fn {name} under ui/properties/"));
     let rest = &src[start + needle.len()..];
-    let end = ["\nfn ", "\npub fn ", "\npub(crate) fn ", "\npub(super) fn "]
-        .iter()
-        .filter_map(|marker| rest.find(marker))
-        .min()
-        .unwrap_or(rest.len());
+    // W7: a child of `toolpath_panel/` opens an item with `pub(in ..)`.
+    let end = [
+        "\nfn ",
+        "\npub fn ",
+        "\npub(crate) fn ",
+        "\npub(super) fn ",
+        "\npub(in ",
+    ]
+    .iter()
+    .filter_map(|marker| rest.find(marker))
+    .min()
+    .unwrap_or(rest.len());
     &rest[..end]
 }
 
@@ -192,10 +216,14 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
         "the per-tab footer row is back; the issue stack replaces it (W2b)"
     );
     let stack = function_body(&src, "draw_issue_stack");
+    // W7: the stack is in `toolpath_panel/issues.rs`, so it names the
+    // placement module in full, and rustfmt breaks the call over lines.
+    // The needles read the body without white space.
+    let flat: String = stack.split_whitespace().collect();
     assert!(
-        stack.contains("Notice::new(super::placement::role_of(d), d.face.as_str())")
-            && stack.contains(".detail(super::placement::detail(d))")
-            && stack.contains(".show_issues(ui)"),
+        flat.contains("Notice::new(crate::ui::properties::placement::role_of(d),d.face.as_str(),)")
+            && flat.contains(".detail(crate::ui::properties::placement::detail(d))")
+            && flat.contains(".show_issues(ui)"),
         "a finding must be one issue row with its detail on hover:\n{stack}"
     );
     let detail = function_body(&src, "detail");

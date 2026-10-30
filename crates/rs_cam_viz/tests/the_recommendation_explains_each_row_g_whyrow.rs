@@ -255,6 +255,22 @@ fn painted_text_of(mut state: AppState) -> Vec<String> {
     texts
 }
 
+/// W7 (2026-10-30) split `toolpath_panel.rs` into the module root and the
+/// children under `toolpath_panel/`. They are one module of the inspector, so
+/// the reader takes the sub-folder too.
+fn push_panel_children(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            push_panel_children(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
 fn feeds_sources() -> Vec<(PathBuf, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/feeds");
     let mut out = Vec::new();
@@ -279,6 +295,7 @@ fn feeds_sources() -> Vec<(PathBuf, String)> {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .collect();
+    push_panel_children(&inspector.join("toolpath_panel"), &mut panels);
     panels.sort();
     assert!(!panels.is_empty(), "no source under src/ui/properties");
     for path in panels {

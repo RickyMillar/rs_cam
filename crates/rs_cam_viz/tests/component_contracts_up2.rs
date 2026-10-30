@@ -886,11 +886,16 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
          there is no label:value row to render",
     ),
     (
-        "ui/properties/toolpath_panel.rs",
-        4,
-        "boundary offset and the three rest-analysis dials draw in \
-         `ui.horizontal`; `ValueRow::show` calls `ui.end_row()` and needs a \
-         grid",
+        "ui/properties/toolpath_panel/tabs/geometry.rs",
+        1,
+        "the boundary offset draws in `ui.horizontal`; `ValueRow::show` calls \
+         `ui.end_row()` and needs a grid",
+    ),
+    (
+        "ui/properties/toolpath_panel/tabs/passes.rs",
+        3,
+        "the three rest-analysis dials draw in `ui.horizontal`; \
+         `ValueRow::show` calls `ui.end_row()` and needs a grid",
     ),
     (
         "ui/properties/stock.rs",

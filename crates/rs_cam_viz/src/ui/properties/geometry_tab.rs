@@ -2,8 +2,8 @@
 //! (geometry selection GT-1): what the op cuts. It is the first tab
 //! (operator ruling 2026-10-22).
 //!
-//! R2 (2026-10-30): `toolpath_panel::draw_geometry_tab` draws the Input row
-//! above these rows, and the Machining Boundary section and the Reach row
+//! R2 (2026-10-30): `toolpath_panel::draw_geometry_tab`
+//! (`toolpath_panel/tabs/geometry.rs`) draws the Input row above these rows, and the Machining Boundary section and the Reach row
 //! between and below them. Those rows write the draft entry; this file
 //! does not.
 //!

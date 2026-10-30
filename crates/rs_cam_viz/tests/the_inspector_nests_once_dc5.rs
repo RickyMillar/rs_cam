@@ -69,14 +69,32 @@ fn inspector_dir() -> PathBuf {
         .join("properties")
 }
 
-/// Every `.rs` file directly in that folder, concatenated in file-name order.
+/// W7 (2026-10-30) split `toolpath_panel.rs` into the module root and the
+/// children under `toolpath_panel/`. They are one module of the inspector, so
+/// the reader takes the sub-folder too.
+fn push_panel_children(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            push_panel_children(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
+/// Every `.rs` file directly in that folder and under `toolpath_panel/`,
+/// concatenated in path order.
 ///
 /// The order matters to `the_notes_are_one_count_and_the_wiring_is_below_the_strip_dc5`,
-/// which compares byte offsets. It reads the CALL sites, all of which sit in
-/// `toolpath_panel.rs`; that name sorts last, after the `tab_badges.rs`
-/// DEFINITIONS its `rfind` must not pick. A new child whose name sorts after
-/// `toolpath_panel.rs` and repeats one of those markers would break that arm,
-/// and the arm says so when it fails.
+/// which compares byte offsets. It reads the CALL sites: the strip call in
+/// `toolpath_panel.rs` and the Input row call in
+/// `toolpath_panel/tabs/geometry.rs`. Those paths sort last, in that order
+/// (`.` sorts before `/`), after the `tab_badges.rs` DEFINITIONS its `rfind`
+/// must not pick. A new child whose path sorts after them and repeats one of
+/// those markers would break that arm, and the arm says so when it fails.
 fn inspector_src() -> String {
     let dir = inspector_dir();
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -85,7 +103,10 @@ fn inspector_src() -> String {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .collect();
-    paths.sort();
+    push_panel_children(&dir.join("toolpath_panel"), &mut paths);
+    // Byte order, not `Path` order: `Path` compares by component, which
+    // puts `toolpath_panel/` before `toolpath_panel.rs`.
+    paths.sort_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
     assert!(
         !paths.is_empty(),
         "no source under {}; the scans below would read nothing",

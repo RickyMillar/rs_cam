@@ -40,6 +40,22 @@ fn properties_src() -> String {
     out
 }
 
+/// W7 (2026-10-30) split `toolpath_panel.rs` into the module root and the
+/// children under `toolpath_panel/`. They are one module of the inspector, so
+/// the reader takes the sub-folder too.
+fn push_panel_children(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir {}: {e}", dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            push_panel_children(&path, out);
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.push(path);
+        }
+    }
+}
+
 /// The same files, one row each: the label a message prints and the text.
 ///
 /// The export-wording scan below exempts a surface that calls the shared
@@ -53,14 +69,15 @@ fn properties_files() -> Vec<(String, String)> {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "rs"))
         .collect();
+    push_panel_children(&dir.join("toolpath_panel"), &mut paths);
     paths.sort();
     assert!(!paths.is_empty(), "no source under {}", dir.display());
     paths
         .into_iter()
         .map(|path| {
             let name = path
-                .file_name()
-                .unwrap_or_else(|| panic!("no file name: {}", path.display()))
+                .strip_prefix(&dir)
+                .unwrap_or_else(|_| panic!("not under the folder: {}", path.display()))
                 .to_string_lossy()
                 .into_owned();
             let text = std::fs::read_to_string(&path)
