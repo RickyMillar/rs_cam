@@ -1011,7 +1011,7 @@ pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
     // R7d: the map measures up to the part outline, so grey is only the
     // surface a top-down measure cannot see.
     format!(
-        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a gap smaller than the floor is grid error, not a real gap \u{00B7} grey: not measured (walls, undersides)"
+        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a gap smaller than the floor is under what the grid can resolve: not a measured gap \u{00B7} grey: not measured (walls, undersides)"
     )
 }
 
