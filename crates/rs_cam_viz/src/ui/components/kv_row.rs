@@ -1,5 +1,9 @@
 //! `KeyValueRow` (§4.6) and the row hover tint (§4.7).
 //!
+//! W1 (2026-10-30): `KeyValueRow` is a COMPATIBILITY row. `PropRow`
+//! (`prop_row.rs`, `show_read_only`) is the one field row; W3 moves the
+//! call sites of `KeyValueRow` onto it, and W6 deletes it.
+//!
 //! The table of §4.7 is `data_table::DataTable` (inspector clean-up round 2).
 //!
 //! # The row is a FIXED line box

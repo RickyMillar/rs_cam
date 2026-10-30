@@ -49,6 +49,9 @@ pub struct Notice {
     /// Optional hover text of the row: the fix or the cause, so the row
     /// stays one short line (G-D).
     pub detail: Option<String>,
+    /// The label of the one Fix button of an issue row (W1). It is not
+    /// part of the collapse key.
+    pub fix: Option<String>,
 }
 
 impl Notice {
@@ -58,7 +61,16 @@ impl Notice {
             text: text.into(),
             group: None,
             detail: None,
+            fix: None,
         }
+    }
+
+    /// The label of the one Fix button of an issue row
+    /// ([`NoticeStack::show_issues`]).
+    #[must_use]
+    pub fn fix(mut self, label: impl Into<String>) -> Self {
+        self.fix = Some(label.into());
+        self
     }
 
     /// The hover text of the row.
@@ -82,6 +94,8 @@ pub struct CollapsedNotice {
     pub notice: Notice,
     /// How many identical notices this row represents. Always at least 1.
     pub count: usize,
+    /// The input index of the first notice this row stands for.
+    pub first: usize,
 }
 
 /// What [`NoticeStack::resolve`] decided to draw.
@@ -139,6 +153,17 @@ impl NoticeStack {
     /// displacing the thing the operator is actually looking at.
     pub(crate) const DEFAULT_CAP: usize = 4;
 
+    /// The cap of an issue stack (W1): at most three issue rows under the
+    /// inspector header.
+    pub const ISSUE_CAP: usize = 3;
+
+    /// An issue stack (W1): the cap is [`Self::ISSUE_CAP`]; draw it with
+    /// [`Self::show_issues`]. The four rules stay: a `Danger` still
+    /// outranks the cap.
+    pub fn issues(notices: Vec<Notice>) -> Self {
+        Self::new(notices).cap(Self::ISSUE_CAP)
+    }
+
     pub fn new(notices: Vec<Notice>) -> Self {
         Self {
             notices,
@@ -173,7 +198,7 @@ impl NoticeStack {
         // arrival index of the first occurrence keeps the order stable.
         let mut first_seen: BTreeMap<(Role, String, Option<String>), usize> = BTreeMap::new();
         let mut collapsed: Vec<CollapsedNotice> = Vec::new();
-        for notice in &self.notices {
+        for (index, notice) in self.notices.iter().enumerate() {
             let key = (notice.role, notice.text.clone(), notice.group.clone());
             match first_seen.get(&key) {
                 Some(&idx) => {
@@ -186,6 +211,7 @@ impl NoticeStack {
                     collapsed.push(CollapsedNotice {
                         notice: notice.clone(),
                         count: 1,
+                        first: index,
                     });
                 }
             }
@@ -245,6 +271,133 @@ impl NoticeStack {
 
         expand_requested
     }
+}
+
+/// What [`NoticeStack::show_issues`] returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct IssueStackResponse {
+    /// The input index of the notice whose Fix button was clicked.
+    pub fix: Option<usize>,
+    /// The operator clicked the overflow row to see every issue. The
+    /// caller then draws the stack with `expanded(true)` (ruling R12).
+    pub expand: bool,
+}
+
+impl NoticeStack {
+    /// Draw the stack as issue rows (W1): one line per row, the severity
+    /// glyph, the face text (it truncates; the hover has the full text and
+    /// the detail) and at most one Fix button. The overflow row is the R1
+    /// line: it states the true total, never a remainder.
+    pub fn show_issues(self, ui: &mut egui::Ui) -> IssueStackResponse {
+        let resolved = self.resolve();
+        let mut out = IssueStackResponse::default();
+        for row in &resolved.rows {
+            if issue_row(ui, row) {
+                out.fix = Some(row.first);
+            }
+        }
+        if resolved.truncated && overflow_row(ui, resolved.rows.len(), resolved.total) {
+            out.expand = true;
+        }
+        out
+    }
+}
+
+/// The hover text of an issue row: the full face, then the detail. Pure.
+#[must_use]
+pub fn issue_hover(notice: &Notice) -> String {
+    match notice.detail.as_deref().filter(|d| !d.is_empty()) {
+        Some(detail) => format!("{}\n\n{detail}", notice.text),
+        None => notice.text.clone(),
+    }
+}
+
+/// One issue row: `ROW_ACTION` high, the role tint, the glyph, the face
+/// and the Fix button at the right edge. True when Fix was clicked.
+fn issue_row(ui: &mut egui::Ui, row: &CollapsedNotice) -> bool {
+    let role = row.notice.role;
+    let width = ui.available_width();
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, tokens::ROW_ACTION), egui::Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        egui::CornerRadius::from(tokens::RADIUS_SM),
+        role.tint(),
+    );
+    let inner = rect.shrink2(egui::vec2(tokens::SPACE_3, 0.0));
+    let child = |ui: &mut egui::Ui, r: egui::Rect| {
+        let mut c = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(r)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        c.set_clip_rect(r.intersect(ui.clip_rect()));
+        c
+    };
+    let text_width = |ui: &egui::Ui, t: &str, font: egui::FontId| {
+        ui.painter()
+            .layout_no_wrap(t.to_owned(), font, tokens::TEXT_BODY)
+            .size()
+            .x
+    };
+    let body = egui::FontId::proportional(tokens::SIZE_BODY);
+    // From the right: the Fix button, then the multiplier. The face takes
+    // what is left, so the button never moves to a second line.
+    let mut right = inner.right();
+    let mut fixed = false;
+    if let Some(fix) = row.notice.fix.as_deref() {
+        let font = ui
+            .style()
+            .text_styles
+            .get(&egui::TextStyle::Button)
+            .cloned()
+            .unwrap_or_default();
+        let w = text_width(ui, fix, font) + 2.0 * ui.spacing().button_padding.x;
+        let r = egui::Rect::from_min_max(
+            egui::pos2(right - w, rect.top()),
+            egui::pos2(right, rect.bottom()),
+        );
+        fixed = child(ui, r)
+            .add(super::button::Button::quiet(fix))
+            .clicked();
+        right = r.left() - tokens::SPACE_2;
+    }
+    if row.count > 1 {
+        let multiplier = format!("\u{00D7}{}", row.count);
+        let w = text_width(
+            ui,
+            &multiplier,
+            egui::FontId::proportional(tokens::SIZE_CAPTION),
+        );
+        let r = egui::Rect::from_min_max(
+            egui::pos2(right - w, rect.top()),
+            egui::pos2(right, rect.bottom()),
+        );
+        let _ = child(ui, r).label(text::caption(multiplier));
+        right = r.left() - tokens::SPACE_2;
+    }
+    let mut left = inner.left();
+    if let Some(glyph) = role.glyph() {
+        let w = text_width(ui, glyph, body);
+        let r = egui::Rect::from_min_max(
+            egui::pos2(left, rect.top()),
+            egui::pos2(left + w, rect.bottom()),
+        );
+        let _ = child(ui, r).label(egui::RichText::new(glyph).color(role.text()));
+        left = r.right() + tokens::SPACE_3;
+    }
+    let face = egui::Rect::from_min_max(
+        egui::pos2(left, rect.top()),
+        egui::pos2(right.max(left), rect.bottom()),
+    );
+    let _ = child(ui, face)
+        .add(
+            egui::Label::new(egui::RichText::new(&row.notice.text).color(tokens::TEXT_BODY))
+                .truncate(),
+        )
+        .on_hover_text(issue_hover(&row.notice));
+    let _ = response.on_hover_text(issue_hover(&row.notice));
+    fixed
 }
 
 /// One notice row. Geometry is ruling R13.
@@ -559,6 +712,110 @@ mod tests {
         assert_eq!(resolved.total, 0);
         assert!(!resolved.truncated);
         assert_eq!(resolved.overflow_text(), None);
+    }
+
+    /// W1: an issue stack shows at most three rows and states the true
+    /// total on the overflow row.
+    #[test]
+    fn an_issue_stack_shows_at_most_three_w1() {
+        let resolved = NoticeStack::issues(many(Role::Caution, 7, "check")).resolve();
+        assert_eq!(resolved.rows.len(), 3);
+        assert_eq!(
+            resolved.overflow_text().unwrap(),
+            "Showing 3 of 7 \u{00B7} Show all"
+        );
+        let few = NoticeStack::issues(many(Role::Caution, 2, "check")).resolve();
+        assert_eq!(few.rows.len(), 2);
+        assert!(!few.truncated);
+    }
+
+    /// W1 keeps rule 1: every blocking issue renders, even past the cap.
+    #[test]
+    fn every_blocking_issue_renders_past_the_cap_w1() {
+        let mut notices = many(Role::Danger, 4, "blocked");
+        notices.extend(many(Role::Caution, 3, "check"));
+        let resolved = NoticeStack::issues(notices).resolve();
+        assert_eq!(resolved.rows.len(), 4);
+        assert!(resolved.rows.iter().all(|r| r.notice.role == Role::Danger));
+    }
+
+    /// W1: a row keeps the input index of its first notice, so a Fix click
+    /// names the notice after the sort.
+    #[test]
+    fn a_row_names_its_first_notice_w1() {
+        let notices = vec![
+            Notice::new(Role::Caution, "check").fix("Fix"),
+            Notice::new(Role::Danger, "blocked"),
+        ];
+        let resolved = NoticeStack::issues(notices).resolve();
+        let firsts: Vec<usize> = resolved.rows.iter().map(|r| r.first).collect();
+        assert_eq!(firsts, vec![1, 0]);
+    }
+
+    /// W1: an issue row is one line of `ROW_ACTION`. A long face
+    /// truncates inside the row, the Fix button stays on the line, and the
+    /// hover has the full face and the detail.
+    #[test]
+    fn an_issue_row_is_one_truncated_line_w1() {
+        const FACE: &str = "Depth per pass 1.5 mm is over the rigid limit of 0.83 mm for this tool";
+        let ctx = egui::Context::default();
+        tokens::apply(&ctx);
+        tokens::apply_fonts(&ctx);
+        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+        warmup.textures_delta.clear();
+        let mut top = 0.0;
+        let mut bottom = 0.0;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(300.0);
+            top = ui.cursor().top();
+            let notice = Notice::new(Role::Caution, FACE)
+                .detail("The rigid limit comes from the tool stick-out.")
+                .fix("Fix");
+            let _ = NoticeStack::issues(vec![notice]).show_issues(ui);
+            bottom = ui.min_rect().bottom();
+        });
+        assert!(
+            (bottom - top - tokens::ROW_ACTION).abs() < 0.5,
+            "{top} {bottom}"
+        );
+        // A `Button` lays out its label twice (a transparent run that
+        // reserves the space, then the painted one); keep the runs that
+        // paint, with their elided flag.
+        let texts: Vec<(String, egui::Rect, bool)> = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t)
+                    if t.galley
+                        .job
+                        .sections
+                        .iter()
+                        .any(|s| s.format.color != egui::Color32::TRANSPARENT) =>
+                {
+                    Some((
+                        t.galley.job.text.clone(),
+                        c.shape.visual_bounding_rect(),
+                        t.galley.elided,
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+        out.textures_delta.clear();
+        let face = texts
+            .iter()
+            .find(|(t, _, _)| t.starts_with("Depth"))
+            .unwrap();
+        assert!(face.2, "not truncated");
+        let fix = texts.iter().find(|(t, _, _)| t == "Fix").unwrap();
+        assert!(fix.1.left() >= face.1.right(), "Fix after the face");
+        assert!(fix.1.right() <= 300.5, "Fix inside the row");
+        assert!(
+            (fix.1.center().y - face.1.center().y).abs() < tokens::SPACE_2,
+            "one line: {fix:?} {face:?}"
+        );
+        let hover = issue_hover(&Notice::new(Role::Caution, FACE).detail("Why."));
+        assert_eq!(hover, format!("{FACE}\n\nWhy."));
     }
 
     #[test]

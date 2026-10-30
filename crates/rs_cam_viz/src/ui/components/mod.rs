@@ -34,9 +34,11 @@ pub mod histogram;
 pub mod kv_row;
 pub mod line;
 pub mod motion;
+pub mod notes_counter;
 pub mod notice;
 pub mod pill;
 pub mod precedence;
+pub mod prop_row;
 pub mod provenance;
 pub mod section;
 pub mod sparkline;
@@ -55,9 +57,14 @@ pub use freshness::{Freshness, FreshnessGate};
 pub use histogram::{DistributionChart, DistributionChartResponse};
 pub use kv_row::{KeyValueRow, Value as KeyValue};
 pub use line::OneLine;
-pub use notice::{Banner, CollapsedNotice, EmptyState, NotMeasured, Notice, NoticeStack, Resolved};
+pub use notes_counter::NotesCounter;
+pub use notice::{
+    Banner, CollapsedNotice, EmptyState, IssueStackResponse, NotMeasured, Notice, NoticeStack,
+    Resolved,
+};
 pub use pill::{CountPill, PillFamily, PillRole};
 pub use precedence::PrecedenceField;
+pub use prop_row::{PropRow, PropRowResponse, RowRects};
 pub use provenance::{ProvKind, ProvenanceBadge};
 pub use section::{SummaryCard, UiExt};
 pub use sparkline::{ChartFace, ChartFlip, Sparkline, SparklineResponse, TraceOpen};

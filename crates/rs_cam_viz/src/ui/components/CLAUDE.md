@@ -6,14 +6,14 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 
 - `mod.rs` — the facade. `section.rs` — `UiExt`, param grids, `SummaryCard`.
 - `card.rs`, `notice.rs` — `SectionHeader`, `Card`, `EmptyState`, `Banner`,
-  `NoticeStack`, `NotMeasured`. `data_table.rs` — `DataTable`, `Details` (IC2); a clickable row's labels are not selectable (P4.4).
-- `kv_row.rs`, `value_row.rs` — `KeyValueRow`, `ValueRow`, `OptionalValueRow` (S11: an unset value is an empty field with the hint "set a value" or the rule text; `clearable` gives a "×"), `label_cell`,
-  `row_hover_tint`. `chip.rs`, `pill.rs` — `Role`, `StatusChip`, `CountPill`.
-- `choice_row.rs` — `ChoiceRow` (G-STARTFROM). `line.rs` — `OneLine`, a note.
-- `freshness.rs` — the staleness cue. `histogram.rs`, `sparkline.rs` — charts.
+  `NoticeStack`, `NotMeasured`. W1: `NoticeStack::issues` + `show_issues` is the IssueStack (one line, glyph, truncated face, one `Notice::fix`, cap 3; a Danger outranks the cap; R1 overflow). `notes_counter.rs` — `NotesCounter` ("ⓘ n", popover; 0 draws nothing). `data_table.rs` — `DataTable`, `Details` (IC2); a clickable row's labels are not selectable (P4.4).
+- `prop_row.rs` — `PropRow`, THE field row (W1): label `LABEL_COL_WIDTH` muted, control in one well at `ROW_ACTION`,
+  unit inside the well, `show_read_only`, one quiet `action`, `state(Role)` outline, hover = label + explanation + detail; `label_cell`.
+  `kv_row.rs`, `value_row.rs` — COMPAT rows until W3 (`KeyValueRow`, `ValueRow`, `OptionalValueRow`; S11 unset hint), `row_hover_tint`. Add no new caller. `chip.rs`, `pill.rs` — `Role`, `StatusChip`, `CountPill`.
+- `choice_row.rs` — `ChoiceRow` (G-STARTFROM). `line.rs` — `OneLine`, a note. `freshness.rs` — the staleness cue. `histogram.rs`, `sparkline.rs` — charts.
 - `provenance.rs`, `precedence.rs` — `ProvKind`, `ProvenanceBadge`,
   `PrecedenceField`. `suggest.rs`, `compare.rs` — Suggest and the deltas.
-- `tab_strip.rs` — `TabStrip` (IC3); `focus_ring.rs` — the keyboard focus ring; `format.rs` — shared text formatting; `button.rs`, `motion.rs`, `text.rs`, etc.
+- `tab_strip.rs` — `TabStrip` (IC3): ONE row always (full, compact, then a `»` menu for the tail; the active tab stays; a dot never adds a row); `focus_ring.rs` — the keyboard focus ring; `format.rs` — shared text formatting; `button.rs`, `motion.rs`, `text.rs`, etc.
 
 ## The rule: tabular data uses DataTable; derivation goes in Details
 
@@ -37,4 +37,4 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 
 `component_contracts_up2`, `chrome_reads_the_kit_up3`, `panels_read_the_token_module_up1`,
 `tabular_data_reads_one_table_ic2`, `the_sim_inspector_is_tabbed_ic3`,
-`the_toolpath_card_is_five_elements_dc1`, `cut_metric_cards_read_the_gate_g_cutcards`.
+`the_toolpath_card_is_five_elements_dc1`, `cut_metric_cards_read_the_gate_g_cutcards`; W1 kit: `--lib components` (`_w1`).
