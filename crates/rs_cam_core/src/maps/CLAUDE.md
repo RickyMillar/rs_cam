@@ -16,8 +16,8 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 
 ## Invariants
 
-- The reach map is a top-down, rim-eroded UPPER estimate. Red at or below
-  the discretisation floor is unresolved arithmetic, not proven geometry.
+- The reach map is a top-down UPPER estimate, measured up to the part outline
+  (R7d). Red at or below the floor is unresolved arithmetic, not geometry.
 - `stock_to_leave` is an intentional offset. It is never a reach tolerance.
 - A cache key holds the mesh identity and the tool shape key (GUI: `ReachRequestKey`).
 - `reach_map_for_mesh`, `stats`, `reset_stats`, `cache_len`, `clear`, `bvh_stats`,
@@ -29,7 +29,7 @@ are `maps::tier_map::compute_tier_map` and `maps::reach_map::compute_reach_map`.
 ## Sentries
 
 - With `--features test-support`: `reach_map_p5`, `reach_map_residual_p5_1`,
-  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`, `a_reimport_drops_the_pick_index_sel2`.
+  `tier_map_walk_t1`, `tier_map_slope_t2`, `tier_map_cache_t3`, `stl_flat_regions_are_face_items_p4_7`, `a_reimport_drops_the_pick_index_sel2`; with `step` too: `a_flat_top_reads_reached_to_its_edge_r7d`.
 - Without it: `tier_islands_i1`, `tier_islands_speck_weld`,
   `tier_map_flute_reach`, `the_test_doors_are_gated_fld0405`.
 

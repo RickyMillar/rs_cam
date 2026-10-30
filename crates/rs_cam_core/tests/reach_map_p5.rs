@@ -191,34 +191,33 @@ fn a_flat_endmill_on_a_slope_is_reachable_too() {
     let flat = FlatEndmill::new(6.0, 25.0);
     let map = reach_map_for_mesh(&mesh, &flat, 0.05, 0.4);
     assert!(map.is_measured());
+    // The interior: more than one envelope radius from the outline, where
+    // every binding CL sits over the plane. The edge band is a sampling
+    // question with its own sentry
+    // (`the_low_edge_of_a_slope_reads_reached_or_unresolved_never_a_confident_gap`).
+    let edge = flat.envelope_radius_mm() + map.grid.cell_mm;
+    let mut worst = (0.0f64, 0.0f64, 0.0f64);
+    for (i, cell) in map.cells.iter().enumerate() {
+        let Some(gap) = *cell else { continue };
+        let (x, y) = (
+            map.grid.x_of(i % map.grid.nx),
+            map.grid.y_of(i / map.grid.nx),
+        );
+        let to_outline = x.min(40.0 - x).min(y).min(40.0 - y);
+        if to_outline > edge && f64::from(gap) > worst.0 {
+            worst = (f64::from(gap), x, y);
+        }
+    }
     assert!(
-        map.max_gap_mm < 0.05,
-        "a flat endmill on a 45 deg plane must read reachable; got {:.4} mm at {}, \
-         floor {:.4} mm, cell {:.3} mm",
-        map.max_gap_mm,
-        worst_cell(&map),
+        worst.0 < 0.05,
+        "a flat endmill on a 45 deg plane must read reachable; got {:.4} mm at \
+         ({:.2}, {:.2}), floor {:.4} mm, cell {:.3} mm",
+        worst.0,
+        worst.1,
+        worst.2,
         map.discretisation_floor_mm,
         map.grid.cell_mm
     );
-}
-
-/// Where the worst gap sits, in world XY — so a failure names a place, not
-/// just a number.
-fn worst_cell(map: &rs_cam_core::maps::reach_map::ReachMap) -> String {
-    let mut best = (f32::NEG_INFINITY, 0usize);
-    for (i, cell) in map.cells.iter().enumerate() {
-        if let Some(gap) = cell
-            && *gap > best.0
-        {
-            best = (*gap, i);
-        }
-    }
-    let (row, col) = (best.1 / map.grid.nx.max(1), best.1 % map.grid.nx.max(1));
-    format!(
-        "({:.2}, {:.2})",
-        map.grid.origin_x + col as f64 * map.grid.cell_mm,
-        map.grid.origin_y + row as f64 * map.grid.cell_mm
-    )
 }
 
 // ── 2. A V-groove: floor unreachable, flanks reachable, monotone in R ──
@@ -254,6 +253,84 @@ fn a_v_groove_is_unreachable_at_the_floor_and_reachable_on_the_flanks() {
         map.unreachable_fraction > 0.0 && map.unreachable_fraction < 1.0,
         "the groove must split into reached and unreached; got {:.2} %",
         map.unreachable_pct()
+    );
+}
+
+/// The true apex gap of a V trench that ENDS at the outline, at a distance
+/// `e` from its end: the ball may stand past the end (`y_c < 0`), where only
+/// its section in the end plane, of radius `sqrt(R² − y_c²)`, meets the V.
+/// So the ball reaches deeper near the end, and the closed form
+/// `R·(csc β − 1)` holds only from `e = R` inward.
+///
+/// Minimised over the ball centre on a 1 µm lattice. The lattice minimum
+/// is at or above the continuum minimum, by at most the slope times half a
+/// step; the caller's slack covers that.
+fn trench_end_apex_gap_mm(radius_mm: f64, half_angle_deg: f64, e: f64) -> f64 {
+    let csc = 1.0 / half_angle_deg.to_radians().sin();
+    let steps = (2.0 * radius_mm / 1e-3).ceil() as usize;
+    (0..=steps)
+        .map(|i| e - radius_mm + 2.0 * radius_mm * i as f64 / steps as f64)
+        .filter_map(|y_c| {
+            let section = (radius_mm * radius_mm - y_c.min(0.0).powi(2))
+                .max(0.0)
+                .sqrt();
+            let centre_z = section * csc;
+            let lean = e - y_c;
+            let under = radius_mm * radius_mm - lean * lean;
+            (under >= 0.0).then(|| centre_z - under.sqrt())
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// R7d soundness at the outline: "reached" must stay sound when the map
+/// measures up to the outline. A tap past the outline can read `tip_z` by a
+/// renormalised or a concave interpolation, and an UNDER-read there would
+/// clamp to a false "reached". The V trench runs out of the part at both
+/// ends with a positive true gap all along its apex, so every apex cell
+/// must read at or above the true gap, near the ends too.
+#[test]
+fn a_trench_that_runs_out_of_the_part_never_under_reads_at_the_outline() {
+    let half_angle = 30.0_f64;
+    let length = 30.0_f64;
+    let mesh = v_trench(8.0, half_angle, length, 80, 30).into_mesh();
+    let ball = BallEndmill::new(3.0, 25.0);
+    let r = ball.cusp_radius_mm();
+    // 0.4 mm divides the 8 mm half-width, so a grid column lies on the apex.
+    let map = reach_map_for_mesh(&mesh, &ball, 0.05, 0.4);
+    let col = map
+        .nearest_cell(0.0, 0.0)
+        .expect("the apex is on the grid")
+        .1;
+    assert!(
+        map.grid.x_of(col).abs() < 1e-9,
+        "the grid has an apex column"
+    );
+    let mut checked = 0usize;
+    let mut under = Vec::new();
+    for row in 0..map.grid.ny {
+        let y = map.grid.y_of(row);
+        let Some(gap) = map.cells.get(row * map.grid.nx + col).copied().flatten() else {
+            continue;
+        };
+        let e = y.min(length - y);
+        if e < 0.0 {
+            continue;
+        }
+        let truth = trench_end_apex_gap_mm(r, half_angle, e);
+        checked += 1;
+        if f64::from(gap) < truth - 1e-3 {
+            under.push(format!("y {y:.2}: map {gap:.4} < true {truth:.4}"));
+        }
+    }
+    assert!(
+        checked > 0 && map.gap_at(0.0, 0.0).is_some(),
+        "the apex must be measured up to the outline"
+    );
+    assert!(
+        under.is_empty(),
+        "{} apex cells under-read the true gap, so \"reached\" is not sound at the \
+         outline: {under:?}",
+        under.len()
     );
 }
 
@@ -340,7 +417,7 @@ fn a_colour_vector_has_one_entry_per_model_vertex() {
     let ball = BallEndmill::new(3.0, 25.0);
     let map = reach_map_for_mesh(&mesh, &ball, 0.05, 0.5);
     let gaps = map.vertex_gaps(&mesh, &index);
-    let floors = map.vertex_floors(&mesh);
+    let floors = map.vertex_floors(&mesh, &index);
     let ramp = map.ramp();
     let colors = reach_colors(&gaps, &floors, ramp);
     assert_eq!(colors.len(), mesh.vertices.len());
@@ -572,33 +649,58 @@ fn cold_build_wall_clock_on_a_board_sized_terrain() {
     );
 }
 
+/// R7d (operator ruling 2026-10-30): the map measures up to the part
+/// outline. The old rim band abstained one envelope radius inside it,
+/// because on this fixture — a Ø6 flat endmill on a 45° plane, 0.4 mm cells
+/// — the low edge read a false 0.20 mm gap: the binding CL sits one envelope
+/// radius downhill, at a single-point tangency the grid cannot represent.
+///
+/// The edge is now a sampling question like any other cell. Every measured
+/// cell reads REACHED or UNRESOLVED under its own floor; none reads a
+/// confident gap above the bar, and the low-edge column is measured.
 #[test]
-fn the_rim_band_abstains_rather_than_reporting_its_own_truncation() {
-    // Within one envelope radius of the footprint edge the min-filter has no
-    // CL positions to draw on, so the map says NOT MEASURED there. It must
-    // not report a number it cannot know.
+fn the_low_edge_of_a_slope_reads_reached_or_unresolved_never_a_confident_gap() {
     let mesh = sloped_plane(40.0, 45.0);
     let flat = FlatEndmill::new(6.0, 25.0);
     let map = reach_map_for_mesh(&mesh, &flat, 0.05, 0.4);
     assert!(
-        (map.rim_erosion_mm - flat.envelope_radius_mm()).abs() < 1e-12,
-        "the eroded band is one envelope radius"
+        map.cl_margin_mm >= flat.envelope_radius_mm(),
+        "the CL samples reach at least one envelope radius past the model box; \
+         margin {:.3} mm",
+        map.cl_margin_mm
     );
-    assert!(map.gap_at(0.0, 20.0).is_none(), "the edge abstains");
+    let mut confident = Vec::new();
+    let mut low_edge = Vec::new();
+    for (i, cell) in map.cells.iter().enumerate() {
+        let Some(gap) = *cell else { continue };
+        let (row, col) = (i / map.grid.nx, i % map.grid.nx);
+        let (x, y) = (map.grid.x_of(col), map.grid.y_of(row));
+        let floor = f64::from(map.cell_floor_mm.get(i).copied().unwrap_or(f32::NAN));
+        let gap = f64::from(gap);
+        if x < map.grid.cell_mm / 2.0 {
+            low_edge.push((y, gap, floor));
+        }
+        let bar = if floor.is_finite() {
+            map.tolerance_mm.max(floor)
+        } else {
+            map.tolerance_mm
+        };
+        if gap > bar {
+            confident.push(format!("({x:.2}, {y:.2}) gap {gap:.4} floor {floor:.4}"));
+        }
+    }
+    let worst_edge = low_edge.iter().map(|e| e.1).fold(0.0f64, f64::max);
     assert!(
-        map.gap_at(20.0, 20.0).is_some(),
-        "the middle of the plane is measured"
+        !low_edge.is_empty(),
+        "the low-edge column (x = 0) must be measured"
     );
-    // The abstention is visible on the grid, not silently folded away.
-    let (_, _, not_measured) = map.gap_histogram(8);
-    let measured = map.cells.iter().filter(|c| c.is_some()).count();
-    assert!(measured > 0 && not_measured > 0);
-    // A two-triangle plane still reports its whole area as measured, because
-    // the area verdict samples each triangle at its CENTROID and both
-    // centroids are well inside the band. That is the documented limit of
-    // centroid sampling on a coarse mesh, stated here so it cannot be read
-    // as the rim erosion failing.
-    assert!((map.measured_area_mm2 - map.surface_area_mm2).abs() < 1e-9);
+    assert!(
+        confident.is_empty(),
+        "{} cells read a confident gap above the bar on a plane the tool forms \
+         (worst low-edge gap {worst_edge:.4} mm); first: {:?}",
+        confident.len(),
+        confident.iter().take(5).collect::<Vec<_>>()
+    );
 }
 
 // ── The op set, and the kernel budget ──────────────────────────────────
@@ -720,12 +822,14 @@ fn the_grid_note_says_the_bias_over_states_and_names_its_area_base() {
     // what turned a 3.5-point weighting difference into a hunt for a phantom
     // instrument defect.
     assert!(
-        note.contains("3D surface area") && note.contains("rim-eroded"),
+        note.contains("3D surface area") && note.contains("to the part outline"),
         "the grid note must state the area base. Got: {note}"
     );
     assert!(
-        map.area_basis_note().contains("rim-eroded"),
-        "the shared area-basis string is the one the panel prints"
+        map.area_basis_note().contains("to the part outline")
+            && !map.area_basis_note().contains("rim-eroded"),
+        "the shared area-basis string is the one the panel prints; R7d \
+         removed the rim erosion"
     );
     // And the over-statement sentence is one construction site, so the three
     // surfaces cannot describe the bias three ways.

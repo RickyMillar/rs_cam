@@ -894,8 +894,7 @@ pub struct ScreenshotToolpathParam {
     /// Shade the MODEL surface by the per-tool reach map behind the
     /// toolpath (default false, PNG only). Green = this tool forms the
     /// surface inside the operation's tolerance, red = it cannot reach,
-    /// neutral = not measured (an underside, a wall, or the eroded rim
-    /// band). This is the explicit form of the overlay on purpose: this
+    /// neutral = not measured (an underside or a wall). This is the explicit form of the overlay on purpose: this
     /// call renders offscreen and inherits no viewport state, so the
     /// screenshot asks for the overlay rather than inheriting it. (The
     /// live GUI's own toggle is reachable since P6 —

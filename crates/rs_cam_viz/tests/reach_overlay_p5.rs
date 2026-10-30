@@ -227,9 +227,9 @@ fn open_edges(mesh: &TriangleMesh) -> usize {
     uses.values().filter(|&&n| n == 1).count()
 }
 
-/// The root cause and the fix. On the model vertices every colour is the
-/// model material (no vertex is measured), although the map holds measured
-/// cells. On the refined surface the faces show the field: a reached green
+/// The root cause and the fix. On the model vertices no colour is a miss
+/// (the corners read reached or the model material), although the map holds
+/// missed cells. On the refined surface the faces show the field: a reached green
 /// and a miss colour both appear, and the refinement adds no open edge.
 #[test]
 fn a_step_block_shows_the_reach_field_on_its_faces_r7() {
@@ -243,11 +243,25 @@ fn a_step_block_shows_the_reach_field_on_its_faces_r7() {
         "non-vacuity: the map must hold measured cells"
     );
     let plain = reach_overlay_colors(&map, &mesh, &index, map.ramp());
+    // The root cause: the block's few model vertices all sit at face
+    // corners, so they cannot carry the cell field. Before R7d none was
+    // measured; since R7d (and its own-face lookup) a top-face corner reads
+    // its face, reached. But no corner lies in the wall-foot band where the
+    // ball misses, so no model vertex shows a miss although the map holds
+    // missed cells: the field shows only on the refined surface below.
+    let tol = map.tolerance_mm;
     assert!(
-        plain.iter().all(|c| *c == MODEL_SURFACE.array()),
-        "the model vertices are expected to carry no measured gap (the root cause): {plain:?}"
+        map.cells.iter().flatten().any(|g| f64::from(*g) > tol),
+        "non-vacuity: the map must hold missed cells"
     );
-
+    let reached = reach_color(0.0, f32::NAN, map.ramp());
+    let unmissed = plain
+        .iter()
+        .all(|c| *c == MODEL_SURFACE.array() || *c == reached);
+    assert!(
+        unmissed,
+        "the model vertices are expected to show no miss (the root cause): {plain:?}"
+    );
     let surface = reach_overlay_surface(&map, &mesh, &index, radius);
     eprintln!(
         "r7 block: {} model vertices, {} added vertices, {} triangles, vertex budget {}",
@@ -285,6 +299,86 @@ fn a_step_block_shows_the_reach_field_on_its_faces_r7() {
     );
     let miss = surface.colors.iter().any(|c| c[0] > c[1] && c[0] > c[2]);
     assert!(miss, "no vertex takes a miss colour near the walls");
+}
+
+/// R7d follow-up: a vertex on the top edge of a step reads its own face.
+///
+/// The stepped block's middle step (top at Z 20) meets the low step (Z 10)
+/// at a wall on X 40. A refined vertex on the top edge of that wall lies
+/// between a cell on its own face and a cell at the wall foot. By XY alone
+/// it took the foot cell (x = 40.2, gap 3.49 mm), and the overlay drew a red
+/// line along the edge. The lookup now takes, among the cells within one
+/// cell, the one whose surface Z is nearest the vertex Z.
+///
+/// 1. Every refined vertex on that top edge reads reached: a finite gap at
+///    or under the bar, or under its own floor.
+/// 2. The wall-foot band at Z 10 still reads past the bar. A ball of
+///    radius `R` leaves `R − sqrt(R² − (R − d)²)` at a distance `d` from the
+///    wall; the band checked is `d ≤ R/2`, where that is
+///    `R·(1 − sqrt(3)/2)`, far past the 0.01 mm bar. Vertices within `R` of
+///    the outline are left out: the wall ends there and the ball reaches
+///    past its end.
+#[test]
+fn a_vertex_on_a_step_edge_reads_its_own_face_r7d() {
+    use rs_cam_viz::state::runtime::reach_overlay_surface;
+
+    // The stepped block: the wall between the Z 20 and Z 10 tops is X 40.
+    const WALL_X: f64 = 40.0;
+    const TOP_Z: f64 = 20.0;
+    const FOOT_Z: f64 = 10.0;
+    const ON: f64 = 1e-6;
+
+    let (mesh, index, map, radius) = stepped_block_map();
+    let surface = reach_overlay_surface(&map, &mesh, &index, radius);
+    let refined = surface
+        .refined_mesh(&mesh)
+        .unwrap_or_else(|| panic!("the surface must replay on its own mesh"));
+    let refined_index = SpatialIndex::build_auto(&refined);
+    let (gaps, floors) = map.vertex_gaps_and_floors(&refined, &refined_index);
+    let bbox = &mesh.bbox;
+
+    let mut edge = 0usize;
+    let mut foot = 0usize;
+    for (i, v) in refined.vertices.iter().enumerate() {
+        let (gap, floor) = (f64::from(gaps[i]), f64::from(floors[i]));
+        if (v.x - WALL_X).abs() < ON && (v.z - TOP_Z).abs() < ON {
+            edge += 1;
+            let bar = if floor.is_finite() {
+                map.tolerance_mm.max(floor)
+            } else {
+                map.tolerance_mm
+            };
+            assert!(
+                gap.is_finite() && gap <= bar,
+                "the top-edge vertex ({:.2}, {:.2}, {:.1}) reads gap {gap:.4} mm \
+                 against a bar of {bar:.4} mm: it took a cell off its own face",
+                v.x,
+                v.y,
+                v.z
+            );
+        }
+        let d = v.x - WALL_X;
+        let inside = v.y - bbox.min.y >= radius && bbox.max.y - v.y >= radius;
+        if (v.z - FOOT_Z).abs() < ON && d > ON && d <= radius / 2.0 && inside {
+            foot += 1;
+            assert!(
+                gap.is_finite() && gap > map.tolerance_mm,
+                "the wall-foot vertex ({:.2}, {:.2}, {:.1}), {d:.2} mm from the wall, \
+                 reads gap {gap:.4} mm; the ball leaves its radius there",
+                v.x,
+                v.y,
+                v.z
+            );
+        }
+    }
+    assert!(
+        edge > 2,
+        "non-vacuity: the refined top edge has vertices ({edge})"
+    );
+    assert!(
+        foot > 0,
+        "non-vacuity: the refined wall-foot band has vertices"
+    );
 }
 
 /// The upload replays the refinement on the drawn mesh. The display frame

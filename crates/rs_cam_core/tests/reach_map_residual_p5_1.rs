@@ -122,7 +122,7 @@
 )]
 
 use rs_cam_core::geo::P3;
-use rs_cam_core::maps::reach_map::{ReachMap, reach_map_for_mesh};
+use rs_cam_core::maps::reach_map::{DEFAULT_REACH_TOLERANCE_MM, ReachMap, reach_map_for_mesh};
 use rs_cam_core::mesh::{SpatialIndex, TriangleMesh};
 use rs_cam_core::tool::{BallEndmill, FlatEndmill, MillingCutter};
 
@@ -240,6 +240,63 @@ fn row(label: &str, map: &ReachMap) {
     );
 }
 
+// ── R7d follow-up: the outline ring does not move the published floor ───
+
+/// R7d measures up to the part outline, and a cell there can bind on a CL
+/// past it, where the tool pivots on the part edge. That cell keeps its own
+/// floor for its own verdict. The PUBLISHED floor is a statement about the
+/// surface as a whole, so its p95 is taken over the cells whose winning tap
+/// has a full stencil and reads a floor built from CLs over the part only
+/// (coordinator ruling, 2026-10-30).
+///
+/// The figures below are the `curvature_floor_p95_mm` this file's own rows
+/// printed at ce32777f3, before R7d, when the map abstained on the outline
+/// band. With the ring out of the population they come back. The tolerance
+/// is the map's own profile floor at its cell (a difference below what the
+/// grid resolves on a plane is not a change in what it resolves), and at
+/// least half a unit in the fourth decimal the figures were printed to.
+#[test]
+fn the_outline_ring_does_not_move_the_published_floor_r7d() {
+    let ball = BallEndmill::new(4.0, 25.0);
+    let flat = FlatEndmill::new(6.0, 25.0);
+    let plane = ridges(20.0, 20.0, 0.2, |x| x * 45.0_f64.to_radians().tan());
+    let wave = sinusoid(12.0, 0.6, 20.0, 0.2);
+    let groove = v_trench(10.0, 45.0, 0.1);
+    let narrow = trough(1.5, 1.2, 6.0, 0.1);
+    let cases: [(&str, &TriangleMesh, &dyn MillingCutter, f64, f64); 8] = [
+        ("45 deg plane, R2.0 ball", &plane, &ball, 0.4, 0.0),
+        ("45 deg plane, \u{00D8}6 flat", &plane, &flat, 0.4, 0.0),
+        ("sinusoid", &wave, &ball, 0.2, 0.0012),
+        ("sinusoid", &wave, &ball, 0.4, 0.0047),
+        ("sinusoid", &wave, &ball, 0.645, 0.0123),
+        ("90 deg V-groove", &groove, &ball, 0.4, 0.1000),
+        ("trough rho 1.5", &narrow, &ball, 0.4, 0.0583),
+        ("trough rho 1.5", &narrow, &ball, 0.645, 0.0612),
+    ];
+    for (label, mesh, cutter, cell, before) in cases {
+        let map = reach_map_for_mesh(mesh, cutter, DEFAULT_REACH_TOLERANCE_MM, cell);
+        row(&format!("R7d {label} cell {cell}"), &map);
+        // The `before` figures were printed to four decimals, so half a unit
+        // in the fourth place is the least slack they can carry.
+        let slack = map.profile_floor_mm.max(0.5e-4);
+        assert!(
+            (map.curvature_floor_p95_mm - before).abs() <= slack,
+            "{label} at cell {cell}: the published curvature p95 is {:.4} mm, against \
+             {before:.4} mm before R7d (slack: the profile floor {slack:.4} mm). The \
+             outline ring must not move the whole-map floor.",
+            map.curvature_floor_p95_mm
+        );
+    }
+    // The plain plane at the default bar: the bar is not under the floor.
+    let map = reach_map_for_mesh(&plane, &ball, DEFAULT_REACH_TOLERANCE_MM, 0.4);
+    assert!(
+        !map.tolerance_below_floor(),
+        "a plain 45 deg plane must not put the 0.05 mm bar under the floor; floor \
+         {:.4} mm",
+        map.discretisation_floor_mm
+    );
+}
+
 // ── hypothesis (a): the cell, on a surface the tool fits ────────────────
 
 /// A smooth field whose curvature is three times gentler than the tool's own
@@ -321,17 +378,54 @@ fn a_plane_is_exact_and_its_curvature_floor_is_zero() {
         let map = reach_map_for_mesh(&mesh, cutter.as_ref(), 0.05, 0.4);
         row(label, &map);
         // A fifth of the bar, not literally zero, and the slack is named.
-        // `tip_z` is exactly linear over the plane's interior, but the
-        // quantile's population is the REPORTED cells and the innermost of
-        // those sit one erosion width in, where a neighbour two cells further
-        // out has the ball resting on the part EDGE rather than on the plane.
-        // That ring is a small tail, so p95 lands in the linear interior; the
-        // claim is that a plane accumulates no floor worth reading, not that
-        // it accumulates none at all.
+        // `tip_z` is exactly linear where the tool rests on the plane, so
+        // every cell whose binding CL sits over the plane reads a floor of
+        // about zero. R7d (2026-10-30) measures up to the outline: a cell
+        // within one envelope radius of it can bind on a CL past the edge,
+        // where the tool rests on the part EDGE and `tip_z` kinks, and that
+        // cell takes the kink's floor for its own verdict. The published p95
+        // leaves those cells out (`the_outline_ring_does_not_move_the_published_floor_r7d`),
+        // and this test reads both: the interior cells' own floors, more
+        // than one envelope radius plus a cell from the outline, and the
+        // published p95.
         assert!(
             map.curvature_floor_p95_mm < 0.01,
-            "{label}: tip_z is linear over a plane, so the curvature floor must \
-             stay well under the 0.05 mm bar; got {:.6} mm",
+            "{label}: the published curvature p95 must stay well under the bar \
+             on a plane; got {:.6} mm",
+            map.curvature_floor_p95_mm
+        );
+        let edge = cutter.envelope_radius_mm() + map.grid.cell_mm;
+        let bbox = &mesh.bbox;
+        let mut interior_floor = 0.0f64;
+        let mut interior = 0usize;
+        for (i, cell) in map.cells.iter().enumerate() {
+            if cell.is_none() {
+                continue;
+            }
+            let x = map.grid.x_of(i % map.grid.nx);
+            let y = map.grid.y_of(i / map.grid.nx);
+            let to_outline = (x - bbox.min.x)
+                .min(bbox.max.x - x)
+                .min(y - bbox.min.y)
+                .min(bbox.max.y - y);
+            if to_outline <= edge {
+                continue;
+            }
+            interior += 1;
+            let floor = f64::from(map.cell_floor_mm.get(i).copied().unwrap_or(f32::NAN));
+            if floor.is_finite() {
+                interior_floor = interior_floor.max(floor);
+            }
+        }
+        assert!(
+            interior > 0,
+            "{label}: the fixture must have interior cells"
+        );
+        assert!(
+            interior_floor < 0.01,
+            "{label}: tip_z is linear over a plane, so the curvature floor of a \
+             cell that binds over the plane must stay well under the 0.05 mm bar; \
+             got {interior_floor:.6} mm (published p95 {:.6} mm)",
             map.curvature_floor_p95_mm
         );
         assert!(
@@ -692,8 +786,10 @@ fn the_wanaka_terrain_reach_table() {
         taper.cusp_radius_mm(),
         taper.envelope_radius_mm(),
     );
-    // ON THE MAP'S OWN BASE — 3D triangle area over the rim-eroded
-    // population. The whole-board planar-ish figures (55.0 / 39.5 / 25.2)
+    // ON THE MAP'S BASE BEFORE R7d — 3D triangle area over the rim-eroded
+    // population. R7d (2026-10-30) measures up to the outline, so the map's
+    // rows below are on the whole-footprint base now and sit up to the rim
+    // band's share away from this truth. The whole-board planar-ish figures (55.0 / 39.5 / 25.2)
     // that this line used to print are a DIFFERENT question and reading them
     // beside the rows below is what produced a phantom 12-point offset
     // (P5.2).

@@ -593,8 +593,8 @@ impl Default for ReachOverlayState {
 ///
 /// A colour per vertex of the MODEL mesh cannot carry the cell field on a
 /// coarse tessellation. A STEP block has 48 vertices, and each one lies on
-/// the part outline (inside the rim band, not measured) or at the foot of a
-/// wall (not topmost). So every vertex took the not-measured colour, while
+/// the part outline or at the foot of a wall (not topmost); before R7d the
+/// map also abstained on a band inside the outline. So every vertex took the not-measured colour, while
 /// the map held 4067 measured cells. The refinement adds vertices at the
 /// map cell, so the field shows on the faces.
 ///
@@ -866,7 +866,7 @@ fn refine_to_cell(
 ///
 /// The single construction site for the overlay's colours, so the worker,
 /// the screenshot and the sentry test cannot drift apart. A `NaN` gap (an
-/// underside, the foot of a wall, the rim band, anything off the measured
+/// underside, the foot of a wall, anything off the measured
 /// population) takes `colors::MODEL_SURFACE`, the material of the model
 /// shaders. The overlay shader lights it as the model shader does, so a
 /// not-measured vertex reads exactly as the plain model.
@@ -877,8 +877,7 @@ pub fn reach_overlay_colors(
     index: &SpatialIndex,
     ramp: ReachRamp,
 ) -> Vec<[f32; 3]> {
-    let gaps = map.vertex_gaps(mesh, index);
-    let floors = map.vertex_floors(mesh);
+    let (gaps, floors) = map.vertex_gaps_and_floors(mesh, index);
     let mut colors = rs_cam_core::maps::reach_map::reach_colors(&gaps, &floors, ramp);
     for (color, gap) in colors.iter_mut().zip(&gaps) {
         if !gap.is_finite() {
@@ -1009,11 +1008,10 @@ pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
     } else {
         String::new()
     };
-    // Round 7c: the grey margin round each face is the rim band the map
-    // abstains on (`ReachMap::rim_erosion_mm`), not a rendering gap.
-    let rim = map.rim_erosion_mm;
+    // R7d: the map measures up to the part outline, so grey is only the
+    // surface a top-down measure cannot see.
     format!(
-        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a reported gap under the floor is discretisation, not geometry \u{00B7} grey: not measured (walls, undersides, and the rim band {rim:.2} mm wide)"
+        "{scale} \u{00B7} grid floor {floor:.3} mm{floor_in_r}: a reported gap under the floor is discretisation, not geometry \u{00B7} grey: not measured (walls, undersides)"
     )
 }
 

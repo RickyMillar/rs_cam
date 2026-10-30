@@ -120,9 +120,9 @@ impl RsCamApp {
             // P5.2: the base, on the wire, because a comparison against any
             // other instrument is meaningless until both sides share it.
             "area_basis": "true 3D surface area (each triangle by its own \
-                           area, never its XY footprint), over the rim-eroded \
-                           measured population only \u{2014} both numerator \
-                           and denominator",
+                           area, never its XY footprint), over the measured \
+                           population up to the part outline \u{2014} both \
+                           numerator and denominator",
             "toolpath_index": index,
             "tool_id": map.tool_id,
             "model_id": map.model_id,
@@ -148,6 +148,11 @@ impl RsCamApp {
                 "not_measured_cells": not_measured,
                 "cell_rule": "the TOOL's tip sphere and the model bbox, never the tolerance \
                               \u{2014} so a series of probes at moving tolerances is comparable",
+                "cl_margin_mm": map.cl_margin_mm,
+                "cl_margin_rule": "the grid reaches this far past the model bbox on every \
+                                   side: whole cells, at least the envelope radius, so a \
+                                   cell at the part outline has its binding cutter location \
+                                   sampled",
             },
             "gap_histogram": {
                 "upper_edges_mm": edges,
@@ -156,17 +161,19 @@ impl RsCamApp {
             "discretisation_floor_mm": map.discretisation_floor_mm,
             "profile_floor_mm": map.profile_floor_mm,
             "curvature_floor_p95_mm": map.curvature_floor_p95_mm,
-            "rim_erosion_mm": map.rim_erosion_mm,
-            "note": "Percentages are 3D-SURFACE-AREA weighted over the rim-eroded \
-                     measured population (see `area_basis`); putting a planar or \
+            "note": "Percentages are 3D-SURFACE-AREA weighted over the measured \
+                     population up to the part outline (see `area_basis`); putting a planar or \
                      whole-board figure beside one of these compares two different \
                      questions \u{2014} on a 1.34 mean-sec-theta terrain that alone is \
-                     5 points. Top-down measure. Undersides, walls and a band one envelope radius wide \
-                     inside the part outline are NOT MEASURED \u{2014} read `is_measured` and \
+                     5 points. Top-down measure, up to the part outline. Undersides and walls \
+                     are NOT MEASURED \u{2014} read `is_measured` and \
                      the measured-against-surface areas before believing the percentage. \
                      `discretisation_floor_mm` is what this grid can resolve ON THIS SURFACE: \
                      the larger of the plane-only `profile_floor_mm` and the curvature term \
-                     `curvature_floor_p95_mm`. When `tolerance_below_floor` is true the bar is \
+                     `curvature_floor_p95_mm`, a p95 over the cells whose binding cutter \
+                     location and its floor lie over the part (a cell at the outline that \
+                     binds past it keeps its own floor for its own verdict, but does not \
+                     move this whole-map figure). When `tolerance_below_floor` is true the bar is \
                      under the arithmetic. The grid's gap bias is NON-NEGATIVE \u{2014} a \
                      minimum over a sampled CL set sits at or above the continuum minimum \
                      \u{2014} so `unreachable_pct_of_measured_area` OVER-states: the true \

@@ -94,8 +94,15 @@
 //!   minimum ([`gap_plane`]), because the error of a minimum is the error of
 //!   the one term that won it.
 //!
-//! [`ReachMap::discretisation_floor_mm`] is the larger of the two (the
-//! curvature term at p95), and the verdict ABSTAINS per cell wherever the
+//! * the **edge** term ([`edge_floor_plane`], R7d): the CL samples reach
+//!   one envelope radius past the model box, so a cell at the outline has
+//!   its binding CL in the set. Where that CL is the last contacted sample
+//!   before the tool leaves the part, its bilinear read misses a corner and
+//!   is good only to the field's change over one cell. A tap like that
+//!   carries the first difference there instead of the curvature term.
+//!
+//! [`ReachMap::discretisation_floor_mm`] is the larger of the profile term
+//! and the per-cell floor at p95, and the verdict ABSTAINS per cell wherever the
 //! tolerance sits under a cell's own floor —
 //! [`ReachMap::unresolved_area_mm2`], never counted as unreachable. Read
 //! [`ReachMap::tolerance_below_floor`] before believing the percentage.
@@ -383,18 +390,20 @@ pub struct ReachMap {
     ///
     /// Both halves of this ratio are **true 3D surface area** (each triangle
     /// weighted by its own area, not by its XY footprint), over the
-    /// **rim-eroded** population only. Neither is arbitrary and neither is
-    /// free:
+    /// **whole top-down footprint**, up to the part outline. Neither is
+    /// arbitrary and neither is free:
     ///
     /// * 3D area rather than planar. The unreachable places on a terrain are
     ///   the steep ones, and a steep triangle carries `sec θ` times the area
     ///   of its footprint. On the wanaka board the mean `sec θ` is 1.34, and
     ///   weighting by 3D area rather than by planar cell area moves the
     ///   answer from 53.4 % to 58.6 % at the same bar.
-    /// * eroded rather than whole-board. The band one envelope radius inside
-    ///   the outline is NOT MEASURED ([`rim_keep_mask`]), so it is out of the
-    ///   denominator as well as the numerator — 52 835 mm² of 56 295 on that
-    ///   board.
+    /// * the whole footprint, the rim included (R7d, 2026-10-30). Until then
+    ///   the band one envelope radius inside the outline was NOT MEASURED and
+    ///   left both halves of the ratio — 52 835 mm² of 56 295 on the wanaka
+    ///   board. A figure quoted before R7d is on that eroded base. The CL
+    ///   samples now reach [`Self::cl_margin_mm`] past the model box, so a
+    ///   rim cell has its binding CL in the set.
     ///
     /// A comparison against any other instrument must be put on this base
     /// first. P5.2 found a 12-point "unexplained offset" against an
@@ -454,16 +463,29 @@ pub struct ReachMap {
     /// p95 of the per-cell curvature term ([`curvature_floor_plane`]) over
     /// the measured cells — the term the profile sweep cannot see.
     ///
+    /// **The population (R7d).** Only the cells whose winning tap has a full
+    /// bilinear stencil AND reads a floor built from CLs over the part (the
+    /// 5 x 5 block round the tap's nearest cell lies over the footprint).
+    /// A cell at the outline that binds on a CL past it keeps its own floor
+    /// in [`Self::cell_floor_mm`] for its own verdict, but it does not move
+    /// this whole-map figure, which states what the grid resolves on the
+    /// surface as a whole. Taken over every winner, the outline ring held
+    /// the p95 on small fixtures (0.096 mm on a 20 mm plane, R2.0 ball,
+    /// 0.4 mm cells, against 0.0000 with this population).
+    ///
     /// p95 rather than the maximum: one apex cell on a V-groove would
     /// otherwise set the floor for a whole board. Exactly `0.0` on any plane
     /// at any slope, because `tip_z` is linear there.
     #[serde(default)]
     pub curvature_floor_p95_mm: f64,
-    /// Width (mm) of the band inside the mesh footprint boundary that the
-    /// map ABSTAINS on — one envelope radius. See [`rim_keep_mask`] for what
-    /// the min-filter cannot know there and the 0.20 mm artefact that
-    /// measured it.
-    pub rim_erosion_mm: f64,
+    /// How far (mm) past the model bbox the walk samples cutter locations,
+    /// on every side: whole cells, at least the envelope radius plus
+    /// `ReachMapParams::margin_mm` ([`GridSpec`]'s `for_reach`). The surface
+    /// population stays the mesh's top-down footprint; only the CL domain
+    /// reaches past it, so a rim cell has its binding CL in the set. A CL
+    /// whose footprint covers no mesh binds on nothing and forms no point.
+    /// [`Self::grid`] is the whole CL grid, this margin included.
+    pub cl_margin_mm: f64,
     /// The per-cell resolution floor (mm) the verdict used, read at each
     /// cell's BINDING tap — row-major beside [`Self::cells`], `NaN` where the
     /// map reports nothing.
@@ -531,6 +553,15 @@ impl ReachMap {
     /// * a truly unreachable cell can never be classified `reached`, so what
     ///   the grid loses lands in `unresolved`, not in a false clean bill.
     ///
+    /// That argument holds for a tap with a full bilinear stencil. At the
+    /// edge of the CL domain (R7d) a renormalised read, or a read of the
+    /// concave `tip_z` past the outline, can UNDER-read, and the `max(0.0)`
+    /// clamp would turn that into `reached`. The evidence that it does not
+    /// happen at the outline is
+    /// `tests/reach_map_p5.rs::a_trench_that_runs_out_of_the_part_never_under_reads_at_the_outline`:
+    /// no apex cell of a V trench that runs out of the part reads under its
+    /// true gap.
+    ///
     /// This method's doc, [`Self::grid_note`] and four operator surfaces all
     /// said "lower bound" until 2026-09-08. That was exactly inverted, and it
     /// pointed a reader the wrong way at the one moment they were being told
@@ -545,14 +576,11 @@ impl ReachMap {
     ///
     /// P5.2: an unstated base is what turned a 3.5-point weighting
     /// difference into a hunt for a phantom instrument defect. Both halves of
-    /// every percentage here are true 3D surface area over the rim-eroded
-    /// population.
+    /// every percentage here are true 3D surface area over the whole top-down
+    /// footprint, up to the part outline.
     #[must_use]
     pub fn area_basis_note(&self) -> String {
-        format!(
-            "of 3D surface area, rim-eroded {:.1} mm",
-            self.rim_erosion_mm
-        )
+        "of 3D surface area, up to the part outline".to_owned()
     }
 
     /// The single sentence that says which way this grid's error runs.
@@ -570,11 +598,11 @@ impl ReachMap {
         )
     }
 
-    /// The cell, the floor and the bar, as one phrase.
+    /// The cell, the floor, the bar and the CL margin, as one phrase.
     fn grid_cells(&self) -> String {
         format!(
-            "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm",
-            self.grid.cell_mm, self.discretisation_floor_mm, self.tolerance_mm
+            "cell {:.3} mm \u{00B7} floor {:.3} mm \u{00B7} tol {:.3} mm \u{00B7} CL margin {:.1} mm",
+            self.grid.cell_mm, self.discretisation_floor_mm, self.tolerance_mm, self.cl_margin_mm
         )
     }
 
@@ -633,12 +661,76 @@ impl ReachMap {
         self.cells.get(row * self.grid.nx + col).copied().flatten()
     }
 
-    /// One gap per mesh vertex, for per-vertex colouring.
+    /// The cell a mesh vertex reads its gap and floor from (R7d follow-up).
     ///
-    /// `f32::NAN` means **not measured** — off the grid, no surface, or the
-    /// vertex is not on the topmost surface at its own XY (an underside, the
-    /// foot of a wall). The caller renders those with the mesh's normal
-    /// colour; [`reach_color`] does that for you.
+    /// Among the cells whose centre lies within one cell of the vertex in
+    /// XY, and that are measured, the one whose surface Z is nearest the
+    /// vertex Z; on a tie (within [`TOP_SURFACE_EPS_MM`]) the one nearest in
+    /// XY. `None` when no measured cell lies within one cell.
+    ///
+    /// Nearest by XY alone is wrong on a step edge. A vertex on the top edge
+    /// of a wall lies between a cell on the upper face and a cell on the
+    /// lower face, at the wall foot; by XY it can take the lower one. On the
+    /// stepped block with a Ø10 ball the vertex (40, 0, 20) took the cell at
+    /// x = 40.2 on the face at Z 10 and read a 3.49 mm gap, which drew a red
+    /// line along the top edge of the step. The surface Z of a cell is the
+    /// exact zero-radius drop at its centre ([`surface_z_at`]), so the cell
+    /// on the vertex's own face wins.
+    fn vertex_cell(&self, v: &P3, mesh: &TriangleMesh, index: &SpatialIndex) -> Option<usize> {
+        let cell = self.grid.cell_mm;
+        let fx = (v.x - self.grid.origin_x) / cell;
+        let fy = (v.y - self.grid.origin_y) / cell;
+        if !fx.is_finite() || !fy.is_finite() {
+            return None;
+        }
+        let c_lo = (fx - 1.0).ceil().max(0.0) as usize;
+        let r_lo = (fy - 1.0).ceil().max(0.0) as usize;
+        let c_hi = (fx + 1.0).floor();
+        let r_hi = (fy + 1.0).floor();
+        if c_hi < 0.0 || r_hi < 0.0 {
+            return None;
+        }
+        let c_hi = (c_hi as usize).min(self.grid.nx.saturating_sub(1));
+        let r_hi = (r_hi as usize).min(self.grid.ny.saturating_sub(1));
+        let mut best: Option<(f64, f64, usize)> = None;
+        for row in r_lo..=r_hi {
+            for col in c_lo..=c_hi {
+                let (cx, cy) = (self.grid.x_of(col), self.grid.y_of(row));
+                let xy = ((cx - v.x).powi(2) + (cy - v.y).powi(2)).sqrt();
+                if xy > cell {
+                    continue;
+                }
+                let i = row * self.grid.nx + col;
+                if self.cells.get(i).copied().flatten().is_none() {
+                    continue;
+                }
+                let Some(z) = surface_z_at(cx, cy, mesh, index) else {
+                    continue;
+                };
+                let dz = (z - v.z).abs();
+                let better = match best {
+                    None => true,
+                    Some((bz, bxy, _)) => {
+                        dz < bz - TOP_SURFACE_EPS_MM || (dz <= bz + TOP_SURFACE_EPS_MM && xy < bxy)
+                    }
+                };
+                if better {
+                    best = Some((dz, xy, i));
+                }
+            }
+        }
+        best.map(|(_, _, i)| i)
+    }
+
+    /// One gap and one floor per mesh vertex, from ONE cell choice
+    /// ([`Self::vertex_cell`]), so the colour never pairs the gap of one cell
+    /// with the floor of another.
+    ///
+    /// The gap is `f32::NAN` — **not measured** — when no measured cell lies
+    /// within one cell, or when the vertex is not on the topmost surface at
+    /// its own XY (an underside, the foot of a wall). The floor is `NaN`
+    /// when no cell was chosen or the cell has no floor; the colour then
+    /// falls back to the tolerance alone.
     ///
     /// Takes the spatial index because the topmost-surface test is the exact
     /// zero-radius predicate, not a grid lookup: at half a cell on a steep
@@ -646,39 +738,48 @@ impl ReachMap {
     /// already holds a memoised index
     /// ([`crate::maps::geom_cache::cached_auto_index`]).
     #[must_use]
-    pub fn vertex_gaps(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<f32> {
+    pub fn vertex_gaps_and_floors(
+        &self,
+        mesh: &TriangleMesh,
+        index: &SpatialIndex,
+    ) -> (Vec<f32>, Vec<f32>) {
         mesh.vertices
             .iter()
             .map(|v| {
-                match surface_z_at(v.x, v.y, mesh, index) {
+                let cell = self.vertex_cell(v, mesh, index);
+                let floor = cell
+                    .and_then(|i| self.cell_floor_mm.get(i))
+                    .copied()
+                    .unwrap_or(f32::NAN);
+                let gap = match surface_z_at(v.x, v.y, mesh, index) {
                     // Not the topmost surface here: an underside or the foot
                     // of a wall. Not measured, never "reachable".
                     Some(top) if top - v.z > TOP_SURFACE_EPS_MM => f32::NAN,
-                    Some(_) => self.gap_at(v.x, v.y).unwrap_or(f32::NAN),
+                    Some(_) => cell
+                        .and_then(|i| self.cells.get(i).copied().flatten())
+                        .unwrap_or(f32::NAN),
                     None => f32::NAN,
-                }
+                };
+                (gap, floor)
             })
-            .collect()
+            .unzip()
+    }
+
+    /// One gap per mesh vertex, for per-vertex colouring — the gap half of
+    /// [`Self::vertex_gaps_and_floors`]. The caller renders a `NaN` with the
+    /// mesh's normal colour; [`reach_color`] does that for you.
+    #[must_use]
+    pub fn vertex_gaps(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<f32> {
+        self.vertex_gaps_and_floors(mesh, index).0
     }
 
     /// The per-vertex resolution floor, positionally beside
     /// [`Self::vertex_gaps`] — what [`reach_color`] needs to paint an
-    /// UNRESOLVED vertex grey rather than calling it reached or missed.
-    ///
-    /// `NaN` means the same thing it means in the gap vector: not measured
-    /// here, or no floor for this cell, in which case the colour falls back
-    /// to the tolerance alone.
+    /// UNRESOLVED vertex grey rather than calling it reached or missed. It
+    /// reads the SAME cell as the gap ([`Self::vertex_cell`]).
     #[must_use]
-    pub fn vertex_floors(&self, mesh: &TriangleMesh) -> Vec<f32> {
-        mesh.vertices
-            .iter()
-            .map(|v| {
-                self.nearest_cell(v.x, v.y)
-                    .and_then(|(row, col)| self.cell_floor_mm.get(row * self.grid.nx + col))
-                    .copied()
-                    .unwrap_or(f32::NAN)
-            })
-            .collect()
+    pub fn vertex_floors(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<f32> {
+        self.vertex_gaps_and_floors(mesh, index).1
     }
 
     /// One colour per model vertex — the whole overlay in one pass, so the
@@ -686,11 +787,8 @@ impl ReachMap {
     /// maps.
     #[must_use]
     pub fn vertex_colors(&self, mesh: &TriangleMesh, index: &SpatialIndex) -> Vec<[f32; 3]> {
-        reach_colors(
-            &self.vertex_gaps(mesh, index),
-            &self.vertex_floors(mesh),
-            self.ramp(),
-        )
+        let (gaps, floors) = self.vertex_gaps_and_floors(mesh, index);
+        reach_colors(&gaps, &floors, self.ramp())
     }
 
     /// A coarse histogram of the measured gaps, for a wire surface that must
@@ -948,6 +1046,18 @@ impl GridSpec {
     /// Pad past the mesh bbox by the cutter's envelope plus the margin, so
     /// the min-filter kernel has source cells all round the part, then
     /// coarsen until the grid fits [`MAX_REACH_CELLS`].
+    ///
+    /// # The CL margin, derived
+    ///
+    /// A surface point at the outline is formed by a CL up to one envelope
+    /// radius `E` past it (a flat tip on a slope binds at exactly `E`
+    /// downhill). So the CL domain reaches `E + margin_mm` past the bbox on
+    /// every side, rounded UP to whole cells, plus one cell:
+    /// `ceil((E + margin_mm) / cell) + 1` cells. The rule predates R7d and
+    /// its source names no reason for the extra cell; read as observed, it
+    /// keeps the far bilinear corner of the outermost tap inside the grid. For
+    /// a Ø6 ball at the 0.6 mm cell that is `ceil(3.5 / 0.6) + 1 = 7` cells,
+    /// 4.2 mm. The margin is published as [`ReachMap::cl_margin_mm`].
     fn for_reach(mesh: &TriangleMesh, cutter: &dyn MillingCutter, params: &ReachMapParams) -> Self {
         let pad_mm = cutter.envelope_radius_mm().max(0.0) + params.margin_mm.max(0.0);
         let bbox = &mesh.bbox;
@@ -1318,7 +1428,9 @@ fn floor_against(
 /// the two differ by more than a factor of two on a concave flank.
 ///
 /// `NaN` for a cell with no `tip_z`, or on the grid edge where no second
-/// difference exists.
+/// difference exists. A tap whose bilinear stencil misses a corner (the
+/// edge of the CL domain) does not read this plane; it reads
+/// [`edge_floor_plane`].
 #[must_use]
 pub fn curvature_floor_plane(tip_z: &[f64], nx: usize, ny: usize) -> Vec<f64> {
     fn second(a: Option<&f64>, b: Option<&f64>, c: Option<&f64>) -> Option<f64> {
@@ -1433,7 +1545,19 @@ fn drop_and_surface_planes(
 /// Interpolation, not a nearest-cell lookup, is what makes the min-filter
 /// exact on a plane: `tip_z` is linear on a plane, and bilinear
 /// interpolation of a linear field is exact.
-fn sample_tip_z(tip_z: &[f64], grid: &GridSpec, x: f64, y: f64) -> Option<f64> {
+///
+/// The second return is `Some(floor)` when a corner was missing: the
+/// largest [`edge_floor_plane`] value over the corners that were present.
+/// A renormalised read is a convex combination of corners up to one cell
+/// away, so its error is the field's change over one cell, not the
+/// curvature term of a full stencil (R7d).
+fn sample_tip_z(
+    tip_z: &[f64],
+    edge_floor: &[f64],
+    grid: &GridSpec,
+    x: f64,
+    y: f64,
+) -> Option<(f64, Option<f64>)> {
     let fx = (x - grid.origin_x) / grid.cell_mm;
     let fy = (y - grid.origin_y) / grid.cell_mm;
     if !fx.is_finite() || !fy.is_finite() || fx < 0.0 || fy < 0.0 {
@@ -1459,90 +1583,81 @@ fn sample_tip_z(tip_z: &[f64], grid: &GridSpec, x: f64, y: f64) -> Option<f64> {
     ];
     let mut weighted = 0.0;
     let mut total = 0.0;
+    let mut missing = false;
+    let mut edge = f64::NAN;
     for (r, c, w) in corners {
         if let Some(z) = at(r, c) {
             weighted += w * z;
             total += w;
+            let f = edge_floor.get(r * grid.nx + c).copied().unwrap_or(f64::NAN);
+            if f.is_finite() && (!edge.is_finite() || f > edge) {
+                edge = f;
+            }
+        } else {
+            missing = true;
         }
     }
-    (total > 0.0).then(|| weighted / total)
+    (total > 0.0).then(|| (weighted / total, missing.then_some(edge)))
 }
 
-/// Which cells are far enough inside the mesh footprint for the min-filter
-/// to have CL positions all round them — `true` = keep, `false` = abstain.
+/// The resolution floor (mm) of a renormalised `tip_z` read at each cell —
+/// the term a tap with a missing corner carries instead of
+/// [`curvature_floor_plane`] (R7d).
 ///
-/// **This is a measurement boundary, not a policy.** `machined_z` is a
-/// minimum over CL positions within one envelope radius, and outside the
-/// footprint there are no CL positions: `tip_z` is `NaN` there and the tap
-/// carries no information. Within an envelope radius of the rim the minimum
-/// is therefore taken over a truncated set, and it comes out HIGH.
+/// # Why it exists
 ///
-/// The size of that error is not academic. A Ø6 flat endmill on a 45° plane
-/// binds one envelope radius downhill; at the plane's low edge that CL is a
-/// tangency the grid cannot represent, and the band read a flat **0.20 mm**
-/// of gap — four times a 0.05 mm tolerance, on a plane the tool machines
-/// perfectly. Interpolating over the surviving corners does not fix it,
-/// because the field is genuinely discontinuous there.
+/// The CL domain reaches one envelope radius past the model box
+/// ([`ReachMap::cl_margin_mm`]). Past the outline `tip_z` stays finite while
+/// the tool still touches the part, then stops: the next cell has no
+/// contact (`NaN`). A tap in the last cell before that stop has a missing
+/// corner, and [`sample_tip_z`] renormalises over the corners it has. That
+/// read is a convex combination of corners up to one cell from the tap in
+/// each axis, so its error is bounded by the field's change over one cell
+/// per axis, `cell · |∂tip_z|` — first order, not `cell² · ∂² / 8`. On the
+/// lattice that change IS the first difference to a finite neighbour, with
+/// no cell factor to get wrong: per axis the larger of the two one-sided
+/// differences, summed over the two axes.
 ///
-/// [`crate::maps::tier_map`] leaves the equivalent erosion to its consumer so the
-/// map stays a measurement. This map IS the consumer surface, so it abstains
-/// here instead — `None`, never a number. The eroded width is published as
-/// [`ReachMap::rim_erosion_mm`].
+/// The case that measured it: a Ø6 flat endmill on a 45° plane at 0.4 mm
+/// cells binds one envelope radius downhill, at a single-point tangency
+/// between a contacted cell and a `NaN` one. The low edge read a 0.20 mm gap
+/// on a plane the tool forms; this term there is 0.40 mm, so the edge reads
+/// UNRESOLVED, not missed
+/// (`tests/reach_map_p5.rs::the_low_edge_of_a_slope_reads_reached_or_unresolved_never_a_confident_gap`).
+/// Until R7d the map abstained on a whole envelope-radius band inside the
+/// outline instead.
 ///
-/// The box is Chebyshev rather than Euclidean (a square, not a disc), which
-/// erodes marginally more than the geometry demands — the conservative
-/// direction for an abstention.
-fn rim_keep_mask(surface_z: &[f64], grid: &GridSpec, radius_mm: f64) -> Vec<bool> {
-    let k = (radius_mm.max(0.0) / grid.cell_mm).ceil() as usize;
-    if k == 0 {
-        return surface_z.iter().map(|z| z.is_finite()).collect();
-    }
-    // Integral image of "this cell is NOT over the mesh", so a box query is
-    // four loads whatever the erosion width.
-    let (nx, ny) = (grid.nx, grid.ny);
-    let stride = nx + 1;
-    let mut integral = vec![0u32; stride * (ny + 1)];
-    for r in 0..ny {
-        let mut row_sum = 0u32;
-        for c in 0..nx {
-            let uncovered = u32::from(
-                surface_z
-                    .get(r * nx + c)
-                    .is_none_or(|z: &f64| !z.is_finite()),
-            );
-            row_sum += uncovered;
-            let above = integral.get(r * stride + c + 1).copied().unwrap_or(0);
-            if let Some(slot) = integral.get_mut((r + 1) * stride + c + 1) {
-                *slot = above + row_sum;
+/// Not dilated: the tap reads it at the corners it interpolated from, which
+/// are the cells the error comes from. A tap with a full stencil never reads
+/// it, so a full-stencil floor is the same number it was before R7d.
+///
+/// `NaN` for a cell with no `tip_z`; `0.0` for a contacted cell with no
+/// contacted neighbour.
+fn edge_floor_plane(tip_z: &[f64], nx: usize, ny: usize) -> Vec<f64> {
+    let at = |r: usize, c: usize| -> Option<f64> {
+        tip_z
+            .get(r.checked_mul(nx)?.checked_add(c)?)
+            .copied()
+            .filter(|z| z.is_finite())
+    };
+    let mut out = vec![f64::NAN; nx.saturating_mul(ny)];
+    for row in 0..ny {
+        for col in 0..nx {
+            let Some(here) = at(row, col) else {
+                continue;
+            };
+            let side = |n: Option<f64>| n.map_or(0.0, |z| (z - here).abs());
+            let left = col.checked_sub(1).and_then(|c| at(row, c));
+            let right = (col + 1 < nx).then(|| at(row, col + 1)).flatten();
+            let down = row.checked_sub(1).and_then(|r| at(r, col));
+            let up = (row + 1 < ny).then(|| at(row + 1, col)).flatten();
+            let floor = side(left).max(side(right)) + side(down).max(side(up));
+            if let Some(slot) = out.get_mut(row * nx + col) {
+                *slot = floor;
             }
         }
     }
-    let sum = |r0: usize, c0: usize, r1: usize, c1: usize| -> u32 {
-        let at = |r: usize, c: usize| integral.get(r * stride + c).copied().unwrap_or(0);
-        at(r1, c1) + at(r0, c0) - at(r0, c1) - at(r1, c0)
-    };
-
-    (0..ny)
-        .flat_map(|r| {
-            (0..nx).map(move |c| {
-                if surface_z
-                    .get(r * nx + c)
-                    .is_none_or(|z: &f64| !z.is_finite())
-                {
-                    return false;
-                }
-                // A box that would leave the grid means the padding was not
-                // wide enough; treat the missing part as uncovered.
-                let (Some(r0), Some(c0)) = (r.checked_sub(k), c.checked_sub(k)) else {
-                    return false;
-                };
-                if r + k + 1 > ny || c + k + 1 > nx {
-                    return false;
-                }
-                sum(r0, c0, r + k + 1, c + k + 1) == 0
-            })
-        })
-        .collect()
+    out
 }
 
 /// Pass B: the machined surface, the gap against the true mesh, and **the
@@ -1567,52 +1682,105 @@ fn rim_keep_mask(surface_z: &[f64], grid: &GridSpec, radius_mm: f64) -> Vec<bool
 fn gap_plane(
     tip_z: &[f64],
     surface_z: &[f64],
-    keep: &[bool],
     kernel: &[KernelTap],
     cell_floor: &[f64],
+    edge_floor: &[f64],
     grid: &GridSpec,
     cancel: &(dyn CancelCheck + Sync),
-) -> Result<(Vec<Option<f32>>, Vec<f64>), Cancelled> {
-    let row_fn = |row: usize| -> Vec<(Option<f32>, f64)> {
+) -> Result<GapPlanes, Cancelled> {
+    let row_fn = |row: usize| -> Vec<(Option<f32>, f64, bool)> {
         let y = grid.y_of(row);
         (0..grid.nx)
             .map(|col| {
                 let cell = row * grid.nx + col;
-                if !keep.get(cell).copied().unwrap_or(false) {
-                    return (None, f64::NAN);
-                }
                 let mesh_z = surface_z.get(cell).copied().unwrap_or(f64::NAN);
                 if !mesh_z.is_finite() {
-                    return (None, f64::NAN);
+                    return (None, f64::NAN, false);
                 }
                 let x = grid.x_of(col);
                 let mut machined = f64::INFINITY;
                 let mut floor = f64::NAN;
+                let mut full = false;
                 for tap in kernel {
                     let (tx, ty) = (x + tap.dx_mm, y + tap.dy_mm);
-                    let Some(z) = sample_tip_z(tip_z, grid, tx, ty) else {
+                    let Some((z, edge)) = sample_tip_z(tip_z, edge_floor, grid, tx, ty) else {
                         continue;
                     };
                     let candidate = z + tap.rise_mm;
                     if candidate < machined {
                         machined = candidate;
-                        floor = floor_at(cell_floor, grid, tx, ty);
+                        // A full stencil reads the curvature term; a
+                        // renormalised one reads the first-order edge term.
+                        floor = edge.unwrap_or_else(|| floor_at(cell_floor, grid, tx, ty));
+                        full = edge.is_none() && floor_over_footprint(surface_z, grid, tx, ty);
                     }
                 }
                 if !machined.is_finite() {
-                    return (None, f64::NAN);
+                    return (None, f64::NAN, false);
                 }
                 // A drop cutter cannot gouge, so the machined surface is
                 // never below the mesh; a negative reading is arithmetic
                 // noise and is clamped, not reported as a gouge.
-                (Some((machined - mesh_z).max(0.0) as f32), floor)
+                (Some((machined - mesh_z).max(0.0) as f32), floor, full)
             })
             .collect()
     };
     // A reach row has no drop count of its own to report.
-    Ok(walk_rows(grid, cancel, None, |row| (row_fn(row), 0))?
-        .into_iter()
-        .unzip())
+    let rows = walk_rows(grid, cancel, None, |row| (row_fn(row), 0))?;
+    let mut planes = GapPlanes {
+        cells: Vec::with_capacity(rows.len()),
+        binding_floor: Vec::with_capacity(rows.len()),
+        full_stencil_floor: Vec::with_capacity(rows.len()),
+    };
+    for (gap, floor, full) in rows {
+        planes.cells.push(gap);
+        planes.binding_floor.push(floor);
+        planes
+            .full_stencil_floor
+            .push(if full { floor } else { f64::NAN });
+    }
+    Ok(planes)
+}
+
+/// Is the floor the tap at `(x, y)` reads built from CLs over the part only?
+///
+/// [`floor_at`] reads the cell nearest the tap; [`curvature_floor_plane`]
+/// dilates over that cell's 3 x 3 neighbours, and each of their second
+/// differences reaches one cell further. So the floor at the nearest cell
+/// comes from its 5 x 5 block, and the tap passes when every cell of that
+/// block lies over the mesh footprint (a finite surface Z). That block
+/// holds the tap's four bilinear corners too. A tap that fails binds on, or
+/// reads a floor from, `tip_z` past the outline, where the tool pivots on
+/// the part edge.
+fn floor_over_footprint(surface_z: &[f64], grid: &GridSpec, x: f64, y: f64) -> bool {
+    let col = ((x - grid.origin_x) / grid.cell_mm).round();
+    let row = ((y - grid.origin_y) / grid.cell_mm).round();
+    if !col.is_finite() || !row.is_finite() || col < 2.0 || row < 2.0 {
+        return false;
+    }
+    let (col, row) = (col as usize, row as usize);
+    if col + 2 >= grid.nx || row + 2 >= grid.ny {
+        return false;
+    }
+    (row - 2..=row + 2).all(|r| {
+        (col - 2..=col + 2).all(|c| {
+            surface_z
+                .get(r * grid.nx + c)
+                .is_some_and(|z| z.is_finite())
+        })
+    })
+}
+
+/// What [`gap_plane`] returns, row-major beside the grid.
+struct GapPlanes {
+    /// The gap per cell; `None` = not measured.
+    cells: Vec<Option<f32>>,
+    /// The floor of the tap that won each cell — the cell's own verdict
+    /// reads it, whatever kind of tap won.
+    binding_floor: Vec<f64>,
+    /// The same floor where a FULL-stencil tap won, `NaN` elsewhere: the
+    /// population of the published p95 ([`ReachMap::curvature_floor_p95_mm`]).
+    full_stencil_floor: Vec<f64>,
 }
 
 /// The per-cell floor at the grid cell nearest `(x, y)`, or `NaN` off the
@@ -1658,8 +1826,7 @@ type FaceAreas = (f64, f64, f64, f64);
 /// the tool, and it is counted into neither side.
 ///
 /// A cell with no floor of its own (the grid rim, where no second difference
-/// exists) takes the tolerance alone. That is the conservative direction: the
-/// rim band is already abstained on by [`rim_keep_mask`].
+/// exists) takes the tolerance alone. That is the conservative direction.
 fn area_verdict(
     mesh: &TriangleMesh,
     index: &SpatialIndex,
@@ -1765,36 +1932,44 @@ pub fn compute_reach_map(
     cancel: &(dyn CancelCheck + Sync),
 ) -> Result<ReachMap, Cancelled> {
     let grid = GridSpec::for_reach(mesh, cutter, params);
+    // The CL margin `for_reach` put on every side, read back from the grid
+    // it built so the report cannot name a different number.
+    let cl_margin_mm = (mesh.bbox.min.x - grid.origin_x).max(0.0);
     let (tip_z, surface_z) = drop_and_surface_planes(mesh, index, cutter, &grid, cancel)?;
     let kernel = profile_kernel(cutter, grid.cell_mm);
-    let rim_erosion_mm = cutter.envelope_radius_mm().max(0.0);
-    let keep = rim_keep_mask(&surface_z, &grid, rim_erosion_mm);
     // The floor is measured on the surface this walk built — see
     // `curvature_floor_plane` for the wanaka evidence that the plane-only
     // term understated it by 1.8x on the wanaka case — and `gap_plane` then reports it at
     // the tap that ATTAINED each cell's minimum, which is the only place the
     // error of a minimum can come from.
     let cell_floor = curvature_floor_plane(&tip_z, grid.nx, grid.ny);
-    let (cells, binding_floor) = gap_plane(
+    let edge_floor = edge_floor_plane(&tip_z, grid.nx, grid.ny);
+    let GapPlanes {
+        cells,
+        binding_floor,
+        full_stencil_floor,
+    } = gap_plane(
         &tip_z,
         &surface_z,
-        &keep,
         &kernel,
         &cell_floor,
+        &edge_floor,
         &grid,
         cancel,
     )?;
 
     let profile_floor_mm = sampling_floor_mm(cutter, grid.cell_mm);
-    // `binding_floor` is `NaN` wherever the map reports nothing, so the
-    // quantile's population is the answer's own footprint. That matters:
-    // `tip_z` is finite for a band one envelope radius OUTSIDE the mesh
-    // footprint too — the tool still contacts the part edge from there — and
-    // that band is where `tip_z` stops following the surface and starts
-    // pivoting on the rim, so its second difference is large and says nothing
-    // about the answer. On a 45° plane fixture that band is 40 % of the grid,
-    // which would have put a plane's published floor in the millimetres.
-    let curvature_floor_p95_mm = finite_quantile(&binding_floor, 0.95);
+    // The published p95 is taken over the cells a FULL-stencil tap won
+    // (R7d follow-up, coordinator ruling 2026-10-30). Both floor planes are
+    // `NaN` wherever the map reports nothing, so the population stays on the
+    // answer's own footprint, not the CL band past the outline. A cell at the
+    // outline that binds on a renormalised read keeps that floor for its own
+    // verdict (`binding_floor` below), but it does not move the whole-map
+    // figure: the published floor states what the grid resolves on the
+    // surface as a whole. Taken over every winner, the outline ring held the
+    // p95 on small fixtures — 0.096 mm on a 20 mm plane for a R2.0 ball at
+    // 0.4 mm cells, against 0.0000 here.
+    let curvature_floor_p95_mm = finite_quantile(&full_stencil_floor, 0.95);
     let discretisation_floor_mm = profile_floor_mm.max(curvature_floor_p95_mm);
 
     let tolerance_mm = params.tolerance_mm.max(0.0);
@@ -1835,7 +2010,7 @@ pub fn compute_reach_map(
         discretisation_floor_mm,
         profile_floor_mm,
         curvature_floor_p95_mm,
-        rim_erosion_mm,
+        cl_margin_mm,
         cell_floor_mm: binding_floor.iter().map(|f| *f as f32).collect(),
         tool_id: None,
         model_id: None,
@@ -1885,7 +2060,7 @@ pub fn reach_map_for_mesh(
         discretisation_floor_mm: 0.0,
         profile_floor_mm: 0.0,
         curvature_floor_p95_mm: 0.0,
-        rim_erosion_mm: 0.0,
+        cl_margin_mm: 0.0,
         cell_floor_mm: Vec::new(),
         tool_id: None,
         model_id: None,
