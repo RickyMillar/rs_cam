@@ -125,6 +125,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: OP_NAME.to_owned(),
         enabled: true,

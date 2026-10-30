@@ -164,6 +164,7 @@ fn drill_session(cfg: DrillConfig) -> (ProjectSession, DrillConfig) {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: ToolpathId::from_raw(0),
                 name: "drill sentry".to_owned(),
                 enabled: true,

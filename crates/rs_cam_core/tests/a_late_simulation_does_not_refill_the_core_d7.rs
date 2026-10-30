@@ -91,6 +91,7 @@ fn empty_model(name: &str) -> LoadedModel {
 fn tc(name: &str, stock_source: StockSource, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0), // overwritten by `add_toolpath`
         name: name.to_owned(),
         enabled: true,

@@ -953,6 +953,7 @@ fn coarse_steps_is_gone_from_the_wire() {
     ));
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: crate::ToolpathId::from_raw(0),
         name: "rough".to_owned(),
         enabled: true,

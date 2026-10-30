@@ -87,6 +87,7 @@ fn fixture() -> AppState {
     }
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Speed control fixture".to_owned(),
         enabled: true,
@@ -253,7 +254,24 @@ fn the_speed_controls_write_through_the_panel_idiom_g_fscontrol() {
         .find("\n}\n")
         .map(|offset| start + offset)
         .expect("draw_speed_controls has no closing brace");
-    let body = &source[start..end];
+    // W3k: the feed and spindle writes of a locked edit are in
+    // `write_speed_edit`, which `draw_speed_controls` calls.
+    let helper_start = source
+        .find("fn write_speed_edit(")
+        .expect("write_speed_edit moved or was renamed");
+    let helper_end = source[helper_start..]
+        .find("\n}\n")
+        .map(|offset| helper_start + offset)
+        .expect("write_speed_edit has no closing brace");
+    assert!(
+        source[start..end].contains("write_speed_edit("),
+        "draw_speed_controls no longer calls write_speed_edit"
+    );
+    let body = format!(
+        "{}{}",
+        &source[start..end],
+        &source[helper_start..helper_end]
+    );
 
     for setter in ["set_feed_rate(", "set_plunge_rate(", "set_spindle_rpm("] {
         assert!(

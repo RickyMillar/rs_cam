@@ -57,6 +57,7 @@ pub fn drawing_model(items: ItemSet) -> LoadedModel {
 pub fn toolpath(name: &str, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

@@ -120,6 +120,7 @@ fn mesh_model(id: usize) -> LoadedModel {
 fn toolpath(name: &str, model_id: usize, operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

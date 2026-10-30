@@ -109,6 +109,7 @@ fn one_pocket_session() -> (
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
@@ -533,6 +534,7 @@ fn step_pocket_session() -> rs_cam_core::session::ProjectSession {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,
@@ -764,6 +766,7 @@ fn holes_session() -> rs_cam_core::session::ProjectSession {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Drill".to_owned(),
                 enabled: true,
@@ -1338,6 +1341,7 @@ fn one_hole_is_one_row_re() {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "re drill".to_owned(),
                 enabled: true,
@@ -1454,6 +1458,7 @@ fn the_part_outline_row_reads_part_outline_ra() {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "ra profile".to_owned(),
                 enabled: true,
@@ -2440,6 +2445,7 @@ fn one_op_session(
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::compute::ToolpathId::from_raw(0),
                 name: "Case".to_owned(),
                 enabled: true,

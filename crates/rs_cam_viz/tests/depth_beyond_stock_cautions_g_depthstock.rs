@@ -116,6 +116,7 @@ fn toolpath(name: &str, model_id: usize, op: OperationConfig) -> ToolpathConfig 
     rs_cam_core::compute::fixture_values::fill_unset(&mut op);
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0), // assigned by session.add_toolpath
         name: name.to_owned(),
         enabled: true,

@@ -583,6 +583,7 @@ pub fn case_session(spec: CaseSpec<'_>) -> (ProjectSession, usize) {
         let prior: ToolpathConfig = if mesh {
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 heights: pinned_heights(MESH_STOCK_Z, 0.0),
                 ..toolpath_config(
                     "prior",

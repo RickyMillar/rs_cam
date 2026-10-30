@@ -171,6 +171,7 @@ fn toolpath(op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathCon
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Unified Finish".to_owned(),
         enabled: true,

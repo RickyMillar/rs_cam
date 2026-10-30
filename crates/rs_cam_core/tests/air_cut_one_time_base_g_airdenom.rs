@@ -136,6 +136,7 @@ fn build_as001_pocket_session(feed_rate: f64) -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

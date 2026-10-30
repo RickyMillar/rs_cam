@@ -209,6 +209,7 @@ fn each_selection_colour_is_its_token_p4_4() {
 fn toolpath(op: OperationType) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

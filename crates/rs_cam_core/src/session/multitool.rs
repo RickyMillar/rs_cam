@@ -507,6 +507,7 @@ impl ProjectSession {
         };
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::placeholder(),
             name: format!("Finish tier {tier}{strategy_tag} (R{cusp:.1})"),
             enabled: true,

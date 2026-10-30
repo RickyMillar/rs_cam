@@ -164,6 +164,7 @@ pub struct PropRow<'a> {
     detail: Option<&'a str>,
     action: Option<&'a str>,
     action_hover: Option<&'a str>,
+    lock: Option<bool>,
     numeric: bool,
     unit_slot: bool,
 }
@@ -189,9 +190,22 @@ impl<'a> PropRow<'a> {
             detail: None,
             action: None,
             action_hover: None,
+            lock: None,
             numeric: false,
             unit_slot: true,
         }
+    }
+
+    /// W3k: a lock toggle, a painted padlock, at the right end of the label
+    /// column, next to the label. It takes no width from the well, so the
+    /// row fits the 240-point rail. `locked` draws it closed in the accent
+    /// colour. A click reports through [`PropRowResponse::action_clicked`];
+    /// the hover of the toggle is [`Self::action_hover`]; its rect is
+    /// [`RowRects::action`].
+    pub fn lock(mut self, locked: bool) -> Self {
+        self.lock = Some(locked);
+        self.action = None;
+        self
     }
 
     /// W3g: a numeric row. The well is `NUMBER_WELL_WIDTH` wide at the start
@@ -362,11 +376,20 @@ impl<'a> PropRow<'a> {
         let width = ui.available_width().max(tokens::LABEL_COL_WIDTH);
         let (row, response) =
             ui.allocate_exact_size(egui::vec2(width, tokens::ROW_ACTION), egui::Sense::hover());
-        let rects = layout(
+        let action_width = self.action.map(|text| {
+            let font = ui
+                .style()
+                .text_styles
+                .get(&egui::TextStyle::Button)
+                .cloned()
+                .unwrap_or_default();
+            text_width(ui, text, font) + 2.0 * ui.spacing().button_padding.x
+        });
+        let mut rects = layout(
             ui,
             row,
             self.unit,
-            self.action,
+            action_width,
             self.numeric.then_some(self.unit_slot),
         );
         // egui gives the hover to the top widget only, so the hover goes on
@@ -374,8 +397,25 @@ impl<'a> PropRow<'a> {
         // the control.
         let hover = hover_text(self.label, self.explanation, self.state, self.detail);
 
+        // W3k: the lock sits at the right end of the label column.
+        let lock_rect = self.lock.map(|_| {
+            egui::Rect::from_min_max(
+                egui::pos2(rects.label.right() - LOCK_SLOT_WIDTH, rects.label.top()),
+                rects.label.right_bottom(),
+            )
+        });
+        if lock_rect.is_some() {
+            rects.action = lock_rect;
+        }
+        let label_rect = lock_rect.map_or(rects.label, |lock| {
+            egui::Rect::from_min_max(
+                rects.label.min,
+                egui::pos2(lock.left(), rects.label.bottom()),
+            )
+        });
+
         // The label column.
-        let mut label_ui = child(ui, rects.label);
+        let mut label_ui = child(ui, label_rect);
         let _ = label_ui
             .add(
                 egui::Label::new(
@@ -424,7 +464,13 @@ impl<'a> PropRow<'a> {
 
         // The trailing action.
         let mut action_clicked = false;
-        if let (Some(action), Some(rect)) = (self.action, rects.action) {
+        if let (Some(locked), Some(rect)) = (self.lock, lock_rect) {
+            let mut clicked = lock_toggle(ui, rect, locked, self.label);
+            if let Some(hover) = self.action_hover {
+                clicked = clicked.on_hover_text(hover);
+            }
+            action_clicked = clicked.clicked();
+        } else if let (Some(action), Some(rect)) = (self.action, rects.action) {
             let mut action_ui = child(ui, rect);
             let mut clicked = action_ui.add(Button::quiet(action));
             if let Some(hover) = self.action_hover {
@@ -442,6 +488,71 @@ impl<'a> PropRow<'a> {
             hover,
         }
     }
+}
+
+/// W3k: the width of the lock slot of a row, in points.
+const LOCK_SLOT_WIDTH: f32 = 20.0;
+
+/// W3k: the lock toggle in `rect`: a padlock that the painter draws, so it
+/// needs no glyph in the loaded fonts. Closed and in the accent colour when
+/// `locked`; open and faint when not. The hover fills the slot as a quiet
+/// button does.
+fn lock_toggle(ui: &mut egui::Ui, rect: egui::Rect, locked: bool, label: &str) -> egui::Response {
+    let id = ui.id().with(("prop_row_lock", label));
+    let response = ui.interact(rect, id, egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    if response.hovered() {
+        let _ = painter.rect_filled(
+            rect.shrink(1.0),
+            egui::CornerRadius::from(tokens::RADIUS_SM),
+            ui.visuals().widgets.hovered.weak_bg_fill,
+        );
+    }
+    let color = if locked {
+        tokens::ACCENT
+    } else if response.hovered() {
+        tokens::TEXT_MUTED
+    } else {
+        tokens::TEXT_FAINT
+    };
+    paint_padlock(&painter, rect.center(), locked, color);
+    response
+}
+
+/// Paint a padlock about `center`: a body 10 x 7 points and a shackle above
+/// it. An open lock lifts its shackle and leaves its right leg off the body.
+fn paint_padlock(painter: &egui::Painter, center: egui::Pos2, locked: bool, color: egui::Color32) {
+    let stroke = egui::Stroke::new(1.5, color);
+    let body = egui::Rect::from_center_size(center + egui::vec2(0.0, 2.5), egui::vec2(10.0, 7.0));
+    if locked {
+        let _ = painter.rect_filled(body, egui::CornerRadius::same(1), color);
+    } else {
+        let _ = painter.rect_stroke(
+            body,
+            egui::CornerRadius::same(1),
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    // The shackle: an arch of radius 3 over the body, its legs down to it.
+    let lift = if locked { 0.0 } else { 2.0 };
+    let radius = 3.0;
+    let top = body.top() - 3.0 - lift;
+    let arch_center = egui::pos2(center.x, top + radius);
+    let steps = 12;
+    let mut points: Vec<egui::Pos2> = Vec::with_capacity(steps + 3);
+    points.push(egui::pos2(center.x - radius, body.top()));
+    for i in 0..=steps {
+        let a = std::f32::consts::PI * (1.0 + i as f32 / steps as f32);
+        points.push(arch_center + radius * egui::vec2(a.cos(), a.sin()));
+    }
+    let right_end = if locked {
+        body.top()
+    } else {
+        arch_center.y + 1.0
+    };
+    points.push(egui::pos2(center.x + radius, right_end));
+    let _ = painter.add(egui::Shape::line(points, stroke));
 }
 
 /// A child `Ui` in `rect`, left to right, centred on the row. A child does
@@ -466,7 +577,7 @@ fn layout(
     ui: &egui::Ui,
     row: egui::Rect,
     unit: Option<&str>,
-    action: Option<&str>,
+    action_width: Option<f32>,
     numeric: Option<bool>,
 ) -> RowRects {
     let slot = numeric == Some(true);
@@ -477,14 +588,7 @@ fn layout(
         egui::vec2(tokens::LABEL_COL_WIDTH, tokens::ROW_ACTION),
     );
     let mut right = row.right();
-    let action_rect = action.map(|text| {
-        let font = ui
-            .style()
-            .text_styles
-            .get(&egui::TextStyle::Button)
-            .cloned()
-            .unwrap_or_default();
-        let w = text_width(ui, text, font) + 2.0 * ui.spacing().button_padding.x;
+    let action_rect = action_width.map(|w| {
         let rect = egui::Rect::from_min_max(egui::pos2(right - w, row.top()), row.right_bottom());
         right = rect.left() - gap;
         rect

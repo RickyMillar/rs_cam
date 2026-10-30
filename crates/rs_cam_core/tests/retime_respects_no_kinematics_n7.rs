@@ -214,6 +214,7 @@ fn pocket_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
     };
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: POCKET,
         name: "Pocket".to_owned(),
         enabled: true,
@@ -247,6 +248,7 @@ fn drill_toolpath(tool_id: usize, model_id: usize) -> ToolpathConfig {
     };
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: DRILL,
         name: "Holes".to_owned(),
         enabled: true,

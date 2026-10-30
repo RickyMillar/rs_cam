@@ -83,6 +83,7 @@ fn pin_holes_land_where_the_stock_says_the_pins_are() {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pins".to_owned(),
         enabled: true,

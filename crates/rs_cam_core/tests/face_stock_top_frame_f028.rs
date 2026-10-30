@@ -122,6 +122,7 @@ fn build_as004_face_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Face (AS004)".to_owned(),
         enabled: true,
@@ -389,6 +390,7 @@ fn build_as001_pocket_session_from_file() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,

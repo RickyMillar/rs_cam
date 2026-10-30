@@ -27,6 +27,7 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_feeds_tab(
         ui,
         entry,
         tool.map(|t| t.flute_count),
+        &inputs.machine,
         Fields::new(&placement.by_field),
     );
 

@@ -352,6 +352,7 @@ impl ProjectSession {
         );
         let mut config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: crate::ToolpathId::placeholder(),
             name,
             enabled: true,

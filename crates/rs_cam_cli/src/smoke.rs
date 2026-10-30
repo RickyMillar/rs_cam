@@ -529,6 +529,7 @@ fn materialize_case_toolpath(
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::placeholder(),
         name: format!("{} {name_suffix}", op_type.kind_str()),
         enabled: true,

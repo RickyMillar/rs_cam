@@ -1070,6 +1070,10 @@ pub struct ProjectToolpathSection {
         skip_serializing_if = "crate::machine::head::ShoeSetting::is_auto"
     )]
     pub shoe: crate::machine::head::ShoeSetting,
+    /// W3k: the Feeds tab lock (`feed`, `spindle`, `chipload`). Absent:
+    /// `chipload`, the default, which the file does not write.
+    #[serde(default, skip_serializing_if = "crate::feeds::FeedsLock::is_default")]
+    pub feeds_lock: crate::feeds::FeedsLock,
 }
 
 fn rest_analysis_is_default(r: &crate::compute::config::RestAnalysisConfig) -> bool {
@@ -1383,6 +1387,7 @@ fn toolpath_config_from_section(
         rest_analysis: tp.rest_analysis.clone(),
         planner_origin: tp.planner_origin.clone(),
         shoe: tp.shoe,
+        feeds_lock: tp.feeds_lock,
     }
 }
 

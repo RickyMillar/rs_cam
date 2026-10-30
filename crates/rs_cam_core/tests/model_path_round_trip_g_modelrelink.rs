@@ -239,6 +239,7 @@ fn invalidate_model_drops_every_dependent_and_leaves_others_alone() {
     ) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(id),
             name: format!("Op {id}"),
             enabled: true,

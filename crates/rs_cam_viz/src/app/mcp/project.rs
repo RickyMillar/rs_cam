@@ -233,6 +233,11 @@ impl RsCamApp {
                     // P2.5: op-agnostic rest analysis config — mirrors `boundary`'s
                     // presence here; set via `set_rest_analysis_config`.
                     "rest_analysis": tc.rest_analysis,
+                    // W3k: the Feeds tab lock (`feed`, `spindle`,
+                    // `chipload`): the value the GUI holds when the
+                    // operator edits one of the other two.
+                    // `set_toolpath_param` does no lock arithmetic.
+                    "feeds_lock": tc.feeds_lock,
                     // Geometry selection P3.3: the heights from the one
                     // heights rule, with the floor reference and the
                     // resolved floor Z (the `set_toolpath_floor` reply

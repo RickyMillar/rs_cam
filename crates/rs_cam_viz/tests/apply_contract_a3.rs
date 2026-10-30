@@ -75,6 +75,7 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(id: usize, op_type: OperationType) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(id),
         name: format!("{op_type:?} fixture"),
         enabled: true,

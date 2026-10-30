@@ -267,6 +267,7 @@ pub fn toolpath_config(
     rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut dressups);
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

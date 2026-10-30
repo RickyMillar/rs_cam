@@ -41,9 +41,20 @@
 //!
 //! # W3i (2026-10-30): the readout is the plot hover
 //!
-//! The chart is inline on the Feeds tab, and the readout and the legend are
-//! the hover of the plot. A pointer off the chart opens no hover, so it
-//! paints no reading and no legend; a pointer on the chart paints both.
+//! The chart is inline on the Feeds tab, and the readout is the hover of
+//! the plot. A pointer off the chart opens no hover, so it paints no
+//! reading; a pointer on the chart paints it.
+//!
+//! # W3k (2026-10-31): one line, and no navigation
+//!
+//! The legend left the hover for labels on the chart; the hover is one line
+//! (`RPM · mm/min · mm/t`). The operator found that the hover sometimes
+//! stopped. Measured headless: a short drag on the RPM tick labels zoomed
+//! the x axis (egui_plot's `allow_axis_zoom_drag`, on by default) to about
+//! -100000, and the plot memory kept that zoom. Every pointer position then
+//! read outside the axes, so the readout abstained on the whole chart. Arm 4
+//! drags the ticks, right-drags a box, double-clicks and scrolls, and holds
+//! the readout and the tick labels.
 
 #![expect(
     clippy::expect_used,
@@ -65,10 +76,6 @@ use rs_cam_viz::ui::{properties, tokens};
 
 /// Room for the whole window, so the plot is drawn unclipped.
 const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
-
-/// The first legend line of the plot hover: it paints only while the
-/// pointer is over the plot (W3i).
-const LEGEND_MARK: &str = "Recommended";
 
 /// The inspector width the chart draws in.
 const PANEL_WIDTH: f32 = 340.0;
@@ -111,12 +118,11 @@ fn ctx() -> egui::Context {
 
 /// A readout of a real operating point contains this phrase.
 ///
-/// It was `" RPM · "`, which is too loose: the legend's `● Now` row reads
-/// `17000 RPM · 1291 mm/min` and matched it. That went unnoticed only while
-/// the window was short enough to clip that row, so raising the window's
-/// default height turned a passing arm red — the test was reading the
-/// legend, not the readout, and had been for as long as both existed.
-const READING_MARK: &str = "commanded advance/tooth";
+/// It was `" RPM · "`, which is too loose: the legend's `● Now` row read
+/// `17000 RPM · 1291 mm/min` and matched it. W3k deleted the legend; the
+/// readout is `<rpm> RPM · <feed> mm/min · <chipload> mm/t`, and no other
+/// text on the Feeds tab holds a feed followed by a chipload.
+const READING_MARK: &str = " mm/min \u{00B7} ";
 
 fn fixture() -> AppState {
     let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::EndMill);
@@ -137,6 +143,7 @@ fn fixture() -> AppState {
     }
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Hover bound fixture".to_owned(),
         enabled: true,
@@ -261,12 +268,6 @@ fn the_readout_abstains_when_the_pointer_is_off_the_chart_g_hoverbound() {
          pointer outside the drawn bounds; a verdict built from one is a \
          hazard reading manufactured from an absence."
     );
-    // W3i: the readout is the plot hover, so a pointer off the chart
-    // opens no hover at all.
-    assert!(
-        !texts.iter().any(|t| t.contains(LEGEND_MARK)),
-        "the plot hover painted for a pointer that is not on the chart"
-    );
 }
 
 // ── arm 2 — the pointer is on the chart ──────────────────────────────────
@@ -284,9 +285,10 @@ fn the_readout_reports_when_the_pointer_is_on_the_chart_g_hoverbound() {
          runs: {texts:?}"
     );
     assert!(
-        texts.iter().any(|t| t.contains(LEGEND_MARK)),
-        "W3i: the plot hover holds the legend beside the readout; it is missing. \
-         Painted runs: {texts:?}"
+        texts
+            .iter()
+            .any(|t| t.contains(READING_MARK) && t.ends_with("mm/t")),
+        "W3k: the readout is one line, `RPM · mm/min · mm/t`. Painted runs: {texts:?}"
     );
 }
 
@@ -317,5 +319,164 @@ fn the_hover_guard_uses_the_axis_bound_g_hoverbound() {
         source.contains("past spindle cap"),
         "the `past spindle cap` clause is gone; the overrun strip now reports \
          nothing and the axis bound has nothing left to protect"
+    );
+}
+
+// ── arm 4 — no navigation moves the axes (W3k) ───────────────────────────
+
+/// One frame with these input events.
+fn frame_with(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> Vec<String> {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+        events,
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| {
+        egui::Panel::right("hoverbound_properties")
+            .default_size(PANEL_WIDTH)
+            .max_size(PANEL_WIDTH)
+            .resizable(false)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let mut events = Vec::new();
+                    properties::draw(ui, state, &mut events);
+                });
+            });
+    });
+    let texts = out
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    out.textures_delta.clear();
+    texts
+}
+
+fn button(pos: egui::Pos2, button: egui::PointerButton, pressed: bool) -> egui::Event {
+    egui::Event::PointerButton {
+        pos,
+        button,
+        pressed,
+        modifiers: Default::default(),
+    }
+}
+
+/// A drag with `which` from `from` by `by`, over ten frames.
+fn drag(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    which: egui::PointerButton,
+    from: egui::Pos2,
+    by: egui::Vec2,
+) {
+    let _ = frame_with(
+        ctx,
+        state,
+        vec![egui::Event::PointerMoved(from), button(from, which, true)],
+    );
+    for k in 1..=10 {
+        let at = from + by * (k as f32 / 10.0);
+        let _ = frame_with(ctx, state, vec![egui::Event::PointerMoved(at)]);
+    }
+    let _ = frame_with(ctx, state, vec![button(from + by, which, false)]);
+}
+
+/// The RPM tick labels on the face.
+fn rpm_ticks(texts: &[String]) -> Vec<String> {
+    ["0", "10000", "20000"]
+        .iter()
+        .filter(|t| texts.iter().any(|s| s == *t))
+        .map(|t| (*t).to_owned())
+        .collect()
+}
+
+/// The pointer reads the chart after each navigation gesture: it moves to
+/// `at` and rests there (a tooltip waits for a still pointer).
+fn reads(ctx: &egui::Context, state: &mut AppState, at: egui::Pos2) -> bool {
+    let mut texts = Vec::new();
+    for _ in 0..8 {
+        texts = frame_with(ctx, state, vec![egui::Event::PointerMoved(at)]);
+    }
+    texts.iter().any(|t| t.contains(READING_MARK))
+}
+
+/// W3k: a drag on the tick labels, a right drag, a double click and a
+/// scroll leave the axes where they were, and the readout still answers.
+/// Before W3k the tick drag zoomed the x axis and the readout abstained
+/// on the whole chart.
+#[test]
+fn no_gesture_moves_the_axes_w3k() {
+    let at = a_point_on_the_chart();
+    let ctx = ctx();
+    let mut state = fixture();
+    assert!(reads(&ctx, &mut state, at), "the readout must answer first");
+    let ticks = rpm_ticks(&frame_with(&ctx, &mut state, Vec::new()));
+    assert_eq!(
+        ticks.len(),
+        3,
+        "the RPM ticks 0, 10000, 20000 paint: {ticks:?}"
+    );
+
+    // The "10000" tick sits 40 points under `at`.
+    let tick = at + egui::vec2(0.0, 40.0);
+    drag(
+        &ctx,
+        &mut state,
+        egui::PointerButton::Primary,
+        tick,
+        egui::vec2(-100.0, 0.0),
+    );
+    assert!(
+        reads(&ctx, &mut state, at),
+        "a drag on the RPM ticks stopped the readout"
+    );
+    drag(
+        &ctx,
+        &mut state,
+        egui::PointerButton::Secondary,
+        at,
+        egui::vec2(40.0, 30.0),
+    );
+    assert!(
+        reads(&ctx, &mut state, at),
+        "a right drag stopped the readout"
+    );
+    drag(
+        &ctx,
+        &mut state,
+        egui::PointerButton::Primary,
+        at,
+        egui::vec2(-50.0, 20.0),
+    );
+    for _ in 0..2 {
+        let _ = frame_with(
+            &ctx,
+            &mut state,
+            vec![button(at, egui::PointerButton::Primary, true)],
+        );
+        let _ = frame_with(
+            &ctx,
+            &mut state,
+            vec![button(at, egui::PointerButton::Primary, false)],
+        );
+    }
+    let _ = frame_with(
+        &ctx,
+        &mut state,
+        vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -3.0),
+            modifiers: Default::default(),
+            phase: egui::TouchPhase::Move,
+        }],
+    );
+    assert!(reads(&ctx, &mut state, at), "a gesture stopped the readout");
+    assert_eq!(
+        rpm_ticks(&frame_with(&ctx, &mut state, Vec::new())),
+        ticks,
+        "a gesture moved the RPM axis"
     );
 }

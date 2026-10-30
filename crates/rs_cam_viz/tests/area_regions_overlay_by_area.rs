@@ -73,6 +73,7 @@ fn fresh_state() -> AppState {
 fn config(operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Rough".to_owned(),
         enabled: true,

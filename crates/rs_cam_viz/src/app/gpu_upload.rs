@@ -865,6 +865,7 @@ mod tests {
             });
             let tc = ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: ToolpathId::from_raw(0),
                 name: "Pocket".to_owned(),
                 enabled: true,

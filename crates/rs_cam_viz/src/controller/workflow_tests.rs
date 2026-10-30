@@ -252,6 +252,7 @@ fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationTyp
     use rs_cam_core::compute::catalog::OperationConfig;
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: op_type.label().to_owned(),
         enabled: true,
@@ -1259,6 +1260,7 @@ fn w5_project_round_trip_preserves_step_face_selection() {
     let face_id = find_horizontal_face(&enriched);
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

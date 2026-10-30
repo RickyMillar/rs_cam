@@ -265,6 +265,7 @@ impl<B: ComputeBackend> AppController<B> {
             .map(|(_, src)| {
                 rs_cam_core::session::ToolpathConfig {
                     shoe: src.shoe,
+                    feeds_lock: src.feeds_lock,
                     id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
                     name: format!("{} (copy)", src.name),
                     enabled: src.enabled,

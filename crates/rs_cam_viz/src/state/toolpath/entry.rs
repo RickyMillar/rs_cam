@@ -172,6 +172,9 @@ pub struct ToolpathEntry {
     /// whenever the new stamp equals the stored one (same vendor row, value
     /// moved). Never persisted; the entry is rebuilt empty every frame.
     pub pill_stamped_fields: Vec<rs_cam_core::feeds::FeedsField>,
+    /// W3k: the Feeds tab lock. Mirrors `ToolpathConfig::feeds_lock`;
+    /// round-trips like `feeds_provenance`.
+    pub feeds_lock: rs_cam_core::feeds::FeedsLock,
     /// Multi-tool planner provenance (Phase O). Mirrors
     /// `ToolpathConfig::planner_origin`, which
     /// `ui::properties::build_entry_from_session_and_gui` copies in when it
@@ -245,6 +248,7 @@ impl ToolpathEntry {
             feeds_memo: crate::state::runtime::FeedsMemo::default(),
             feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
             pill_stamped_fields: Vec::new(),
+            feeds_lock: rs_cam_core::feeds::FeedsLock::default(),
             planner_origin: None,
             debug_options: init.debug_options,
             debug_trace: None,

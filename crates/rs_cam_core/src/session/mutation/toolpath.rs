@@ -177,6 +177,7 @@ impl ProjectSession {
             feeds_provenance: crate::feeds::FeedsProvenance::default(),
             planner_origin: None,
             shoe: drill.shoe,
+            feeds_lock: drill.feeds_lock,
         };
         config.floor_conflict()?;
         crate::compute::domain::validate_toolpath(&config)?;

@@ -184,6 +184,7 @@ fn toolpath(tool_id: usize, model_id: usize, rest_analysis: RestAnalysisConfig) 
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Scallop".to_owned(),
         enabled: true,

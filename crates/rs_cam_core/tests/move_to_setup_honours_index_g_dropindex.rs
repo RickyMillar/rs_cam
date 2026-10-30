@@ -31,6 +31,7 @@ use rs_cam_core::session::{
 fn toolpath(name: &str, tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

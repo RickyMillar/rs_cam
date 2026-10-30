@@ -114,6 +114,7 @@ fn steady_state_axial_engagement_stays_within_commanded_dpp() {
         let op_type = op.op_type();
         let tc = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(i),
             name: format!("detector {name}"),
             enabled: true,

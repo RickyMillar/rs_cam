@@ -152,6 +152,7 @@ fn selection_controller() -> AppController<ScriptedBackend> {
     let _ = builder.add_model(model);
     let config = |op: crate::state::toolpath::OperationType| ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,
@@ -510,6 +511,7 @@ mod an_stl_face_click_p4_7 {
         });
         let tc = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             enabled: true,

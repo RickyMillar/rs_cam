@@ -519,6 +519,7 @@ mod tests {
     fn add_op(s: &mut ProjectSession, op: OperationType, tool_id: usize) -> usize {
         let config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: op.kind_str().to_owned(),
             enabled: true,
@@ -1933,6 +1934,7 @@ mod tests {
         tool.diameter = 3.0;
         let config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: "Each face pocket".to_owned(),
             enabled: true,
@@ -2056,6 +2058,7 @@ mod tests {
         tool.diameter = tool_d;
         let config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: operation.label().to_owned(),
             enabled: true,
@@ -2490,6 +2493,7 @@ mod tests {
             });
             let config = ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: rs_cam_core::ToolpathId::from_raw(0),
                 name: "Drill".to_owned(),
                 enabled: true,

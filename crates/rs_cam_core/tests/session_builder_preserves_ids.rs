@@ -88,6 +88,7 @@ fn polygon_model(id: usize, name: &str) -> LoadedModel {
 fn toolpath(id: usize, name: &str, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,

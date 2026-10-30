@@ -13,7 +13,7 @@ The calculator for RPM, feed, plunge rate, DOC and WOC. The validated entry poin
 - `vendor_lut.rs`, `vendor_lookup.rs`, `vendor_normalize.rs` — vendor table, lookup, type mapping. `ramp.rs` — G6 ramp: `RampBasis`, the entry θ, `resolve_ramp_feed`, the G10 `entry_notes`. `plunge.rs` — G10: `PlungeBasis`, `resolve_plunge`.
 - `extrapolation.rs` + `extrapolation/{size,hardness,family,drill,plunge}.rs` — `SizeLaw` (G1 size claim, form A/B/C or refusal),
   `hardness_basis` (G2 Janka + soft/hard cap), `family_basis` (G3 `FAMILY_RULES`), `drill_basis` (G6 `DRILL_RULES`) run in `build_result`; `plunge_rule` (G10 `PLUNGE_RULES`).
-- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary newtypes, the per-value provenance, the `FeedsSupport` arm. `rationale.rs`, `feed_explanation.rs`, `explain_payload.rs` — rationale tree, stage record, UI contract.
+- `profile.rs`, `quantities.rs`, `provenance.rs`, `support.rs` — the pre-sim profile, the boundary newtypes, the per-value provenance, the `FeedsSupport` arm. `lock.rs` — W3k `FeedsLock` (GUI only; a raw param write ignores it). `rationale.rs`, `feed_explanation.rs`, `explain_payload.rs` — rationale tree, stage record, UI contract.
 
 ## Invariants
 - `ChiploadBounds` in Suggest mirrors the gate's piecewise-linear DOC derating (canonical scale: `feeds::geometry`). A V-bit row is read, and its band de-rated, at its printed key (the cutting diameter, or the included angle when the chart prints none), never the engaged width (ruling B4).

@@ -82,6 +82,7 @@ fn drill_op(tool_id: usize, model_id: usize) -> rs_cam_core::session::ToolpathCo
 
     rs_cam_core::session::ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ids::ToolpathId::from_raw(0),
         name: "Dowel holes, 6 mm drill".to_owned(),
         enabled: true,

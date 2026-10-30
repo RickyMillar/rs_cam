@@ -536,6 +536,7 @@ mod tests {
                 setup_index: 0,
                 config: Box::new(ToolpathConfig {
                     shoe: Default::default(),
+                    feeds_lock: Default::default(),
                     id: ToolpathId::from_raw(0),
                     name: "Pocket (rough-score test)".to_owned(),
                     enabled: true,

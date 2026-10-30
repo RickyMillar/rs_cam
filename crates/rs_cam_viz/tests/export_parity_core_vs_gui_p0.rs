@@ -228,6 +228,7 @@ fn pocket_op(rpm: u32) -> OperationConfig {
 fn toolpath_config(name: &str, rpm: u32, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

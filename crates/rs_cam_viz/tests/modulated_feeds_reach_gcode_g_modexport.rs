@@ -132,6 +132,7 @@ fn build_state() -> (ProjectSession, GuiState, SimulationState) {
 
     let tp = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Sample Path".to_owned(),
         enabled: true,

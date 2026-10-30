@@ -38,6 +38,7 @@ fn make_session() -> ProjectSession {
 fn make_tc(tool_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "test".to_owned(),
         enabled: true,
@@ -1601,6 +1602,7 @@ use crate::stock::simulation_cut::SimulationToolpathCutSummary;
 fn make_tp(id: usize, name: &str, op: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,
@@ -2069,6 +2071,7 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,

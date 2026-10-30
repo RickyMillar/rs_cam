@@ -157,6 +157,16 @@ impl AdvancePerToothMm {
         CommandedFeedMmMin::new(self.0 * rpm * f64::from(flutes))
     }
 
+    /// W3k: the spindle speed that gives this advance per tooth at the
+    /// commanded `feed` and `flutes`: `feed / (advance · flutes)`. The
+    /// inverse of [`Self::feed_at`] in the RPM. `None` when the divisor is
+    /// not positive.
+    #[must_use]
+    pub fn rpm_for(self, feed: CommandedFeedMmMin, flutes: u32) -> Option<f64> {
+        let divisor = self.0 * f64::from(flutes);
+        (divisor > 0.0).then(|| feed.mm_min() / divisor)
+    }
+
     #[must_use]
     pub const fn mm(self) -> f64 {
         self.0

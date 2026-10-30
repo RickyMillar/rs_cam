@@ -151,6 +151,7 @@ fn fresh_state() -> AppState {
 fn config(name: &str) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

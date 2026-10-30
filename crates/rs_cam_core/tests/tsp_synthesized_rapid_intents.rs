@@ -195,6 +195,7 @@ fn flat_session(op: OperationConfig) -> ProjectSession {
             0,
             ToolpathConfig {
                 shoe: Default::default(),
+                feeds_lock: Default::default(),
                 id: ToolpathId::from_raw(0),
                 name: format!("{op_type:?}"),
                 enabled: true,

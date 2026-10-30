@@ -132,6 +132,7 @@ fn policy() -> rs_cam_core::gcode::ToolLoadExportPolicy {
 fn toolpath(name: &str, op_type: OperationType, stock_source: StockSource) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

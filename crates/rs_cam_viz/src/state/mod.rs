@@ -784,6 +784,7 @@ mod tests {
         use crate::state::toolpath::{OperationConfig, OperationType, StockSource};
         rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(id),
             name: format!("Op {id}"),
             enabled: true,

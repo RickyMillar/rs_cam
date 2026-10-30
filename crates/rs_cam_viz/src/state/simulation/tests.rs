@@ -720,6 +720,7 @@ fn session_for_toolpath_one() -> rs_cam_core::session::ProjectSession {
     for name in ["Unused", "Adaptive"] {
         let config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: name.to_owned(),
             enabled: true,

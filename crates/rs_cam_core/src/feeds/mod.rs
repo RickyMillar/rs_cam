@@ -23,6 +23,7 @@ pub mod feed_explanation;
 pub mod force;
 pub mod geometry;
 pub mod geometry_class;
+pub mod lock;
 pub mod operating_point;
 pub mod plunge;
 pub mod predict;
@@ -42,6 +43,7 @@ pub use feed_explanation::{
     ADVANCE_PER_TOOTH, AchievedFeedStage, CommandedStage, FeedExplanation, GateObservationStage,
     LutBandStage, ObservedStatistic,
 };
+pub use lock::{FeedsLock, SpeedEdit, SpeedField, SpeedRanges, SpeedWrite};
 pub use operating_point::{PowerFigure, PowerUnmodeled, power_at_operating_point};
 pub use plunge::{PlungeBasis, PlungeBinding};
 pub use predict::{

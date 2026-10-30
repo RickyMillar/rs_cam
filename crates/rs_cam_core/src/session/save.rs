@@ -228,6 +228,7 @@ impl ProjectSession {
                         rest_analysis: tc.rest_analysis.clone(),
                         planner_origin: tc.planner_origin.clone(),
                         shoe: tc.shoe,
+                        feeds_lock: tc.feeds_lock,
                     })
                     .collect();
 
@@ -294,6 +295,7 @@ mod tests {
         use crate::compute::config::{BoundaryConfig, DressupConfig, HeightsConfig};
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(0),
             name: "Test Op".to_owned(),
             enabled: true,
@@ -534,6 +536,50 @@ mod tests {
                 .to_string();
             assert!(message.contains(&format!("'{key_path}'")), "{message}");
             assert!(message.contains(replacement), "{message}");
+        }
+        cleanup(&path);
+    }
+
+    /// W3k: the Feeds tab lock survives a save and a load. The default
+    /// (Chipload) writes no `feeds_lock` key, so an old file saves as it
+    /// loaded. The GUI sets it through `ReplaceToolpathConfig`, and the
+    /// replacement keeps the cached result: the lock moves no motion.
+    #[test]
+    fn the_feeds_lock_round_trips_w3k() {
+        use crate::feeds::FeedsLock;
+        let mut s = ProjectSession::new_empty();
+        let _ = s.add_tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ));
+        let tool_id = s.tools()[0].id.raw();
+        let _ = s.add_toolpath(0, make_tc(tool_id, 0)).unwrap();
+        assert_eq!(s.toolpath_configs()[0].feeds_lock, FeedsLock::Chipload);
+        let path = temp_path("feeds_lock_round_trip_w3k");
+        s.save(&path).unwrap();
+        let plain = std::fs::read_to_string(&path).unwrap();
+        assert!(!plain.contains("feeds_lock"), "{plain}");
+
+        for lock in [FeedsLock::Feed, FeedsLock::Spindle] {
+            let mut config = s.toolpath_configs()[0].clone();
+            config.feeds_lock = lock;
+            let effects = s
+                .apply(crate::session::Command::ReplaceToolpathConfig(
+                    crate::session::ReplaceToolpathConfigArgs {
+                        index: 0,
+                        config: Box::new(config),
+                    },
+                ))
+                .unwrap();
+            assert!(effects.stale.is_empty(), "the lock moves no motion");
+            s.save(&path).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                text.contains(&format!("feeds_lock = \"{}\"", lock.key())),
+                "{text}"
+            );
+            let loaded = ProjectSession::load(&path).unwrap();
+            assert_eq!(loaded.toolpath_configs()[0].feeds_lock, lock);
         }
         cleanup(&path);
     }

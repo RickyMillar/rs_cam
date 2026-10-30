@@ -117,6 +117,7 @@ fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
     rs_cam_core::compute::fixture_values::fill_unset_keep_floor(&mut operation);
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,

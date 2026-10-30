@@ -162,6 +162,7 @@ fn build_project_with_mist(dir: &Path, format: PostFormat, mist: Option<bool>) -
 
     let pocket = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

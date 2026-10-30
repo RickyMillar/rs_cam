@@ -134,6 +134,7 @@ impl ComputeBackend for SilentBackend {
 fn toolpath(operation: OperationConfig) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Op".to_owned(),
         enabled: true,

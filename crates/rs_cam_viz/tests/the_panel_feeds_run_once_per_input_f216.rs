@@ -78,6 +78,7 @@ fn fixture() -> AppState {
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "F216 fixture".to_owned(),
         enabled: true,

@@ -403,15 +403,22 @@ pub(crate) fn draw_inspector_comparison(
     }
     face = face.row_opt(why::chipload_min_row(current, explain));
 
-    draw_apply_column(ui, preview.refusal(), any_change, toolpath_id, events);
+    // W3k (operator, 2026-10-31): the two apply buttons are inside the
+    // `Recommended` disclosure, beside the rows they write. A refusal that
+    // blocks the apply stays on the face.
+    draw_apply_refusal(ui, preview.refusal());
     if !face.is_empty() {
         face.show(ui);
     }
     let count = 1 + changes.len() + level.len() + details.len();
+    let can_apply = preview.refusal().is_none() && any_change;
     Details::new("feeds_details")
-        .label("Recommendation")
+        .label(RECOMMENDED_DETAILS)
         .count(count)
         .show(ui, |ui| {
+            if can_apply {
+                draw_apply_buttons(ui, toolpath_id, events);
+            }
             policy(ui, events);
             if any_change {
                 changes.show(ui);
@@ -1045,22 +1052,16 @@ fn power_unmodelled_hover(reason: PowerUnmodeled) -> String {
     )
 }
 
-/// The inspector comparison's Apply column.
+/// The refusal of the apply, on the card face.
 ///
 /// Checkpoint I-3 (2026-08-12): on a tool × operation pairing
 /// `validate_tool_for_operation` refuses, the explanation remains visible but
-/// the **whole Apply column is replaced by the refusal**. The write becomes
+/// the **apply buttons are replaced by the refusal**. The write becomes
 /// impossible; the explanation survives.
 ///
 /// Round 2: when every row is at the recommendation, the writes would
-/// change nothing, so the column is not drawn.
-fn draw_apply_column(
-    ui: &mut egui::Ui,
-    refusal: Option<&rs_cam_core::feeds::FeedsError>,
-    any_change: bool,
-    toolpath_id: crate::state::toolpath::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
+/// change nothing, so the buttons are not drawn.
+fn draw_apply_refusal(ui: &mut egui::Ui, refusal: Option<&rs_cam_core::feeds::FeedsError>) {
     if let Some(err) = refusal {
         ui.add(
             egui::Label::new(
@@ -1089,13 +1090,23 @@ fn draw_apply_column(
             )
             .wrap(),
         );
-        return;
     }
-    if !any_change {
-        return;
-    }
-    // W3i: both buttons are small and share one row at the chart's left
-    // edge; a rail too narrow for the pair wraps the second under the first.
+}
+
+/// The label of the card's one disclosure (W3k: "Recommended"; it was
+/// "Recommendation"). It holds the two apply buttons and every row.
+pub(crate) const RECOMMENDED_DETAILS: &str = "Recommended";
+
+/// `⚡ Apply all` and `⚡ Speeds only`, at the top of the `Recommended`
+/// disclosure (W3k). The caller draws them only when Suggest does not refuse
+/// and a row differs.
+fn draw_apply_buttons(
+    ui: &mut egui::Ui,
+    toolpath_id: crate::state::toolpath::ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    // W3i: both buttons are small and share one row; a rail too narrow for
+    // the pair wraps the second under the first.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_2;
         // A-3's contract: the 'changes the cut' attribution sits on the

@@ -72,6 +72,7 @@ fn empty_state() -> AppState {
 fn state_with_a_toolpath() -> AppState {
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

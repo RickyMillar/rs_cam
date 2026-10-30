@@ -373,6 +373,7 @@ mod tests {
     fn make_tp(id: usize, name: &str, op: OperationConfig, tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: crate::ids::ToolpathId::from_raw(id),
             name: name.to_owned(),
             enabled: true,

@@ -158,8 +158,18 @@ pub(super) fn calculate_and_apply_feeds(
 /// placement. R1: core fills an EMPTY field from Suggest on op add, and an
 /// empty or suggested field on a tool change, and stamps it with a Suggest
 /// source. Such a value shows ⚡
-/// (`ValueProvenance::is_suggested`). A typed value replaces it; nothing
-/// locks. This block does not consult the calculator: it reads the stamp.
+/// (`ValueProvenance::is_suggested`). A typed value replaces it. This block
+/// does not consult the calculator: it reads the stamp.
+///
+/// # The lock (W3k)
+///
+/// The Feed, Spindle and Chipload rows end in a padlock. Exactly one of the
+/// three is locked (`ToolpathConfig::feeds_lock`, default Chipload); an edit
+/// of one of the other two moves the third (core `FeedsLock::resolve`). The
+/// edited value and the value that moves with it land on the entry in the
+/// same frame, so the write-back sends ONE command and stamps both Manual
+/// (`FeedsProvenance::detect_manual_edits`). Plunge and Ramp feed take no
+/// part in the lock.
 ///
 /// The write idiom is the panel's own: edit the scratch `ToolpathEntry` and
 /// stamp `stale_since`. The panel's write-back turns that into a `Command`,
@@ -168,8 +178,10 @@ pub(super) fn draw_speed_controls(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     flutes: Option<u32>,
+    machine: &rs_cam_core::machine::MachineProfile,
     fields: Fields<'_>,
 ) {
+    use rs_cam_core::feeds::{FeedsLock, SpeedEdit, SpeedField};
     // A drill is Z-only: its plunge rate IS its feed rate. A second field
     // there is a duplicate that writes nothing (the W3.2 rule). F095: the
     // core drill-family predicate decides it.
@@ -180,7 +192,8 @@ pub(super) fn draw_speed_controls(
         .small_caps()
         .hover(
             "The cut feed, the plunge feed and the spindle speed. ⚡ marks a value that \
-             Suggest wrote.",
+             Suggest wrote. The padlock marks the one of feed, spindle speed and \
+             chipload that holds when you edit another.",
         )
         .show(ui);
     let stamped = |field: FeedsField| {
@@ -194,25 +207,52 @@ pub(super) fn draw_speed_controls(
     let spindle_suggested = stamped(FeedsField::SpindleRpm);
     let ramp_suggested = stamped(FeedsField::RampFeedRate);
 
+    let lock = entry.feeds_lock;
+    let flutes = flutes.filter(|f| *f > 0);
+    let feed_before = entry.operation.feed_rate();
+    let rpm_before = entry.operation.spindle_rpm().map(f64::from);
+    let feed_range = feed_range_for(op_type);
+    let ranges = rs_cam_core::feeds::SpeedRanges {
+        feed: (*feed_range.start(), *feed_range.end()),
+        rpm: (*SPINDLE_RANGE.start(), *SPINDLE_RANGE.end()),
+    };
+    // The range of an edit under the lock: the row's own range, narrowed so
+    // the value that moves with it stays inside ITS row's range.
+    let edit_range = |field: SpeedField, own: std::ops::RangeInclusive<f64>| {
+        flutes
+            .and_then(|f| lock.edit_range(field, ranges, feed_before, rpm_before, f))
+            .map_or(own, |(lo, hi)| lo..=hi)
+    };
+    // At most one of the three rows is edited in a frame.
+    let mut edit: Option<SpeedEdit> = None;
+    let mut new_lock = lock;
+
     // S11: a feed that Suggest did not write (no feeds data for the tool)
     // is not set. The field is empty, and the op refuses to generate until
     // it is set.
-    let mut feed = entry.operation.feed_rate();
-    let feed_range = feed_range_for(op_type);
-    let row = speed_prop_row("Feed", op_type, "feed_rate", fields);
-    if speed_row(
+    let mut feed = feed_before;
+    let (row, detail) = machine_state(
+        speed_prop_row("Feed", op_type, "feed_rate", fields),
+        fields.state("feed_rate").role.is_some(),
+        feed_cap_reason(feed, machine),
+    );
+    let out = speed_row(
         ui,
-        row,
+        (lock_row(row, lock, FeedsLock::Feed), detail),
         &mut feed,
         "mm/min",
         50.0,
-        feed_range,
+        edit_range(SpeedField::Feed, feed_range),
         feed_suggested,
         NOT_SET_HOVER,
-    ) && let Some(feed) = feed
+    );
+    if out.lock_clicked {
+        new_lock = FeedsLock::Feed;
+    }
+    if out.edited
+        && let Some(feed) = feed
     {
-        entry.operation.set_feed_rate(feed);
-        entry.stale_since = Some(std::time::Instant::now());
+        edit = Some(SpeedEdit::Feed(feed));
     }
 
     if z_only {
@@ -226,17 +266,19 @@ pub(super) fn draw_speed_controls(
             .show_read_only(ui, text);
     } else {
         let mut plunge = entry.operation.plunge_rate();
-        let row = speed_prop_row("Plunge", op_type, "plunge_rate", fields);
+        let (row, detail) = speed_prop_row("Plunge", op_type, "plunge_rate", fields);
         if speed_row(
             ui,
-            row,
+            (row, detail),
             &mut plunge,
             "mm/min",
             10.0,
             1.0..=10_000.0,
             plunge_suggested,
             NOT_SET_HOVER,
-        ) && let Some(plunge) = plunge
+        )
+        .edited
+            && let Some(plunge) = plunge
         {
             entry.operation.set_plunge_rate(plunge);
             entry.stale_since = Some(std::time::Instant::now());
@@ -246,26 +288,29 @@ pub(super) fn draw_speed_controls(
     // S11: the spindle speed of the op. With no feeds data it is not set,
     // and the op refuses to generate until it is set; the post spindle
     // speed is no fallback.
-    let mut spindle = entry.operation.spindle_rpm().map(f64::from);
-    let row = speed_prop_row("Spindle", op_type, "spindle_rpm", fields);
-    if speed_row(
+    let mut spindle = rpm_before;
+    let (row, detail) = machine_state(
+        speed_prop_row("Spindle", op_type, "spindle_rpm", fields),
+        fields.state("spindle_rpm").role.is_some(),
+        spindle_range_reason(spindle, machine),
+    );
+    let out = speed_row(
         ui,
-        row,
+        (lock_row(row, lock, FeedsLock::Spindle), detail),
         &mut spindle,
         "RPM",
         100.0,
-        1_000.0..=60_000.0,
+        edit_range(SpeedField::Spindle, SPINDLE_RANGE),
         spindle_suggested,
         NOT_SET_HOVER,
-    ) && let Some(rpm) = spindle
+    );
+    if out.lock_clicked {
+        new_lock = FeedsLock::Spindle;
+    }
+    if out.edited
+        && let Some(rpm) = spindle
     {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "the row clamps the RPM to 1 000..=60 000, inside u32"
-        )]
-        entry.operation.set_spindle_rpm(Some(rpm.round() as u32));
-        entry.stale_since = Some(std::time::Instant::now());
+        edit = Some(SpeedEdit::Spindle(rpm));
     }
 
     // G6 ramp: the entry feed, on an op that has the field. Empty means the
@@ -274,17 +319,19 @@ pub(super) fn draw_speed_controls(
         let mut ramp = entry.operation.ramp_feed_rate();
         let range = OperationConfig::param_range_for_type(op_type, "ramp_feed_rate")
             .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
-        let row = speed_prop_row("Ramp feed", op_type, "ramp_feed_rate", fields);
+        let (row, detail) = speed_prop_row("Ramp feed", op_type, "ramp_feed_rate", fields);
         if speed_row(
             ui,
-            row,
+            (row, detail),
             &mut ramp,
             "mm/min",
             10.0,
             range,
             ramp_suggested,
             "Empty: the entry runs at the plunge rate.",
-        ) && let Some(ramp) = ramp
+        )
+        .edited
+            && let Some(ramp) = ramp
             && entry
                 .operation
                 .as_params_mut()
@@ -295,13 +342,163 @@ pub(super) fn draw_speed_controls(
     }
 
     // W3i: the chipload of the feed and the spindle speed.
-    draw_chipload_row(
+    let out = draw_chipload_row(
         ui,
         entry,
         flutes,
-        feed_range_for(op_type),
+        lock,
+        edit_range(SpeedField::Chipload, 0.0..=f64::MAX),
         feed_suggested && spindle_suggested,
     );
+    if out.lock_clicked {
+        new_lock = FeedsLock::Chipload;
+    }
+    if let Some(chipload) = out.edited {
+        edit = Some(SpeedEdit::Chipload(chipload));
+    }
+
+    // W3k: the one write of the edit: the edited value and the value that
+    // moves with it, in this frame.
+    if let Some(edit) = edit {
+        write_speed_edit(entry, edit, flutes, &ranges);
+    }
+    entry.feeds_lock = new_lock;
+}
+
+/// The range of the Spindle row: the clamp of a typed spindle speed.
+const SPINDLE_RANGE: std::ops::RangeInclusive<f64> = 1_000.0..=60_000.0;
+
+/// W3k: the write of one speed edit under the entry's lock: the edited
+/// value and the one that moves with it (core `FeedsLock::resolve`). A
+/// written value is clamped to its row's range, as a typed value is. With
+/// no flutes the edit writes its own field only (a chipload edit writes
+/// nothing). The write-back stamps each written value Manual.
+fn write_speed_edit(
+    entry: &mut ToolpathEntry,
+    edit: rs_cam_core::feeds::SpeedEdit,
+    flutes: Option<u32>,
+    ranges: &rs_cam_core::feeds::SpeedRanges,
+) {
+    use rs_cam_core::feeds::{SpeedEdit, SpeedWrite};
+    let feed = entry.operation.feed_rate();
+    let rpm = entry.operation.spindle_rpm().map(f64::from);
+    let write = match (flutes, edit) {
+        (Some(flutes), _) => entry.feeds_lock.resolve(edit, feed, rpm, flutes),
+        (None, SpeedEdit::Feed(f)) => SpeedWrite {
+            feed: Some(f),
+            rpm: None,
+        },
+        (None, SpeedEdit::Spindle(r)) => SpeedWrite {
+            feed: None,
+            rpm: Some(r),
+        },
+        (None, SpeedEdit::Chipload(_)) => return,
+    };
+    if let Some(feed) = write.feed {
+        entry
+            .operation
+            .set_feed_rate(feed.clamp(ranges.feed.0, ranges.feed.1));
+    }
+    if let Some(rpm) = write.rpm {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the clamp holds the RPM to 1 000..=60 000, inside u32"
+        )]
+        entry
+            .operation
+            .set_spindle_rpm(Some(rpm.clamp(ranges.rpm.0, ranges.rpm.1).round() as u32));
+    }
+    entry.stale_since = Some(std::time::Instant::now());
+}
+
+/// The hover of a lock that is closed, per row.
+fn lock_hover(
+    lock: rs_cam_core::feeds::FeedsLock,
+    row: rs_cam_core::feeds::FeedsLock,
+) -> &'static str {
+    use rs_cam_core::feeds::FeedsLock;
+    if lock != row {
+        return match row {
+            FeedsLock::Feed => {
+                "Lock the feed: an edit of the spindle speed or the chipload keeps it."
+            }
+            FeedsLock::Spindle => {
+                "Lock the spindle speed: an edit of the feed or the chipload keeps it."
+            }
+            FeedsLock::Chipload => {
+                "Lock the chipload: an edit of the feed or the spindle speed keeps it."
+            }
+        };
+    }
+    match row {
+        FeedsLock::Feed => {
+            "Locked: an edit of the spindle speed moves the chipload; an edit of the \
+             chipload moves the spindle speed."
+        }
+        FeedsLock::Spindle => {
+            "Locked: an edit of the feed moves the chipload; an edit of the chipload \
+             moves the feed."
+        }
+        FeedsLock::Chipload => {
+            "Locked: an edit of the feed moves the spindle speed; an edit of the \
+             spindle speed moves the feed."
+        }
+    }
+}
+
+/// The row with its padlock: closed when `row` is the lock.
+fn lock_row<'a>(
+    row: PropRow<'a>,
+    lock: rs_cam_core::feeds::FeedsLock,
+    this: rs_cam_core::feeds::FeedsLock,
+) -> PropRow<'a> {
+    row.lock(lock == this).action_hover(lock_hover(lock, this))
+}
+
+/// W3k: a Caution on a speed row whose value is outside the machine's
+/// range, when the placement gives the row no state (`placed` is `false`).
+/// A value typed or moved by the lock is written as it is; the row says
+/// that the machine cannot run it.
+fn machine_state<'a>(
+    (row, detail): (PropRow<'a>, Option<String>),
+    placed: bool,
+    reason: Option<String>,
+) -> (PropRow<'a>, Option<String>) {
+    match reason {
+        Some(reason) if !placed => (row.state(Some(Role::Caution)), Some(reason)),
+        _ => (row, detail),
+    }
+}
+
+/// The reason of a feed above the machine's cutting feed limit.
+fn feed_cap_reason(
+    feed: Option<f64>,
+    machine: &rs_cam_core::machine::MachineProfile,
+) -> Option<String> {
+    let cap = machine.cutting_ceiling().mm_min();
+    feed.filter(|f| *f > cap)
+        .map(|_| format!("Above the machine's cutting feed limit of {cap:.0} mm/min."))
+}
+
+/// The reason of a spindle speed outside the machine's spindle range.
+fn spindle_range_reason(
+    rpm: Option<f64>,
+    machine: &rs_cam_core::machine::MachineProfile,
+) -> Option<String> {
+    let (lo, hi) = machine.rpm_range();
+    let rpm = rpm?;
+    if rpm > hi {
+        Some(format!(
+            "Above the machine's spindle maximum of {hi:.0} RPM."
+        ))
+    } else if rpm < lo {
+        Some(format!(
+            "Below the machine's spindle minimum of {lo:.0} RPM."
+        ))
+    } else {
+        None
+    }
 }
 
 /// The clamp range of the Feed row of `op_type`. W5: an op whose schema
@@ -321,52 +518,61 @@ const CHIPLOAD_UNIT: &str = "mm/t";
 
 /// The hover of the Chipload row.
 const CHIPLOAD_HOVER: &str = "The commanded advance per tooth, in mm per tooth: feed \
-     \u{00F7} (spindle speed \u{00D7} flutes). Type a chipload to set the feed for it at this spindle speed; the \
-     spindle speed stays. An edit of the feed or the spindle speed changes this value.";
+     \u{00F7} (spindle speed \u{00D7} flutes). The padlock of the feed, spindle and \
+     chipload rows names the value that holds when you edit another.";
+
+/// What the Chipload row returns: the typed chipload, and a click on its
+/// padlock.
+struct ChiploadRowOut {
+    edited: Option<f64>,
+    lock_clicked: bool,
+}
 
 /// W3i — the Chipload row: the commanded advance per tooth of the op's feed,
-/// spindle speed and tool flutes, through core `AdvancePerToothMm`. An edit
-/// writes ONE value, the feed (`feed = chipload × RPM × flutes`, core
-/// `AdvancePerToothMm::feed_at`); the spindle speed stays. The write-back
-/// stamps the feed Manual (`FeedsProvenance::detect_manual_edits`).
+/// spindle speed and tool flutes, through core `AdvancePerToothMm`. W3k: an
+/// edit returns the typed chipload; the caller writes it under the lock
+/// (`write_speed_edit`). `range` is the edit range under the lock.
 ///
 /// With no feed, no spindle speed or no flutes the row is read-only "—"
 /// and the hover gives the reason. ⚡ shows when the feed and the spindle
 /// speed both carry a Suggest stamp: then the chipload is Suggest's too.
 fn draw_chipload_row(
     ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
+    entry: &ToolpathEntry,
     flutes: Option<u32>,
-    feed_range: std::ops::RangeInclusive<f64>,
+    lock: rs_cam_core::feeds::FeedsLock,
+    range: std::ops::RangeInclusive<f64>,
     suggested: bool,
-) {
-    let rpm = entry
-        .operation
-        .spindle_rpm()
-        .filter(|rpm| *rpm > 0)
-        .map(f64::from);
-    let flutes = flutes.filter(|f| *f > 0);
-    let (Some(rpm), Some(flutes)) = (rpm, flutes) else {
+) -> ChiploadRowOut {
+    use rs_cam_core::feeds::FeedsLock;
+    let rpm = entry.operation.spindle_rpm().filter(|rpm| *rpm > 0);
+    let (Some(_), Some(flutes)) = (rpm, flutes) else {
         let reason = if rpm.is_none() {
             "The spindle speed is not set, so the chipload has no value. Set the spindle \
              speed above."
         } else {
             "The tool has no flutes, so the chipload has no value."
         };
-        let _ = PropRow::new("Chipload")
+        let out = lock_row(PropRow::new("Chipload"), lock, FeedsLock::Chipload)
             .unit(CHIPLOAD_UNIT)
             .hover(Some(CHIPLOAD_HOVER))
             .detail(Some(reason))
             .show_read_only(ui, "\u{2014}");
-        return;
+        return ChiploadRowOut {
+            edited: None,
+            lock_clicked: out.action_clicked,
+        };
     };
     let mut chipload = chipload_of(&entry.operation, flutes);
-    // The chipload range is the Feed row's range at this spindle speed, so an
-    // edit here never writes a feed that the Feed row would refuse.
-    let per_feed = rpm * f64::from(flutes);
-    let range = (feed_range.start() / per_feed)..=(feed_range.end() / per_feed);
-    let row = (PropRow::new("Chipload").hover(Some(CHIPLOAD_HOVER)), None);
-    let edited = speed_row_spec(
+    let row = (
+        lock_row(
+            PropRow::new("Chipload").hover(Some(CHIPLOAD_HOVER)),
+            lock,
+            FeedsLock::Chipload,
+        ),
+        None,
+    );
+    let out = speed_row_spec(
         ui,
         row,
         &mut chipload,
@@ -377,8 +583,9 @@ fn draw_chipload_row(
         suggested,
         "The feed is not set. Type a chipload to set the feed at this spindle speed.",
     );
-    if edited && let Some(chipload) = chipload {
-        write_chipload(entry, chipload, flutes);
+    ChiploadRowOut {
+        edited: chipload.filter(|_| out.edited),
+        lock_clicked: out.lock_clicked,
     }
 }
 
@@ -391,21 +598,6 @@ fn chipload_of(operation: &OperationConfig, flutes: u32) -> Option<f64> {
     let feed = operation.feed_rate()?;
     AdvancePerToothMm::from_commanded_at(CommandedFeedMmMin::new(feed), rpm, flutes)
         .map(AdvancePerToothMm::mm)
-}
-
-/// The one write of a Chipload edit: the feed, `chipload × RPM × flutes`
-/// (core `AdvancePerToothMm::feed_at`). The spindle speed stays. Nothing is
-/// written while the op has no spindle speed.
-fn write_chipload(entry: &mut ToolpathEntry, chipload: f64, flutes: u32) {
-    use rs_cam_core::feeds::AdvancePerToothMm;
-    let Some(rpm) = entry.operation.spindle_rpm().filter(|rpm| *rpm > 0) else {
-        return;
-    };
-    let feed = AdvancePerToothMm::new(chipload)
-        .feed_at(f64::from(rpm), flutes)
-        .mm_min();
-    entry.operation.set_feed_rate(feed);
-    entry.stale_since = Some(std::time::Instant::now());
 }
 
 /// The `PropRow` of one speed field: the label, the registry help of the
@@ -432,7 +624,6 @@ fn speed_prop_row<'a>(
 ///
 /// An empty value draws "—" (no long hint fits the rail); its hover adds
 /// `empty_hover`. A typed number sets it, clamped to the range.
-/// `true` when the value changed.
 #[expect(
     clippy::too_many_arguments,
     reason = "the row, the value, its unit, speed and range, the mark and the empty hover"
@@ -446,9 +637,16 @@ fn speed_row(
     range: std::ops::RangeInclusive<f64>,
     suggested: bool,
     empty_hover: &str,
-) -> bool {
+) -> SpeedRowOut {
     let spec = crate::ui::components::NumberSpec::new(speed).range(range);
     speed_row_spec(ui, row, val, unit, &spec, suggested, empty_hover)
+}
+
+/// What a speed row returns: the value changed, and its padlock (W3k) was
+/// clicked.
+struct SpeedRowOut {
+    edited: bool,
+    lock_clicked: bool,
 }
 
 /// [`speed_row`] with the caller's `NumberSpec` (the Chipload row takes four
@@ -461,7 +659,7 @@ fn speed_row_spec(
     spec: &crate::ui::components::NumberSpec<'_>,
     suggested: bool,
     empty_hover: &str,
-) -> bool {
+) -> SpeedRowOut {
     let mut changed = false;
     let was_set = val.is_some();
     let out = row
@@ -495,7 +693,10 @@ fn speed_row_spec(
         format!("{}\n\n{empty_hover}", out.hover)
     };
     let _ = out.inner.on_hover_text(hover);
-    changed
+    SpeedRowOut {
+        edited: changed,
+        lock_clicked: out.action_clicked,
+    }
 }
 
 /// The derived rows of the tab: the measured operating point. The
@@ -1016,9 +1217,9 @@ pub(super) fn draw_entry_preview_diagram(
     reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
-    use super::{chipload_of, write_chipload};
+    use super::{chipload_of, write_speed_edit};
     use crate::state::toolpath::{OperationConfig, OperationType, ToolpathEntry};
-    use rs_cam_core::feeds::{FeedsField, ProvenanceSource};
+    use rs_cam_core::feeds::{FeedsField, FeedsLock, ProvenanceSource, SpeedEdit};
 
     const FLUTES: u32 = 2;
 
@@ -1039,6 +1240,7 @@ mod tests {
         );
         let stored = rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::compute::ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             enabled: true,
@@ -1069,41 +1271,152 @@ mod tests {
         (stored, entry)
     }
 
-    /// W3i: a Chipload edit writes ONE value, the feed
-    /// (`chipload × RPM × flutes`), stamps it Manual through the write-back,
-    /// and leaves the spindle speed and its stamp.
-    #[test]
-    fn a_chipload_edit_writes_the_feed_and_keeps_the_rpm_w3i() {
+    /// The ranges of the two rows, wide enough for every case below.
+    const RANGES: rs_cam_core::feeds::SpeedRanges = rs_cam_core::feeds::SpeedRanges {
+        feed: (1.0, 50_000.0),
+        rpm: (1_000.0, 60_000.0),
+    };
+
+    /// One edit under `lock` through the tab's write, then the write-back:
+    /// the projected config (ONE `ReplaceToolpathConfig`, so one undo step).
+    fn edit_under(
+        lock: FeedsLock,
+        edit: SpeedEdit,
+    ) -> (
+        rs_cam_core::session::ToolpathConfig,
+        rs_cam_core::session::ToolpathConfig,
+    ) {
         let (stored, mut entry) = pocket();
-        write_chipload(&mut entry, 0.05, FLUTES);
+        entry.feeds_lock = lock;
+        write_speed_edit(&mut entry, edit, Some(FLUTES), &RANGES);
         let config = crate::ui::properties::project_entry_onto(&stored, &entry);
-        let feed = config
-            .operation
-            .feed_rate()
-            .expect("the edit sets the feed");
-        assert!(
-            (feed - 0.05 * 18_000.0 * f64::from(FLUTES)).abs() < 1e-9,
-            "feed {feed}, not chipload x RPM x flutes = 1800"
-        );
+        (stored, *config)
+    }
+
+    fn source(
+        config: &rs_cam_core::session::ToolpathConfig,
+        field: FeedsField,
+    ) -> Option<ProvenanceSource> {
+        config.feeds_provenance.get(field).map(|p| p.source)
+    }
+
+    /// W3k: every lock against every edit. The edited field takes the typed
+    /// value, the dependent field moves by `feed = chipload x RPM x flutes`,
+    /// the locked one holds, and both written fields are Manual. The start
+    /// is feed 1000, 18 000 RPM, 2 flutes: chipload 1/36.
+    #[test]
+    fn each_lock_moves_the_dependent_field_and_holds_the_locked_one_w3k() {
+        let cl = 1000.0 / (18_000.0 * f64::from(FLUTES));
+        // (lock, edit, feed after, rpm after, the fields written)
+        let cases: [(FeedsLock, SpeedEdit, f64, u32, &[FeedsField]); 6] = [
+            // Chipload locked: a feed edit moves the RPM; an RPM edit the feed.
+            (
+                FeedsLock::Chipload,
+                SpeedEdit::Feed(2000.0),
+                2000.0,
+                36_000,
+                &[FeedsField::FeedRate, FeedsField::SpindleRpm],
+            ),
+            (
+                FeedsLock::Chipload,
+                SpeedEdit::Spindle(9000.0),
+                500.0,
+                9000,
+                &[FeedsField::FeedRate, FeedsField::SpindleRpm],
+            ),
+            // Feed locked: an RPM edit moves the chipload; a chipload edit
+            // moves the RPM.
+            (
+                FeedsLock::Feed,
+                SpeedEdit::Spindle(12_000.0),
+                1000.0,
+                12_000,
+                &[FeedsField::SpindleRpm],
+            ),
+            (
+                FeedsLock::Feed,
+                SpeedEdit::Chipload(0.05),
+                1000.0,
+                10_000,
+                &[FeedsField::SpindleRpm],
+            ),
+            // Spindle locked: a feed edit moves the chipload; a chipload edit
+            // moves the feed (the W3i behaviour).
+            (
+                FeedsLock::Spindle,
+                SpeedEdit::Feed(1500.0),
+                1500.0,
+                18_000,
+                &[FeedsField::FeedRate],
+            ),
+            (
+                FeedsLock::Spindle,
+                SpeedEdit::Chipload(0.05),
+                1800.0,
+                18_000,
+                &[FeedsField::FeedRate],
+            ),
+        ];
+        for (lock, edit, feed, rpm, written) in cases {
+            let (_, config) = edit_under(lock, edit);
+            let got_feed = config.operation.feed_rate().expect("a feed");
+            assert!(
+                (got_feed - feed).abs() < 1e-9,
+                "{lock:?} {edit:?}: feed {got_feed}, not {feed}"
+            );
+            assert_eq!(
+                config.operation.spindle_rpm(),
+                Some(rpm),
+                "{lock:?} {edit:?}: rpm"
+            );
+            for field in [FeedsField::FeedRate, FeedsField::SpindleRpm] {
+                let manual = source(&config, field) == Some(ProvenanceSource::Manual);
+                assert_eq!(
+                    manual,
+                    written.contains(&field),
+                    "{lock:?} {edit:?}: {field:?} Manual = {manual}; a written field is \
+                     the operator's value, a held one keeps its Suggest stamp"
+                );
+            }
+            assert_eq!(config.feeds_lock, lock, "the write-back carries the lock");
+            // The locked value holds.
+            match lock {
+                FeedsLock::Feed => assert!((got_feed - 1000.0).abs() < 1e-9),
+                FeedsLock::Spindle => assert_eq!(config.operation.spindle_rpm(), Some(18_000)),
+                FeedsLock::Chipload => {
+                    let after = chipload_of(&config.operation, FLUTES).expect("a chipload");
+                    assert!(
+                        (after - cl).abs() < 1e-9,
+                        "{edit:?}: chipload {after}, not {cl}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// W3k: the default lock is the chipload, on a new entry and in the
+    /// core config.
+    #[test]
+    fn the_default_lock_is_the_chipload_w3k() {
+        let (stored, entry) = pocket();
+        assert_eq!(entry.feeds_lock, FeedsLock::Chipload);
+        assert_eq!(stored.feeds_lock, FeedsLock::Chipload);
+    }
+
+    /// W3k: a lock change alone is one config write that moves no value.
+    #[test]
+    fn a_lock_change_writes_the_lock_only_w3k() {
+        let (stored, mut entry) = pocket();
+        let before = crate::ui::properties::project_entry_onto(&stored, &entry);
+        entry.feeds_lock = FeedsLock::Feed;
+        let config = crate::ui::properties::project_entry_onto(&stored, &entry);
+        assert_eq!(config.feeds_lock, FeedsLock::Feed);
+        assert_eq!(config.operation.feed_rate(), Some(1000.0));
+        assert_eq!(config.operation.spindle_rpm(), Some(18_000));
         assert_eq!(
-            config.operation.spindle_rpm(),
-            Some(18_000),
-            "the RPM moved"
-        );
-        assert_eq!(
-            config
-                .feeds_provenance
-                .get(FeedsField::FeedRate)
-                .map(|p| p.source),
-            Some(ProvenanceSource::Manual),
-            "a typed chipload is a typed feed: the feed is Manual"
-        );
-        assert!(
-            config
-                .feeds_provenance
-                .get(FeedsField::SpindleRpm)
-                .is_some_and(rs_cam_core::feeds::ValueProvenance::is_suggested),
-            "the spindle speed keeps its Suggest stamp"
+            config.generation_inputs_signature(),
+            before.generation_inputs_signature(),
+            "the lock moves no motion"
         );
     }
 
@@ -1120,14 +1433,14 @@ mod tests {
         assert_eq!(entry.operation.feed_rate(), Some(1000.0), "the feed moved");
     }
 
-    /// With no spindle speed the chipload has no value, and an edit writes
-    /// nothing.
+    /// With no spindle speed the chipload has no value, and a chipload edit
+    /// under the default lock writes nothing.
     #[test]
     fn no_rpm_no_chipload_w3i() {
         let (_, mut entry) = pocket();
         entry.operation.set_spindle_rpm(None);
         assert_eq!(chipload_of(&entry.operation, FLUTES), None);
-        write_chipload(&mut entry, 0.05, FLUTES);
+        write_speed_edit(&mut entry, SpeedEdit::Chipload(0.05), Some(FLUTES), &RANGES);
         assert_eq!(entry.operation.feed_rate(), Some(1000.0));
     }
 }

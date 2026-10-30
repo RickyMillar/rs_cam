@@ -46,6 +46,7 @@ fn three_pins() -> Vec<AlignmentPin> {
 fn pin_drill_toolpath() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(7),
         name: "Pin Drill".to_owned(),
         enabled: true,

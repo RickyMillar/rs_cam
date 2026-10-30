@@ -149,6 +149,7 @@ fn state_for(tool: ToolConfig, species: WoodSpecies, operation: OperationConfig)
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Claim card fixture".to_owned(),
         enabled: true,

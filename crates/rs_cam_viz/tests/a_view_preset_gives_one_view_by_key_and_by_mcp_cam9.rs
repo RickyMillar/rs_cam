@@ -235,6 +235,7 @@ fn state_with_a_selected_pocket() -> AppState {
     let model_id = builder.add_model(model);
     let tc = rs_cam_core::session::ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Pocket".to_owned(),
         enabled: true,

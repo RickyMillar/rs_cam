@@ -255,6 +255,7 @@ impl<'a> TriageView<'a> {
                 feeds_provenance: _,
                 planner_origin: _,
                 shoe: _,
+                feeds_lock: _,
             } = tc;
             TriageRow {
                 id: *id,

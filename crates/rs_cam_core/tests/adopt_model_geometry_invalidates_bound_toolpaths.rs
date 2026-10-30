@@ -99,6 +99,7 @@ fn square_model(id: usize, name: &str, side_mm: f64, targets: &[TestHole]) -> Lo
 fn toolpath(id: usize, name: &str, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,

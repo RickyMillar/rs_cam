@@ -111,6 +111,7 @@ fn build_adaptive3d_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Adaptive3d".to_owned(),
         enabled: true,

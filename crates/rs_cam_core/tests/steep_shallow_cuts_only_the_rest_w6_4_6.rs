@@ -170,6 +170,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
     let configs = [
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             heights: heights(),
             ..toolpath_config(
                 "rough",
@@ -180,6 +181,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
         },
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             heights: heights(),
             ..toolpath_config(
                 "finish",
@@ -190,6 +192,7 @@ fn long_session(op: OperationConfig, source: StockSource) -> (ProjectSession, us
         },
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             heights: heights(),
             stock_source: source,
             ..toolpath_config(

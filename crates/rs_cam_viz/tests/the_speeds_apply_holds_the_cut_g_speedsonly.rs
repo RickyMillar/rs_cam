@@ -119,6 +119,7 @@ fn viz_result() -> ToolpathResult {
 fn toolpath() -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Rough Pocket".to_owned(),
         enabled: true,

@@ -130,6 +130,7 @@ fn toolpath(
 ) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0), // assigned by session.add_toolpath
         name: name.to_owned(),
         enabled: true,

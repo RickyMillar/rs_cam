@@ -112,6 +112,7 @@ mod tests {
         let tool_id = s.tools()[tool_index].id.raw();
         let config = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0),
             name: "Pocket".to_owned(),
             enabled: true,

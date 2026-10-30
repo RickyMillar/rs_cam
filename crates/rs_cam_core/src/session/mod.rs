@@ -1368,6 +1368,10 @@ pub struct ToolpathConfig {
     /// moves no toolpath: the check and the export read it through the
     /// shoe plan (`ProjectSession::shoe_plan`).
     pub shoe: crate::machine::head::ShoeSetting,
+    /// W3k: which of the feed, the spindle speed and the chipload holds
+    /// when the operator edits one of the other two (the Feeds tab locks).
+    /// It moves no motion; a raw parameter write ignores it.
+    pub feeds_lock: crate::feeds::FeedsLock,
 }
 
 impl ToolpathConfig {
@@ -1464,6 +1468,9 @@ impl ToolpathConfig {
             planner_origin: _,
             // H1: the shoe moves no toolpath (the field doc above).
             shoe: _,
+            // W3k: the lock decides what the next GUI edit writes; the
+            // feeds themselves are in `operation`.
+            feeds_lock: _,
         } = self;
         format!(
             "{}|{}|{}|{:?}|{:?}|{}|{}|{:?}",
@@ -2696,6 +2703,7 @@ mod tests {
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     shoe: Default::default(),
+                    feeds_lock: Default::default(),
                     id: Some(ToolpathId::from_raw(0)),
                     name: "Bare".to_owned(),
                     operation: None,
@@ -3003,6 +3011,7 @@ mod tests {
                 stock_changes: Vec::new(),
                 toolpaths: vec![ProjectToolpathSection {
                     shoe: Default::default(),
+                    feeds_lock: Default::default(),
                     id: Some(ToolpathId::from_raw(0)),
                     name: "Test Pocket".to_owned(),
                     // S11: the fixture states the floor and the feeds.
@@ -3148,6 +3157,7 @@ mod tests {
 
         let new_tp = ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(0), // will be overwritten by add_toolpath
             name: "New Profile".to_owned(),
             enabled: true,

@@ -252,6 +252,7 @@ fn as001_pocket_heights_resolve_in_world_frame_for_identity_setup_f028() {
 
     let tp_config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Pocket (AS001)".to_owned(),
         enabled: true,

@@ -407,6 +407,7 @@ pub fn toolpath_panel_snapshot(
     let entry = ToolpathEntry {
         id: tc.id,
         pill_stamped_fields: Vec::new(),
+        feeds_lock: tc.feeds_lock,
         name: tc.name.clone(),
         enabled: tc.enabled,
         visible: rt.visible,
@@ -1142,6 +1143,7 @@ pub(crate) fn project_entry_onto(
         debug_trace_path: _,
         feeds_provenance,
         pill_stamped_fields,
+        feeds_lock,
         // The multi-tool planner owns it; the clone keeps the stored copy.
         planner_origin: _,
         debug_options,
@@ -1186,6 +1188,7 @@ pub(crate) fn project_entry_onto(
     config.stock_source = *stock_source;
     config.debug_options = *debug_options;
     config.feeds_provenance = new_provenance;
+    config.feeds_lock = *feeds_lock;
     Box::new(config)
 }
 
@@ -1228,13 +1231,16 @@ pub(crate) fn write_entry_config_to_session(
     entry: &ToolpathEntry,
     state: &mut AppState,
 ) -> Option<rs_cam_core::session::Effects> {
-    let (index, config) = {
+    let (index, config, lock_moved) = {
         let (index, stored) = state.session().find_toolpath_config_by_id(entry.id)?;
         let config = project_entry_onto(stored, entry);
         if format!("{config:?}") == format!("{stored:?}") {
             return None;
         }
-        (index, config)
+        // W3k: a padlock click moves no generation input, but it is an
+        // operator choice that the project file keeps.
+        let lock_moved = config.feeds_lock != stored.feeds_lock;
+        (index, config, lock_moved)
     };
     let command = rs_cam_core::session::Command::ReplaceToolpathConfig(
         rs_cam_core::session::ReplaceToolpathConfigArgs { index, config },
@@ -1252,7 +1258,7 @@ pub(crate) fn write_entry_config_to_session(
     // An empty set is a write that moved no generation input (a name or a
     // coolant edit, for example). Dirtying there would mark a healthy
     // project edited for a write the signature does not see (G-HEIGHTSTAB).
-    if !effects.stale.is_empty() {
+    if !effects.stale.is_empty() || lock_moved {
         state.gui.mark_edited();
     }
     Some(effects)

@@ -107,6 +107,7 @@ fn drawing() -> ItemSet {
 fn toolpath(tab_points: Vec<[f64; 2]>) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Profile".to_owned(),
         enabled: true,

@@ -133,6 +133,7 @@ impl<'a> RowInputs<'a> {
             feeds_provenance: _,
             planner_origin: _,
             shoe: _,
+            feeds_lock: _,
         } = tc;
         let result = session.results.get(&index);
         Self {
@@ -407,6 +408,7 @@ mod tests {
     fn pocket_config(tool_id: usize) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(0),
             name: "memo".to_owned(),
             enabled: true,

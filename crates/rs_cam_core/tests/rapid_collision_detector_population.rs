@@ -171,6 +171,7 @@ fn build_session(heights: HeightsConfig) -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Collision population pocket".to_owned(),
         enabled: true,

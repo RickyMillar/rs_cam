@@ -71,6 +71,7 @@ fn polygon_model(id: usize) -> LoadedModel {
 fn make_tp(name: &str, op: OperationConfig, tool_id: usize, model_id: usize) -> ToolpathConfig {
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: name.to_owned(),
         enabled: true,

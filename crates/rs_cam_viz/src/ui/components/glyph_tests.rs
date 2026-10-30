@@ -153,8 +153,12 @@ fn string_literals(text: &str) -> Vec<String> {
 /// The parser reads literals, escapes and comments as the compiler does.
 #[test]
 fn the_literal_reader_skips_comments_and_decodes_escapes() {
-    let src = "// \"comment\"\nlet a = \"x\\u{2026}y\"; let b: &'static str = r#\"\u{2715}\"#;\n\
-               let c = '\"'; /* \"block\" */ let d = \"one \\\n    two\";";
+    let src = concat!(
+        "// \"comment\"\nlet a = \"x\\u{2026}y\"; let b: &'static str = r#\"\u{2715}\"#;\n",
+        // ui-string-columns: test input; the spaces after the escaped
+        // newline are the continuation the reader must strip.
+        "let c = '\"'; /* \"block\" */ let d = \"one \\\n    two\";"
+    );
     assert_eq!(
         string_literals(src),
         vec![

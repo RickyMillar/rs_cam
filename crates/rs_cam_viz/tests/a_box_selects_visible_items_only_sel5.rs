@@ -83,6 +83,7 @@ fn session_of(model: LoadedModel, op: OperationType) -> ProjectSession {
     rs_cam_core::compute::fixture_values::fill_unset_keep_floor(&mut operation);
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: op.label().to_owned(),
         enabled: true,

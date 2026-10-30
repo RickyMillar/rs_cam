@@ -115,6 +115,7 @@ fn toolpath_config(
     let op_type = op.op_type();
     ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(id),
         name: name.to_owned(),
         enabled: true,

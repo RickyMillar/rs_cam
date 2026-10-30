@@ -213,6 +213,7 @@ fn build_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "subtool rough".to_owned(),
         enabled: true,

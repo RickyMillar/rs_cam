@@ -291,6 +291,7 @@ fn simulation_results_capture_setup_boundaries() {
         .expect("the AddSetup row reports the new setup index");
     let tp2_config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "Profile".to_owned(),
         enabled: true,

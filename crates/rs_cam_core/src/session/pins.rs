@@ -650,6 +650,7 @@ mod tests {
     fn toolpath(id: usize, operation: OperationConfig) -> ToolpathConfig {
         ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: ToolpathId::from_raw(id),
             name: "Pin Drill".to_owned(),
             enabled: true,

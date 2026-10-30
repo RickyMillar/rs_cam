@@ -624,6 +624,7 @@ impl<B: ComputeBackend> AppController<B> {
         };
         let tc = rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::placeholder(), // will be assigned by session
             name,
             enabled: true,

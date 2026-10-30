@@ -1088,6 +1088,7 @@ mod tests {
     ) -> rs_cam_core::session::ToolpathConfig {
         rs_cam_core::session::ToolpathConfig {
             shoe: Default::default(),
+            feeds_lock: Default::default(),
             id: rs_cam_core::ToolpathId::from_raw(0), // assigned by session.add_toolpath
             name: name.to_owned(),
             enabled: true,

@@ -94,6 +94,7 @@ fn set_boundary_config_auto_enables_source_rest_analysis() {
     // setter itself).
     let consumer_config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0), // placeholder — add_toolpath assigns the real id
         name: "Consumer".to_owned(),
         enabled: true,

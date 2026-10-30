@@ -70,6 +70,7 @@ fn fixture() -> AppState {
     };
     let config = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "IC2 fixture".to_owned(),
         enabled: true,
@@ -283,8 +284,10 @@ const DERIVATION_PREFIXES: [&str; 4] = [
     "Vendor row",
 ];
 
-/// The label of the Feeds card's one disclosure (W3i).
-const RECOMMENDATION_DETAILS: &str = "Recommendation";
+/// The header of the Feeds card's one disclosure (W3i), its label and the
+/// count separator. W3k renamed it from "Recommendation"; the chart label
+/// "Recommended" has no separator, so it does not match.
+const RECOMMENDATION_DETAILS: &str = "Recommended \u{00B7}";
 
 #[test]
 fn derivation_rows_are_in_a_closed_details_ic2() {

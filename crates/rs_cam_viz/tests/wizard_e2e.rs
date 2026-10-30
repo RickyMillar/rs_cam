@@ -150,6 +150,7 @@ fn build_session() -> (ProjectSession, GuiState, SimulationState) {
     // pre/post-amble, which still yields valid g-code).
     let tp = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(0),
         name: "Sample Path".to_owned(),
         enabled: true,
@@ -453,6 +454,7 @@ fn viz_phase_assembly_uses_per_op_spindle_rpm() {
     op.set_spindle_rpm(Some(12_345));
     let tp2 = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(1),
         name: "Override Path".to_owned(),
         enabled: true,
@@ -622,6 +624,7 @@ fn wizard_setup_pause_message_lands_in_emitted_gcode() {
 
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
@@ -777,6 +780,7 @@ fn per_setup_export_puts_identity_setup_in_the_stock_relative_frame() {
     let bottom_id = session.list_setups()[bottom_idx].id;
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,
@@ -886,6 +890,7 @@ fn two_setup_session() -> (ProjectSession, GuiState, SimulationState) {
         .expect("the AddSetup row reports the new setup index");
     let tp_bottom = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: rs_cam_core::ToolpathId::from_raw(99),
         name: "Bottom Op".to_owned(),
         enabled: true,

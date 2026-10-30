@@ -143,6 +143,7 @@ fn build_as013_terrain_session() -> ProjectSession {
 
     let tc = ToolpathConfig {
         shoe: Default::default(),
+        feeds_lock: Default::default(),
         id: ToolpathId::from_raw(0),
         name: "AS013 adaptive3d".to_owned(),
         enabled: true,
