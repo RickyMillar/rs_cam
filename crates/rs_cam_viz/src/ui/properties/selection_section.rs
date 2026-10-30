@@ -12,11 +12,11 @@
 //!   [`row_counts_text`]) at the right, the state mark (a refusal, a
 //!   finding of the `selection` field, the notes, the lost picks, a report
 //!   that the query cannot read: the role glyph, the texts on hover),
-//!   "Pick" only while the operator left the pick mode, and the `⋯` menu
+//!   "Pick" only while the operator left the pick mode, and the `…` menu
 //!   ([`header_menu`]: the rule presets, "Remove rule", "Clear selection",
 //!   "Reset to default" for an op whose default holds a rule: Face);
 //! - one row per selected item, rule members and picks alike: the label
-//!   (it truncates), the `⋯` menu ("Rule…", "Use as floor", "Show me"),
+//!   (it truncates), the `…` menu ("Rule…", "Use as floor", "Show me"),
 //!   then `×`. A row under the pointer lights its item in the viewport
 //!   (`SelectionUi::row_hover`). A long list scrolls inside the box
 //!   ([`LIST_CAP`] rows); above the cap a filter field sits under the
@@ -248,7 +248,7 @@ pub(crate) fn draw_selection_section(
                 ui,
                 &placeholder_text(inputs.item_use, inputs.model_kinds),
                 "Nothing is selected. Click items in the viewport (Pick), or add a rule from \
-                 the \u{22EF} menu of the list.",
+                 the \u{2026} menu of the list.",
             );
         } else {
             ListBox::rows(
@@ -322,11 +322,11 @@ fn list_hover(target: SelectionTarget) -> &'static str {
     match target {
         SelectionTarget::Op => {
             "What this operation cuts: one row per item, the counts at the right. Pick turns \
-             on the viewport pick; the \u{22EF} menu adds a rule or clears the selection."
+             on the viewport pick; the \u{2026} menu adds a rule or clears the selection."
         }
         SelectionTarget::Boundary => {
             "The items that bound where the tool may go. Pick turns on the viewport pick; the \
-             \u{22EF} menu adds a rule or clears the selection."
+             \u{2026} menu adds a rule or clears the selection."
         }
     }
 }
@@ -420,7 +420,7 @@ fn is_never_cut(note: &SelectionNote) -> bool {
     matches!(note.cause, NoteCause::KindNotServed)
 }
 
-/// What the `⋯` menu of a row offers besides `×` (L-R4, L-R5, GT-Q8).
+/// What the `…` menu of a row offers besides `×` (L-R4, L-R5, GT-Q8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct RowActs {
     /// "Rule…": the offers from the facts of this item.
@@ -586,7 +586,7 @@ pub(crate) fn list_rows(
     rows
 }
 
-/// One act of the `⋯` menu of a row, or its `×`.
+/// One act of the `…` menu of a row, or its `×`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RowAct {
     Rule,
@@ -595,7 +595,7 @@ enum RowAct {
     Remove,
 }
 
-/// The items of the `⋯` menu of a row, in order, with their hover.
+/// The items of the `…` menu of a row, in order, with their hover.
 fn row_menu(acts: RowActs) -> Vec<(RowAct, &'static str, &'static str)> {
     let mut out = Vec::new();
     if acts.rule {
@@ -630,7 +630,7 @@ fn remove_hover(from: RowFrom) -> &'static str {
     }
 }
 
-/// Draw one item row: the label and the state word, the `⋯` menu, then
+/// Draw one item row: the label and the state word, the `…` menu, then
 /// `×`. W3h: a row under the pointer lights its item in the viewport,
 /// for every row kind (a pick, a rule member, a face).
 fn draw_row(
@@ -713,7 +713,7 @@ fn preset_rule(kinds: Option<ItemKind>) -> Rule {
     }
 }
 
-/// One item of the header `⋯` menu: what it writes.
+/// One item of the header `…` menu: what it writes.
 #[derive(Debug, Clone, PartialEq)]
 enum HeaderItem {
     /// "Every closed loop", "Every circle", "Every item it cuts".
@@ -726,7 +726,7 @@ enum HeaderItem {
     Reset,
 }
 
-/// The items of the header `⋯` menu (W3h), each with its label and
+/// The items of the header `…` menu (W3h), each with its label and
 /// whether it does something now:
 ///
 /// - the rule presets: one "Every …" per kind that the reader cuts and

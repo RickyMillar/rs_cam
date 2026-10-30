@@ -11,7 +11,7 @@
 //! `PropRow`):
 //!
 //! 1. The op selection block (`selection_section.rs`, W3h): ONE list box
-//!    (the header with the counts, the state mark, Pick and the `⋯` menu;
+//!    (the header with the counts, the state mark, Pick and the `…` menu;
 //!    one row per selected item; a placeholder while empty) and the notes.
 //!    An op with no op selection (every 3D op) gets the Surface row of its
 //!    boundary selection instead, with Pick.
@@ -31,7 +31,7 @@ use rs_cam_core::session::{BOUNDARY_ITEM_USE, SelectionTarget};
 use super::ToolpathPanelInputs;
 use super::selection_section::{SelectionSectionInputs, draw_selection_section};
 use crate::ui::AppEvent;
-use crate::ui::components::{PropRow, Role};
+use crate::ui::components::PropRow;
 
 /// The quiet action of the Surface row of a 3D op (geometry selection
 /// P4.D): it turns the face pick on. W3a: "Pick", as on the selection
@@ -201,17 +201,13 @@ fn draw_floor_lines(
         (_, _, Some(Ok(z))) => format!("Z {z:.2}"),
         (_, _, Some(Err(_))) | (_, _, None) => "Z \u{2014}".to_owned(),
     };
-    // W3a: one read-only row. A floor with no Z is the Danger state, the
-    // refusal on the hover.
-    let refusal = match &floor_z {
-        Some(Err(refusal)) => Some(format!("No floor Z: {refusal}")),
-        Some(Ok(_)) | None => None,
-    };
+    // W3a: one read-only row. It shows no state: the Bottom height row of
+    // the Heights tab is THE floor editor (D6), and it owns the outline and
+    // the hover of a floor with no Z (an unset floor included). One place
+    // per finding (W2b).
     let _ = PropRow::new("Floor")
         .unit(&z_text)
-        .state(refusal.as_ref().map(|_| Role::Danger))
         .hover(Some(FLOOR_HOVER))
-        .detail(refusal.as_deref())
         .show_read_only(ui, floor.reference_label());
     if let Some(key) = floor.face_key() {
         // FR-2 F23: the slot names the face as the list rows do.

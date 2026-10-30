@@ -8,7 +8,11 @@
 //!
 //! A tab is a label and an optional badge:
 //!
-//! - `TabBadge::Dot` — a small dot in a role colour before the label.
+//! - `TabBadge::Dot` — a small dot in a role colour in the top-left corner
+//!   of the tab, inside its padding. The dot adds no width, so a dot never
+//!   changes the size of the labels (W3 fix: a dot pushed the five R2 tabs
+//!   at 340 points into the compact form). In the `»` menu the dot is a
+//!   text run before the label.
 //! - `TabBadge::Count` — the caution glyph and a count after the label, in
 //!   the colour of its role. A count of 0 shows no badge.
 //!
@@ -42,10 +46,18 @@ const COMPACT_PADDING_X: f32 = tokens::SPACE_1;
 /// The glyph before the count of a count badge.
 pub const COUNT_GLYPH: &str = "\u{26A0}";
 
+/// The radius of the dot badge, in points.
+const DOT_RADIUS: f32 = 2.0;
+
+/// The inset of the dot centre from the top-left corner of the tab, in
+/// points. The dot then sits in the padding, above the cap height of a
+/// body label in a `ROW_ACTION` tab.
+const DOT_INSET: f32 = 4.5;
+
 /// The badge of one tab.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TabBadge {
-    /// A dot in this colour before the label.
+    /// A dot in this colour in the top-left corner of the tab.
     Dot(egui::Color32),
     /// The count glyph and a count after the label, in the colour of the
     /// role. A count of 0 shows no badge.
@@ -120,7 +132,7 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
                 } else {
                     (egui::Color32::TRANSPARENT, tokens::TEXT_MUTED)
                 };
-                let button = egui::Button::new(tab_label(ui, tab, text_color, size))
+                let button = egui::Button::new(tab_label(ui, tab, text_color, size, false))
                     .fill(fill)
                     .corner_radius(egui::CornerRadius {
                         nw: tokens::RADIUS_SM,
@@ -130,6 +142,10 @@ impl<'a, T: Copy + PartialEq> TabStrip<'a, T> {
                     })
                     .min_size(egui::vec2(min_width, tokens::ROW_ACTION));
                 let response = ui.add(button);
+                if let Some(TabBadge::Dot(color)) = tab.badge {
+                    let corner = response.rect.left_top() + egui::vec2(DOT_INSET, DOT_INSET);
+                    ui.painter().circle_filled(corner, DOT_RADIUS, color);
+                }
                 if response.clicked() && !is_active {
                     *active = tab.value;
                     changed = true;
@@ -301,7 +317,7 @@ fn more_menu<T: Copy>(ui: &mut egui::Ui, hidden: &[&Tab<'_, T>], size: f32) -> O
     let mut picked = None;
     let _ = egui::Popup::menu(&response).show(|ui| {
         for tab in hidden {
-            let label = tab_label(ui, tab, tokens::TEXT_BODY, tokens::SIZE_BODY);
+            let label = tab_label(ui, tab, tokens::TEXT_BODY, tokens::SIZE_BODY, true);
             if ui.add(egui::Button::new(label).frame(false)).clicked() {
                 picked = Some(tab.value);
             }
@@ -313,7 +329,7 @@ fn more_menu<T: Copy>(ui: &mut egui::Ui, hidden: &[&Tab<'_, T>], size: f32) -> O
 /// The width of one compact tab: its caption-size label and the compact
 /// padding, with no minimum width and no gap.
 fn compact_width<T>(ui: &egui::Ui, tab: &Tab<'_, T>) -> f32 {
-    let galley = tab_label(ui, tab, tokens::TEXT_STRONG, tokens::SIZE_CAPTION).into_galley(
+    let galley = tab_label(ui, tab, tokens::TEXT_STRONG, tokens::SIZE_CAPTION, false).into_galley(
         ui,
         Some(egui::TextWrapMode::Extend),
         f32::INFINITY,
@@ -328,12 +344,13 @@ fn full_width<T>(ui: &egui::Ui, tabs: &[Tab<'_, T>]) -> f32 {
     let padding = 2.0 * ui.spacing().button_padding.x;
     tabs.iter()
         .map(|tab| {
-            let galley = tab_label(ui, tab, tokens::TEXT_STRONG, tokens::SIZE_BODY).into_galley(
-                ui,
-                Some(egui::TextWrapMode::Extend),
-                f32::INFINITY,
-                egui::TextStyle::Button,
-            );
+            let galley = tab_label(ui, tab, tokens::TEXT_STRONG, tokens::SIZE_BODY, false)
+                .into_galley(
+                    ui,
+                    Some(egui::TextWrapMode::Extend),
+                    f32::INFINITY,
+                    egui::TextStyle::Button,
+                );
             (galley.size().x + padding).max(TAB_MIN_WIDTH) + tokens::SPACE_1
         })
         .sum()
@@ -345,12 +362,15 @@ pub fn count_text(count: usize) -> String {
     format!("{COUNT_GLYPH} {count}")
 }
 
-/// The label of one tab, with its badge, as one text run.
+/// The label of one tab, with its count badge, as one text run. A dot
+/// badge is a text run only when `dot_text` is true (the `»` menu); on the
+/// strip the painter draws it in the corner, with no width.
 fn tab_label<T>(
     ui: &egui::Ui,
     tab: &Tab<'_, T>,
     text_color: egui::Color32,
     size: f32,
+    dot_text: bool,
 ) -> egui::WidgetText {
     let label = || {
         egui::RichText::new(tab.label)
@@ -369,6 +389,7 @@ fn tab_label<T>(
     };
     match tab.badge {
         None => return label().into(),
+        Some(TabBadge::Dot(_)) if !dot_text => return label().into(),
         Some(TabBadge::Dot(color)) => {
             append(
                 egui::RichText::new("\u{25CF} ")
@@ -407,14 +428,18 @@ mod tests {
         right: f32,
         /// The labels that painted, in x order.
         labels: Vec<String>,
+        /// The dot badges that painted (filled circles in the dot colour).
+        dots: usize,
+        /// The dots whose ink touches the ink of a label.
+        dots_on_labels: usize,
     }
 
     /// Draw a strip of `labels` at `width` with `labels[active]` active.
-    /// `labels[dot]` carries a dot badge and `labels[count]` a count badge,
-    /// as the two inspectors draw them.
+    /// Each `labels[dots[..]]` carries a dot badge and `labels[count]` a
+    /// count badge, as the two inspectors draw them.
     fn draw(
         labels: &[&str],
-        dot: Option<usize>,
+        dots: &[usize],
         count: Option<usize>,
         active: usize,
         width: f32,
@@ -435,7 +460,7 @@ mod tests {
                     .iter()
                     .enumerate()
                     .fold(TabStrip::new(&mut active), |s, (i, label)| {
-                        let badge = if Some(i) == dot {
+                        let badge = if dots.contains(&i) {
                             Some(TabBadge::Dot(tokens::DANGER))
                         } else if Some(i) == count {
                             Some(TabBadge::Count(3, Role::Danger))
@@ -451,7 +476,18 @@ mod tests {
         let mut size = 0.0;
         let mut right: f32 = 0.0;
         let mut painted: Vec<(f32, String)> = Vec::new();
+        let mut dot_count = 0;
+        let mut dot_rects = Vec::new();
+        let mut label_rects = Vec::new();
         for clipped in &out.shapes {
+            if let egui::epaint::Shape::Circle(circle) = &clipped.shape
+                && circle.fill == tokens::DANGER
+            {
+                dot_count += 1;
+                let bounds = clipped.shape.visual_bounding_rect();
+                right = right.max(bounds.right() - left);
+                dot_rects.push(bounds);
+            }
             if let egui::epaint::Shape::Text(text) = &clipped.shape {
                 let bounds = clipped.shape.visual_bounding_rect();
                 right = right.max(bounds.right() - left);
@@ -461,6 +497,7 @@ mod tests {
                 }
                 if let Some(l) = labels.iter().find(|l| text.galley.job.text.contains(*l)) {
                     painted.push((bounds.left(), (*l).to_owned()));
+                    label_rects.push(bounds);
                     size = text
                         .galley
                         .job
@@ -479,6 +516,11 @@ mod tests {
             full,
             right,
             labels: painted.into_iter().map(|(_, l)| l).collect(),
+            dots: dot_count,
+            dots_on_labels: dot_rects
+                .iter()
+                .filter(|d| label_rects.iter().any(|l| l.intersects(**d)))
+                .count(),
         }
     }
 
@@ -492,7 +534,7 @@ mod tests {
     /// line. At full size they need more than the width (non-vacuity).
     #[test]
     fn the_toolpath_tabs_fit_one_line_compact_gt() {
-        let p = draw(&TOOLPATH, Some(3), None, 0, 264.0);
+        let p = draw(&TOOLPATH, &[3], None, 0, 264.0);
         assert!(
             p.full > 264.0,
             "non-vacuity: full size fits ({:.1})",
@@ -512,7 +554,7 @@ mod tests {
     /// of the 304-point Simulation inspector (288 points).
     #[test]
     fn a_strip_that_fits_keeps_the_full_size_gt() {
-        let p = draw(&SIM, None, Some(1), 0, 288.0);
+        let p = draw(&SIM, &[], Some(1), 0, 288.0);
         assert!(p.full <= 288.0, "the sim tabs need {:.1} points", p.full);
         assert_eq!(p.size, tokens::SIZE_BODY);
         assert_eq!(p.rows, 1);
@@ -527,11 +569,13 @@ mod tests {
         let sets: [&[&str]; 2] = [&TOOLPATH_R2, &TOOLPATH];
         for width in [240.0_f32, 280.0, 340.0] {
             for labels in sets {
-                for dot in [None, Some(2), Some(labels.len() - 1)] {
+                let every: Vec<usize> = (0..labels.len()).collect();
+                let dot_sets: [&[usize]; 4] = [&[], &[2], &[labels.len() - 1], &every];
+                for dots in dot_sets {
                     for active in [0, labels.len() - 1] {
-                        let p = draw(labels, dot, None, active, width);
+                        let p = draw(labels, dots, None, active, width);
                         let case = format!(
-                            "{} tabs at {width} (dot {dot:?}, active {active}): {:?}",
+                            "{} tabs at {width} (dots {dots:?}, active {active}): {:?}",
                             labels.len(),
                             p.labels
                         );
@@ -543,6 +587,38 @@ mod tests {
                 }
             }
         }
+        // W3 fix: at the 340-point default the five R2 tabs keep the full
+        // size with a dot on every tab. A dot adds no width. Red proof:
+        // the dot was a text run before the label, and one dot pushed the
+        // strip into the compact form.
+        let every: Vec<usize> = (0..TOOLPATH_R2.len()).collect();
+        let bare = draw(&TOOLPATH_R2, &[], None, 0, 340.0);
+        let dotted = draw(&TOOLPATH_R2, &every, None, 0, 340.0);
+        assert!(dotted.full <= 340.0, "the R2 tabs need {:.1}", dotted.full);
+        assert_eq!(
+            dotted.size,
+            tokens::SIZE_BODY,
+            "five dots at 340: full size"
+        );
+        assert_eq!(dotted.rows, 1);
+        assert_eq!(
+            dotted.labels.len(),
+            TOOLPATH_R2.len(),
+            "{:?}",
+            dotted.labels
+        );
+        assert_eq!(
+            dotted.dots,
+            TOOLPATH_R2.len(),
+            "non-vacuity: each dot paints"
+        );
+        assert_eq!(dotted.dots_on_labels, 0, "each dot sits in the padding");
+        assert!(
+            (dotted.full - bare.full).abs() < 0.01,
+            "a dot adds no width: {:.1} vs {:.1}",
+            dotted.full,
+            bare.full
+        );
     }
 
     /// W1: when even the compact tabs do not fit, the tail goes into the
@@ -550,7 +626,7 @@ mod tests {
     /// appended after the head. Non-vacuity: 160 points overflows.
     #[test]
     fn a_narrow_strip_moves_the_tail_into_a_menu_w1() {
-        let p = draw(&TOOLPATH, Some(4), None, 5, 160.0);
+        let p = draw(&TOOLPATH, &[4], None, 5, 160.0);
         assert_eq!(p.rows, 1);
         assert!(
             p.labels.len() < TOOLPATH.len(),

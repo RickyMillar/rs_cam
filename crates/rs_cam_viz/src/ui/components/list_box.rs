@@ -11,7 +11,7 @@
 //!   and the quiet acts;
 //! - list rows ([`list_row`]): one line each, a hover highlight and a faint
 //!   separator under each row; the label truncates, the acts sit at the
-//!   right edge (W3h: the `⋯` menu, then `×`);
+//!   right edge (W3h: the `…` menu, then `×`);
 //! - a placeholder row ([`list_placeholder`]) while the list is empty;
 //! - [`ListBox::rows`]: a long list scrolls inside the box, with a cap on
 //!   the visible rows.
@@ -22,7 +22,7 @@ use crate::ui::components::{Button, Role};
 use crate::ui::tokens;
 
 /// The text of the menu act of a line (W3h).
-pub const MENU: &str = "\u{22EF}";
+pub const MENU: &str = "\u{2026}";
 
 /// The inset container of a list. See the module doc.
 #[must_use]
@@ -97,7 +97,7 @@ pub struct ListLine {
 pub enum Act<'a> {
     /// A quiet button: the label and the hover.
     Button(&'a str, &'a str),
-    /// The `⋯` menu: the hover and the items. The items draw while the
+    /// The `…` menu: the hover and the items. The items draw while the
     /// popup is open.
     Menu(&'a str, Box<dyn FnOnce(&mut egui::Ui) + 'a>),
 }

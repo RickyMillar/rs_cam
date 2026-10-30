@@ -429,9 +429,11 @@ fn the_geometry_rows_fit_the_inspector_f22() {
     edit(&mut session, SelectionEdit::AddPick(rim));
     let mut state = state_of(session);
     let f = settle(&mut state);
-    // W3h: every row has its ⋯ menu ("Rule…" is in it) and its ×.
+    // W3h: every row has its menu act ("Rule…" is in it) and its ×.
     assert!(
-        f.texts.iter().any(|(t, _)| t == "\u{22EF}")
+        f.texts
+            .iter()
+            .any(|(t, _)| t == rs_cam_viz::ui::components::list_box::MENU)
             && f.texts.iter().any(|(t, _)| t == "\u{00D7}"),
         "the picked row has its acts: {:?}",
         f.texts

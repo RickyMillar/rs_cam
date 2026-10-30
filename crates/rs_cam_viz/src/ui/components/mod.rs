@@ -29,6 +29,8 @@ pub mod compare;
 pub mod data_table;
 pub mod focus_ring;
 pub mod format;
+#[cfg(test)]
+mod glyph_tests;
 pub mod freshness;
 pub mod histogram;
 pub mod kv_row;

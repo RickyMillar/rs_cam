@@ -102,6 +102,14 @@ const CHART_HEIGHT: f32 = 180.0;
 /// The room of the feed axis ticks: four digits at the small text size.
 const Y_AXIS_MIN_WIDTH: f32 = 32.0;
 
+/// The title of the feed axis, rotated at the left of the plot.
+const FEED_AXIS_TITLE: &str = "Feed (mm/min)";
+
+/// The gap of an egui_plot axis title, as a fraction of its row height
+/// (egui_plot 0.37 `axis.rs`, `AXIS_LABEL_GAP`; the crate keeps it
+/// private). The rotated y title paints this far left of the plot.
+const AXIS_LABEL_GAP: f32 = 0.25;
+
 /// The Feeds tab's chart block: the nomogram of this operation, then the
 /// recommendation (the apply buttons, the problem rows and one `Details`).
 ///
@@ -361,249 +369,285 @@ pub(crate) fn draw_chart_c(
         .map(|row| (row.rpm_min, row.rpm_max, row.rpm_nominal));
 
     let mut hover_readout: Option<(String, egui::Color32)> = None;
-    let plot_response = Plot::new("feeds_tab_nomogram")
-        .height(CHART_HEIGHT)
-        .include_x(0.0)
-        .include_y(0.0)
-        .include_x(rpm_axis_max)
-        .include_y(feed_axis_max)
-        .x_axis_label("RPM")
-        .y_axis_label("feed (mm/min)")
-        // The four-digit feed ticks need this room at the 240-point rail;
-        // the default width clipped them.
-        .y_axis_min_width(Y_AXIS_MIN_WIDTH)
-        .allow_drag(false)
-        .allow_zoom(false)
-        .allow_scroll(false)
-        .show(ui, |plot_ui| {
-            // 0. The corridor: the two bounds that turn the vendor band into
-            //    a place the cut can live. Each is a thin line in the machine
-            //    wall's hue, with no floating label and NO legend row.
-            //    `Sources` carries both numbers. They were shaded wedges until
-            //    2026-09-23 (G-CHARTLINES: "no shading").
-            if let Some(corridor) = corridor {
-                if corridor.floor_mm.is_finite() && corridor.floor_mm > 0.0 {
-                    plot_ui.line(
-                        Line::new(
-                            "",
-                            iso_line(
-                                corridor.floor_mm,
-                                env.spindle_max_rpm,
-                                flutes,
-                                env.max_feed_mm_min,
-                            ),
-                        )
-                        .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
-                        .width(CORRIDOR_LINE_WIDTH)
-                        .name(format!("Rubbing floor ({:.4} mm/tooth)", corridor.floor_mm)),
-                    );
-                }
-                // The ceiling line is drawn ONLY when the ceiling lands
-                // inside the plot. It is never clamped to the top edge —
-                // see [`Ceiling::OffScale`].
-                if let Ceiling::OnChart { ceiling_mm } = corridor.ceiling {
-                    plot_ui.line(
-                        Line::new(
-                            "",
-                            iso_line(ceiling_mm, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
-                        )
-                        .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
-                        .width(CORRIDOR_LINE_WIDTH)
-                        .name(format!("Deflection ceiling ({ceiling_mm:.4} mm/tooth)")),
-                    );
-                }
-            }
-            // 1. The suggested advance per tooth: ONE solid iso-advance line,
-            //    clipped at the machine RPM cap and feed cap. It goes through
-            //    the `Recommended` diamond.
-            //
-            //    §2.6 rule 2: the vendor data is a RANGE or a VALUE, not a
-            //    verdict, so these lines take a chart series colour and not
-            //    the `OK` green.
-            if let Some(cl) = suggested {
-                plot_ui.line(
-                    Line::new(
-                        "",
-                        iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
-                    )
-                    .color(chart::BAND)
-                    .width(SUGGESTED_LINE_WIDTH)
-                    .name(format!("Suggested {cl:.4} mm/tooth")),
-                );
-            }
-            // 2. The vendor limits: two fainter lines in the same colour,
-            //    ONLY when the row publishes both. No fill between them.
-            //
-            //    Operator ruling, 2026-09-23: "Always just have the straight
-            //    line, center or suggested, then add more faint bands around
-            //    it, no shading, but only if they exist". A row that
-            //    publishes one value gets no band lines. The chart does not
-            //    make a band from one value.
-            if let Some((lo, hi)) = band {
-                for limit in [lo, hi] {
-                    plot_ui.line(
-                        Line::new(
-                            "",
-                            iso_line(limit, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
-                        )
-                        .color(wash(chart::BAND, BAND_LIMIT_ALPHA))
-                        .width(BAND_LIMIT_WIDTH)
-                        .name(format!("Vendor limit {limit:.4} mm/tooth")),
-                    );
-                }
-            }
+    // egui_plot 0.37 (`axis.rs`, `AXIS_LABEL_GAP` = 0.25) paints the
+    // rotated feed axis title a quarter of its galley height left of the
+    // plot. At the left edge of the inspector the scroll area clipped the
+    // tops of its glyphs ("ieea"). The plot starts that far in, so the
+    // title paints whole. The indent adds no text row (IC1). The galley is
+    // the one egui_plot lays out: the Body style, no wrap.
+    let title_height = egui::WidgetText::from(FEED_AXIS_TITLE)
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+        .size()
+        .y;
+    let title_overhang = (AXIS_LABEL_GAP * title_height).ceil();
+    let plot_response = ui
+        .horizontal(|ui| {
+            ui.add_space(title_overhang);
+            Plot::new("feeds_tab_nomogram")
+                .height(CHART_HEIGHT)
+                .include_x(0.0)
+                .include_y(0.0)
+                .include_x(rpm_axis_max)
+                .include_y(feed_axis_max)
+                .x_axis_label("RPM")
+                .y_axis_label(FEED_AXIS_TITLE)
+                // The four-digit feed ticks need this room at the 240-point rail;
+                // the default width clipped them.
+                .y_axis_min_width(Y_AXIS_MIN_WIDTH)
+                .allow_drag(false)
+                .allow_zoom(false)
+                .allow_scroll(false)
+                .show(ui, |plot_ui| {
+                    // 0. The corridor: the two bounds that turn the vendor band into
+                    //    a place the cut can live. Each is a thin line in the machine
+                    //    wall's hue, with no floating label and NO legend row.
+                    //    `Sources` carries both numbers. They were shaded wedges until
+                    //    2026-09-23 (G-CHARTLINES: "no shading").
+                    if let Some(corridor) = corridor {
+                        if corridor.floor_mm.is_finite() && corridor.floor_mm > 0.0 {
+                            plot_ui.line(
+                                Line::new(
+                                    "",
+                                    iso_line(
+                                        corridor.floor_mm,
+                                        env.spindle_max_rpm,
+                                        flutes,
+                                        env.max_feed_mm_min,
+                                    ),
+                                )
+                                .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
+                                .width(CORRIDOR_LINE_WIDTH)
+                                .name(format!("Rubbing floor ({:.4} mm/tooth)", corridor.floor_mm)),
+                            );
+                        }
+                        // The ceiling line is drawn ONLY when the ceiling lands
+                        // inside the plot. It is never clamped to the top edge —
+                        // see [`Ceiling::OffScale`].
+                        if let Ceiling::OnChart { ceiling_mm } = corridor.ceiling {
+                            plot_ui.line(
+                                Line::new(
+                                    "",
+                                    iso_line(
+                                        ceiling_mm,
+                                        env.spindle_max_rpm,
+                                        flutes,
+                                        env.max_feed_mm_min,
+                                    ),
+                                )
+                                .color(wash(tokens::DANGER, CORRIDOR_LINE_ALPHA))
+                                .width(CORRIDOR_LINE_WIDTH)
+                                .name(format!("Deflection ceiling ({ceiling_mm:.4} mm/tooth)")),
+                            );
+                        }
+                    }
+                    // 1. The suggested advance per tooth: ONE solid iso-advance line,
+                    //    clipped at the machine RPM cap and feed cap. It goes through
+                    //    the `Recommended` diamond.
+                    //
+                    //    §2.6 rule 2: the vendor data is a RANGE or a VALUE, not a
+                    //    verdict, so these lines take a chart series colour and not
+                    //    the `OK` green.
+                    if let Some(cl) = suggested {
+                        plot_ui.line(
+                            Line::new(
+                                "",
+                                iso_line(cl, env.spindle_max_rpm, flutes, env.max_feed_mm_min),
+                            )
+                            .color(chart::BAND)
+                            .width(SUGGESTED_LINE_WIDTH)
+                            .name(format!("Suggested {cl:.4} mm/tooth")),
+                        );
+                    }
+                    // 2. The vendor limits: two fainter lines in the same colour,
+                    //    ONLY when the row publishes both. No fill between them.
+                    //
+                    //    Operator ruling, 2026-09-23: "Always just have the straight
+                    //    line, center or suggested, then add more faint bands around
+                    //    it, no shading, but only if they exist". A row that
+                    //    publishes one value gets no band lines. The chart does not
+                    //    make a band from one value.
+                    if let Some((lo, hi)) = band {
+                        for limit in [lo, hi] {
+                            plot_ui.line(
+                                Line::new(
+                                    "",
+                                    iso_line(
+                                        limit,
+                                        env.spindle_max_rpm,
+                                        flutes,
+                                        env.max_feed_mm_min,
+                                    ),
+                                )
+                                .color(wash(chart::BAND, BAND_LIMIT_ALPHA))
+                                .width(BAND_LIMIT_WIDTH)
+                                .name(format!("Vendor limit {limit:.4} mm/tooth")),
+                            );
+                        }
+                    }
 
-            // 3. Machine envelope — the walls and the axis marks.
-            draw_machine_envelope(plot_ui, env, rpm_axis_max, feed_axis_max);
+                    // 3. Machine envelope — the walls and the axis marks.
+                    draw_machine_envelope(plot_ui, env, rpm_axis_max, feed_axis_max);
 
-            // 4. The vendor's RPM window, marked ON the RPM axis.
-            //
-            //    It used to be a full-height column washed across the plot,
-            //    a second translucent region competing with the band for the
-            //    same pixels. A range along one axis is a fact about that
-            //    axis: "the max and min lines should be on the axis, not
-            //    marked on the chart as points" (2026-09-16).
-            if let Some((Some(lo), Some(hi), _)) = vendor_rpm {
-                plot_ui.line(
-                    Line::new("", PlotPoints::from(vec![[lo, 0.0], [hi, 0.0]]))
-                        .color(wash(chart::RPM_RANGE, 220))
-                        .width(AXIS_MARK_WIDTH)
-                        .name(format!("Vendor RPM {lo:.0}–{hi:.0}")),
-                );
-            }
+                    // 4. The vendor's RPM window, marked ON the RPM axis.
+                    //
+                    //    It used to be a full-height column washed across the plot,
+                    //    a second translucent region competing with the band for the
+                    //    same pixels. A range along one axis is a fact about that
+                    //    axis: "the max and min lines should be on the axis, not
+                    //    marked on the chart as points" (2026-09-16).
+                    if let Some((Some(lo), Some(hi), _)) = vendor_rpm {
+                        plot_ui.line(
+                            Line::new("", PlotPoints::from(vec![[lo, 0.0], [hi, 0.0]]))
+                                .color(wash(chart::RPM_RANGE, 220))
+                                .width(AXIS_MARK_WIDTH)
+                                .name(format!("Vendor RPM {lo:.0}–{hi:.0}")),
+                        );
+                    }
 
-            // 5. Current operating point.
-            if let (Some(rpm), Some(feed)) = (current.spindle_rpm, current.feed_rate_mm_min) {
-                plot_ui.points(
-                    Points::new("", vec![[f64::from(rpm), feed]])
-                        .shape(MarkerShape::Circle)
+                    // 5. Current operating point.
+                    if let (Some(rpm), Some(feed)) = (current.spindle_rpm, current.feed_rate_mm_min)
+                    {
+                        plot_ui.points(
+                            Points::new("", vec![[f64::from(rpm), feed]])
+                                .shape(MarkerShape::Circle)
+                                .filled(true)
+                                .radius(6.0_f32)
+                                .color(theme::ERROR)
+                                .name("Current"),
+                        );
+                    }
+                    // Target (pre-derate) operating point. Shows where the
+                    // recommendation *would* sit if the depth / power / feed-clamp
+                    // derates weren't applied (ruling R4 removed the safety factor
+                    // and the workholding factor; the overhang share is a load
+                    // target). The
+                    // arrow from target → recommended makes the derate visually
+                    // obvious.
+                    let target_chipload = explain.recommended.derates.target_chip_load_mm;
+                    if target_chipload > 0.0 && explain.recommended.rpm > 0.0 {
+                        let target_feed = target_chipload * explain.recommended.rpm * flutes;
+                        if (target_feed - explain.recommended.feed_rate_mm_min).abs() > 1.0 {
+                            plot_ui.points(
+                                Points::new("", vec![[explain.recommended.rpm, target_feed]])
+                                    .shape(MarkerShape::Circle)
+                                    .filled(false)
+                                    .radius(7.0_f32)
+                                    .color(tokens::DIAGRAM_INK)
+                                    .name(format!(
+                                        "Target pre-derate ({target_chipload:.4} mm/tooth)"
+                                    )),
+                            );
+                            // Arrow from target down to derated recommendation.
+                            plot_ui.line(
+                                Line::new(
+                                    "",
+                                    PlotPoints::from(vec![
+                                        [explain.recommended.rpm, target_feed],
+                                        [
+                                            explain.recommended.rpm,
+                                            explain.recommended.feed_rate_mm_min,
+                                        ],
+                                    ]),
+                                )
+                                .color(wash(tokens::DIAGRAM_INK, 180))
+                                .style(egui_plot::LineStyle::Dashed { length: 4.0 })
+                                .width(1.5_f32)
+                                .name("derate chain"),
+                            );
+                            // Inline label on the derate arrow.
+                            let mid_feed =
+                                (target_feed + explain.recommended.feed_rate_mm_min) * 0.5;
+                            let derate_pct =
+                                (1.0 - explain.recommended.derates.combined_factor()) * 100.0;
+                            plot_ui.text(
+                                egui_plot::Text::new(
+                                    "",
+                                    egui_plot::PlotPoint::new(explain.recommended.rpm, mid_feed),
+                                    egui::RichText::new(format!(" −{derate_pct:.0}% derate"))
+                                        .small()
+                                        .color(wash(tokens::DIAGRAM_INK, 220)),
+                                )
+                                .anchor(egui::Align2::LEFT_CENTER),
+                            );
+                        }
+                    }
+
+                    // Recommended operating point (after derates).
+                    plot_ui.points(
+                        Points::new(
+                            "",
+                            vec![[
+                                explain.recommended.rpm,
+                                explain.recommended.feed_rate_mm_min,
+                            ]],
+                        )
+                        .shape(MarkerShape::Diamond)
                         .filled(true)
                         .radius(6.0_f32)
-                        .color(theme::ERROR)
-                        .name("Current"),
-                );
-            }
-            // Target (pre-derate) operating point. Shows where the
-            // recommendation *would* sit if the depth / power / feed-clamp
-            // derates weren't applied (ruling R4 removed the safety factor
-            // and the workholding factor; the overhang share is a load
-            // target). The
-            // arrow from target → recommended makes the derate visually
-            // obvious.
-            let target_chipload = explain.recommended.derates.target_chip_load_mm;
-            if target_chipload > 0.0 && explain.recommended.rpm > 0.0 {
-                let target_feed = target_chipload * explain.recommended.rpm * flutes;
-                if (target_feed - explain.recommended.feed_rate_mm_min).abs() > 1.0 {
-                    plot_ui.points(
-                        Points::new("", vec![[explain.recommended.rpm, target_feed]])
-                            .shape(MarkerShape::Circle)
-                            .filled(false)
-                            .radius(7.0_f32)
-                            .color(tokens::DIAGRAM_INK)
-                            .name(format!("Target pre-derate ({target_chipload:.4} mm/tooth)")),
+                        .color(tokens::DIAGRAM_INK)
+                        .name("Recommended (after derates)"),
                     );
-                    // Arrow from target down to derated recommendation.
-                    plot_ui.line(
-                        Line::new(
-                            "",
-                            PlotPoints::from(vec![
-                                [explain.recommended.rpm, target_feed],
-                                [
-                                    explain.recommended.rpm,
-                                    explain.recommended.feed_rate_mm_min,
-                                ],
-                            ]),
-                        )
-                        .color(wash(tokens::DIAGRAM_INK, 180))
-                        .style(egui_plot::LineStyle::Dashed { length: 4.0 })
-                        .width(1.5_f32)
-                        .name("derate chain"),
-                    );
-                    // Inline label on the derate arrow.
-                    let mid_feed = (target_feed + explain.recommended.feed_rate_mm_min) * 0.5;
-                    let derate_pct = (1.0 - explain.recommended.derates.combined_factor()) * 100.0;
-                    plot_ui.text(
-                        egui_plot::Text::new(
-                            "",
-                            egui_plot::PlotPoint::new(explain.recommended.rpm, mid_feed),
-                            egui::RichText::new(format!(" −{derate_pct:.0}% derate"))
-                                .small()
-                                .color(wash(tokens::DIAGRAM_INK, 220)),
-                        )
-                        .anchor(egui::Align2::LEFT_CENTER),
-                    );
-                }
-            }
 
-            // Recommended operating point (after derates).
-            plot_ui.points(
-                Points::new(
-                    "",
-                    vec![[
-                        explain.recommended.rpm,
-                        explain.recommended.feed_rate_mm_min,
-                    ]],
-                )
-                .shape(MarkerShape::Diamond)
-                .filled(true)
-                .radius(6.0_f32)
-                .color(tokens::DIAGRAM_INK)
-                .name("Recommended (after derates)"),
-            );
-
-            // 7. Hover readout — shows the resulting chipload, the
-            //    chart bucket the hover lands in (within / admit /
-            //    BURN / BREAK), and the machine-cap clearance at the
-            //    pointer's RPM/feed. Same text as the verdict line so
-            //    the user can learn the chart by hovering.
-            // The pointer must be ON the chart. `pointer_coordinate` also
-            // answers for a pointer outside the drawn bounds, and the
-            // readout below then reports an operating point that does not
-            // exist: measured at `37891 RPM · 0 mm/min · BURN risk (below
-            // band)`, painted in the danger colour, on an axis whose maximum
-            // is 27 600. That is a hazard verdict manufactured from an
-            // absence, which is the failure shape this repo cares about most.
-            //
-            // The strip BETWEEN the spindle cap and the axis maximum is a
-            // real place to hover — it is how `· past spindle cap` is read —
-            // so the guard is the axis bound, not the machine's.
-            if let Some(hover) = plot_ui
-                .pointer_coordinate()
-                .filter(|p| (0.0..=rpm_axis_max).contains(&p.x))
-                .filter(|p| (0.0..=feed_axis_max).contains(&p.y))
-            {
-                // Read the CLAMPED coordinates once and derive everything
-                // from them, readout and cap-note alike — see
-                // `hover_readout_chipload`.
-                let (rpm, feed) = (hover.x.max(0.0), hover.y.max(0.0));
-                let cl = hover_readout_chipload(rpm, feed, flutes);
-                let (verdict, color) = chipload_verdict(cl, explain);
-                let cap_note = if rpm > env.spindle_max_rpm {
-                    " · past spindle cap".to_owned()
-                } else if feed > env.max_feed_mm_min {
-                    " · past feed cap".to_owned()
-                } else if rpm < env.spindle_min_rpm {
-                    " · below spindle min".to_owned()
-                } else {
-                    String::new()
-                };
-                // W6: the readout is RETURNED, not painted into the plot.
-                //
-                // It is a two-line sentence with up to four clauses, and it
-                // was anchored inside the drawing at a fixed fraction of the
-                // axes. At the top-left of this chart that is the feed wall
-                // and the forbidden zone above it, so the sentence printed
-                // straight through them. A sentence that long is prose, and
-                // prose belongs on a line of its own, under the picture.
-                hover_readout = Some((
-                    format!(
-                        "{rpm:.0} RPM · {feed:.0} mm/min → commanded advance/tooth \
+                    // 7. Hover readout — shows the resulting chipload, the
+                    //    chart bucket the hover lands in (within / admit /
+                    //    BURN / BREAK), and the machine-cap clearance at the
+                    //    pointer's RPM/feed. Same text as the verdict line so
+                    //    the user can learn the chart by hovering.
+                    // The pointer must be ON the chart. `pointer_coordinate` also
+                    // answers for a pointer outside the drawn bounds, and the
+                    // readout below then reports an operating point that does not
+                    // exist: measured at `37891 RPM · 0 mm/min · BURN risk (below
+                    // band)`, painted in the danger colour, on an axis whose maximum
+                    // is 27 600. That is a hazard verdict manufactured from an
+                    // absence, which is the failure shape this repo cares about most.
+                    //
+                    // The strip BETWEEN the spindle cap and the axis maximum is a
+                    // real place to hover — it is how `· past spindle cap` is read —
+                    // so the guard is the axis bound, not the machine's.
+                    if let Some(hover) = plot_ui
+                        .pointer_coordinate()
+                        .filter(|p| (0.0..=rpm_axis_max).contains(&p.x))
+                        .filter(|p| (0.0..=feed_axis_max).contains(&p.y))
+                    {
+                        // Read the CLAMPED coordinates once and derive everything
+                        // from them, readout and cap-note alike — see
+                        // `hover_readout_chipload`.
+                        let (rpm, feed) = (hover.x.max(0.0), hover.y.max(0.0));
+                        let cl = hover_readout_chipload(rpm, feed, flutes);
+                        let (verdict, color) = chipload_verdict(cl, explain);
+                        let cap_note = if rpm > env.spindle_max_rpm {
+                            " · past spindle cap".to_owned()
+                        } else if feed > env.max_feed_mm_min {
+                            " · past feed cap".to_owned()
+                        } else if rpm < env.spindle_min_rpm {
+                            " · below spindle min".to_owned()
+                        } else {
+                            String::new()
+                        };
+                        // W6: the readout is RETURNED, not painted into the plot.
+                        //
+                        // It is a two-line sentence with up to four clauses, and it
+                        // was anchored inside the drawing at a fixed fraction of the
+                        // axes. At the top-left of this chart that is the feed wall
+                        // and the forbidden zone above it, so the sentence printed
+                        // straight through them. A sentence that long is prose, and
+                        // prose belongs on a line of its own, under the picture.
+                        hover_readout = Some((
+                            format!(
+                                "{rpm:.0} RPM · {feed:.0} mm/min → commanded advance/tooth \
                          {cl:.4} mm/tooth · {verdict}{cap_note}"
-                    ),
-                    color,
-                ));
-            }
-        });
+                            ),
+                            color,
+                        ));
+                    }
+                })
+        })
+        .inner;
 
     // W3i: the readout and the legend are the hover of the plot. The
     // window drew the readout as a line under the plot and the legend as a

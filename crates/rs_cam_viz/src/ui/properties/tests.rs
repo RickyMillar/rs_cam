@@ -892,7 +892,7 @@ fn holes_with_a_rule_and_a_pick() -> rs_cam_core::session::ProjectSession {
 
 /// GT-2, W3h: the list is one row per selected item, the rule members and
 /// the picks alike, so the rows ARE the report rows; every row has `×`
-/// and the `⋯` menu holds "Rule…".
+/// and the `…` menu holds "Rule…".
 ///
 /// - A new Drill holds no item: no row. The header menu offers the rule
 ///   preset of the kind it cuts ("Every circle"), "Clear selection" (off:

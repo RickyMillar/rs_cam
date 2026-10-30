@@ -3,7 +3,7 @@
 ## Files
 
 - `mod.rs` — the facade and the map. No feeds window holds the chart (W3i deleted Explore).
-- `explore.rs` — the nomogram, inline on the Feeds tab (`draw_inline`, `draw_chart_c`); legend + readout = plot hover.
+- `explore.rs` — the nomogram, inline on the Feeds tab (`draw_inline`, `draw_chart_c`); legend + readout = plot hover; the plot starts `AXIS_LABEL_GAP` of the title height in, so the rotated feed title is not clipped (up4 reads the rotated edge).
 - `compare.rs` — the recommendation (`draw_recommendation`): small `⚡ Apply all` / `⚡ Speeds only`, problem rows, ONE `Details`; `why.rs` — the lines behind each number.
 - `vendor.rs` — the vendor cutting data window (`Vendor data…`, MCP `set_ui_view modal: vendor_data`).
 - `shared.rs` — what more than one feeds job needs; `OpFeeds` is the tab's inputs.

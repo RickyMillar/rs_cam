@@ -213,7 +213,9 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
                 crate::compute::floor::FLOOR_UNSET_DETAIL
             ),
             "Floor not set".to_owned(),
-            field("floor"),
+            // W3 fix: the Bottom height row is THE floor editor of an
+            // `OpFloor` op (D6), so the finding anchors to `bottom_z`.
+            field("bottom_z"),
             Category::Geometry,
         )
     } else {

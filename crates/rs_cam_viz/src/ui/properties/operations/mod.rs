@@ -498,7 +498,7 @@ pub(super) fn draw_heights_params(
     // rule reads `answer.resolve`), so only the floor row is drawn.
     let Some(answer) = answer else {
         if let Some(bottom) = bottom {
-            draw_bottom_height(ui, op_type, bottom, state_of("floor"));
+            draw_bottom_height(ui, op_type, bottom, state_of("bottom_z"));
         }
         return;
     };
@@ -607,13 +607,9 @@ pub(super) fn draw_heights_params(
     }
     if let Some(bottom) = bottom {
         // The floor row is the bottom of an `OpFloor` op, so a finding
-        // anchored to `bottom_z` is its state too; no other row draws it.
-        let mut state = state_of("floor");
-        let bottom_z = state_of("bottom_z");
-        if let Some(role) = bottom_z.role {
-            state.raise(role, bottom_z.detail.as_deref().unwrap_or_default());
-        }
-        draw_bottom_height(ui, op_type, bottom, state);
+        // anchored to `bottom_z` (an unset floor too) is its state; no
+        // other row draws it.
+        draw_bottom_height(ui, op_type, bottom, state_of("bottom_z"));
     }
     // L-4: a model refusal that no row reads (the Bottom of an `OpFloor`
     // op, which no row here draws) keeps one line.

@@ -1123,20 +1123,30 @@ fn the_adapters_fill_the_face_and_the_anchor_w1() {
             }
             assert!(d.face.chars().count() <= FACE_MAX_CHARS);
             if let Anchor::Field { key } = d.anchor {
-                let published = op_type
-                    .registry_entry()
-                    .params
-                    .defs
-                    .iter()
-                    .any(|p| p.name == key.as_str());
                 assert!(
-                    published,
-                    "{op_type:?}: not-set anchor `{}` is not a param",
+                    crate::diagnostics::presentation::op_has_field(*op_type, key.as_str()),
+                    "{op_type:?}: not-set anchor `{}` is not a field of the op",
                     key.as_str()
                 );
             }
         }
     }
+
+    // W3 fix: an unset floor anchors to the Bottom height row (`bottom_z`),
+    // THE floor editor of an `OpFloor` op (D6), not to the op. Red proof:
+    // the anchor was the unknown key "floor", so it fell back to the op
+    // and the GUI painted it twice (issue row + Floor row).
+    let pocket = OperationConfig::new_default(OperationType::Pocket);
+    assert!(
+        pocket.floor().is_some_and(|f| f.is_unset()),
+        "fixture: a new Pocket has no floor"
+    );
+    let found = diagnostics_from_preconditions(tp, &pocket, &PreconditionContext::default());
+    let floor = found
+        .iter()
+        .find(|d| d.face == "Floor not set")
+        .expect("an unset floor gives Floor not set");
+    assert_eq!(floor.anchor, Anchor::field("bottom_z"));
 }
 
 /// W1: the JSON of a diagnostic carries `face` and `anchor`, and a field

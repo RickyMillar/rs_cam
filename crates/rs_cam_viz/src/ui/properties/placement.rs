@@ -626,4 +626,44 @@ mod tests {
             Some(crate::ui::components::Role::Danger)
         );
     }
+
+    /// W3 fix: the core finding of an unset floor goes to the Bottom height
+    /// row of the Heights tab (`bottom_z`, THE floor editor, D6), not to the
+    /// issue stack. Red proof: core anchored it to the unknown key "floor",
+    /// so it fell back to the op, and a new Pocket showed "Floor not set"
+    /// as an issue row and as the Danger state of the Geometry Floor row.
+    #[test]
+    fn an_unset_floor_sits_on_the_bottom_height_row_w3() {
+        use rs_cam_core::diagnostics::adapters::from_preconditions::{
+            PreconditionContext, diagnostics_from_preconditions,
+        };
+        let pocket = OperationConfig::new_default(OperationType::Pocket);
+        let list = diagnostics_from_preconditions(
+            rs_cam_core::ids::ToolpathId::from_raw(1),
+            &pocket,
+            &PreconditionContext::default(),
+        );
+        assert!(
+            list.iter().any(|d| d.face == "Floor not set"),
+            "fixture: a new Pocket has no floor: {list:?}"
+        );
+        let p = place(&list, &pocket);
+        let faces = |v: &[Finding<'_>]| {
+            v.iter()
+                .map(|f| f.to_owned_diagnostic().face)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            !faces(&p.issues).iter().any(|f| f == "Floor not set"),
+            "no issue row: {:?}",
+            faces(&p.issues)
+        );
+        let on_row = p.by_field.get("bottom_z").map_or(&[][..], Vec::as_slice);
+        assert_eq!(faces(on_row), ["Floor not set"]);
+        assert!(
+            p.dots.iter().any(|(tab, _)| *tab == ToolpathTab::Heights),
+            "the Heights tab takes the dot: {:?}",
+            p.dots
+        );
+    }
 }

@@ -339,6 +339,31 @@ struct RenderedFeedsPanel {
     requested_width: f32,
     max_left_clip: f32,
     rendered_rubbing_warning: bool,
+    /// The nomogram painted its x axis title ("RPM"): the chart is drawn.
+    rendered_chart: bool,
+}
+
+/// The left edge of a text as it paints. `visual_bounding_rect` ignores
+/// the angle of a rotated text (egui_plot draws its y axis title at -90
+/// degrees), so the edge comes from the four rotated corners of the galley.
+fn painted_left(shape: &egui::epaint::Shape) -> f32 {
+    let egui::epaint::Shape::Text(text) = shape else {
+        return shape.visual_bounding_rect().min.x;
+    };
+    if text.angle == 0.0 {
+        return shape.visual_bounding_rect().min.x;
+    }
+    let rot = egui::emath::Rot2::from_angle(text.angle);
+    let r = text.galley.rect;
+    [
+        r.left_top(),
+        r.right_top(),
+        r.left_bottom(),
+        r.right_bottom(),
+    ]
+    .into_iter()
+    .map(|corner| (text.pos + rot * corner.to_vec2()).x)
+    .fold(f32::INFINITY, f32::min)
 }
 
 /// Render the production inspector inside the same fixed-width Panel and
@@ -357,12 +382,15 @@ fn render_feeds_panel_at(
     width: f32,
 ) -> RenderedFeedsPanel {
     let mut rendered = RenderedFeedsPanel::default();
+    let mut content_left = f32::NEG_INFINITY;
+    let mut panel_clip = egui::Rect::NOTHING;
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         egui::Panel::right("ur1_toolpath_properties")
             .default_size(width)
             .max_size(width.max(PANEL_MAX_WIDTH))
             .resizable(true)
             .show(ui, |ui| {
+                panel_clip = ui.clip_rect();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let response = ui.scope(|ui| {
                         let mut events = Vec::new();
@@ -373,14 +401,26 @@ fn render_feeds_panel_at(
                         );
                     });
                     rendered.requested_width = response.response.rect.width();
+                    content_left = response.response.rect.left();
                 });
             });
     });
     for clipped in &out.shapes {
         if let egui::epaint::Shape::Text(text) = &clipped.shape {
-            rendered.max_left_clip = rendered.max_left_clip.max(
-                (clipped.clip_rect.min.x - clipped.shape.visual_bounding_rect().min.x).max(0.0),
-            );
+            // W3 fix: the rotated feed axis title painted its ascenders
+            // left of the content column, and the app's scroll area clipped
+            // them ("ieea"). The edge reads the rotation, and the limit is
+            // the clip or the content column, whichever is further right.
+            let in_panel = panel_clip.expand(1.0).contains_rect(clipped.clip_rect);
+            let limit = if in_panel {
+                clipped.clip_rect.min.x.max(content_left)
+            } else {
+                clipped.clip_rect.min.x
+            };
+            rendered.max_left_clip = rendered
+                .max_left_clip
+                .max((limit - painted_left(&clipped.shape)).max(0.0));
+            rendered.rendered_chart |= text.galley.job.text == "RPM";
             rendered.rendered_rubbing_warning |= text
                 .galley
                 .job
@@ -504,6 +544,7 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
             .collect::<Vec<_>>()
     );
     let _ = rendered.rendered_rubbing_warning;
+    assert!(rendered.rendered_chart, "non-vacuity: the nomogram paints");
     assert!(
         rendered.max_left_clip <= 0.5,
         "the real warning-shaped Feeds tab painted text {:.2} points left of its panel clip \
@@ -537,6 +578,7 @@ fn real_warning_shaped_feeds_tab_fits_the_240_point_rail_ur4() {
          this width; content must fit, not overflow under the viewport.",
         rendered.requested_width,
     );
+    assert!(rendered.rendered_chart, "non-vacuity: the nomogram paints");
     assert!(
         rendered.max_left_clip <= 0.5,
         "the Feeds tab painted text {:.2} points left of its panel clip at the \
