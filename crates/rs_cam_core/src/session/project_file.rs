@@ -1760,6 +1760,7 @@ pub(super) fn build_session_from_project(
         rest_fresh_comparisons: std::collections::HashMap::new(),
         toolpath_revision: std::collections::HashMap::new(),
         next_revision: 0,
+        run_record: super::run_state::RunRecord::default(),
         simulation_epoch: 0,
         simulation_runs: 0,
         simulation_drop_epochs: [0; super::SimulationDropCause::COUNT],

@@ -28,6 +28,8 @@ fn stale_default_to_diagnostic(d: &StaleDefault) -> Diagnostic {
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaleDefault,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message: format!("{} — {}", d.title, d.detail),
         evidence: None,
         fix: Some(DiagnosticFix::ApplyStaleDefault {

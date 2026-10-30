@@ -16,7 +16,7 @@
 //! # The arms
 //!
 //! 1. Behavioural: each side-panel entry point draws through the real helper
-//!    at 240, 280 and `SIM_DIAGNOSTICS_DEFAULT_WIDTH` points for two frames. Arms 1a and 1b: the stored panel
+//!    at 240, 280, 340 and `SIM_DIAGNOSTICS_DEFAULT_WIDTH` points for two frames. Arms 1a and 1b: the stored panel
 //!    width must not grow (the G contract). Arms 1c and 1d: the content must
 //!    not be wider than the inner width. A failure of 1c or 1d names a
 //!    residual row fix of PLAN.md §6.1, not a defect in the helper.
@@ -61,8 +61,9 @@ use rs_cam_viz::ui::{
 };
 
 /// The default widths that `app.rs` gives a side panel: the rails, the
-/// inspector and the Simulation inspector (measured, round 3).
-const WIDTHS: [f32; 3] = [240.0, 280.0, SIM_DIAGNOSTICS_DEFAULT_WIDTH];
+/// setup properties panel (280), the toolpath inspector (R4: 340) and the
+/// Simulation inspector (measured, round 3).
+const WIDTHS: [f32; 4] = [240.0, 280.0, 340.0, SIM_DIAGNOSTICS_DEFAULT_WIDTH];
 
 /// The tolerance for layout rounding, in points.
 const SLACK: f32 = 0.5;

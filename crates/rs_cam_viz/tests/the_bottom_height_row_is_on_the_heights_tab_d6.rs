@@ -378,7 +378,7 @@ fn the_bottom_height_row_is_on_the_heights_tab_d6() {
             "{label}: the read-only Floor line is still drawn"
         );
 
-        let mut s = state(session(operation), properties::ToolpathTab::Cut);
+        let mut s = state(session(operation), properties::ToolpathTab::Passes);
         let cut = settle(&ctx, &mut s);
         for gone in ["Bottom height:", "Floor from:"] {
             assert!(

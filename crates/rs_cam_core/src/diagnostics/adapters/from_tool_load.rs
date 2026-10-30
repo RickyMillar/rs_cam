@@ -122,6 +122,8 @@ fn material_split_to_diagnostics(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(ids::LOAD_MATERIAL_NOT_JUDGED),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_MATERIAL_NOT_JUDGED),
             message: count.label(),
             evidence: None,
             fix: None,
@@ -245,6 +247,8 @@ fn commanded_above_band_to_diagnostic(
         confidence: chipload_confidence(&e.band.bounds_source),
         state: DiagnosticState::Current,
         source: Source::ToolLoad,
+        face: crate::diagnostics::presentation::face(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
+        anchor: crate::diagnostics::presentation::anchor(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
         message: format!(
             "Commanded feed-per-tooth {:.4} mm/tooth is {ratio:.1}× the matched \
              band maximum {:.4} mm/tooth — same unit, same stage, so this \
@@ -341,6 +345,8 @@ fn chipload_to_diagnostic(
                 confidence: chipload_confidence(&approach_to_max.bounds.source),
                 state: DiagnosticState::Current,
                 source: Source::ToolLoad,
+                face: crate::diagnostics::presentation::face(ids::LOAD_CHIPLOAD_WITHIN),
+                anchor: crate::diagnostics::presentation::anchor(ids::LOAD_CHIPLOAD_WITHIN),
                 message,
                 evidence: Some(DiagnosticEvidence::LutCitation {
                     // Was hard-coded `"vendor_lut"`, which named a
@@ -388,6 +394,8 @@ fn chipload_to_diagnostic(
                 confidence: confidence_to_kind(confidence),
                 state: DiagnosticState::Current,
                 source: Source::ToolLoad,
+                face: crate::diagnostics::presentation::face(id_str),
+                anchor: crate::diagnostics::presentation::anchor(id_str),
                 message: format!(
                     "{msg_prefix}: {:.4} mm{qualifier}{provenance}{}",
                     triggering.observed_mm_per_tooth,
@@ -490,6 +498,8 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             confidence: confidence_to_kind(confidence),
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(ids::LOAD_POWER_WITHIN),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_POWER_WITHIN),
             message: format!(
                 "Power within budget ({:.2}/{:.2} kW peak){}",
                 peak_kw,
@@ -527,6 +537,8 @@ fn power_to_diagnostic(tp_id: ToolpathId, v: &PowerVerdict) -> Option<Diagnostic
             confidence: confidence_to_kind(confidence),
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(ids::LOAD_POWER_EXCEEDS),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_POWER_EXCEEDS),
             message: format!(
                 "Spindle power exceeded: {:.2} kW peak > {:.2} kW available{}",
                 peak_kw,
@@ -574,6 +586,8 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             confidence: confidence_to_kind(confidence),
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(ids::LOAD_DEFLECTION_WITHIN),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_DEFLECTION_WITHIN),
             message: format!(
                 "Tip deflection within limit ({:.0} µm / {:.0} µm){}",
                 peak_mm * 1000.0,
@@ -610,6 +624,8 @@ fn deflection_to_diagnostic(tp_id: ToolpathId, v: &DeflectionVerdict) -> Option<
             confidence: confidence_to_kind(confidence),
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(ids::LOAD_DEFLECTION_EXCEEDS),
+            anchor: crate::diagnostics::presentation::anchor(ids::LOAD_DEFLECTION_EXCEEDS),
             message: format!(
                 "Tip deflection exceeds limit: {:.0} µm > {:.0} µm{}",
                 peak_mm * 1000.0,
@@ -673,6 +689,8 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
         confidence: confidence_to_kind(confidence),
         state: DiagnosticState::Current,
         source: Source::ToolLoad,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message,
         evidence: Some(DiagnosticEvidence::SampleRange {
             toolpath_id: tp_id,
@@ -915,6 +933,8 @@ fn drill_gate_to_diagnostic(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(id),
+            anchor: crate::diagnostics::presentation::anchor(id),
             message: format!(
                 "{label} within ({observed:.2} of {threshold:.2}{}){vacuity}",
                 band_suffix(*envelope_lo, *envelope_hi, *threshold)
@@ -950,6 +970,8 @@ fn drill_gate_to_diagnostic(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::ToolLoad,
+            face: crate::diagnostics::presentation::face(id),
+            anchor: crate::diagnostics::presentation::anchor(id),
             message: format!(
                 "{}{hole_clause}{vacuity}",
                 drill_exceedance_message(
@@ -1045,6 +1067,20 @@ fn unmodeled_to_diagnostic(
         ),
         UnmodeledReason::NotApplicableForOp(_) => return None,
     };
+    // W1: the face names the gate and the one step that measures it.
+    let face = match reason {
+        UnmodeledReason::SimulationRequired
+        | UnmodeledReason::ArcEngagementNotCaptured
+        | UnmodeledReason::SteadyStateSamplesNotPresent => format!("{label} not simulated"),
+        UnmodeledReason::StaleSimulation => format!("{label}: simulation out of date"),
+        UnmodeledReason::NoVendorData => format!("{label}: no vendor data"),
+        UnmodeledReason::MaterialUnvalidated => format!("{label}: material not modelled"),
+        UnmodeledReason::AllSamplesAirCutOrRapid
+        | UnmodeledReason::CutterModeUnsupported(_)
+        | UnmodeledReason::NotImplemented(_)
+        | UnmodeledReason::NotApplicableForOp(_) => crate::diagnostics::presentation::face(id),
+    };
+    let face = crate::diagnostics::presentation::face_or_default(id, face);
     Some(Diagnostic {
         id: DiagnosticId::from(id),
         scope: Scope::Toolpath { id: tp_id },
@@ -1053,6 +1089,8 @@ fn unmodeled_to_diagnostic(
         confidence: Confidence::Static,
         state,
         source: Source::ToolLoad,
+        face,
+        anchor: crate::diagnostics::presentation::anchor(id),
         message: msg,
         // No `supersedes` when the diagnostic is non-Current; the
         // reducer is state-gated. But we still attach the family so

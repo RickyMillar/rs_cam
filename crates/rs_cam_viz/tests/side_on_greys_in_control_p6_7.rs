@@ -62,7 +62,7 @@ fn profile(side: ProfileSide, compensation: CompensationType) -> AppState {
         }),
     );
     // GT-1: the side and the compensation are op parameters, on the Cut tab.
-    h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Cut);
+    h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Passes);
     state
 }
 

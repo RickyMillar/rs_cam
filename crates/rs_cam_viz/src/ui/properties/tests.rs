@@ -37,9 +37,18 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
         ToolpathTab::parse("heights"),
         Some(ToolpathTab::Heights)
     ));
+    // R2: the old keys read as the tabs that hold their rows now.
     assert!(matches!(
         ToolpathTab::parse("dressup"),
-        Some(ToolpathTab::Dressup)
+        Some(ToolpathTab::Linking)
+    ));
+    assert!(matches!(
+        ToolpathTab::parse("cut"),
+        Some(ToolpathTab::Passes)
+    ));
+    assert!(matches!(
+        ToolpathTab::parse("passes"),
+        Some(ToolpathTab::Passes)
     ));
     assert!(ToolpathTab::parse("not_a_tab").is_none());
     // UI-06: `key()` is the ONE key table. The hand-written match that used
@@ -75,6 +84,8 @@ fn stateful_diag(
         state: dx::DiagnosticState::StaleEvidence,
         source,
         message: message.to_owned(),
+        face: String::new(),
+        anchor: dx::Anchor::Note,
         evidence: None,
         fix: None,
         supersedes: Vec::new(),
@@ -293,16 +304,18 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         "one toolpath has no other toolpath to derive a rest boundary from"
     );
 }
-/// D7 (reference audit 2026-10-23, operator approved): the tab strip
-/// draws Geometry, Cut, Heights, Feeds, Linking, Dressup, from
-/// left to right. The test renders the strip and reads the x of each
-/// label, so a change of `ALL` or of the strip order turns it red.
+/// D7, changed by operator ruling R2 (2026-10-30): the tab strip draws
+/// Geometry, Passes, Feeds, Heights, Linking, from left to right. The Cut
+/// tab is Passes; the Dressup tab is deleted (its rows are on Linking);
+/// the tool is the header Tool row. The test renders the strip and reads
+/// the x of each label, so a change of `ALL` or of the strip order turns
+/// it red.
 ///
-/// Red proof: with the old `ALL` order (Heights fifth), the drawn order
-/// was Geometry, Cut, Feeds & Speeds, Linking, Heights, Dressup.
+/// Red proof: with the pre-R2 `ALL` order, the drawn order was Geometry,
+/// Cut, Heights, Feeds, Linking, Dressup.
 #[test]
-fn the_tab_strip_puts_heights_after_cut_d7() {
-    const WANT: [&str; 6] = ["Geometry", "Cut", "Heights", "Feeds", "Linking", "Dressup"];
+fn the_tab_strip_is_the_r2_tab_set_d7() {
+    const WANT: [&str; 5] = ["Geometry", "Passes", "Feeds", "Heights", "Linking"];
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);
@@ -313,7 +326,14 @@ fn the_tab_strip_puts_heights_after_cut_d7() {
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         // Wide enough for one row: the order is then the x order.
         ui.set_min_width(1200.0);
-        super::tab_badges::draw_toolpath_tabs(ui, &mut active, &badges);
+        super::tab_badges::draw_toolpath_tabs(
+            ui,
+            &mut active,
+            &badges,
+            &crate::state::toolpath::OperationConfig::new_default(
+                crate::state::toolpath::OperationType::Pocket,
+            ),
+        );
     });
     let mut drawn: Vec<(f32, f32, String)> = Vec::new();
     for clipped in &out.shapes {
@@ -431,14 +451,13 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
         warmup.textures_delta.clear();
         let mut events = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            super::toolpath_panel::draw_cut_tab(
+            super::toolpath_panel::draw_geometry_tab(
                 ui,
                 &mut entry,
                 &inputs,
-                None,
-                None,
                 &mut crate::state::pick::SelectionUi::default(),
                 &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                &mut super::toolpath_panel::ReachView::default(),
                 &mut events,
             );
         });
@@ -481,9 +500,12 @@ fn geometry_tab_texts(
     tab_texts(session, op, ToolpathTab::Geometry)
 }
 
-/// Render the Geometry or the Cut tab of an entry of `op` against the
-/// first toolpath of `session`, and give the painted texts in draw order.
-/// The entry holds the stored op config when its type is `op`.
+/// Render a tab of an entry of `op` against the first toolpath of
+/// `session`, and give the painted texts in draw order. `Geometry` draws
+/// the selection rows only (`geometry_tab.rs`); `Passes` draws the Passes
+/// tab; `Linking` here stands for the whole Geometry tab (R2: the Input
+/// row, the selection and the Machining Boundary section). The entry holds
+/// the stored op config when its type is `op`.
 fn tab_texts(
     session: &rs_cam_core::session::ProjectSession,
     op: crate::state::toolpath::OperationType,
@@ -517,14 +539,24 @@ fn tab_texts(
     warmup.textures_delta.clear();
     let mut events = Vec::new();
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| match tab {
-        ToolpathTab::Cut => super::toolpath_panel::draw_cut_tab(
+        ToolpathTab::Passes => super::toolpath_panel::draw_passes_tab(
             ui,
             &mut entry,
             &inputs,
             None,
             None,
             &mut crate::state::pick::SelectionUi::default(),
+            &mut events,
+        ),
+        // R2: the whole Geometry tab: the Input row, the selection, the
+        // Machining Boundary section and the Reach row.
+        ToolpathTab::Linking => super::toolpath_panel::draw_geometry_tab(
+            ui,
+            &mut entry,
+            &inputs,
+            &mut crate::state::pick::SelectionUi::default(),
             &mut crate::state::panels::ContainmentAutoCorrect::default(),
+            &mut super::toolpath_panel::ReachView::default(),
             &mut events,
         ),
         _ => super::geometry_tab::draw_geometry_tab(
@@ -702,25 +734,36 @@ fn the_selection_section_is_at_the_top_p4_d() {
     let cuts = position_of(&geometry, "Cuts row", |t| t.starts_with("Cuts"));
     let pick = position_of(&geometry, "Pick button", |t| t == "Pick");
     assert!(cuts < pick, "the summary opens the tab: {geometry:?}");
-    let cut = tab_texts(
+    // R2: the whole Geometry tab opens with the Input row and holds the
+    // Machining Boundary section under the selection.
+    let whole = tab_texts(
         &session,
         crate::state::toolpath::OperationType::Pocket,
-        ToolpathTab::Cut,
+        ToolpathTab::Linking,
     );
-    let input = position_of(&cut, "Input row", |t| t.starts_with("Input"));
-    let start_from = position_of(&cut, "Rest machining row", |t| {
-        t == super::REST_MACHINING_LABEL
-    });
-    let boundary = position_of(&cut, "boundary header", |t| {
+    let input = position_of(&whole, "Input row", |t| t.starts_with("Input"));
+    let cuts = position_of(&whole, "Cuts row", |t| t.starts_with("Cuts"));
+    let boundary = position_of(&whole, "boundary header", |t| {
         t.eq_ignore_ascii_case("machining boundary")
     });
     assert!(
-        input < start_from && start_from < boundary,
-        "want Input < Rest machining < Machining Boundary: {cut:?}"
+        input < cuts && cuts < boundary,
+        "want Input < Cuts < Machining Boundary: {whole:?}"
     );
+    let passes = tab_texts(
+        &session,
+        crate::state::toolpath::OperationType::Pocket,
+        ToolpathTab::Passes,
+    );
+    let _ = position_of(&passes, "Rest machining row", |t| {
+        t == super::REST_MACHINING_LABEL
+    });
     assert!(
-        !cut.iter().any(|t| t == "Pick" || t.starts_with("Cuts")),
-        "the Cut tab holds no selection: {cut:?}"
+        !passes.iter().any(|t| t == "Pick"
+            || t.starts_with("Cuts")
+            || t.starts_with("Input")
+            || t.eq_ignore_ascii_case("machining boundary")),
+        "the Passes tab holds no selection, no Input row and no boundary: {passes:?}"
     );
 
     let rough = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Adaptive3d);
@@ -1108,6 +1151,8 @@ fn a_finding_dots_the_tab_of_its_fix_f24() {
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
         message: String::new(),
+        face: String::new(),
+        anchor: rs_cam_core::diagnostics::presentation::anchor(id),
         evidence: None,
         fix: None,
         supersedes: Vec::new(),
@@ -1141,10 +1186,9 @@ fn a_finding_dots_the_tab_of_its_fix_f24() {
         Some(crate::ui::tokens::CAUTION)
     );
     for tab in [
-        ToolpathTab::Cut,
+        ToolpathTab::Passes,
         ToolpathTab::Linking,
         ToolpathTab::Heights,
-        ToolpathTab::Dressup,
     ] {
         assert_eq!(badges.for_tab(tab), None, "{tab:?} gets no dot");
     }
@@ -1536,8 +1580,9 @@ fn the_part_outline_row_reads_part_outline_ra() {
 
 /// R2 / 6.F4 (Fusion, operator ruling 2026-10-23): the Tool combo greys a
 /// tool that the op refuses, by core `ProjectSession::tool_fit` (the
-/// acceptance door of the add), and an op with no tool draws its state and
-/// the fix on the Cut tab.
+/// acceptance door of the add). R2 (2026-10-30): the combo is the header
+/// Tool row; with no tool it reads "Choose a tool", and the Passes tab
+/// draws no tool row and no no-tool line.
 ///
 /// Red proof: build `tool_refusals` as an empty list in
 /// `toolpath_panel_inputs`. The first assertion fails.
@@ -1600,7 +1645,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
         &session,
         &crate::state::runtime::GuiState::default(),
         None,
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         false,
     );
     let greyed: Vec<_> = inputs.tool_refusals.iter().map(|(id, _)| *id).collect();
@@ -1625,35 +1670,44 @@ fn the_tool_picker_greys_refused_tools_r2() {
     let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
     warmup.textures_delta.clear();
     let mut events = Vec::new();
-    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        super::toolpath_panel::draw_cut_tab(
-            ui,
-            &mut entry,
-            &inputs,
-            None,
-            None,
-            &mut crate::state::pick::SelectionUi::default(),
-            &mut crate::state::panels::ContainmentAutoCorrect::default(),
-            &mut events,
-        );
-    });
-    let mut texts = Vec::new();
-    for clipped in &out.shapes {
-        if let egui::epaint::Shape::Text(text) = &clipped.shape {
-            texts.push(text.galley.job.text.clone());
+    let mut painted = |entry: &mut ToolpathEntry, passes: bool| {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            if passes {
+                super::toolpath_panel::draw_passes_tab(
+                    ui,
+                    entry,
+                    &inputs,
+                    None,
+                    None,
+                    &mut crate::state::pick::SelectionUi::default(),
+                    &mut events,
+                );
+            } else {
+                super::tab_badges::draw_tool_row(ui, entry, &inputs, &mut events);
+            }
+        });
+        let mut texts = Vec::new();
+        for clipped in &out.shapes {
+            if let egui::epaint::Shape::Text(text) = &clipped.shape {
+                texts.push(text.galley.job.text.clone());
+            }
         }
-    }
-    out.textures_delta.clear();
-    let line = format!("No tool set. {}", rs_cam_core::session::NO_TOOL_FIX);
-    assert!(
-        texts.iter().any(|t| t == &line),
-        "the Cut tab draws the state; it rendered {texts:?}"
-    );
-    assert!(
+        out.textures_delta.clear();
         texts
+    };
+    let header = painted(&mut entry, false);
+    assert!(
+        header.iter().any(|t| t == "Tool")
+            && header.iter().any(|t| t == super::tab_badges::CHOOSE_A_TOOL),
+        "the header Tool row reads `Choose a tool`; it rendered {header:?}"
+    );
+    let passes = painted(&mut entry, true);
+    let old_line = format!("No tool set. {}", rs_cam_core::session::NO_TOOL_FIX);
+    assert!(
+        !passes
             .iter()
-            .any(|t| t == rs_cam_core::session::NO_TOOL_NAME),
-        "the Tool combo reads `No tool`; it rendered {texts:?}"
+            .any(|t| t == "Tool:" || t == &old_line || t == super::tab_badges::CHOOSE_A_TOOL),
+        "the Passes tab holds no tool control and no no-tool line: {passes:?}"
     );
 }
 
@@ -1749,7 +1803,7 @@ fn the_boundary_summary_is_the_source_hover_d1() {
         &session,
         &crate::state::runtime::GuiState::default(),
         None,
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         false,
     );
     let mut entry = ToolpathEntry::for_operation(
@@ -1768,14 +1822,13 @@ fn the_boundary_summary_is_the_source_hover_d1() {
     for _ in 0..2 {
         let mut events = Vec::new();
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            super::toolpath_panel::draw_cut_tab(
+            super::toolpath_panel::draw_geometry_tab(
                 ui,
                 &mut entry,
                 &inputs,
-                None,
-                None,
                 &mut crate::state::pick::SelectionUi::default(),
                 &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                &mut super::toolpath_panel::ReachView::default(),
                 &mut events,
             );
         });
@@ -2069,7 +2122,7 @@ fn use_inside_sits_on_the_containment_row_g_c() {
             &session,
             &crate::state::runtime::GuiState::default(),
             None,
-            Some(ToolpathTab::Cut),
+            Some(ToolpathTab::Passes),
             false,
         );
         inputs.rest_containment = Some(larger_consumer(source, inside));
@@ -2110,14 +2163,13 @@ fn use_inside_sits_on_the_containment_row_g_c() {
             }
             let mut events = Vec::new();
             let mut out = ctx.run_ui(input, |ui| {
-                super::toolpath_panel::draw_cut_tab(
+                super::toolpath_panel::draw_geometry_tab(
                     ui,
                     &mut entry,
                     &inputs,
-                    None,
-                    None,
                     &mut crate::state::pick::SelectionUi::default(),
                     &mut badge,
+                    &mut super::toolpath_panel::ReachView::default(),
                     &mut events,
                 );
             });
@@ -2276,14 +2328,13 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
             }
             let mut events = Vec::new();
             let mut out = ctx.run_ui(input, |ui| {
-                super::toolpath_panel::draw_cut_tab(
+                super::toolpath_panel::draw_geometry_tab(
                     ui,
                     entry,
                     inputs,
-                    None,
-                    None,
                     &mut crate::state::pick::SelectionUi::default(),
                     &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                    &mut super::toolpath_panel::ReachView::default(),
                     &mut events,
                 );
             });
@@ -2308,7 +2359,7 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
         &session,
         &crate::state::runtime::GuiState::default(),
         None,
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         false,
     );
     // The flat STL holds no drawing item and no face; the button is drawn

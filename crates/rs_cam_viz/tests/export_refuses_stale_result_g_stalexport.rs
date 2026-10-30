@@ -332,7 +332,10 @@ fn accepting_the_previous_geometry_exports_it() {
 fn the_acceptance_does_not_waive_a_missing_result() {
     let (mut session, mut gui, sim) = build_state();
     let _ = session
-        .apply(Command::ForgetResult(ForgetResultArgs { index: 0 }))
+        .apply(Command::ForgetResult(ForgetResultArgs {
+            index: 0,
+            refusal: None,
+        }))
         .expect("toolpath 0 exists");
     if let Some(rt) = gui
         .toolpath_rt

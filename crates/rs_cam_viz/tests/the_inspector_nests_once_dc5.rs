@@ -50,8 +50,9 @@ use std::path::{Path, PathBuf};
 
 use rs_cam_viz::ui::tokens;
 
-/// The panel width the app gives the inspector (`app.rs`, `default_size`).
-const PANEL_WIDTH: f32 = 280.0;
+/// The panel width the app gives the inspector (`app.rs`, `default_size`;
+/// R4, operator ruling 2026-10-30: 340).
+const PANEL_WIDTH: f32 = 340.0;
 
 /// The inspector's source folder.
 ///
@@ -175,11 +176,11 @@ fn the_hints_block_renders_below_the_tab_strip_dc5() {
          detail: it belongs at the bottom, as a count that opens."
     );
 
-    // The geometry WIRING belongs to the Geometry tab, so it must not draw
-    // above the strip either. `rfind` picks the CALL; the definition sits
-    // above `draw_toolpath_panel`.
+    // The geometry WIRING (R2: the Input row) belongs to the Geometry tab,
+    // so it must not draw above the strip either. `rfind` picks the CALL;
+    // the definition sits in `tab_badges.rs`, read first.
     let wiring = src
-        .rfind("draw_geometry_wiring(")
+        .rfind("draw_input_row(")
         .expect("the geometry wiring call moved; re-anchor this scan");
     assert!(
         wiring > strip,

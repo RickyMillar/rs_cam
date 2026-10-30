@@ -50,8 +50,9 @@ use rs_cam_viz::ui::{properties, tokens};
 /// One tab's worst-case row: its name and how it builds.
 type TabCase<'a> = (&'a str, &'a dyn Fn(&mut egui::Ui));
 
-/// The default and maximum widths the app gives the inspector (`app.rs`).
-const PANEL_WIDTH: f32 = 280.0;
+/// The default and maximum widths the app gives the inspector (`app.rs`;
+/// R4, operator ruling 2026-10-30: the default is 340).
+const PANEL_WIDTH: f32 = 340.0;
 const PANEL_MAX_WIDTH: f32 = 420.0;
 
 /// Every `.rs` file directly in `src/ui/properties/`, concatenated in

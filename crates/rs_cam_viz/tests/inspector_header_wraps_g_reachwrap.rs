@@ -128,164 +128,38 @@ fn function_body<'a>(src: &'a str, name: &str) -> &'a str {
     &rest[..end]
 }
 
-/// The `supports_reach_map()` block — the reach checkbox and its readings.
+/// R3 (operator ruling 2026-10-30): the reach readings left the inspector
+/// footer. The dock and the legend own the reach map; the Geometry tab
+/// keeps ONE read-only `PropRow`, "Reach", whose value is one short line.
+/// The grid line, the area base and the over-statement are its hover, so
+/// no caveat sentence is on a row where it can clip.
 ///
-/// # Why the end marker is an indent and not a comment
-///
-/// This function used to slice from the `if` to the comment
-/// `// Contextual diagnostics`, which sat immediately after it. DC5
-/// (2026-09-14) moved the reach block to the panel FOOTER, below the tab
-/// content, and left the diagnostic tiers where they were, because the tab
-/// strip's badges read them. The end marker then sat ABOVE the start marker
-/// and this function panicked.
-///
-/// The file's own instruction was "find it before weakening this test", so
-/// it was found: the block moved, the guarantee did not. The readings this
-/// file pins are still off the checkbox row and still constructed through
-/// `wrapped_small_label`.
-///
-/// The end is now the `if`'s OWN closing brace, found by indent — the first
-/// line after the start that is exactly four spaces, a brace and a newline.
-/// Everything inside the block is indented deeper, so this cannot match
-/// early. A marker that is part of the block's own syntax travels with the
-/// block; a neighbouring comment does not, which is the defect this
-/// paragraph exists to stop recurring.
-///
-/// # Why `"\n    }\n"` is safe here, and what would break it
-///
-/// The marker is NOT unique: it occurs **103 times** in `properties/mod.rs`
-/// (measured 2026-09-14). The cut is correct only because it takes the
-/// NEAREST occurrence after the start offset. Read that number alone and
-/// this looks fragile; it is not, and the reason is worth stating so nobody
-/// weakens the test to "fix" it.
-///
-/// **The invariant is upheld by rustfmt, and rustfmt is gated.** The `if`
-/// sits at four spaces inside `fn draw_toolpath_panel`, so everything nested
-/// inside it is indented to eight or more — verified: of the 104 lines in
-/// the block, NONE is at indent four or less. A line of exactly four spaces,
-/// a brace and a newline cannot occur inside the block in formatted source,
-/// because it would need a construct closing at the `if`'s own indent while
-/// still inside the `if`, which rustfmt does not emit. And
-/// `cargo fmt --all -- --check` runs on every commit, so the source cannot
-/// drift out of that shape without the format gate going red first.
-///
-/// So this rests on a CHECKED invariant, not on luck. It is not an absolute
-/// one, and the next reader should know which kind it is:
-///
-/// - A multi-line string literal containing a line of `    }` would end the
-///   slice early. There are none in `properties/mod.rs` today (measured
-///   2026-09-14), and this scan does not model string literals.
-/// - Both failure modes shorten the slice, and every assertion below is
-///   NEGATIVE — "these readings are not inside that row". A shorter slice
-///   therefore passes more easily. That is the silent direction. See the
-///   stripper note in `tests/the_feeds_modal_holds_one_scope_dc5a.rs`.
-fn reach_block(src: &str) -> &str {
-    let start = src
-        .find("if entry.operation.op_type().supports_reach_map() {")
-        .expect("the reach block moved; find it before weakening this test");
-    let rest = &src[start..];
-    let end = rest
-        .find("\n    }\n")
-        .expect("the reach block has no closing brace at its own indent");
-    &rest[..end]
-}
-
-/// THE sentry. The three reach readings that carry a caveat must not be
-/// constructed inside the checkbox's `ui.horizontal` row.
-///
-/// Two reasons, and the second is the load-bearing one. That row's wrap mode
-/// is `Extend`, so a bare label on it clips — which is what the review
-/// captured. And even wrapped explicitly, a label there wraps at
-/// `ui.available_width()`, which on that row is only the remainder after the
-/// checkbox: a narrow column instead of the panel's full width. Off the row,
-/// they get the whole width, which is what makes a caveat readable.
-///
-/// Pre-fix all three were inside it.
+/// This replaces the three G-REACHWRAP arms that read the deleted footer
+/// block (the checkbox row, the `DataTable` readings and the status words).
 #[test]
-fn the_reach_readings_get_the_panel_width_not_the_row_remainder() {
+fn the_reach_reading_is_one_row_on_the_geometry_tab_r3() {
     let src = properties_src();
-    let block = reach_block(&src);
-    let horizontal = block
-        .find("ui.horizontal(|ui| {")
-        .expect("the checkbox still sits in a horizontal row");
-    let after_horizontal = block[horizontal..]
-        .find("\n        });")
-        .map(|at| horizontal + at)
-        .expect("the checkbox row's closing brace moved");
-    let row = &block[horizontal..after_horizontal];
-
-    for reading in [
-        "{unreachable_pct:.1} %",
-        "grid_line.clone()",
-        "over_statement_note.clone()",
-    ] {
-        assert!(
-            !row.contains(reading),
-            "{reading:?} is inside the checkbox's ui.horizontal row, where a bare \
-             label clips (wrap mode Extend) and even a wrapped one would only get \
-             the width the checkbox leaves:\n{row}"
-        );
-    }
-}
-
-/// IC1: each reading is ONE line, not a bare `ui.label`. Round 2
-/// (2026-10-13): each line is a row of the one table component
-/// (`DataRow`). The grid line is the hover of the reading rows; the
-/// over-statement is a caution row of its own.
-#[test]
-fn the_reach_readings_are_one_line_each() {
-    let src = properties_src();
-    let block = reach_block(&src);
-    for reading in [
-        "{unreachable_pct:.1} %",
-        "over_statement_note.clone()",
-        "reach: {message}",
-    ] {
-        let at = block
-            .find(reading)
-            .unwrap_or_else(|| panic!("{reading:?} is gone from the reach block"));
-        // The row constructor opens at most a few lines above the text it
-        // carries; anything else means the line moved back onto a bare
-        // `ui.label`.
-        let before = &block[at.saturating_sub(120)..at];
-        assert!(
-            before.contains("DataRow::"),
-            "{reading:?} must be drawn as a DataTable row:\n{before}"
-        );
-    }
-    let grid = block
-        .find("grid_line.clone()")
-        .expect("the grid line is gone from the reach block");
-    let after = &block[grid..(grid + 400).min(block.len())];
     assert!(
-        after.contains(".hover("),
-        "the grid line must be the reading's hover:\n{after}"
+        !src.contains("\"Show reach map\""),
+        "the inspector draws the reach checkbox again; R3 moved it to the dock"
     );
-    let caution = block
-        .find("if *tolerance_below_floor {")
-        .expect("the over-statement caution is gone");
     assert!(
-        block[caution..].contains("Role::Caution"),
-        "the over-statement must stay a caution row on the face"
+        !src.contains("toolpath_reach_readings"),
+        "the inspector draws the reach table again; R3 moved it to the legend"
     );
-}
-
-/// The two SHORT status words may stay beside the checkbox: they carry no
-/// caveat and cannot clip. This pins that the exemption is narrow — a
-/// sentence must not be added to that row later on the strength of it.
-#[test]
-fn only_short_status_words_share_the_checkbox_row() {
-    let src = properties_src();
-    let block = reach_block(&src);
-    for status in ["reach: computing…", "reach: not measured"] {
-        assert!(
-            block.contains(status),
-            "{status:?} should still be a status word, not a sentence"
-        );
-        assert!(
-            status.len() < 30,
-            "{status:?} has grown into a sentence and must leave the horizontal row"
-        );
+    let body = function_body(&src, "draw_reach_row");
+    assert!(
+        body.contains("PropRow::new(\"Reach\")") && body.contains(".show_read_only("),
+        "the Reach row must be one read-only PropRow:\n{body}"
+    );
+    for sentence in ["grid_line", "area_basis_note", "over_statement_note"] {
+        let at = body
+            .find(sentence)
+            .unwrap_or_else(|| panic!("{sentence:?} is gone from the Reach row"));
+        let detail = body[at..]
+            .find(".detail(")
+            .expect("the Reach row must carry its sentences as the hover detail");
+        assert!(detail > 0, "{sentence:?} must reach the row hover");
     }
 }
 
@@ -417,24 +291,23 @@ fn every_sentence_in_the_header_is_wrapped() {
     }
 }
 
-/// Audit WRONG #2 (2026-10-02): the inspector reach footer prints the area
-/// base on the percentage line and the over-statement sentence on its own
-/// line. The grid line between them is `ReachMap::grid_line`, which holds
-/// neither. `ReachMap::grid_note` holds both, so a footer that prints it
-/// says each sentence twice. The core sentry `reach_map_p5` pins what
-/// `grid_line` holds; this pins that the footer reads it.
+/// Audit WRONG #2 (2026-10-02): the reach reading prints the area base and
+/// the over-statement sentence once each. The grid line is
+/// `ReachMap::grid_line`, which holds neither. `ReachMap::grid_note` holds
+/// both, so a reading that prints it says each sentence twice. The core
+/// sentry `reach_map_p5` pins what `grid_line` holds; this pins that the
+/// Reach row (R3; the footer before it) reads it.
 #[test]
-fn the_reach_footer_prints_the_grid_line_not_the_grid_note() {
+fn the_reach_row_prints_the_grid_line_not_the_grid_note() {
     let src = properties_src();
-    let block = reach_block(&src);
+    let body = function_body(&src, "draw_reach_row");
     assert!(
-        block.contains("grid_line.clone()"),
-        "the reach footer no longer prints the grid line:\n{block}"
+        body.contains("{grid_line}"),
+        "the Reach row no longer prints the grid line:\n{body}"
     );
     assert!(
-        !block.contains("grid_note"),
-        "the reach footer prints `grid_note`, which already holds the area base \
-         and the over-statement sentence that the footer prints on their own \
-         lines:\n{block}"
+        !body.contains("grid_note"),
+        "the Reach row prints `grid_note`, which already holds the area base \
+         and the over-statement sentence that the row prints on their own:\n{body}"
     );
 }

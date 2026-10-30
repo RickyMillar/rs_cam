@@ -1,8 +1,8 @@
-//! The Linking and Dressup tabs, and the parameter-grid helpers every
-//! operation editor draws its rows with.
+//! The Linking tab rows, and the parameter-grid helpers every operation
+//! editor draws its rows with.
 //!
-//! `draw_linking_params` and `draw_dressup_params` call each other, so they
-//! share one file.
+//! `draw_linking_params` and `draw_dressup_params` both draw on the Linking
+//! tab (R2: the Dressup tab is deleted), so they share one file.
 
 use super::feeds_speeds::draw_entry_preview_diagram;
 use super::operations::{draw_dogbone_diagram, draw_lead_in_out_diagram};
@@ -347,20 +347,6 @@ pub(super) fn dv_pill_opt(
 
 // ── Dressup configuration ────────────────────────────────────────────────
 
-/// Count how many dressup features are currently active.
-///
-/// F016: the total and the count read core's `DressupKey`, so a new dressup
-/// is counted without an edit here. The hand count named 7 of 8 and never
-/// counted `segment_merge`.
-pub(super) fn dressup_active_count(cfg: &DressupConfig) -> (usize, usize) {
-    use rs_cam_core::compute::config::DressupKey;
-    let active = DressupKey::ALL
-        .into_iter()
-        .filter(|key| cfg.is_dressup_enabled(*key))
-        .count();
-    (active, DressupKey::ALL.len())
-}
-
 /// Linking tab (W3.2): how moves connect — Entry & Exit and Move
 /// Optimization. Split out of the old monolithic dressup panel; the
 /// remaining edge-work (arc fitting / dogbone) stays in [`draw_dressup_params`].
@@ -681,10 +667,15 @@ pub(super) fn draw_linking_params(
     });
 }
 
-/// Dressup tab (W3.2): edge work / path quality — arc fitting and dogbone
-/// overcuts. Entry/exit + optimization live on the Linking tab
-/// ([`draw_linking_params`]); the machining boundary lives on Geometry.
-pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
+/// The Path Quality rows of the Linking tab (R2; the Dressup tab before
+/// it): arc fitting and, where `dogbone_applies`, dogbone overcuts.
+/// Entry/exit and optimization are above them ([`draw_linking_params`]);
+/// the machining boundary is on the Geometry tab.
+pub(super) fn draw_dressup_params(
+    ui: &mut egui::Ui,
+    cfg: &mut DressupConfig,
+    dogbone_applies: bool,
+) {
     // ── Path Quality ──────────────────────────────────────────
     crate::ui::components::SectionHeader::new("Path Quality").show(ui);
 
@@ -710,6 +701,9 @@ pub(super) fn draw_dressup_params(ui: &mut egui::Ui, cfg: &mut DressupConfig) {
         });
     }
 
+    if !dogbone_applies {
+        return;
+    }
     let mut dogbone_on = cfg.dogbone.is_some();
     if ui
         .checkbox(&mut dogbone_on, "Dogbone overcuts")

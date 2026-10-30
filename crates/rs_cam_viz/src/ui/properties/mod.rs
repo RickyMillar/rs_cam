@@ -272,58 +272,70 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 }
 
 // ── Toolpath property tab system ─────────────────────────────────────────
-// The per-toolpath properties panel has six concern tabs. Geometry (what
-// the op cuts: the selected items, the floor face; geometry selection GT-1)
-// comes first. Cut holds the tool, the input model, the start stock and
-// the op parameters (the "Geometry" tab before GT-1). Then Heights (Z
-// planes), Feeds, Linking (how moves connect) and Dressup.
-// D7 (reference audit 2026-10-23): Heights is third, after Cut, as in
-// FreeCAD and Fusion.
+// The per-toolpath properties panel has five concern tabs (operator ruling
+// R2, 2026-10-30). Geometry (what the op cuts: the input model, the
+// selected items, the floor face, the machining boundary and the reach
+// row) comes first. Passes holds the start stock and the op parameters
+// (the "Cut" tab before R2). Then Feeds, Heights (Z planes) and Linking
+// (how moves connect, arc fitting and dogbone; the Dressup tab before R2).
+// The tool is not on a tab: it is the Tool row of the inspector header.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolpathTab {
     Geometry,
-    Cut,
-    Heights,
+    Passes,
     FeedsSpeeds,
+    Heights,
     Linking,
-    Dressup,
 }
 
 impl ToolpathTab {
-    /// The tabs in strip order (D7).
+    /// The tabs in strip order (R2).
     pub const ALL: &[ToolpathTab] = &[
         ToolpathTab::Geometry,
-        ToolpathTab::Cut,
-        ToolpathTab::Heights,
+        ToolpathTab::Passes,
         ToolpathTab::FeedsSpeeds,
+        ToolpathTab::Heights,
         ToolpathTab::Linking,
-        ToolpathTab::Dressup,
     ];
+
+    /// R2: the old name of [`Self::Passes`]. The MCP wire enum
+    /// (`rs_cam_mcp::server::PropertiesTabParam::Cut`) still names it; the
+    /// MCP view maps it here.
+    #[expect(
+        non_upper_case_globals,
+        reason = "R2 bridge: the MCP view names the old tab as a variant path until its wire enum moves"
+    )]
+    pub const Cut: ToolpathTab = ToolpathTab::Passes;
+
+    /// R2: the Dressup tab is deleted; its rows are on [`Self::Linking`].
+    /// The MCP wire enum (`PropertiesTabParam::Dressup`) still names it.
+    #[expect(
+        non_upper_case_globals,
+        reason = "R2 bridge: the MCP view names the old tab as a variant path until its wire enum moves"
+    )]
+    pub const Dressup: ToolpathTab = ToolpathTab::Linking;
 
     fn label(self) -> &'static str {
         match self {
             ToolpathTab::Geometry => "Geometry",
-            ToolpathTab::Cut => "Cut",
+            ToolpathTab::Passes => "Passes",
             ToolpathTab::FeedsSpeeds => "Feeds",
-            ToolpathTab::Linking => "Linking",
             ToolpathTab::Heights => "Heights",
-            ToolpathTab::Dressup => "Dressup",
+            ToolpathTab::Linking => "Linking",
         }
     }
 
     /// The canonical agent-facing key of this tab.
     ///
-    /// UI-06: this is the ONE key table. The MCP `set_ui_view` tool builds
-    /// its valid-key list from `ALL.map(key)`, so the list cannot disagree
-    /// with what [`Self::parse`] accepts.
+    /// UI-06: this is the ONE key table of the GUI. [`Self::parse`] reads
+    /// every key back to its own variant.
     pub fn key(self) -> &'static str {
         match self {
             ToolpathTab::Geometry => "geometry",
-            ToolpathTab::Cut => "cut",
+            ToolpathTab::Passes => "passes",
             ToolpathTab::FeedsSpeeds => "feeds",
-            ToolpathTab::Linking => "linking",
             ToolpathTab::Heights => "heights",
-            ToolpathTab::Dressup => "dressup",
+            ToolpathTab::Linking => "linking",
         }
     }
 
@@ -331,15 +343,38 @@ impl ToolpathTab {
     ///
     /// Every [`Self::key`] parses back to its own variant. `feeds_speeds` is
     /// an extra spelling the tool has always accepted for the Feeds tab.
+    /// R2: the old keys `cut` and `dressup` read as Passes and Linking.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "geometry" => Some(ToolpathTab::Geometry),
-            "cut" => Some(ToolpathTab::Cut),
+            "passes" | "cut" => Some(ToolpathTab::Passes),
             "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),
-            "linking" => Some(ToolpathTab::Linking),
             "heights" => Some(ToolpathTab::Heights),
-            "dressup" => Some(ToolpathTab::Dressup),
+            "linking" | "dressup" => Some(ToolpathTab::Linking),
             _ => None,
+        }
+    }
+
+    /// R2: true when the tab holds a control for `operation`. A tab with no
+    /// control is not drawn. Each answer reads the op catalog:
+    ///
+    /// - Geometry: every op reads an input model (the Input row).
+    /// - Passes: every op has a registry editor
+    ///   (`operations::registry::OP_UI_ROWS`, held against
+    ///   `OperationType::ALL` by `operations_registry`).
+    /// - Feeds and Heights: every op has a feed and a Z plane set.
+    /// - Linking: arc fitting applies to every op.
+    ///
+    /// No shipped op hides a tab today; the predicate is the one place that
+    /// decides it.
+    pub fn applies(self, operation: &crate::state::toolpath::OperationConfig) -> bool {
+        let _ = operation;
+        match self {
+            ToolpathTab::Geometry
+            | ToolpathTab::Passes
+            | ToolpathTab::FeedsSpeeds
+            | ToolpathTab::Heights
+            | ToolpathTab::Linking => true,
         }
     }
 }
@@ -510,7 +545,7 @@ pub(crate) struct ToolpathPanelInputs {
     /// the items to pick, which of them the selection holds, and the
     /// refusal. `None` for every other op.
     pub holes: Option<rs_cam_core::session::HoleSelection>,
-    /// What the panel prints beside the reach-map checkbox (P5).
+    /// What the Reach row of the Geometry tab prints (P5, R3).
     pub reach: ReachPanelSummary,
     /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
     /// which cannot say "generated, then edited".
@@ -840,9 +875,6 @@ pub(crate) fn toolpath_panel_inputs(
                             area_basis_note: map.area_basis_note(),
                             over_statement_note: map.over_statement_note(),
                             tolerance_below_floor: map.tolerance_below_floor(),
-                            scale_note: overlay.surface.as_ref().map(|surface| {
-                                crate::state::runtime::reach_scale_note(map, surface)
-                            }),
                         }
                     } else {
                         ReachPanelSummary::NotMeasured
@@ -1182,11 +1214,10 @@ pub(crate) fn write_entry_runtime_to_gui(
     }
 }
 
-/// What the toolpath panel prints beside the reach-map checkbox (P5).
+/// What the Reach row of the Geometry tab prints (P5, R3).
 ///
-/// Built by the caller from `GuiState::reach_overlay`, and owned rather than
-/// borrowed so the panel can hold a `&mut` on the viewport flag at the same
-/// time.
+/// Built by the caller from `GuiState::reach_overlay`. R3: the scale note
+/// and the grid floor are in the viewport legend only.
 ///
 /// [`Self::NotMeasured`] is a separate arm from [`Self::Measured`] on
 /// purpose. A reach map over a mesh with no upward-facing topmost triangle
@@ -1226,10 +1257,6 @@ pub(crate) enum ReachPanelSummary {
         /// and the truth is at or below it — see
         /// [`rs_cam_core::maps::reach_map::ReachMap::tolerance_below_floor`].
         tolerance_below_floor: bool,
-        /// Round 7: [`crate::state::runtime::reach_scale_note`] — the
-        /// colour scale in tip radii and the grid floor against the tip
-        /// radius. `None` while no overlay surface is held.
-        scale_note: Option<String>,
     },
     Failed(String),
 }
@@ -1742,9 +1769,16 @@ fn draw_toolpath_selection(
         _ => None,
     };
 
-    // Copied out and written back so the panel's `&mut bool` cannot
-    // collide with the session borrows in the same argument list.
-    let mut show_reach_map = state.viewport.show_reach_map;
+    // R3: the Reach row reads the overlay registry row and asks for a
+    // switch; the switch below goes through `registry::set_overlay`, so
+    // the per-surface exclusivity holds (F5). The panel never writes
+    // `show_reach_map`.
+    let reach_row = crate::ui::overlays::registry::row("reach_map");
+    let mut reach_view = toolpath_panel::ReachView {
+        on: reach_row.is_some_and(|row| (row.get)(state)),
+        refusal: reach_row.and_then(|row| row.precondition(state).reason().map(str::to_owned)),
+        toggle: false,
+    };
     // P4.3: the pick mode and the `+ Rule` draft belong to the toolpath
     // on screen. A change of the selected toolpath ends both.
     state.gui.selection_ui.keep_only(Some(id));
@@ -1775,7 +1809,7 @@ fn draw_toolpath_selection(
         // static diagnostic contexts and the model bbox travel as
         // one value, so no caller can draw the entry while
         // silently substituting a default for one of the others.
-        // Taken out and put back, as `show_reach_map`: the section edits
+        // Taken out and put back: the section edits
         // the view state while `inputs` holds its read of the session.
         let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
         let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
@@ -1784,14 +1818,18 @@ fn draw_toolpath_selection(
             ui,
             &mut snapshot,
             &inputs,
-            &mut show_reach_map,
+            &mut reach_view,
             &mut selection_ui,
             &mut heights_refusal,
             &mut containment_autocorrect,
             events,
         );
 
-        state.viewport.show_reach_map = show_reach_map;
+        if reach_view.toggle
+            && let Some(row) = reach_row
+        {
+            crate::ui::overlays::registry::set_overlay(state, row, !reach_view.on);
+        }
         state.gui.active_toolpath_tab = Some((id, active_tab));
         state.gui.selection_ui = selection_ui;
         state.panels.heights_refusal = heights_refusal;

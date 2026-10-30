@@ -66,6 +66,8 @@ pub fn diagnostic_from_suggest_warning(
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::FeedsCalculator,
+        face: crate::diagnostics::presentation::face(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
+        anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT),
         message: row.message(),
         evidence: None,
         fix: None,
@@ -84,6 +86,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_FEED_CLAMPED),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_FEED_CLAMPED),
             message: format!(
                 "Feed clamped to machine limit: {actual:.0} mm/min (asked {requested:.0})"
             ),
@@ -103,6 +107,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_POWER_LIMITED),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_POWER_LIMITED),
             message: format!(
                 "Power limited: {required_kw:.2} kW needed, {available_kw:.2} kW available"
             ),
@@ -150,6 +156,10 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 confidence: Confidence::Approximate,
                 state: DiagnosticState::Current,
                 source: Source::FeedsCalculator,
+                face: crate::diagnostics::presentation::face(ids::FEEDS_POWER_LADDER_REDUCED_CUT),
+                anchor: crate::diagnostics::presentation::anchor(
+                    ids::FEEDS_POWER_LADDER_REDUCED_CUT,
+                ),
                 message: format!(
                     "Cut reduced to fit spindle power ({}): {required_kw_before:.2} → \
                      {required_kw_after:.2} kW against {available_kw:.2} kW available{}. {}",
@@ -177,6 +187,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_SHANK_TOO_LARGE),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SHANK_TOO_LARGE),
             message: format!("Shank {shank_mm:.1} mm exceeds max {max_mm:.1} mm"),
             evidence: None,
             fix: None,
@@ -191,6 +203,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_DOC_EXCEEDS_FLUTE),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_DOC_EXCEEDS_FLUTE),
             message: format!(
                 "Depth-per-pass {requested:.1} mm capped to flute length {capped:.1} mm"
             ),
@@ -207,6 +221,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_SLOTTING_DETECTED),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SLOTTING_DETECTED),
             message: format!(
                 "Slotting detected — depth-per-pass reduced to {doc_reduced_to:.1} mm"
             ),
@@ -226,6 +242,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_SCALLOP_INVALID),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SCALLOP_INVALID),
             message: format!(
                 "Scallop target {target:.3} mm unachievable (max {max_possible:.1} mm)"
             ),
@@ -249,6 +267,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             message: format!(
                 "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
                  (floor {floor:.4}, {}). The feed is not raised. The tool can rub and \
@@ -279,6 +299,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
             message: crate::feeds::rpm_lowered_text(
                 *rpm_from,
                 *rpm_to,
@@ -307,6 +329,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: format!("Long tool: load target \u{00D7}{factor:.2}"),
+            anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_LONG_TOOL_DERATE),
             message: format!(
                 "Long tool: stickout {stickout_mm:.1} mm is {ratio:.1} x D \
                  (D {diameter_mm:.3} mm); load target x{factor:.2} (repo rule, unsourced). \
@@ -330,6 +354,10 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
+            ),
             message: format!(
                 "Drill feed clamped into material envelope: {requested:.0} → {actual:.0} mm/min \
                  (safe band {envelope_lo:.0}–{envelope_hi:.0} mm/min for this diameter)"
@@ -354,6 +382,12 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(
+                ids::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
+            ),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
+            ),
             message: format!(
                 "No vendor data for {operation_kind} on a {tool_family} cutter — this \
                  recommendation is entirely formula-derived and carries no band, and the \
@@ -381,6 +415,12 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
+            face: crate::diagnostics::presentation::face(
+                ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
+            ),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
+            ),
             message: format!(
                 "Vendor row {observation_id} is an RPM anchor and publishes no chipload \
                  column — the recommended {formula_chipload_mm:.4} mm/tooth is the \
@@ -530,6 +570,8 @@ fn ratio_hint(
         confidence: Confidence::Heuristic,
         state: DiagnosticState::Current,
         source: Source::FeedsCalculator,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message,
         evidence: Some(DiagnosticEvidence::GeometryCompare {
             lhs_label: lhs_label.to_owned(),

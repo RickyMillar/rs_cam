@@ -831,32 +831,39 @@ impl ProjectSession {
             if !session.tools.iter().any(|t| t.id == tool_id) {
                 return Err(SessionError::ToolNotFound(tool_id));
             }
-            let mut candidate = session
-                .toolpath_configs
-                .get(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?
-                .clone();
-            if candidate.tool_id == Some(tool_id) {
-                return Ok(());
+            if session.toolpath_configs.get(index).is_none() {
+                return Err(SessionError::ToolpathNotFound(index));
             }
-            let old_tool = candidate.tool_id;
-            candidate.tool_id = Some(tool_id);
-            // R2: the first tool of an op with no tool applies THE boundary
-            // rule of the draft (`apply_first_tool_boundary`).
-            session.apply_first_tool_boundary(old_tool, &mut candidate);
-            let tc = session
-                .toolpath_configs
-                .get_mut(index)
-                .ok_or(SessionError::ToolpathNotFound(index))?;
-            *tc = candidate;
-            let enabled = tc.enabled;
-            // A different cutter removes different material, so this is a
-            // stock-chain change: same invalidation as
-            // `edit_toolpath_selection` and `set_heights_config`, not the
-            // narrower `remove_result`.
-            session.invalidate_result_chain(index, enabled);
+            session.bind_tool_impl(index, tool_id);
             Ok(())
         })
+    }
+
+    /// The raw half of [`Self::set_toolpath_tool`], with no effects
+    /// wrapper: bind `tool_id` to the toolpath at `index`. The caller
+    /// checks that both exist. A bind to the tool already bound does
+    /// nothing. [`Self::add_tool`] calls it too (P3 auto-bind).
+    pub(crate) fn bind_tool_impl(&mut self, index: usize, tool_id: ToolId) {
+        let Some(mut candidate) = self.toolpath_configs.get(index).cloned() else {
+            return;
+        };
+        if candidate.tool_id == Some(tool_id) {
+            return;
+        }
+        let old_tool = candidate.tool_id;
+        candidate.tool_id = Some(tool_id);
+        // R2: the first tool of an op with no tool applies THE boundary
+        // rule of the draft (`apply_first_tool_boundary`).
+        self.apply_first_tool_boundary(old_tool, &mut candidate);
+        let enabled = candidate.enabled;
+        if let Some(tc) = self.toolpath_configs.get_mut(index) {
+            *tc = candidate;
+        }
+        // A different cutter removes different material, so this is a
+        // stock-chain change: same invalidation as
+        // `edit_toolpath_selection` and `set_heights_config`, not the
+        // narrower `remove_result`.
+        self.invalidate_result_chain(index, enabled);
     }
 
     /// Rebind a toolpath to a different **input model**, invalidating its

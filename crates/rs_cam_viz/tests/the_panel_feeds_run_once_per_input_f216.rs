@@ -126,7 +126,7 @@ fn fixture() -> AppState {
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     let _ = state.set_focus(Selection::Toolpath(id));
-    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Cut));
+    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Passes));
     state
 }
 
@@ -210,7 +210,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
         0,
         "the Feeds tab must read the memo the Geometry tab filled"
     );
-    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Cut));
+    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Passes));
     assert_eq!(builds_after(&ctx, &mut state, 10), 0);
 
     // An edit that is not an input runs nothing.

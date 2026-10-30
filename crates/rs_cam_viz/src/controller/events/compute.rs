@@ -37,10 +37,10 @@ impl<B: ComputeBackend> AppController<B> {
     pub(crate) fn fail_toolpath_submit(&mut self, tp_id: ToolpathId, msg: impl Into<String>) {
         let msg = msg.into();
         let rt = self.state.gui.toolpath_rt_or_default(tp_id);
-        rt.run = ToolpathRun::Failed(msg);
+        rt.run = ToolpathRun::Failed(msg.clone());
         // Keep the core cache in step with `rt.result` — see
         // `forget_core_result`.
-        self.forget_core_result(tp_id);
+        self.forget_core_result(tp_id, Some(msg));
         self.toolpath_completion_landed(tp_id);
     }
 
@@ -62,7 +62,7 @@ impl<B: ComputeBackend> AppController<B> {
         // blocked op that still had a stale core result would read as
         // "generated" to `PhantomPriorStockScan` and never be offered the
         // phantom prior-stock snapshot that unblocks it.
-        self.forget_core_result(tp_id);
+        self.forget_core_result(tp_id, None);
         self.toolpath_completion_landed(tp_id);
     }
 
@@ -181,8 +181,9 @@ impl<B: ComputeBackend> AppController<B> {
     /// dropped with it) keeps its stamp.
     ///
     /// The caller ends its borrow of the runtime row before it calls
-    /// this method.
-    fn forget_core_result(&mut self, tp_id: ToolpathId) {
+    /// this method. W1: `refusal` is the refusal text of a failed run, or
+    /// `None` for a cancel or a wait; core records it for the run state.
+    fn forget_core_result(&mut self, tp_id: ToolpathId, refusal: Option<String>) {
         let Some((tp_index, _)) = self.state.session().find_toolpath_config_by_id(tp_id) else {
             return;
         };
@@ -192,7 +193,10 @@ impl<B: ComputeBackend> AppController<B> {
             .toolpath_rt
             .get(&tp_id)
             .and_then(|rt| rt.stale_since);
-        let command = Command::ForgetResult(ForgetResultArgs { index: tp_index });
+        let command = Command::ForgetResult(ForgetResultArgs {
+            index: tp_index,
+            refusal,
+        });
         if self.apply(command).is_ok()
             && let Some(rt) = self.state.gui.toolpath_rt.get_mut(&tp_id)
         {
@@ -598,7 +602,7 @@ impl<B: ComputeBackend> AppController<B> {
             }
             Err(ComputeError::Cancelled) => {
                 rt.run = ToolpathRun::Pending;
-                self.forget_core_result(tp_id);
+                self.forget_core_result(tp_id, None);
             }
             Err(ComputeError::OverBudget {
                 need_bytes,
@@ -610,12 +614,12 @@ impl<B: ComputeBackend> AppController<B> {
                 let message =
                     ComputeError::over_budget_message("Generation", need_bytes, limit_bytes);
                 rt.run = ToolpathRun::Failed(message.clone());
-                self.forget_core_result(tp_id);
+                self.forget_core_result(tp_id, Some(message.clone()));
                 tracing::warn!("{message}");
                 self.push_notification(message, super::super::Severity::Warning);
             }
             Err(ComputeError::Message(error)) => {
-                rt.run = ToolpathRun::Failed(error);
+                rt.run = ToolpathRun::Failed(error.clone());
                 // G-STICKYEMPTY: clear the CORE cache too, not
                 // just `rt.result`. `Ok` writes both caches
                 // (`AdoptResult`, above); a failure used to
@@ -627,7 +631,7 @@ impl<B: ComputeBackend> AppController<B> {
                 // withholds a pending rest op's phantom
                 // prior-stock snapshot and leaves it unable to
                 // regenerate until the project is reloaded.
-                self.forget_core_result(tp_id);
+                self.forget_core_result(tp_id, Some(error));
             }
         }
         self.pending_upload = true;

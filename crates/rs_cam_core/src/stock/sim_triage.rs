@@ -669,6 +669,8 @@ impl SimulationTriage {
                     confidence: Confidence::Approximate,
                     state: DiagnosticState::Current,
                     source: Source::Simulation,
+                    face: crate::diagnostics::presentation::face(ids::PROJECT_AIR_CUT_HIGH),
+                    anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_AIR_CUT_HIGH),
                     message: format!(
                         "{:.1}s wasted around ({:.1}, {:.1}, {:.1}) — engagement {:.2}",
                         h.wasted_runtime_s,
@@ -768,6 +770,8 @@ fn rest_slower_than_fresh_finding(
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_REST_SLOWER_THAN_FRESH),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_REST_SLOWER_THAN_FRESH),
             message: format!(
                 "rest operation {label} takes {rest_s:.1} s; the same operation on fresh stock \
                  takes {fresh_s:.1} s (cycle-time model, commanded feeds). Rest can take \
@@ -1055,6 +1059,10 @@ fn standing_material_finding(
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_CROSSES_STANDING_MATERIAL),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::PROJECT_CROSSES_STANDING_MATERIAL,
+            ),
             message,
             evidence: Some(DiagnosticEvidence::SampleRange {
                 toolpath_id,
@@ -1188,6 +1196,8 @@ pub(crate) fn rough_coverage_finding(
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_ROUGH_LEAVES_ISLANDS),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_ROUGH_LEAVES_ISLANDS),
             message,
             evidence: Some(DiagnosticEvidence::GeometryCompare {
                 lhs_label: "tallest island above the rough target".to_owned(),
@@ -1465,6 +1475,8 @@ fn entry_load_finding(trace: &SimulationCutTrace, toolpath_id: ToolpathId) -> Op
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_ENTRY_LOAD),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_ENTRY_LOAD),
             message: format!(
                 "entry motion cuts far harder than the pass does: {} of {} entry samples \
                  remove more than {:.2} mm ({:.0}x this pass's own {:.2} mm median body \
@@ -1759,6 +1771,8 @@ fn link_cut_finding(
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_LINK_CUTS_STOCK),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_LINK_CUTS_STOCK),
             message: format!(
                 "{name}a fed link cuts stock it was planned to cross in air or on cut ground: \
                  link move {move_index} removes {peak:.2} mm at ({:.1}, {:.1}, {:.2}). \
@@ -1859,6 +1873,8 @@ pub fn plunge_class_finding(util: &ToolpathKinematicUtilization) -> Option<Findi
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_PLUNGE_CLASS_LOAD),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_PLUNGE_CLASS_LOAD),
             message: format!(
                 "plunge-class motion descends faster than this op's own plunge rate: {} of \
                  {} vertical-dominant moves exceed {:.0} mm/min, peaking at {:.0} mm/min \
@@ -1965,6 +1981,8 @@ fn collision_finding(
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(id),
+            anchor: crate::diagnostics::presentation::anchor(id),
             message,
             evidence: toolpath_id.map(|id| DiagnosticEvidence::Move {
                 toolpath_id: id,
@@ -2206,6 +2224,8 @@ mod tests {
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_GENERATED_EMPTY),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_GENERATED_EMPTY),
             message: "removed no material".to_owned(),
             evidence: None,
             fix: None,
@@ -2266,6 +2286,8 @@ mod tests {
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_GENERATED_EMPTY),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_GENERATED_EMPTY),
             message: "removed no material".to_owned(),
             evidence: None,
             fix: None,
@@ -2364,6 +2386,8 @@ mod tests {
                 confidence: Confidence::Approximate,
                 state: DiagnosticState::Current,
                 source: Source::Simulation,
+                face: crate::diagnostics::presentation::face(ids::PROJECT_AIR_CUT_HIGH),
+                anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_AIR_CUT_HIGH),
                 message: String::new(),
                 evidence: None,
                 fix: None,
@@ -2410,6 +2434,8 @@ mod tests {
                         confidence: Confidence::Approximate,
                         state: DiagnosticState::Current,
                         source: Source::Simulation,
+                        face: crate::diagnostics::presentation::face(ids::PROJECT_AIR_CUT_HIGH),
+                        anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_AIR_CUT_HIGH),
                         message: String::new(),
                         evidence: None,
                         fix: None,
@@ -2646,6 +2672,8 @@ mod tests {
             confidence: Confidence::Static,
             state: DiagnosticState::NotApplicable,
             source: Source::Simulation,
+            face: crate::diagnostics::presentation::face(ids::PROJECT_MEASURABILITY_ABSTAINED),
+            anchor: crate::diagnostics::presentation::anchor(ids::PROJECT_MEASURABILITY_ABSTAINED),
             message: "air-cut % withheld".to_owned(),
             evidence: None,
             fix: None,

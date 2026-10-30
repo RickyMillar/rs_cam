@@ -3,7 +3,7 @@
 //! tab and the run sheet fit the side panel.
 //!
 //! The harness is the G-PANELFIT one (`every_side_panel_fits_its_width_g_panelfit.rs`):
-//! the real `side_panel` helper at 240 and 280 points, two frames, and the
+//! the real `side_panel` helper at 240, 280 and 340 points, two frames, and the
 //! content width against the inner width. Each case also asserts that the
 //! section painted its anchor text (a non-vacuity anchor): a section that
 //! does not draw fits any width.
@@ -34,7 +34,9 @@ use rs_cam_viz::ui::properties::ToolpathTab;
 use rs_cam_viz::ui::properties::head::PartList;
 use rs_cam_viz::ui::{properties, shoe_list, tokens};
 
-const WIDTHS: [f32; 2] = [240.0, 280.0];
+/// The rail, the setup properties panel and the toolpath inspector (R4,
+/// operator ruling 2026-10-30: 340).
+const WIDTHS: [f32; 3] = [240.0, 280.0, 340.0];
 const SLACK: f32 = 0.5;
 
 fn ctx() -> egui::Context {

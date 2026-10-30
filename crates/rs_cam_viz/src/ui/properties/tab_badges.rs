@@ -63,12 +63,13 @@ fn worse(dot: Option<egui::Color32>, color: egui::Color32) -> egui::Color32 {
 /// core `diagnostics::ids::ALL`; `owner_tab_map_covers_every_id_f24`
 /// fails on an id with no row.
 ///
-/// No core id holds a dressup finding (arc fitting, dogbone) today, so no
-/// row names the Dressup tab.
+/// R2: the Dressup tab is deleted (its rows are on Linking); the Cut tab is
+/// now Passes. The tool is the header Tool row, on no tab, so a tool
+/// finding gives no dot: the row outline carries it.
 pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
     use rs_cam_core::diagnostics::ids as i;
     const G: Option<ToolpathTab> = Some(ToolpathTab::Geometry);
-    const C: Option<ToolpathTab> = Some(ToolpathTab::Cut);
+    const C: Option<ToolpathTab> = Some(ToolpathTab::Passes);
     const F: Option<ToolpathTab> = Some(ToolpathTab::FeedsSpeeds);
     const L: Option<ToolpathTab> = Some(ToolpathTab::Linking);
     const H: Option<ToolpathTab> = Some(ToolpathTab::Heights);
@@ -171,10 +172,10 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::CONFIG_DERIVED_STEPOVER, C),
         (i::CONFIG_CLAIMS_REFERENCE, C),
         (i::CONFIG_INERT_CLAIMS_DIAL, C),
-        // The tool and the input model combos are on the Cut tab.
-        (i::COMPAT_TOOL_KIND_REFUSED, C),
-        // R2: an op with no tool; the fix is the Tool combo.
-        (i::PRECOND_NO_TOOL, C),
+        // R2: the tool is the header Tool row, on no tab.
+        (i::COMPAT_TOOL_KIND_REFUSED, NO),
+        // R2: an op with no tool; the fix is the header Tool row.
+        (i::PRECOND_NO_TOOL, NO),
         (i::COMPAT_BALL_NOSE_FLAT_CLEARING, C),
         (i::COMPAT_PROJECT_CURVE_POINT_PROJECTION, G),
         (i::TOOL_NAME_SIZE_MISMATCH, NO),
@@ -196,8 +197,10 @@ pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
         (i::PRECOND_NOT_SET, C),
         (i::SAFETY_CUTS_INTO_MODEL, G),
         (i::PRECOND_PROJECT_CURVE_NO_CURVE, G),
-        (i::PRECOND_PROJECT_CURVE_NO_SURFACE, C),
-        (i::REF_MODEL_MISSING, C),
+        // R2: the fix is the Input row, on the Geometry tab.
+        (i::PRECOND_PROJECT_CURVE_NO_SURFACE, G),
+        // R2: the Input row is on the Geometry tab.
+        (i::REF_MODEL_MISSING, G),
     ]
 };
 
@@ -607,12 +610,19 @@ fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static st
     }
 }
 
-pub(super) fn draw_toolpath_tabs(ui: &mut egui::Ui, active: &mut ToolpathTab, badges: &TabBadges) {
+pub(super) fn draw_toolpath_tabs(
+    ui: &mut egui::Ui,
+    active: &mut ToolpathTab,
+    badges: &TabBadges,
+    operation: &crate::state::toolpath::OperationConfig,
+) {
     // The strip is the shared `components::TabStrip` (inspector clean-up
-    // round 3); the Simulation inspector draws the same one. It wraps in a
-    // narrow rail, so no tab paints past the panel edge (UR1).
+    // round 3); the Simulation inspector draws the same one. It keeps one
+    // row (IC3). R2: a tab with no control for the op is not drawn
+    // (`ToolpathTab::applies`).
     let strip = ToolpathTab::ALL
         .iter()
+        .filter(|tab| tab.applies(operation))
         .fold(TabStrip::new(active), |strip, &tab| {
             strip.tab_badge(tab, tab.label(), badges.for_tab(tab).map(TabBadge::Dot))
         });
@@ -696,32 +706,66 @@ const START_FROM_HOVER: &str = concat!(
     "operations in this setup leave, and needs their simulation first."
 );
 
-/// The Geometry tab's WIRING rows: Tool and Input model. The Selection
-/// section and [`draw_start_from`] follow them (geometry selection P4.D).
+/// The text of the header Tool row while the op has no tool (R2, P1).
+pub(crate) const CHOOSE_A_TOOL: &str = "Choose a tool";
+
+/// The Tool row entry that opens the tool library modal.
+pub(crate) const ADD_FROM_LIBRARY: &str = "Add from library\u{2026}";
+
+/// The Tool row entry that adds a new tool of a kind the op takes.
+pub(crate) const NEW_TOOL: &str = "New tool\u{2026}";
+
+/// The hover of the header Tool row.
+const TOOL_ROW_HOVER: &str = "The cutter this toolpath runs. A grey tool is one the \
+    operation refuses; its hover gives the reason.";
+
+/// The header Tool row (R2, P1): the ONE tool control of the inspector, a
+/// `PropRow` dropdown under the name.
 ///
-/// DC5 (Pattern A). These rows used to sit behind a `Geometry` disclosure
-/// ABOVE the tab strip, while a `Geometry` TAB held the operation's geometry
-/// PARAMETERS. One name carried two different blocks at one level, and the
-/// reader could not tell what contained what. The rows now open the Geometry
-/// tab and the disclosure is deleted, so the name has one home.
-pub(super) fn draw_geometry_wiring(
+/// The list holds the project tools (a tool the op refuses is grey, with
+/// the refusal of core `tool_fit` on hover, 6.F4), a separator, then
+/// [`ADD_FROM_LIBRARY`] (the tool library modal, the route of the Setup
+/// rail) and [`NEW_TOOL`] (the add-tool route, with the first tool kind
+/// the op takes). P3: core `add_tool` binds a new fitting tool to this op
+/// while it has no tool. With no tool bound the row reads
+/// [`CHOOSE_A_TOOL`] in a DANGER outline; the no-tool state is its hover.
+pub(super) fn draw_tool_row(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
+    events: &mut Vec<crate::ui::AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
-    let models = inputs.models.as_slice();
-    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
-    // Tool selector
-    ui.horizontal(|ui| {
-        ui.label("Tool:");
-        let tool_label = tools
-            .iter()
-            .find(|(id, _, _)| Some(*id) == entry.tool_id)
-            .map_or(rs_cam_core::session::NO_TOOL_NAME, |(_, s, _)| s.as_str());
+    let current = tools
+        .iter()
+        .find(|(id, _, _)| Some(*id) == entry.tool_id)
+        .map(|(_, name, _)| name.clone());
+    let state = current
+        .is_none()
+        .then_some(crate::ui::components::Role::Danger);
+    let detail = inputs
+        .no_tool_state
+        .clone()
+        .unwrap_or_else(|| CHOOSE_A_TOOL.to_owned());
+    // The first tool kind the op takes, for "New tool…".
+    let constraints = entry.operation.op_type().registry_entry().tool_constraints;
+    let new_kind = crate::state::job::ToolType::ALL
+        .iter()
+        .copied()
+        .find(|tt| constraints.allows(tt.cutter_kind()));
+    let row = crate::ui::components::PropRow::new("Tool")
+        .state(state)
+        .hover(Some(TOOL_ROW_HOVER))
+        .detail(Some(detail.as_str()));
+    let out = row.show(ui, |ui| {
+        let selected = match current.as_deref() {
+            Some(name) => egui::RichText::new(name),
+            None => egui::RichText::new(CHOOSE_A_TOOL).color(crate::ui::tokens::DANGER),
+        };
         egui::ComboBox::from_id_salt("tp_tool")
             .truncate()
-            .selected_text(tool_label)
+            .width(ui.available_width())
+            .selected_text(selected)
             .show_ui(ui, |ui| {
                 for (id, name, _) in tools {
                     // R2 / 6.F4: a tool that the op refuses is grey, with
@@ -734,19 +778,46 @@ pub(super) fn draw_geometry_wiring(
                         row.response.on_disabled_hover_text(text);
                     }
                 }
-            });
+                if !tools.is_empty() {
+                    ui.separator();
+                }
+                if ui
+                    .selectable_label(false, ADD_FROM_LIBRARY)
+                    .on_hover_text("Open the tool library and add a tool to the project.")
+                    .clicked()
+                {
+                    events.push(crate::ui::AppEvent::Ui(
+                        crate::ui_command::UiCommand::OpenToolLibrary(crate::ui_command::NoArgs),
+                    ));
+                }
+                if let Some(kind) = new_kind
+                    && ui
+                        .selectable_label(false, NEW_TOOL)
+                        .on_hover_text(format!(
+                            "Add a new {} to the project. This toolpath takes it while it \
+                             has no tool.",
+                            kind.label().to_lowercase()
+                        ))
+                        .clicked()
+                {
+                    events.push(crate::ui::AppEvent::AddTool(kind));
+                }
+            })
+            .response
     });
-    // R2: the op has no tool. The state stays on the panel until a tool is
-    // set (Q4: a state, not a toast).
-    if entry.tool_id.is_none()
-        && let Some(state) = &inputs.no_tool_state
-    {
-        ui.label(
-            egui::RichText::new(format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX))
-                .color(crate::ui::tokens::DANGER),
-        );
-    }
+    let _ = out.inner.on_hover_text(&out.hover);
+}
 
+/// The Input row of the Geometry tab (R2: it was on the Cut tab) and the
+/// BREP warning of the model. The row keeps its pre-R2 form; W3a moves it
+/// onto `PropRow`.
+pub(super) fn draw_input_row(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    inputs: &super::ToolpathPanelInputs,
+) {
+    let models = inputs.models.as_slice();
+    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
     // Model selector
     ui.horizontal(|ui| {
         ui.label("Input:");
@@ -778,15 +849,13 @@ pub(super) fn draw_geometry_wiring(
         );
     }
 
-    // Geometry selection P4.3: the face picker block went to the
-    // Selection section (`selection_section.rs`), which shows the face
-    // picks with the other items of the selection. P4.D: the Geometry tab
-    // draws that section directly below these rows, next to the Input
-    // combo, and then calls [`draw_start_from`].
+    // Geometry selection P4.3: the face picker block is in the Selection
+    // section (`selection_section.rs`). The Geometry tab draws that section
+    // directly below this row.
 }
 
-/// The Cut tab's rest machining row and its rest comparison: the end of
-/// the wiring rows, below the Selection section (geometry selection P4.D).
+/// The rest machining row and its rest comparison: the first rows of the
+/// Passes tab (R2).
 pub(super) fn draw_start_from(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,

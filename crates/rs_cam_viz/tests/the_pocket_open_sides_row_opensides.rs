@@ -87,7 +87,7 @@ fn painted_on_cut_tab(
 ) -> Vec<inspector_harness_p6_7::Painted> {
     let ctx = h::ctx();
     let mut state = h::state(model, 6.0, stock(), pocket(on));
-    h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Cut);
+    h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Passes);
     h::render(&ctx, &mut state, h::RAIL_WIDTH)
 }
 

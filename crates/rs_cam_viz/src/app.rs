@@ -629,12 +629,13 @@ impl RsCamApp {
             crate::ui::toolpath_panel::draw(ui, state, &panel_ctx, events);
         });
 
-        // Right panel: operation/tool parameters
+        // Right panel: operation/tool parameters. R4 (operator ruling
+        // 2026-10-30): the default width is 340; the maximum stays 420.
         side_panel(
             ui,
             SidePanelEdge::Right,
             "toolpath_properties",
-            280.0,
+            340.0,
             |ui| {
                 let (state, events) = self.controller.state_and_events_mut();
                 crate::ui::properties::draw(ui, state, events);

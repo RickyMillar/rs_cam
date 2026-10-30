@@ -2687,6 +2687,30 @@ impl ProjectSession {
         index: usize,
         cancel: &AtomicBool,
     ) -> Result<&ToolpathComputeResult, SessionError> {
+        // W1: a refusal of this door is recorded at the current revision,
+        // as the GUI drain records it through `ForgetResult`, so the run
+        // state reads `Failed` on every surface.
+        if let Err(error) = self.generate_toolpath_steps(index, cancel) {
+            // A cancel is no refusal; an unknown index has no record.
+            let cancelled = cancel.load(std::sync::atomic::Ordering::Relaxed);
+            if !cancelled && !matches!(error, SessionError::ToolpathNotFound(_)) {
+                self.record_run_refusal(index, Some(error.to_string()));
+            }
+            return Err(error);
+        }
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "the steps inserted at this key: their adopt refuses and returns an error when the index names no toolpath or the revision moved, and neither can happen under one `&mut self`."
+        )]
+        Ok(&self.results[&index])
+    }
+
+    /// The three steps of [`Self::generate_toolpath`].
+    fn generate_toolpath_steps(
+        &mut self,
+        index: usize,
+        cancel: &AtomicBool,
+    ) -> Result<(), SessionError> {
         // `start` answers the handle of the row it was handed, so the
         // other arm cannot happen. It is spelled out rather than wildcarded
         // because that is what makes a new `Job` row stop this door from
@@ -2710,11 +2734,7 @@ impl ProjectSession {
             revision: handle.revision,
             result: Box::new(result),
         }))?;
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "the adopt above inserted at this key. It refuses and returns early when the index names no toolpath or the revision moved, and neither can happen under one `&mut self`."
-        )]
-        Ok(&self.results[&index])
+        Ok(())
     }
 
     // ── Analysis ───────────────────────────────────────────────────

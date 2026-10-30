@@ -43,6 +43,7 @@ mod rest_fresh;
 mod rest_stock;
 mod result_provenance;
 mod rule_offers;
+pub mod run_state;
 mod save;
 pub(crate) mod selection_status;
 mod shoe;
@@ -80,6 +81,7 @@ pub use command::{
     Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
     UpdateStockFromBboxArgs,
 };
+pub use run_state::{NextAction, RunState, next_action, refuses_generation, toolpath_run_state};
 // E5: one line of its own, so the re-export block above keeps its shape.
 pub use command::RuleOffersArgs;
 pub use compute::{
@@ -1898,6 +1900,10 @@ pub struct ProjectSession {
     pub(crate) toolpath_revision: HashMap<usize, u64>,
     /// Monotonic source of [`Self::toolpath_revision_at`] values. Never reset.
     pub(crate) next_revision: u64,
+    /// W1: the last refusal of each toolpath (with its revision) and the
+    /// toolpaths that had a result, for [`run_state::toolpath_run_state`].
+    /// NOT persisted.
+    pub(crate) run_record: run_state::RunRecord,
     pub(crate) simulation: Option<SimulationResult>,
     /// How many times an edit has dropped the simulation.
     ///
@@ -1972,6 +1978,7 @@ impl ProjectSession {
             rest_fresh_comparisons: HashMap::new(),
             toolpath_revision: HashMap::new(),
             next_revision: 0,
+            run_record: run_state::RunRecord::default(),
             simulation_epoch: 0,
             simulation_runs: 0,
             simulation_drop_epochs: [0; SimulationDropCause::COUNT],

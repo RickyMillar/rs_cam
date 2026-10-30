@@ -80,6 +80,8 @@ fn cuts_into_model(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::SAFETY_CUTS_INTO_MODEL),
+        anchor: crate::diagnostics::presentation::anchor(ids::SAFETY_CUTS_INTO_MODEL),
         message: f.message(),
         evidence: Some(crate::diagnostics::DiagnosticEvidence::Move {
             toolpath_id,
@@ -124,6 +126,8 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_REST_LEVELS_FALLBACK),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_REST_LEVELS_FALLBACK),
         message: format!(
             "This rest operation cut its whole outline at every level, because \
              {cause}. The remaining stock did not remove the air cuts. [Recorded \
@@ -167,6 +171,8 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_REGION_CAP_TRUNCATED),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_REGION_CAP_TRUNCATED),
         message: format!(
             "Rest-region extraction found {total} islands and kept only the \
              largest {kept} (cap {cap}); {dropped} were DROPPED. Anything \
@@ -221,6 +227,8 @@ fn inert_claims_dial(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diag
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::CONFIG_INERT_CLAIMS_DIAL),
+        anchor: crate::diagnostics::presentation::anchor(ids::CONFIG_INERT_CLAIMS_DIAL),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -253,6 +261,8 @@ fn boundary_clip_dropped(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_BOUNDARY_CLIP_DROPPED),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_BOUNDARY_CLIP_DROPPED),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -286,6 +296,8 @@ fn waterline_ladder(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -340,6 +352,8 @@ fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Ve
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_OFFSET_LIBRARY_FAILURE),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_OFFSET_LIBRARY_FAILURE),
         message: format!(
             "{n} 2D offset call(s) in this operation FAILED rather than \
              collapsing: cavalier_contours panicked on the input and the \
@@ -394,6 +408,8 @@ fn zero_removal(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_ZERO_REMOVAL),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_ZERO_REMOVAL),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -418,6 +434,8 @@ fn buried_curve(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_BURIED_CURVE),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_BURIED_CURVE),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -443,6 +461,8 @@ fn selection_note(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_SELECTION_NOTE),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_SELECTION_NOTE),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -467,6 +487,8 @@ fn tab_placement(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnost
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_TAB_PLACEMENT),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_TAB_PLACEMENT),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -520,6 +542,8 @@ fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         severity,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::CONFIG_CLAIMS_REFERENCE),
+        anchor: crate::diagnostics::presentation::anchor(ids::CONFIG_CLAIMS_REFERENCE),
         message: format!(
             "Rest reference: {used} ({verb} — `{label}`). {why}{clip_note} \
              [Report-only — no gate.]",
@@ -580,6 +604,8 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_RAMP_REACH_CLAMP),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_RAMP_REACH_CLAMP),
         message: format!(
             "Ramp descent TRUNCATED by cutter reach: {clamped} of {total} \
              ramp points ({pct:.0}%) were raised, by up to {lift:.3} mm, \
@@ -645,6 +671,8 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::CONFIG_DERIVED_STEPOVER),
+            anchor: crate::diagnostics::presentation::anchor(ids::CONFIG_DERIVED_STEPOVER),
             message: match f.slope_derate {
                 // Honest raster (Track B, 2026-09-01): a slope-keyed
                 // derivation, not a reach-policy one — the reach-policy
@@ -726,6 +754,8 @@ fn truncated_core(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_STANDING_MATERIAL),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_STANDING_MATERIAL),
         message: format!(
             "{area:.0} mm² of material left UNCUT inside the machining \
              region: the scallop ring cascade hit its ring cap before the \
@@ -808,6 +838,8 @@ fn clipped_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnosti
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_CLIPPED_BAND),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_CLIPPED_BAND),
         message: f.message(),
         evidence: None,
         fix: None,
@@ -845,6 +877,8 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_UNMACHINED_BAND),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_UNMACHINED_BAND),
         message: format!(
             "{area:.1} mm² of the {band} band across {count} planned \
              region(s) emitted NO cutting: the resolved {clip} = \
@@ -886,6 +920,8 @@ fn tip_float(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnostic> 
         confidence: Confidence::Verified,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::GEOM_TIP_FLOAT),
+        anchor: crate::diagnostics::presentation::anchor(ids::GEOM_TIP_FLOAT),
         message: f.message(),
         evidence: None,
         fix: None,

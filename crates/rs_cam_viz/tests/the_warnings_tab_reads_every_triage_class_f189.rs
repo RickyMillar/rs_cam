@@ -37,6 +37,8 @@ fn finding(class: TriageClass, id: &str, message: &str) -> Finding {
             confidence: Confidence::Approximate,
             state: DiagnosticState::Current,
             source: Source::Simulation,
+            face: rs_cam_core::diagnostics::presentation::face(id),
+            anchor: rs_cam_core::diagnostics::presentation::anchor(id),
             message: message.to_owned(),
             evidence: None,
             fix: None,

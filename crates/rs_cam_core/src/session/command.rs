@@ -2290,6 +2290,11 @@ pub struct AutoEnableRestAnalysisArgs {
 pub struct ForgetResultArgs {
     /// The index of the toolpath whose cached result the command drops.
     pub index: usize,
+    /// W1: the refusal text of the run, or `None` for a run that stopped
+    /// with no refusal (a cancel, a wait on upstream stock). The session
+    /// records it at the revision after the drop; the run state reads it
+    /// as `Failed` until an edit moves the revision.
+    pub refusal: Option<String>,
 }
 
 /// The arguments of the `set_toolpath_operation` command.
@@ -2750,6 +2755,7 @@ impl ProjectSession {
                 }
                 self.try_with_effects(Some(index), move |session| {
                     session.insert_result(index, *result)?;
+                    session.record_run_result(index);
                     // D1. The source's OUTPUT moved: its rest regions may
                     // have appeared, changed or vanished. Rule (b) only.
                     //
@@ -2995,7 +3001,15 @@ impl ProjectSession {
                     None => self.with_effects(None, |_| {}),
                 })
             }
-            Command::ForgetResult(args) => Ok(self.remove_result(args.index)),
+            Command::ForgetResult(args) => {
+                let ForgetResultArgs { index, refusal } = args;
+                let effects = self.remove_result(index);
+                // W1: after the drop, so the record holds the revision the
+                // toolpath is at now. The next edit moves it and clears the
+                // refusal.
+                self.record_run_refusal(index, refusal);
+                Ok(effects)
+            }
             Command::SetToolpathOperation(args) => {
                 self.set_toolpath_operation(args.index, *args.operation)
             }

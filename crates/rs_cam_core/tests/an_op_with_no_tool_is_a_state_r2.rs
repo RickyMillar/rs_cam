@@ -114,14 +114,16 @@ fn an_add_with_no_fitting_tool_makes_the_op_r2() {
     );
     assert!(finding.message.contains(NO_TOOL_FIX), "{}", finding.message);
 
-    // Non-vacuity: with a ball nose in the project the state changes to
-    // "No tool set", and a draft takes the ball nose.
+    // Non-vacuity: a ball nose added to the project binds the waiting
+    // Scallop (P3, operator ruling 2026-10-30), so the state goes, and a
+    // draft takes the ball nose.
     let _ = s
         .apply(Command::AddTool(AddToolArgs {
             tool: Box::new(ball_tool_config(6.0)),
         }))
         .unwrap();
-    assert_eq!(s.no_tool_state(index).as_deref(), Some("No tool set"));
+    assert_eq!(s.toolpath_configs()[index].tool_id, Some(s.tools()[1].id));
+    assert_eq!(s.no_tool_state(index), None);
     let draft = s
         .draft_toolpath(DraftRequest::new(OperationType::Scallop, 0, "Scallop 2"))
         .unwrap();

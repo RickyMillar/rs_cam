@@ -187,6 +187,8 @@ pub fn diagnostics_from_tool_name(tool: &ToolConfig) -> Vec<Diagnostic> {
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::TOOL_NAME_SIZE_MISMATCH),
+        anchor: crate::diagnostics::presentation::anchor(ids::TOOL_NAME_SIZE_MISMATCH),
         message: format!("Tool \"{}\": {caution}", tool.name),
         evidence: None,
         fix: None,
@@ -217,6 +219,8 @@ fn tool_op_compat_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::COMPAT_BALL_NOSE_FLAT_CLEARING),
+            anchor: crate::diagnostics::presentation::anchor(ids::COMPAT_BALL_NOSE_FLAT_CLEARING),
             message:
                 "Ball nose tools leave scallops on flat surfaces. Consider a flat end mill for clearing."
                     .to_owned(),
@@ -242,6 +246,12 @@ fn tool_op_compat_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            // W1: the face names the tool kind the op needs.
+            face: crate::diagnostics::presentation::face_or_default(
+                ids::COMPAT_TOOL_KIND_REFUSED,
+                crate::diagnostics::presentation::sentence_case(&op.op_type().needs_text()),
+            ),
+            anchor: crate::diagnostics::presentation::anchor(ids::COMPAT_TOOL_KIND_REFUSED),
             message: text,
             evidence: None,
             fix: None,
@@ -265,6 +275,12 @@ fn tool_op_compat_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(
+                ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION,
+            ),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION,
+            ),
             message: PROJECT_CURVE_POINT_CAUTION.to_owned(),
             evidence: None,
             fix: None,
@@ -322,6 +338,8 @@ fn stepover_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::GEOM_STEPOVER_EXCEEDS_DIAMETER),
+            anchor: crate::diagnostics::presentation::anchor(ids::GEOM_STEPOVER_EXCEEDS_DIAMETER),
             message: format!(
                 "Stepover ({stepover:.2} mm) exceeds tool diameter ({diameter:.1} mm) \
                  — will leave uncut strips."
@@ -349,6 +367,8 @@ fn stepover_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::QUALITY_STEPOVER_OVER_80_PCT),
+            anchor: crate::diagnostics::presentation::anchor(ids::QUALITY_STEPOVER_OVER_80_PCT),
             message: format!(
                 "Stepover is {:.0}% of tool diameter — may leave visible scallops.",
                 (stepover / diameter) * 100.0
@@ -369,6 +389,8 @@ fn stepover_checks(
             confidence: Confidence::Heuristic,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::EFFICIENCY_VERY_FINE_STEPOVER),
+            anchor: crate::diagnostics::presentation::anchor(ids::EFFICIENCY_VERY_FINE_STEPOVER),
             message: "Very fine stepover — cycle time will be significantly longer.".to_owned(),
             evidence: None,
             fix: None,
@@ -386,6 +408,8 @@ fn stepover_checks(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT),
+            anchor: crate::diagnostics::presentation::anchor(ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT),
             message: format!(
                 "Stepover ({stepover:.2} mm) is >{:.0}% of tool diameter. Finish quality may suffer.",
                 (stepover / diameter) * 100.0
@@ -417,6 +441,12 @@ fn stepover_checks(
                         confidence: Confidence::Static,
                         state: DiagnosticState::Current,
                         source: Source::StaticValidation,
+                        face: crate::diagnostics::presentation::face(
+                            ids::QUALITY_BALL_SCALLOP_HEIGHT,
+                        ),
+                        anchor: crate::diagnostics::presentation::anchor(
+                            ids::QUALITY_BALL_SCALLOP_HEIGHT,
+                        ),
                         message: format!(
                             "Scallop height {scallop_h:.3} mm at this stepover. \
                              Reduce stepover for a smoother finish."
@@ -451,6 +481,8 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH),
+            anchor: crate::diagnostics::presentation::anchor(ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH),
             message: format!(
                 "Depth per pass ({dpp:.1} mm) exceeds cutting length ({:.1} mm). \
                  Tool shank will contact material.",
@@ -485,6 +517,10 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
+            ),
             message: format!(
                 "Depth per pass ({dpp:.1} mm) is {:.1}× the tool diameter ({:.1} mm). \
                  The vendors print the depth de-rate to {last_ratio:.0}× diameter only. \
@@ -525,6 +561,8 @@ fn feed_checks(scope: &Scope, feed: Option<f64>, plunge: Option<f64>) -> Vec<Dia
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::GEOM_PLUNGE_EXCEEDS_FEED),
+            anchor: crate::diagnostics::presentation::anchor(ids::GEOM_PLUNGE_EXCEEDS_FEED),
             message: format!(
                 "Plunge rate ({plunge:.0}) exceeds feed rate ({feed:.0}). \
                  Unusual — plunge is typically 30–50% of feed."
@@ -712,6 +750,8 @@ fn height_order_findings(
                 confidence: Confidence::Static,
                 state: DiagnosticState::Current,
                 source: Source::StaticValidation,
+                face: crate::diagnostics::presentation::face(id),
+                anchor: crate::diagnostics::presentation::anchor(id),
                 message: format!("{violation}."),
                 evidence: None,
                 fix: None,
@@ -745,6 +785,8 @@ fn heights_checks(scope: &Scope, op: &OperationConfig, h: &ResolvedHeights) -> V
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::GEOM_DEPTH_BEYOND_STOCK),
+            anchor: crate::diagnostics::presentation::anchor(ids::GEOM_DEPTH_BEYOND_STOCK),
             message: found.message(),
             // The GUI rule F1.6 shipped carried this evidence line and the
             // inspector ribbon renders it (`ui/properties/mod.rs`, the

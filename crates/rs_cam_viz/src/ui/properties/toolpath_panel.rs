@@ -5,12 +5,13 @@
 //! sibling child of `ui::properties`.
 
 use super::feeds_speeds::{calculate_and_apply_feeds, draw_speed_controls, draw_vendor_lut_viewer};
-use super::linking_dressup::{draw_dressup_params, draw_linking_params, dressup_active_count};
+use super::linking_dressup::{draw_dressup_params, draw_linking_params};
 use super::operations::{draw_height_diagram, draw_heights_params, validate_toolpath};
 use super::pills::PillSuggestions;
 use super::tab_badges::{
-    RowTier, compute_tab_badges, draw_geometry_wiring, draw_start_from, draw_toolpath_tabs,
-    merge_stateful_gate_rows, render_diagnostic_row, rest_region_pathology_line,
+    RowTier, compute_tab_badges, draw_input_row, draw_start_from, draw_tool_row,
+    draw_toolpath_tabs, merge_stateful_gate_rows, render_diagnostic_row,
+    rest_region_pathology_line,
 };
 use super::{
     ReachPanelSummary, ToolpathPanelInputs, ToolpathPanelSnapshot, ToolpathTab,
@@ -20,7 +21,7 @@ use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, DressupConfig, OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
-use crate::ui::components::{DataRow, DataTable, OneLine, Role, UiExt as _};
+use crate::ui::components::{OneLine, PropRow, Role, UiExt as _};
 
 /// The header line of a selection refusal (FR-2 F27, IC1): the Geometry tab
 /// owns the text; the header names the tab, and the full text is the hover.
@@ -29,10 +30,6 @@ pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
 /// G-E (§7.7): the state word of the Generate row when the last run
 /// refused. The full refusal is its hover.
 pub(crate) const REFUSED_STATE: &str = "Refused";
-
-/// G-C (§2 d, review): the header line of the D53 refusal. The Cut tab owns
-/// the fix (the Containment row); the full text is the hover.
-pub(crate) const REFUSED_SEE_CUT: &str = "Refused \u{00B7} see Cut";
 
 /// G-C (§2 d): the act on the Containment row that writes `Inside`.
 pub(crate) const USE_INSIDE: &str = "Use Inside";
@@ -51,13 +48,13 @@ pub(super) fn draw_toolpath_panel(
     // UI-01: every read-only value the panel draws from, built once by
     // `toolpath_panel_inputs`. These were 21 separate parameters.
     inputs: &ToolpathPanelInputs,
-    // P5 — `show_reach_map` is the viewport's reach-map checkbox, threaded in
-    // as a `&mut bool` rather than reached through `AppState`, because this
-    // panel takes no state reference; the caller copies the flag out and
-    // writes it back.
-    show_reach_map: &mut bool,
+    // R3: the reach overlay as the Reach row reads it, and the row's
+    // Show/Hide request. The caller switches the overlay through the
+    // overlay registry (`set_overlay`); this panel takes no state
+    // reference.
+    reach_view: &mut ReachView,
     // P4.3: the pick mode and the `+ Rule` draft of the Selection
-    // sections, threaded in as `show_reach_map` is.
+    // sections, threaded in as `reach_view` is.
     selection_ui: &mut crate::state::pick::SelectionUi,
     // F033 / UI-09: the last refused heights edit (`state.panels`), threaded
     // in as `selection_ui` is.
@@ -92,7 +89,6 @@ pub(super) fn draw_toolpath_panel(
     let stale_default_defects = inputs.stale_default_defects.as_slice();
     let load_verdict = inputs.load_verdict();
     let tab_override = inputs.tab_override;
-    let reach = &inputs.reach;
     let freshness = &inputs.freshness;
 
     // The inspector is a fixed-width side panel. Keep children — especially
@@ -111,6 +107,8 @@ pub(super) fn draw_toolpath_panel(
             .on_hover_text(format!("{}: {}", spec.label, spec.description));
         ui.text_edit_singleline(&mut entry.name);
     });
+    // R2 / P1: the Tool row is the one tool control of the inspector.
+    draw_tool_row(ui, entry, inputs, events);
 
     ui.separator();
 
@@ -163,7 +161,8 @@ pub(super) fn draw_toolpath_panel(
             }
         }
     }
-    // G-C (§2 d): the D53 refusal, owned by the Cut tab.
+    // G-C (§2 d): the D53 refusal, owned by the Containment row of the
+    // Geometry tab (R2: the Machining Boundary section moved there).
     let cut_refusal = operations::rest_consumer_refusal(validation, entry).map(str::to_owned);
     if !validation_errors.is_empty() {
         // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
@@ -184,7 +183,7 @@ pub(super) fn draw_toolpath_panel(
                 section_refusal.as_deref() == Some(err.as_str())
                     || hole_refusal == Some(err.as_str())
             });
-        // G-C: the D53 refusal is the Cut tab's (the Containment row).
+        // G-C: the D53 refusal is the Geometry tab's (the Containment row).
         let cut_owned = other
             .iter()
             .any(|err| cut_refusal.as_deref() == Some(err.as_str()));
@@ -199,10 +198,8 @@ pub(super) fn draw_toolpath_panel(
             .map(|err| err.as_str())
             .collect::<Vec<_>>()
             .join("\n");
-        let face = if !owned.is_empty() {
+        let face = if !owned.is_empty() || cut_owned {
             REFUSED_SEE_GEOMETRY
-        } else if cut_owned {
-            REFUSED_SEE_CUT
         } else {
             other.first().map_or("", |err| err.as_str())
         };
@@ -280,37 +277,49 @@ pub(super) fn draw_toolpath_panel(
         ui.memory(|mem| mem.data.get_temp(tab_id))
             .unwrap_or(ToolpathTab::Geometry)
     });
+    // R2: a tab that the op does not draw falls back to Geometry.
+    if !active_tab.applies(&entry.operation) {
+        active_tab = ToolpathTab::Geometry;
+    }
     let mut tab_badges = compute_tab_badges(
         entry,
         &diagnostics,
         toolpath_heights,
         shoe_finding.is_some(),
     );
-    // G-C (review §2 d): the D53 refusal puts a dot on the Cut tab, which
-    // holds its fix.
+    // G-C (review §2 d): the D53 refusal puts a dot on the Geometry tab,
+    // which holds its fix (the Containment row).
     if cut_refusal.is_some() {
-        tab_badges.raise(ToolpathTab::Cut, crate::ui::tokens::DANGER);
+        tab_badges.raise(ToolpathTab::Geometry, crate::ui::tokens::DANGER);
     }
-    draw_toolpath_tabs(ui, &mut active_tab, &tab_badges);
+    draw_toolpath_tabs(ui, &mut active_tab, &tab_badges, &entry.operation);
     ui.memory_mut(|mem| mem.data.insert_temp(tab_id, active_tab));
     ui.separator();
 
     // ── Tab content ─────────────────────────────────────────────────
 
     match active_tab {
-        // GT-1: what the op cuts. The tab writes through events only (L-1).
+        // GT-1: what the op cuts. R2: the Input row, the selection, the
+        // floor, the machining boundary and the Reach row.
         ToolpathTab::Geometry => {
-            super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
+            draw_geometry_tab(
+                ui,
+                entry,
+                inputs,
+                selection_ui,
+                containment_autocorrect,
+                reach_view,
+                events,
+            );
         }
-        ToolpathTab::Cut => {
-            draw_cut_tab(
+        ToolpathTab::Passes => {
+            draw_passes_tab(
                 ui,
                 entry,
                 inputs,
                 model_bbox,
                 strategy_suggestion(suggest_warnings),
                 selection_ui,
-                containment_autocorrect,
                 events,
             );
         }
@@ -318,16 +327,13 @@ pub(super) fn draw_toolpath_panel(
         ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
 
         // How moves connect: entry/exit, move optimization, retract
-        // strategy (W3.2 — lifted out of the old Dressups tab). This arm is
-        // already one call: `draw_linking_params` IS the Linking tab, and it
-        // lives in `linking_dressup.rs` beside the Dressup rows it shares.
-        ToolpathTab::Linking => draw_linking_params(ui, entry, tool_for_diags, toolpath_heights),
+        // strategy, then arc fitting and dogbone (R2: the Dressup tab is
+        // deleted; its rows are here).
+        ToolpathTab::Linking => draw_linking_tab(ui, entry, tool_for_diags, toolpath_heights),
 
         ToolpathTab::Heights => {
             draw_heights_tab(ui, entry, inputs, heights_refusal, events);
         }
-
-        ToolpathTab::Dressup => draw_dressup_tab(ui, entry),
     }
 
     // ── Panel footer ────────────────────────────────────────────────
@@ -338,114 +344,6 @@ pub(super) fn draw_toolpath_panel(
     // put a paragraph of text between the Generate button and the tabs and
     // left the reader unable to tell what contained what.
     ui.separator();
-
-    // Per-tool reach map (P5). Reach-capable operations only — every other
-    // operation gets no checkbox at all rather than a disabled one, because
-    // the question does not apply to it (`OperationType::supports_reach_map`).
-    if entry.operation.op_type().supports_reach_map() {
-        ui.horizontal(|ui| {
-            ui.checkbox(show_reach_map, "Show reach map").on_hover_text(
-                "Colour the model by what THIS toolpath's cutter can form: green where \
-                     the cutter reaches the surface within the operation's tolerance, red \
-                     where a gap is left. The measure is top-down, so undersides, overhangs \
-                     and vertical walls are NOT MEASURED and keep the plain model colour.",
-            );
-            // Only the two SHORT status words share the checkbox's row.
-            // A horizontal layout's wrap mode is `Extend` (egui's
-            // `Ui::wrap_mode`: a layout that is neither vertical nor
-            // main-wrapped falls to the `Extend` arm), so a bare `ui.label`
-            // here runs past the panel and clips. A `Label::wrap()` WOULD
-            // still wrap — the label's own mode overrides the Ui's
-            // (`label.rs:191`, `self.wrap_mode.unwrap_or_else(|| ui.wrap_mode())`) —
-            // but at `ui.available_width()`, which on this row is only what
-            // the checkbox leaves: a narrow column, not the panel width.
-            // These two readings are under twenty characters and carry no
-            // caveat, so either fate is fine for them; the ones that do
-            // carry a caveat are below, where they get the full width
-            // (G-REACHWRAP).
-            match reach {
-                ReachPanelSummary::Computing => {
-                    ui.label(
-                        egui::RichText::new("reach: computing…")
-                            .small()
-                            .color(crate::ui::tokens::TEXT_MUTED),
-                    );
-                }
-                // A zero percentage over an empty population is
-                // indistinguishable from a clean part, so it is never shown
-                // as one.
-                ReachPanelSummary::NotMeasured => {
-                    ui.label(
-                        egui::RichText::new("reach: not measured")
-                            .small()
-                            .color(crate::ui::tokens::CAUTION),
-                    );
-                }
-                ReachPanelSummary::Measured { .. }
-                | ReachPanelSummary::Failed(_)
-                | ReachPanelSummary::Idle => {}
-            }
-        });
-
-        // G-REACHWRAP (UX-R09-001, 2026-09-10): the readings used to sit on
-        // the checkbox's row as bare `ui.label`s, which under that row's
-        // `Extend` mode ran past the panel and clipped. They now get the
-        // panel's full width.
-        //
-        // IC1 (2026-10-13): the reading is ONE line. The grid line (the cell,
-        // the floor and the bar) is its hover. When the tolerance is below
-        // the grid floor, the over-statement is its own caution line, so the
-        // missing guarantee is never only on a hover. Round 2: the readings
-        // are rows of one `DataTable`.
-        let mut table = DataTable::new("toolpath_reach_readings");
-        match reach {
-            ReachPanelSummary::Measured {
-                unreachable_pct,
-                max_gap_mm,
-                grid_line,
-                area_basis_note,
-                over_statement_note,
-                tolerance_below_floor,
-                scale_note,
-            } => {
-                // The base comes from `ReachMap::area_basis_note`, not
-                // from a sentence written here. This line said "of
-                // MEASURED area" while the panel legend said "of 3D
-                // surface area, rim-eroded 3.0 mm" - two surfaces, one
-                // quantity, two descriptions, and that is the drift the
-                // shared notes exist to prevent.
-                let hover = format!("{area_basis_note}\n{}", grid_line.clone());
-                table = table
-                    .row(
-                        DataRow::value("Unreachable", format!("{unreachable_pct:.1} %"))
-                            .hover(hover.clone()),
-                    )
-                    .row(
-                        DataRow::measured("Max gap", format!("{max_gap_mm:.2}"), "mm").hover(hover),
-                    );
-                // Round 7: the scale and the floor in tool units, on its
-                // own row, so a small corner gap is read against the floor.
-                if let Some(note) = scale_note {
-                    table = table.row(DataRow::note(Role::Info, note.clone()));
-                }
-                if *tolerance_below_floor {
-                    // The shared sentence, quoted - not a fourth
-                    // hand-written paraphrase of the same bias.
-                    table = table.row(DataRow::note(
-                        Role::Caution,
-                        format!("\u{26A0} {}", over_statement_note.clone()),
-                    ));
-                }
-            }
-            ReachPanelSummary::Failed(message) => {
-                table = table.row(DataRow::note(Role::Caution, format!("reach: {message}")));
-            }
-            ReachPanelSummary::Computing
-            | ReachPanelSummary::NotMeasured
-            | ReachPanelSummary::Idle => {}
-        }
-        table.show(ui);
-    }
 
     // G-E (2), §7.2 rule 4: the findings are a bounded list. At most
     // `FOOTER_FINDINGS_CAP` rows, then the `NoticeStack` remainder line,
@@ -508,29 +406,22 @@ pub(super) fn draw_toolpath_panel(
 // order and no egui id changed. Each function re-binds the `inputs` fields
 // it needs under the names its body already used.
 
-/// The Cut tab (geometry selection GT-1; the "Geometry" tab before it): the
-/// tool, the input model, the start stock, the op parameters and the
-/// machining boundary source. The selection is in the Geometry tab.
+/// The Passes tab (R2; the Cut tab before it): the start stock, the op
+/// parameters and the rest analysis. The tool is the header Tool row; the
+/// input model and the machining boundary are on the Geometry tab.
 /// `properties::tests` renders it (D3).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the entry, its inputs, the Suggest advice and the GUI state slots the tab edits in place, each threaded in alone"
-)]
-pub(super) fn draw_cut_tab(
+pub(super) fn draw_passes_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
-    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
     events: &mut Vec<AppEvent>,
 ) {
-    containment_autocorrect.scope(entry.id);
     let tools = inputs.tools.as_slice();
     let models = inputs.models.as_slice();
     let tool_configs = inputs.tool_configs.as_slice();
-    let boundary_source_candidates = inputs.boundary_source_candidates.as_slice();
     let rest_region_consumers = inputs.rest_region_consumers.as_slice();
     // W2: the rest-heatmap overlay is on FOR THIS TOOLPATH. It is the
     // second demand for the rest dials, beside a regions consumer.
@@ -546,11 +437,8 @@ pub(super) fn draw_cut_tab(
 
     ui.add_space(4.0);
 
-    // DC5: the geometry WIRING opens this tab: Tool, Input model and the
-    // stock source. GT-1: the Selection section moved to the Geometry tab,
-    // and the O-2 "Each picked face" hint went (R2.4, FR-1 F7: it named
-    // the floor while no face was picked).
-    draw_geometry_wiring(ui, entry, inputs);
+    // The stock source opens this tab. R2: the Tool row is in the header
+    // and the Input row is on the Geometry tab.
     draw_start_from(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
@@ -654,9 +542,210 @@ pub(super) fn draw_cut_tab(
         entry.pill_stamped_fields.push(field);
     }
 
-    // ── Machining Boundary ─────────────────────────────────────
+    // ── Rest analysis: a demand-titled disclosure ───────────────
+    // W2 (G-STARTFROM). There is no "Compute rest heatmap" checkbox and
+    // no draw-time flip (D5). The analysis costs a rest-field solve at
+    // generation, so it runs only on DEMAND, and the demand names itself
+    // in the title:
+    //   - another operation takes this one's rest regions as its
+    //     boundary (`rest_region_consumers`), or
+    //   - the operator switched the rest-heatmap overlay on for this
+    //     operation.
+    // Both doors WRITE `rest_analysis.enabled` through
+    // `Command::AutoEnableRestAnalysis`: the boundary picker and the
+    // overlay action in `ui::properties::apply_auto_enable`, the MCP
+    // `set_boundary_config` setter, and the loader's post-pass. A draw
+    // reads the flag; it never sets it.
+    let is_rest_depth_pencil = matches!(
+        &entry.operation,
+        OperationConfig::Pencil(cfg)
+            if cfg.detector == rs_cam_core::finish::pencil::PencilDetector::RestDepth
+    );
+    if !rest_region_consumers.is_empty() || rest_heatmap_on {
+        let title = if rest_region_consumers.is_empty() {
+            "Rest heatmap overlay".to_owned()
+        } else {
+            // G-C (§6 c): the count of this op's own regions, in the
+            // phrase of the consumer's source combo.
+            let count = entry
+                .run
+                .result()
+                .and_then(|result| result.annotated.produced.rest_regions.as_ref())
+                .map_or(0, |regions| regions.len());
+            let consumers = rest_region_consumers.join(", ");
+            if count > 0 {
+                format!(
+                    "Rest regions \u{2192} {consumers} \u{00B7} {}",
+                    regions_phrase(count)
+                )
+            } else {
+                format!("Rest regions \u{2192} {consumers}")
+            }
+        };
+        ui.add_space(8.0);
+        ui.disclosure("rest_regions", &title, false, |ui| {
+            if is_rest_depth_pencil {
+                // The rest-depth detector attaches the same grid and the
+                // same regions from the pencil dials one grid above, so
+                // this operation has no second set to show.
+                ui.add(
+                    OneLine::new("Grid and regions: from the Rest depth detector").detail(
+                        "The pencil's Rest depth detector produces the grid and the regions.",
+                    ),
+                );
+                return;
+            }
+            if entry.stock_source == StockSource::Fresh {
+                // `RestReferenceChoice::resolve` prefers the machined stock
+                // whenever it overlaps, so under "Rest machining: from previous ops"
+                // this combo is inert and naming it would be a lie.
+                ui.horizontal(|ui| {
+                    ui.label("Reference:");
+                    let ref_label = entry
+                        .rest_analysis
+                        .reference_tool_id
+                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                        .map(|(_, name, _)| name.as_str())
+                        .unwrap_or("Self / machined stock");
+                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
+                        .truncate()
+                        .selected_text(ref_label)
+                        .show_ui(ui, |ui| {
+                            if ui
+                                .selectable_label(
+                                    entry.rest_analysis.reference_tool_id.is_none(),
+                                    "Self / machined stock",
+                                )
+                                .clicked()
+                            {
+                                entry.rest_analysis.reference_tool_id = None;
+                            }
+                            for (id, name, _) in tools {
+                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
+                                if ui.selectable_label(selected, name.as_str()).clicked() {
+                                    entry.rest_analysis.reference_tool_id = Some(*id);
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The reference the gate measures 'deeper than'. Unset = prefer \
+                             the machined stock from a prior simulation, else a \
+                             self-referenced bare-surface probe.",
+                        );
+                });
+            }
+            ui.horizontal(|ui| {
+                ui.label("Cell Size:");
+                ui.add(
+                    egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
+                        .speed(0.05)
+                        .range(0.05..=10.0)
+                        .suffix(" mm"),
+                )
+                .on_hover_text("XY grid cell size for the rest field. Smaller = finer regions.");
+            });
+            ui.horizontal(|ui| {
+                ui.label("Min Valley Depth:");
+                ui.add(
+                    egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
+                        .speed(0.01)
+                        .range(0.0..=5.0)
+                        .suffix(" mm"),
+                )
+                .on_hover_text(
+                    "A cell counts as REST material once the reference floats more than \
+                     this above the true surface.",
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label("Region Margin:");
+                ui.add(
+                    egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
+                        .speed(0.05)
+                        .range(0.0..=10.0)
+                        .suffix(" mm"),
+                )
+                .on_hover_text(
+                    "Extra clearance added around detected regions beyond this \
+                     toolpath's own tool radius.",
+                );
+            });
+        })
+        .header_response
+        .on_hover_text(
+            "The rest field this operation leaves, and the regions the operations \
+             above take as their boundary.",
+        );
+    }
+
+    // Sliver-storm / giant-region caption (2026-07-06 incident):
+    // classify THIS toolpath's own generated rest regions, whether the
+    // generic rest analysis produced them or (for a rest_depth pencil)
+    // the detector it always runs. Deliberately outside the disclosure
+    // above, so both cases show it and a closed disclosure cannot hide
+    // a caution.
+    //
+    // LH-2: the giant-region denominator is THIS result's own rest
+    // grid — covered cells × cell², the same grid the regions were
+    // extracted from. It used to be the model's XY bounding
+    // rectangle, which overstates a non-rectangular part's footprint
+    // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
+    // No grid ⇒ 0.0 ⇒ silence, never a guess.
+    if let Some(result) = entry.run.result()
+        && let Some(regions) = result.annotated.produced.rest_regions.as_ref()
+        && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
+            regions,
+            rest_grid_footprint_area(result.annotated.produced.rest_grid.as_deref()),
+        )
+    {
+        ui.add(rest_region_pathology_line(pathology));
+    }
+}
+
+/// The Geometry tab (R2): the Input row, the op selection and the floor
+/// (`geometry_tab.rs`, events only, L-1), the Machining Boundary section
+/// and its selection list, then the Reach row of a reach-capable op.
+/// `properties::tests` renders it (D3, G-C, G-D, R7a).
+pub(super) fn draw_geometry_tab(
+    ui: &mut egui::Ui,
+    entry: &mut crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
+    selection_ui: &mut crate::state::pick::SelectionUi,
+    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+    reach_view: &mut ReachView,
+    events: &mut Vec<AppEvent>,
+) {
+    ui.add_space(4.0);
+    draw_input_row(ui, entry, inputs);
+    super::geometry_tab::draw_geometry_tab(ui, entry, inputs, selection_ui, events);
+    ui.add_space(6.0);
+    draw_machining_boundary(ui, entry, inputs, containment_autocorrect);
+    super::geometry_tab::draw_boundary_selection(ui, entry, inputs, selection_ui, events);
+    if entry.operation.op_type().supports_reach_map() {
+        ui.add_space(6.0);
+        if draw_reach_row(ui, &inputs.reach, reach_view) {
+            reach_view.toggle = true;
+        }
+    }
+}
+
+/// The Machining Boundary section of the Geometry tab (R2: it was at the
+/// foot of the Cut tab). It writes the draft entry: the enable box, the
+/// source, the holes option, the rest source, the containment and the
+/// offset. The rows keep their pre-R2 form; W3a moves them onto `PropRow`.
+fn draw_machining_boundary(
+    ui: &mut egui::Ui,
+    entry: &mut crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
+    containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+) {
+    containment_autocorrect.scope(entry.id);
+    let tools = inputs.tools.as_slice();
+    let models = inputs.models.as_slice();
+    let boundary_source_candidates = inputs.boundary_source_candidates.as_slice();
     // W3.2: the boundary defines *what region to cut*, so it lives
-    // under Geometry (was on the old Dressups tab).
+    // under Geometry (R2: it was at the foot of the Cut tab).
     // D3: an op that no boundary moves (`TerritoryXy::SetupMap`, Pin
     // Drill: its holes are absolute setup-map positions) draws no
     // boundary controls. The panel reads the capability, not the op type.
@@ -804,13 +893,10 @@ pub(super) fn draw_cut_tab(
                     .on_hover_text(source_summary);
             });
 
-            // GT-Q7: the Geometry tab draws the boundary selection, with the
-            // rows of the op selection. This tab keeps the source and the
-            // holes option.
+            // GT-Q7: the boundary selection list follows this section on
+            // the same tab. This section keeps the source and the holes
+            // option.
             if let BoundarySource::Selection { holes, .. } = &mut entry.boundary.source {
-                ui.add(OneLine::new(
-                    "Pick the boundary items in the Geometry tab, under Boundary.",
-                ));
                 // The holes option inverts the regions: the toolpath cuts
                 // inside the holes of the shapes and stays off the shapes.
                 ui.checkbox(holes, "Machine the holes").on_hover_text(
@@ -1011,166 +1097,6 @@ pub(super) fn draw_cut_tab(
             });
         }
     }
-
-    // ── Rest analysis: a demand-titled disclosure ───────────────
-    // W2 (G-STARTFROM). There is no "Compute rest heatmap" checkbox and
-    // no draw-time flip (D5). The analysis costs a rest-field solve at
-    // generation, so it runs only on DEMAND, and the demand names itself
-    // in the title:
-    //   - another operation takes this one's rest regions as its
-    //     boundary (`rest_region_consumers`), or
-    //   - the operator switched the rest-heatmap overlay on for this
-    //     operation.
-    // Both doors WRITE `rest_analysis.enabled` through
-    // `Command::AutoEnableRestAnalysis`: the boundary picker and the
-    // overlay action in `ui::properties::apply_auto_enable`, the MCP
-    // `set_boundary_config` setter, and the loader's post-pass. A draw
-    // reads the flag; it never sets it.
-    let is_rest_depth_pencil = matches!(
-        &entry.operation,
-        OperationConfig::Pencil(cfg)
-            if cfg.detector == rs_cam_core::finish::pencil::PencilDetector::RestDepth
-    );
-    if !rest_region_consumers.is_empty() || rest_heatmap_on {
-        let title = if rest_region_consumers.is_empty() {
-            "Rest heatmap overlay".to_owned()
-        } else {
-            // G-C (§6 c): the count of this op's own regions, in the
-            // phrase of the consumer's source combo.
-            let count = entry
-                .run
-                .result()
-                .and_then(|result| result.annotated.produced.rest_regions.as_ref())
-                .map_or(0, |regions| regions.len());
-            let consumers = rest_region_consumers.join(", ");
-            if count > 0 {
-                format!(
-                    "Rest regions \u{2192} {consumers} \u{00B7} {}",
-                    regions_phrase(count)
-                )
-            } else {
-                format!("Rest regions \u{2192} {consumers}")
-            }
-        };
-        ui.add_space(8.0);
-        ui.disclosure("rest_regions", &title, false, |ui| {
-            if is_rest_depth_pencil {
-                // The rest-depth detector attaches the same grid and the
-                // same regions from the pencil dials one grid above, so
-                // this operation has no second set to show.
-                ui.add(
-                    OneLine::new("Grid and regions: from the Rest depth detector").detail(
-                        "The pencil's Rest depth detector produces the grid and the regions.",
-                    ),
-                );
-                return;
-            }
-            if entry.stock_source == StockSource::Fresh {
-                // `RestReferenceChoice::resolve` prefers the machined stock
-                // whenever it overlaps, so under "Rest machining: from previous ops"
-                // this combo is inert and naming it would be a lie.
-                ui.horizontal(|ui| {
-                    ui.label("Reference:");
-                    let ref_label = entry
-                        .rest_analysis
-                        .reference_tool_id
-                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
-                        .map(|(_, name, _)| name.as_str())
-                        .unwrap_or("Self / machined stock");
-                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
-                        .truncate()
-                        .selected_text(ref_label)
-                        .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(
-                                    entry.rest_analysis.reference_tool_id.is_none(),
-                                    "Self / machined stock",
-                                )
-                                .clicked()
-                            {
-                                entry.rest_analysis.reference_tool_id = None;
-                            }
-                            for (id, name, _) in tools {
-                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
-                                if ui.selectable_label(selected, name.as_str()).clicked() {
-                                    entry.rest_analysis.reference_tool_id = Some(*id);
-                                }
-                            }
-                        })
-                        .response
-                        .on_hover_text(
-                            "The reference the gate measures 'deeper than'. Unset = prefer \
-                             the machined stock from a prior simulation, else a \
-                             self-referenced bare-surface probe.",
-                        );
-                });
-            }
-            ui.horizontal(|ui| {
-                ui.label("Cell Size:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
-                        .speed(0.05)
-                        .range(0.05..=10.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text("XY grid cell size for the rest field. Smaller = finer regions.");
-            });
-            ui.horizontal(|ui| {
-                ui.label("Min Valley Depth:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
-                        .speed(0.01)
-                        .range(0.0..=5.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text(
-                    "A cell counts as REST material once the reference floats more than \
-                     this above the true surface.",
-                );
-            });
-            ui.horizontal(|ui| {
-                ui.label("Region Margin:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
-                        .speed(0.05)
-                        .range(0.0..=10.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text(
-                    "Extra clearance added around detected regions beyond this \
-                     toolpath's own tool radius.",
-                );
-            });
-        })
-        .header_response
-        .on_hover_text(
-            "The rest field this operation leaves, and the regions the operations \
-             above take as their boundary.",
-        );
-    }
-
-    // Sliver-storm / giant-region caption (2026-07-06 incident):
-    // classify THIS toolpath's own generated rest regions, whether the
-    // generic rest analysis produced them or (for a rest_depth pencil)
-    // the detector it always runs. Deliberately outside the disclosure
-    // above, so both cases show it and a closed disclosure cannot hide
-    // a caution.
-    //
-    // LH-2: the giant-region denominator is THIS result's own rest
-    // grid — covered cells × cell², the same grid the regions were
-    // extracted from. It used to be the model's XY bounding
-    // rectangle, which overstates a non-rectangular part's footprint
-    // and made the warning fire late (`MEASUREMENT_DOMAINS.md` X-4).
-    // No grid ⇒ 0.0 ⇒ silence, never a guess.
-    if let Some(result) = entry.run.result()
-        && let Some(regions) = result.annotated.produced.rest_regions.as_ref()
-        && let Some(pathology) = rs_cam_core::surface::rest_field::classify_rest_regions(
-            regions,
-            rest_grid_footprint_area(result.annotated.produced.rest_grid.as_deref()),
-        )
-    {
-        ui.add(rest_region_pathology_line(pathology));
-    }
 }
 
 /// The Feeds tab: how fast.
@@ -1325,46 +1251,122 @@ fn op_report(
     }
 }
 
-/// The Dressup tab: edge work and path quality.
-fn draw_dressup_tab(ui: &mut egui::Ui, entry: &mut crate::state::toolpath::ToolpathEntry) {
-    // Active dressup summary + reset button
-    let (active, total) = dressup_active_count(&entry.dressups);
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(format!("{active}/{total} dressups active"))
-                .small()
-                .color(if active > 0 {
-                    crate::ui::tokens::OK
-                } else {
-                    crate::ui::tokens::TEXT_MUTED
-                }),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let role = entry.operation.op_type().spec().ui_process_role;
-            if ui
-                .small_button("Reset to recommended")
-                .on_hover_text(format!(
-                    "Apply recommended dressups for {} operations",
-                    match role {
-                        UiProcessRole::Roughing => "roughing",
-                        UiProcessRole::SemiFinish => "semi-finish",
-                        UiProcessRole::Finish => "finishing",
-                    }
-                ))
-                .clicked()
-            {
-                entry.dressups = DressupConfig::for_role(role);
+/// The Linking tab (R2): entry and exit, links and retracts
+/// (`draw_linking_params`), then arc fitting and dogbone
+/// (`draw_dressup_params`; the Dressup tab before R2). Dogbone draws only
+/// where it applies: not on a 3D surface op (`OperationConfig::is_3d`),
+/// unless a project file turned it on there.
+fn draw_linking_tab(
+    ui: &mut egui::Ui,
+    entry: &mut crate::state::toolpath::ToolpathEntry,
+    tool: Option<&crate::state::job::ToolConfig>,
+    toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
+) {
+    draw_linking_params(ui, entry, tool, toolpath_heights);
+    ui.add_space(6.0);
+    let dogbone_applies = !entry.operation.is_3d() || entry.dressups.dogbone.is_some();
+    draw_dressup_params(ui, &mut entry.dressups, dogbone_applies);
+    // "Reset to recommended" writes the dressup set of the op role; R2
+    // deleted the "n/8 dressups active" count beside it.
+    let role = entry.operation.op_type().spec().ui_process_role;
+    ui.add_space(4.0);
+    if ui
+        .small_button("Reset to recommended")
+        .on_hover_text(format!(
+            "Apply the recommended linking and dressup values for {} operations.",
+            match role {
+                UiProcessRole::Roughing => "roughing",
+                UiProcessRole::SemiFinish => "semi-finish",
+                UiProcessRole::Finish => "finishing",
             }
-        });
-    });
+        ))
+        .clicked()
+    {
+        entry.dressups = DressupConfig::for_role(role);
+    }
+}
 
-    // Edge work / path quality (W3.2 — Entry/Exit, Optimization
-    // and Retract moved to the Linking tab; Machining Boundary
-    // moved to Geometry).
-    draw_dressup_params(ui, &mut entry.dressups);
+/// The Reach row of the Geometry tab (R3): one read-only `PropRow`. The
+/// value is the unreachable share of the reach overlay (CAUTION above
+/// zero), or "computing…". The quiet action Show/Hide asks the caller to
+/// switch the overlay; the dock and the legend own the rest. True when the
+/// action was clicked.
+fn draw_reach_row(ui: &mut egui::Ui, reach: &ReachPanelSummary, view: &ReachView) -> bool {
+    let (value, state, detail): (String, Option<Role>, Option<String>) = match reach {
+        ReachPanelSummary::Measured {
+            unreachable_pct,
+            max_gap_mm,
+            grid_line,
+            area_basis_note,
+            over_statement_note,
+            tolerance_below_floor,
+        } => {
+            // The base comes from `ReachMap::area_basis_note`; the bias
+            // sentence is `ReachMap::over_statement_note`, quoted on the
+            // hover only when the bar is under the grid floor.
+            let mut detail =
+                format!("Worst gap {max_gap_mm:.2} mm. {area_basis_note}\n{grid_line}");
+            if *tolerance_below_floor {
+                detail.push('\n');
+                detail.push_str(over_statement_note);
+            }
+            (
+                format!("Unreachable {unreachable_pct:.0} %"),
+                (*unreachable_pct > 0.0).then_some(Role::Caution),
+                Some(detail),
+            )
+        }
+        ReachPanelSummary::Computing => ("computing\u{2026}".to_owned(), None, None),
+        ReachPanelSummary::NotMeasured => (
+            "not measured".to_owned(),
+            Some(Role::Caution),
+            Some("The reach walk found no upward surface to judge.".to_owned()),
+        ),
+        ReachPanelSummary::Failed(message) => (
+            "failed".to_owned(),
+            Some(Role::Caution),
+            Some(message.clone()),
+        ),
+        ReachPanelSummary::Idle => {
+            let value = if view.on { "waiting" } else { "off" };
+            (value.to_owned(), None, None)
+        }
+    };
+    let action = if view.on { "Hide" } else { "Show" };
+    let row = PropRow::new("Reach")
+        .state(state)
+        .hover(Some(REACH_ROW_HOVER))
+        .detail(detail.as_deref());
+    // A refused switch has no action; the reason is the hover.
+    let row = match (&view.refusal, view.on) {
+        (Some(_), false) => row,
+        _ => row.action(action),
+    };
+    let out = row.show_read_only(ui, value);
+    if let Some(reason) = view.refusal.as_ref().filter(|_| !view.on) {
+        let _ = out
+            .response
+            .on_hover_text(format!("Show is not available: {reason}."));
+    }
+    out.action_clicked
+}
 
-    // Manual G-code fields (pre_gcode, post_gcode) kept in state
-    // for future export wiring — UI removed until export is implemented.
+/// The hover of the Reach row.
+const REACH_ROW_HOVER: &str = "The share of the surface that the cutter of this toolpath \
+    cannot form within its tolerance. Show colours the model; the legend explains the colours.";
+
+/// R3: the reach overlay as the Reach row reads it, and the Show/Hide
+/// request of the row. The caller fills `on` and `refusal` from the overlay
+/// registry row `reach_map` and, when `toggle` is set after the draw,
+/// switches the overlay through `registry::set_overlay`.
+#[derive(Default)]
+pub(crate) struct ReachView {
+    /// The reach overlay is on.
+    pub on: bool,
+    /// Why the overlay cannot go on now (the registry precondition).
+    pub refusal: Option<String>,
+    /// The row asked to switch the overlay this frame.
+    pub toggle: bool,
 }
 
 /// What the Generate row of the header shows (FR-2 F22).

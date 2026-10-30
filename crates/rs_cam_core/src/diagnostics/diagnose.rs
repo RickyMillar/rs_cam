@@ -140,6 +140,11 @@ pub fn diagnose_toolpath_inputs(inputs: &ToolpathDiagnoseInputs<'_>) -> Vec<Diag
             stats,
         ));
     }
+    // W1: a field anchor names a field this op draws, else the op.
+    let op_type = inputs.operation.op_type();
+    for d in &mut out {
+        d.anchor = super::presentation::fit_anchor(d.anchor, op_type);
+    }
     apply_supersession(out)
 }
 

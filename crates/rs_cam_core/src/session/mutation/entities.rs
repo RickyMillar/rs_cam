@@ -105,15 +105,55 @@ impl ProjectSession {
     ///
     /// F029: refuses a tool outside its domain
     /// ([`SessionError::ToolOutOfDomain`]) and adds nothing.
+    ///
+    /// P3 (operator ruling 2026-10-30): every toolpath with no tool that
+    /// accepts the new tool takes it ([`Self::bind_waiting_toolpaths`]).
+    /// [`Effects::stale`] names each bound toolpath. The GUI, MCP
+    /// (`add_tool`, `add_tool_from_library`) and the CLI share this door.
     #[instrument(skip(self, config))]
     pub(crate) fn add_tool(&mut self, config: ToolConfig) -> Result<Effects, SessionError> {
         crate::session::validate_tool(&config)?;
         let mut created = None;
         let mut effects = self.with_effects(None, |session| {
-            created = Some(session.add_tool_impl(config));
+            let index = session.add_tool_impl(config);
+            if let Some(tool_id) = session.tools.get(index).map(|t| t.id) {
+                session.bind_waiting_toolpaths(tool_id);
+            }
+            created = Some(index);
         });
         effects.created = created;
         Ok(effects)
+    }
+
+    /// P3: bind `tool_id` to every toolpath that has no tool and accepts
+    /// it. The acceptance is the rule of [`Self::no_tool_state_of`]:
+    /// [`Self::tool_fit`], and for a Bore with holes the size limit of its
+    /// holes. A toolpath that refuses the tool stays with no tool.
+    fn bind_waiting_toolpaths(&mut self, tool_id: ToolId) {
+        let Some(diameter) = self.tool_by_id(tool_id).map(|t| t.diameter) else {
+            return;
+        };
+        let waiting: Vec<usize> = self
+            .toolpath_configs
+            .iter()
+            .enumerate()
+            .filter(|(_, tc)| tc.tool_id.is_none())
+            .filter(|(index, tc)| {
+                let op_type = tc.operation.op_type();
+                if self.tool_fit(op_type, tool_id, tc.model_id).is_err() {
+                    return false;
+                }
+                if op_type != crate::compute::catalog::OperationType::Bore {
+                    return true;
+                }
+                let holes = self.bore_holes(tc, Some(*index));
+                holes.is_empty() || crate::session::op_draft::bore_tool_fits(diameter, &holes)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        for index in waiting {
+            self.bind_tool_impl(index, tool_id);
+        }
     }
 
     /// Append the tool and report its index. The raw half of

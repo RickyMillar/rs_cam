@@ -126,6 +126,12 @@ pub fn diagnostics_from_preconditions(
                     confidence: Confidence::Static,
                     state: DiagnosticState::Current,
                     source: Source::StaticValidation,
+                    face: crate::diagnostics::presentation::face(
+                        ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
+                    ),
+                    anchor: crate::diagnostics::presentation::anchor(
+                        ids::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES,
+                    ),
                     message,
                     evidence: None,
                     fix: None,
@@ -163,6 +169,8 @@ fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::PRECOND_NO_TOOL),
+        anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_NO_TOOL),
         message: format!(
             "{state}. {} — generation will fail.",
             crate::session::NO_TOOL_FIX
@@ -180,16 +188,35 @@ fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
 /// floor (`FloorRefusal::Unset`), else the depth or the feeds
 /// (`OperationConfig::not_set`).
 fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Option<Diagnostic> {
-    let message = if let Some(text) = &ctx.stock_thickness_refusal {
-        text.clone()
+    use crate::compute::not_set::NotSetKind;
+    use crate::diagnostics::presentation::{Anchor, FieldKey};
+    // W1: the face and the anchor name the value that is not set.
+    let field =
+        |name: &str| FieldKey::parse(name).map_or(Anchor::Operation, |key| Anchor::Field { key });
+    let (message, face, anchor) = if let Some(text) = &ctx.stock_thickness_refusal {
+        (
+            text.clone(),
+            "Stock thickness not set".to_owned(),
+            Anchor::Project,
+        )
     } else if op.floor().is_some_and(|floor| floor.is_unset()) {
-        format!(
-            "{}: {}",
-            op.op_type().label(),
-            crate::compute::floor::FLOOR_UNSET_TEXT
+        (
+            format!(
+                "{}: {}",
+                op.op_type().label(),
+                crate::compute::floor::FLOOR_UNSET_TEXT
+            ),
+            "Floor not set".to_owned(),
+            field("floor"),
         )
     } else {
-        op.not_set()?.to_string()
+        let not_set = op.not_set()?;
+        let anchor = not_set.first_field().map_or(Anchor::Operation, field);
+        let face = match not_set.kind {
+            NotSetKind::Depth => "Depth not set",
+            NotSetKind::Feeds => "Feed and spindle not set",
+        };
+        (not_set.to_string(), face.to_owned(), anchor)
     };
     Some(Diagnostic {
         id: DiagnosticId::from(ids::PRECOND_NOT_SET),
@@ -199,6 +226,8 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face,
+        anchor,
         message: format!("{message} — generation will fail."),
         evidence: None,
         fix: None,
@@ -220,6 +249,8 @@ fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::PRECOND_BURIED_FACE),
+        anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_BURIED_FACE),
         message: format!("{message} — generation will fail."),
         evidence: None,
         fix: None,
@@ -241,6 +272,8 @@ fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnos
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::PRECOND_SELECTION_REFUSED),
+        anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_SELECTION_REFUSED),
         message: format!("{message} — generation will fail."),
         evidence: None,
         fix: None,
@@ -263,6 +296,8 @@ fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::PRECOND_DRILL_NO_HOLES),
+            anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_DRILL_NO_HOLES),
             message: format!("{message} — generation will fail."),
             evidence: None,
             fix: None,
@@ -287,6 +322,8 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::PRECOND_PROJECT_CURVE_NO_CURVE),
+            anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_PROJECT_CURVE_NO_CURVE),
             message: "Project Curve needs a source curve. The selected model has no 2D \
                       polygons — import an SVG/DXF with the curve and select it as the \
                       toolpath's model."
@@ -309,6 +346,8 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::PRECOND_PROJECT_CURVE_NO_SURFACE),
+            anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_PROJECT_CURVE_NO_SURFACE),
             message: "Project Curve needs a target surface mesh. No mesh model is loaded \
                       in the project — import the surface (e.g. an STL) before adding \
                       this op."

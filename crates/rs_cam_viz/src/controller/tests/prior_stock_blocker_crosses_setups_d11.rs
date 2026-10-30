@@ -119,7 +119,10 @@ fn three_setups(
         let rt = controller.state.gui.toolpath_rt_or_default(*id);
         rt.run = crate::state::runtime::ToolpathRun::Pending;
         let _ = controller.state.apply(Command::ForgetResult(
-            rs_cam_core::session::ForgetResultArgs { index },
+            rs_cam_core::session::ForgetResultArgs {
+                index,
+                refusal: None,
+            },
         ));
     }
     (controller, ids)

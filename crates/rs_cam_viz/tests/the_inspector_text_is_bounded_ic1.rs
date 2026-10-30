@@ -10,7 +10,7 @@
 //! # What it measures
 //!
 //! The test renders the real inspector (`properties::draw`) in the app's
-//! 280-point panel for a pocket, a 3D rough and a 3D finish on each tab, and
+//! 340-point panel (R4) for a pocket, a 3D rough and a 3D finish on each tab, and
 //! for the other inspector panels. It reads every painted text galley. Then
 //! it asserts two rules:
 //!
@@ -48,8 +48,13 @@ use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::ui::properties::{self, ToolpathTab};
 use rs_cam_viz::ui::tokens;
 
-/// The default inspector width (`app.rs`).
-const PANEL_WIDTH: f32 = 280.0;
+/// The default toolpath inspector width (`app.rs`; R4, operator ruling
+/// 2026-10-30: 340).
+const PANEL_WIDTH: f32 = 340.0;
+
+/// The default width of the setup properties panel (`app.rs`), where the
+/// other inspector panels also draw. It stays 280.
+const SETUP_PANEL_WIDTH: f32 = 280.0;
 
 /// The Simulation workspace's right rail, the narrowest inspector.
 const RAIL_WIDTH: f32 = 240.0;
@@ -356,10 +361,16 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // GT-1 (2026-10-22): the Geometry tab (the selection) comes first and
     // the old Geometry tab is Cut. Measured: Geometry 11 / 6 / 8 lines and
     // Cut 24 / 20 / 18 lines; each cap is the measure plus 3.
-    let caps: [(&str, [usize; 6]); 3] = [
-        ("Pocket", [14, 27, 21, 25, 22, 13]),
-        ("3D Rough", [9, 23, 20, 25, 22, 13]),
-        ("3D Finish", [11, 21, 23, 28, 22, 15]),
+    // R2 + R4 (2026-10-30): five tabs in the order Geometry, Passes,
+    // Feeds, Heights, Linking at 340 points. The Input row and the
+    // Machining Boundary section moved to Geometry, the Dressup rows to
+    // Linking, the reach rows out of the footer. Measured: Pocket
+    // 13/17/23/21/24, 3D Rough 9/15/22/18/22, 3D Finish 11/12/24/20/21;
+    // each cap is the measure plus 3.
+    let caps: [(&str, [usize; 5]); 3] = [
+        ("Pocket", [16, 20, 26, 24, 27]),
+        ("3D Rough", [12, 18, 25, 21, 25]),
+        ("3D Finish", [14, 15, 27, 23, 24]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -398,7 +409,7 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
         ),
     ];
     for (name, selection, cap) in panels {
-        out.push((name.to_owned(), selection, None, PANEL_WIDTH, cap));
+        out.push((name.to_owned(), selection, None, SETUP_PANEL_WIDTH, cap));
     }
     out
 }
@@ -553,7 +564,7 @@ fn a_generate_refusal_takes_one_line_g_e() {
     let clean = surface(
         &mut state,
         Selection::Toolpath(id),
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
     state
@@ -565,7 +576,7 @@ fn a_generate_refusal_takes_one_line_g_e() {
     let refused = surface(
         &mut state,
         Selection::Toolpath(id),
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
     assert!(
@@ -649,7 +660,7 @@ fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
     let frame = surface(
         &mut state,
         Selection::Toolpath(finish_id),
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
     let face = frame
@@ -698,7 +709,7 @@ fn a_validation_error_takes_one_line_g_e() {
     let clean = surface(
         &mut state,
         Selection::Toolpath(id),
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
     let _ = state
@@ -710,7 +721,7 @@ fn a_validation_error_takes_one_line_g_e() {
     let refused = surface(
         &mut state,
         Selection::Toolpath(id),
-        Some(ToolpathTab::Cut),
+        Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
     assert!(

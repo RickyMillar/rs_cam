@@ -42,5 +42,8 @@ run the server; the live server, GUI dispatch and session ownership are in
   `SelectionEditParam` JSON. The snapshot was re-blessed.
 - FOLLOW_UPS §1 (2026-10-29): `SetUiViewParam.display_mode` (`DisplayModeParam`, inline; `From` both ways with core
   `settings::DisplayMode`). The snapshot was re-blessed.
+- W1 (2026-10-30): a reply `Diagnostic` carries `face` and `anchor` (core `diagnostics::presentation`);
+  `list_toolpaths` rows carry `run_state` and `next_action` (core `session::toolpath_run_state`).
+  Feature tokens `diagnostic_face_anchor`, `toolpath_run_state`. Reply keys only: the snapshot did not move.
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

@@ -69,6 +69,14 @@ impl RsCamApp {
                 // recorded, so a switched-off toolpath can never present the
                 // rest-stock error it had while it was on.
                 let raw = rt.map_or(ComputeStatus::Pending, |r| r.run.status());
+                // W1: THE run state (core `toolpath_run_state`), which the
+                // GUI header reads too. The session cannot see the compute
+                // lane, so the row supplies the in-flight flag.
+                let in_flight = rt.is_some_and(|r| {
+                    matches!(r.run, crate::state::runtime::ToolpathRun::Computing)
+                });
+                let run_state = rs_cam_core::session::toolpath_run_state(session, s.id, in_flight);
+                let next_action = run_state.as_ref().map(rs_cam_core::session::next_action);
                 let status = ComputeStatus::effective(s.enabled, &raw);
                 // `ToolpathSummary` carries no stock source, and widening it
                 // would push a viz concern into the core listing. Read the
@@ -108,6 +116,11 @@ impl RsCamApp {
                     // W5 item (c). An EMPTY list means "asked, and this
                     // operation depends on nothing". It is never null.
                     "depends_on": depends_on,
+                    // W1: `{"state": "not_ready", "blocking": [ids]}`,
+                    // `{"state": "failed", "reason": ..}`, or one word
+                    // in `state`.
+                    "run_state": run_state,
+                    "next_action": next_action,
                 })
             })
             .collect();

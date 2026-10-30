@@ -339,7 +339,7 @@ fn every_depth_shows_its_reference_p3_7() {
             all.contains(&"Top height: auto: faces"),
             "{label}: the Top height line does not name its source: {all:?}"
         );
-        let mut s = state(operation, properties::ToolpathTab::Cut);
+        let mut s = state(operation, properties::ToolpathTab::Passes);
         let cut = draw(&ctx, &mut s, None);
         let all = texts(&cut);
         assert!(

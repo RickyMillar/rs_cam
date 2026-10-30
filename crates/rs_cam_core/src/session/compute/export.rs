@@ -393,6 +393,12 @@ impl ProjectSession {
                     &preconditions,
                 ),
             );
+            // W1: as `diagnose_toolpath_inputs`, a field anchor names a
+            // field this op draws, else the op.
+            let op_type = tc.operation.op_type();
+            for d in &mut out {
+                d.anchor = crate::diagnostics::presentation::fit_anchor(d.anchor, op_type);
+            }
             return Ok(out);
         }
         let tool = self.tool_of(tc)?;
@@ -502,6 +508,14 @@ impl ProjectSession {
         // advisories (air-cut hotspots) are not appended.
         let triage = self.simulation_triage(evidence);
         out.extend(triage.own_toolpath_findings(id).cloned());
+        // W1: the appended findings get the fit too, so no anchor on this
+        // list names a field the op does not draw.
+        if let Some(tc) = self.toolpath_configs.get(index) {
+            let op_type = tc.operation.op_type();
+            for d in &mut out {
+                d.anchor = crate::diagnostics::presentation::fit_anchor(d.anchor, op_type);
+            }
+        }
         Ok(out)
     }
 

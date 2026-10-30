@@ -67,6 +67,8 @@ pub fn diagnostics_from_model_refs(
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
+            face: crate::diagnostics::presentation::face(ids::REF_MODEL_MISSING),
+            anchor: crate::diagnostics::presentation::anchor(ids::REF_MODEL_MISSING),
             message: format!(
                 "Selected model is missing — toolpath references model_id {} but no loaded \
                  model has that id. Add the toolpath again on a loaded model. An MCP agent \

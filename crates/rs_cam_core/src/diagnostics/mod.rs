@@ -55,6 +55,7 @@ pub mod diagnose;
 pub mod evidence;
 pub mod fix;
 pub mod ids;
+pub mod presentation;
 pub mod supersession;
 
 #[cfg(test)]
@@ -65,6 +66,7 @@ pub use diagnose::{
 };
 pub use evidence::DiagnosticEvidence;
 pub use fix::DiagnosticFix;
+pub use presentation::{Anchor, FACE_MAX_CHARS, FieldKey};
 pub use supersession::apply_supersession;
 
 use crate::ids::{SetupId, ToolId, ToolpathId};
@@ -242,9 +244,16 @@ pub struct Diagnostic {
     pub confidence: Confidence,
     pub state: DiagnosticState,
     pub source: Source,
-    /// One-line operator-facing message. Adapters keep this terse
-    /// (the UI panel renders a list of these and details on click).
+    /// The full operator text: the finding, its derivation and its fix.
+    /// The panel shows it as the detail of the finding (W1).
     pub message: String,
+    /// W1: the short text for the panel face. At most
+    /// [`FACE_MAX_CHARS`] characters, plain words, no category prefix and
+    /// no derivation. [`presentation::face`] gives the default of the id.
+    pub face: String,
+    /// W1: the place that holds the fix of the finding
+    /// ([`presentation::TABLE`] for each id).
+    pub anchor: Anchor,
     /// Where the finding came from — sim sample range, LUT row,
     /// geometric inequality. Optional because some workflow notices
     /// (needs-simulation, generated-empty) have no specific evidence.

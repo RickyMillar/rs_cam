@@ -10,7 +10,7 @@
 //! # The claim
 //!
 //! The real inspector (`properties::draw`) in the real side panel wrapper
-//! (`app::side_panel`, default width 280) keeps its width, and no painted
+//! (`app::side_panel`, default width 340 since R4) keeps its width, and no painted
 //! text and no widget goes past the right edge of the panel content. The
 //! cases are the long rows of the FR-2 screenshots:
 //!
@@ -73,8 +73,9 @@ use rs_cam_viz::ui::properties;
 
 /// The window of the FR-2 screenshots.
 const SCREEN: egui::Vec2 = egui::vec2(1400.0, 900.0);
-/// The default width of the inspector (`app.rs`).
-const PANEL_WIDTH: f32 = 280.0;
+/// The default width of the inspector (`app.rs`; R4, operator ruling
+/// 2026-10-30: 340).
+const PANEL_WIDTH: f32 = 340.0;
 
 /// What one frame of the inspector measured.
 #[derive(Debug, Default)]

@@ -59,6 +59,8 @@ pub fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         confidence: Confidence::Static,
         state: state_for(v.kind),
         source: Source::Simulation,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message,
         evidence,
         fix: None,

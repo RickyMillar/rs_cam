@@ -3910,6 +3910,14 @@ pub fn build_info() -> serde_json::Value {
             // of one picked item, each with its count and the edit that
             // `edit_toolpath_selection` takes unchanged.
             "rule_offers",
+            // W1 (2026-10-30): each diagnostic carries `face` (the short
+            // panel text, at most 60 characters) and `anchor` (the place
+            // that holds the fix: a field key, the tool, the op, a note,
+            // the project or the view).
+            "diagnostic_face_anchor",
+            // W1 (2026-10-30): `list_toolpaths` rows carry `run_state` (core
+            // `toolpath_run_state`, the GUI header rule) and `next_action`.
+            "toolpath_run_state",
         ],
     })
 }

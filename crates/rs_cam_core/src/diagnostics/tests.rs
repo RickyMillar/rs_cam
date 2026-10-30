@@ -29,6 +29,8 @@ fn make_diag(
         confidence: Confidence::Verified,
         state,
         source: Source::ToolLoad,
+        face: crate::diagnostics::presentation::face(id),
+        anchor: crate::diagnostics::presentation::anchor(id),
         message: format!("test {id}"),
         evidence: None,
         fix: None,
@@ -85,7 +87,7 @@ fn every_id_const_in_ids_rs_is_in_all() {
 #[test]
 fn all_diagnostic_ids_reachable_in_adapter_source() {
     // Read every file under `src/` and assert each ID appears at least
-    // once outside `ids.rs` and the `tests.rs` files. A reachable ID need
+    // once outside `ids.rs`, `presentation.rs` and the `tests.rs` files. A reachable ID need
     // not be emitted under every scenario — we just need to know it's
     // wired. Some ids are emitted outside `diagnostics/` (for example
     // `stock/sim_triage.rs`), so the scan reads the whole crate source.
@@ -100,6 +102,8 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
             } else if p.extension().and_then(|e| e.to_str()) == Some("rs")
                 && p.file_name().and_then(|n| n.to_str()) != Some("ids.rs")
                 && p.file_name().and_then(|n| n.to_str()) != Some("tests.rs")
+                // W1: the presentation table names every id; it emits none.
+                && p.file_name().and_then(|n| n.to_str()) != Some("presentation.rs")
             {
                 out.push(p);
             }
@@ -662,4 +666,257 @@ fn project_curve_point_projection_gives_the_caution() {
             "no caution for Cutter on {tool_type:?}"
         );
     }
+}
+
+// ── W1: the anchor and the face of each rule ────────────────────────
+
+/// W1 (toolpath inspector programme): every id of `ids::ALL` has one row
+/// of `presentation::TABLE`, every face is short plain text, and every
+/// field anchor names a real field.
+#[test]
+fn every_id_has_an_anchor_and_a_short_face_w1() {
+    use crate::diagnostics::presentation::{self, Anchor, FACE_MAX_CHARS, FieldKey, TABLE};
+    use std::collections::HashSet;
+
+    let mut rows = HashSet::new();
+    for (id, _, _) in TABLE {
+        assert!(rows.insert(*id), "two TABLE rows for {id}");
+        assert!(ids::ALL.contains(id), "TABLE row {id} is not in ids::ALL");
+    }
+    for id in ids::ALL {
+        assert!(rows.contains(id), "{id} has no presentation::TABLE row");
+        let face = presentation::face(id);
+        assert!(!face.is_empty(), "{id}: empty face");
+        assert!(
+            face.chars().count() <= FACE_MAX_CHARS,
+            "{id}: face {face:?} is over {FACE_MAX_CHARS} characters"
+        );
+        assert!(!face.contains('\n'), "{id}: face {face:?} has two lines");
+        assert!(
+            face.chars().next().is_some_and(char::is_uppercase),
+            "{id}: face {face:?} does not start with a capital"
+        );
+        assert!(
+            !face.ends_with('.'),
+            "{id}: face {face:?} is a label, not a sentence"
+        );
+        if let Anchor::Field { key } = presentation::anchor(id) {
+            assert_eq!(
+                FieldKey::parse(key.as_str()),
+                Some(key),
+                "{id}: field anchor `{}` names no op parameter, height or dressup",
+                key.as_str()
+            );
+        }
+    }
+}
+
+/// W1: a field anchor names a field of every op the rule can fire on.
+/// The static and feeds rules fire on an op only when the op carries the
+/// value (`OperationConfig::stepover` and its siblings are `Some`). Where
+/// the op carries a value but publishes no row for it (a Drill plunge rate,
+/// a Waterline depth per pass), `fit_anchor` gives the op, never a field
+/// the panel cannot draw. Each table key is a field of at least one op.
+#[test]
+fn a_field_anchor_names_a_param_of_each_op_it_fires_on_w1() {
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::fixture_values::fixture_op;
+    use crate::diagnostics::presentation::{self, Anchor};
+
+    type Has = fn(&OperationConfig) -> bool;
+    let carriers: &[(&str, Has)] = &[
+        ("feed_rate", |op| op.feed_rate().is_some()),
+        ("plunge_rate", |op| op.plunge_rate().is_some()),
+        ("spindle_rpm", |op| op.spindle_rpm().is_some()),
+        ("stepover", |op| op.stepover().is_some()),
+        ("depth_per_pass", |op| op.depth_per_pass().is_some()),
+        ("scallop_height", |op| op.scallop_height().is_some()),
+    ];
+    let mut bad = Vec::new();
+    let mut fitted = 0;
+    for op_type in OperationType::ALL {
+        let op = fixture_op(*op_type);
+        for (key, has) in carriers {
+            if !has(&op) {
+                continue;
+            }
+            match presentation::fit_anchor(Anchor::field(key), *op_type) {
+                Anchor::Field { key: kept }
+                    if !presentation::op_has_field(*op_type, kept.as_str()) =>
+                {
+                    bad.push(format!(
+                        "{op_type:?}: `{key}` kept but not a field of the op"
+                    ));
+                }
+                Anchor::Field { .. } => {}
+                _ => fitted += 1,
+            }
+        }
+        for (id, anchor, _) in presentation::TABLE {
+            if let Anchor::Field { key } = presentation::fit_anchor(*anchor, *op_type)
+                && !presentation::op_has_field(*op_type, key.as_str())
+            {
+                bad.push(format!(
+                    "{op_type:?} {id}: `{}` is no field of the op",
+                    key.as_str()
+                ));
+            }
+        }
+    }
+    // Non-vacuity: some op carries a value it does not publish (2026-10-30:
+    // the Drill and Pin Drill plunge rate, the Waterline and Ramp Finish
+    // depth per pass), and the fit gives the op for it.
+    assert!(
+        fitted > 0,
+        "no carried-but-unpublished value: the fit is untested"
+    );
+    for (id, anchor, _) in presentation::TABLE {
+        if let Anchor::Field { key } = anchor
+            && !OperationType::ALL
+                .iter()
+                .any(|op| presentation::op_has_field(*op, key.as_str()))
+        {
+            bad.push(format!("{id}: `{}` is a field of no op", key.as_str()));
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("; "));
+}
+
+/// W1: the adapters fill the face and the anchor. The table row is the
+/// default; the sites that build their own face (the value that is not set,
+/// the tool kind) keep it short and name the field.
+#[test]
+fn the_adapters_fill_the_face_and_the_anchor_w1() {
+    use crate::compute::catalog::{OperationConfig, OperationType};
+    use crate::compute::fixture_values::fixture_op;
+    use crate::compute::tool_config::{ToolConfig, ToolId, ToolType};
+    use crate::diagnostics::adapters::from_preconditions::{
+        PreconditionContext, diagnostics_from_preconditions,
+    };
+    use crate::diagnostics::presentation::{self, Anchor, FACE_MAX_CHARS};
+
+    let tp = ToolpathId::from_raw(1);
+    // Every op on every tool kind: each static finding has a short face, and
+    // its anchor is the table row (no static site overrides the anchor).
+    for op_type in OperationType::ALL {
+        let op = fixture_op(*op_type);
+        for tool_type in [
+            ToolType::EndMill,
+            ToolType::BallNose,
+            ToolType::BullNose,
+            ToolType::VBit,
+            ToolType::TaperedBallNose,
+        ] {
+            let tool = ToolConfig::new_default(ToolId::from_raw(0), tool_type);
+            for d in
+                adapters::from_static_checks::diagnostics_from_static_checks(tp, &op, &tool, None)
+            {
+                assert!(
+                    !d.face.is_empty() && d.face.chars().count() <= FACE_MAX_CHARS,
+                    "{op_type:?}/{tool_type:?} {}: face {:?}",
+                    d.id.as_str(),
+                    d.face
+                );
+                // The static sites write the table anchor; the orchestrator
+                // fits it to the op.
+                assert_eq!(d.anchor, presentation::anchor(d.id.as_str()));
+                if let Anchor::Field { key } = presentation::fit_anchor(d.anchor, *op_type) {
+                    assert!(presentation::op_has_field(*op_type, key.as_str()));
+                }
+            }
+        }
+    }
+
+    // A Scallop Finish on an end mill: the face names the tool it needs.
+    let scallop = fixture_op(OperationType::Scallop);
+    let flat = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+    let refused =
+        adapters::from_static_checks::diagnostics_from_static_checks(tp, &scallop, &flat, None)
+            .into_iter()
+            .find(|d| d.id.as_str() == ids::COMPAT_TOOL_KIND_REFUSED)
+            .expect("Scallop refuses an end mill");
+    assert_eq!(refused.anchor, Anchor::Tool);
+    assert!(
+        refused.face.starts_with("Needs a "),
+        "face {:?}",
+        refused.face
+    );
+
+    // A Pocket with no feeds and no tool: "Feed and spindle not set" on the
+    // feed field, and "No tool" on the tool.
+    let mut pocket = fixture_op(OperationType::Pocket);
+    if let OperationConfig::Pocket(cfg) = &mut pocket {
+        cfg.feed_rate = None;
+        cfg.plunge_rate = None;
+        cfg.spindle_rpm = None;
+    }
+    let ctx = PreconditionContext {
+        no_tool_state: Some("No tool fits: needs a flat end mill".to_owned()),
+        ..Default::default()
+    };
+    let found = diagnostics_from_preconditions(tp, &pocket, &ctx);
+    let not_set = found
+        .iter()
+        .find(|d| d.id.as_str() == ids::PRECOND_NOT_SET)
+        .expect("unset feeds give precondition.not_set");
+    assert_eq!(not_set.face, "Feed and spindle not set");
+    assert_eq!(not_set.anchor, Anchor::field("feed_rate"));
+    let no_tool = found
+        .iter()
+        .find(|d| d.id.as_str() == ids::PRECOND_NO_TOOL)
+        .expect("no tool gives precondition.no_tool");
+    assert_eq!(no_tool.face, "No tool");
+    assert_eq!(no_tool.anchor, Anchor::Tool);
+
+    // Each op with its values unset: the not-set anchor names a field the op
+    // publishes (or the op, when no field holds it).
+    for op_type in OperationType::ALL {
+        let op = OperationConfig::new_default(*op_type);
+        for d in diagnostics_from_preconditions(tp, &op, &PreconditionContext::default()) {
+            if d.id.as_str() != ids::PRECOND_NOT_SET {
+                continue;
+            }
+            assert!(d.face.chars().count() <= FACE_MAX_CHARS);
+            if let Anchor::Field { key } = d.anchor {
+                let published = op_type
+                    .registry_entry()
+                    .params
+                    .defs
+                    .iter()
+                    .any(|p| p.name == key.as_str());
+                assert!(
+                    published,
+                    "{op_type:?}: not-set anchor `{}` is not a param",
+                    key.as_str()
+                );
+            }
+        }
+    }
+}
+
+/// W1: the JSON of a diagnostic carries `face` and `anchor`, and a field
+/// anchor reads back only when it names a real field.
+#[test]
+fn the_json_carries_the_face_and_the_anchor_w1() {
+    use crate::diagnostics::presentation::Anchor;
+    let mut d = make_diag(
+        ids::FEEDS_FEED_VS_LUT_HIGH,
+        DiagnosticState::Current,
+        vec![],
+        Severity::Hint,
+    );
+    d.anchor = Anchor::field("feed_rate");
+    let json = serde_json::to_value(&d).expect("serialise");
+    assert_eq!(json["face"], "Feed above recommendation");
+    assert_eq!(
+        json["anchor"],
+        serde_json::json!({"kind": "field", "key": "feed_rate"})
+    );
+    let back: Diagnostic = serde_json::from_value(json.clone()).expect("read back");
+    assert_eq!(back.anchor, d.anchor);
+    let mut bad = json;
+    bad["anchor"]["key"] = serde_json::json!("no_such_field");
+    assert!(serde_json::from_value::<Diagnostic>(bad).is_err());
+    let tool = serde_json::to_value(Anchor::Tool).expect("serialise");
+    assert_eq!(tool, serde_json::json!({"kind": "tool"}));
 }

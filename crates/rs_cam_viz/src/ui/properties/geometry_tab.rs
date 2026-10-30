@@ -1,5 +1,11 @@
-//! The Cut tab of the toolpath inspector (geometry selection GT-1):
-//! what the op cuts. It is the first tab (operator ruling 2026-10-22).
+//! The selection rows of the Geometry tab of the toolpath inspector
+//! (geometry selection GT-1): what the op cuts. It is the first tab
+//! (operator ruling 2026-10-22).
+//!
+//! R2 (2026-10-30): `toolpath_panel::draw_geometry_tab` draws the Input row
+//! above these rows, and the Machining Boundary section and the Reach row
+//! between and below them. Those rows write the draft entry; this file
+//! does not.
 //!
 //! From top to bottom (design revision 2, R2.5):
 //!
@@ -9,10 +15,11 @@
 //!    boundary selection instead.
 //! 2. On an op that holds a floor: the Floor line and, under the floor
 //!    "A picked face" (UX-8), the floor face slot with "Clear" (L-R5).
-//! 3. "Boundary" (operator ruling GT-Q7): the boundary selection block,
-//!    with the same rows, while the boundary source is a selection.
+//! 3. "Boundary" (operator ruling GT-Q7, [`draw_boundary_selection`]): the
+//!    boundary selection block, with the same rows, while the boundary
+//!    source is a selection. It follows the Machining Boundary section.
 //!
-//! The tab writes through events only (L-1): `EditToolpathSelection`,
+//! The file writes through events only (L-1): `EditToolpathSelection`,
 //! `UseAsFloor`, `ClearFloorFace`. It never writes the draft entry.
 
 use rs_cam_core::compute::config::BoundarySource;
@@ -36,7 +43,8 @@ const PICK_FACES_HOVER: &str = "Click flat faces in the viewport to bound this o
 /// The name of the floor face slot (L-R5).
 pub(crate) const FLOOR_FACE: &str = "Floor face";
 
-/// The Geometry tab. `properties::tests` renders it.
+/// The op selection and the floor of the Geometry tab.
+/// `properties::tests` renders it.
 pub(super) fn draw_geometry_tab(
     ui: &mut egui::Ui,
     entry: &crate::state::toolpath::ToolpathEntry,
@@ -90,8 +98,17 @@ pub(super) fn draw_geometry_tab(
     if let Some(floor) = floor.as_ref() {
         draw_floor_lines(ui, entry, inputs, floor, events);
     }
+}
 
-    // ── 3. The boundary selection (GT-Q7) ──────────────────────────
+/// The boundary selection block of the Geometry tab (GT-Q7), under the
+/// Machining Boundary section, while the boundary source is a selection.
+pub(super) fn draw_boundary_selection(
+    ui: &mut egui::Ui,
+    entry: &crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
+    selection_ui: &mut crate::state::pick::SelectionUi,
+    events: &mut Vec<AppEvent>,
+) {
     if entry.boundary.enabled
         && let BoundarySource::Selection { selection, .. } = &entry.boundary.source
     {
@@ -99,7 +116,7 @@ pub(super) fn draw_geometry_tab(
         SectionHeader::new("Boundary")
             .hover(
                 "The items that bound where the tool may go. The source, the containment \
-                 and the offset are in the Cut tab.",
+                 and the offset are in the Machining Boundary section above.",
             )
             .show(ui);
         draw_selection_section(
