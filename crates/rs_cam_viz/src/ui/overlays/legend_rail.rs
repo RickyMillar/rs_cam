@@ -1247,14 +1247,11 @@ fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
             }
             if let Some(map) = state.gui.reach_overlay.ready_map() {
                 let measured = map.is_measured();
-                // Round 7: the scale in tool units and the grid floor
-                // against the tip radius, the line the Geometry tab shows.
-                if measured && let Some(surface) = state.gui.reach_overlay.surface.as_ref() {
-                    caveats.push(
-                        crate::state::runtime::reach_scale_note(map, surface),
-                        tokens::TEXT_FAINT,
-                    );
-                }
+                let below = measured && map.tolerance_below_floor();
+                // W2b: ONE summary line leads the reach caveats, in the
+                // caution colour while the bar is under the grid floor;
+                // the notes follow it in this hover, each once (audit WRONG
+                // #2, 2026-10-02). The inspector prints none of them (R3).
                 caveats.push(
                     if measured {
                         format!(
@@ -1266,27 +1263,29 @@ fn scale_caveats(state: &AppState, legend: Legend, caveats: &mut Caveats) {
                     } else {
                         "reach: not measured".to_owned()
                     },
-                    tokens::TEXT_FAINT,
-                );
-                // The grid, always, and on its own line: two percentages are
-                // comparable only on one grid (F5, 2026-09-08). It also
-                // carries the "the bar is UNDER the floor" marker, which is
-                // what the wanaka red terrain needed said. `grid_line` holds
-                // neither the area base (on the line above) nor the
-                // over-statement sentence (on the line below), so each
-                // sentence shows once (audit WRONG #2, 2026-10-02).
-                if measured {
-                    let below = map.tolerance_below_floor();
-                    caveats.push(
-                        map.grid_line(),
-                        if below {
-                            tokens::CAUTION
-                        } else {
-                            tokens::TEXT_FAINT
-                        },
-                    );
                     if below {
-                        caveats.push(map.over_statement_note(), tokens::CAUTION);
+                        tokens::CAUTION
+                    } else {
+                        tokens::TEXT_FAINT
+                    },
+                );
+                // Round 7: the scale in tool units and the grid floor
+                // against the tip radius.
+                if measured && let Some(surface) = state.gui.reach_overlay.surface.as_ref() {
+                    caveats.push(
+                        crate::state::runtime::reach_scale_note(map, surface),
+                        tokens::TEXT_FAINT,
+                    );
+                }
+                // The grid: two percentages are comparable only on one grid
+                // (F5, 2026-09-08). It carries the "the bar is UNDER the
+                // floor" marker. `grid_line` holds neither the area base
+                // (in the summary) nor the over-statement sentence (below),
+                // so each sentence shows once.
+                if measured {
+                    caveats.push(map.grid_line(), tokens::TEXT_FAINT);
+                    if below {
+                        caveats.push(map.over_statement_note(), tokens::TEXT_FAINT);
                     }
                 }
             }

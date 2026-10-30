@@ -312,8 +312,9 @@ fn a_permitted_add_creates_one_toolpath_bound_to_the_first_tool() {
 }
 
 /// R0.3 §2.2 row A3, as R2 (operator ruling 2026-10-23) left it: with no
-/// tools at all the op is still made, with no tool, and one Warning toast
-/// names the state and the fix.
+/// tools at all the op is still made, with no tool. W2b: no toast repeats
+/// that STATE; the core no-tool state holds it (the inspector Tool row
+/// and MCP `run_state` read it).
 #[test]
 fn an_add_with_no_tools_makes_the_op_with_no_tool_r2() {
     let mut controller = AppController::with_backend(SilentBackend);
@@ -325,15 +326,12 @@ fn an_add_with_no_tools_makes_the_op_with_no_tool_r2() {
     assert_eq!(configs.len(), 1, "the op is made");
     assert_eq!(configs[0].tool_id, None);
     let shown = toasts(&controller);
-    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert!(shown.is_empty(), "a state takes no toast: {shown:?}");
     assert_eq!(
-        shown[0].0,
-        format!(
-            "Added with no tool: No tool fits: needs a tool. {}.",
-            rs_cam_core::session::NO_TOOL_FIX
-        )
+        controller.state.session().no_tool_state(0).as_deref(),
+        Some("No tool fits: needs a tool"),
+        "the state is in core"
     );
-    assert_eq!(shown[0].1, Severity::Warning);
 }
 
 /// Two adds, two toasts, in order — the property `add_toolpath_via_gui`

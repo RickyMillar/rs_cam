@@ -17,7 +17,7 @@
 //!    tool that the op accepts ([`ProjectSession::tool_fit`]). When no tool
 //!    fits, the draft has NO tool (`tool_id: None`). The op exists, shows
 //!    [`ProjectSession::no_tool_state`] and refuses generation until the
-//!    operator sets a tool ([`NO_TOOL_FIX`]).
+//!    operator sets a tool ([`CHOOSE_A_TOOL_FIX`]).
 //! 3. The registry op (`OperationConfig::new_default`) with the stock
 //!    defaults (`feeds::suggest::apply_stock_defaults`), and Suggest under
 //!    `ApplyScope::Both` (`feeds::suggest::suggest_params`). With no feeds
@@ -45,9 +45,9 @@ use crate::ids::{ModelId, ToolId};
 
 use super::{LoadedModel, ProjectSession, ToolConfig, ToolpathConfig};
 
-/// R2: the fix that the no-tool refusal names. The Tool combo is in the
-/// Cut tab of the toolpath inspector (MCP: `set_toolpath_tool`).
-pub const NO_TOOL_FIX: &str = "Set a tool on the Cut tab";
+/// R2: the fix that the no-tool refusal names. The Tool dropdown is in the
+/// header of the toolpath inspector (W2b; MCP: `set_toolpath_tool`).
+pub const CHOOSE_A_TOOL_FIX: &str = "Choose a tool in the header";
 
 /// R2: the tool name that a list row shows for an op with no tool.
 pub const NO_TOOL_NAME: &str = "No tool";

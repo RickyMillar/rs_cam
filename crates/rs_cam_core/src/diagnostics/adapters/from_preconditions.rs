@@ -173,7 +173,7 @@ fn no_tool(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
         anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_NO_TOOL),
         message: format!(
             "{state}. {} — generation will fail.",
-            crate::session::NO_TOOL_FIX
+            crate::session::CHOOSE_A_TOOL_FIX
         ),
         evidence: None,
         fix: None,

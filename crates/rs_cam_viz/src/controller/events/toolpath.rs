@@ -75,10 +75,14 @@ impl<B: ComputeBackend> AppController<B> {
                 return None;
             }
         };
+        // W2b: no toast for a draft with no tool or no feeds. Each is a
+        // STATE, and the inspector shows it: the red Tool row, the empty
+        // feed fields and the "Not ready" status word. A toast is for an
+        // event only.
         let rs_cam_core::session::ToolpathDraft {
             config: tc,
-            feeds_refusal,
-            no_tool,
+            feeds_refusal: _,
+            no_tool: _,
             // The GUI add passes no picks, so no pick drops.
             dropped_picks: _,
         } = draft;
@@ -90,26 +94,6 @@ impl<B: ComputeBackend> AppController<B> {
             tracing::warn!("{msg}");
             self.push_notification(msg, super::super::Severity::Warning);
             return None;
-        }
-        if let Some(state) = no_tool {
-            // R2 (Fusion): the op is made with no tool. It refuses to
-            // generate until the operator sets one.
-            let msg = format!(
-                "Added with no tool: {state}. {}.",
-                rs_cam_core::session::NO_TOOL_FIX
-            );
-            tracing::warn!("{msg}");
-            self.push_notification(msg, super::super::Severity::Warning);
-        }
-        if let Some(e) = feeds_refusal {
-            // Ruling R1 + S11: no feeds data for the tool. The op is added
-            // with no feeds; it refuses to generate until they are set.
-            let msg = format!(
-                "Added with no feeds: {e}. {}.",
-                rs_cam_core::compute::not_set::FEEDS_NOT_SET_TEXT
-            );
-            tracing::warn!("{msg}");
-            self.push_notification(msg, super::super::Severity::Warning);
         }
         let target_setup_idx = Some(target_setup_idx);
 
@@ -155,8 +139,8 @@ impl<B: ComputeBackend> AppController<B> {
 
     /// Step 7.8: draft the pair through core (`draft_geodesic_pair`, THE
     /// draft door) and add it with ONE `AddGeodesicBodyAndEdges` command.
-    /// The GUI part is the op add's: a runtime entry per op, the selection
-    /// on op 1, and the R2 and S11 toasts. The GUI and MCP both call it.
+    /// The GUI part is the op add's: a runtime entry per op and the
+    /// selection on op 1 (W2b: no state toast). The GUI and MCP both call it.
     ///
     /// # Errors
     ///
@@ -171,6 +155,8 @@ impl<B: ComputeBackend> AppController<B> {
             .session()
             .draft_geodesic_pair(request)
             .map_err(|error| format!("Cannot add toolpath: {error}"))?;
+        // W2b: no toast for a draft with no tool or no feeds (a STATE the
+        // inspector shows), as the op add. The MCP reply keeps the notes.
         let notes: Vec<(Option<String>, Option<String>)> = std::iter::once(&draft.body)
             .chain(draft.edges.as_ref())
             .map(|d| (d.no_tool.clone(), d.feeds_refusal.clone()))
@@ -188,25 +174,6 @@ impl<B: ComputeBackend> AppController<B> {
             .created
             .ok_or_else(|| "Cannot add toolpath: the command created nothing".to_owned())?;
         let edges_index = (notes.len() > 1).then_some(body_index + 1);
-        // One toast per kind, as the op add gives: the pair shares its tool.
-        if let Some(state) = notes.iter().find_map(|(no_tool, _)| no_tool.clone()) {
-            self.push_notification(
-                format!(
-                    "Added with no tool: {state}. {}.",
-                    rs_cam_core::session::NO_TOOL_FIX
-                ),
-                super::super::Severity::Warning,
-            );
-        }
-        if let Some(e) = notes.iter().find_map(|(_, feeds)| feeds.clone()) {
-            self.push_notification(
-                format!(
-                    "Added with no feeds: {e}. {}.",
-                    rs_cam_core::compute::not_set::FEEDS_NOT_SET_TEXT
-                ),
-                super::super::Severity::Warning,
-            );
-        }
         let mut body_id = None;
         for index in std::iter::once(body_index).chain(edges_index) {
             if let Some(tc) = self.state.session().toolpath_configs().get(index) {
@@ -373,16 +340,8 @@ impl<B: ComputeBackend> AppController<B> {
             .created?;
         let tc = self.state.session().toolpath_configs().get(created)?;
         let (bore_id, auto_regen) = (tc.id, tc.operation.default_auto_regen());
-        // Q9 + R2: no project tool fits the holes; the Bore has no tool.
-        if let Some(state) = self.state.session().no_tool_state(created) {
-            self.push_notification(
-                format!(
-                    "Added a Bore with no tool: {state}. {}.",
-                    rs_cam_core::session::NO_TOOL_FIX
-                ),
-                super::super::Severity::Warning,
-            );
-        }
+        // Q9 + R2: when no project tool fits the holes the Bore has no
+        // tool. W2b: no toast; the red Tool row of the inspector shows it.
         self.state.gui.toolpath_rt.insert(
             bore_id,
             crate::state::runtime::ToolpathRuntime::new(auto_regen),

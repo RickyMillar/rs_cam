@@ -1,16 +1,17 @@
 //! `draw_toolpath_panel` — the tab host itself.
 //!
-//! One function. It draws the shared header, the tab strip, the diagnostic
-//! ribbon and whichever tab is active, and it delegates every tab body to a
-//! sibling child of `ui::properties`.
+//! One function. It draws the shared header (the name, the Tool row, the
+//! status line and the issue stack), the tab strip and whichever tab is
+//! active, and it delegates every tab body to a sibling child of
+//! `ui::properties`. W2b: the panel has no footer; `placement::place` gives
+//! each finding its one place.
 
 use super::feeds_speeds::{calculate_and_apply_feeds, draw_speed_controls, draw_vendor_lut_viewer};
 use super::linking_dressup::{draw_dressup_params, draw_linking_params};
 use super::operations::{draw_height_diagram, draw_heights_params, validate_toolpath};
 use super::pills::PillSuggestions;
 use super::tab_badges::{
-    RowTier, compute_tab_badges, draw_input_row, draw_start_from, draw_tool_row,
-    draw_toolpath_tabs, merge_stateful_gate_rows, render_diagnostic_row,
+    compute_tab_badges, draw_input_row, draw_start_from, draw_tool_row, draw_toolpath_tabs,
     rest_region_pathology_line,
 };
 use super::{
@@ -21,15 +22,19 @@ use crate::state::toolpath::{
     BoundaryContainment, BoundarySource, DressupConfig, OperationConfig, StockSource, UiProcessRole,
 };
 use crate::ui::AppEvent;
-use crate::ui::components::{OneLine, PropRow, Role, UiExt as _};
+use crate::ui::components::{
+    NotesCounter, Notice, NoticeStack, OneLine, PropRow, Role, UiExt as _,
+};
 
-/// The header line of a selection refusal (FR-2 F27, IC1): the Geometry tab
-/// owns the text; the header names the tab, and the full text is the hover.
-pub(crate) const REFUSED_SEE_GEOMETRY: &str = "Refused \u{00B7} see Geometry";
-
-/// G-E (§7.7): the state word of the Generate row when the last run
-/// refused. The full refusal is its hover.
-pub(crate) const REFUSED_STATE: &str = "Refused";
+/// W2b: the state words of the status line, one per core `RunState`.
+pub(crate) const WORD_DISABLED: &str = "Disabled";
+pub(crate) const WORD_NOT_READY: &str = "Not ready";
+pub(crate) const WORD_READY: &str = "Ready";
+pub(crate) const WORD_GENERATING: &str = "Generating";
+pub(crate) const WORD_DONE: &str = "Done";
+pub(crate) const WORD_OUT_OF_DATE: &str = "Out of date";
+pub(crate) const WORD_FAILED: &str = "Failed";
+pub(crate) const WORD_WAITING: &str = "Waiting";
 
 /// G-C (§2 d): the act on the Containment row that writes `Inside`.
 pub(crate) const USE_INSIDE: &str = "Use Inside";
@@ -86,8 +91,6 @@ pub(super) fn draw_toolpath_panel(
         .toolpath_heights
         .as_ref()
         .and_then(|answer| answer.as_ref().ok());
-    let stale_default_defects = inputs.stale_default_defects.as_slice();
-    let load_verdict = inputs.load_verdict();
     let tab_override = inputs.tab_override;
     let freshness = &inputs.freshness;
 
@@ -107,14 +110,22 @@ pub(super) fn draw_toolpath_panel(
             .on_hover_text(format!("{}: {}", spec.label, spec.description));
         ui.text_edit_singleline(&mut entry.name);
     });
-    // R2 / P1: the Tool row is the one tool control of the inspector.
-    draw_tool_row(ui, entry, inputs, events);
+    // W2b: THE finding list of this toolpath and THE placement of each
+    // finding. `placement::place` is the only reader of the list here.
+    let tool_for_diags = tool_configs
+        .iter()
+        .find(|(id, _)| Some(*id) == entry.tool_id)
+        .map(|(_, tc)| tc);
+    let diagnostics = panel_diagnostics(entry, preconditions, model_refs, suggest_warnings, inputs);
+    let placement = super::placement::place(&diagnostics);
 
-    ui.separator();
+    // R2 / P1: the Tool row is the one tool control of the inspector. W2b:
+    // a tool finding is its state and its hover.
+    draw_tool_row(ui, entry, inputs, &placement.tool, events);
 
-    // Generate button + status (always visible) — promoted to the top
-    // (SHE-004) so "is it generated? any warnings?" reads before the geometry
-    // combos the user rarely revisits after setup.
+    // W2b: the status line. One word and one button from core
+    // `toolpath_run_state` (the rule MCP `list_toolpaths` reads), the move
+    // count as faint meta, the notes counter.
     ui.add_space(4.0);
     let validation_errors = validate_toolpath(entry, validation);
     // F20: the first blocking finding of the stored result.
@@ -122,152 +133,53 @@ pub(super) fn draw_toolpath_panel(
         entry.run.result().map(|result| &result.stats),
         entry.id,
     );
-    let can_generate = !tools.is_empty() && validation_errors.is_empty();
-    // DC5 (Pattern C): the state the "requires manual generation" sentence
-    // used to carry. Read before the row so the closure holds no extra
-    // borrow of `entry`.
-    let manual_generation =
-        !entry.auto_regen && matches!(entry.run, crate::state::runtime::ToolpathRun::Pending);
+    let notes: Vec<Notice> = placement
+        .notes
+        .iter()
+        .map(|d| Notice::new(Role::Info, d.face.as_str()).detail(super::placement::detail(d)))
+        .collect();
     let header = HeaderRow {
-        can_generate,
-        freshness,
-        manual_generation,
+        run_state: inputs.run_state.as_ref(),
+        can_run: !tools.is_empty() && validation_errors.is_empty(),
+        manual_generation: !entry.auto_regen,
+        waiting_detail: match freshness {
+            crate::state::freshness::FreshnessState::WaitingOnUpstream(block) => {
+                Some(block.message.as_str())
+            }
+            _ => None,
+        },
         blocking: blocking.as_ref(),
         moves: entry.run.result().map(|result| result.stats.move_count),
         feed_stage: inputs.feed_stage,
         caps: inputs.caps,
     };
-    if draw_generate_row(ui, &header) {
+    if draw_generate_row(ui, &header, &notes) {
         events.push(AppEvent::GenerateToolpath(entry.id));
     }
-    // G-E (§7.5, §7.7): the last run's refusal gets one face line under
-    // the row, which truncates; its hover holds the full text. A
-    // validation refusal answers the settings on screen, so when one
-    // stands it takes the line and the state word keeps the last run.
-    if let crate::state::freshness::FreshnessState::Error(e) = freshness
-        && validation_errors.is_empty()
-    {
-        // G-E (3): a rest-boundary refusal that is the last run's text
-        // gets its short face and its action; any other refusal shows its
-        // own text, truncated.
-        match inputs
-            .rest_boundary_refusal
-            .as_ref()
-            .and_then(|refusal| rest_refusal_face(refusal).filter(|_| refusal.to_string() == *e))
-        {
-            Some(face) => draw_refusal_face(ui, &face, e, events),
-            None => {
-                ui.add(OneLine::new(e.as_str()).color(crate::ui::tokens::DANGER));
-            }
-        }
-    }
-    // G-C (§2 d): the D53 refusal, owned by the Containment row of the
-    // Geometry tab (R2: the Machining Boundary section moved there).
-    let cut_refusal = operations::rest_consumer_refusal(validation, entry).map(str::to_owned);
-    if !validation_errors.is_empty() {
-        // L-2, FR-2 F27 (IC1): the Geometry tab owns the refusal text of
-        // the selection. A validation error that IS that refusal (the
-        // section refusal, or the drill form of it from `hole_refusal`) gets
-        // ONE short line here, with the full text on hover. Before F27 the
-        // drill form did not match the section text, so the header painted
-        // the full paragraph a second time and pushed the tabs down.
-        let section_refusal = inputs
-            .selection_report
-            .as_ref()
-            .and_then(|read| read.as_ref().ok())
-            .and_then(|report| report.refusal.as_ref())
-            .map(ToString::to_string);
-        let hole_refusal = operations::hole_refusal(validation, entry.id);
-        let (owned, other): (Vec<&String>, Vec<&String>) =
-            validation_errors.iter().partition(|err| {
-                section_refusal.as_deref() == Some(err.as_str())
-                    || hole_refusal == Some(err.as_str())
-            });
-        // G-C: the D53 refusal is the Geometry tab's (the Containment row).
-        let cut_owned = other
-            .iter()
-            .any(|err| cut_refusal.as_deref() == Some(err.as_str()));
-        // G-E (4), §7.2 rule 5: above the tab strip at most ONE refusal
-        // line. The Geometry tab's refusal names its tab; else the first
-        // validator sentence is the face, truncated. The hover holds every
-        // validation error. Before G-E each sentence wrapped (up to 3 rows
-        // each), and the tabs moved down.
-        let detail = owned
-            .iter()
-            .chain(other.iter())
-            .map(|err| err.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let face = if !owned.is_empty() || cut_owned {
-            REFUSED_SEE_GEOMETRY
-        } else {
-            other.first().map_or("", |err| err.as_str())
-        };
-        ui.add(
-            OneLine::new(face)
-                .color(crate::ui::tokens::DANGER)
-                .detail(detail),
-        );
-    }
 
-    // Contextual diagnostics (non-blocking). Native `Diagnostic`
-    // rendering — splits findings into three tiers:
-    //  * Actionable (state Current, severity ≥ Caution) — coloured row
-    //    with evidence + confidence + optional Fix button.
-    //  * Stateful (NeedsSimulation / StaleEvidence) — neutral grey
-    //    "needs current simulation" / "re-run sim" rows.
-    //  * Hints (state Current, severity ≤ Hint) — collapsed by default.
-    //
-    // Load-gate diagnostics (chipload / power / deflection / drill)
-    // surface in the same ribbon now that we have `load_verdict`.
-    //
-    // DC5: the tiers are BUILT here, because the tab strip's badges read
-    // them. The rows DRAW in the panel footer, below the tab content.
-    let tool_for_diags = tool_configs
-        .iter()
-        .find(|(id, _)| Some(*id) == entry.tool_id)
-        .map(|(_, tc)| tc);
-    let diagnostics = operations::collect_diagnostics(
+    // G-C (§2 d): the D53 refusal, owned by the Containment row of the
+    // Geometry tab (R2: the Machining Boundary section moved there); the
+    // Geometry tab shows a dot for it.
+    let cut_refusal = operations::rest_consumer_refusal(validation, entry).map(str::to_owned);
+
+    // W2b: the issue stack under the header. The last run's refusal (ONE
+    // row), the findings the placement gives it, and the validator
+    // refusals that no core finding states.
+    draw_issue_stack(
+        ui,
         entry,
-        tool_for_diags,
-        stale_default_defects,
-        toolpath_heights,
-        preconditions,
-        model_refs,
-        suggest_warnings,
-        load_verdict,
+        inputs,
+        &placement,
+        cut_refusal.as_deref(),
+        &gate_refusals(
+            &validation_errors,
+            entry,
+            inputs,
+            tool_for_diags,
+            cut_refusal.as_deref(),
+        ),
+        events,
     );
-    // DC5 (Pattern C): the auto-regen workflow notice used to be synthesised
-    // here as a `Category::State` diagnostic and printed as the sentence
-    // "This operation requires manual generation. Press G or click Generate."
-    // The sentence only named the button beside it. The state now reads as
-    // one word on the Generate row, with the same fact on hover.
-    let mut actionable = Vec::new();
-    let mut stateful = Vec::new();
-    let mut hints = Vec::new();
-    for d in &diagnostics {
-        use rs_cam_core::diagnostics::DiagnosticState;
-        match d.state {
-            DiagnosticState::Current if d.severity.is_actionable() => actionable.push(d),
-            DiagnosticState::Current => {
-                // Workflow / State category notices render as stateful
-                // (neutral) — they don't deserve the yellow tier even
-                // though they live in `Current` state.
-                if matches!(d.category, rs_cam_core::diagnostics::Category::State) {
-                    stateful.push(d);
-                } else {
-                    hints.push(d);
-                }
-            }
-            DiagnosticState::NeedsSimulation | DiagnosticState::StaleEvidence => stateful.push(d),
-            DiagnosticState::NotApplicable => {}
-        }
-    }
-    // H2: the shoe gap finding (`project.shoe_gap_too_low`) is a project
-    // verdict about this toolpath. The footer is its one owner here; the
-    // Heights tab, which holds the shoe row, carries the badge.
-    let shoe_finding = inputs.shoe.as_ref().and_then(|shoe| shoe.finding.as_ref());
-    actionable.extend(shoe_finding);
 
     // ── Tab bar ─────────────────────────────────────────────────────
 
@@ -281,12 +193,7 @@ pub(super) fn draw_toolpath_panel(
     if !active_tab.applies(&entry.operation) {
         active_tab = ToolpathTab::Geometry;
     }
-    let mut tab_badges = compute_tab_badges(
-        entry,
-        &diagnostics,
-        toolpath_heights,
-        shoe_finding.is_some(),
-    );
+    let mut tab_badges = compute_tab_badges(entry, &placement, toolpath_heights);
     // G-C (review §2 d): the D53 refusal puts a dot on the Geometry tab,
     // which holds its fix (the Containment row).
     if cut_refusal.is_some() {
@@ -336,66 +243,43 @@ pub(super) fn draw_toolpath_panel(
         }
     }
 
-    // ── Panel footer ────────────────────────────────────────────────
-    //
-    // DC5 (Pattern A / Pattern C): everything below belongs to the panel, not
-    // to a tab, so it renders BELOW the tab strip's content. The reach
-    // readings and the diagnostic ribbon used to draw ABOVE the strip, which
-    // put a paragraph of text between the Generate button and the tabs and
-    // left the reader unable to tell what contained what.
-    ui.separator();
-
-    // G-E (2), §7.2 rule 4: the findings are a bounded list. At most
-    // `FOOTER_FINDINGS_CAP` rows, then the `NoticeStack` remainder line,
-    // which shows the rest. Every critical and blocking row shows whatever
-    // the cap (the `NoticeStack` safety rule).
-    let (merged_gate_rows, stateful_rest) = merge_stateful_gate_rows(&stateful);
-    let rows: Vec<(&rs_cam_core::diagnostics::Diagnostic, RowTier)> = actionable
-        .iter()
-        .map(|d| (*d, RowTier::Actionable))
-        .chain(merged_gate_rows.iter().map(|d| (d, RowTier::Stateful)))
-        .chain(stateful_rest.iter().map(|d| (*d, RowTier::Stateful)))
-        .collect();
-    let expand_id = ui.id().with("tp_findings_all").with(entry.id.raw());
-    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
-    let shown = bounded_findings(
-        &rows.iter().map(|(d, _)| d.severity).collect::<Vec<_>>(),
-        expanded,
-    );
-    for &index in &shown {
-        if let Some((d, tier)) = rows.get(index) {
-            render_diagnostic_row(ui, d, *tier, entry, stale_default_defects);
-        }
-    }
-    if shown.len() < rows.len()
-        && crate::ui::components::notice::overflow_row(ui, shown.len(), rows.len())
-    {
-        ui.data_mut(|d| d.insert_temp(expand_id, true));
-    }
-
-    // DC5 (Pattern C): the hint list is a COUNT at the bottom of the panel,
-    // not a block of text at the top. The operator's words were "hints is a
-    // lot of text and its at the top, why?". Every hint and its severity
-    // order survive; the row's placement and its resting weight are what
-    // changed. `id_salt` pins the collapse state, which the header text used
-    // to derive and would otherwise reset on every count change.
-    if !hints.is_empty() {
-        egui::CollapsingHeader::new(
-            egui::RichText::new(format!("{} hints", hints.len()))
-                .small()
-                .color(crate::ui::tokens::TEXT_MUTED),
-        )
-        .id_salt("tp_hints")
-        .default_open(false)
-        .show(ui, |ui| {
-            for d in &hints {
-                render_diagnostic_row(ui, d, RowTier::Hint, entry, stale_default_defects);
-            }
-        });
-    }
     // Live look round 3: the caller records the tab on screen
     // (`GuiState::active_toolpath_tab`), which the height planes read.
     active_tab
+}
+
+/// W2b: THE finding list the toolpath inspector places: the core list of
+/// the op (`collect_diagnostics`; with no tool, core's no-tool list) and
+/// the shoe gap finding (H2: a project verdict about this toolpath). The
+/// panel and the `properties::placed_findings` sentry door both call it.
+pub(super) fn panel_diagnostics(
+    entry: &crate::state::toolpath::ToolpathEntry,
+    preconditions: &rs_cam_core::diagnostics::diagnose::PreconditionContext,
+    model_refs: &rs_cam_core::diagnostics::diagnose::ModelRefContext,
+    suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
+    inputs: &ToolpathPanelInputs,
+) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
+    let tool = inputs
+        .tool_configs
+        .iter()
+        .find(|(id, _)| Some(*id) == entry.tool_id)
+        .map(|(_, tc)| tc);
+    let toolpath_heights = inputs
+        .toolpath_heights
+        .as_ref()
+        .and_then(|answer| answer.as_ref().ok());
+    let mut diagnostics = operations::collect_diagnostics(
+        entry,
+        tool,
+        &inputs.stale_default_defects,
+        toolpath_heights,
+        preconditions,
+        model_refs,
+        suggest_warnings,
+        inputs.load_verdict(),
+    );
+    diagnostics.extend(inputs.shoe.as_ref().and_then(|shoe| shoe.finding.clone()));
+    diagnostics
 }
 
 // ── The tab bodies ──────────────────────────────────────────────────────
@@ -1369,11 +1253,18 @@ pub(crate) struct ReachView {
     pub toggle: bool,
 }
 
-/// What the Generate row of the header shows (FR-2 F22).
+/// What the status line of the header shows (FR-2 F22, W2b).
 pub(super) struct HeaderRow<'a> {
-    pub can_generate: bool,
-    pub freshness: &'a crate::state::freshness::FreshnessState,
+    /// THE run state of the toolpath (core `toolpath_run_state`).
+    pub run_state: Option<&'a rs_cam_core::session::RunState>,
+    /// The GUI can submit a run: the project has a tool and no validator
+    /// refusal stands.
+    pub can_run: bool,
+    /// The op does not regenerate on its own (the hover of "Ready").
     pub manual_generation: bool,
+    /// The sentence of a blocked submit of a waiting rest op, when the GUI
+    /// holds one (the hover of "Waiting").
+    pub waiting_detail: Option<&'a str>,
     /// F20: the first blocking finding of the stored result.
     pub blocking: Option<&'a rs_cam_core::diagnostics::Diagnostic>,
     /// The move count of the stored result.
@@ -1386,19 +1277,17 @@ pub(super) struct HeaderRow<'a> {
 impl HeaderRow<'_> {
     /// True when the state word is the F20 safety signal "Done · BLOCKED".
     fn is_blocked(&self) -> bool {
-        matches!(
-            self.freshness,
-            crate::state::freshness::FreshnessState::Current
-        ) && self.blocking.is_some()
+        matches!(self.run_state, Some(rs_cam_core::session::RunState::Done))
+            && self.blocking.is_some()
     }
 
-    /// The move count text: "old: N moves" on an edited result.
+    /// The move count text: "old: N moves" on a result that is out of date.
     fn moves_text(&self) -> Option<String> {
         let moves = self.moves?;
         Some(
             if matches!(
-                self.freshness,
-                crate::state::freshness::FreshnessState::EditedSince
+                self.run_state,
+                Some(rs_cam_core::session::RunState::OutOfDate)
             ) {
                 format!("old: {moves} moves")
             } else {
@@ -1406,59 +1295,332 @@ impl HeaderRow<'_> {
             },
         )
     }
+
+    /// The word, its colour and its hover.
+    fn word(&self) -> (&'static str, egui::Color32, String) {
+        use crate::ui::tokens;
+        use rs_cam_core::session::RunState;
+        if self.is_blocked()
+            && let Some(finding) = self.blocking
+        {
+            return (
+                crate::ui::toolpath_panel::BLOCKED_HEADER,
+                tokens::DANGER,
+                format!(
+                    "A blocking finding stands, so this toolpath does not go to G-code. {}",
+                    finding.message
+                ),
+            );
+        }
+        match self.run_state {
+            Some(RunState::Disabled) => (
+                WORD_DISABLED,
+                tokens::TEXT_MUTED,
+                "Disabled: this operation does not go to G-code.".to_owned(),
+            ),
+            Some(RunState::NotReady { .. }) => (
+                WORD_NOT_READY,
+                tokens::TEXT_MUTED,
+                "Not ready: generation refuses until the marked inputs are set.".to_owned(),
+            ),
+            Some(RunState::Generating) => (
+                WORD_GENERATING,
+                tokens::TEXT_BODY,
+                "Generating: the operation is in generation.".to_owned(),
+            ),
+            Some(RunState::Done) => (
+                WORD_DONE,
+                tokens::OK,
+                "Done: the result answers the settings shown here.".to_owned(),
+            ),
+            Some(RunState::OutOfDate) => (
+                WORD_OUT_OF_DATE,
+                tokens::CAUTION,
+                "Out of date: this operation generated, then one of its inputs changed. \
+                 The path in the viewport and the figures on this panel are from that \
+                 earlier generation."
+                    .to_owned(),
+            ),
+            Some(RunState::Failed { .. }) => (
+                WORD_FAILED,
+                tokens::DANGER,
+                "Failed: the last run refused. The issue row under this line gives the \
+                 reason. An edit of the inputs clears it."
+                    .to_owned(),
+            ),
+            Some(RunState::Waiting { .. }) => (
+                WORD_WAITING,
+                tokens::CAUTION,
+                self.waiting_detail.map_or_else(
+                    || {
+                        "Waiting: this rest operation needs the simulated stock of the \
+                         operations before it. Generate runs them and the simulation first."
+                            .to_owned()
+                    },
+                    str::to_owned,
+                ),
+            ),
+            Some(RunState::Ready) | None => (
+                WORD_READY,
+                tokens::TEXT_BODY,
+                if self.manual_generation {
+                    "Ready: this operation has no result yet, and it does not regenerate \
+                     on its own. Press G, or click Generate."
+                        .to_owned()
+                } else {
+                    "Ready: this operation has no result yet.".to_owned()
+                },
+            ),
+        }
+    }
+
+    /// The one button of the state, or `None` for no button. W2b: a state
+    /// that asks for a tool or for a fix of the inputs shows a disabled
+    /// Generate; the red Tool row and the issue rows are the call to action.
+    fn button(&self) -> Option<crate::ui::components::Button> {
+        use crate::ui::components::Button;
+        use rs_cam_core::session::{NextAction, RunState, next_action};
+        let state = self.run_state.cloned().unwrap_or(RunState::Ready);
+        let button = match next_action(&state) {
+            NextAction::ChooseTool | NextAction::FixInputs => {
+                return Some(Button::primary("Generate").enabled(false));
+            }
+            NextAction::Generate => Button::primary("Generate"),
+            NextAction::Regenerate => Button::quiet("Regenerate"),
+            NextAction::Retry => Button::quiet("Retry"),
+            NextAction::None => match state {
+                // A current result can run again on request.
+                RunState::Done => Button::quiet("Regenerate"),
+                _ => return None,
+            },
+        };
+        Some(button.enabled(self.can_run))
+    }
 }
 
-/// The Generate row of the header (FR-2 F22). The row never grows the
-/// panel. True when Generate was clicked.
+/// The status line of the header (FR-2 F22, W2b). The row never grows the
+/// panel. True when its button was clicked.
 ///
-/// - A blocked result (F20, the safety signal): "Done · BLOCKED" takes its
-///   full width FIRST and never truncates. Then the feed stage and the
-///   move count paint only when they fit (the move count drops first);
-///   the hover of the state word keeps them.
-/// - Every other state: the feed stage and the move count take their
-///   width first, at the right edge; the state word truncates in the
-///   rest, with its text on hover. Before F22 "Done · edited since —
-///   regenerate" and "old: N moves" ran past the panel, and every row
-///   below took the wider width.
-pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>) -> bool {
+/// From the right: the one button, the notes counter, then the move count
+/// as faint meta (its hover holds the feed stage and the caps). The state
+/// word takes the rest and truncates, except the F20 safety signal
+/// "Done · BLOCKED": it takes its full width first and the move count drops.
+pub(super) fn draw_generate_row(ui: &mut egui::Ui, row: &HeaderRow<'_>, notes: &[Notice]) -> bool {
+    let (word, colour, hover) = row.word();
     ui.horizontal(|ui| {
-        let clicked = ui
-            .add_enabled(row.can_generate, egui::Button::new("Generate"))
-            .clicked();
-        if row.is_blocked() {
-            draw_header_state(
-                ui,
-                row.freshness,
-                row.manual_generation,
-                row.blocking,
-                &figures_hover(row),
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let clicked = row.button().is_some_and(|button| ui.add(button).clicked());
+            let _ = NotesCounter::new(notes).show(ui);
+            if let Some(text) = row.moves_text() {
+                let word_room = if row.is_blocked() {
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    ui.painter()
+                        .layout_no_wrap(word.to_owned(), font, colour)
+                        .size()
+                        .x
+                } else {
+                    0.0
+                };
+                if small_width(ui, &text) + word_room <= ui.available_width() {
+                    ui.label(
+                        egui::RichText::new(text)
+                            .small()
+                            .color(crate::ui::tokens::TEXT_FAINT),
+                    )
+                    .on_hover_text(figures_hover(row));
+                }
+            }
+            let rest = ui.available_width().max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_max_width(rest);
+                    let text = egui::RichText::new(word).color(colour);
+                    let label = if row.is_blocked() {
+                        egui::Label::new(text).extend()
+                    } else {
+                        egui::Label::new(text)
+                            .truncate()
+                            .show_tooltip_when_elided(false)
+                    };
+                    let figures = figures_hover(row);
+                    let hover = if figures.is_empty() {
+                        hover
+                    } else {
+                        format!("{hover}\n{figures}")
+                    };
+                    ui.add(label).on_hover_text(hover);
+                },
             );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                draw_header_figures(ui, row, true);
-            });
-        } else {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                draw_header_figures(ui, row, false);
-                let rest = ui.available_width().max(0.0);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.set_max_width(rest);
-                        draw_header_state(
-                            ui,
-                            row.freshness,
-                            row.manual_generation,
-                            row.blocking,
-                            "",
-                        );
-                    },
-                );
-            });
-        }
-        clicked
+            clicked
+        })
+        .inner
     })
     .inner
+}
+
+/// The validator text of a missing model; core states it as
+/// `ref.model_missing` (an issue row of its own).
+const SELECTED_MODEL_MISSING: &str = "Selected model is missing";
+
+/// What an issue row of the stack does when its Fix button is clicked.
+enum IssueAct {
+    None,
+    /// Apply the stale-default fix of `stale_default_defects[index]`.
+    StaleDefault(usize),
+    /// Generate the source toolpath of a rest-boundary refusal.
+    Generate(crate::state::toolpath::ToolpathId),
+}
+
+/// The validator refusals that no core finding states (W2b). Each other
+/// refusal has ONE owner elsewhere: the no-tool text and the tool-kind
+/// refusal are the Tool row, the stepover and the drill holes are core
+/// findings the placement gives a place, the selection refusal is
+/// `precondition.selection_refused`, a missing model is `ref.model_missing`,
+/// and the D53 refusal is the
+/// Containment row on the Geometry tab. What is left (the model geometry
+/// checks of `validate_toolpath`) is a core gap; these rows hold it until
+/// core states it.
+fn gate_refusals(
+    validation_errors: &[String],
+    entry: &crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
+    tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
+    cut_refusal: Option<&str>,
+) -> Vec<String> {
+    // With no tool the validator gives only the no-tool text.
+    let Some(tool) = tool else {
+        return Vec::new();
+    };
+    let tool_kind = entry
+        .operation
+        .op_type()
+        .tool_refusal(tool.tool_type.cutter_kind());
+    let section_refusal = inputs
+        .selection_report
+        .as_ref()
+        .and_then(|read| read.as_ref().ok())
+        .and_then(|report| report.refusal.as_ref())
+        .map(ToString::to_string);
+    let hole = operations::hole_refusal(&inputs.validation, entry.id);
+    validation_errors
+        .iter()
+        .filter(|err| {
+            let err = err.as_str();
+            tool_kind.as_deref() != Some(err)
+                && err != operations::registry::STEPOVER_EXCEEDS_DIAMETER_REFUSAL
+                && hole != Some(err)
+                && section_refusal.as_deref() != Some(err)
+                && cut_refusal != Some(err)
+                && err != SELECTED_MODEL_MISSING
+        })
+        .cloned()
+        .collect()
+}
+
+/// The issue stack under the header (W2b): the NoticeStack issue form, a
+/// cap of 3, every blocker shown. The rows, in order:
+///
+/// 1. The last run's refusal (`RunState::Failed`), ONE row. A rest-boundary
+///    refusal takes its short face and the `⟳` action (G-E (3)). A D53
+///    refusal takes none: the Containment row owns it.
+/// 2. The findings the placement gives the stack, face on the row, detail
+///    on hover, one Fix button for a stale-default fix.
+/// 3. The validator refusals no core finding states ([`gate_refusals`]).
+fn draw_issue_stack(
+    ui: &mut egui::Ui,
+    entry: &mut crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
+    placement: &super::placement::Placement<'_>,
+    cut_refusal: Option<&str>,
+    gates: &[String],
+    events: &mut Vec<AppEvent>,
+) {
+    use rs_cam_core::diagnostics::DiagnosticFix;
+    let mut notices = Vec::new();
+    let mut acts = Vec::new();
+    // A D53 refusal of the last run is the Containment row's (the Geometry
+    // tab and its dot own it), so it takes no issue row.
+    if let Some(rs_cam_core::session::RunState::Failed { reason }) = inputs
+        .run_state
+        .as_ref()
+        .filter(|state| !matches!(state, rs_cam_core::session::RunState::Failed { reason } if cut_refusal == Some(reason.as_str())))
+    {
+        let face = inputs
+            .rest_boundary_refusal
+            .as_ref()
+            .filter(|refusal| refusal.to_string() == *reason)
+            .and_then(rest_refusal_face);
+        match face {
+            Some(face) => {
+                let mut notice = Notice::new(Role::Danger, face.text).detail(reason.as_str());
+                let act = match face.generate {
+                    Some((source, _)) => {
+                        notice = notice.fix(GENERATE_SOURCE_GLYPH);
+                        IssueAct::Generate(source)
+                    }
+                    None => IssueAct::None,
+                };
+                notices.push(notice);
+                acts.push(act);
+            }
+            None => {
+                notices.push(Notice::new(Role::Danger, reason.as_str()));
+                acts.push(IssueAct::None);
+            }
+        }
+    }
+    for d in &placement.issues {
+        let mut notice = Notice::new(super::placement::role_of(d), d.face.as_str())
+            .detail(super::placement::detail(d));
+        let defect = match &d.fix {
+            Some(DiagnosticFix::ApplyStaleDefault { rule_id, .. }) => inputs
+                .stale_default_defects
+                .iter()
+                .position(|defect| defect.rule_id.id() == rule_id.as_str()),
+            _ => None,
+        };
+        let act = match defect {
+            Some(index) => {
+                notice = notice.fix("Fix");
+                IssueAct::StaleDefault(index)
+            }
+            None => IssueAct::None,
+        };
+        notices.push(notice);
+        acts.push(act);
+    }
+    for gate in gates {
+        notices.push(Notice::new(Role::Danger, gate.as_str()));
+        acts.push(IssueAct::None);
+    }
+    if notices.is_empty() {
+        return;
+    }
+    let expand_id = ui.id().with("tp_issues_all").with(entry.id.raw());
+    let expanded = ui.data(|d| d.get_temp::<bool>(expand_id).unwrap_or(false));
+    ui.add_space(4.0);
+    let response = NoticeStack::issues(notices)
+        .expanded(expanded)
+        .show_issues(ui);
+    if response.expand {
+        ui.data_mut(|d| d.insert_temp(expand_id, true));
+    }
+    match response.fix.and_then(|index| acts.get(index)) {
+        Some(IssueAct::StaleDefault(index)) => {
+            if let Some(defect) = inputs.stale_default_defects.get(*index) {
+                rs_cam_core::compute::validate::apply_stale_default_to_op(
+                    &mut entry.operation,
+                    &mut entry.feeds_provenance,
+                    defect,
+                );
+                entry.stale_since = Some(std::time::Instant::now());
+            }
+        }
+        Some(IssueAct::Generate(source)) => events.push(AppEvent::GenerateToolpath(*source)),
+        Some(IssueAct::None) | None => {}
+    }
 }
 
 /// G-C (D-2, ruled yes): the `Rest Regions` pick of `source` writes
@@ -1528,25 +1690,24 @@ pub(super) struct RefusalFace {
 pub(super) fn rest_refusal_face(
     refusal: &rs_cam_core::session::RestBoundaryRefusal,
 ) -> Option<RefusalFace> {
-    use crate::ui::tokens::GLYPH_DANGER;
     use rs_cam_core::session::RestBoundaryRefusal;
     match refusal {
         RestBoundaryRefusal::NotGenerated {
             source_toolpath_id,
             source_name,
         } => Some(RefusalFace {
-            text: format!("{GLYPH_DANGER} Generate '{source_name}' first"),
+            text: format!("Generate '{source_name}' first"),
             generate: Some((*source_toolpath_id, source_name.clone())),
         }),
         RestBoundaryRefusal::NoRegions {
             source_toolpath_id,
             source_name,
         } => Some(RefusalFace {
-            text: format!("{GLYPH_DANGER} '{source_name}' left no regions"),
+            text: format!("'{source_name}' left no regions"),
             generate: Some((*source_toolpath_id, source_name.clone())),
         }),
         RestBoundaryRefusal::OwnRegions => Some(RefusalFace {
-            text: "Refused \u{00B7} source is this op".to_owned(),
+            text: "The source is this op".to_owned(),
             generate: None,
         }),
         RestBoundaryRefusal::SourceMissing { .. } => None,
@@ -1555,64 +1716,6 @@ pub(super) fn rest_refusal_face(
 
 /// The glyph of the action that generates a refusal's source.
 pub(super) const GENERATE_SOURCE_GLYPH: &str = "\u{27F3}";
-
-/// Draw one refusal face: the face truncates in the width the action
-/// leaves; `detail` (the full refusal) is its hover.
-fn draw_refusal_face(
-    ui: &mut egui::Ui,
-    face: &RefusalFace,
-    detail: &str,
-    events: &mut Vec<AppEvent>,
-) {
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some((source, name)) = &face.generate
-                && ui
-                    .small_button(GENERATE_SOURCE_GLYPH)
-                    .on_hover_text(format!("Generate '{name}'"))
-                    .clicked()
-            {
-                events.push(AppEvent::GenerateToolpath(*source));
-            }
-            let rest = ui.available_width().max(0.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.set_max_width(rest);
-                    ui.add(
-                        OneLine::new(face.text.as_str())
-                            .color(crate::ui::tokens::DANGER)
-                            .detail(detail),
-                    );
-                },
-            );
-        });
-    });
-}
-
-/// G-E (2): the footer shows at most this many finding rows before the
-/// remainder line.
-pub(super) const FOOTER_FINDINGS_CAP: usize = 3;
-
-/// G-E (2): the indices of the footer finding rows to draw, in their
-/// order. All of them when `expanded`. Else the first
-/// [`FOOTER_FINDINGS_CAP`], and every critical or blocking row however far
-/// down it is (the `NoticeStack` safety rule: a cap never hides one).
-pub(super) fn bounded_findings(
-    severities: &[rs_cam_core::diagnostics::Severity],
-    expanded: bool,
-) -> Vec<usize> {
-    use rs_cam_core::diagnostics::Severity;
-    severities
-        .iter()
-        .enumerate()
-        .filter(|(index, severity)| {
-            expanded || *index < FOOTER_FINDINGS_CAP || severity.rank() >= Severity::Critical.rank()
-        })
-        .map(|(index, _)| index)
-        .collect()
-}
 
 /// G-D (§3): the clearing strategy that the Suggest run recommends and did
 /// not apply, from its records. The token is the serde spelling of
@@ -1654,181 +1757,4 @@ fn small_width(ui: &egui::Ui, text: &str) -> f32 {
         .size()
         .x
         + ui.spacing().item_spacing.x
-}
-
-/// The figures of the header row, right to left: the feed stage at the
-/// right edge, the move count to its left. With `fit`, a figure that does
-/// not fit the width that is left is not painted (the move count drops
-/// first, then the feed stage).
-fn draw_header_figures(ui: &mut egui::Ui, row: &HeaderRow<'_>, fit: bool) {
-    // W2.5 (D10): one word for the feed stage of the stored result,
-    // the one export emits. The hover is the sentence the G-code
-    // header prints. Right to left: the stage paints first.
-    let mut stage_shown = true;
-    if let Some(stage) = row.feed_stage {
-        stage_shown = !fit || small_width(ui, stage.badge()) <= ui.available_width();
-        if stage_shown {
-            let colour = if stage.is_superseded() {
-                crate::ui::tokens::CAUTION
-            } else {
-                crate::ui::tokens::TEXT_FAINT
-            };
-            ui.label(egui::RichText::new(stage.badge()).small().color(colour))
-                .on_hover_text(stage.statement());
-        }
-    }
-    // DC1 ruling R27 moved the card's figures off the toolpath card, so
-    // this is the product's per-operation move count. It must say whose
-    // generation it counts.
-    //
-    // F2.2 made the card prefix an edited operation's figures with
-    // `old: `, for a reason that applies here unchanged: a confident
-    // number outweighs a quiet state word beside it. R27 deleted the
-    // surface that carried the mark, so the mark moves with the figure.
-    // The word is the card's word, so the two surfaces cannot fork.
-    if let Some(text) = row.moves_text() {
-        if fit && (!stage_shown || small_width(ui, &text) > ui.available_width()) {
-            return;
-        }
-        let is_stale = text.starts_with("old: ");
-        ui.label(
-            egui::RichText::new(text)
-                .small()
-                .color(crate::ui::tokens::TEXT_FAINT),
-        )
-        .on_hover_text({
-            let count = if is_stale {
-                "This count is from the previous generation. Regenerate the \
-                 operation to measure the settings shown here."
-            } else {
-                "The move count of the current generation."
-            };
-            match row.caps {
-                Some(caps) => format!("{count}\n{}", caps.line()),
-                None => count.to_owned(),
-            }
-        });
-    }
-}
-
-/// The state word of the header row (FR-2 F22): one line that truncates,
-/// with its text on hover.
-pub(super) fn draw_header_state(
-    ui: &mut egui::Ui,
-    freshness: &crate::state::freshness::FreshnessState,
-    manual_generation: bool,
-    blocking: Option<&rs_cam_core::diagnostics::Diagnostic>,
-    figures: &str,
-) {
-    use crate::state::freshness::FreshnessState;
-    // F2.2 — the same one state the card chip and the workspace counts
-    // read (R0.1 §4.4), in place of the raw `ComputeStatus`. The two
-    // agree on six of seven; the seventh is why this changed.
-    match freshness {
-        FreshnessState::NoResult => {
-            // One word, then a hover. A printed sentence that names the
-            // button next to it tells the reader nothing the button does
-            // not already say.
-            if manual_generation {
-                state_word(
-                    ui,
-                    egui::RichText::new("Manual").color(crate::ui::tokens::TEXT_MUTED),
-                )
-                .on_hover_text(
-                    "This operation does not regenerate on its own. Press G, or click \
-                     Generate, to compute it.",
-                );
-            } else {
-                state_word(ui, egui::RichText::new("Ready"))
-                    .on_hover_text("Ready: this operation has no result yet.");
-            }
-        }
-        FreshnessState::Regenerating => {
-            state_word(ui, egui::RichText::new("Computing..."))
-                .on_hover_text("Computing: the operation is in generation.");
-        }
-        // F20 (SAFETY visibility): a current result with a blocking
-        // finding is not "Done": export refuses it. The header names
-        // the state, and its hover holds the finding with its fix. The
-        // footer row stays the one owner of the finding row (IC1).
-        FreshnessState::Current if let Some(finding) = blocking => {
-            // The safety signal never truncates (FR-2 F22): the row gives it
-            // its full width first. The hover keeps the figures that the
-            // row drops.
-            let figures = if figures.is_empty() {
-                String::new()
-            } else {
-                format!("\n{figures}")
-            };
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(crate::ui::toolpath_panel::BLOCKED_HEADER)
-                        .color(crate::ui::tokens::DANGER),
-                )
-                .extend(),
-            )
-            .on_hover_text(format!(
-                "A blocking finding stands, so this toolpath does not go to G-code. {}{figures}",
-                finding.message
-            ));
-        }
-        FreshnessState::Current => {
-            state_word(ui, egui::RichText::new("Done").color(crate::ui::tokens::OK))
-                .on_hover_text("Done: the result answers the settings shown here.");
-        }
-        // NOT green, and it says both halves: the generation finished,
-        // AND what it produced no longer answers the configuration on
-        // this screen. "Done" alone was the whole defect — the header
-        // sat directly above the fields the operator had just changed
-        // and reported success at them.
-        FreshnessState::EditedSince => {
-            state_word(
-                ui,
-                egui::RichText::new("Done \u{00B7} edited since \u{2014} regenerate")
-                    .color(crate::ui::tokens::CAUTION),
-            )
-            .on_hover_text(
-                "This operation generated successfully, then one of its inputs changed. \
-                 The path in the viewport and the figures on this panel are from that \
-                 earlier generation, not from the settings shown here.",
-            );
-        }
-        FreshnessState::WaitingOnUpstream(block) => {
-            // Amber, not red: this operation is fine, it is waiting its
-            // turn. The hover names the operation it is waiting for.
-            // G-E: one row; it truncates, it does not wrap.
-            state_word(
-                ui,
-                egui::RichText::new("Waiting on upstream stock").color(crate::ui::tokens::CAUTION),
-            )
-            .on_hover_text(&block.message);
-        }
-        FreshnessState::Disabled => {
-            state_word(
-                ui,
-                egui::RichText::new("Disabled").color(crate::ui::tokens::TEXT_MUTED),
-            )
-            .on_hover_text("Disabled: this operation does not go to G-code.");
-        }
-        // G-E (§7.7): the last run refused. One word in the row, the full
-        // text on its hover. The text printed in full here took 3 to 15
-        // rows and moved the tab strip down by up to 257 points.
-        FreshnessState::Error(e) => {
-            state_word(
-                ui,
-                egui::RichText::new(REFUSED_STATE).color(crate::ui::tokens::DANGER),
-            )
-            .on_hover_text(e);
-        }
-    }
-}
-
-/// One state word of the header row: a label that truncates in the width
-/// that the figures leave (FR-2 F22). The caller adds the hover.
-fn state_word(ui: &mut egui::Ui, text: egui::RichText) -> egui::Response {
-    ui.add(
-        egui::Label::new(text)
-            .truncate()
-            .show_tooltip_when_elided(false),
-    )
 }

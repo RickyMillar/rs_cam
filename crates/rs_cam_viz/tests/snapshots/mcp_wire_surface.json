@@ -7858,11 +7858,10 @@
           "description": "The toolpath properties tab to activate. Takes effect the next\ntime the properties panel renders a selected toolpath.",
           "enum": [
             "geometry",
-            "cut",
+            "passes",
             "feeds",
-            "linking",
             "heights",
-            "dressup",
+            "linking",
             null
           ],
           "type": [

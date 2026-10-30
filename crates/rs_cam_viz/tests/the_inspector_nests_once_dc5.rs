@@ -71,7 +71,7 @@ fn inspector_dir() -> PathBuf {
 
 /// Every `.rs` file directly in that folder, concatenated in file-name order.
 ///
-/// The order matters to `the_hints_block_renders_below_the_tab_strip_dc5`,
+/// The order matters to `the_notes_are_one_count_and_the_wiring_is_below_the_strip_dc5`,
 /// which compares byte offsets. It reads the CALL sites, all of which sit in
 /// `toolpath_panel.rs`; that name sorts last, after the `tab_badges.rs`
 /// DEFINITIONS its `rfind` must not pick. A new child whose name sorts after
@@ -160,20 +160,21 @@ fn no_name_is_both_a_tab_and_a_disclosure_dc5() {
 }
 
 #[test]
-fn the_hints_block_renders_below_the_tab_strip_dc5() {
+fn the_notes_are_one_count_and_the_wiring_is_below_the_strip_dc5() {
     let src = inspector_src();
     let strip = src
         .find("draw_toolpath_tabs(ui, &mut active_tab")
         .expect("the tab strip call moved; re-anchor this scan");
-    let hints = src
-        .find("{} hints")
-        .expect("the hints count row moved; re-anchor this scan");
+    // W2b: the hints block is gone. The notes are ONE quiet count that
+    // opens (`NotesCounter`, "ⓘ n") in the status line; the operator's words
+    // were "hints is a lot of text and its at the top, why?".
     assert!(
-        hints > strip,
-        "the hints block draws at byte {hints}, the tab strip at {strip}, so \
-         the hints render ABOVE the strip. The operator's words were \"hints \
-         is a lot of text and its at the top, why?\". A hint list is optional \
-         detail: it belongs at the bottom, as a count that opens."
+        !src.contains("{} hints"),
+        "the hints block is back; the notes counter replaces it (W2b)"
+    );
+    assert!(
+        src.contains("NotesCounter::new(notes).show(ui)"),
+        "the notes are one count that opens"
     );
 
     // The geometry WIRING (R2: the Input row) belongs to the Geometry tab,

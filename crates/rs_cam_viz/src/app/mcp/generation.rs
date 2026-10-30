@@ -217,9 +217,8 @@ impl RsCamApp {
                 "error": match tc.tool_id {
                     Some(tool_id) => format!("Tool {tool_id} for toolpath {} not found", tc.id),
                     None => format!(
-                        "Toolpath {} has no tool. {}.",
-                        tc.id,
-                        rs_cam_core::session::NO_TOOL_FIX
+                        "Toolpath {} has no tool. Set one with `set_toolpath_tool`.",
+                        tc.id
                     ),
                 }
             }));

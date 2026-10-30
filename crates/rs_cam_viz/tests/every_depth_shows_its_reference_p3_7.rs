@@ -7,7 +7,7 @@
 //!    draws the floor as the Bottom height row of its Heights tab (D6; the
 //!    Cut tab before D6, the Geometry tab before GT-1): "Bottom height:",
 //!    the reference of its floor, and the resolved floor Z.
-//! 2. That row is the one floor editor (IC1): the Cut tab draws no floor
+//! 2. That row is the one floor editor (IC1): the Passes tab draws no floor
 //!    row, the Heights tab draws no read-only Floor line and no second
 //!    Bottom height row, and the Top height line names its source
 //!    ("auto: faces").
@@ -344,7 +344,7 @@ fn every_depth_shows_its_reference_p3_7() {
         let all = texts(&cut);
         assert!(
             !all.contains(&"Bottom height:") && !all.contains(&"Floor from:"),
-            "{label}: the Cut tab still draws a floor row: {all:?}"
+            "{label}: the Passes tab still draws a floor row: {all:?}"
         );
     }
 }

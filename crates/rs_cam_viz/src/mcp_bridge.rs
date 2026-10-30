@@ -1734,6 +1734,87 @@ impl PendingMcpCompute {
     }
 }
 
+/// The `list_toolpaths` reply of the MCP server, built from the GUI state.
+/// W2b: a function of the state, so the GUI/MCP parity sentry
+/// (`one_place_per_diagnostic_w2b`) reads the same `run_state` the server
+/// gives.
+pub fn build_list_toolpaths_response(state: &crate::state::AppState) -> String {
+    // Override the core listing to inject viz-only fields (`stale`,
+    // `status`) so an automation client can tell at a glance whether a
+    // toolpath needs regeneration. Staleness lives in
+    // `ToolpathRuntime.stale_since` — viz-only — and the core summary
+    // never sees it. (Roadmap E.3)
+    let session = state.session();
+    let summaries = session.list_toolpaths();
+    // W5 item (c): read the edges ONCE, not once per row. `primary_edges`
+    // is the row a surface draws as one line: one entry per (consumer,
+    // kind), with the nearest enabled source on a Stock edge.
+    let edges = rs_cam_core::session::dependencies::primary_edges(session);
+    let rows: Vec<serde_json::Value> = summaries
+        .into_iter()
+        .map(|s| {
+            let rt = state.gui.toolpath_rt.get(&s.id);
+            let stale = rt.is_some_and(|r| r.stale_since.is_some());
+            // A/M11: `enabled: false` wins over whatever the op last
+            // recorded, so a switched-off toolpath can never present the
+            // rest-stock error it had while it was on.
+            let raw = rt.map_or(rs_cam_core::compute::config::ComputeStatus::Pending, |r| {
+                r.run.status()
+            });
+            // W1, W2b: THE run state (core `toolpath_run_state`), through
+            // the one GUI door the header reads too.
+            let run_state = crate::state::freshness::run_state_of(session, &state.gui, s.id);
+            let next_action = run_state.as_ref().map(rs_cam_core::session::next_action);
+            let status = rs_cam_core::compute::config::ComputeStatus::effective(s.enabled, &raw);
+            // `ToolpathSummary` carries no stock source, and widening it
+            // would push a viz concern into the core listing. Read the
+            // config instead.
+            let stock_source = session
+                .find_toolpath_config_by_id(s.id)
+                .map(|(_, tc)| tc.stock_source)
+                .unwrap_or_default();
+            let depends_on: Vec<serde_json::Value> = edges
+                .iter()
+                .filter(|e| e.from == s.id)
+                .map(|e| {
+                    // W1 tail: the two wire words live on the enums
+                    // (`stock|regions`, `ready|pending|broken`),
+                    // so a third arm cannot reach this reply unnamed.
+                    serde_json::json!({
+                        "id": e.on,
+                        "kind": e.kind,
+                        "state": rs_cam_core::session::dependencies::state(e, session),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "name": s.name,
+                "operation_label": s.operation_label,
+                "enabled": s.enabled,
+                "tool_name": s.tool_name,
+                "stale": stale,
+                "status": status.label(),
+                "error": status.error_text(),
+                // W5 item (a): the core struct serialises. Do not
+                // hand-build the three keys here.
+                "awaiting_prior_stock": status.blocked_on(),
+                "stock_source": stock_source,
+                // W5 item (c). An EMPTY list means "asked, and this
+                // operation depends on nothing". It is never null.
+                "depends_on": depends_on,
+                // W1: `{"state": "not_ready", "blocking": [ids]}`,
+                // `{"state": "failed", "reason": ..}`, or one word
+                // in `state`.
+                "run_state": run_state,
+                "next_action": next_action,
+            })
+        })
+        .collect();
+    rs_cam_mcp::server::json_str(serde_json::Value::Array(rows))
+}
+
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,

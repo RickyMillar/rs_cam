@@ -6,7 +6,7 @@
 //!    (`ProjectSession::draft_toolpath`, `ToolChoice::FirstFitting`) gives
 //!    `tool_id: None` and the state "No tool fits: needs ...". The op
 //!    refuses generation with `SessionError::NoTool` and the fix
-//!    (`NO_TOOL_FIX`), and its diagnostics hold `precondition.no_tool`.
+//!    (`CHOOSE_A_TOOL_FIX`), and its diagnostics hold `precondition.no_tool`.
 //! 2. A project file round-trips an op with no tool: the toolpath section
 //!    writes no `tool_id` key, and the load gives `tool_id: None` with no
 //!    missing-tool warning.
@@ -42,7 +42,7 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::BoundaryConfig;
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::session::{
-    AddToolArgs, AddToolpathArgs, Command, DraftRequest, NO_TOOL_FIX, ProjectSession,
+    AddToolArgs, AddToolpathArgs, CHOOSE_A_TOOL_FIX, Command, DraftRequest, ProjectSession,
     ProjectSessionBuilder, ReplaceToolpathConfigArgs, SessionError, SetToolpathToolArgs,
 };
 
@@ -96,7 +96,7 @@ fn an_add_with_no_fitting_tool_makes_the_op_r2() {
     assert_eq!(err.field(), Some("tool_id"));
     let text = err.to_string();
     assert!(
-        text.contains(SCALLOP_STATE) && text.contains(NO_TOOL_FIX),
+        text.contains(SCALLOP_STATE) && text.contains(CHOOSE_A_TOOL_FIX),
         "the refusal names the state and the fix: {text}"
     );
 
@@ -112,7 +112,11 @@ fn an_add_with_no_fitting_tool_makes_the_op_r2() {
         finding.severity,
         rs_cam_core::diagnostics::Severity::Blocking
     );
-    assert!(finding.message.contains(NO_TOOL_FIX), "{}", finding.message);
+    assert!(
+        finding.message.contains(CHOOSE_A_TOOL_FIX),
+        "{}",
+        finding.message
+    );
 
     // Non-vacuity: a ball nose added to the project binds the waiting
     // Scallop (P3, operator ruling 2026-10-30), so the state goes, and a

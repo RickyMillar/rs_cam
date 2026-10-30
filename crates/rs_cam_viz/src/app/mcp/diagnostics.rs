@@ -57,8 +57,7 @@ impl RsCamApp {
         else {
             let Some(tool_id) = tc.tool_id else {
                 return format!(
-                    "Error: toolpath {index} has no tool. {}.",
-                    rs_cam_core::session::NO_TOOL_FIX
+                    "Error: toolpath {index} has no tool. Set one with `set_toolpath_tool`."
                 );
             };
             return format!(

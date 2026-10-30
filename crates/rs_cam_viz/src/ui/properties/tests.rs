@@ -1,4 +1,4 @@
-//! Unit tests for the inspector's tab enum and its diagnostic-row merge.
+//! Unit tests for the inspector's tab enum, its header and its rows.
 
 #![expect(
     clippy::unwrap_used,
@@ -9,7 +9,6 @@
 )]
 
 use super::ToolpathTab;
-use super::tab_badges::merge_stateful_gate_rows;
 
 /// The MCP `set_ui_view` tool documents these tab keys — every
 /// documented key must parse, every tab must be reachable, and
@@ -37,15 +36,9 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
         ToolpathTab::parse("heights"),
         Some(ToolpathTab::Heights)
     ));
-    // R2: the old keys read as the tabs that hold their rows now.
-    assert!(matches!(
-        ToolpathTab::parse("dressup"),
-        Some(ToolpathTab::Linking)
-    ));
-    assert!(matches!(
-        ToolpathTab::parse("cut"),
-        Some(ToolpathTab::Passes)
-    ));
+    // W2b: the old keys are gone (no-legacy ruling 2026-09-16).
+    assert!(ToolpathTab::parse("dressup").is_none());
+    assert!(ToolpathTab::parse("cut").is_none());
     assert!(matches!(
         ToolpathTab::parse("passes"),
         Some(ToolpathTab::Passes)
@@ -66,78 +59,6 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
             tab.key()
         );
     }
-}
-
-fn stateful_diag(
-    source: rs_cam_core::diagnostics::Source,
-    message: &str,
-) -> rs_cam_core::diagnostics::Diagnostic {
-    use rs_cam_core::diagnostics as dx;
-    dx::Diagnostic {
-        id: dx::DiagnosticId::new("test.gate"),
-        scope: dx::Scope::Toolpath {
-            id: rs_cam_core::ToolpathId::from_raw(0),
-        },
-        category: dx::Category::State,
-        severity: dx::Severity::Info,
-        confidence: dx::Confidence::Static,
-        state: dx::DiagnosticState::StaleEvidence,
-        source,
-        message: message.to_owned(),
-        face: String::new(),
-        anchor: dx::Anchor::Note,
-        evidence: None,
-        fix: None,
-        supersedes: Vec::new(),
-        suppressed_diagnostics: Vec::new(),
-    }
-}
-
-/// Density pass V3 — three per-gate copies of the same stale-sim
-/// sentence must collapse into one "Gates: …" row; gate rows with a
-/// unique status and non-gate rows pass through untouched.
-#[test]
-fn stateful_gate_rows_with_shared_status_merge_into_one_gates_row() {
-    use rs_cam_core::diagnostics::Source;
-    let stale = "simulation stale — re-run to verify";
-    let chipload = stateful_diag(Source::ToolLoad, &format!("Chipload: {stale}"));
-    let power = stateful_diag(Source::ToolLoad, &format!("Power: {stale}"));
-    let deflection = stateful_diag(Source::ToolLoad, &format!("Deflection: {stale}"));
-    let unique_gate = stateful_diag(
-        Source::ToolLoad,
-        "Drill: no vendor LUT row matches this tool/material — supply vendor data \
-         to enable this gate",
-    );
-    let non_gate = stateful_diag(Source::StaticValidation, "Heights: needs simulation");
-
-    let stateful = vec![&chipload, &power, &deflection, &unique_gate, &non_gate];
-    let (merged, rest) = merge_stateful_gate_rows(&stateful);
-
-    assert_eq!(merged.len(), 1, "three shared-status gates → one row");
-    assert_eq!(merged[0].message, format!("Gates: {stale}"));
-    assert_eq!(rest.len(), 2, "unique gate + non-gate pass through");
-    assert!(rest.iter().any(|d| d.message.starts_with("Drill:")));
-    assert!(rest.iter().any(|d| d.message.starts_with("Heights:")));
-}
-
-/// Both wordings ship today — "run simulation to evaluate" (never
-/// simulated) must merge independently of the stale wording.
-#[test]
-fn stateful_gate_rows_merge_groups_by_exact_status_text() {
-    use rs_cam_core::diagnostics::Source;
-    let chipload = stateful_diag(Source::ToolLoad, "Chipload: run simulation to evaluate");
-    let power = stateful_diag(Source::ToolLoad, "Power: run simulation to evaluate");
-    let deflection = stateful_diag(
-        Source::ToolLoad,
-        "Deflection: simulation stale — re-run to verify",
-    );
-
-    let stateful = vec![&chipload, &power, &deflection];
-    let (merged, rest) = merge_stateful_gate_rows(&stateful);
-
-    assert_eq!(merged.len(), 1);
-    assert_eq!(merged[0].message, "Gates: run simulation to evaluate");
-    assert_eq!(rest.len(), 1, "differently-worded gate stays separate");
 }
 
 /// Q1: the panel snapshot carries the model bounding box.
@@ -723,9 +644,9 @@ fn the_selection_section_shows_one_pick_p4_d() {
 
 /// Geometry selection P4.D fix 4, then GT-1: the op selection is the
 /// Geometry tab, the first tab; its summary row ("Cuts") opens the tab. The
-/// Cut tab holds Input, Start from and the Machining Boundary source, and
+/// Passes tab holds Input, Start from and the Machining Boundary source, and
 /// no Pick. A 3D op shows "Pick faces" in the Geometry tab (fix 2). Red
-/// proof: the selection drawn in the Cut tab again: the Cut tab paints
+/// proof: the selection drawn in the Passes tab again: the Passes tab paints
 /// "Pick".
 #[test]
 fn the_selection_section_is_at_the_top_p4_d() {
@@ -1106,37 +1027,16 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
     );
 }
 
-/// FR-2 F24: the owner map holds every core diagnostic id once, and holds
-/// no id that core does not declare. A new core id with no row fails here.
+/// W2b (was F24): a field finding puts its dot on the tab that draws its
+/// field (the anchor names the field, `placement::field_tab` names the
+/// tab). A selection refusal dots Geometry; a load finding on the feed dots
+/// Feeds; a pin finding (a project anchor) and an operation finding dot no
+/// tab.
 ///
-/// Red proof: delete the `SAFETY_CUTS_INTO_MODEL` row: the first
-/// assertion names it.
+/// Red proof: dot every current finding (the F24 id table read every id):
+/// the operation finding dots a tab and the Passes arm fails.
 #[test]
-fn owner_tab_map_covers_every_id_f24() {
-    use rs_cam_core::diagnostics::ids;
-    let rows: Vec<&str> = super::tab_badges::OWNER_TAB
-        .iter()
-        .map(|(id, _)| *id)
-        .collect();
-    let missing: Vec<&&str> = ids::ALL.iter().filter(|id| !rows.contains(id)).collect();
-    assert!(missing.is_empty(), "ids with no owner row: {missing:?}");
-    let unknown: Vec<&&str> = rows.iter().filter(|id| !ids::ALL.contains(id)).collect();
-    assert!(unknown.is_empty(), "rows of no core id: {unknown:?}");
-    let mut sorted = rows.clone();
-    sorted.sort_unstable();
-    sorted.dedup();
-    assert_eq!(sorted.len(), rows.len(), "each id has one row");
-}
-
-/// FR-2 F24: a finding puts its dot on the tab that holds its fix. A
-/// selection refusal and a model gouge go to Geometry; a load finding to
-/// Feeds & Speeds; a pin finding (no toolpath tab) gives no dot. No
-/// finding puts a dot on Dressup.
-///
-/// Red proof: the old "Mods" rule (every finding dots Dressup) gives no
-/// Geometry dot and a Dressup dot, so the Geometry arm fails.
-#[test]
-fn a_finding_dots_the_tab_of_its_fix_f24() {
+fn a_field_finding_dots_the_tab_of_its_field_w2b() {
     use rs_cam_core::diagnostics::{
         Category, Confidence, Diagnostic, DiagnosticState, Scope, Severity, Source, ids,
     };
@@ -1167,16 +1067,14 @@ fn a_finding_dots_the_tab_of_its_fix_f24() {
         tc.model_id,
         crate::state::toolpath::OperationType::Pocket,
     );
-    let badges = super::tab_badges::compute_tab_badges(
-        &entry,
-        &[
-            finding(ids::SAFETY_CUTS_INTO_MODEL, Severity::Blocking),
-            finding(ids::LOAD_CHIPLOAD_HIGH, Severity::Caution),
-            finding(ids::PROJECT_PIN_WALL_THIN, Severity::Critical),
-        ],
-        None,
-        false,
-    );
+    let list = [
+        finding(ids::PRECOND_SELECTION_REFUSED, Severity::Blocking),
+        finding(ids::LOAD_CHIPLOAD_HIGH, Severity::Caution),
+        finding(ids::PROJECT_PIN_WALL_THIN, Severity::Critical),
+        finding(ids::PROJECT_GENERATED_EMPTY, Severity::Critical),
+    ];
+    let placement = super::placement::place(&list);
+    let badges = super::tab_badges::compute_tab_badges(&entry, &placement, None);
     assert_eq!(
         badges.for_tab(ToolpathTab::Geometry),
         Some(crate::ui::tokens::DANGER)
@@ -1232,11 +1130,12 @@ fn the_blocked_state_word_fits_its_slot_f22() {
         rs_cam_core::ToolpathId::from_raw(0),
     )
     .expect("a gouge blocks");
-    let current = crate::state::freshness::FreshnessState::Current;
+    let done = rs_cam_core::session::RunState::Done;
     let row = super::toolpath_panel::HeaderRow {
-        can_generate: true,
-        freshness: &current,
+        run_state: Some(&done),
+        can_run: true,
         manual_generation: false,
+        waiting_detail: None,
         blocking: Some(&finding),
         moves: Some(12_345),
         feed_stage: Some(rs_cam_core::session::FeedStage::ModulatedSuperseded {
@@ -1254,7 +1153,7 @@ fn the_blocked_state_word_fits_its_slot_f22() {
         for _ in 0..3 {
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 ui.set_max_width(width);
-                let _ = super::toolpath_panel::draw_generate_row(ui, &row);
+                let _ = super::toolpath_panel::draw_generate_row(ui, &row, &[]);
             });
             texts = out
                 .shapes
@@ -1683,7 +1582,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     &mut events,
                 );
             } else {
-                super::tab_badges::draw_tool_row(ui, entry, &inputs, &mut events);
+                super::tab_badges::draw_tool_row(ui, entry, &inputs, &[], &mut events);
             }
         });
         let mut texts = Vec::new();
@@ -1702,7 +1601,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
         "the header Tool row reads `Choose a tool`; it rendered {header:?}"
     );
     let passes = painted(&mut entry, true);
-    let old_line = format!("No tool set. {}", rs_cam_core::session::NO_TOOL_FIX);
+    let old_line = format!("No tool set. {}", rs_cam_core::session::CHOOSE_A_TOOL_FIX);
     assert!(
         !passes
             .iter()
@@ -1790,7 +1689,7 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
     assert_eq!(run(cp, Some(ga), true), (1, ga), "a click writes the draft");
 }
 
-/// G-D (ruling D-1): with the boundary on, the Cut tab draws the `Source:`
+/// G-D (ruling D-1): with the boundary on, the Passes tab draws the `Source:`
 /// combo and no `Boundary: …` row above it; the row's text is the combo's
 /// hover. The row repeated the combo one line above.
 #[test]
@@ -1849,31 +1748,6 @@ fn the_boundary_summary_is_the_source_hover_d1() {
     assert!(
         !texts.iter().any(|t| t.starts_with("Boundary:")),
         "the summary row is back: {texts:?}"
-    );
-}
-
-/// G-E (2): the footer findings are bounded. Five caution rows show three
-/// and the remainder line "Showing 3 of 5 · Show all"; expanded, all five.
-/// A blocking row past the cap still shows (the safety rule).
-#[test]
-fn the_footer_findings_are_bounded_g_e() {
-    use super::toolpath_panel::{FOOTER_FINDINGS_CAP, bounded_findings};
-    use rs_cam_core::diagnostics::Severity;
-    let five = [Severity::Caution; 5];
-    assert_eq!(FOOTER_FINDINGS_CAP, 3);
-    assert_eq!(bounded_findings(&five, false), vec![0, 1, 2]);
-    assert_eq!(bounded_findings(&five, true), vec![0, 1, 2, 3, 4]);
-    assert_eq!(
-        crate::ui::components::notice::overflow_line(3, 5),
-        "Showing 3 of 5 \u{00B7} Show all"
-    );
-    let mut late_block = five;
-    late_block[4] = Severity::Blocking;
-    assert_eq!(bounded_findings(&late_block, false), vec![0, 1, 2, 4]);
-    assert_eq!(
-        bounded_findings(&five[..2], false),
-        vec![0, 1],
-        "under the cap"
     );
 }
 
@@ -1952,16 +1826,16 @@ fn the_rest_refusal_faces_are_short_g_e() {
         source_name: name.clone(),
     })
     .expect("a face");
-    assert_eq!(not_generated.text, "\u{2715} Generate 'Body rough' first");
+    assert_eq!(not_generated.text, "Generate 'Body rough' first");
     assert_eq!(not_generated.generate, Some((source, name.clone())));
     let no_regions = rest_refusal_face(&RestBoundaryRefusal::NoRegions {
         source_toolpath_id: source,
         source_name: name,
     })
     .expect("a face");
-    assert_eq!(no_regions.text, "\u{2715} 'Body rough' left no regions");
+    assert_eq!(no_regions.text, "'Body rough' left no regions");
     let own = rest_refusal_face(&RestBoundaryRefusal::OwnRegions).expect("a face");
-    assert_eq!(own.text, "Refused \u{00B7} source is this op");
+    assert_eq!(own.text, "The source is this op");
     assert_eq!(own.generate, None);
     assert_eq!(
         rest_refusal_face(&RestBoundaryRefusal::SourceMissing {
@@ -2302,7 +2176,7 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
     use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
     use rs_cam_core::compute::config::BoundaryConfig;
 
-    /// Draw the Cut tab until `label` paints, click it on the next pass,
+    /// Draw the Passes tab until `label` paints, click it on the next pass,
     /// and draw two more passes. Panics when `label` never paints.
     fn click_label(
         ctx: &egui::Context,

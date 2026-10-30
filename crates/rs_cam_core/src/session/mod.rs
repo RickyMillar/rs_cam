@@ -28,8 +28,8 @@ pub mod multitool;
 mod mutation;
 mod op_draft;
 pub use op_draft::{
-    DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME, GeodesicPairDraft,
-    GeodesicPairRequest, ModelChoice, NO_TOOL_FIX, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
+    CHOOSE_A_TOOL_FIX, DraftRefusal, DraftRequest, GEODESIC_BODY_NAME, GEODESIC_EDGES_NAME,
+    GeodesicPairDraft, GeodesicPairRequest, ModelChoice, NO_TOOL_NAME, ToolChoice, ToolpathDraft,
 };
 mod pick_index;
 mod pin_report;
@@ -510,7 +510,7 @@ impl std::fmt::Display for SessionError {
             ),
             Self::ToolNotFound(id) => write!(f, "Tool {} not found", id.raw()),
             Self::NoTool { toolpath, state } => {
-                write!(f, "Toolpath {toolpath}: {state}. {NO_TOOL_FIX}")
+                write!(f, "Toolpath {toolpath}: {state}. {CHOOSE_A_TOOL_FIX}")
             }
             Self::SetupNotFound(id) => write!(f, "Setup {id} not found"),
             Self::ToolInUse(id) => write!(f, "Tool {} is still referenced by toolpaths", id.raw()),

@@ -181,56 +181,43 @@ fn the_wrapped_helper_only_wraps() {
 }
 
 /// The tool-load caution — the sentence the review caught at "The whole
-/// derat". IC1: the row is one truncated line, and its hover holds the whole
-/// message, so the caveat is one hover away and the ellipsis says so.
+/// derat". IC1, W2b: a finding is one issue row (the NoticeStack issue
+/// form truncates its face), and its hover holds the whole message first.
+/// The footer row that drew it before W2b is gone.
 #[test]
 fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
     let src = properties_src();
-    let body = function_body(&src, "render_diagnostic_row");
-    // P4.D (L-2): the drawn line is `face`, the whole message or, for a
-    // selection refusal, one line that names the Selection section. The
-    // window starts at the drawn label, not at the message format.
-    let face_at = body
-        .find("let face = ")
-        .expect("the drawn diagnostic line moved");
     assert!(
-        body[face_at..].contains("format!(\"{prefix}{}\", d.message)"),
-        "the drawn line no longer carries the message"
+        !src.contains("fn render_diagnostic_row("),
+        "the per-tab footer row is back; the issue stack replaces it (W2b)"
     );
-    let at = face_at
-        + body[face_at..]
-            .find("egui::RichText::new(face)")
-            .expect("the drawn diagnostic label moved");
-    let around = &body[at..(at + 400).min(body.len())];
+    let stack = function_body(&src, "draw_issue_stack");
     assert!(
-        around.contains(".truncate()") && around.contains(".on_hover_text(hover)"),
-        "the diagnostic message must be one truncated line with its hover:\n{around}"
+        stack.contains("Notice::new(super::placement::role_of(d), d.face.as_str())")
+            && stack.contains(".detail(super::placement::detail(d))")
+            && stack.contains(".show_issues(ui)"),
+        "a finding must be one issue row with its detail on hover:\n{stack}"
     );
-    let hover_at = body
-        .find("let mut hover = format!(\"{prefix}{}\", d.message);")
-        .expect("the hover no longer starts with the whole message");
+    let detail = function_body(&src, "detail");
     assert!(
-        hover_at < at,
-        "the hover must be built before the line is drawn"
+        detail.contains("let mut out = d.message.clone();"),
+        "the hover detail must start with the whole message:\n{detail}"
     );
 }
 
 /// The third sentence-bearing site in the header: the validator's
-/// messages. They wrapped until G-E (2026-10-28). Now the header gives them
-/// ONE line (§7.2 rule 5): the Geometry refusal's short line, else the
-/// first sentence truncated, with every validation error on the hover. The
-/// behaviour is measured in `the_inspector_text_is_bounded_ic1`
-/// (`a_validation_error_takes_one_line_g_e`).
+/// messages. W2b: a validator refusal that no core finding states is ONE
+/// issue row (`gate_refusals`); the issue row truncates and keeps its text
+/// on hover. The behaviour is measured in
+/// `the_inspector_text_is_bounded_ic1` (`a_validation_error_takes_one_line_g_e`).
 #[test]
 fn the_validation_errors_are_one_line() {
     let src = properties_src();
-    let at = src
-        .find("let face = if !owned.is_empty()")
-        .expect("the validation-error face moved");
-    let body = &src[at..(at + 400).min(src.len())];
+    let stack = function_body(&src, "draw_issue_stack");
     assert!(
-        body.contains("OneLine::new(face)") && body.contains(".detail(detail)"),
-        "the validation errors are one line with their text on hover:\n{body}"
+        stack.contains("for gate in gates {")
+            && stack.contains("Notice::new(Role::Danger, gate.as_str())"),
+        "the validator refusals are issue rows:\n{stack}"
     );
     assert!(
         !src.contains("for err in other {"),
@@ -246,37 +233,31 @@ fn the_validation_errors_are_one_line() {
 /// This is a source read and it counts CONSTRUCTION, not pixels.
 #[test]
 fn every_sentence_in_the_header_is_wrapped() {
-    // The header runs from the Name row to the diagnostics ribbon.
+    // The header runs from the Name row to the tab strip.
     let src = properties_src();
     let start = src
         .find("// ── Shared header (always visible above tabs)")
         .expect("the header marker moved");
     let end = src[start..]
-        .find("// Contextual diagnostics")
+        .find("// ── Tab bar")
         .map(|at| start + at)
         .expect("the header's end marker moved");
     let header = &src[start..end];
-    // FR-2 F22: the state word of the Generate row is drawn by
-    // `draw_header_state`, so the census reads that body too.
-    let state = function_body(&src, "draw_header_state");
-
-    // The two Generate-row statuses with a long text. They wrapped until
-    // G-E (2026-10-28); now each is one truncating state word with the full
-    // text on hover (the IC1 remedy), and the last run's refusal is the
-    // word `Refused` (`REFUSED_STATE`).
-    for existing in ["Waiting on upstream stock", "REFUSED_STATE"] {
-        let at = state
-            .find(existing)
-            .unwrap_or_else(|| panic!("{existing:?} left the header state"));
-        let before = &state[at.saturating_sub(120)..at];
-        let after = &state[at..(at + 200).min(state.len())];
+    // W2b: the status line draws ONE state word from core `RunState`
+    // (`HeaderRow::word`), as a truncating label with its text on hover.
+    let state = function_body(&src, "draw_generate_row");
+    assert!(
+        state.contains("row.word()")
+            && state.contains(".truncate()")
+            && state.contains(".on_hover_text(hover)")
+            && !state.contains(".wrap()"),
+        "the state word is one truncating label with its text on hover:\n{state}"
+    );
+    let words = function_body(&src, "word");
+    for existing in ["WORD_WAITING", "WORD_FAILED", "WORD_NOT_READY"] {
         assert!(
-            before.contains("state_word(") && after.contains(".on_hover_text("),
-            "{existing:?} is one truncating word with its text on hover:\n{before}{after}"
-        );
-        assert!(
-            !after.contains(".wrap()"),
-            "{existing:?} wraps again:\n{after}"
+            words.contains(existing),
+            "{existing:?} left the header state:\n{words}"
         );
     }
 

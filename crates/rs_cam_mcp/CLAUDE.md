@@ -45,5 +45,8 @@ run the server; the live server, GUI dispatch and session ownership are in
 - W1 (2026-10-30): a reply `Diagnostic` carries `face` and `anchor` (core `diagnostics::presentation`);
   `list_toolpaths` rows carry `run_state` and `next_action` (core `session::toolpath_run_state`).
   Feature tokens `diagnostic_face_anchor`, `toolpath_run_state`. Reply keys only: the snapshot did not move.
+- W2b (2026-10-30): `PropertiesTabParam` is `geometry`, `passes`, `feeds`, `heights`, `linking`;
+  `cut` and `dressup` are deleted (no-legacy ruling). `list_toolpaths` `run_state` gains `waiting`
+  (`{"state": "waiting", "on": [ids]}`). The snapshot was re-blessed (the enum only).
 - Verify with `cargo test -p rs_cam_mcp -q`; when a wire type changes, also run
   the relevant `rs_cam_viz` MCP integration tests.

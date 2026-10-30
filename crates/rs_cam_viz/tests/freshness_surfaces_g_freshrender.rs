@@ -75,35 +75,37 @@ const VIEWPORT_SRC: &str = include_str!("../src/app/viewport.rs");
 const READINESS_PANEL_SRC: &str = include_str!("../src/ui/readiness_panel.rs");
 const WORKSPACE_BAR_SRC: &str = include_str!("../src/ui/workspace_bar.rs");
 
-/// The inspector header's status line reads the freshness state, and its
-/// `EditedSince` arm says both halves — the generation finished, and what it
-/// produced no longer answers the settings on screen.
+/// The inspector header's status line reads the one run state, and its
+/// out-of-date arm says so: the generation finished, and what it produced
+/// no longer answers the settings on screen.
 ///
 /// Pre-fix the header matched `ComputeStatus::effective(entry.enabled,
 /// &entry.run.status())`, whose `Done` arm printed a green "Done" directly above
-/// the fields the operator had just changed.
+/// the fields the operator had just changed. F2.2 moved it to the freshness
+/// state; W2b moved it to core `toolpath_run_state` (`HeaderRow::word`), the
+/// rule MCP `list_toolpaths` reads too.
 #[test]
-fn the_inspector_header_reads_the_freshness_state() {
+fn the_inspector_header_reads_the_run_state() {
     let src = properties_src();
     let at = src
-        .find("// F2.2 — the same one state the card chip")
+        .find("fn word(&self)")
         .expect("the header's status match moved");
     let block = &src[at..(at + 6000).min(src.len())];
 
     assert!(
-        block.contains("match freshness {"),
-        "the header must match on the freshness state"
+        block.contains("match self.run_state {"),
+        "the header must match on the core run state"
     );
     assert!(
-        !block.contains("ComputeStatus::effective(entry.enabled"),
+        !src.contains("ComputeStatus::effective(entry.enabled"),
         "the header must not re-derive its own answer from ComputeStatus"
     );
     assert!(
-        block.contains("FreshnessState::EditedSince =>"),
-        "the header needs an arm for the state that did not exist before"
+        block.contains("Some(RunState::OutOfDate) =>"),
+        "the header needs an arm for the result an edit made out of date"
     );
     assert!(
-        block.contains("edited since"),
+        block.contains("WORD_OUT_OF_DATE") && block.contains("inputs changed"),
         "and that arm has to say so: {block}"
     );
 }

@@ -489,7 +489,7 @@ mod height_planes_tests {
 
         state.gui.active_toolpath_tab = Some((id, ToolpathTab::Heights));
         assert!(height_planes_drawn(&state), "the Heights tab shows them");
-        state.gui.active_toolpath_tab = Some((id, ToolpathTab::Cut));
+        state.gui.active_toolpath_tab = Some((id, ToolpathTab::Passes));
         assert!(!height_planes_drawn(&state), "another tab hides them");
         state.gui.active_toolpath_tab = Some((ToolpathId::from_raw(4), ToolpathTab::Heights));
         assert!(

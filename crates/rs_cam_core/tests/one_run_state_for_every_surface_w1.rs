@@ -13,6 +13,14 @@
 //!    changes, and asks for a retry; an edit clears it.
 //! 4. A result is `Done`; an edit after it is `OutOfDate`; a switched-off
 //!    op is `Disabled`; a compute in flight is `Generating`.
+//! 5. W2b: the run state reads a gate-only list (no load report, no
+//!    feeds calculator, no Suggest; the GUI reads it on every repaint).
+//!    Its blocking ids equal the refusing findings of the full
+//!    `diagnose_toolpath` list.
+//! 6. W2b: a rest op with no current simulated snapshot is `Waiting` on the
+//!    nearest enabled operation before it, and asks for a Generate (the
+//!    plan generates and simulates that operation first). Before W2b the
+//!    GUI header said "Waiting on upstream stock" and MCP said `ready`.
 //!
 //! Red proof: drop the revision check in `current_run_refusal`; claim 2
 //! reads `Failed` after the feeds are set. Drop the blocking scan; claim 1
@@ -33,15 +41,18 @@ mod common;
 
 use std::sync::atomic::AtomicBool;
 
-use common::session::{polygon_model, single_op_session_with, square_polygon, stock_over};
+use common::session::{
+    polygon_model, single_op_session_with, square_polygon, stock_over, toolpath_config,
+};
 use common::tools::endmill_tool_config;
 use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::compute::config::StockSource;
 use rs_cam_core::compute::operation_configs::PocketConfig;
 use rs_cam_core::diagnostics::ids;
 use rs_cam_core::ids::ToolpathId;
 use rs_cam_core::session::{
     Command, ForgetResultArgs, NextAction, ProjectSession, RunState, SetToolpathEnabledArgs,
-    SetToolpathParamArgs, ToolpathConfig, next_action, toolpath_run_state,
+    SetToolpathParamArgs, ToolpathConfig, next_action, refuses_generation, toolpath_run_state,
 };
 
 const FEED: f64 = 1200.0;
@@ -223,4 +234,88 @@ fn done_out_of_date_disabled_and_generating() {
         serde_json::to_value(NextAction::ChooseTool).expect("serialise"),
         serde_json::json!("choose_tool")
     );
+}
+
+#[test]
+fn a_rest_op_with_no_snapshot_is_waiting_w2b() {
+    // Alone, the rest op has nothing before it: it waits on no operation.
+    let (s, id) = session(|cfg| cfg.stock_source = StockSource::FromRemainingStock);
+    assert_eq!(state(&s, id), RunState::Waiting { on: Vec::new() });
+    assert_eq!(next_action(&state(&s, id)), NextAction::Generate);
+
+    // After a rough, it waits on the rough.
+    let (mut s, rough) = session(|_| {});
+    let tool = s.tools()[0].id;
+    let model = s.models()[0].id;
+    let mut rest = toolpath_config(
+        "w1 rest",
+        OperationConfig::Pocket(PocketConfig::default()),
+        tool,
+        model,
+    );
+    rest.stock_source = StockSource::FromRemainingStock;
+    let _ = s
+        .apply(Command::AddToolpath(
+            rs_cam_core::session::AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(rest),
+            },
+        ))
+        .expect("the rest op adds");
+    let rest_id = s.toolpath_configs()[1].id;
+    assert_eq!(state(&s, rest_id), RunState::Waiting { on: vec![rough] });
+    assert_eq!(
+        serde_json::to_value(state(&s, rest_id)).expect("serialise"),
+        serde_json::json!({"state": "waiting", "on": [rough]}),
+        "the wire form names the operation it waits on"
+    );
+    // A switched-off rough is not the stock it waits on.
+    let _ = s
+        .apply(Command::SetToolpathEnabled(SetToolpathEnabledArgs {
+            index: 0,
+            enabled: false,
+        }))
+        .expect("index 0 exists");
+    assert_eq!(state(&s, rest_id), RunState::Waiting { on: Vec::new() });
+}
+
+/// A change to the fixture config.
+type Tweak = fn(&mut ToolpathConfig);
+
+/// Claim 5: the blocking ids of the run state are the refusing findings of
+/// the full list, in each case of this file.
+#[test]
+fn the_gate_list_blocks_as_the_full_list_w2b() {
+    let cases: [(&str, Tweak); 4] = [
+        ("clean", |_| {}),
+        ("no feeds", clear_feeds),
+        ("no tool", |cfg| cfg.tool_id = None),
+        ("no tool, no feeds", |cfg| {
+            cfg.tool_id = None;
+            clear_feeds(cfg);
+        }),
+    ];
+    let mut blocked = 0_usize;
+    for (name, tweak) in cases {
+        let (s, id) = session(tweak);
+        let full: Vec<String> = s
+            .diagnose_toolpath(0)
+            .expect("the list builds")
+            .iter()
+            .filter(|d| refuses_generation(d))
+            .map(|d| d.id.as_str().to_owned())
+            .collect();
+        let gate: Vec<String> = match state(&s, id) {
+            RunState::NotReady { blocking } => {
+                blocking.iter().map(|b| b.as_str().to_owned()).collect()
+            }
+            _ => Vec::new(),
+        };
+        assert_eq!(
+            gate, full,
+            "{name}: the gate list and the full list disagree"
+        );
+        blocked += usize::from(!gate.is_empty());
+    }
+    assert!(blocked >= 3, "non-vacuity: {blocked} blocked cases");
 }

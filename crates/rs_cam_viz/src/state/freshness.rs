@@ -109,6 +109,22 @@ pub fn freshness_at(
     Some(freshness(tc, rt, session.result_at(index).is_some()))
 }
 
+/// W2b: THE run state of toolpath `id` as the GUI header and the MCP
+/// `list_toolpaths` reply read it. It is core `toolpath_run_state`; the GUI
+/// supplies the one fact the session cannot see, a compute in flight on the
+/// worker lane. One function for both surfaces, so the two words agree.
+pub fn run_state_of(
+    session: &ProjectSession,
+    gui: &GuiState,
+    id: ToolpathId,
+) -> Option<rs_cam_core::session::RunState> {
+    let in_flight = gui
+        .toolpath_rt
+        .get(&id)
+        .is_some_and(|rt| matches!(rt.run, ToolpathRun::Computing));
+    rs_cam_core::session::toolpath_run_state(session, id, in_flight)
+}
+
 /// Where the SIMULATION stands, as every surface should read it.
 ///
 /// The toolpath sibling of [`FreshnessState`], and derived the same way:

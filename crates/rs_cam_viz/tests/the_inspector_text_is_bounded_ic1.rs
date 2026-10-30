@@ -20,7 +20,9 @@
 //!    word or one line, with its text on hover
 //!    (`a_generate_refusal_takes_one_line_g_e`).
 //! 2. The number of visible text rows on each surface stays under a cap.
-//!    The caps come from the after-state with a small margin.
+//!    The caps of the toolpath tabs are the measured W2b state with no
+//!    margin (W6 rule); the other panels keep the after-state with a small
+//!    margin.
 //!
 //! Run it with `--nocapture` to print the inventory of each surface.
 
@@ -55,6 +57,10 @@ const PANEL_WIDTH: f32 = 340.0;
 /// The default width of the setup properties panel (`app.rs`), where the
 /// other inspector panels also draw. It stays 280.
 const SETUP_PANEL_WIDTH: f32 = 280.0;
+
+/// W2b: the height one issue row adds above the tab strip: the row
+/// (`ROW_ACTION`), the space above the stack and the item gap below it.
+const ONE_ISSUE_ROW: f32 = tokens::ROW_ACTION + 2.0 * tokens::SPACE_2;
 
 /// The Simulation workspace's right rail, the narrowest inspector.
 const RAIL_WIDTH: f32 = 240.0;
@@ -366,11 +372,15 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // Machining Boundary section moved to Geometry, the Dressup rows to
     // Linking, the reach rows out of the footer. Measured: Pocket
     // 13/17/23/21/24, 3D Rough 9/15/22/18/22, 3D Finish 11/12/24/20/21;
-    // each cap is the measure plus 3.
+    // each cap was the measure plus 3.
+    // W2b (2026-10-30): the per-tab footer is gone (the issue stack and the
+    // notes counter replace it). Measured: Pocket 12/15/21/19/22, 3D Rough
+    // 8/13/20/16/20, 3D Finish 10/10/22/18/19. W6 rule: each cap IS the
+    // measure, with no margin, so a new line on a tab fails here.
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [16, 20, 26, 24, 27]),
-        ("3D Rough", [12, 18, 25, 21, 25]),
-        ("3D Finish", [14, 15, 27, 23, 24]),
+        ("Pocket", [12, 15, 21, 19, 22]),
+        ("3D Rough", [8, 13, 20, 16, 20]),
+        ("3D Finish", [10, 10, 22, 18, 19]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -412,6 +422,30 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
         out.push((name.to_owned(), selection, None, SETUP_PANEL_WIDTH, cap));
     }
     out
+}
+
+/// A refused run as the app records it (W2b): the runtime row reads
+/// `Failed`, and `ForgetResult` hands the refusal to core, which the header
+/// run state reads.
+fn record_refusal(state: &mut AppState, id: ToolpathId, refusal: &str) {
+    use rs_cam_core::session::{Command, ForgetResultArgs};
+    state
+        .gui
+        .toolpath_rt
+        .get_mut(&id)
+        .expect("fixture runtime")
+        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(refusal.to_owned());
+    let index = state
+        .session()
+        .find_toolpath_config_by_id(id)
+        .map(|(index, _)| index)
+        .expect("fixture toolpath");
+    let _ = state
+        .apply(Command::ForgetResult(ForgetResultArgs {
+            index,
+            refusal: Some(refusal.to_owned()),
+        }))
+        .expect("the refusal records");
 }
 
 #[test]
@@ -532,8 +566,8 @@ fn the_measures_see_a_paragraph_ic1() {
     assert!(painted.iter().all(|p| p.text == SENTENCE));
 }
 
-/// G-E sub-step 1: a refusal from the last generate takes ONE word in the
-/// Generate row and ONE face line under it, and no text wraps. Before G-E
+/// G-E sub-step 1, W2b: a refusal from the last generate takes ONE word in
+/// the status line ("Failed") and ONE issue row under it, and no text wraps. Before G-E
 /// the D53 refusal printed in full beside Generate: 15 rows, and the tab
 /// strip moved down 257 points.
 #[test]
@@ -567,20 +601,17 @@ fn a_generate_refusal_takes_one_line_g_e() {
         Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
-    state
-        .gui
-        .toolpath_rt
-        .get_mut(&id)
-        .expect("fixture runtime")
-        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(REFUSAL.to_owned());
+    record_refusal(&mut state, id, REFUSAL);
     let refused = surface(
         &mut state,
         Selection::Toolpath(id),
         Some(ToolpathTab::Passes),
         PANEL_WIDTH,
     );
+    // W2b: the status word of core `RunState::Failed`, and the reason as
+    // ONE issue row (it truncates; the galley holds the full text).
     assert!(
-        refused.painted.iter().any(|p| p.text == "Refused"),
+        refused.painted.iter().any(|p| p.text == "Failed"),
         "the state word: {:?}",
         refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
     );
@@ -589,7 +620,7 @@ fn a_generate_refusal_takes_one_line_g_e() {
             .painted
             .iter()
             .any(|p| p.text == REFUSAL && p.rows == 1),
-        "the face line holds the full text on one row"
+        "the issue row holds the full text on one row"
     );
     let wrapped: Vec<&String> = refused
         .painted
@@ -603,10 +634,13 @@ fn a_generate_refusal_takes_one_line_g_e() {
         visible_lines(&clean.painted) + 1,
         "the refusal adds one line"
     );
+    // W2b: the refusal is ONE issue row: `ROW_ACTION` high, with the space
+    // above it and the item gap below it. A second row would move the
+    // strip twice as far.
     let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
     assert!(
-        (0.0..30.0).contains(&moved),
-        "the tab strip moves down one line at most, not {moved:.1} points"
+        (0.0..=ONE_ISSUE_ROW).contains(&moved),
+        "the tab strip moves down one issue row at most, not {moved:.1} points"
     );
     assert!(
         refused.excess_width <= 0.5,
@@ -650,12 +684,7 @@ fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
         .rest_boundary_refusal(finish)
         .expect("the source has no result");
     assert!(matches!(refusal, RestBoundaryRefusal::NotGenerated { .. }));
-    state
-        .gui
-        .toolpath_rt
-        .get_mut(&finish_id)
-        .expect("fixture runtime")
-        .run = rs_cam_viz::state::runtime::ToolpathRun::Failed(refusal.to_string());
+    record_refusal(&mut state, finish_id, &refusal.to_string());
 
     let frame = surface(
         &mut state,
@@ -666,7 +695,7 @@ fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
     let face = frame
         .painted
         .iter()
-        .find(|p| p.text == format!("{} Generate '3D Rough' first", tokens::GLYPH_DANGER))
+        .find(|p| p.text == "Generate '3D Rough' first")
         .expect("the short face");
     let action = frame
         .painted
@@ -686,8 +715,8 @@ fn a_rest_refusal_has_a_short_face_and_an_action_g_e() {
     assert!(frame.excess_width <= 0.5, "the row fits the panel");
 }
 
-/// G-E sub-step 4: a header validation error is one line: no wrap, one
-/// line more than the clean panel, the tab strip down by one line at most.
+/// G-E sub-step 4, W2b: a validation error with no core finding is ONE
+/// issue row: no wrap, the tab strip down by one issue row at most.
 /// The 3D Rough is bound to the 2D model, so it has no 3D mesh.
 #[test]
 fn a_validation_error_takes_one_line_g_e() {
@@ -733,9 +762,12 @@ fn a_validation_error_takes_one_line_g_e() {
         refused.painted.iter().map(|p| &p.text).collect::<Vec<_>>()
     );
     assert!(refused.painted.iter().all(|p| p.rows == 1), "no text wraps");
+    // W2b: the refusal is ONE issue row: `ROW_ACTION` high, with the space
+    // above it and the item gap below it. A second row would move the
+    // strip twice as far.
     let moved = tab_top(&refused.painted) - tab_top(&clean.painted);
     assert!(
-        (0.0..30.0).contains(&moved),
-        "the tab strip moves down one line at most, not {moved:.1} points"
+        (0.0..=ONE_ISSUE_ROW).contains(&moved),
+        "the tab strip moves down one issue row at most, not {moved:.1} points"
     );
 }

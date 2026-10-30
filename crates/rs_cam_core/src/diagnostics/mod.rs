@@ -63,6 +63,7 @@ mod tests;
 
 pub use diagnose::{
     ToolpathDiagnoseInputs, diagnose_project_diagnostics, diagnose_toolpath_inputs,
+    diagnose_toolpath_with_no_tool,
 };
 pub use evidence::DiagnosticEvidence;
 pub use fix::DiagnosticFix;

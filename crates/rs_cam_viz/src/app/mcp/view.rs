@@ -570,11 +570,10 @@ impl RsCamApp {
             use rs_cam_mcp::server::PropertiesTabParam;
             let parsed = match tab {
                 PropertiesTabParam::Geometry => ToolpathTab::Geometry,
-                PropertiesTabParam::Cut => ToolpathTab::Cut,
+                PropertiesTabParam::Passes => ToolpathTab::Passes,
                 PropertiesTabParam::Feeds => ToolpathTab::FeedsSpeeds,
-                PropertiesTabParam::Linking => ToolpathTab::Linking,
                 PropertiesTabParam::Heights => ToolpathTab::Heights,
-                PropertiesTabParam::Dressup => ToolpathTab::Dressup,
+                PropertiesTabParam::Linking => ToolpathTab::Linking,
             };
             // Scope the override to its target toolpath (the one selected
             // above, or the pre-existing selection) so an intervening

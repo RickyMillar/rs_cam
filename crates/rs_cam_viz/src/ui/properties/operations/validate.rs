@@ -69,7 +69,7 @@ impl ToolpathValidationContext {
                     let state = session.no_tool_state(index)?;
                     Some((
                         id,
-                        format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX),
+                        format!("{state}. {}", rs_cam_core::session::CHOOSE_A_TOOL_FIX),
                     ))
                 })
                 .collect(),
@@ -507,8 +507,15 @@ pub fn collect_diagnostics(
     suggest_warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
 ) -> Vec<rs_cam_core::diagnostics::Diagnostic> {
+    // R2, W2b: an op with no tool takes THE no-tool list of core (the
+    // session's list too), so its no-tool finding has a place.
     let Some(tool) = tool else {
-        return Vec::new();
+        return rs_cam_core::diagnostics::diagnose_toolpath_with_no_tool(
+            entry.id,
+            &entry.operation,
+            preconditions,
+            model_refs,
+        );
     };
     let heights = toolpath_heights.map(|answer| diagnostics_heights(&entry.heights, answer));
     let inputs = rs_cam_core::diagnostics::ToolpathDiagnoseInputs {

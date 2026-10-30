@@ -515,9 +515,10 @@ fn each_picked_face_shows_the_floor_range_f25() {
     );
 }
 
-/// F27 (IC1): a refusal of the selection has one owner, the Geometry tab.
-/// The header beside Generate reads one short line, and the footer row
-/// names the tab. The full refusal text paints once.
+/// F27 (IC1), W2b: a refusal of the selection paints its full text once
+/// (the Selection section of the Geometry tab). The status line reads
+/// "Not ready", and the issue stack shows the short face of the core
+/// finding, with the text on hover.
 #[test]
 fn a_refusal_paints_once_f27() {
     let session = refused_hole_drill();
@@ -541,17 +542,25 @@ fn a_refusal_paints_once_f27() {
         .collect();
     assert_eq!(full.len(), 1, "the refusal paints once: {full:#?}");
     assert!(
-        f.texts
-            .iter()
-            .any(|(t, _)| t == "Refused \u{00B7} see Geometry"),
-        "the header reads one short line: {:?}",
+        f.texts.iter().any(|(t, _)| t == "Not ready"),
+        "the status line reads one word: {:?}",
         f.texts
     );
-    assert!(
-        !f.elided.iter().any(|t| t.starts_with("Refused")),
-        "the Refused line never truncates: {:?}",
-        f.elided
-    );
+    let faces = [
+        rs_cam_core::diagnostics::presentation::face(
+            rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES,
+        ),
+        rs_cam_core::diagnostics::presentation::face(
+            rs_cam_core::diagnostics::ids::PRECOND_SELECTION_REFUSED,
+        ),
+    ];
+    let issue: Vec<&String> = f
+        .texts
+        .iter()
+        .map(|(t, _)| t)
+        .filter(|t| faces.iter().any(|face| face == *t))
+        .collect();
+    assert_eq!(issue.len(), 1, "one issue row: {:?}", f.texts);
 }
 
 /// F32, F28: on the default rule of a DXF Drill, the six open paths (a

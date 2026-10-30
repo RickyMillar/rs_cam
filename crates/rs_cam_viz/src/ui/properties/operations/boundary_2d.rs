@@ -46,7 +46,7 @@ fn floor_reason(refusal: FloorRefusal) -> &'static str {
 
 /// The Bottom height row of Pocket, Profile, Zigzag, Adaptive 2D, Bore and
 /// Drill (geometry selection P3.7, design 8.1; P6.6; R-B). D6: the Heights
-/// tab draws it, under the Top height row; the Cut tab does not. The
+/// tab draws it, under the Top height row; the Passes tab does not. The
 /// references are the ones the op admits (`Floor::row_references`). Two
 /// grid rows:
 ///

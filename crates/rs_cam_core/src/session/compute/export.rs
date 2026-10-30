@@ -10,6 +10,17 @@ use crate::compute::tool_config::ToolConfig;
 use crate::session::{ProjectEvidence, ProjectSession, SessionError};
 use crate::stock::simulation_cut::SimulationCutTrace;
 
+/// W2b: how much of the toolpath list
+/// [`ProjectSession::diagnose_toolpath_with_trace`] builds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiagnoseDepth {
+    /// Every source.
+    Full,
+    /// The sources that can refuse generation only
+    /// ([`ProjectSession::diagnose_toolpath_gate`]).
+    Gate,
+}
+
 impl ProjectSession {
     /// **F067: the one checked export door.** The GUI, MCP and the CLI
     /// all emit through here, so one project state gives one program and
@@ -370,6 +381,33 @@ impl ProjectSession {
         index: usize,
         sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
     ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        self.diagnose_toolpath_at_depth(index, sim_trace, DiagnoseDepth::Full)
+    }
+
+    /// W2b: the findings of the toolpath at `index` that can refuse
+    /// generation, for [`crate::session::toolpath_run_state`],
+    /// which the GUI header reads on every repaint.
+    ///
+    /// It is [`Self::diagnose_toolpath_with_trace`] without the three
+    /// costly inputs: the project load report (built, not memoised), the
+    /// feeds calculator and the Suggest records. No finding of those
+    /// sources refuses generation (each load gate, feeds hint and Suggest
+    /// record is `Critical` or lower, and none is the tool-kind refusal),
+    /// so the refusing subset of this list equals the subset of the full
+    /// list. The sentry `one_run_state_for_every_surface_w1` holds that.
+    pub(crate) fn diagnose_toolpath_gate(
+        &self,
+        index: usize,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
+        self.diagnose_toolpath_at_depth(index, None, DiagnoseDepth::Gate)
+    }
+
+    fn diagnose_toolpath_at_depth(
+        &self,
+        index: usize,
+        sim_trace: Option<&crate::stock::simulation_cut::SimulationCutTrace>,
+        depth: DiagnoseDepth,
+    ) -> Result<Vec<crate::diagnostics::Diagnostic>, SessionError> {
         let tc = self
             .toolpath_configs
             .get(index)
@@ -378,28 +416,12 @@ impl ProjectSession {
         // report. Its list holds the precondition findings (the no-tool
         // state first among them) and the model references.
         if tc.tool_id.is_none() {
-            let preconditions = self.precondition_context_for_toolpath(tc);
-            let model_refs = self.model_ref_context_for_toolpath(tc);
-            let mut out =
-                crate::diagnostics::adapters::from_model_refs::diagnostics_from_model_refs(
-                    tc.id,
-                    &tc.operation,
-                    &model_refs,
-                );
-            out.extend(
-                crate::diagnostics::adapters::from_preconditions::diagnostics_from_preconditions(
-                    tc.id,
-                    &tc.operation,
-                    &preconditions,
-                ),
-            );
-            // W1: as `diagnose_toolpath_inputs`, a field anchor names a
-            // field this op draws, else the op.
-            let op_type = tc.operation.op_type();
-            for d in &mut out {
-                d.anchor = crate::diagnostics::presentation::fit_anchor(d.anchor, op_type);
-            }
-            return Ok(out);
+            return Ok(crate::diagnostics::diagnose_toolpath_with_no_tool(
+                tc.id,
+                &tc.operation,
+                &self.precondition_context_for_toolpath(tc),
+                &self.model_ref_context_for_toolpath(tc),
+            ));
         }
         let tool = self.tool_of(tc)?;
         let stale_defaults = crate::compute::validate::validate_one_toolpath(
@@ -411,8 +433,11 @@ impl ProjectSession {
         // Build the load report from the *supplied* trace so callers
         // can plug in viz-side traces. `build_tool_load_report`
         // applies its own staleness check via `sim_trace_is_fresh_for`.
-        let report = self.build_tool_load_report(sim_trace);
-        let load_verdict = report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id);
+        let full = depth == DiagnoseDepth::Full;
+        let report = full.then(|| self.build_tool_load_report(sim_trace));
+        let load_verdict = report
+            .as_ref()
+            .and_then(|report| report.per_toolpath.iter().find(|v| v.toolpath_id == tc.id));
 
         // N4 (2026-09-10): resolve the toolpath's OWN heights, pins and
         // all. P3.1: through THE session rule, so the snapshot holds the
@@ -425,8 +450,12 @@ impl ProjectSession {
                 &tc.heights,
             )
         });
-        let feeds_result = self.feeds_result_for_toolpath(tc, tool);
-        let suggest_warnings = self.suggest_warnings_for_toolpath(tc, tool);
+        let feeds_result = full
+            .then(|| self.feeds_result_for_toolpath(tc, tool))
+            .flatten();
+        let suggest_warnings = full
+            .then(|| self.suggest_warnings_for_toolpath(tc, tool))
+            .flatten();
         let preconditions = self.precondition_context_for_toolpath(tc);
         let model_refs = self.model_ref_context_for_toolpath(tc);
         // Generation-time findings ride on the stats of this toolpath's own

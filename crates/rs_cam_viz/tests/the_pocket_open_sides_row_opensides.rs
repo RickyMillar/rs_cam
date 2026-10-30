@@ -1,5 +1,5 @@
 //! "Cut past open sides" (operator ruling 2026-10-23): the Pocket row of
-//! the Cut tab.
+//! the Passes tab.
 //!
 //! # The claims
 //!
@@ -130,7 +130,7 @@ fn a_drawing_pocket_shows_no_row_opensides() {
     let painted = painted_on_cut_tab(square(), false);
     assert!(
         !h::find(&painted, "Open paths:").is_empty(),
-        "non-vacuity: the Cut tab is drawn"
+        "non-vacuity: the Passes tab is drawn"
     );
     assert!(h::find(&painted, ROW).is_empty(), "no face, no row");
     let painted = painted_on_cut_tab(square(), true);

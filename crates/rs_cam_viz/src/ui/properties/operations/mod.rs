@@ -366,7 +366,7 @@ pub(in crate::ui::properties) struct BottomHeight<'a> {
 /// Depth"): on an op that holds a floor (`FloorOwner::OpFloor`) the row
 /// under Top height is the Bottom height row: the reference, the value and
 /// the resolved floor Z (`boundary_2d::floor_row`). It is the one editor
-/// of the floor (IC1); the Cut tab has no floor row, and no read-only
+/// of the floor (IC1); the Passes tab has no floor row, and no read-only
 /// Floor line remains. The other ops keep the Bottom height row of the
 /// Heights config. When the heights do not resolve, only the Bottom height
 /// row is drawn, so the floor stays editable.

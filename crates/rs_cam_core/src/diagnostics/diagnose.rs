@@ -28,6 +28,34 @@ use crate::tool_load::ToolpathLoadVerdict;
 pub use from_model_refs::ModelRefContext;
 pub use from_preconditions::{PreconditionContext, TargetModelGeometry};
 
+/// R2, W2b: the diagnostic list of an op with no tool. It has no tool
+/// checks, no feeds and no load report: the model references and the
+/// precondition findings (the no-tool state among them) only. Each field
+/// anchor names a field the op draws, else the op ([`super::presentation::fit_anchor`]).
+///
+/// THE one list for an op with no tool: the session
+/// ([`ProjectSession::diagnose_toolpath`](crate::session::ProjectSession::diagnose_toolpath))
+/// and the GUI inspector both call it.
+#[must_use]
+pub fn diagnose_toolpath_with_no_tool(
+    toolpath_id: ToolpathId,
+    operation: &OperationConfig,
+    preconditions: &PreconditionContext,
+    model_refs: &ModelRefContext,
+) -> Vec<Diagnostic> {
+    let mut out = from_model_refs::diagnostics_from_model_refs(toolpath_id, operation, model_refs);
+    out.extend(from_preconditions::diagnostics_from_preconditions(
+        toolpath_id,
+        operation,
+        preconditions,
+    ));
+    let op_type = operation.op_type();
+    for d in &mut out {
+        d.anchor = super::presentation::fit_anchor(d.anchor, op_type);
+    }
+    out
+}
+
 /// Inputs the pure orchestrator needs to compute a toolpath's
 /// diagnostic list. All fields except the operation/tool are
 /// optional — missing inputs cause the relevant gates to surface as

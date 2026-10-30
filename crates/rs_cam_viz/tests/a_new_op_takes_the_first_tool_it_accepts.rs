@@ -7,9 +7,9 @@
 //!   (`AppEvent::AddToolpath`) creates one Bore bound to the end mill.
 //!   The V-bit is skipped without a toast.
 //! - R2: a project with only a V-bit: the add makes the Bore with NO
-//!   tool, and one Warning toast names the state ("No tool fits: needs a
-//!   flat end mill or a bull nose smaller than Ø10.00 ...") and the fix. Generation refuses with
-//!   `SessionError::NoTool`.
+//!   tool; core holds the state ("No tool fits: needs a flat end mill or a
+//!   bull nose smaller than Ø10.00 ..."), and no toast repeats it (W2b).
+//!   Generation refuses with `SessionError::NoTool`.
 //!
 //! The operator saw the defect on 2026-10-22: Add toolpath → Bore did
 //! nothing, because the first tool was a V-bit.
@@ -154,8 +154,8 @@ fn a_new_op_takes_the_first_tool_it_accepts() {
 }
 
 /// R2 (Fusion, operator ruling 2026-10-23): an add that no project tool
-/// fits still MAKES the op, with no tool. One Warning toast names the state
-/// and the fix, and generation refuses with the same fix.
+/// fits still MAKES the op, with no tool, and generation refuses with the
+/// fix. W2b: no toast repeats that STATE (the inspector Tool row shows it).
 ///
 /// Red proof: make `draft_toolpath` refuse when `FirstFitting` finds no
 /// tool (the old rule). The op count is 0 and the test fails.
@@ -182,16 +182,7 @@ fn an_add_that_no_tool_fits_makes_the_op_with_no_tool_r2() {
         Some(state)
     );
     let shown = toasts(&controller);
-    assert_eq!(shown.len(), 1, "exactly one toast: {shown:?}");
-    assert_eq!(shown[0].1, Severity::Warning, "{shown:?}");
-    assert_eq!(
-        shown[0].0,
-        format!(
-            "Added with no tool: {state}. {}.",
-            rs_cam_core::session::NO_TOOL_FIX
-        ),
-        "the toast names the state and the fix"
-    );
+    assert!(shown.is_empty(), "a state takes no toast: {shown:?}");
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let refusal = controller
         .state
@@ -208,7 +199,7 @@ fn an_add_that_no_tool_fits_makes_the_op_with_no_tool_r2() {
         format!(
             "Toolpath {}: {state}. {}",
             configs[0].id,
-            rs_cam_core::session::NO_TOOL_FIX
+            rs_cam_core::session::CHOOSE_A_TOOL_FIX
         )
     );
 }

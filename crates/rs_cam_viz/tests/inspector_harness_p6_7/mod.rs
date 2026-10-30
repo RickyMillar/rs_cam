@@ -111,7 +111,7 @@ pub fn state(
 }
 
 /// Show the toolpath of `state` on `tab` (GT-1: the op parameters are on
-/// the Cut tab; the Geometry tab holds the selection).
+/// the Passes tab; the Geometry tab holds the selection).
 pub fn show_tab(state: &mut AppState, tab: properties::ToolpathTab) {
     let id = state.session().toolpath_configs()[0].id;
     state.gui.pending_toolpath_tab = Some((id, tab));

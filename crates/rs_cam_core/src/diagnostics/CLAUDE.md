@@ -20,7 +20,7 @@ One typed finding model for every upstream source. `diagnostics::diagnose` turns
   ad-hoc string. Write it as a row of `diag_ids!`: it emits the const and its `ALL` entry (F162).
 - An adapter converts. It does not compute a verdict. The verdict belongs to
   the source layer. Example: the tool-kind finding reads
-  `OperationType::tool_refusal`, the generator's own refusal (W2.2). S11: `precondition.not_set` (Blocking) states the stock thickness, floor, depth or feeds text that generation gives. R2: `precondition.no_tool` (Blocking) states `no_tool_state` and `NO_TOOL_FIX`; an op with no tool gets only the precondition and model-reference findings. F033: the plane-order findings convert `compute::config::height_order`; `height_order_severity` is the one severity (the GUI badge reads it).
+  `OperationType::tool_refusal`, the generator's own refusal (W2.2). S11: `precondition.not_set` (Blocking) states the stock thickness, floor, depth or feeds text that generation gives. R2: `precondition.no_tool` (Blocking) states `no_tool_state` and `CHOOSE_A_TOOL_FIX`; an op with no tool gets only the precondition and model-reference findings (W2b: THE list `diagnose_toolpath_with_no_tool`, the session and the GUI inspector call it). F033: the plane-order findings convert `compute::config::height_order`; `height_order_severity` is the one severity (the GUI badge reads it).
 - W1: every `Diagnostic` has a `face` (at most 60 chars, plain words, no derivation; `message`
   keeps the detail) and an `anchor` (`Field { key }`, `Tool`, `Operation`, `Note` = Info/Hint at
   every site, `Project`, `View`). A new id needs a `TABLE` row. A site fills both from

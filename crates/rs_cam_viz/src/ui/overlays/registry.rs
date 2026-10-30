@@ -1919,19 +1919,18 @@ pub fn clear_surface(state: &mut AppState, surface: OverlaySurface) {
 
 /// Put each exclusive surface back to at most one row on.
 ///
-/// Every dock and MCP write goes through [`set_overlay`], which keeps this
-/// rule. One writer does not: the inspector's `Show reach map` checkbox
-/// writes `show_reach_map` straight into the state (inventory §2.3, item 6;
-/// MOCKUPS §12, Q4), so it can leave Reach and the rest heatmap both on,
-/// and the renderer then draws both. The dock calls this function before it
-/// draws, and the frame loop draws the dock before it builds the viewport
-/// callback, so no frame draws two colour sources on one surface.
+/// Every dock, MCP and inspector write goes through [`set_overlay`], which
+/// keeps this rule. Since R3 (2026-10-30) the inspector's Reach row asks,
+/// and `draw_toolpath_selection` calls [`set_overlay`]; the old `Show reach
+/// map` checkbox, the one direct writer, is gone. This function stays as a
+/// guard for a state that a load, a fixture or a future direct write puts
+/// on screen with two rows on: the dock calls it before it draws, and the
+/// frame loop draws the dock before it builds the viewport callback, so no
+/// frame draws two colour sources on one surface.
 ///
-/// When two rows are on, the LAST one in [`ROWS`] stays on. On the model
-/// surface that is Reach, which is the row the direct writer writes: a
-/// switch through [`set_overlay`] would already have cleared the other.
-/// The radio surfaces are enums and can never hold two, so the rule has
-/// work on the model surface only.
+/// When two rows are on, the LAST one in [`ROWS`] stays on (on the model
+/// surface, Reach). The radio surfaces are enums and can never hold two,
+/// so the rule has work on the model surface only.
 pub fn settle_exclusive_surfaces(state: &mut AppState) {
     for surface in OverlaySurface::EXCLUSIVE {
         let on: Vec<&'static OverlayRow> = ROWS

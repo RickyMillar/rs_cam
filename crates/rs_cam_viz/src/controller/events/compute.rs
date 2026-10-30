@@ -232,7 +232,7 @@ impl<B: ComputeBackend> AppController<B> {
         // R2: an op with no tool refuses with its state and the fix, the
         // text of core `SessionError::NoTool`.
         if let Some(state) = self.state.session().no_tool_state(tp_idx) {
-            let msg = format!("{state}. {}", rs_cam_core::session::NO_TOOL_FIX);
+            let msg = format!("{state}. {}", rs_cam_core::session::CHOOSE_A_TOOL_FIX);
             self.push_notification(
                 format!("Cannot generate: {msg}"),
                 super::super::Severity::Warning,

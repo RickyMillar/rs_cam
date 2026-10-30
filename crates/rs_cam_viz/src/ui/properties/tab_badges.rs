@@ -1,6 +1,7 @@
-//! The toolpath tab strip and the diagnostic rows under it: the per-tab
-//! badge counts, the row tiers the ribbon merges, and the Geometry tab's
-//! wiring block.
+//! The toolpath tab strip and its dots, the header Tool row, and the first
+//! rows of the Geometry and Passes tabs. W2b: the dots of the findings come
+//! from `placement::place` (the anchor names the field, the field names its
+//! tab); the footer rows are gone.
 
 use super::ToolpathTab;
 use crate::state::toolpath::{StockSource, ToolpathEntry};
@@ -56,191 +57,20 @@ fn worse(dot: Option<egui::Color32>, color: egui::Color32) -> egui::Color32 {
     }
 }
 
-/// FR-2 F24: THE map from a diagnostic id to the tab that holds its fix.
-/// `None`: no tab of the toolpath holds the fix (a setup pin, the tool
-/// editor, the material, an obstacle), so no tab gets a dot; the footer
-/// row is the one owner of the finding. The table holds every id of
-/// core `diagnostics::ids::ALL`; `owner_tab_map_covers_every_id_f24`
-/// fails on an id with no row.
-///
-/// R2: the Dressup tab is deleted (its rows are on Linking); the Cut tab is
-/// now Passes. The tool is the header Tool row, on no tab, so a tool
-/// finding gives no dot: the row outline carries it.
-pub(crate) const OWNER_TAB: &[(&str, Option<ToolpathTab>)] = {
-    use rs_cam_core::diagnostics::ids as i;
-    const G: Option<ToolpathTab> = Some(ToolpathTab::Geometry);
-    const C: Option<ToolpathTab> = Some(ToolpathTab::Passes);
-    const F: Option<ToolpathTab> = Some(ToolpathTab::FeedsSpeeds);
-    const L: Option<ToolpathTab> = Some(ToolpathTab::Linking);
-    const H: Option<ToolpathTab> = Some(ToolpathTab::Heights);
-    const NO: Option<ToolpathTab> = None;
-    &[
-        // The load gates: the feed, the speed and the tool load.
-        (i::LOAD_CHIPLOAD_HIGH, F),
-        (i::LOAD_CHIPLOAD_LOW, F),
-        (i::LOAD_CHIPLOAD_WITHIN, F),
-        (i::LOAD_CHIPLOAD_UNMODELED, F),
-        (i::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND, F),
-        (i::LOAD_POWER_EXCEEDS, F),
-        (i::LOAD_POWER_WITHIN, F),
-        (i::LOAD_POWER_UNMODELED, F),
-        (i::LOAD_DEFLECTION_EXCEEDS, F),
-        (i::LOAD_DEFLECTION_WITHIN, F),
-        (i::LOAD_DEFLECTION_UNMODELED, F),
-        // The depth of cut is an op parameter.
-        (i::LOAD_DEPTH_WITHIN, C),
-        (i::LOAD_DEPTH_EXCEEDS, C),
-        (i::LOAD_DEPTH_REPORTED, C),
-        (i::LOAD_DEPTH_UNMODELED, C),
-        (i::LOAD_MATERIAL_NOT_JUDGED, NO),
-        (i::DRILL_CHIP_WELDING, F),
-        (i::DRILL_PECK_ADEQUACY, C),
-        (i::DRILL_PLUNGE_FEED, F),
-        // Project findings.
-        (i::PROJECT_HOLDER_COLLISION, NO),
-        (i::PROJECT_HOLDER_CHECK_FAILED, NO),
-        (i::PROJECT_RAPID_COLLISION, H),
-        (i::PROJECT_OBSTACLE_COLLISION, NO),
-        (i::PROJECT_PLUNGE_STRESS, L),
-        (i::PROJECT_AIR_CUT_HIGH, L),
-        (i::PROJECT_GENERATED_EMPTY, G),
-        (i::PROJECT_ALIGNMENT_PINS_UNKEYED, NO),
-        (i::PROJECT_PIN_HOLES_DRILLED_TWICE, NO),
-        (i::PROJECT_DOWEL_HOLES_DISAGREE, NO),
-        (i::PROJECT_PIN_WALL_THIN, NO),
-        (i::PROJECT_PIN_TOOL_MISMATCH, NO),
-        (i::PROJECT_SHOE_GAP_TOO_LOW, H),
-        (i::PROJECT_MEASURABILITY_ABSTAINED, NO),
-        (i::PROJECT_CROSSES_STANDING_MATERIAL, L),
-        (i::PROJECT_ENTRY_LOAD, L),
-        (i::PROJECT_LINK_CUTS_STOCK, L),
-        (i::PROJECT_PLUNGE_CLASS_LOAD, L),
-        // G-ROUGHCOV: the Linking tab, as the other stock-reading rules above.
-        (i::PROJECT_ROUGH_LEAVES_ISLANDS, L),
-        (i::PROJECT_REST_SLOWER_THAN_FRESH, C),
-        // Core keeps this id `pub(crate)`, so the row names its text.
-        ("project.kinematic_utilization", NO),
-        // The feeds calculator.
-        (i::FEEDS_FEED_CLAMPED, F),
-        (i::FEEDS_POWER_LIMITED, F),
-        (i::FEEDS_POWER_LADDER_REDUCED_CUT, F),
-        (i::FEEDS_SHANK_TOO_LARGE, F),
-        (i::FEEDS_DOC_EXCEEDS_FLUTE, F),
-        (i::FEEDS_SLOTTING_DETECTED, F),
-        (i::FEEDS_SCALLOP_INVALID, F),
-        (i::FEEDS_CHIPLOAD_BELOW_FLOOR, F),
-        (i::FEEDS_LONG_TOOL_DERATE, F),
-        (i::FEEDS_AGGRESSIVENESS_ENGAGEMENT, F),
-        (i::FEEDS_RPM_LOWERED_FOR_CEILING, F),
-        (i::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE, F),
-        (i::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD, F),
-        (i::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION, F),
-        (i::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE, F),
-        (i::FEEDS_FEED_VS_LUT_HIGH, F),
-        (i::FEEDS_FEED_VS_LUT_LOW, F),
-        (i::FEEDS_STEPOVER_VS_LUT, F),
-        (i::FEEDS_DPP_VS_LUT, F),
-        // Geometry of the op and its heights.
-        (i::GEOM_STEPOVER_EXCEEDS_DIAMETER, C),
-        (i::GEOM_DPP_EXCEEDS_CUTTING_LENGTH, C),
-        (i::GEOM_BOTTOM_ABOVE_TOP_Z, H),
-        (i::GEOM_FEED_Z_BELOW_TOP_Z, H),
-        (i::GEOM_RETRACT_Z_BELOW_FEED_Z, H),
-        (i::GEOM_CLEARANCE_Z_BELOW_RETRACT_Z, H),
-        (i::GEOM_RETRACT_Z_BELOW_TOP_Z, H),
-        (i::GEOM_PLUNGE_EXCEEDS_FEED, F),
-        // The floor row of an op is on the Cut tab.
-        (i::GEOM_DEPTH_BEYOND_STOCK, C),
-        (i::GEOM_STANDING_MATERIAL, C),
-        (i::GEOM_UNMACHINED_BAND, C),
-        (i::GEOM_CLIPPED_BAND, G),
-        (i::GEOM_TIP_FLOAT, C),
-        (i::GEOM_RAMP_REACH_CLAMP, L),
-        (i::GEOM_ZERO_REMOVAL, C),
-        (i::GEOM_BURIED_CURVE, G),
-        (i::GEOM_SELECTION_NOTE, G),
-        (i::GEOM_TAB_PLACEMENT, C),
-        (i::GEOM_OFFSET_LIBRARY_FAILURE, NO),
-        (i::GEOM_BOUNDARY_CLIP_DROPPED, G),
-        (i::GEOM_WATERLINE_LEVELS_BELOW_STOCK, C),
-        (i::GEOM_WATERLINE_LADDER_EMPTY, C),
-        // W4: the fix is a tabbed Profile after the Waterline; no tab of the
-        // Waterline holds it.
-        (i::GEOM_WATERLINE_PART_UNHELD, NO),
-        (i::GEOM_REGION_CAP_TRUNCATED, C),
-        (i::GEOM_REST_LEVELS_FALLBACK, C),
-        (i::CONFIG_DERIVED_STEPOVER, C),
-        (i::CONFIG_CLAIMS_REFERENCE, C),
-        (i::CONFIG_INERT_CLAIMS_DIAL, C),
-        // R2: the tool is the header Tool row, on no tab.
-        (i::COMPAT_TOOL_KIND_REFUSED, NO),
-        // R2: an op with no tool; the fix is the header Tool row.
-        (i::PRECOND_NO_TOOL, NO),
-        (i::COMPAT_BALL_NOSE_FLAT_CLEARING, C),
-        (i::COMPAT_PROJECT_CURVE_POINT_PROJECTION, G),
-        (i::TOOL_NAME_SIZE_MISMATCH, NO),
-        (i::QUALITY_STEPOVER_OVER_80_PCT, C),
-        (i::QUALITY_FINISH_STEPOVER_OVER_50_PCT, C),
-        (i::QUALITY_BALL_SCALLOP_HEIGHT, C),
-        (i::EFFICIENCY_VERY_FINE_STEPOVER, C),
-        (i::STALE_DROP_CUTTER_MIN_Z, C),
-        (i::STALE_TAPERED_BALL_PLUNGE, C),
-        (i::STALE_WOOD_ADAPTIVE_STEPOVER, C),
-        (i::STALE_PROJECT_CURVE_NEGATIVE_DEPTH, C),
-        // A selection refusal and a model gouge: the Geometry tab.
-        (i::PRECOND_DRILL_NO_HOLES, G),
-        (i::PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES, NO),
-        (i::PRECOND_SELECTION_REFUSED, G),
-        (i::PRECOND_BURIED_FACE, G),
-        // S11: an unset floor or depth is a Cut row; the text names the
-        // field (the feeds rows are on the Feeds tab).
-        (i::PRECOND_NOT_SET, C),
-        (i::SAFETY_CUTS_INTO_MODEL, G),
-        (i::PRECOND_PROJECT_CURVE_NO_CURVE, G),
-        // R2: the fix is the Input row, on the Geometry tab.
-        (i::PRECOND_PROJECT_CURVE_NO_SURFACE, G),
-        // R2: the Input row is on the Geometry tab.
-        (i::REF_MODEL_MISSING, G),
-    ]
-};
-
-/// The tab that holds the fix of `id` ([`OWNER_TAB`]), or `None`.
-pub(crate) fn owner_tab(id: &str) -> Option<ToolpathTab> {
-    OWNER_TAB
-        .iter()
-        .find(|(row, _)| *row == id)
-        .and_then(|(_, tab)| *tab)
-}
-
+/// The dot of each tab. W2b: a field finding dots the tab that draws its
+/// field (`placement::field_tab`, through `Placement::dots`); a tool or an
+/// operation finding dots no tab. The plane order, a pinned height and the
+/// feeds warnings keep their own rules below.
 pub(super) fn compute_tab_badges(
     entry: &ToolpathEntry,
-    diagnostics: &[rs_cam_core::diagnostics::Diagnostic],
+    placement: &super::placement::Placement<'_>,
     toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
-    shoe_gap_too_low: bool,
 ) -> TabBadges {
-    use rs_cam_core::diagnostics::{Category, DiagnosticState, Severity};
-
     let mut badges = TabBadges {
         dots: [None; ToolpathTab::ALL.len()],
     };
-
-    // F24: each actionable Current finding raises the dot of the tab that
-    // holds its fix ([`owner_tab`]). Pre-sim hints and State (workflow)
-    // notices stay quiet, so a healthy op shows no dot.
-    for d in diagnostics {
-        if d.state != DiagnosticState::Current
-            || matches!(d.category, Category::State | Category::Efficiency)
-        {
-            continue;
-        }
-        let color = match d.severity {
-            Severity::Blocking | Severity::Critical => crate::ui::tokens::DANGER,
-            Severity::Caution => crate::ui::tokens::CAUTION,
-            Severity::Info | Severity::Hint => continue,
-        };
-        if let Some(tab) = owner_tab(d.id.as_str()) {
-            badges.raise(tab, color);
-        }
+    for (tab, role) in &placement.dots {
+        badges.raise(*tab, role.text());
     }
 
     // Heights: the plane order (F033) has its own rule.
@@ -248,11 +78,6 @@ pub(super) fn compute_tab_badges(
         .and_then(|answer| height_order_badge(answer, &entry.heights, &entry.operation))
     {
         badges.raise(ToolpathTab::Heights, color);
-    }
-    // H2: a stated shoe gap below the solver gap is a Caution about the
-    // shoe row, which this tab holds.
-    if shoe_gap_too_low {
-        badges.raise(ToolpathTab::Heights, crate::ui::tokens::CAUTION);
     }
     // R5 (2026-09-18): a pinned height is a fact the tab states before it
     // opens. A diagram drag pinned Top at −1.37 and nothing on the tab strip
@@ -329,177 +154,6 @@ pub(super) fn wrapped_small_label(ui: &mut egui::Ui, text: String, color: egui::
     ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
 }
 
-/// Tier of a diagnostic row in the params panel. Drives the colour
-/// scheme + collapse behaviour without polluting the core schema.
-#[derive(Debug, Clone, Copy)]
-pub(super) enum RowTier {
-    Actionable,
-    Stateful,
-    Hint,
-}
-
-/// Render one diagnostic row in the params panel ribbon. Surfaces
-/// evidence + confidence inline. When the diagnostic carries an
-/// `ApplyStaleDefault` fix, the fix button is rendered alongside
-/// (uses the same direct-apply path the validator banner uses).
-/// `SetToolpathParam` fixes are advisory for now — the schema
-/// supports them but no adapter emits them yet.
-/// Merge load-gate stateful rows that carry the same status text into one
-/// "Gates: …" row (density pass V3). Pre-merge, every gate printed its own
-/// copy of "<gate>: simulation stale — re-run to verify" — three identical
-/// sentences for chipload/power/deflection on every stale toolpath. Gate
-/// rows with a unique status text (and all non-gate rows) pass through
-/// unchanged in the second slot.
-pub(super) fn merge_stateful_gate_rows<'a>(
-    stateful: &[&'a rs_cam_core::diagnostics::Diagnostic],
-) -> (
-    Vec<rs_cam_core::diagnostics::Diagnostic>,
-    Vec<&'a rs_cam_core::diagnostics::Diagnostic>,
-) {
-    let mut merged: Vec<rs_cam_core::diagnostics::Diagnostic> = Vec::new();
-    let mut rest: Vec<&'a rs_cam_core::diagnostics::Diagnostic> = Vec::new();
-    let mut gate_groups: Vec<(&str, Vec<&'a rs_cam_core::diagnostics::Diagnostic>)> = Vec::new();
-    for &d in stateful {
-        let suffix = (d.source == rs_cam_core::diagnostics::Source::ToolLoad)
-            .then(|| d.message.split_once(": ").map(|(_, s)| s))
-            .flatten();
-        match suffix {
-            Some(suffix) => match gate_groups.iter_mut().find(|(s, _)| *s == suffix) {
-                Some((_, group)) => group.push(d),
-                None => gate_groups.push((suffix, vec![d])),
-            },
-            None => rest.push(d),
-        }
-    }
-    for (suffix, group) in gate_groups {
-        if let &[single] = group.as_slice() {
-            rest.push(single);
-        } else if let Some(first) = group.first() {
-            let mut row = (*first).clone();
-            row.message = format!("Gates: {suffix}");
-            merged.push(row);
-        }
-    }
-    (merged, rest)
-}
-
-pub(super) fn render_diagnostic_row(
-    ui: &mut egui::Ui,
-    d: &rs_cam_core::diagnostics::Diagnostic,
-    tier: RowTier,
-    entry: &mut ToolpathEntry,
-    stale_default_defects: &[rs_cam_core::compute::validate::StaleDefault],
-) {
-    use rs_cam_core::diagnostics::{Category, DiagnosticFix, Severity};
-
-    let category_label = match d.category {
-        Category::Safety => "Safety",
-        Category::Geometry => "Geometry",
-        Category::ToolLoad => "Tool load",
-        Category::Quality => "Quality",
-        Category::Efficiency => "Efficiency",
-        Category::State => "State",
-    };
-    let color = match tier {
-        RowTier::Actionable => match d.severity {
-            Severity::Blocking | Severity::Critical => crate::ui::tokens::DANGER,
-            Severity::Caution => crate::ui::tokens::CAUTION,
-            _ => crate::ui::tokens::INFO,
-        },
-        RowTier::Stateful => crate::ui::tokens::TEXT_MUTED,
-        RowTier::Hint => crate::ui::tokens::TEXT_MUTED,
-    };
-
-    // Evidence (sample ranges, observed-vs-threshold, locality tags) is
-    // expert payload: it rides on hover instead of an inline line below the
-    // row (density pass 2026-06-11; same pattern as
-    // ENGAGEMENT_PROVENANCE_HOVER in sim_diagnostics).
-    let evidence_hover = if matches!(tier, RowTier::Hint) {
-        None
-    } else {
-        d.evidence.as_ref().and_then(evidence_line)
-    };
-
-    let prefix = if matches!(d.category, Category::State) && matches!(tier, RowTier::Stateful) {
-        String::new()
-    } else {
-        format!("{category_label}: ")
-    };
-    // IC1 (2026-10-13): one line per finding. A long message truncates on
-    // the face, and the hover gives the whole message, the confidence and
-    // the evidence. G-REACHWRAP made this line wrap so a caveat was never
-    // cut; the hover now carries it, and the row keeps its role colour.
-    let mut hover = format!("{prefix}{}", d.message);
-    if matches!(tier, RowTier::Actionable) {
-        let chip_text = confidence_chip_label(d.confidence);
-        if !chip_text.is_empty() {
-            hover.push_str(&format!("\nConfidence: {chip_text}"));
-        }
-    }
-    if let Some(line) = evidence_hover {
-        hover.push_str(&format!("\n{line}"));
-    }
-
-    // Stale-default fix button — looks up the matching defect by rule_id
-    // (the adapter only carries the id; the canonical payload lives in
-    // `stale_default_defects`).
-    let fix = match &d.fix {
-        Some(DiagnosticFix::ApplyStaleDefault {
-            rule_id, new_value, ..
-        }) => stale_default_defects
-            .iter()
-            .find(|defect| defect.rule_id.id() == rule_id.as_str())
-            .map(|defect| (defect, rule_id.as_str(), *new_value)),
-        _ => None,
-    };
-    // L-2 (geometry selection P4.3): a selection refusal has one owner,
-    // the Selection section on the Geometry tab, which holds the text and
-    // the fix. The footer row names that section in one line; the hover
-    // keeps the whole refusal.
-    let face = if is_selection_refusal(d) {
-        format!("{prefix}the selection refuses. See the Geometry tab.")
-    } else {
-        format!("{prefix}{}", d.message)
-    };
-    ui.horizontal(|ui| {
-        // The Fix button sits at the right edge; the message takes the rest.
-        let fix_width = if fix.is_some() {
-            crate::ui::tokens::FIX_BUTTON_WIDTH
-        } else {
-            0.0
-        };
-        let line_width = (ui.available_width() - fix_width).max(0.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(line_width, crate::ui::tokens::ROW_DENSE),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.set_width(line_width);
-                ui.add(
-                    egui::Label::new(egui::RichText::new(face).small().color(color))
-                        .truncate()
-                        .show_tooltip_when_elided(false),
-                )
-                .on_hover_text(hover);
-            },
-        );
-        if let Some((defect, rule_id, new_value)) = fix
-            && ui
-                .small_button(format!("\u{2713} Fix ({new_value:.3})"))
-                .on_hover_text(format!(
-                    "Apply validator rule `{rule_id}` to this toolpath."
-                ))
-                .clicked()
-        {
-            rs_cam_core::compute::validate::apply_stale_default_to_op(
-                &mut entry.operation,
-                &mut entry.feeds_provenance,
-                defect,
-            );
-            entry.stale_since = Some(std::time::Instant::now());
-        }
-    });
-}
-
 /// R2 / 6.F4: the refusal text of the tool `id` for the op of `inputs`, or
 /// `None` when the op accepts it.
 pub(crate) fn tool_refusal(
@@ -511,103 +165,6 @@ pub(crate) fn tool_refusal(
         .iter()
         .find(|(tool, _)| *tool == id)
         .map(|(_, text)| text.as_str())
-}
-
-/// True when `d` is the refusal of the op selection: the footer row of
-/// `precondition.selection_refused`, and its drill form
-/// `precondition.drill_no_holes` (both carry the `selection_status`
-/// refusal).
-fn is_selection_refusal(d: &rs_cam_core::diagnostics::Diagnostic) -> bool {
-    use rs_cam_core::diagnostics::ids;
-    let id = d.id.as_str();
-    id == ids::PRECOND_SELECTION_REFUSED || id == ids::PRECOND_DRILL_NO_HOLES
-}
-
-/// One-line evidence summary for the panel. Returns `None` when the
-/// evidence variant has nothing meaningful to render in the ribbon.
-fn evidence_line(ev: &rs_cam_core::diagnostics::DiagnosticEvidence) -> Option<String> {
-    use rs_cam_core::diagnostics::DiagnosticEvidence as E;
-    Some(match ev {
-        E::SampleRange {
-            sample_start,
-            sample_end,
-            observed,
-            threshold,
-            unit,
-            locality,
-            ..
-        } => {
-            let thr = threshold
-                .map(|t| format!(", threshold {t:.3}"))
-                .unwrap_or_default();
-            let loc = if locality.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", locality.as_str())
-            };
-            format!(
-                "at samples {sample_start}-{sample_end}: observed {observed:.3} {unit}{thr}{loc}"
-            )
-        }
-        E::LutCitation {
-            row_id,
-            min,
-            max,
-            observed,
-            unit,
-            extrapolated,
-        } => {
-            let min_s = min
-                .map(|v| format!("min {v:.3}"))
-                .unwrap_or_else(|| "min —".to_owned());
-            let max_s = max.map(|m| format!(", max {m:.3}")).unwrap_or_default();
-            let ext = if *extrapolated { " (extrapolated)" } else { "" };
-            format!("LUT `{row_id}`: observed {observed:.3} {unit} ({min_s}{max_s}){ext}")
-        }
-        E::GeometryCompare {
-            lhs_label,
-            lhs_value,
-            rhs_label,
-            rhs_value,
-            unit,
-        } => format!("{lhs_label} ({lhs_value:.3} {unit}) vs {rhs_label} ({rhs_value:.3} {unit})"),
-        E::Move {
-            move_index,
-            position,
-            ..
-        } => {
-            if let Some([x, y, z]) = position {
-                format!("at move {move_index} ({x:.2}, {y:.2}, {z:.2})")
-            } else {
-                format!("at move {move_index}")
-            }
-        }
-        E::Counts {
-            count,
-            offender_toolpath_ids,
-        } if *count > 0 => {
-            if offender_toolpath_ids.is_empty() {
-                format!("{count} occurrences")
-            } else {
-                let ids: Vec<String> = offender_toolpath_ids
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect();
-                format!("{count} occurrences across toolpaths {}", ids.join(", "))
-            }
-        }
-        E::Counts { .. } => return None,
-    })
-}
-
-fn confidence_chip_label(c: rs_cam_core::diagnostics::Confidence) -> &'static str {
-    use rs_cam_core::diagnostics::Confidence as C;
-    match c {
-        C::Verified => "verified",
-        C::Approximate => "approximate",
-        C::Static => "",
-        C::Heuristic => "heuristic",
-    }
 }
 
 pub(super) fn draw_toolpath_tabs(
@@ -729,10 +286,13 @@ const TOOL_ROW_HOVER: &str = "The cutter this toolpath runs. A grey tool is one 
 /// the op takes). P3: core `add_tool` binds a new fitting tool to this op
 /// while it has no tool. With no tool bound the row reads
 /// [`CHOOSE_A_TOOL`] in a DANGER outline; the no-tool state is its hover.
+/// W2b: `findings` are the findings `placement::place` anchors to the tool
+/// (`Anchor::Tool`): they set the row state, and their faces are its hover.
 pub(super) fn draw_tool_row(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
+    findings: &[&rs_cam_core::diagnostics::Diagnostic],
     events: &mut Vec<crate::ui::AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
@@ -740,13 +300,19 @@ pub(super) fn draw_tool_row(
         .iter()
         .find(|(id, _, _)| Some(*id) == entry.tool_id)
         .map(|(_, name, _)| name.clone());
-    let state = current
-        .is_none()
-        .then_some(crate::ui::components::Role::Danger);
-    let detail = inputs
-        .no_tool_state
-        .clone()
-        .unwrap_or_else(|| CHOOSE_A_TOOL.to_owned());
+    let state = if current.is_none() {
+        Some(crate::ui::components::Role::Danger)
+    } else {
+        super::placement::tool_role(findings)
+    };
+    let detail = match (
+        &inputs.no_tool_state,
+        super::placement::tool_hover(findings),
+    ) {
+        (Some(no_tool), _) => no_tool.clone(),
+        (None, Some(hover)) => hover,
+        (None, None) => CHOOSE_A_TOOL.to_owned(),
+    };
     // The first tool kind the op takes, for "New tool…".
     let constraints = entry.operation.op_type().registry_entry().tool_constraints;
     let new_kind = crate::state::job::ToolType::ALL

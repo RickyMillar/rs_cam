@@ -24,9 +24,13 @@
 //!    tool id that names no tool) gives `NotReady` with no finding.
 //! 4. A refusal recorded at the current revision gives [`RunState::Failed`].
 //! 5. A result gives [`RunState::Done`].
-//! 6. No result, after a result an edit dropped, gives
+//! 6. W2b: a rest op (`StockSource::FromRemainingStock`) with no current
+//!    simulated snapshot gives [`RunState::Waiting`]. The GUI submit blocks
+//!    it on the same rule (`snapshot_is_current`), so the GUI and MCP give
+//!    one word.
+//! 7. No result, after a result an edit dropped, gives
 //!    [`RunState::OutOfDate`].
-//! 7. Else [`RunState::Ready`].
+//! 8. Else [`RunState::Ready`].
 
 use std::collections::{HashMap, HashSet};
 
@@ -56,6 +60,11 @@ pub enum RunState {
     OutOfDate,
     /// The last run refused, and no input changed since that run.
     Failed { reason: String },
+    /// W2b: a rest op that waits on the simulated stock of the operations
+    /// before it. `on` names the nearest enabled operation before it in the
+    /// carve order ([`ProjectSession::carve_order_before`]); it is empty
+    /// when no operation comes before it.
+    Waiting { on: Vec<ToolpathId> },
 }
 
 /// The one action the state asks for.
@@ -84,6 +93,7 @@ impl RunState {
             Self::Done => "done",
             Self::OutOfDate => "out_of_date",
             Self::Failed { .. } => "failed",
+            Self::Waiting { .. } => "waiting",
         }
     }
 }
@@ -104,7 +114,9 @@ pub fn next_action(state: &RunState) -> NextAction {
                 NextAction::FixInputs
             }
         }
-        RunState::Ready => NextAction::Generate,
+        // W2b: a Generate runs the plan, which generates and simulates the
+        // operations before a waiting rest op first.
+        RunState::Ready | RunState::Waiting { .. } => NextAction::Generate,
         RunState::OutOfDate => NextAction::Regenerate,
         RunState::Failed { .. } => NextAction::Retry,
         RunState::Disabled | RunState::Generating | RunState::Done => NextAction::None,
@@ -195,12 +207,15 @@ pub fn toolpath_run_state(
     if in_flight {
         return Some(RunState::Generating);
     }
-    // The session's own trace: no load gate is Blocking, so the trace
-    // changes no blocking answer.
+    // W2b: the gate list (`diagnose_toolpath_gate`): the sources that can
+    // refuse generation, without the load report, the feeds calculator and
+    // Suggest, because the GUI header reads this state on every repaint.
+    // No load gate, feeds hint or Suggest record refuses generation, so
+    // the refusing subset is the same as the full list's.
     // A list that cannot be built (a tool id that names no tool) is not
     // ready either: generation refuses the same input. The state names no
     // finding then.
-    let Ok(findings) = session.diagnose_toolpath(index) else {
+    let Ok(findings) = session.diagnose_toolpath_gate(index) else {
         return Some(RunState::NotReady {
             blocking: Vec::new(),
         });
@@ -221,8 +236,35 @@ pub fn toolpath_run_state(
     if session.result_at(index).is_some() {
         return Some(RunState::Done);
     }
+    if tc.stock_source == crate::compute::config::StockSource::FromRemainingStock
+        && session.snapshot_is_current(id).is_err()
+    {
+        return Some(RunState::Waiting {
+            on: waiting_on(session, id),
+        });
+    }
     if session.run_record.generated.contains(&id) {
         return Some(RunState::OutOfDate);
     }
     Some(RunState::Ready)
+}
+
+/// W2b: the operation a waiting rest op `id` waits on: the nearest enabled
+/// toolpath before it in the carve order, which crosses setups. The GUI
+/// submit names the same one (`prior_stock_blocker`). Empty when no enabled
+/// toolpath comes before it.
+fn waiting_on(session: &ProjectSession, id: ToolpathId) -> Vec<ToolpathId> {
+    session
+        .carve_order_before(id)
+        .into_iter()
+        .rev()
+        .find_map(|index| {
+            session
+                .toolpath_configs()
+                .get(index)
+                .filter(|tc| tc.enabled)
+                .map(|tc| tc.id)
+        })
+        .into_iter()
+        .collect()
 }

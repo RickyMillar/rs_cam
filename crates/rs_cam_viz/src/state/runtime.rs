@@ -990,7 +990,7 @@ fn split_unmeasured(
 
 /// The scale and floor note of the reach overlay, in tool units: where the
 /// colour is full, and how large the grid floor is against the tip radius.
-/// The Geometry tab and the legend chip print this one string.
+/// The legend hover prints this one string (R3, W2b: the inspector does not).
 #[must_use]
 pub fn reach_scale_note(map: &ReachMap, surface: &ReachSurface) -> String {
     let radius = surface.tip_radius_mm;

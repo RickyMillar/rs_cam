@@ -9,6 +9,7 @@ pub mod operations;
 mod panel_apply;
 mod pills;
 pub mod pins;
+mod placement;
 mod selection_section;
 #[cfg(test)]
 pub(crate) use selection_section::counts_text as selection_counts_text;
@@ -298,23 +299,6 @@ impl ToolpathTab {
         ToolpathTab::Linking,
     ];
 
-    /// R2: the old name of [`Self::Passes`]. The MCP wire enum
-    /// (`rs_cam_mcp::server::PropertiesTabParam::Cut`) still names it; the
-    /// MCP view maps it here.
-    #[expect(
-        non_upper_case_globals,
-        reason = "R2 bridge: the MCP view names the old tab as a variant path until its wire enum moves"
-    )]
-    pub const Cut: ToolpathTab = ToolpathTab::Passes;
-
-    /// R2: the Dressup tab is deleted; its rows are on [`Self::Linking`].
-    /// The MCP wire enum (`PropertiesTabParam::Dressup`) still names it.
-    #[expect(
-        non_upper_case_globals,
-        reason = "R2 bridge: the MCP view names the old tab as a variant path until its wire enum moves"
-    )]
-    pub const Dressup: ToolpathTab = ToolpathTab::Linking;
-
     fn label(self) -> &'static str {
         match self {
             ToolpathTab::Geometry => "Geometry",
@@ -343,14 +327,14 @@ impl ToolpathTab {
     ///
     /// Every [`Self::key`] parses back to its own variant. `feeds_speeds` is
     /// an extra spelling the tool has always accepted for the Feeds tab.
-    /// R2: the old keys `cut` and `dressup` read as Passes and Linking.
+    /// W2b: the old keys `cut` and `dressup` are gone (no-legacy ruling).
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "geometry" => Some(ToolpathTab::Geometry),
-            "passes" | "cut" => Some(ToolpathTab::Passes),
+            "passes" => Some(ToolpathTab::Passes),
             "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),
             "heights" => Some(ToolpathTab::Heights),
-            "linking" | "dressup" => Some(ToolpathTab::Linking),
+            "linking" => Some(ToolpathTab::Linking),
             _ => None,
         }
     }
@@ -572,6 +556,9 @@ pub(crate) struct ToolpathPanelInputs {
     /// H2: the dust shoe row of the Heights tab. `None` when the machine
     /// head has no dust shoe.
     pub shoe: Option<ShoeRowInputs>,
+    /// W2b: THE run state of the toolpath (`freshness::run_state_of`, the
+    /// door MCP `list_toolpaths` reads). The status line reads it.
+    pub run_state: Option<rs_cam_core::session::RunState>,
 }
 
 /// One `selection_status` read: the report, or the error text of an error
@@ -956,7 +943,69 @@ pub(crate) fn toolpath_panel_inputs(
         rest_pick,
         rest_fresh,
         shoe: shoe_row_inputs(id, session, gui),
+        run_state: crate::state::freshness::run_state_of(session, gui, id),
     }
+}
+
+/// W2b: where the toolpath inspector puts each finding of toolpath `id`,
+/// by the one placement rule (`placement::place`). Each list holds the
+/// findings of one place, in list order. A sentry reads it beside the
+/// painted text (`one_place_per_diagnostic_w2b`).
+#[derive(Debug, Clone, Default)]
+pub struct PlacedFindings {
+    /// The header Tool row (state and hover only).
+    pub tool: Vec<rs_cam_core::diagnostics::Diagnostic>,
+    /// The field `PropRow`s (state and hover only).
+    pub by_field: Vec<rs_cam_core::diagnostics::Diagnostic>,
+    /// The issue rows under the header.
+    pub issues: Vec<rs_cam_core::diagnostics::Diagnostic>,
+    /// The notes counter (popover only).
+    pub notes: Vec<rs_cam_core::diagnostics::Diagnostic>,
+    /// Not drawn in the toolpath inspector (project, view, not current).
+    pub elsewhere: Vec<rs_cam_core::diagnostics::Diagnostic>,
+}
+
+/// W2b: [`PlacedFindings`] of toolpath `id`, from the same list and the
+/// same placement the panel draws. `None` when no toolpath has the id.
+pub fn placed_findings(
+    id: crate::state::toolpath::ToolpathId,
+    state: &crate::state::AppState,
+) -> Option<PlacedFindings> {
+    let snapshot = toolpath_panel_snapshot(id, state.session(), &state.gui)?;
+    let inputs = toolpath_panel_inputs(
+        id,
+        state.session(),
+        &state.gui,
+        state
+            .simulation
+            .results
+            .as_ref()
+            .and_then(|r| r.cut_trace.as_ref()),
+        None,
+        state.viewport.show_rest_heatmap,
+    );
+    let list = toolpath_panel::panel_diagnostics(
+        &snapshot.entry,
+        &snapshot.preconditions,
+        &snapshot.model_refs,
+        snapshot.suggest_warnings.as_deref(),
+        &inputs,
+    );
+    let placement = placement::place(&list);
+    let owned =
+        |v: &[&rs_cam_core::diagnostics::Diagnostic]| v.iter().map(|d| (*d).clone()).collect();
+    Some(PlacedFindings {
+        tool: owned(&placement.tool),
+        by_field: placement
+            .by_field
+            .values()
+            .flatten()
+            .map(|d| (*d).clone())
+            .collect(),
+        issues: owned(&placement.issues),
+        notes: owned(&placement.notes),
+        elsewhere: owned(&placement.elsewhere),
+    })
 }
 
 /// Test-only entry projection used by the inspector write-back sentries.
@@ -969,7 +1018,7 @@ pub(crate) fn build_entry_from_session_and_gui(
     toolpath_panel_snapshot(id, session, gui).map(|snapshot| snapshot.entry)
 }
 
-/// The hover of the Cut tab's boundary `Source:` combo (UX-R03-009,
+/// The hover of the Passes tab's boundary `Source:` combo (UX-R03-009,
 /// G-BOUNDARYINHERIT; a row until G-D, ruling D-1). It names the STORED
 /// `boundary.source`,
 /// which is the boundary generation clips to. `auto` appends "(auto)" when

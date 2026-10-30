@@ -233,11 +233,29 @@ fn click(ctx: &egui::Context, state: &mut AppState, label: &str, nth: usize) -> 
             // A button paints its label in two shapes at one place, so the
             // matches count by place, not by shape.
             let mut places: Vec<egui::Pos2> = Vec::new();
+            // W2b: the controls are in the tab body. The issue rows above
+            // the tab strip paint the same `✕` glyph as a label, so a match
+            // counts only below the strip.
+            let strip_y = out
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::epaint::Shape::Text(text)
+                        if text.galley.job.text.ends_with("Geometry") =>
+                    {
+                        Some(clipped.shape.visual_bounding_rect().bottom())
+                    }
+                    _ => None,
+                })
+                .unwrap_or(f32::NEG_INFINITY);
             for clipped in &out.shapes {
                 if let egui::epaint::Shape::Text(text) = &clipped.shape {
                     let t = text.galley.job.text.clone();
                     let centre = clipped.shape.visual_bounding_rect().center();
-                    if t == label && !places.iter().any(|p| p.distance(centre) < 1.0) {
+                    if t == label
+                        && centre.y > strip_y
+                        && !places.iter().any(|p| p.distance(centre) < 1.0)
+                    {
                         places.push(centre);
                     }
                     painted.push(t);
@@ -408,9 +426,9 @@ fn painted(ctx: &egui::Context, state: &mut AppState) -> Vec<String> {
     texts
 }
 
-/// L-2: the refusal has one owner. The section prints the whole refusal;
-/// the footer row prints one line that names the section, and keeps the
-/// whole text for its hover.
+/// L-2, W2b: the section prints the whole refusal, once. The status line
+/// reads "Not ready", and the issue stack shows the short face of the core
+/// finding (the whole text is its hover).
 #[test]
 fn a_selection_refusal_has_one_owner_p4_3() {
     let ctx = ctx();
@@ -445,13 +463,15 @@ fn a_selection_refusal_has_one_owner_p4_3() {
          footer name the section in one line: {whole:?}"
     );
     assert!(
-        texts.iter().any(|t| t == "Refused \u{00B7} see Geometry"),
-        "the header must say why Generate is off in one line; painted: {texts:?}"
+        texts.iter().any(|t| t == "Not ready"),
+        "the status line must say why Generate is off in one word; painted: {texts:?}"
     );
-    assert!(
-        texts
-            .iter()
-            .any(|t| t.ends_with("the selection refuses. See the Geometry tab.")),
-        "the footer row must name the Selection section in one line; painted: {texts:?}"
+    let face = rs_cam_core::diagnostics::presentation::face(
+        rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES,
+    );
+    assert_eq!(
+        texts.iter().filter(|t| **t == face).count(),
+        1,
+        "the issue stack shows the short face once; painted: {texts:?}"
     );
 }

@@ -124,7 +124,7 @@ fn flip_writes_the_other_side_in_one_command_p6_7() {
     );
 
     // 1. Flip: one command, the other side. GT-1: the open paths row is
-    // an op parameter, on the Cut tab.
+    // an op parameter, on the Passes tab.
     h::show_tab(&mut state, rs_cam_viz::ui::properties::ToolpathTab::Passes);
     let before = state.session().toolpath_revision_at(0);
     let _ = h::click(&ctx, &mut state, "\u{2194} Flip", 0);

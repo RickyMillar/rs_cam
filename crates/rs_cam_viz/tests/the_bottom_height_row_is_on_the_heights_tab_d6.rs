@@ -7,7 +7,7 @@
 //! 1. For each `OpFloor` op (Pocket, Profile, Zigzag, Adaptive 2D, Drill,
 //!    Bore) the Heights tab draws "Bottom height:" with the reference of
 //!    the floor, and no row label stands between "Top height:" and
-//!    "Bottom height:". The Cut tab draws no floor row ("Bottom height:"
+//!    "Bottom height:". The Passes tab draws no floor row ("Bottom height:"
 //!    and the old "Floor from:" are both absent). The read-only Floor line
 //!    of the Heights tab ("Floor: ...") is gone (one owner, IC1).
 //! 2. GUI/MCP parity: a change of reference in the Bottom height row (two
@@ -383,7 +383,7 @@ fn the_bottom_height_row_is_on_the_heights_tab_d6() {
         for gone in ["Bottom height:", "Floor from:"] {
             assert!(
                 find(&cut, gone).is_empty(),
-                "{label}: the Cut tab still draws {gone:?}"
+                "{label}: the Passes tab still draws {gone:?}"
             );
         }
     }

@@ -473,20 +473,21 @@ pub enum WorkspaceParam {
     Readiness,
 }
 
-/// The toolpath properties tab `set_ui_view` shows. `geometry`: what the
-/// op cuts (the selected items, the floor face, the boundary selection;
-/// geometry selection GT-1). `cut`: the tool, the input model, the start
-/// stock and the op parameters.
+/// The toolpath properties tab `set_ui_view` shows (operator ruling R2,
+/// 2026-10-30). `geometry`: what the op cuts (the input model, the
+/// selected items, the floor face, the machining boundary). `passes`: the
+/// start stock and the op parameters. `feeds`: the feeds and speeds.
+/// `heights`: the Z planes. `linking`: entry and exit, links, arc fitting
+/// and dogbone. The tool is in the inspector header, on no tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum PropertiesTabParam {
     Geometry,
-    Cut,
+    Passes,
     Feeds,
-    Linking,
     Heights,
-    Dressup,
+    Linking,
 }
 
 /// The non-toolpath properties panel `set_ui_view` selects.
