@@ -477,3 +477,25 @@ one row (margin 1.0) on 65 x 65 x 25 stock.
   overfill); 3 948 s total. The dowels are symmetric on the flip axis: the rim has no room
   for the 3 mm keying offset. Mark one edge of the part.
 - G-code: `~/Downloads/testpiece_mini_gcode/` (3 files, the flip-message fix 5b428b53).
+
+## Update 2026-10-31: the full-size block nz-wanaka-21
+
+Brief: `project_rivmap_mono/manufacture/docs/rs_cam_full_block_prompt.md`. The operator asked for
+the setups, the tools and the toolpaths only; the operator tunes them in the GUI. No simulation,
+no checks and no G-code are done yet.
+
+- `derive_wanaka21.py` writes `nz_wanaka_21.toml` (3 setups, 33 toolpaths, 6 tools). It reads
+  `block.json` `cam` and `cam_ops.json` (op order, tools, z_start, z_end; the "hand" rows are
+  skipped) and reuses the writers of `derive.py`. It removes the keys that the loader now retires
+  (toolpath `type`, `fixtures`, `keep_out_zones`, `air_bridge_policy`, `shank_length`) and writes
+  the EDGE_OUTER boundary as a selection. `derive.py` (nz-south, test piece) is not changed and
+  no longer runs: its constant asserts name a removed constant.
+- Stock: the operator's 395 x 460, the block centred (18.5 / 8.5). Machine: the Scylla grblHAL
+  tables of `testpiece_mini.toml`. Pins: rs_cam preset "axis plus mirror pair", 3 x Ø6, centred
+  in the band between the stock edge wall and the profile cut wall (6.25 mm from the long edge);
+  the pair is 100 mm from the flip axis (a free choice). rs_cam gives no "not keyed" finding.
+- The V ops take top Z = the cavity ceiling (the loader refuses a retract below the top).
+- The skim uses fresh stock (a remaining-stock skim waits for a setup-1 simulation).
+- The pour is a stock change on setup 2: the cavity outline, filled to ceiling + overfill = 17.7.
+- All 33 toolpaths generate (GUI at fa6da4fed). Findings: the scallop plunge 736 is over the
+  tapered ball cap 300 (run Suggest); the v20 name "25 mm stick-out" reads as Ø25 (info).
