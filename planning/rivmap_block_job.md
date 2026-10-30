@@ -499,3 +499,14 @@ no checks and no G-code are done yet.
 - The pour is a stock change on setup 2: the cavity outline, filled to ceiling + overfill = 17.7.
 - All 33 toolpaths generate (GUI at fa6da4fed). Findings: the scallop plunge 736 is over the
   tapered ball cap 300 (run Suggest); the v20 name "25 mm stick-out" reads as Ø25 (info).
+
+### Revision 2026-10-31 (later): 10 toolpaths with 3D ops
+
+Operator: "use 3d ops for most of this, and use maybe like.. 5-10 paths total". The back is now a
+3D rough of the finished oak block (mech `oak_block_full.stl`, moved to the setup-1 frame with
+`stack.json` levels.z_block) with flat_6, then a flat_3 rest rough from remaining stock; the V
+lines are one Project Curve op (no pre-pass); the cavity is cut to its finished depth 9.0 and the
+skim takes only the overfill. The V60 day-strip slit is not in the job (a 3D rough cannot cut a
+1 mm slit). All 10 generate; the project simulation (0.25 mm) gives 10 h 41 min, 1 rapid
+collision on the front 3D rough (z 23.086, run move 250349), the scallop plunge finding, and
+2 of 10 operations over a load gate.
