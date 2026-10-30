@@ -7811,11 +7811,15 @@
               "oneOf": [
                 {
                   "enum": [
-                    "feeds_modal",
                     "export_wizard",
                     "tool_library",
                     "pin_wizard"
                   ],
+                  "type": "string"
+                },
+                {
+                  "const": "vendor_data",
+                  "description": "The vendor cutting data table of the selected toolpath's tool.",
                   "type": "string"
                 },
                 {

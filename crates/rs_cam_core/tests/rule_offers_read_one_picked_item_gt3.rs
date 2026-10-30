@@ -43,7 +43,7 @@ use common::session::{
     pick_faces_in, polygon_model, single_op_session_with, stock_under, toolpath_config,
 };
 use common::tools::endmill_tool_config;
-use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::catalog::OperationConfig;
 use rs_cam_core::geo::P2;
 use rs_cam_core::selection::{
     Item, ItemSet, KindFilter, MatchKey, SelectionEdit, Shape, SourceRef,
@@ -95,7 +95,11 @@ fn rule_offers_read_one_picked_item_gt3() {
         endmill_tool_config(6.0),
         model,
         "gt3 drill",
-        OperationConfig::new_default(OperationType::Drill),
+        // W3h: a new op holds no item (`default_selection`).
+        OperationConfig::Drill(rs_cam_core::compute::operation_configs::DrillConfig {
+            selection: rs_cam_core::selection::Selection::empty(),
+            ..rs_cam_core::compute::operation_configs::DrillConfig::default()
+        }),
         |_| {},
     );
     let (small_key, large_key) = (key(&small[0], &s), key(&large, &s));
@@ -104,7 +108,7 @@ fn rule_offers_read_one_picked_item_gt3() {
     assert_eq!(
         tc(&s).operation.selection().unwrap().picks().len(),
         2,
-        "fixture: the first pick replaced the default (O-PICK)"
+        "fixture: the two picks are the selection"
     );
 
     // 1. The offers of the Ø 6 pick.

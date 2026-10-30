@@ -253,6 +253,23 @@ fn controller(
             z_rotation: turn,
         }))
         .unwrap();
+    // W3h: the op starts at its new-op default selection (no item, except
+    // Face), as the draft door gives a new op.
+    if state.session().toolpath_configs()[0]
+        .operation
+        .selection()
+        .is_some()
+    {
+        let _ = state
+            .apply(Command::EditSelection(
+                rs_cam_core::session::EditSelectionArgs {
+                    index: 0,
+                    target: SelectionTarget::Op,
+                    edit: rs_cam_core::selection::SelectionEdit::Reset,
+                },
+            ))
+            .unwrap();
+    }
     let id = state.session().toolpath_configs()[0].id;
     let state = c.state_mut();
     state.workspace = Workspace::Toolpaths;
@@ -398,12 +415,12 @@ fn a_click_picks_each_drawn_kind(face_up: FaceUp, turn: ZRotation) {
             "{face_up:?}/{turn:?}: the click on the {:?} picked {key:?}",
             item.kind()
         );
-        // The default rule holds the item. Operator ruling O-PICK: the
-        // click replaces the default, so the op cuts that item only.
+        // W3h: a new op holds no item, so the click is the selection and
+        // the op cuts that item only.
         assert_eq!(
             state_of(&c, index),
-            ItemState::Cut,
-            "fixture: the default cuts it"
+            ItemState::NotSelected,
+            "fixture: a new op holds no item"
         );
         c.handle_internal_event(AppEvent::TogglePick {
             toolpath_id: mode.toolpath_id,

@@ -71,23 +71,123 @@ pub(crate) fn record_drawn(draw: impl FnOnce()) -> std::collections::BTreeSet<St
     DRAWN.with(|d| d.borrow_mut().take().unwrap_or_default())
 }
 
+/// One placed finding (W6). The `Diagnostic` is private to this module,
+/// so an inspector file reads a finding only through the methods here:
+/// its id, its role, its fix, its issue or note row ([`Finding::notice`])
+/// and the hover of a row ([`tool_hover`]). The compiler holds the rule
+/// that only the placement reads the text of a finding.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Finding<'a>(&'a Diagnostic);
+
+impl<'a> From<&'a Diagnostic> for Finding<'a> {
+    fn from(d: &'a Diagnostic) -> Self {
+        Self(d)
+    }
+}
+
+impl<'a> From<&&'a Diagnostic> for Finding<'a> {
+    fn from(d: &&'a Diagnostic) -> Self {
+        Self(d)
+    }
+}
+
+impl<'a> From<&Finding<'a>> for Finding<'a> {
+    fn from(f: &Finding<'a>) -> Self {
+        *f
+    }
+}
+
+impl<'a> Finding<'a> {
+    /// The rule id of the finding.
+    #[must_use]
+    pub(crate) fn id(self) -> &'a str {
+        self.0.id.as_str()
+    }
+
+    /// The issue role of the finding ([`role_of`]).
+    #[must_use]
+    pub(crate) fn role(self) -> crate::ui::components::Role {
+        role_of(self.0)
+    }
+
+    /// The auto-applyable fix of the finding, if any.
+    #[must_use]
+    pub(crate) fn fix(self) -> Option<&'a rs_cam_core::diagnostics::DiagnosticFix> {
+        self.0.fix.as_ref()
+    }
+
+    /// The row of the finding in the issue stack or the notes counter: the
+    /// face (at most `FACE_MAX_CHARS`), the detail on hover, in `role`.
+    #[must_use]
+    pub(crate) fn notice_as(
+        self,
+        role: crate::ui::components::Role,
+    ) -> crate::ui::components::Notice {
+        crate::ui::components::Notice::new(role, self.0.face.as_str()).detail(detail(self.0))
+    }
+
+    /// [`Self::notice_as`] in the role of the finding.
+    #[must_use]
+    pub(crate) fn notice(self) -> crate::ui::components::Notice {
+        self.notice_as(self.role())
+    }
+
+    /// The `PlacedFindings` test door only: an owned copy.
+    pub(super) fn to_owned_diagnostic(self) -> Diagnostic {
+        self.0.clone()
+    }
+
+    /// The tab of the row of a field finding, for the op `config`.
+    pub(super) fn field_tab(self, config: &OperationConfig) -> Option<ToolpathTab> {
+        match self.0.anchor {
+            Anchor::Field { key } => field_tab(key, config),
+            _ => None,
+        }
+    }
+}
+
+/// The findings each field `PropRow` draws, by the field key.
+pub(crate) type FieldFindings<'a> = BTreeMap<&'static str, Vec<Finding<'a>>>;
+
 /// Where each diagnostic of one toolpath goes ([`place`]).
 #[derive(Debug, Default)]
 pub(crate) struct Placement<'a> {
     /// The findings each field `PropRow` draws, by the field key.
-    pub by_field: BTreeMap<&'static str, Vec<&'a Diagnostic>>,
+    pub by_field: FieldFindings<'a>,
     /// The findings of the header Tool row.
-    pub tool: Vec<&'a Diagnostic>,
+    pub tool: Vec<Finding<'a>>,
     /// The issue rows under the header, in list order.
-    pub issues: Vec<&'a Diagnostic>,
+    pub issues: Vec<Finding<'a>>,
     /// The notes of the status line counter.
-    pub notes: Vec<&'a Diagnostic>,
+    pub notes: Vec<Finding<'a>>,
     /// The findings the toolpath inspector does not draw: a project or
     /// view anchor, or a finding that is not current.
-    pub elsewhere: Vec<&'a Diagnostic>,
+    pub elsewhere: Vec<Finding<'a>>,
     /// The dot of each tab that holds a field with a finding: the tab and
     /// the role of the worst finding on it.
     pub dots: Vec<(ToolpathTab, crate::ui::components::Role)>,
+}
+
+impl<'a> Placement<'a> {
+    /// The notes counter rows: each note finding as an Info row.
+    #[must_use]
+    pub(crate) fn note_notices(&self) -> Vec<crate::ui::components::Notice> {
+        self.notes
+            .iter()
+            .map(|f| f.notice_as(crate::ui::components::Role::Info))
+            .collect()
+    }
+}
+
+/// The hover of the header Tool row while the stored result holds a
+/// blocking finding (F20): the face and the detail of `d`.
+#[must_use]
+pub(crate) fn blocking_hover(d: &Diagnostic) -> String {
+    format!(
+        "A blocking finding stands, so this toolpath does not go to G-code. {}\n{}",
+        d.face,
+        detail(d)
+    )
 }
 
 /// The tab whose `PropRow` draws the field `key` for the op `config`, or
@@ -179,7 +279,7 @@ pub(crate) fn drawn_fields(config: &OperationConfig) -> BTreeMap<&'static str, T
 /// The issue role of a finding: Danger for a finding that blocks or is
 /// critical, Caution else.
 #[must_use]
-pub(crate) fn role_of(d: &Diagnostic) -> crate::ui::components::Role {
+fn role_of(d: &Diagnostic) -> crate::ui::components::Role {
     use crate::ui::components::Role;
     match d.severity {
         Severity::Blocking | Severity::Critical => Role::Danger,
@@ -200,15 +300,15 @@ pub(crate) fn place<'a>(diagnostics: &'a [Diagnostic], config: &OperationConfig)
     let mut out = Placement::default();
     for d in diagnostics {
         if d.state != DiagnosticState::Current {
-            out.elsewhere.push(d);
+            out.elsewhere.push(Finding(d));
             continue;
         }
         match d.anchor {
-            Anchor::Project | Anchor::View => out.elsewhere.push(d),
-            Anchor::Tool => out.tool.push(d),
-            Anchor::Note => out.notes.push(d),
-            _ if is_advisory(d) => out.notes.push(d),
-            Anchor::Operation => out.issues.push(d),
+            Anchor::Project | Anchor::View => out.elsewhere.push(Finding(d)),
+            Anchor::Tool => out.tool.push(Finding(d)),
+            Anchor::Note => out.notes.push(Finding(d)),
+            _ if is_advisory(d) => out.notes.push(Finding(d)),
+            Anchor::Operation => out.issues.push(Finding(d)),
             Anchor::Field { key } => match field_tab(key, config) {
                 Some(tab) => {
                     // A Danger or Caution dot on the tab that holds the
@@ -217,11 +317,14 @@ pub(crate) fn place<'a>(diagnostics: &'a [Diagnostic], config: &OperationConfig)
                     if d.category != Category::Efficiency {
                         raise_dot(&mut out.dots, tab, role_of(d));
                     }
-                    out.by_field.entry(key.as_str()).or_default().push(d);
+                    out.by_field
+                        .entry(key.as_str())
+                        .or_default()
+                        .push(Finding(d));
                 }
                 // W3f: this op draws no row for the key, so the finding
                 // is an issue row.
-                None => out.issues.push(d),
+                None => out.issues.push(Finding(d)),
             },
         }
     }
@@ -244,7 +347,7 @@ fn raise_dot(
 /// The hover detail of a finding: the full message, then the confidence
 /// and the evidence. The face is the row text.
 #[must_use]
-pub(crate) fn detail(d: &Diagnostic) -> String {
+fn detail(d: &Diagnostic) -> String {
     let mut out = d.message.clone();
     let chip = confidence_label(d.confidence);
     if !chip.is_empty() && !is_advisory(d) {
@@ -259,13 +362,19 @@ pub(crate) fn detail(d: &Diagnostic) -> String {
 /// The hover of the header Tool row for its findings: one face per line,
 /// then the detail of each.
 #[must_use]
-pub(crate) fn tool_hover(tool: &[&Diagnostic]) -> Option<String> {
+pub(crate) fn tool_hover<'a, T>(tool: &'a [T]) -> Option<String>
+where
+    Finding<'a>: From<&'a T>,
+{
     if tool.is_empty() {
         return None;
     }
     Some(
         tool.iter()
-            .map(|d| format!("{}\n{}", d.face, detail(d)))
+            .map(|f| {
+                let d = Finding::from(f).0;
+                format!("{}\n{}", d.face, detail(d))
+            })
             .collect::<Vec<_>>()
             .join("\n\n"),
     )
@@ -274,10 +383,13 @@ pub(crate) fn tool_hover(tool: &[&Diagnostic]) -> Option<String> {
 /// The state of the header Tool row from its findings: Danger for one that
 /// blocks, Caution for a caution, else none.
 #[must_use]
-pub(crate) fn tool_role(tool: &[&Diagnostic]) -> Option<crate::ui::components::Role> {
+pub(crate) fn tool_role<'a, T>(tool: &'a [T]) -> Option<crate::ui::components::Role>
+where
+    Finding<'a>: From<&'a T>,
+{
     use crate::ui::components::Role;
     tool.iter()
-        .map(|d| role_of(d))
+        .map(|f| Finding::from(f).role())
         .filter(|role| matches!(role, Role::Danger | Role::Caution))
         .min_by_key(|role| role.severity_rank())
 }
@@ -484,11 +596,7 @@ mod tests {
             &list,
             &OperationConfig::new_default(OperationType::DropCutter),
         );
-        let ids = |v: &[&Diagnostic]| {
-            v.iter()
-                .map(|d| d.id.as_str().to_owned())
-                .collect::<Vec<_>>()
-        };
+        let ids = |v: &[Finding<'_>]| v.iter().map(|d| d.id().to_owned()).collect::<Vec<_>>();
         assert_eq!(ids(&p.tool), ["a"]);
         assert_eq!(
             ids(&p.issues),

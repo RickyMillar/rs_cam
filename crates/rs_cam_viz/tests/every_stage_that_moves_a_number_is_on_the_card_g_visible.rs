@@ -909,8 +909,6 @@ fn open_explore(state: &mut AppState) {
         .map(|(id, _)| id)
         .or_else(|| state.session().toolpath_configs().first().map(|tc| tc.id))
         .expect("a toolpath to explore");
-    state.feeds_modal = Some(rs_cam_viz::state::FeedsModalState {
-        toolpath_id: id,
-        explore: None,
-    });
+    // W3i: the chart and the card are on the Feeds tab; no window opens.
+    let _ = id;
 }

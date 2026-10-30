@@ -46,6 +46,8 @@ pub struct ValueRowOutcome {
 
 /// The label column is shared with [`super::prop_row::PropRow`]; this
 /// re-export keeps the callers of the compatibility rows unchanged.
+// W6: `import_modal.rs` (outside the inspector) still uses it; the inspector
+// sentry `the_inspector_draws_only_kit_rows_w6` bars it there.
 pub use super::prop_row::label_cell;
 
 pub struct ValueRow<'a> {

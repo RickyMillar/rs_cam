@@ -49,7 +49,11 @@ use crate::ui::{
 /// IC1: `add_sized` centred the label in the cell, so a `ValueRow` label sat
 /// to the right of a plain `ui.label` in the same column and the column read
 /// ragged. The cell lays the label out from its left edge.
-pub fn label_cell_sized(ui: &mut egui::Ui, label: &str, height: f32) -> egui::Response {
+pub(in crate::ui::components) fn label_cell_sized(
+    ui: &mut egui::Ui,
+    label: &str,
+    height: f32,
+) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(tokens::LABEL_COL_WIDTH, height),
         egui::Layout::left_to_right(egui::Align::Center),
@@ -65,6 +69,20 @@ pub fn label_cell_sized(ui: &mut egui::Ui, label: &str, height: f32) -> egui::Re
 /// The label cell of a grid row at `ROW_DENSE` (the compatibility rows).
 pub fn label_cell(ui: &mut egui::Ui, label: &str) -> egui::Response {
     label_cell_sized(ui, label, tokens::ROW_DENSE)
+}
+
+/// W6: a value as text in a row control: the body size in
+/// `TEXT_STRONG`, truncated. The read-only row and a count inside a well
+/// (the Hand tabs row) paint a value with it.
+pub fn well_value(ui: &mut egui::Ui, value: &str) -> egui::Response {
+    ui.add(
+        egui::Label::new(
+            egui::RichText::new(value)
+                .size(tokens::SIZE_BODY)
+                .color(tokens::TEXT_STRONG),
+        )
+        .truncate(),
+    )
 }
 
 /// The hover text of a field row. Pure, so the words are unit-testable.
@@ -277,19 +295,22 @@ impl<'a> PropRow<'a> {
         value: impl Into<String>,
     ) -> PropRowResponse<egui::Response> {
         let value = value.into();
-        let mut out = self.draw(ui, Frame::ReadOnly, |ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(&value)
-                        .size(tokens::SIZE_BODY)
-                        .color(tokens::TEXT_STRONG),
-                )
-                .truncate(),
-            )
-        });
+        let mut out = self.draw(ui, Frame::ReadOnly, |ui| well_value(ui, &value));
         let hover = format!("{value}\n\n{}", out.hover);
         out.inner = out.inner.on_hover_text(hover);
         out
+    }
+
+    /// W6: a note under a row (a hint, G-THROUGHCUT): one [`OneLine`] at
+    /// the control column, so it lines up with the wells above it.
+    ///
+    /// [`OneLine`]: super::OneLine
+    pub fn note(ui: &mut egui::Ui, note: super::OneLine) -> egui::Response {
+        ui.horizontal(|ui| {
+            ui.add_space(tokens::LABEL_COL_WIDTH + tokens::SPACE_3);
+            ui.add(note)
+        })
+        .inner
     }
 
     /// W3g: draw an on/off row. The box sits alone at the start of the

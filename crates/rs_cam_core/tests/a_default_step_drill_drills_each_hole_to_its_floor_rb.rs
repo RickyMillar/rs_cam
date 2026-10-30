@@ -228,11 +228,19 @@ fn a_default_step_drill_drills_each_hole_to_its_floor_rb() {
     );
 }
 
-/// Claim 4.
+/// Claim 4. W3h: a new op holds no item, so the click adds; on the
+/// drawing rule (which holds the rim) the click would remove the rim.
 #[test]
 fn a_click_on_the_floor_circle_picks_the_rim_rb() {
     let mut session = empty_session();
     let _ = add_default_drill(&mut session);
+    let _ = session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::empty())),
+        }))
+        .unwrap();
     let model = load();
     let (_, rim) = circle_at(&model, RIM_Z);
     let (_, floor) = circle_at(&model, FLOOR_Z);

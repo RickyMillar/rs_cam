@@ -15,7 +15,6 @@ use crate::ui::automation;
 use crate::ui::components::PropRow;
 use crate::ui::components::UiExt as _;
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::diagnostics::Diagnostic;
 
 // --- Parameter row helpers ---
 //
@@ -33,7 +32,7 @@ use rs_cam_core::diagnostics::Diagnostic;
 /// A row reads its state by its registry parameter name.
 #[derive(Clone, Copy, Default)]
 pub(super) struct Fields<'a> {
-    by_field: Option<&'a std::collections::BTreeMap<&'static str, Vec<&'a Diagnostic>>>,
+    by_field: Option<&'a super::placement::FieldFindings<'a>>,
     depth_caution: Option<(&'static str, &'a operations::DepthBeyondStock)>,
 }
 
@@ -47,9 +46,7 @@ pub(super) struct FieldState {
 
 impl<'a> Fields<'a> {
     /// The field states of one toolpath, from `Placement::by_field`.
-    pub(super) fn new(
-        by_field: &'a std::collections::BTreeMap<&'static str, Vec<&'a Diagnostic>>,
-    ) -> Self {
+    pub(super) fn new(by_field: &'a super::placement::FieldFindings<'a>) -> Self {
         Self {
             by_field: Some(by_field),
             depth_caution: None,
@@ -342,14 +339,6 @@ pub(super) fn num_in_row(
     num_row(ui, row, "", val, suffix, speed, range, None).response
 }
 
-/// A note under a row (G-THROUGHCUT, a hint): one line at the well column.
-pub(super) fn row_note(ui: &mut egui::Ui, note: crate::ui::components::OneLine) {
-    ui.horizontal(|ui| {
-        ui.add_space(crate::ui::tokens::LABEL_COL_WIDTH + crate::ui::tokens::SPACE_3);
-        ui.add(note);
-    });
-}
-
 /// One parameter row's identity: which operation owns it, the registry name
 /// the help text is keyed on, and the label the operator reads.
 ///
@@ -597,7 +586,7 @@ pub(super) fn through_cut_line(ui: &mut egui::Ui, through_cut: Option<&operation
     let Some(through_cut) = through_cut else {
         return;
     };
-    row_note(
+    let _ = PropRow::note(
         ui,
         crate::ui::components::OneLine::new(through_cut.message()).detail(format!(
             "The cut bottom reaches the bottom of the {:.2} mm board, so the last pass \

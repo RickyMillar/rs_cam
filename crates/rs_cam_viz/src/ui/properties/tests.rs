@@ -469,7 +469,6 @@ fn tab_texts(
             &mut entry,
             &inputs,
             None,
-            None,
             &mut crate::state::pick::SelectionUi::default(),
             super::linking_dressup::Fields::default(),
             &mut events,
@@ -574,50 +573,40 @@ fn position_of(texts: &[String], what: &str, pred: impl Fn(&str) -> bool) -> usi
         .unwrap_or_else(|| panic!("the Geometry tab paints no {what}: {texts:?}"))
 }
 
-/// Geometry selection P4.D, fix 1: a Pocket on a STEP-only project with
-/// nothing to cut (an empty selection; since UX-7 the default rule takes
-/// the face rings) names the fix: pick a face. Red proof: `wants_a_face_pick`
-/// returning false: the line was not painted.
+/// Geometry selection P4.D, fix 1, then W3h: a Pocket on a STEP-only
+/// project with nothing to cut (an empty selection) names the fix in the
+/// placeholder row of its list: "Select faces …", from the kinds of the
+/// pick bar chips. Red proof: `placeholder_text` without the face kind:
+/// the row reads "Select loops".
 #[test]
 fn a_step_pocket_names_the_face_pick_fix_p4_d() {
     let session = step_pocket_session();
     let texts = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
     assert!(
-        texts
-            .iter()
-            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
-        "the section must name the face pick fix: {texts:?}"
+        texts.iter().any(|t| t.starts_with("Select faces")),
+        "the placeholder must name the face pick: {texts:?}"
     );
 }
 
-/// Geometry selection P4.D follow-up: the section shows ONE Pick button,
-/// in the action row, in the refused state (the fix line names the fix
-/// and has no button of its own) and after a face pick (no fix line).
-/// Red proof: the fix line with its own `Pick` button again: the refused
-/// state painted two.
+/// Geometry selection P4.D follow-up, then W3h: the section shows ONE
+/// Pick, a quiet act of the list header, in the empty state and after a
+/// face pick. Red proof: a placeholder with its own `Pick` button: the
+/// empty state paints two.
 #[test]
 fn the_selection_section_shows_one_pick_p4_d() {
     // A button paints its label more than once in this harness, so the
-    // test counts Pick against Reset. W3a: both are quiet actions of the
-    // summary rows (Pick on Cuts, Reset on Selected), each drawn once.
+    // test counts Pick against the header menu act (also a quiet button).
     let count = |texts: &[String], label: &str| texts.iter().filter(|t| *t == label).count();
+    let menu = crate::ui::components::list_box::MENU;
 
     let mut session = step_pocket_session();
-    let refused = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
-    assert!(
-        refused
-            .iter()
-            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
-        "fixture: the section is refused and names the fix: {refused:?}"
-    );
-    assert!(
-        count(&refused, "Reset") > 0,
-        "fixture: the Selected row paints Reset: {refused:?}"
-    );
+    let empty = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
+    let per_button = count(&empty, menu);
+    assert!(per_button > 0, "fixture: the header paints its menu: {empty:?}");
     assert_eq!(
-        count(&refused, "Pick"),
-        count(&refused, "Reset"),
-        "the refused section must show one Pick: {refused:?}"
+        count(&empty, "Pick"),
+        per_button,
+        "the empty section must show one Pick: {empty:?}"
     );
 
     let face = session.models()[0]
@@ -638,20 +627,19 @@ fn the_selection_section_shows_one_pick_p4_d() {
         .expect("the face pick applies");
     let picked = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
     assert!(
-        !picked
-            .iter()
-            .any(|t| t == super::selection_section::PICK_A_FACE_FIX),
-        "fixture: a face pick clears the fix line: {picked:?}"
+        !picked.iter().any(|t| t.starts_with("Select faces")),
+        "fixture: a face pick fills the list: {picked:?}"
     );
     assert_eq!(
         count(&picked, "Pick"),
-        count(&picked, "Reset"),
+        per_button,
         "the section must show one Pick: {picked:?}"
     );
 }
 
 /// Geometry selection P4.D fix 4, then GT-1: the op selection is the
-/// Geometry tab, the first tab; its summary row ("Cuts") opens the tab. The
+/// Geometry tab, the first tab; its list (W3h: the header "Selection")
+/// opens the tab. The
 /// Passes tab holds Input, Start from and the Machining Boundary source, and
 /// no Pick. A 3D op shows "Pick faces" in the Geometry tab (fix 2). Red
 /// proof: the selection drawn in the Passes tab again: the Passes tab paints
@@ -660,9 +648,10 @@ fn the_selection_section_shows_one_pick_p4_d() {
 fn the_selection_section_is_at_the_top_p4_d() {
     let session = step_pocket_session();
     let geometry = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Pocket);
-    let cuts = position_of(&geometry, "Cuts row", |t| t.starts_with("Cuts"));
-    let pick = position_of(&geometry, "Pick button", |t| t == "Pick");
-    assert!(cuts < pick, "the summary opens the tab: {geometry:?}");
+    // W3h: Pick is a quiet act of the list header (the header paints its
+    // acts before its title, right to left).
+    let _ = position_of(&geometry, "list header", |t| t == "Selection");
+    let _ = position_of(&geometry, "Pick act", |t| t == "Pick");
     // R2: the whole Geometry tab opens with the Input row and holds the
     // Boundary row under the selection (W3a: no section header).
     let whole = tab_texts(
@@ -671,11 +660,11 @@ fn the_selection_section_is_at_the_top_p4_d() {
         ToolpathTab::Linking,
     );
     let input = position_of(&whole, "Input row", |t| t.starts_with("Input"));
-    let cuts = position_of(&whole, "Cuts row", |t| t.starts_with("Cuts"));
+    let cuts = position_of(&whole, "list header", |t| t == "Selection");
     let boundary = position_of(&whole, "Boundary row", |t| t == "Boundary");
     assert!(
         input < cuts && cuts < boundary,
-        "want Input < Cuts < Boundary: {whole:?}"
+        "want Input < Selection < Boundary: {whole:?}"
     );
     let passes = tab_texts(
         &session,
@@ -687,7 +676,7 @@ fn the_selection_section_is_at_the_top_p4_d() {
     });
     assert!(
         !passes.iter().any(|t| t == "Pick"
-            || t.starts_with("Cuts")
+            || t == "Selection"
             || t.starts_with("Input")
             || t.eq_ignore_ascii_case("machining boundary")),
         "the Passes tab holds no selection, no Input row and no boundary: {passes:?}"
@@ -798,7 +787,10 @@ fn holes_session() -> rs_cam_core::session::ProjectSession {
             },
         )
         .unwrap();
-    builder.build()
+    let mut session = builder.build();
+    // W3h: the Drill starts at its new-op default (no item).
+    edit_op(&mut session, rs_cam_core::selection::SelectionEdit::Reset);
+    session
 }
 
 fn edit_op(
@@ -816,19 +808,21 @@ fn edit_op(
         .unwrap();
 }
 
-/// The groups of the list of toolpath 0, as the tab builds them.
-fn groups_of(
+/// The inputs of the op selection of toolpath 0, as the tab builds them,
+/// handed to `with`.
+fn with_section_inputs<R>(
     session: &rs_cam_core::session::ProjectSession,
-) -> (
-    Vec<super::selection_section::ListGroup>,
-    std::sync::Arc<rs_cam_core::session::SelectionReport>,
-) {
+    with: impl FnOnce(
+        &super::selection_section::SelectionSectionInputs<'_>,
+        &rs_cam_core::session::SelectionReport,
+    ) -> R,
+) -> R {
     use rs_cam_core::session::SelectionTarget;
     let tc = &session.toolpath_configs()[0];
     let report = session.selection_status(tc, SelectionTarget::Op).unwrap();
     let read: super::SelectionRead = Ok(std::sync::Arc::clone(&report));
     let op_default = tc.operation.default_selection().unwrap();
-    let kinds = std::collections::BTreeSet::new();
+    let kinds = crate::state::pick::held_kinds(&session.models()[0]);
     let inputs = super::selection_section::SelectionSectionInputs {
         toolpath_id: tc.id,
         toolpath_model: tc.model_id,
@@ -846,42 +840,30 @@ fn groups_of(
         tool_diameter: Some(6.0),
         findings: &[],
     };
-    (
-        super::selection_section::list_groups(&inputs, &report),
-        report,
-    )
+    with(&inputs, &report)
 }
 
-/// GT-2 (L-R1, L-R2): every selected item is in one group only, so the
-/// rows of the groups are the report rows.
-///
-/// - The default Drill: one default row, closed, with the default rule's
-///   members.
-/// - After a pick of the Ø 10 circle and the Ø 6 rule offer: a rule group of
-///   24 rows (closed: more than 8) and a picked group of 1 row with
-///   "Rule…" and "×" (a Drill holds no floor). The filter keeps the full
-///   count on the header ("1 of 24").
-///
-/// Red proof: let a rule group also take the `Pick` rows: the row sum is
-/// more than the report rows.
-#[test]
-fn the_list_groups_hold_each_selected_item_once_gt2() {
-    use super::selection_section::{GROUP_CAP, GroupKind};
-    use rs_cam_core::selection::{ItemKind, MatchKey, SelectionEdit, SourceRef};
+/// The rows of the list of toolpath 0, as the tab builds them.
+fn rows_of(
+    session: &rs_cam_core::session::ProjectSession,
+) -> (
+    Vec<super::selection_section::ListRow>,
+    std::sync::Arc<rs_cam_core::session::SelectionReport>,
+) {
+    use rs_cam_core::session::SelectionTarget;
+    let tc = &session.toolpath_configs()[0];
+    let report = session.selection_status(tc, SelectionTarget::Op).unwrap();
+    let rows = with_section_inputs(session, |inputs, report| {
+        super::selection_section::list_rows(inputs, report)
+    });
+    (rows, report)
+}
 
+/// The holes session after a pick of the Ø 10 circle, a pick of one Ø 6
+/// circle and its first "Rule…" offer (all circles Ø 6).
+fn holes_with_a_rule_and_a_pick() -> rs_cam_core::session::ProjectSession {
+    use rs_cam_core::selection::{MatchKey, SelectionEdit, SourceRef};
     let mut session = holes_session();
-    let (groups, report) = groups_of(&session);
-    assert_eq!(groups.len(), 1, "the default row only: {groups:?}");
-    assert_eq!(groups[0].kind, GroupKind::Default);
-    assert!(groups[0].starts_closed(), "L-R2: the default row is closed");
-    assert!(
-        groups[0].title.starts_with("Default: every circle"),
-        "{}",
-        groups[0].title
-    );
-    assert_eq!(groups[0].rows.len(), report.rows.len());
-    assert!(groups[0].rows.iter().all(|r| r.acts == Default::default()));
-
     let model = session.toolpath_configs()[0].model_id;
     let key_of = |session: &rs_cam_core::session::ProjectSession, at: usize| MatchKey {
         source: SourceRef::Model(model),
@@ -905,19 +887,51 @@ fn the_list_groups_hold_each_selected_item_once_gt2() {
         )
         .unwrap();
     edit_op(&mut session, offers[0].edit.clone().unwrap());
+    session
+}
 
-    let (groups, report) = groups_of(&session);
-    let kinds: Vec<GroupKind> = groups.iter().map(|g| g.kind).collect();
+/// GT-2, W3h: the list is one row per selected item, the rule members and
+/// the picks alike, so the rows ARE the report rows; every row has `×`
+/// and the `⋯` menu holds "Rule…".
+///
+/// - A new Drill holds no item: no row. The header menu offers the rule
+///   preset of the kind it cuts ("Every circle"), "Clear selection" (off:
+///   nothing to clear) and no "Reset to default" (its default holds no
+///   rule).
+/// - After a pick of the Ø 10 circle and the Ø 6 rule offer: 24 rule rows
+///   (`RowFrom::Rule(0)`), then 1 pick row. The menu offers "Remove rule"
+///   and "Clear selection" writes the empty selection.
+///
+/// Red proof: let the rule rows also take the `Pick` rows: the row count
+/// is more than the report rows.
+#[test]
+fn the_list_rows_hold_each_selected_item_once_gt2() {
+    use super::selection_section::{
+        LIST_CAP, RowFrom, header_menu_edit_of, header_menu_labels,
+    };
+    use rs_cam_core::selection::{Selection, SelectionEdit};
+
+    let session = holes_session();
+    let (rows, report) = rows_of(&session);
+    assert!(rows.is_empty() && report.rows.is_empty(), "{rows:?}");
+    let labels = with_section_inputs(&session, |inputs, _| header_menu_labels(inputs));
+    assert!(labels.iter().any(|l| l == "Every circle"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "Clear selection"), "{labels:?}");
+    assert!(!labels.iter().any(|l| l == "Reset to default"), "{labels:?}");
     assert_eq!(
-        kinds,
-        [GroupKind::Rule(0), GroupKind::Picked(ItemKind::Circle)]
+        with_section_inputs(&session, |inputs, _| header_menu_edit_of(inputs, "Clear selection")),
+        None,
+        "nothing to clear"
     );
-    let total: usize = groups.iter().map(|g| g.rows.len()).sum();
-    assert_eq!(total, report.rows.len(), "each item in one group only");
-    assert_eq!(groups[0].rows.len(), 24);
-    assert!(groups[0].rows.len() > GROUP_CAP && groups[0].starts_closed());
-    assert_eq!(groups[1].rows.len(), 1);
-    let picked = &groups[1].rows[0];
+
+    let session = holes_with_a_rule_and_a_pick();
+    let (rows, report) = rows_of(&session);
+    assert_eq!(rows.len(), report.rows.len(), "each item in one row");
+    assert_eq!(rows.len(), 25);
+    assert!(rows.len() > LIST_CAP, "the list scrolls");
+    assert!(rows[..24].iter().all(|r| r.from == RowFrom::Rule(0)));
+    let picked = &rows[24];
+    assert_eq!(picked.from, RowFrom::Pick);
     // FR-2 F22: the row text is short; the full text (the place, the
     // layer) is the hover, and the filter reads it.
     assert_eq!(picked.label, "\u{00D8}10.00", "{}", picked.label);
@@ -926,50 +940,31 @@ fn the_list_groups_hold_each_selected_item_once_gt2() {
         "{}",
         picked.full
     );
-    assert!(picked.acts.rule && picked.acts.remove && !picked.acts.floor);
-    assert!(groups[0].rows.iter().all(|r| r.acts.remove && !r.acts.rule));
-    assert_eq!(groups[0].count_text(""), "24");
-    assert_eq!(groups[0].count_text("(36.0,"), "1 of 24");
+    assert!(rows.iter().all(|r| r.acts.rule && !r.acts.floor));
+    let labels = with_section_inputs(&session, |inputs, _| header_menu_labels(inputs));
+    assert!(
+        labels.iter().any(|l| l.starts_with("Remove rule: ")),
+        "{labels:?}"
+    );
+    assert_eq!(
+        with_section_inputs(&session, |inputs, _| header_menu_edit_of(inputs, "Clear selection")),
+        Some(SelectionEdit::Replace(Box::new(Selection::empty())))
+    );
 }
 
-/// GT-2: the tab paints the closed rule group as its header only, the open
-/// picked group with its row, and a row under the pointer lights its item
-/// in the viewport (`SelectionUi::row_hover`).
-///
-/// Red proof: drop the `row_hover` write of `draw_row`: the hover arm fails.
-#[test]
-fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
-    use rs_cam_core::selection::{MatchKey, SelectionEdit, SourceRef};
-
-    let mut session = holes_session();
-    let model = session.toolpath_configs()[0].model_id;
-    let key_of = |session: &rs_cam_core::session::ProjectSession, at: usize| MatchKey {
-        source: SourceRef::Model(model),
-        ..session.models()[0]
-            .items
-            .iter()
-            .nth(at)
-            .unwrap()
-            .key()
-            .clone()
-    };
-    let large = key_of(&session, 24);
-    let small = key_of(&session, 3);
-    edit_op(&mut session, SelectionEdit::AddPick(large));
-    edit_op(&mut session, SelectionEdit::AddPick(small.clone()));
-    let offers = session
-        .rule_offers(
-            &session.toolpath_configs()[0].clone(),
-            rs_cam_core::session::SelectionTarget::Op,
-            &small,
-        )
-        .unwrap();
-    edit_op(&mut session, offers[0].edit.clone().unwrap());
-
+/// Draw the Geometry tab of toolpath 0 of `session` (an op of `op_type`)
+/// headless, move the pointer onto the first painted text that `pick`
+/// accepts, and return the painted texts and the key that the hover sets
+/// (`SelectionUi::row_hover`).
+fn hover_a_row(
+    session: &rs_cam_core::session::ProjectSession,
+    op_type: crate::state::toolpath::OperationType,
+    pick: impl Fn(&str) -> bool,
+) -> (Vec<String>, Option<rs_cam_core::selection::MatchKey>) {
     let tc = session.toolpath_configs()[0].clone();
     let inputs = super::toolpath_panel_inputs(
         tc.id,
-        &session,
+        session,
         &crate::state::runtime::GuiState::default(),
         None,
         Some(ToolpathTab::Geometry),
@@ -977,10 +972,10 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
     );
     let mut entry = crate::state::toolpath::ToolpathEntry::for_operation(
         tc.id,
-        "Drill".to_owned(),
+        "Case".to_owned(),
         tc.tool_id.expect("the case tool"),
         tc.model_id,
-        tc.operation.op_type(),
+        op_type,
     );
     entry.operation = tc.operation;
     let ctx = egui::Context::default();
@@ -1011,7 +1006,7 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
             for clipped in &out.shapes {
                 if let egui::epaint::Shape::Text(text) = &clipped.shape {
                     let t = text.galley.job.text.clone();
-                    if t.starts_with("\u{00D8}10.00 \u{00B7}") {
+                    if row_at.is_none() && pick(&t) {
                         row_at = Some(clipped.shape.visual_bounding_rect().center());
                     }
                     texts.push(t);
@@ -1020,24 +1015,61 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
         }
         out.textures_delta.clear();
     }
-    // W3g: the list header paints the title and, at its right, the count.
+    assert!(row_at.is_some(), "the tab paints the row: {texts:?}");
+    (texts, selection_ui.row_hover)
+}
+
+/// GT-2, W3h: the list paints its header with the counts at the right and
+/// a scroll of rule rows; a RULE MEMBER row under the pointer lights its
+/// item in the viewport (`SelectionUi::row_hover`, the key that
+/// `selection_highlight::hover_target` rings).
+///
+/// Red proof: drop the `row_hover` write of `draw_row`: the hover arm
+/// fails.
+#[test]
+fn hovering_a_rule_member_row_lights_its_item_w3h() {
+    let session = holes_with_a_rule_and_a_pick();
+    let (texts, hover) = hover_a_row(
+        &session,
+        crate::state::toolpath::OperationType::Drill,
+        |t| t.starts_with("\u{00D8}6 hole") || t.starts_with("\u{00D8}6.00 \u{00B7}"),
+    );
+    assert!(texts.iter().any(|t| t == "Selection"), "{texts:?}");
     assert!(
-        texts.iter().any(|t| t.contains("\u{00D8} 6.00")) && texts.iter().any(|t| t == "24"),
-        "the rule header holds its count: {texts:?}"
+        texts.iter().any(|t| t.starts_with("25 circles")),
+        "the header holds the counts: {texts:?}"
     );
-    assert!(
-        !texts.iter().any(|t| t.starts_with("\u{00D8}6.00 \u{00B7}")),
-        "the closed group paints no row: {texts:?}"
+    let hover = hover.expect("the row under the pointer lights its item");
+    assert_eq!(hover.kind, rs_cam_core::selection::ItemKind::Circle);
+    assert!((hover.measure - 6.0).abs() < 1e-9, "{hover:?}");
+}
+
+/// W3h: a FACE row under the pointer lights its face (the hover key is the
+/// face key), and the empty list paints its placeholder.
+#[test]
+fn hovering_a_face_row_lights_the_face_w3h() {
+    let mut session = step_pocket_session();
+    let face = session.models()[0]
+        .items
+        .iter()
+        .find(|i| i.kind() == rs_cam_core::selection::ItemKind::Face)
+        .expect("fixture: the STEP model holds a face")
+        .key()
+        .clone();
+    edit_op(
+        &mut session,
+        rs_cam_core::selection::SelectionEdit::Replace(Box::new(
+            rs_cam_core::selection::Selection::from_picks(vec![face.clone()]),
+        )),
     );
-    assert!(
-        row_at.is_some(),
-        "the open picked group paints its row: {texts:?}"
+    let (_, hover) = hover_a_row(
+        &session,
+        crate::state::toolpath::OperationType::Pocket,
+        |t| t.starts_with("Face Z"),
     );
-    assert_eq!(
-        selection_ui.row_hover.as_ref().map(|k| k.measure),
-        Some(10.0),
-        "the row under the pointer lights its item"
-    );
+    let hover = hover.expect("the face row lights its item");
+    assert_eq!(hover.kind, rs_cam_core::selection::ItemKind::Face);
+    assert!(hover.matches(&face) || face.matches(&hover), "{hover:?} vs {face:?}");
 }
 
 /// W2b (was F24): a field finding puts its dot on the tab that draws its
@@ -1143,13 +1175,14 @@ fn the_blocked_state_word_fits_its_slot_f22() {
         rs_cam_core::ToolpathId::from_raw(0),
     )
     .expect("a gouge blocks");
+    let hover = super::placement::blocking_hover(&finding);
     let done = rs_cam_core::session::RunState::Done;
     let row = super::toolpath_panel::HeaderRow {
         run_state: Some(&done),
         can_run: true,
         manual_generation: false,
         waiting_detail: None,
-        blocking: Some(&finding),
+        blocking: Some(hover.as_str()),
         moves: Some(12_345),
         feed_stage: Some(rs_cam_core::session::FeedStage::ModulatedSuperseded {
             simulation_run: 3,
@@ -1253,7 +1286,7 @@ fn the_figures_hover_names_the_feed_caps_g_b() {
 /// on every surface. A default Drill on `block_with_blind_hole.step` (one
 /// Ø6 hole, rim Z 20, floor Z 12):
 ///
-/// - the GUI Geometry tab list (`list_groups`) gives one row,
+/// - the GUI Geometry tab list (`list_rows`) gives one row,
 ///   "Ø6 hole, 8 deep";
 /// - the MCP `selection_status` reply gives one `rows` entry with that
 ///   `hole.label` and one `holes` entry with that `label`;
@@ -1329,12 +1362,8 @@ fn one_hole_is_one_row_re() {
     let session = builder.build();
 
     // GUI: the Geometry tab list.
-    let (groups, _) = groups_of(&session);
-    let rows: Vec<&str> = groups
-        .iter()
-        .flat_map(|g| g.rows.iter())
-        .map(|row| row.label.as_str())
-        .collect();
+    let (rows, _) = rows_of(&session);
+    let rows: Vec<&str> = rows.iter().map(|row| row.label.as_str()).collect();
     assert_eq!(rows, vec![LABEL], "the GUI list: one row per hole");
 
     // MCP: selection_status.
@@ -1376,8 +1405,8 @@ fn one_hole_is_one_row_re() {
 /// R-A (operator ruling 2026-10-23): the part outline row has one name on
 /// every surface. A default Profile (side Outside) on `stepped_block.step`:
 ///
-/// - the GUI Geometry tab list (`list_groups`) gives one row,
-///   "Part outline Z0", under the title "Default: the part outline";
+/// - the GUI Geometry tab list (`list_rows`) gives one row,
+///   "Part outline Z0" (the drawing rule of the config default);
 /// - the MCP `selection_status` reply gives one `rows` entry with `role`
 ///   `"part_outline"`;
 /// - the MCP `list_model_items` reply gives one row with that `role`, the
@@ -1449,10 +1478,8 @@ fn the_part_outline_row_reads_part_outline_ra() {
     let session = builder.build();
 
     // GUI: the Geometry tab list.
-    let (groups, _) = groups_of(&session);
-    assert_eq!(groups.len(), 1);
-    assert_eq!(groups[0].title, "Default: the part outline");
-    let rows: Vec<&str> = groups[0].rows.iter().map(|r| r.label.as_str()).collect();
+    let (rows, _) = rows_of(&session);
+    let rows: Vec<&str> = rows.iter().map(|r| r.label.as_str()).collect();
     assert_eq!(rows, vec!["Part outline Z0"], "the GUI list");
 
     // MCP: selection_status.
@@ -1589,7 +1616,6 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     ui,
                     entry,
                     &inputs,
-                    None,
                     None,
                     &mut crate::state::pick::SelectionUi::default(),
                     super::linking_dressup::Fields::default(),

@@ -443,6 +443,11 @@ diag_ids! {
     /// generation will refuse. A drill op states the same refusal under its
     /// own no-holes id.
     pub const PRECOND_SELECTION_REFUSED: &str = "precondition.selection_refused";
+    /// W3h (operator ruling 2026-10-30): a new op starts with nothing
+    /// selected. The selection of an op that is not a Pin Drill holds no
+    /// rule and no pick, so generation will refuse until the operator
+    /// picks. The face asks for the pick; it anchors to `selection`.
+    pub const PRECOND_SELECTION_EMPTY: &str = "precondition.selection_empty";
     /// UX-1c (operator ruling 2026-10-22, SAFETY): a Chamfer, V-Carve,
     /// Inlay or Inlay Plug on fresh stock takes a face pick below the stock
     /// top, so generation will refuse (`OperationError::BuriedFace`).

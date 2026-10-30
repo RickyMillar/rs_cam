@@ -44,6 +44,24 @@ pub(in crate::ui::properties) fn panel_diagnostics(
 /// `ref.model_missing` (an issue row of its own).
 const SELECTED_MODEL_MISSING: &str = "Selected model is missing";
 
+/// W6: the face of a last-run refusal whose text is over the face limit
+/// (`FACE_MAX_CHARS`). The full refusal is the hover.
+pub(in crate::ui::properties) const LAST_RUN_REFUSED: &str = "The last run was refused";
+
+/// W6: the face of a validator refusal whose text is over the face limit.
+pub(in crate::ui::properties) const INPUTS_REFUSED: &str = "A check of the inputs refuses this op";
+
+/// A Danger issue row of a text with no short face of its own: the text
+/// itself when it fits the face limit (`FACE_MAX_CHARS`), else `face` with
+/// the text on hover.
+fn refusal_notice(text: &str, face: &str) -> Notice {
+    if text.chars().count() <= rs_cam_core::diagnostics::FACE_MAX_CHARS {
+        Notice::new(Role::Danger, text)
+    } else {
+        Notice::new(Role::Danger, face).detail(text)
+    }
+}
+
 /// What an issue row of the stack does when its Fix button is clicked.
 enum IssueAct {
     None,
@@ -145,19 +163,17 @@ pub(super) fn draw_issue_stack(
                 notices.push(notice);
                 acts.push(act);
             }
+            // W6: a reason over the face limit takes a short face; the
+            // reason is the hover.
             None => {
-                notices.push(Notice::new(Role::Danger, reason.as_str()));
+                notices.push(refusal_notice(reason, LAST_RUN_REFUSED));
                 acts.push(IssueAct::None);
             }
         }
     }
     for d in &placement.issues {
-        let mut notice = Notice::new(
-            crate::ui::properties::placement::role_of(d),
-            d.face.as_str(),
-        )
-        .detail(crate::ui::properties::placement::detail(d));
-        let defect = match &d.fix {
+        let mut notice = d.notice();
+        let defect = match d.fix() {
             Some(DiagnosticFix::ApplyStaleDefault { rule_id, .. }) => inputs
                 .stale_default_defects
                 .iter()
@@ -175,7 +191,7 @@ pub(super) fn draw_issue_stack(
         acts.push(act);
     }
     for gate in gates {
-        notices.push(Notice::new(Role::Danger, gate.as_str()));
+        notices.push(refusal_notice(gate, INPUTS_REFUSED));
         acts.push(IssueAct::None);
     }
     if notices.is_empty() {

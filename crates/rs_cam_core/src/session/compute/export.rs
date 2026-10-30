@@ -621,6 +621,10 @@ impl ProjectSession {
                 .collect(),
             selection_holes,
             selection_refusal,
+            selection_empty: tc
+                .operation
+                .selection()
+                .is_some_and(crate::selection::Selection::is_empty),
             buried_face_refusal,
             stock_thickness_refusal: self.stock_thickness_refusal(),
             no_tool_state: self

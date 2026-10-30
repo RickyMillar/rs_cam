@@ -180,9 +180,9 @@ impl Button {
     /// width, painted as a bar along the bottom edge. `None` paints nothing.
     ///
     /// A progress BAR and not a second label. The button paints its label
-    /// exactly ONCE (`component_contracts_up2`), so the progress WORDS are
-    /// the button's own `text`, which the caller composes. That also keeps
-    /// the one centred label centred while a job runs.
+    /// exactly ONCE (`component_contracts_up2`). W5: the label is the
+    /// action and stays fixed; progress WORDS go in a status line beside
+    /// the button (Generate All draws one under it).
     #[must_use]
     pub fn progress(mut self, fraction: f32) -> Self {
         self.progress = Some(fraction.clamp(0.0, 1.0));

@@ -4,12 +4,20 @@
 //! pattern, the dogbone corner, the lead-in arc, the tabs, and so on. The
 //! parent re-exports every name, so the inspector imports do not change.
 
-use crate::state::toolpath::{OperationConfig, PocketPattern};
+use crate::state::toolpath::{FaceDirection, OperationConfig, PocketPattern};
 
 /// Whether an operation has a displayable stepover pattern.
 pub(in crate::ui::properties) enum StepoverPattern {
-    Zigzag { stepover: f64, angle: f64 },
-    Contour { stepover: f64 },
+    /// Parallel passes. `one_way` is true when every pass cuts in the same
+    /// direction (Face `OneWay`); the label then says so.
+    Zigzag {
+        stepover: f64,
+        angle: f64,
+        one_way: bool,
+    },
+    Contour {
+        stepover: f64,
+    },
 }
 
 impl StepoverPattern {
@@ -20,6 +28,7 @@ impl StepoverPattern {
                 PocketPattern::Zigzag => Self::Zigzag {
                     stepover: cfg.stepover,
                     angle: cfg.angle,
+                    one_way: false,
                 },
                 PocketPattern::Contour => Self::Contour {
                     stepover: cfg.stepover,
@@ -28,33 +37,36 @@ impl StepoverPattern {
             OperationConfig::Face(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: 0.0,
+                one_way: cfg.direction == FaceDirection::OneWay,
             }),
             OperationConfig::Zigzag(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: cfg.angle,
+                one_way: false,
             }),
             OperationConfig::VCarve(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: 0.0,
+                one_way: false,
             }),
             OperationConfig::HorizontalFinish(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: 0.0,
+                one_way: false,
             }),
             OperationConfig::DropCutter(cfg) => Some(Self::Zigzag {
                 stepover: cfg.stepover,
                 angle: 0.0,
-            }),
-            OperationConfig::Waterline(cfg) => Some(Self::Contour {
-                stepover: cfg.z_step,
-            }),
-            OperationConfig::Scallop(cfg) => Some(Self::Contour {
-                stepover: cfg.scallop_height * 5.0,
+                one_way: false,
             }),
             // F161: these ops draw no stepover diagram. Each is named, so a
             // new op is a compile error here until it picks a pattern or
-            // `None`.
-            OperationConfig::Profile(_)
+            // `None`. F12: Waterline (a Z step is not an XY inset) and
+            // Scallop (its step is not a fixed multiple of the cusp height)
+            // drew a contour picture that misled; they draw none.
+            OperationConfig::Waterline(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::Profile(_)
             | OperationConfig::Bore(_)
             | OperationConfig::Adaptive(_)
             | OperationConfig::Inlay(_)
@@ -105,7 +117,11 @@ pub(in crate::ui::properties) fn draw_stepover_diagram(
     let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
     match pattern {
-        StepoverPattern::Zigzag { stepover, angle } => {
+        StepoverPattern::Zigzag {
+            stepover,
+            angle,
+            one_way,
+        } => {
             let angle_rad = (*angle as f32).to_radians();
             let cos_a = angle_rad.cos();
             let sin_a = angle_rad.sin();
@@ -156,7 +172,7 @@ pub(in crate::ui::properties) fn draw_stepover_diagram(
                     // Direction arrow on middle lines
                     if i > 0 && i < num_lines && i % 2 == 0 {
                         let mid = egui::pos2((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0);
-                        let dir = if i % 4 == 0 { 1.0 } else { -1.0 };
+                        let dir = if *one_way || i % 4 == 0 { 1.0 } else { -1.0 };
                         let ax = mid.x + dir * cos_a * 5.0;
                         let ay = mid.y + dir * sin_a * 5.0;
                         painter.circle_filled(egui::pos2(ax, ay), 2.0, path_color);
@@ -164,24 +180,20 @@ pub(in crate::ui::properties) fn draw_stepover_diagram(
                 }
             }
 
-            // Angle label
-            if angle.abs() > 0.1 {
-                painter.text(
-                    egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
-                    egui::Align2::LEFT_TOP,
-                    format!("Zigzag {angle:.0}\u{00B0}"),
-                    egui::FontId::proportional(9.0),
-                    dim_color,
-                );
+            // The pattern label, with the angle when it is not zero.
+            let kind = if *one_way { "One way" } else { "Zigzag" };
+            let label = if angle.abs() > 0.1 {
+                format!("{kind} {angle:.0}\u{00B0}")
             } else {
-                painter.text(
-                    egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
-                    egui::Align2::LEFT_TOP,
-                    "Zigzag",
-                    egui::FontId::proportional(9.0),
-                    dim_color,
-                );
-            }
+                kind.to_owned()
+            };
+            painter.text(
+                egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+                egui::Align2::LEFT_TOP,
+                label,
+                egui::FontId::proportional(9.0),
+                dim_color,
+            );
 
             // Stepover dimension
             painter.text(
@@ -845,52 +857,107 @@ pub(in crate::ui::properties) fn draw_radial_diagram(ui: &mut egui::Ui, angular_
     );
 }
 
-// ── Point Set Diagram (Drill, AlignmentPinDrill) ────────────────────────
+// ── Hole Diagram (Drill, Pin Drill) ─────────────────────────────────────
 
-/// Draw scattered drill points.
-pub(in crate::ui::properties) fn draw_point_set_diagram(ui: &mut egui::Ui, label: &str) {
-    let desired_size = egui::vec2(ui.available_width().min(260.0), 70.0);
+/// Draw the holes the op drills, top down, fitted to the box (F12).
+///
+/// `holes` are the centres and diameters of the holes that generation
+/// drills: a Drill's `HoleSelection::holes`, a Pin Drill's
+/// `ProjectSession::pin_drill_holes`. Two holes on one centre are one hole,
+/// as the drill adapter drills them (`unique_holes`), so the count label
+/// agrees with the drilled count. With no hole, the function draws nothing and
+/// returns false: no box, no placeholder.
+pub(in crate::ui::properties) fn draw_hole_diagram(
+    ui: &mut egui::Ui,
+    holes: &[([f64; 2], Option<f64>)],
+) -> bool {
+    let eps = rs_cam_core::selection::KEY_MATCH_EPS_MM;
+    let mut centres: Vec<(f64, f64, Option<f64>)> = Vec::with_capacity(holes.len());
+    for &([x, y], diameter) in holes {
+        if !centres
+            .iter()
+            .any(|c| (c.0 - x).abs() < eps && (c.1 - y).abs() < eps)
+        {
+            centres.push((x, y, diameter));
+        }
+    }
+    if centres.is_empty() {
+        return false;
+    }
+
+    let desired_size = egui::vec2(ui.available_width().min(260.0), 90.0);
     let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
-
     painter.rect_filled(rect, 4.0, crate::ui::tokens::DIAGRAM_CANVAS);
 
     let path_color = crate::ui::tokens::DIAGRAM_INK;
     let dim_color = crate::ui::tokens::DIAGRAM_DIM;
 
-    // Scattered drill points (representative pattern)
-    let positions = [
-        (0.25, 0.35),
-        (0.45, 0.55),
-        (0.7, 0.3),
-        (0.55, 0.7),
-        (0.3, 0.65),
-        (0.75, 0.6),
-        (0.5, 0.4),
-    ];
-    for &(fx, fy) in &positions {
-        let x = rect.left() + 20.0 + fx as f32 * (rect.width() - 40.0);
-        let y = rect.top() + 14.0 + fy as f32 * (rect.height() - 28.0);
-        // Crosshair at each point
+    // The extent of the centres. One hole, or holes on one line, has no
+    // extent on an axis; a minimum span keeps the scale finite.
+    let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &(x, y, _) in &centres {
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    let span = (max_x - min_x).max(max_y - min_y).max(1.0);
+    // The drawing area under the label, with the same scale on X and Y.
+    let area = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 14.0, rect.top() + 18.0),
+        egui::pos2(rect.right() - 14.0, rect.bottom() - 10.0),
+    );
+    let scale = f64::from(area.width().min(area.height())) / span;
+    let mid_x = (min_x + max_x) / 2.0;
+    let mid_y = (min_y + max_y) / 2.0;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "screen coordinates: the offsets are scaled into the box, far inside f32."
+    )]
+    let to_screen = |x: f64, y: f64| {
+        // Y is up on the part and down on the screen.
+        egui::pos2(
+            area.center().x + ((x - mid_x) * scale) as f32,
+            area.center().y - ((y - mid_y) * scale) as f32,
+        )
+    };
+
+    let stroke = egui::Stroke::new(1.0_f32, path_color);
+    for &(x, y, diameter) in &centres {
+        let at = to_screen(x, y);
+        // A crosshair at each centre.
         let s = 4.0;
         painter.line_segment(
-            [egui::pos2(x - s, y), egui::pos2(x + s, y)],
-            egui::Stroke::new(1.0_f32, path_color),
+            [egui::pos2(at.x - s, at.y), egui::pos2(at.x + s, at.y)],
+            stroke,
         );
         painter.line_segment(
-            [egui::pos2(x, y - s), egui::pos2(x, y + s)],
-            egui::Stroke::new(1.0_f32, path_color),
+            [egui::pos2(at.x, at.y - s), egui::pos2(at.x, at.y + s)],
+            stroke,
         );
-        painter.circle_filled(egui::pos2(x, y), 2.0, path_color);
+        // A circle at its scaled size; a point has no size.
+        if let Some(d) = diameter {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a screen radius, clamped to a few points."
+            )]
+            let r = ((d * scale / 2.0) as f32).clamp(2.0, 12.0);
+            painter.circle_stroke(at, r, stroke);
+        }
     }
 
+    let count = centres.len();
+    let noun = if count == 1 { "hole" } else { "holes" };
     painter.text(
         egui::pos2(rect.left() + 6.0, rect.top() + 4.0),
         egui::Align2::LEFT_TOP,
-        label,
+        format!("{count} {noun}"),
         egui::FontId::proportional(9.0),
         dim_color,
     );
+    true
 }
 
 // ── Pencil Diagram ──────────────────────────────────────────────────────
@@ -1306,4 +1373,50 @@ pub(in crate::ui::properties) fn draw_ramp_finish_diagram(ui: &mut egui::Ui, max
         egui::FontId::proportional(9.0),
         dim_color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    fn hole(x: f64, y: f64) -> ([f64; 2], Option<f64>) {
+        ([x, y], Some(6.0))
+    }
+
+    /// The texts the hole diagram paints, and whether it drew.
+    fn paint(holes: &[([f64; 2], Option<f64>)]) -> (bool, Vec<String>, usize) {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+        warmup.textures_delta.clear();
+        let mut drew = false;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            drew = super::draw_hole_diagram(ui, holes);
+        });
+        out.textures_delta.clear();
+        let texts = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        (drew, texts, out.shapes.len())
+    }
+
+    /// F12: the Drill diagram counts the real holes; two holes on one
+    /// centre are one drilled hole. With no hole it draws no box.
+    #[test]
+    fn the_hole_diagram_counts_the_real_holes_f12() {
+        let (drew, texts, _) = paint(&[hole(0.0, 0.0), hole(40.0, 10.0), hole(40.0, 10.0)]);
+        assert!(drew);
+        assert_eq!(texts, vec!["2 holes".to_owned()]);
+
+        let (drew, texts, _) = paint(&[hole(5.0, 5.0)]);
+        assert!(drew, "one hole has no extent; it still draws");
+        assert_eq!(texts, vec!["1 hole".to_owned()]);
+
+        let (drew, _, shapes) = paint(&[]);
+        assert!(!drew && shapes == 0, "no hole draws no box and no text");
+    }
 }

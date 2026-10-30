@@ -241,14 +241,15 @@ fn the_empty_inspector_names_what_can_be_selected() {
 
 /// The Getting-started list ends at the machine, so simulation cannot be a
 /// clause inside the export step. Generate, review, then export — in that
-/// order, and each on its own line.
+/// order, and each its own step (W5: the steps are the `STEPS` table of
+/// `getting_started.rs`, live and linked).
 #[test]
 fn getting_started_reviews_before_it_exports() {
     let properties = properties_src();
     for step in [
-        "\"5. Generate toolpaths\"",
-        "\"6. Simulate and review\"",
-        "\"7. Export G-code\"",
+        "\"Generate toolpaths\"",
+        "\"Simulate and review\"",
+        "\"Export G-code\"",
     ] {
         assert!(
             properties.contains(step),
@@ -261,9 +262,9 @@ fn getting_started_reviews_before_it_exports() {
          the new ones"
     );
     let simulate = properties
-        .find("6. Simulate and review")
+        .find("\"Simulate and review\"")
         .expect("checked above");
-    let export = properties.find("7. Export G-code").expect("checked above");
+    let export = properties.find("\"Export G-code\"").expect("checked above");
     assert!(
         simulate < export,
         "review comes before export, or the step is decoration"

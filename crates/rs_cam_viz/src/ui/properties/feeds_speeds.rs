@@ -1,7 +1,7 @@
-//! The Feeds tab: the speed rows, the measured
-//! operating point, the vendor LUT viewer and the entry-style preview
-//! diagram. The comparison card (current against recommended, and Apply) is
-//! in the Explore window (`ui/feeds/compare.rs`, W3c).
+//! The Feeds tab: the speed rows and the Chipload row, the inline chart and
+//! the recommendation (`ui/feeds/explore.rs`, `ui/feeds/compare.rs`, W3i),
+//! the measured operating point and the entry-style preview diagram. The
+//! vendor cutting data is a window (`ui/feeds/vendor.rs`).
 
 use super::linking_dressup::{Fields, help_for};
 use crate::state::toolpath::{
@@ -10,7 +10,6 @@ use crate::state::toolpath::{
 use crate::ui::components::{
     DataRow, DataTable, Details, PropRow, ProvKind, Role, SectionHeader, Source,
 };
-use crate::ui::feeds::shared::{material_family_label, tool_family_label};
 use rs_cam_core::feeds::FeedsField;
 
 /// R1: the mark of a value that Suggest wrote (design rule 8).
@@ -23,16 +22,54 @@ const SUGGESTED_HOVER: &str = "Suggested by the calculator. Type a value to repl
 const NOT_SET_HOVER: &str = "Not set. The calculator has no data for this tool and \
      material, so type a value. The operation does not generate until it is set.";
 
+/// F216, W3i: fill the toolpath's feeds memo (the calculator, the funnel
+/// dry run and the explanation payload) for the bound tool. The panel host
+/// calls it once per frame BEFORE it places the findings and draws a tab,
+/// so every tab (the Geometry notes counter too) reads the same answer on
+/// the first frame of a selection. The memo runs the work only when an
+/// input moved. With no tool there is nothing to calculate.
+pub(super) fn refresh_feeds_memo(
+    entry: &mut ToolpathEntry,
+    inputs: &super::ToolpathPanelInputs,
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+) {
+    let Some(tool) = inputs
+        .tool_configs
+        .iter()
+        .find(|(id, _)| Some(*id) == entry.tool_id)
+        .map(|(_, t)| t)
+    else {
+        return;
+    };
+    entry.feeds_memo.refresh(
+        &mut entry.feeds_result,
+        crate::state::runtime::FeedsInputs {
+            operation: &entry.operation,
+            tool,
+            material: &inputs.material,
+            machine: &inputs.machine,
+            spindle_strategy: inputs.spindle_strategy,
+            model_bbox,
+        },
+        super::pills::pill_previews,
+    );
+}
+
+/// W6: the face of a feeds refusal; the refusal text is the hover.
+pub(super) const FEEDS_UNAVAILABLE: &str = "Feeds unavailable";
+
 /// Run the LUT calculator (read-only) through the entry's `FeedsMemo`
-/// (F216), and draw the derived rows of the tab: the measured operating
-/// point. With no basis, one line gives the refusal.
+/// (F216), and draw the derived block of the tab: the inline chart and the
+/// recommendation (W3i), then the measured operating point. With no basis,
+/// one line gives the refusal.
 ///
 /// R1 (operator ruling 2026-10-30) replaces F.5 ("the calculator never
 /// writes"): core seeds each EMPTY feed field with the Suggest value on op
 /// add, and each empty or suggested one on a tool change
-/// (`ProjectSession::seed_feeds`). This draw
-/// writes nothing. W3g: the cut half of the recommendation is the "⚡"
-/// action of the Depth/pass and Stepover rows on the Passes tab.
+/// (`ProjectSession::seed_feeds`). This draw writes nothing itself; the
+/// two apply buttons and the spindle policy push events. W3g: the cut half
+/// of the recommendation is the "⚡" action of the Depth/pass and Stepover
+/// rows on the Passes tab.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -48,37 +85,59 @@ pub(super) fn calculate_and_apply_feeds(
     // Q1: the bbox of the model this toolpath machines, from
     // `ToolpathPanelSnapshot`. The memo key reads it.
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    events: &mut Vec<crate::ui::AppEvent>,
 ) {
-    // F216: the same memo the Geometry tab's pills read. The calculator
-    // runs only when an input moved.
-    entry.feeds_memo.refresh(
-        &mut entry.feeds_result,
-        crate::state::runtime::FeedsInputs {
+    // F216: the panel host filled the memo before any tab drew
+    // (`refresh_feeds_memo`); this tab only reads it.
+    if let Some(e) = entry.feeds_memo.refusal().map(ToString::to_string) {
+        ui.add_space(8.0);
+        // G-E (4), W6: one short face; the refusal is the hover. A tool
+        // refusal is also the state of the Tool row.
+        ui.add(
+            crate::ui::components::OneLine::new(FEEDS_UNAVAILABLE)
+                .color(crate::ui::tokens::DANGER)
+                .detail(e),
+        );
+        return;
+    }
+    if let Some(preview) = entry.feeds_memo.preview_shared() {
+        // W3i: the card's funnel answers, once per input change. The key is
+        // the `Debug` text of every input of the build (the `FeedsKey`
+        // idiom), the dressups included.
+        let key = format!(
+            "{:?}|{tool:?}|{material:?}|{machine:?}|{spindle_strategy:?}|{model_bbox:?}|{:?}",
+            entry.operation, entry.dressups
+        );
+        let card = entry.feeds_memo.card(key, || {
+            crate::ui::feeds::compare::build_card(
+                &entry.operation,
+                &entry.dressups,
+                tool,
+                material,
+                machine,
+                spindle_strategy,
+                model_bbox,
+                &preview,
+            )
+        });
+        ui.add_space(crate::ui::tokens::SPACE_2);
+        let op = crate::ui::feeds::shared::OpFeeds {
+            toolpath_id: entry.id,
             operation: &entry.operation,
             tool,
             material,
             machine,
-            spindle_strategy,
-            model_bbox,
-        },
-        super::pills::pill_previews,
-    );
-    match (
-        entry.feeds_result.is_some(),
-        entry.feeds_memo.refusal().map(ToString::to_string),
-    ) {
-        (true, _) => draw_feeds_card(ui, load_verdict),
-        (false, Some(e)) => {
-            ui.add_space(8.0);
-            // G-E (4): one line that truncates; its hover is the full text.
-            ui.add(
-                crate::ui::components::OneLine::new(format!("Feeds unavailable: {e}"))
-                    .color(crate::ui::tokens::DANGER),
-            );
-        }
-        // Not reached: a refresh leaves a result or a refusal.
-        (false, None) => {}
+            preview: &preview,
+            card: &card,
+        };
+        crate::ui::feeds::explore::draw_inline(
+            ui,
+            &op,
+            |ui, events| draw_spindle_policy_row(ui, spindle_strategy, machine, events),
+            events,
+        );
     }
+    draw_feeds_card(ui, load_verdict);
 }
 
 /// W1 — the operator sets the feed, the plunge and the RPM here.
@@ -108,6 +167,7 @@ pub(super) fn calculate_and_apply_feeds(
 pub(super) fn draw_speed_controls(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
+    flutes: Option<u32>,
     fields: Fields<'_>,
 ) {
     // A drill is Z-only: its plunge rate IS its feed rate. A second field
@@ -138,10 +198,7 @@ pub(super) fn draw_speed_controls(
     // is not set. The field is empty, and the op refuses to generate until
     // it is set.
     let mut feed = entry.operation.feed_rate();
-    // W5: an op whose schema states a feed range (the drill ops) clamps to
-    // it here too; the others keep this row's own range.
-    let feed_range = OperationConfig::param_range_for_type(op_type, "feed_rate")
-        .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
+    let feed_range = feed_range_for(op_type);
     let row = speed_prop_row("Feed", op_type, "feed_rate", fields);
     if speed_row(
         ui,
@@ -236,6 +293,119 @@ pub(super) fn draw_speed_controls(
             entry.stale_since = Some(std::time::Instant::now());
         }
     }
+
+    // W3i: the chipload of the feed and the spindle speed.
+    draw_chipload_row(
+        ui,
+        entry,
+        flutes,
+        feed_range_for(op_type),
+        feed_suggested && spindle_suggested,
+    );
+}
+
+/// The clamp range of the Feed row of `op_type`. W5: an op whose schema
+/// states a feed range (the drill ops) clamps to it; the others take this
+/// row's own range.
+fn feed_range_for(
+    op_type: rs_cam_core::compute::catalog::OperationType,
+) -> std::ops::RangeInclusive<f64> {
+    OperationConfig::param_range_for_type(op_type, "feed_rate")
+        .map_or(1.0..=50_000.0, |range| range.inclusive_bounds())
+}
+
+/// The unit of the Chipload row: millimetres per tooth. The short form
+/// fits the four-decimal value and the unit in the 240-point rail; the
+/// hover spells it out.
+const CHIPLOAD_UNIT: &str = "mm/t";
+
+/// The hover of the Chipload row.
+const CHIPLOAD_HOVER: &str = "The commanded advance per tooth, in mm per tooth: feed \
+     \u{00F7} (spindle speed \u{00D7} flutes). Type a chipload to set the feed for it at this spindle speed; the \
+     spindle speed stays. An edit of the feed or the spindle speed changes this value.";
+
+/// W3i — the Chipload row: the commanded advance per tooth of the op's feed,
+/// spindle speed and tool flutes, through core `AdvancePerToothMm`. An edit
+/// writes ONE value, the feed (`feed = chipload × RPM × flutes`, core
+/// `AdvancePerToothMm::feed_at`); the spindle speed stays. The write-back
+/// stamps the feed Manual (`FeedsProvenance::detect_manual_edits`).
+///
+/// With no feed, no spindle speed or no flutes the row is read-only "—"
+/// and the hover gives the reason. ⚡ shows when the feed and the spindle
+/// speed both carry a Suggest stamp: then the chipload is Suggest's too.
+fn draw_chipload_row(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    flutes: Option<u32>,
+    feed_range: std::ops::RangeInclusive<f64>,
+    suggested: bool,
+) {
+    let rpm = entry
+        .operation
+        .spindle_rpm()
+        .filter(|rpm| *rpm > 0)
+        .map(f64::from);
+    let flutes = flutes.filter(|f| *f > 0);
+    let (Some(rpm), Some(flutes)) = (rpm, flutes) else {
+        let reason = if rpm.is_none() {
+            "The spindle speed is not set, so the chipload has no value. Set the spindle \
+             speed above."
+        } else {
+            "The tool has no flutes, so the chipload has no value."
+        };
+        let _ = PropRow::new("Chipload")
+            .unit(CHIPLOAD_UNIT)
+            .hover(Some(CHIPLOAD_HOVER))
+            .detail(Some(reason))
+            .show_read_only(ui, "\u{2014}");
+        return;
+    };
+    let mut chipload = chipload_of(&entry.operation, flutes);
+    // The chipload range is the Feed row's range at this spindle speed, so an
+    // edit here never writes a feed that the Feed row would refuse.
+    let per_feed = rpm * f64::from(flutes);
+    let range = (feed_range.start() / per_feed)..=(feed_range.end() / per_feed);
+    let row = (PropRow::new("Chipload").hover(Some(CHIPLOAD_HOVER)), None);
+    let edited = speed_row_spec(
+        ui,
+        row,
+        &mut chipload,
+        CHIPLOAD_UNIT,
+        &crate::ui::components::NumberSpec::new(0.0005)
+            .range(range)
+            .decimals(4),
+        suggested,
+        "The feed is not set. Type a chipload to set the feed at this spindle speed.",
+    );
+    if edited && let Some(chipload) = chipload {
+        write_chipload(entry, chipload, flutes);
+    }
+}
+
+/// The chipload of `operation` for a tool of `flutes`: core
+/// `AdvancePerToothMm::from_commanded_at` of the feed at the spindle speed.
+/// `None` with no feed, no spindle speed or no flutes.
+fn chipload_of(operation: &OperationConfig, flutes: u32) -> Option<f64> {
+    use rs_cam_core::feeds::{AdvancePerToothMm, CommandedFeedMmMin};
+    let rpm = f64::from(operation.spindle_rpm()?);
+    let feed = operation.feed_rate()?;
+    AdvancePerToothMm::from_commanded_at(CommandedFeedMmMin::new(feed), rpm, flutes)
+        .map(AdvancePerToothMm::mm)
+}
+
+/// The one write of a Chipload edit: the feed, `chipload × RPM × flutes`
+/// (core `AdvancePerToothMm::feed_at`). The spindle speed stays. Nothing is
+/// written while the op has no spindle speed.
+fn write_chipload(entry: &mut ToolpathEntry, chipload: f64, flutes: u32) {
+    use rs_cam_core::feeds::AdvancePerToothMm;
+    let Some(rpm) = entry.operation.spindle_rpm().filter(|rpm| *rpm > 0) else {
+        return;
+    };
+    let feed = AdvancePerToothMm::new(chipload)
+        .feed_at(f64::from(rpm), flutes)
+        .mm_min();
+    entry.operation.set_feed_rate(feed);
+    entry.stale_since = Some(std::time::Instant::now());
 }
 
 /// The `PropRow` of one speed field: the label, the registry help of the
@@ -269,11 +439,26 @@ fn speed_prop_row<'a>(
 )]
 fn speed_row(
     ui: &mut egui::Ui,
-    (row, detail): (PropRow<'_>, Option<String>),
+    row: (PropRow<'_>, Option<String>),
     val: &mut Option<f64>,
     unit: &str,
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
+    suggested: bool,
+    empty_hover: &str,
+) -> bool {
+    let spec = crate::ui::components::NumberSpec::new(speed).range(range);
+    speed_row_spec(ui, row, val, unit, &spec, suggested, empty_hover)
+}
+
+/// [`speed_row`] with the caller's `NumberSpec` (the Chipload row takes four
+/// decimals).
+fn speed_row_spec(
+    ui: &mut egui::Ui,
+    (row, detail): (PropRow<'_>, Option<String>),
+    val: &mut Option<f64>,
+    unit: &str,
+    spec: &crate::ui::components::NumberSpec<'_>,
     suggested: bool,
     empty_hover: &str,
 ) -> bool {
@@ -285,9 +470,8 @@ fn speed_row(
         .unit(unit)
         .show(ui, |ui| {
             // An empty value draws "—" (`NumberSpec::new`).
-            let spec = crate::ui::components::NumberSpec::new(speed).range(range);
             let (resp, edited) =
-                crate::ui::components::optional_number_field(ui, val, &spec, ui.available_size());
+                crate::ui::components::optional_number_field(ui, val, spec, ui.available_size());
             changed |= edited;
             resp
         });
@@ -314,9 +498,9 @@ fn speed_row(
     changed
 }
 
-/// The derived rows of the tab: the measured operating point. W3c moved
-/// the comparison card (the recommendation table, `⚡ Apply all`,
-/// `⚡ Speeds only`) into the Explore window.
+/// The derived rows of the tab: the measured operating point. The
+/// recommendation (`⚡ Apply all`, `⚡ Speeds only`, its `Details`) is
+/// above it, under the chart (W3i).
 fn draw_feeds_card(
     ui: &mut egui::Ui,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
@@ -542,209 +726,49 @@ fn advance_gate_verdict(chipload: &rs_cam_core::tool_load::ChiploadVerdict) -> (
     }
 }
 
-// ── Vendor LUT viewer ──────────────────────────────────────────────────
+// ── Spindle policy ──────────────────────────────────────────────────
 
-/// Map `ToolType` to the vendor LUT `ToolFamily` for filtering.
-fn tool_type_to_lut_family(
-    tt: crate::state::job::ToolType,
-) -> rs_cam_core::feeds::vendor_lut::ToolFamily {
-    use rs_cam_core::feeds::vendor_lut::ToolFamily;
-    match tt {
-        crate::state::job::ToolType::EndMill => ToolFamily::FlatEnd,
-        crate::state::job::ToolType::BallNose => ToolFamily::BallNose,
-        crate::state::job::ToolType::BullNose => ToolFamily::BullNose,
-        crate::state::job::ToolType::VBit => ToolFamily::ChamferVbit,
-        crate::state::job::ToolType::TaperedBallNose => ToolFamily::TaperedBallNose,
-    }
-}
-
-/// Human-readable label for an `EvidenceGrade`.
-fn evidence_grade_label(g: rs_cam_core::feeds::vendor_lut::EvidenceGrade) -> &'static str {
-    use rs_cam_core::feeds::vendor_lut::EvidenceGrade;
-    match g {
-        EvidenceGrade::A => "A (vendor)",
-        EvidenceGrade::B => "B (derived)",
-        EvidenceGrade::C => "C (community)",
-    }
-}
-
-/// Draw a collapsible vendor cutting data viewer, filtered by current tool.
-pub(super) fn draw_vendor_lut_viewer(
+/// The spindle policy of the project (chart RPM or maximum speed), the
+/// first row of the recommendation `Details` (W3i). The Explore window held
+/// it as two radio buttons; it is the one GUI control of
+/// `ProjectPostConfig::spindle_strategy` (MCP: `set_spindle_strategy`).
+fn draw_spindle_policy_row(
     ui: &mut egui::Ui,
-    tool_type: crate::state::job::ToolType,
-    tool_diameter: f64,
+    current: rs_cam_core::feeds::SpindleStrategy,
+    machine: &rs_cam_core::machine::MachineProfile,
+    events: &mut Vec<crate::ui::AppEvent>,
 ) {
-    ui.add_space(8.0);
-
-    let header = egui::RichText::new("Vendor Cutting Data")
-        .strong()
-        .color(crate::ui::tokens::TEXT_STRONG);
-
-    egui::CollapsingHeader::new(header)
-        .default_open(false)
-        .show(ui, |ui| {
-            let lut = rs_cam_core::feeds::embedded_vendor_lut();
-            let target_family = tool_type_to_lut_family(tool_type);
-
-            // Filter observations: match tool family, and prefer matching diameter
-            // (show all diameters for this family so the user can see the full picture).
-            let matching: Vec<&rs_cam_core::feeds::vendor_lut::VendorObservation> = lut
-                .observations
-                .iter()
-                .filter(|obs| obs.tool_family == target_family)
-                .collect();
-
-            if matching.is_empty() {
-                ui.label(
-                    egui::RichText::new("No matching vendor data for this tool type")
-                        .small()
-                        .color(crate::ui::tokens::CAUTION),
-                );
-                return;
+    use rs_cam_core::feeds::SpindleStrategy;
+    let (_, max_rpm) = machine.rpm_range();
+    let label = |s: SpindleStrategy| match s {
+        SpindleStrategy::MatchChart => "Match chart",
+        SpindleStrategy::MaxSpeed => "Max speed",
+    };
+    let hover = format!(
+        "Match chart: use the vendor row's published RPM, the closest match to the \
+         vendor's own test. Max speed: push the RPM up to the spindle ceiling \
+         ({max_rpm:.0} RPM \u{00D7} {:.0} % headroom) and scale the feed to keep the \
+         commanded advance per tooth. The vendor rpm_max and a {:.1}\u{00D7} limit over \
+         the chart RPM cap it, and the power derate still applies. This is a project \
+         setting: it moves the recommendation of every toolpath.",
+        rs_cam_core::feeds::SPINDLE_CEILING_HEADROOM * 100.0,
+        rs_cam_core::feeds::MAX_SPINDLE_SPEEDUP,
+    );
+    let mut next = current;
+    let _ = super::linking_dressup::combo_in_row(
+        ui,
+        PropRow::new("Spindle policy").hover(Some(&hover)),
+        "feeds_spindle_policy",
+        label(current),
+        |ui| {
+            for s in [SpindleStrategy::MatchChart, SpindleStrategy::MaxSpeed] {
+                let _ = ui.selectable_value(&mut next, s, label(s));
             }
-
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} observations for {} tools (current: {:.1} mm)",
-                    matching.len(),
-                    tool_family_label(target_family),
-                    tool_diameter,
-                ))
-                .small()
-                .color(crate::ui::tokens::TEXT_MUTED),
-            );
-            ui.add_space(4.0);
-
-            // Table header
-            let dim = crate::ui::tokens::TEXT_MUTED;
-            let val = crate::ui::tokens::TEXT_STRONG;
-            let highlight = crate::ui::tokens::OK;
-            let header_font = egui::FontId::proportional(9.0);
-            let body_font = egui::FontId::proportional(9.0);
-
-            // A seven-column data table cannot fit the inspector rail, and
-            // UR1's rule forbids it from widening the panel: wrap it in a
-            // horizontal ScrollArea so the table scrolls inside the rail
-            // instead of being cut off at the panel edge.
-            egui::ScrollArea::horizontal()
-                .id_salt("vendor_lut_table_scroll")
-                .auto_shrink([false, false])
-                .max_width(ui.available_width())
-                .show(ui, |ui| {
-                    // UI-02: 7 columns and striped, so `param_grid` does not fit.
-                    egui::Grid::new("vendor_lut_table")
-                        .num_columns(7)
-                        .spacing([crate::ui::tokens::SPACE_3, crate::ui::tokens::SPACE_2])
-                        .min_row_height(crate::ui::tokens::ROW_DENSE)
-                        .striped(true)
-                        .show(ui, |ui| {
-                            // Column headers
-                            for label in [
-                                "Material", "Dia (mm)", "Flutes", "RPM", "Chipload", "DOC (mm)",
-                                "Grade",
-                            ] {
-                                ui.label(
-                                    egui::RichText::new(label)
-                                        .font(header_font.clone())
-                                        .strong()
-                                        .color(dim),
-                                );
-                            }
-                            ui.end_row();
-
-                            for obs in &matching {
-                                // Highlight rows matching the current tool diameter (within 0.1mm).
-                                // Rows with `diameter_mm = None` (v-bit charts, diameter-window
-                                // articles) are never highlighted as exact-diameter matches —
-                                // their match criterion is angle / material, not diameter.
-                                let is_diameter_match = match obs.diameter_mm {
-                                    Some(d) => (d - tool_diameter).abs() < 0.1,
-                                    None => false,
-                                };
-                                let row_color = if is_diameter_match { highlight } else { val };
-
-                                // Material
-                                ui.label(
-                                    egui::RichText::new(material_family_label(obs.material_family))
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // Diameter (— if the row has no diameter anchor)
-                                let diameter_text = match obs.diameter_mm {
-                                    Some(d) => format!("{:.1}", d),
-                                    None => "—".to_owned(),
-                                };
-                                ui.label(
-                                    egui::RichText::new(diameter_text)
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // Flutes
-                                ui.label(
-                                    egui::RichText::new(format!("{}", obs.flute_count))
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // RPM range
-                                let rpm_text = match (obs.rpm_min, obs.rpm_max) {
-                                    (Some(lo), Some(hi)) => format!("{lo:.0}-{hi:.0}"),
-                                    (Some(lo), None) => format!("{lo:.0}"),
-                                    (None, Some(hi)) => format!("{hi:.0}"),
-                                    (None, None) => {
-                                        if let Some(nom) = obs.rpm_nominal {
-                                            format!("{nom:.0}")
-                                        } else {
-                                            "-".to_owned()
-                                        }
-                                    }
-                                };
-                                ui.label(
-                                    egui::RichText::new(rpm_text)
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // Chipload range (mm/tooth)
-                                let chip_text =
-                                    match (obs.chipload_min_mm_tooth, obs.chipload_max_mm_tooth) {
-                                        (Some(lo), Some(hi)) => format!("{lo:.3}-{hi:.3}"),
-                                        (Some(lo), None) => format!("{lo:.3}"),
-                                        (None, Some(hi)) => format!("{hi:.3}"),
-                                        (None, None) => "-".to_owned(),
-                                    };
-                                ui.label(
-                                    egui::RichText::new(chip_text)
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // DOC range (ap)
-                                let doc_text = match (obs.ap_min_mm, obs.ap_max_mm) {
-                                    (Some(lo), Some(hi)) => format!("{lo:.1}-{hi:.1}"),
-                                    (Some(v), None) | (None, Some(v)) => format!("{v:.1}"),
-                                    (None, None) => "-".to_owned(),
-                                };
-                                ui.label(
-                                    egui::RichText::new(doc_text)
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                // Evidence grade
-                                ui.label(
-                                    egui::RichText::new(evidence_grade_label(obs.evidence_grade))
-                                        .font(body_font.clone())
-                                        .color(row_color),
-                                );
-
-                                ui.end_row();
-                            }
-                        });
-                });
-        });
+        },
+    );
+    if next != current {
+        events.push(crate::ui::AppEvent::SetSpindleStrategy(next));
+    }
 }
 
 // ── Engagement diagram ──────────────────────────────────────────────────
@@ -983,5 +1007,127 @@ pub(super) fn draw_entry_preview_diagram(
                 entry_color,
             );
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::{chipload_of, write_chipload};
+    use crate::state::toolpath::{OperationConfig, OperationType, ToolpathEntry};
+    use rs_cam_core::feeds::{FeedsField, ProvenanceSource};
+
+    const FLUTES: u32 = 2;
+
+    /// A Pocket at feed 1000 mm/min and 18 000 RPM, with every feed field
+    /// stamped by Suggest, and its stored config.
+    fn pocket() -> (rs_cam_core::session::ToolpathConfig, ToolpathEntry) {
+        let mut operation = OperationConfig::new_default(OperationType::Pocket);
+        operation.set_feed_rate(1000.0);
+        operation.set_spindle_rpm(Some(18_000));
+        let mut provenance = rs_cam_core::feeds::FeedsProvenance::default();
+        provenance.set(
+            FeedsField::FeedRate,
+            rs_cam_core::feeds::ValueProvenance::formula(),
+        );
+        provenance.set(
+            FeedsField::SpindleRpm,
+            rs_cam_core::feeds::ValueProvenance::formula(),
+        );
+        let stored = rs_cam_core::session::ToolpathConfig {
+            shoe: Default::default(),
+            id: rs_cam_core::compute::ToolpathId::from_raw(0),
+            name: "Pocket".to_owned(),
+            enabled: true,
+            operation: operation.clone(),
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
+            model_id: rs_cam_core::ids::ModelId::from_raw(0),
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            stock_source: Default::default(),
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: provenance.clone(),
+            rest_analysis: Default::default(),
+            planner_origin: None,
+        };
+        let mut entry = ToolpathEntry::new(
+            stored.id,
+            stored.name.clone(),
+            rs_cam_core::ids::ToolId::from_raw(1),
+            stored.model_id,
+            operation,
+        );
+        entry.feeds_provenance = provenance;
+        (stored, entry)
+    }
+
+    /// W3i: a Chipload edit writes ONE value, the feed
+    /// (`chipload × RPM × flutes`), stamps it Manual through the write-back,
+    /// and leaves the spindle speed and its stamp.
+    #[test]
+    fn a_chipload_edit_writes_the_feed_and_keeps_the_rpm_w3i() {
+        let (stored, mut entry) = pocket();
+        write_chipload(&mut entry, 0.05, FLUTES);
+        let config = crate::ui::properties::project_entry_onto(&stored, &entry);
+        let feed = config
+            .operation
+            .feed_rate()
+            .expect("the edit sets the feed");
+        assert!(
+            (feed - 0.05 * 18_000.0 * f64::from(FLUTES)).abs() < 1e-9,
+            "feed {feed}, not chipload x RPM x flutes = 1800"
+        );
+        assert_eq!(
+            config.operation.spindle_rpm(),
+            Some(18_000),
+            "the RPM moved"
+        );
+        assert_eq!(
+            config
+                .feeds_provenance
+                .get(FeedsField::FeedRate)
+                .map(|p| p.source),
+            Some(ProvenanceSource::Manual),
+            "a typed chipload is a typed feed: the feed is Manual"
+        );
+        assert!(
+            config
+                .feeds_provenance
+                .get(FeedsField::SpindleRpm)
+                .is_some_and(rs_cam_core::feeds::ValueProvenance::is_suggested),
+            "the spindle speed keeps its Suggest stamp"
+        );
+    }
+
+    /// W3i: an edit of the spindle speed changes the Chipload readout and
+    /// not the feed.
+    #[test]
+    fn an_rpm_edit_moves_the_chipload_not_the_feed_w3i() {
+        let (_, mut entry) = pocket();
+        let before = chipload_of(&entry.operation, FLUTES).expect("a chipload");
+        assert!((before - 1000.0 / (18_000.0 * 2.0)).abs() < 1e-12);
+        entry.operation.set_spindle_rpm(Some(12_000));
+        let after = chipload_of(&entry.operation, FLUTES).expect("a chipload");
+        assert!((after - 1000.0 / (12_000.0 * 2.0)).abs() < 1e-12);
+        assert_eq!(entry.operation.feed_rate(), Some(1000.0), "the feed moved");
+    }
+
+    /// With no spindle speed the chipload has no value, and an edit writes
+    /// nothing.
+    #[test]
+    fn no_rpm_no_chipload_w3i() {
+        let (_, mut entry) = pocket();
+        entry.operation.set_spindle_rpm(None);
+        assert_eq!(chipload_of(&entry.operation, FLUTES), None);
+        write_chipload(&mut entry, 0.05, FLUTES);
+        assert_eq!(entry.operation.feed_rate(), Some(1000.0));
     }
 }

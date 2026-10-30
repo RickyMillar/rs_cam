@@ -231,7 +231,7 @@ fn stepped_session() -> ProjectSession {
 }
 
 /// Add `op_type` as every add door does: THE draft door, then the
-/// `AddToolpath` row. The fixture states the feeds that a tool with no
+/// `AddToolpath` row, then select every item the op can cut (W3h). The fixture states the feeds that a tool with no
 /// feeds data leaves unset; the floor stays as the door leaves it.
 fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> Effects {
     let tool_id = session.tools()[0].id;
@@ -250,12 +250,30 @@ fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> 
         let _ = cfg.operation.set_floor(floor);
     }
     rs_cam_core::compute::fixture_values::fill_unset_dressups(&mut cfg.dressups);
-    session
+    let add = session
         .apply(Command::AddToolpath(AddToolpathArgs {
             setup_index: 0,
             config: Box::new(cfg),
         }))
-        .expect("the add")
+        .expect("the add");
+    // W3h: the draft starts with nothing selected. The op then takes the
+    // rule "every item it can cut" (the default of the claims), and that
+    // edit runs the add-time floor rules; its effects name the floor.
+    let index = add.created.expect("the add creates a toolpath");
+    if !session.toolpath_configs()[index]
+        .operation
+        .selection()
+        .is_some_and(rs_cam_core::selection::Selection::is_empty)
+    {
+        return add;
+    }
+    session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::drawing())),
+        }))
+        .expect("the op holds a selection")
 }
 
 fn generate(session: &mut ProjectSession, index: usize) -> Toolpath {
@@ -436,11 +454,16 @@ fn no_area_op_takes_the_part_outline_ra() {
             continue;
         }
         refusing += 1;
+        // W3h: a pick on a new op (nothing selected) holds the outline
+        // alone; the default config holds the drawing rule, so the case
+        // writes that one pick.
         let _ = s
             .apply(Command::EditSelection(EditSelectionArgs {
                 index: 0,
                 target: SelectionTarget::Op,
-                edit: SelectionEdit::AddPick(key.clone()),
+                edit: SelectionEdit::Replace(Box::new(
+                    rs_cam_core::selection::Selection::from_picks(vec![key.clone()]),
+                )),
             }))
             .expect("the pick edit applies");
         let tc = s.toolpath_configs()[0].clone();

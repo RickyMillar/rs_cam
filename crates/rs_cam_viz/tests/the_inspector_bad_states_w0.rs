@@ -148,7 +148,9 @@ fn marker(state: State) -> Option<&'static [&'static str]> {
         // text), and nothing else in the galley. The clean state paints it
         // too for an empty ramp feed, but fewer times.
         State::FeedsUnset | State::FeedsUnsetRefused => Some(&["=\u{2014}"]),
-        State::WrongTool => Some(&["needs a ball nose"]),
+        // W6: the Feeds tab paints the short face of the feeds refusal;
+        // the refusal ("needs a ball nose") is its hover and the Tool row.
+        State::WrongTool => Some(&["=Feeds unavailable"]),
         // W2b: the status word of core `RunState::Failed`.
         State::Refused => Some(&["Failed"]),
         State::ReachOn => Some(&["Unreachable"]),
@@ -727,13 +729,12 @@ fn no_field_text_truncates_at_340_w3g() {
 }
 
 /// The truncations [`no_field_text_truncates_at_340_w3g`] allows, by exact
-/// text: the refusal of the Refused state (the issue stack face), the
-/// one-line feeds refusal, and a model file name. A field text (a label, a
-/// value, a count such as "3 loops · 2 islands") is never allowed.
+/// text: a model file name. W6 deleted the refusal of the Refused state
+/// and the one-line feeds refusal: each has a short face now, and the text
+/// is its hover. A field text (a label, a value, a count such as "3 loops ·
+/// 2 islands") is never allowed.
 fn allowed_truncation(p: &Painted) -> bool {
-    p.text == inspector_bad_states::REFUSAL
-        || p.text.starts_with("Feeds unavailable:")
-        || [".stl", ".dxf", ".svg", ".step"]
-            .iter()
-            .any(|suffix| p.text.ends_with(suffix))
+    [".stl", ".dxf", ".svg", ".step"]
+        .iter()
+        .any(|suffix| p.text.ends_with(suffix))
 }

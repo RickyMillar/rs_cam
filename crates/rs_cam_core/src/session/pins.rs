@@ -251,6 +251,61 @@ impl ProjectSession {
             .map(|(index, _)| index)
     }
 
+    /// The hole centres that the pin-drill operation `id` drills, in the
+    /// emission frame, in drill order (W5, F12): the stock pins of its
+    /// diameter and the holes of its selection.
+    ///
+    /// It reads the same inputs as `generate_alignment_pin_drill` (the
+    /// stock pins, the emission-frame stock box, the selection after THE
+    /// frame door and the hole fit) and merges them through the same
+    /// function, `pin_holes_in_emission_frame`, so the two cannot disagree.
+    /// It returns no hole for an id that names no pin-drill operation, and
+    /// none when the generation refuses the selection or has no tool: then
+    /// the operation drills nothing. Read only.
+    #[must_use]
+    pub fn pin_drill_holes(&self, id: crate::ids::ToolpathId) -> Vec<[f64; 2]> {
+        let Some((_, tc)) = self.find_toolpath_config_by_id(id) else {
+            return Vec::new();
+        };
+        let OperationConfig::AlignmentPinDrill(cfg) = &tc.operation else {
+            return Vec::new();
+        };
+        let ctx = super::eval_context::SetupEvalContext::build_for_setup(
+            self,
+            self.find_setup_for_toolpath_id(id),
+        );
+        // The prologue of the generator: the view, then the hole fit at
+        // the size of the built cutter.
+        let extras = (|| {
+            let tool = self.toolpath_tool(tc)?;
+            let cutter = crate::compute::cutter::build_cutter(tool).ok()?;
+            let frames = self
+                .resolve_selection_frames(
+                    tc,
+                    super::SelectionTarget::Op,
+                    &ctx,
+                    super::selection_status::FaceAccess::Peek,
+                )
+                .ok()?;
+            let item_use = tc.operation.capabilities().item_use;
+            let (mut items, _) = crate::selection::view(&frames.setup, item_use).ok()?;
+            let size = tc
+                .operation
+                .drill_size(crate::tool::MillingCutter::diameter(&cutter));
+            crate::selection::fit_holes(&frames.setup, &mut items, item_use, size).ok()?;
+            items.holes().cloned()
+        })();
+        let Some(extras) = extras else {
+            return Vec::new();
+        };
+        crate::compute::execute::pin_holes_in_emission_frame(
+            cfg,
+            &self.stock.alignment_pins,
+            &ctx.heights_stock_bbox,
+            &extras,
+        )
+    }
+
     /// The diameter of the tool `tool_id`, or `None` when no tool has the
     /// id or its diameter is not positive.
     fn tool_diameter(&self, tool_id: crate::ids::ToolId) -> Option<f64> {
@@ -575,5 +630,91 @@ impl ProjectSession {
         tool.product_id.clear();
         let _ = tool.normalize_geometry();
         tool
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "test code: a failed fixture step is a test failure"
+)]
+mod tests {
+    use crate::compute::alignment_pins::AlignmentPin;
+    use crate::compute::catalog::OperationConfig;
+    use crate::compute::operation_configs::AlignmentPinDrillConfig;
+    use crate::compute::stock_config::StockConfig;
+    use crate::compute::tool_config::{ToolConfig, ToolType};
+    use crate::ids::{ModelId, ToolId, ToolpathId};
+    use crate::session::{ProjectSessionBuilder, ToolpathConfig};
+
+    fn toolpath(id: usize, operation: OperationConfig) -> ToolpathConfig {
+        ToolpathConfig {
+            shoe: Default::default(),
+            id: ToolpathId::from_raw(id),
+            name: "Pin Drill".to_owned(),
+            enabled: true,
+            operation,
+            dressups: Default::default(),
+            heights: Default::default(),
+            tool_id: Some(ToolId::from_raw(1)),
+            model_id: ModelId::from_raw(1),
+            pre_gcode: None,
+            post_gcode: None,
+            boundary: Default::default(),
+            boundary_inherit: true,
+            stock_source: Default::default(),
+            coolant: Default::default(),
+            debug_options: Default::default(),
+            feeds_provenance: Default::default(),
+            rest_analysis: Default::default(),
+            planner_origin: None,
+        }
+    }
+
+    /// W5 (F12): the query gives the holes the generator drills: the stock
+    /// pins of the op diameter, moved from the stock-relative frame by the
+    /// stock min corner into the emission frame. A pin of another size is
+    /// not drilled, and an op that is not a pin drill has no pin holes.
+    #[test]
+    fn pin_drill_holes_are_the_drilled_pins_in_the_emission_frame_w5() {
+        let stock = StockConfig {
+            x: 120.0,
+            y: 80.0,
+            z: Some(18.0),
+            origin_x: 10.0,
+            origin_y: 20.0,
+            auto_from_model: false,
+            alignment_pins: vec![
+                AlignmentPin::new(5.0, 5.0, 6.0),
+                AlignmentPin::new(115.0, 5.0, 6.0),
+                AlignmentPin::new(60.0, 40.0, 8.0),
+            ],
+            ..Default::default()
+        };
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(1), ToolType::VBit);
+        tool.diameter = 6.0;
+        let pin_drill = OperationConfig::AlignmentPinDrill(AlignmentPinDrillConfig {
+            diameter: 6.0,
+            ..Default::default()
+        });
+        let mut builder = ProjectSessionBuilder::new().stock(stock).tool(tool);
+        builder
+            .add_toolpath(0, toolpath(0, pin_drill))
+            .expect("add the pin drill");
+        builder
+            .add_toolpath(
+                0,
+                toolpath(
+                    1,
+                    OperationConfig::new_default(crate::compute::catalog::OperationType::Pocket),
+                ),
+            )
+            .expect("add the pocket");
+        let session = builder.build();
+
+        let holes = session.pin_drill_holes(ToolpathId::from_raw(0));
+        assert_eq!(holes, vec![[15.0, 25.0], [125.0, 25.0]]);
+        assert!(session.pin_drill_holes(ToolpathId::from_raw(1)).is_empty());
+        assert!(session.pin_drill_holes(ToolpathId::from_raw(9)).is_empty());
     }
 }

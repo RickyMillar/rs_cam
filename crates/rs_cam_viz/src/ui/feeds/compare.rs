@@ -1,13 +1,13 @@
 //! Compare and apply — the per-operation feeds job.
 //!
 //! This file answers "what is this operation set to, what does the
-//! recommendation say, and do I take it?". W3c (2026-10-30) moved the card
-//! off the Feeds tab face into the Explore window
-//! ([`draw_comparison_for`], above the nomogram): R1 seeds the speeds on the tab, and the tab
-//! keeps one quiet Cut row for the cut half.
+//! recommendation say, and do I take it?". W3i (2026-10-30) put the card
+//! back on the Feeds tab, under the inline chart ([`draw_recommendation`]):
+//! the two apply buttons and the problem rows on the face, every other row
+//! in ONE closed `Details`. The Explore window is deleted.
 //!
 //! **Apply contract (Checkpoint I, 2026-08-12).** Both writes — `⚡ Apply
-//! all` and the explore-chart apply — go through `feeds::suggest::apply`,
+//! all` and `⚡ Speeds only` — go through `feeds::suggest::apply`,
 //! the same funnel the properties panel uses, and both are replaced by the
 //! refusal text when `validate_tool_for_operation` declines the tool ×
 //! operation pairing (I-3).
@@ -22,6 +22,7 @@ use rs_cam_core::tool_load::verdict::BoundSource;
 use rs_cam_core::feeds::rationale::SuggestRationale;
 use rs_cam_core::feeds::suggest::SuggestWarning;
 
+use super::shared::OpFeeds;
 use super::shared::{
     AppliedRecipe, CurrentValues, ball_tip_radius, combined_scale, hardness_label,
     material_family_label, tool_family_label,
@@ -29,7 +30,7 @@ use super::shared::{
 use super::why;
 use crate::state::AppState;
 use crate::ui::components::compare;
-use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, SectionHeader, Source};
+use crate::ui::components::{DataRow, DataTable, Details, ProvKind, Role, Source};
 use crate::ui::{AppEvent, theme};
 
 const ADVANCE_ROW_LABEL: &str = "Advance/tooth";
@@ -57,20 +58,7 @@ pub(crate) fn read_current_values(
         .tools()
         .iter()
         .find(|t| Some(t.id) == tc.tool_id)?;
-    Some(CurrentValues {
-        feed_rate_mm_min: tc.operation.feed_rate(),
-        plunge_rate_mm_min: tc.operation.plunge_rate(),
-        spindle_rpm: tc.operation.spindle_rpm(),
-        depth_per_pass: tc.operation.depth_per_pass(),
-        stepover: tc.operation.stepover(),
-        flute_count: tool.flute_count,
-        scallop_height: tc.operation.scallop_height(),
-        supports_scallop_override: matches!(
-            tc.operation.op_type(),
-            rs_cam_core::compute::catalog::OperationType::DropCutter
-        ),
-        pass_role: tc.operation.feeds_style().1,
-    })
+    Some(current_values_for_operation(&tc.operation, tool))
 }
 
 /// Build the modal's payload.
@@ -85,12 +73,13 @@ pub(crate) fn read_current_values(
 pub(crate) fn current_values_for_operation(
     operation: &crate::state::toolpath::OperationConfig,
     tool: &crate::state::job::ToolConfig,
-    project_default_rpm: u32,
 ) -> CurrentValues {
+    // S11: an op with no spindle speed has none; the post speed is no
+    // fallback (W3i dropped the last one here).
     CurrentValues {
         feed_rate_mm_min: operation.feed_rate(),
         plunge_rate_mm_min: operation.plunge_rate(),
-        spindle_rpm: operation.spindle_rpm().or(Some(project_default_rpm)),
+        spindle_rpm: operation.spindle_rpm(),
         depth_per_pass: operation.depth_per_pass(),
         stepover: operation.stepover(),
         flute_count: tool.flute_count,
@@ -101,23 +90,6 @@ pub(crate) fn current_values_for_operation(
         ),
         pass_role: operation.feeds_style().1,
     }
-}
-
-pub(crate) fn compute_preview_for_operation(
-    operation: &crate::state::toolpath::OperationConfig,
-    tool: &crate::state::job::ToolConfig,
-    material: &rs_cam_core::material::Material,
-    machine: &rs_cam_core::machine::MachineProfile,
-    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-) -> FeedsPreview {
-    rs_cam_core::feeds::suggest::feeds_preview_for_operation(
-        operation,
-        tool,
-        material,
-        machine,
-        rs_cam_core::feeds::embedded_vendor_lut(),
-        spindle_strategy,
-    )
 }
 
 pub(crate) fn compute_preview(
@@ -145,50 +117,35 @@ pub(crate) fn compute_preview(
     ))
 }
 
-/// W3c (2026-10-30): the comparison card of one toolpath in the Explore
-/// window. The Feeds tab face holds the speed rows and one quiet Cut row;
-/// the full card (the recommendation rows, `⚡ Apply all`, `⚡ Speeds only`
-/// and the `Details`) is here.
-///
-/// It reads the session the way the tab card read its snapshot: the tool,
-/// the stock material, the machine, the post spindle strategy and RPM, and
-/// the Suggest context of the model box and the dressups.
-pub(crate) fn draw_comparison_for(
-    ui: &mut egui::Ui,
-    state: &AppState,
-    toolpath_id: rs_cam_core::ToolpathId,
-    events: &mut Vec<AppEvent>,
-) {
-    let session = state.session();
-    let Some(tc) = session
-        .toolpath_configs()
-        .iter()
-        .find(|tc| tc.id == toolpath_id)
-    else {
-        return;
-    };
-    let Some(tool) = session.tools().iter().find(|t| Some(t.id) == tc.tool_id) else {
-        return;
-    };
-    let material = &session.stock_config().material;
-    let machine = session.machine();
-    let spindle_strategy = session.post_config().spindle_strategy;
-    let model_bbox = session.model_bbox_by_id(tc.model_id);
+/// The card's funnel answers for `FeedsMemo::card` (W3i): the Suggest
+/// warnings of the invariant pass and, on a pairing that is not refused,
+/// the funnel dry run of `⚡ Apply all` (G-RECOMAPPLIED: the recommended
+/// column prints what the apply writes).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is one input of the funnel; the memo keys on all of them"
+)]
+pub(crate) fn build_card(
+    operation: &crate::state::toolpath::OperationConfig,
+    dressups: &crate::state::toolpath::DressupConfig,
+    tool: &crate::state::job::ToolConfig,
+    material: &rs_cam_core::material::Material,
+    machine: &rs_cam_core::machine::MachineProfile,
+    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    preview: &FeedsPreview,
+) -> crate::state::runtime::FeedsCard {
     let context = || rs_cam_core::feeds::suggest::SuggestContext {
-        model_bbox: model_bbox.as_ref(),
+        model_bbox,
         // G6 ramp: the entry θ the apply writes the ramp feed for.
-        dressups: Some(&tc.dressups),
+        dressups: Some(dressups),
         ..rs_cam_core::feeds::suggest::SuggestContext::default()
     };
-    let preview =
-        compute_preview_for_operation(&tc.operation, tool, material, machine, spindle_strategy);
-    let current =
-        current_values_for_operation(&tc.operation, tool, session.post_config().spindle_speed);
     // `FeedsPreview` carries calculator warnings; the rows also quote the
     // invariant pass's own account of what it did (ruling R4, 2026-09-24).
     let suggest_warnings = rs_cam_core::feeds::suggest::suggest_for_operation(
         rs_cam_core::feeds::suggest::SuggestForOperationInput {
-            operation: &tc.operation,
+            operation,
             tool,
             machine,
             material,
@@ -199,37 +156,69 @@ pub(crate) fn draw_comparison_for(
     )
     .ok()
     .map(|suggested| suggested.warnings);
-    let rationale = suggest_warnings
-        .as_deref()
-        .map(SuggestRationale::from_warnings);
-    // G-RECOMAPPLIED: the recommended column prints what `⚡ Apply all`
-    // writes: the funnel dry run. A refused pairing has no apply, so the
-    // column keeps the calculator values there.
+    // A refused pairing has no apply, so the column keeps the calculator
+    // values there.
     let previews = preview.refusal().is_none().then(|| {
         rs_cam_core::feeds::suggest::preview_field_applies(
-            &tc.operation,
+            operation,
             preview.recommended(),
             tool,
             machine,
             material,
-            tc.operation.feeds_style().1,
+            operation.feeds_style().1,
             context(),
         )
     });
+    crate::state::runtime::FeedsCard {
+        suggest_warnings,
+        previews,
+    }
+}
+
+/// W3i (2026-10-30): the recommendation of one toolpath, under the inline
+/// chart of the Feeds tab: `⚡ Apply all` and `⚡ Speeds only` (small,
+/// at the chart's left edge), the problem rows, then ONE closed `Details`
+/// with the spindle policy (`policy`), the rows that differ, the scallop
+/// control and the derivation.
+///
+/// It reads the panel's own copy of the operation, the tool, the stock
+/// material and the machine, and the memoised preview and funnel answers
+/// ([`OpFeeds`]); it runs no calculator and no funnel itself.
+pub(crate) fn draw_recommendation(
+    ui: &mut egui::Ui,
+    op: &OpFeeds<'_>,
+    current: &CurrentValues,
+    policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
+    events: &mut Vec<AppEvent>,
+) {
+    let OpFeeds {
+        toolpath_id,
+        operation,
+        tool,
+        material,
+        machine,
+        preview,
+        card,
+    } = *op;
+    let suggest_warnings = card.suggest_warnings.clone();
+    let rationale = suggest_warnings
+        .as_deref()
+        .map(SuggestRationale::from_warnings);
+    let previews = card.previews.clone();
     let applied = AppliedRecipe::new(previews, suggest_warnings.as_deref());
-    ui.separator();
     draw_inspector_comparison(
         ui,
-        &current,
-        &preview,
+        current,
+        preview,
         &applied,
         rationale.as_ref(),
         suggest_warnings.as_deref().unwrap_or_default(),
-        &tc.operation,
+        operation,
         tool,
         material,
         machine,
         toolpath_id,
+        policy,
         events,
     );
 }
@@ -250,6 +239,7 @@ pub(crate) fn draw_inspector_comparison(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     toolpath_id: crate::state::toolpath::ToolpathId,
+    policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
     events: &mut Vec<AppEvent>,
 ) {
     let explain = preview.explain();
@@ -360,19 +350,21 @@ pub(crate) fn draw_inspector_comparison(
         ),
     ];
 
-    // Round 2 (2026-10-13). The default view shows a recommendation only
-    // where it differs from the operation, and one status line for each
-    // problem. Everything else is derivation and goes in `Details`: the
-    // rows at the recommendation, the verdicts that are not a problem, the
+    // Round 2 (2026-10-13), W3i (2026-10-30). The face shows the two apply
+    // buttons and one status line for each problem. The chart above already
+    // shows the gap between the operation and the recommendation, so the
+    // rows that differ go in the ONE `Details` with the derivation: the rows
+    // at the recommendation, the verdicts that are not a problem, the
     // context, the row basis, the force line and the Suggest stages.
-    let mut face = DataTable::new("feeds_recommendation").name_share(CHANGE_NAME_SHARE);
+    let mut face = DataTable::new("feeds_recommendation_problems");
+    let mut changes = DataTable::new("feeds_recommendation").name_share(CHANGE_NAME_SHARE);
     let mut level = DataTable::new("feeds_recommendation_level").name_share(CHANGE_NAME_SHARE);
     let mut details = DataTable::new("feeds_derivation");
     let mut any_change = false;
     for (row, differs) in recipe {
         if differs {
             any_change = true;
-            face = face.row(row);
+            changes = changes.row(row);
         } else {
             level = level.row(row);
         }
@@ -410,27 +402,35 @@ pub(crate) fn draw_inspector_comparison(
         }
     }
     face = face.row_opt(why::chipload_min_row(current, explain));
-    if face.is_empty() {
-        face = face.row(DataRow::note(
-            Role::Ok,
-            format!("{} at the recommendation", crate::ui::tokens::GLYPH_OK),
-        ));
-    }
 
-    SectionHeader::new("Recommendation").show(ui);
-    face.show(ui);
-    // S1 — scallop-driven stepover control (DropCutter only). It sets a
-    // value, so it stays in the default view.
-    if current.supports_scallop_override {
-        draw_scallop_control(ui, current, explain, toolpath_id, events);
-    }
-    ui.add_space(crate::ui::tokens::SPACE_2);
     draw_apply_column(ui, preview.refusal(), any_change, toolpath_id, events);
-    let count = level.len() + details.len();
-    Details::new("feeds_details").count(count).show(ui, |ui| {
-        level.show(ui);
-        details.show(ui);
-    });
+    if !face.is_empty() {
+        face.show(ui);
+    }
+    let count = 1 + changes.len() + level.len() + details.len();
+    Details::new("feeds_details")
+        .label("Recommendation")
+        .count(count)
+        .show(ui, |ui| {
+            policy(ui, events);
+            if any_change {
+                changes.show(ui);
+            } else {
+                DataTable::new("feeds_recommendation_ok")
+                    .row(DataRow::note(
+                        Role::Ok,
+                        format!("{} at the recommendation", crate::ui::tokens::GLYPH_OK),
+                    ))
+                    .show(ui);
+            }
+            // S1 — scallop-driven stepover control (DropCutter only). It sets
+            // a value, so it comes before the derivation rows.
+            if current.supports_scallop_override {
+                draw_scallop_control(ui, current, explain, toolpath_id, events);
+            }
+            level.show(ui);
+            details.show(ui);
+        });
 }
 
 /// The name-column share of a table of change rows: the two values and the
@@ -1094,12 +1094,17 @@ fn draw_apply_column(
     if !any_change {
         return;
     }
+    // W3i: both buttons are small and share one row at the chart's left
+    // edge; a rail too narrow for the pair wraps the second under the first.
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::ui::tokens::SPACE_2;
         // A-3's contract: the 'changes the cut' attribution sits on the
         // button's FACE, not its hover — the operator must see it before
-        // clicking. The face is short enough for the 240-point rail; the
-        // truncation only guards a narrower one.
-        let apply = egui::Button::new(APPLY_ALL_FACE).wrap_mode(egui::TextWrapMode::Truncate);
+        // clicking. The truncation only guards a rail narrower than the
+        // face.
+        let apply = egui::Button::new(egui::RichText::new(APPLY_ALL_FACE).small())
+            .small()
+            .wrap_mode(egui::TextWrapMode::Truncate);
         if ui
             .add(apply)
             .on_hover_text(
@@ -1112,18 +1117,19 @@ fn draw_apply_column(
         {
             events.push(AppEvent::ApplyFeedsAll(toolpath_id));
         }
-    });
-    // Phase C (SPEC.md, 2026-09-16). The verdict row above can say the
-    // chipload is thin and costs 1.6× tool wear. Before this button the only
-    // write on the tab was `⚡ Apply all`, so the only offered answer to a
-    // wrong feed also rewrote the operator's cut geometry.
-    //
-    // A-3's attribution rule applies here too, in the mirror image: the face
-    // says what this write changes AND what it holds, so the two buttons read
-    // as one pair. This is not a per-field apply — it is the same funnel with
-    // `ApplyScope::Speeds`, which the funnel was built to serve.
-    ui.horizontal_wrapped(|ui| {
-        let speeds = egui::Button::new(APPLY_SPEEDS_FACE).wrap_mode(egui::TextWrapMode::Truncate);
+        // Phase C (SPEC.md, 2026-09-16). The verdict row can say the
+        // chipload is thin and costs 1.6× tool wear. Before this button the
+        // only write was `⚡ Apply all`, so the only offered answer to a wrong
+        // feed also rewrote the operator's cut geometry.
+        //
+        // A-3's attribution rule applies here too, in the mirror image: the
+        // face says what this write changes AND what it holds, so the two
+        // buttons read as one pair. This is not a per-field apply — it is the
+        // same funnel with `ApplyScope::Speeds`, which the funnel was built to
+        // serve.
+        let speeds = egui::Button::new(egui::RichText::new(APPLY_SPEEDS_FACE).small())
+            .small()
+            .wrap_mode(egui::TextWrapMode::Truncate);
         if ui
             .add(speeds)
             .on_hover_text(

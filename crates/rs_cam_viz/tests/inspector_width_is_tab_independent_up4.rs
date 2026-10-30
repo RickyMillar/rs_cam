@@ -417,7 +417,7 @@ fn feeds_horizontal_rows_have_no_bare_labels_ur1() {
         .find("fn draw_feeds_card(")
         .expect("draw_feeds_card moved or was renamed");
     let card_end = properties[card_start..]
-        .find("// ── Vendor LUT viewer")
+        .find("// ── Spindle policy")
         .map(|offset| card_start + offset)
         .expect("draw_feeds_card's following section moved or was renamed");
     let card = &properties[card_start..card_end];

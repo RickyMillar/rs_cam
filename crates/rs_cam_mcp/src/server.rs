@@ -509,7 +509,8 @@ pub enum SelectPanelParam {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[schemars(inline)]
 pub enum ModalParam {
-    FeedsModal,
+    /// The vendor cutting data table of the selected toolpath's tool.
+    VendorData,
     ExportWizard,
     ToolLibrary,
     PinWizard,
@@ -4531,13 +4532,13 @@ mod tests {
             "workspace": "toolpaths",
             "toolpath_index": 2,
             "properties_tab": "heights",
-            "modal": "feeds_modal",
+            "modal": "vendor_data",
         }))
         .unwrap();
         assert_eq!(p.workspace, Some(WorkspaceParam::Toolpaths));
         assert_eq!(p.toolpath_index, Some(2));
         assert_eq!(p.properties_tab, Some(PropertiesTabParam::Heights));
-        assert_eq!(p.modal, Some(ModalParam::FeedsModal));
+        assert_eq!(p.modal, Some(ModalParam::VendorData));
         // F166: no second spelling.
         for (key, token) in [("workspace", "sim"), ("properties_tab", "feeds_speeds")] {
             assert!(

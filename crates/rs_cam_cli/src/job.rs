@@ -236,9 +236,11 @@ pub struct OperationDef {
     pub dressups: toml::Table,
     /// The selection of the op (geometry selection P2.7): the
     /// `[operation.selection]` table in the shape of the project file's
-    /// `operation.params.selection`. Empty: the default of the op. The
-    /// `edit_toolpath_selection` command applies it, so an op that holds
-    /// no selection refuses it by name.
+    /// `operation.params.selection`. The `edit_toolpath_selection` command
+    /// applies it, so an op that holds no selection refuses it by name.
+    /// Absent: the batch rule ([`batch_selection`]). A new op on the GUI
+    /// and MCP starts with nothing selected (W3h), but a batch has no
+    /// picker, so the job cuts every item the op can cut.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<rs_cam_core::selection::Selection>,
     /// The machining boundary of the op (F7): the `[operation.boundary]`
@@ -1278,6 +1280,7 @@ fn job_op_session(
             "no feeds data for the tool: set feed_rate, plunge_rate and spindle_rpm in the job"
         );
     }
+    let batch = batch_selection(op_type, draft.config.operation.selection());
     let config = ToolpathConfig {
         coolant: op.coolant,
         debug_options,
@@ -1330,7 +1333,7 @@ fn job_op_session(
         let _ = crate::command::apply_command(&mut session, command)
             .map_err(|e| anyhow::anyhow!("boundary: {e}"))?;
     }
-    if let Some(selection) = &op.selection {
+    if let Some(selection) = op.selection.as_ref().or(batch.as_ref()) {
         let command = Command::EditSelection(EditSelectionArgs {
             index: tp_index,
             target: rs_cam_core::session::SelectionTarget::Op,
@@ -1467,6 +1470,22 @@ pub(crate) fn param_value_from_str(s: &str) -> serde_json::Value {
         "false" => serde_json::Value::Bool(false),
         _ => serde_json::Value::String(s.to_owned()),
     }
+}
+
+/// The selection that a batch (a job op with no `selection` table, or
+/// `rs_cam run`) writes on a new op. W3h: the draft door gives an op that
+/// cuts model geometry an empty selection, and the GUI operator picks. A
+/// batch has no picker, so it writes the explicit rule "every item of the
+/// toolpath model that the op can cut" (`Selection::drawing`). `None` when
+/// the drafted op holds no selection, holds one already (Face: the stock
+/// outline), or is a Pin Drill (its holes are the stock pins, decision D6).
+pub(crate) fn batch_selection(
+    op_type: rs_cam_core::compute::catalog::OperationType,
+    drafted: Option<&rs_cam_core::selection::Selection>,
+) -> Option<rs_cam_core::selection::Selection> {
+    let empty = drafted.is_some_and(rs_cam_core::selection::Selection::is_empty);
+    (empty && op_type != rs_cam_core::compute::catalog::OperationType::AlignmentPinDrill)
+        .then(rs_cam_core::selection::Selection::drawing)
 }
 
 #[cfg(test)]
@@ -1700,10 +1719,33 @@ mod tests {
                 .model(job_tc.model_id),
             )
             .expect("the draft");
+        // W3h: the draft starts with nothing selected; a job with no
+        // selection table writes the batch rule. The rest is the draft.
+        let without_selection = |mut v: serde_json::Value| {
+            if let Some(map) = v.as_object_mut() {
+                let _ = map.remove("selection");
+            }
+            v
+        };
         assert_eq!(
-            job_tc.operation.params_value_including_nulls(),
-            draft.config.operation.params_value_including_nulls(),
+            without_selection(job_tc.operation.params_value_including_nulls()),
+            without_selection(draft.config.operation.params_value_including_nulls()),
             "the job op is the core draft"
+        );
+        assert!(
+            draft
+                .config
+                .operation
+                .selection()
+                .is_some_and(rs_cam_core::selection::Selection::is_empty),
+            "the draft starts with nothing selected"
+        );
+        assert!(
+            job_tc
+                .operation
+                .selection()
+                .is_some_and(rs_cam_core::selection::Selection::is_drawing),
+            "the job writes the batch rule"
         );
         assert_eq!(
             serde_json::to_value(&job_tc.dressups).expect("json"),

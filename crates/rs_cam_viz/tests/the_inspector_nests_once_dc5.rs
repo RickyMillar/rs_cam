@@ -193,8 +193,10 @@ fn the_notes_are_one_count_and_the_wiring_is_below_the_strip_dc5() {
         !src.contains("{} hints"),
         "the hints block is back; the notes counter replaces it (W2b)"
     );
+    // W6: the kit `StatusLine` draws the counter; the header passes it
+    // the notes.
     assert!(
-        src.contains("NotesCounter::new(notes).show(ui)"),
+        src.contains("StatusLine::new(") && src.contains(".notes(notes)"),
         "the notes are one count that opens"
     );
 

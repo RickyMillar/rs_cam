@@ -36,8 +36,8 @@ pub use height_diagram::{
     floor_runs, pick_line, round_pin,
 };
 pub(super) use shape_diagrams::{
-    StepoverPattern, draw_dogbone_diagram, draw_inlay_diagram, draw_lead_in_out_diagram,
-    draw_outline_diagram, draw_pencil_diagram, draw_point_set_diagram, draw_radial_diagram,
+    StepoverPattern, draw_dogbone_diagram, draw_hole_diagram, draw_inlay_diagram,
+    draw_lead_in_out_diagram, draw_outline_diagram, draw_pencil_diagram, draw_radial_diagram,
     draw_ramp_finish_diagram, draw_spiral_diagram, draw_steep_shallow_diagram,
     draw_stepover_diagram, draw_tab_diagram,
 };
@@ -124,8 +124,7 @@ fn commit_height_row(mode: &mut HeightMode, display: ReferenceOffset, edited: bo
 }
 
 /// The findings of the toolpath by field key (`Placement::by_field`).
-pub(in crate::ui::properties) type FieldFindings<'a> =
-    std::collections::BTreeMap<&'static str, Vec<&'a rs_cam_core::diagnostics::Diagnostic>>;
+pub(in crate::ui::properties) use super::placement::FieldFindings;
 
 /// The state of one field row of the Heights tab: the role of the outline
 /// and the problem detail on the hover (W3d).

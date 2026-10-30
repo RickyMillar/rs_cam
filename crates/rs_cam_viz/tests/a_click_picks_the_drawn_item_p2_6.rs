@@ -293,15 +293,14 @@ fn a_click_on_a_drawn_hole_toggles_it(face_up: FaceUp, turn: ZRotation) {
             item.xy
         );
 
-        // Each hole starts from the default rule, which holds it.
+        // Each hole starts from the default (W3h: a new op holds no item).
         c.handle_internal_event(AppEvent::EditToolpathSelection {
             toolpath_id: tp_id,
             target: rs_cam_core::session::SelectionTarget::Op,
             edit: rs_cam_core::selection::SelectionEdit::Reset,
         });
-        assert!(is_selected(&c, &key), "fixture: the default holds the hole");
-        // Operator ruling O-PICK: the click replaces the default rule, so
-        // the hole is the one selected item.
+        assert!(!is_selected(&c, &key), "fixture: the default holds no item");
+        // The click picks the hole: it is the one selected item.
         c.handle_internal_event(AppEvent::TogglePick {
             toolpath_id: tp_id,
             target: rs_cam_core::session::SelectionTarget::Op,

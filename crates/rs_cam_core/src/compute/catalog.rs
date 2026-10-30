@@ -1441,9 +1441,22 @@ impl OperationConfig {
     }
 
     /// The default selection of the op, `None` when the op holds no
-    /// selection. It is the value that a file with no `selection` key
-    /// loads and that `SelectionEdit::Reset` restores. Each arm names the
-    /// same constructor as the `serde(default)` of its config field.
+    /// selection. It is the selection of a new op (the draft door,
+    /// `ProjectSession::draft_toolpath`) and the value that
+    /// `SelectionEdit::Reset` restores.
+    ///
+    /// W3h (operator ruling 2026-10-30): an op that cuts model geometry
+    /// starts with nothing selected; it refuses until the operator picks.
+    /// Face keeps the stock outline: it machines the stock top, not model
+    /// geometry. Two values differ from it on purpose:
+    ///
+    /// - a file with no `selection` key loads `Selection::drawing()` (the
+    ///   `serde(default)` of the config field): the files that omit the
+    ///   key were written while the drawing rule was the default, so they
+    ///   keep their rule;
+    /// - the `Default` of each config struct keeps `Selection::drawing()`:
+    ///   it is a test constructor, and no product door adds an op through
+    ///   it (S11: one draft door).
     pub fn default_selection(&self) -> Option<crate::selection::Selection> {
         use crate::selection::Selection;
         match self {
@@ -1458,10 +1471,10 @@ impl OperationConfig {
             | OperationConfig::Drill(_)
             | OperationConfig::Bore(_)
             | OperationConfig::Chamfer(_)
-            | OperationConfig::ProjectCurve(_) => Some(Selection::drawing()),
+            | OperationConfig::ProjectCurve(_)
             // Decision D6: the stock pins are the holes of a Pin Drill. A
             // drawing default would drill every circle of the drawing.
-            OperationConfig::AlignmentPinDrill(_) => Some(Selection::empty()),
+            | OperationConfig::AlignmentPinDrill(_) => Some(Selection::empty()),
             // Decision D5: Face faces the stock outline of the setup.
             OperationConfig::Face(_) => Some(Selection::stock()),
             OperationConfig::DropCutter(_)

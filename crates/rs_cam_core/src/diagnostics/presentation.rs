@@ -641,6 +641,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Fix the selection: generation refuses it",
     ),
     (
+        ids::PRECOND_SELECTION_EMPTY,
+        f("selection"),
+        "Select the geometry to cut",
+    ),
+    (
         ids::PRECOND_BURIED_FACE,
         f("selection"),
         "Face below the stock top",

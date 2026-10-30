@@ -28,13 +28,13 @@ Every panel, modal and workspace. `../app.rs` calls the `draw` of each surface o
 - The Simulation workspace has ONE visible full-run primary. No surface adds a second run route.
 - Every Run Simulation button is enabled by `simulation_request_is_buildable`; the `AppEvent::RunSimulation` handler refuses through the builder.
 - Declutter removes a control; it does not hide a duplicate route. An empty queue keeps its "Add toolpath" (g_emptyadd).
-- A dependency between operations is ONE line in the card gutter, read from
-  `dependencies::primary_edges`. No surface draws a second badge for it.
+- A dependency between operations is ONE line in the card gutter, read from `dependencies::primary_edges`. No surface draws a second badge for it.
 - The crate is on egui 0.36 with `egui_plot` 0.37; the two differ on purpose.
+- A panel draws a field, a list, a table or a message with the kit (`components/`); the toolpath inspector is held to it by `the_inspector_draws_only_kit_rows_w6`.
 
 ## Sentries
 
 - `cargo test -p rs_cam_viz -q --test viewport_draws_selected_only_wp27 --test pick_mode_picks_by_kind_p4_5`
 - `cargo test -p rs_cam_viz -q --test the_simulation_page_is_summary_first_dc6 --test the_sim_inspector_is_tabbed_ic3`
-- `cargo test -p rs_cam_viz -q --test panels_read_the_token_module_up1 --test ui_string_hygiene`
+- `cargo test -p rs_cam_viz -q --test panels_read_the_token_module_up1 --test ui_string_hygiene --test the_inspector_draws_only_kit_rows_w6`
 - `cargo test -p rs_cam_viz -q --test connector_reads_edge_state_g_connector --test the_dot_becomes_a_ring_in_flight_g_ring --test cut_metric_cards_read_the_gate_g_cutcards`

@@ -26,7 +26,7 @@ use super::operations::validate_toolpath;
 use super::tab_badges::{compute_tab_badges, draw_tool_row, draw_toolpath_tabs};
 use super::{ToolpathPanelInputs, ToolpathPanelSnapshot, ToolpathTab, operations};
 use crate::ui::AppEvent;
-use crate::ui::components::{Notice, PropRow, Role};
+use crate::ui::components::{Notice, PropRow};
 
 #[expect(
     clippy::too_many_arguments,
@@ -106,6 +106,10 @@ pub(super) fn draw_toolpath_panel(
         .iter()
         .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, tc)| tc);
+    // F216, W3i: fill the feeds memo before the placement and before any
+    // tab draws, so the feed findings are placed on the first frame of a
+    // selection whatever tab is active.
+    super::feeds_speeds::refresh_feeds_memo(entry, inputs, model_bbox);
     let diagnostics = panel_diagnostics(entry, preconditions, model_refs, suggest_warnings, inputs);
     let placement = super::placement::place(&diagnostics, &entry.operation);
 
@@ -123,11 +127,8 @@ pub(super) fn draw_toolpath_panel(
         entry.run.result().map(|result| &result.stats),
         entry.id,
     );
-    let notes: Vec<Notice> = placement
-        .notes
-        .iter()
-        .map(|d| Notice::new(Role::Info, d.face.as_str()).detail(super::placement::detail(d)))
-        .collect();
+    let notes: Vec<Notice> = placement.note_notices();
+    let blocking_hover = blocking.as_ref().map(super::placement::blocking_hover);
     let header = HeaderRow {
         run_state: inputs.run_state.as_ref(),
         can_run: !tools.is_empty() && validation_errors.is_empty(),
@@ -138,7 +139,7 @@ pub(super) fn draw_toolpath_panel(
             }
             _ => None,
         },
-        blocking: blocking.as_ref(),
+        blocking: blocking_hover.as_deref(),
         moves: entry.run.result().map(|result| result.stats.move_count),
         feed_stage: inputs.feed_stage,
         caps: inputs.caps,
@@ -208,8 +209,8 @@ pub(super) fn draw_toolpath_panel(
                 reach_view,
                 placement
                     .by_field
-                    .get("selection")
-                    .map_or(&[], Vec::as_slice),
+                    .get(rs_cam_core::diagnostics::presentation::SELECTION_KEY)
+                    .map_or(&[][..], Vec::as_slice),
                 events,
             );
         }
@@ -218,7 +219,6 @@ pub(super) fn draw_toolpath_panel(
                 ui,
                 entry,
                 inputs,
-                model_bbox,
                 strategy_suggestion(suggest_warnings),
                 selection_ui,
                 super::linking_dressup::Fields::new(&placement.by_field),

@@ -85,7 +85,8 @@ fn stepped_stock() -> StockConfig {
 }
 
 /// A session with the stepped block and one `op_type`, added as every add
-/// door does: THE draft door, then the `AddToolpath` row.
+/// door does: THE draft door, then the `AddToolpath` row. W3h: the op
+/// starts with nothing selected.
 fn session_with(op_type: OperationType) -> ProjectSession {
     let mut builder = ProjectSessionBuilder::new().stock(stepped_stock());
     let _ = builder.add_tool(endmill_tool_config(TOOL_D));
@@ -194,13 +195,28 @@ fn brep_face_1_is_the_bottom_face_r6a() {
 /// Claims 2 and 3.
 #[test]
 fn a_profile_keeps_a_down_face_as_its_outline_r6a() {
+    // W3h: a new op holds nothing. The drawing rule (the old default)
+    // takes the part outline, and its edit sets the floor "Model bottom".
     let mut default = session_with(OperationType::Profile);
+    common::session::select_every_item(&mut default, 0);
     let want = cut_targets(&mut default);
     assert!(!want.is_empty(), "the default Profile cuts");
 
     let mut s = session_with(OperationType::Profile);
+    common::session::select_every_item(&mut s, 0);
+    let _ = s
+        .apply(Command::EditSelection(
+            rs_cam_core::session::EditSelectionArgs {
+                index: 0,
+                target: SelectionTarget::Op,
+                edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(
+                    rs_cam_core::selection::Selection::empty(),
+                )),
+            },
+        ))
+        .expect("the op holds a selection");
     pick_faces(&mut s, 0, &[BOTTOM_FACE]).expect("the face is flat");
-    // The click keeps the floor that the add set for the default outline.
+    // The click keeps the floor that the outline rule set.
     assert_eq!(
         s.toolpath_configs()[0].operation.floor(),
         Some(rs_cam_core::compute::floor::Floor::ModelBottom { depth: 0.0 }),
@@ -278,6 +294,9 @@ fn a_profile_keeps_a_down_face_as_its_outline_r6a() {
 #[test]
 fn a_pocket_still_refuses_the_down_face_r6a() {
     let mut s = session_with(OperationType::Pocket);
+    // W3h: the rule "every item it can cut" first (it sets the each-face
+    // floor), so generation reaches the selection.
+    common::session::select_every_item(&mut s, 0);
     pick_faces(&mut s, 0, &[BOTTOM_FACE]).expect("the face is flat");
     let tc = s.toolpath_configs()[0].clone();
     let status = s

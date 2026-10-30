@@ -19,8 +19,10 @@
 //! `operations_registry` holds it against `OperationType::ALL`, the way
 //! `overlays_registry` holds the overlay list.
 //!
-//! An operation that shows no diagram now SAYS SO, with the reason, in
-//! [`OpDiagram::None`]. That is the silent arm made visible.
+//! An operation that shows no diagram now SAYS SO in its row, with the
+//! reason, in [`OpDiagram::None`]. That is the silent arm made visible to
+//! the reader of the code. On screen, no diagram is no box at all (F12):
+//! no empty box and no sentence.
 //!
 //! # The row is selected by the operation's own type
 //!
@@ -35,9 +37,9 @@ use super::validate::{DepthBeyondStock, ThroughCut};
 use super::{
     StepoverPattern, draw_adaptive_params, draw_adaptive3d_params, draw_alignment_pin_drill_params,
     draw_bore_params, draw_chamfer_params, draw_drill_params, draw_dropcutter_params,
-    draw_face_params, draw_horizontal_finish_params, draw_inlay_diagram, draw_inlay_params,
-    draw_inlay_plug_params, draw_outline_diagram, draw_pencil_diagram, draw_pencil_params,
-    draw_pocket_params, draw_point_set_diagram, draw_profile_params, draw_project_curve_params,
+    draw_face_params, draw_hole_diagram, draw_horizontal_finish_params, draw_inlay_diagram,
+    draw_inlay_params, draw_inlay_plug_params, draw_outline_diagram, draw_pencil_diagram,
+    draw_pencil_params, draw_pocket_params, draw_profile_params, draw_project_curve_params,
     draw_radial_diagram, draw_radial_finish_params, draw_ramp_finish_diagram,
     draw_ramp_finish_params, draw_scallop_params, draw_spiral_diagram, draw_spiral_finish_params,
     draw_steep_shallow_diagram, draw_steep_shallow_params, draw_stepover_diagram,
@@ -62,6 +64,9 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// The holes of a drill op as generation resolves them (geometry
     /// selection P2.3c); `None` for every other op.
     pub holes: Option<&'a rs_cam_core::session::HoleSelection>,
+    /// W5 (F12): the hole centres a Pin Drill drills (core
+    /// `ProjectSession::pin_drill_holes`); empty for every other op.
+    pub pin_holes: &'a [[f64; 2]],
     pub pills: Option<&'a PillSuggestions<'a>>,
     pub depth_caution: Option<&'a DepthBeyondStock>,
     pub through_cut: Option<&'a ThroughCut>,
@@ -95,13 +100,23 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     pub fields: crate::ui::properties::linking_dressup::Fields<'a>,
 }
 
-/// What shape diagram an operation shows under its parameter grid.
+/// What shape diagram an operation shows above its parameter rows.
+///
+/// F12: a diagram draws the op's real data or the op draws none. A
+/// picture that does not change with the op's parameters, or that shows
+/// another op's pattern, misleads, so its row is [`OpDiagram::None`].
 pub enum OpDiagram {
     /// The stepover-pattern diagram, from `StepoverPattern::from_operation`.
     Stepover,
-    /// A drawing of this operation's own.
-    Draw(fn(&OperationConfig, &mut egui::Ui)),
-    /// This operation shows no diagram, and says why.
+    /// A drawing of this operation's own, from its parameters. It returns
+    /// false when it drew nothing (an unset parameter): then no box shows.
+    Draw(fn(&OperationConfig, &mut egui::Ui) -> bool),
+    /// The holes the op drills: a Drill reads `OpDrawCtx::holes`, a Pin
+    /// Drill reads `OpDrawCtx::pin_holes` (both the resolution that
+    /// generation reads). With no hole, no box shows.
+    Holes,
+    /// This operation shows no diagram. The reason is for the reader of the
+    /// code; the screen shows no box and no sentence.
     ///
     /// The reason is the point: the old `_ => {}` fallback could not tell a
     /// deliberate blank from a forgotten arm.
@@ -114,7 +129,7 @@ impl OpDiagram {
     pub fn none_reason(&self) -> Option<&'static str> {
         match self {
             Self::None(reason) => Some(reason),
-            Self::Stepover | Self::Draw(_) => None,
+            Self::Stepover | Self::Draw(_) | Self::Holes => None,
         }
     }
 }
@@ -191,16 +206,34 @@ pub(in crate::ui::properties) fn draw_editor_and_diagram(
             }
             None => false,
         },
-        OpDiagram::Draw(f) => {
-            f(op, ui);
-            true
-        }
+        OpDiagram::Draw(f) => f(op, ui),
+        OpDiagram::Holes => draw_hole_diagram(ui, &drilled_holes(op, cx)),
         OpDiagram::None(_) => false,
     };
     if drew {
         ui.add_space(6.0);
     }
     (entry.draw)(ui, op, cx);
+}
+
+/// The centres and diameters of the holes the op drills, for
+/// [`OpDiagram::Holes`]. A Drill hole has the size of its item (a point has
+/// none); a Pin Drill drills each hole at its pin diameter.
+fn drilled_holes(op: &OperationConfig, cx: &OpDrawCtx<'_>) -> Vec<([f64; 2], Option<f64>)> {
+    match op {
+        OperationConfig::AlignmentPinDrill(cfg) => cx
+            .pin_holes
+            .iter()
+            .map(|&xy| (xy, Some(cfg.diameter)))
+            .collect(),
+        _ => cx.holes.map_or_else(Vec::new, |holes| {
+            holes
+                .holes
+                .iter()
+                .map(|h| ([h.xy.x, h.xy.y], h.diameter))
+                .collect()
+        }),
+    }
 }
 
 /// The per-operation errors both validation entry points collect.
@@ -378,124 +411,121 @@ editor!(ed_alignment_pin_drill, AlignmentPinDrill, |ui, cfg, cx| {
 });
 
 // ── The bespoke diagrams ────────────────────────────────────────────────
+//
+// Each one reads the op's own fields and returns true when it drew. F12:
+// Adaptive, 3D Rough (an adaptive or contour-parallel clear is not an
+// Archimedean spiral) and Project Curve (a fixed rectangle read no field)
+// drew a picture that did not depend on the op; they draw none now.
 
-fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Profile(cfg) = op {
-        // P6.1: On cuts on the line, so the diagram draws no offset (as
-        // Trace with compensation None).
-        let (label, offset) = match cfg.side {
-            ProfileSide::Outside => ("Outside", Some("Outside")),
-            ProfileSide::Inside => ("Inside", Some("Inside")),
-            ProfileSide::On => ("On the line", None),
-        };
-        draw_outline_diagram(ui, &format!("Profile ({label})"), offset);
-    }
+fn dia_profile(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::Profile(cfg) = op else {
+        return false;
+    };
+    // P6.1: On cuts on the line, so the diagram draws no offset (as
+    // Trace with compensation None).
+    let (label, offset) = match cfg.side {
+        ProfileSide::Outside => ("Outside", Some("Outside")),
+        ProfileSide::Inside => ("Inside", Some("Inside")),
+        ProfileSide::On => ("On the line", None),
+    };
+    draw_outline_diagram(ui, &format!("Profile ({label})"), offset);
+    true
 }
 
-fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Chamfer(cfg) = op {
-        let side = match cfg.side {
-            ChamferSide::Outside => "Outside",
-            ChamferSide::Inside => "Inside",
-        };
-        draw_outline_diagram(ui, &format!("Chamfer ({side})"), Some(side));
-    }
+fn dia_chamfer(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::Chamfer(cfg) = op else {
+        return false;
+    };
+    let side = match cfg.side {
+        ChamferSide::Outside => "Outside",
+        ChamferSide::Inside => "Inside",
+    };
+    draw_outline_diagram(ui, &format!("Chamfer ({side})"), Some(side));
+    true
 }
 
 /// P6.7 (O-1): Left and Right are sides of the drawn direction, not inside
 /// and outside of a loop, so the Trace diagram draws an open line, its
 /// direction and the tool on its side.
-fn dia_trace(op: &OperationConfig, ui: &mut egui::Ui) {
+fn dia_trace(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
     use super::shape_diagrams::{TraceDiagramSide, draw_trace_diagram};
     use crate::state::toolpath::TraceCompensation;
-    if let OperationConfig::Trace(cfg) = op {
-        let side = match cfg.compensation {
-            TraceCompensation::None => TraceDiagramSide::On,
-            TraceCompensation::Left => TraceDiagramSide::Left,
-            TraceCompensation::Right => TraceDiagramSide::Right,
-        };
-        let label = super::engrave::trace_compensation_label(cfg.compensation);
-        draw_trace_diagram(ui, &format!("Trace ({label})"), side);
-    }
+    let OperationConfig::Trace(cfg) = op else {
+        return false;
+    };
+    let side = match cfg.compensation {
+        TraceCompensation::None => TraceDiagramSide::On,
+        TraceCompensation::Left => TraceDiagramSide::Left,
+        TraceCompensation::Right => TraceDiagramSide::Right,
+    };
+    let label = super::engrave::trace_compensation_label(cfg.compensation);
+    draw_trace_diagram(ui, &format!("Trace ({label})"), side);
+    true
 }
 
-fn dia_project_curve(_op: &OperationConfig, ui: &mut egui::Ui) {
-    draw_outline_diagram(ui, "Project Curve", None);
+fn dia_spiral_finish(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::SpiralFinish(cfg) = op else {
+        return false;
+    };
+    let outward = cfg.direction == crate::state::toolpath::SpiralDirection::InsideOut;
+    draw_spiral_diagram(ui, cfg.stepover, outward);
+    true
 }
 
-fn dia_adaptive(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Adaptive(cfg) = op {
-        draw_spiral_diagram(ui, cfg.stepover, true);
-    }
+fn dia_radial_finish(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::RadialFinish(cfg) = op else {
+        return false;
+    };
+    draw_radial_diagram(ui, cfg.angular_step);
+    true
 }
 
-fn dia_adaptive3d(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Adaptive3d(cfg) = op {
-        draw_spiral_diagram(ui, cfg.stepover, true);
-    }
+fn dia_pencil(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::Pencil(cfg) = op else {
+        return false;
+    };
+    draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
+    true
 }
 
-fn dia_spiral_finish(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::SpiralFinish(cfg) = op {
-        let outward = cfg.direction == crate::state::toolpath::SpiralDirection::InsideOut;
-        draw_spiral_diagram(ui, cfg.stepover, outward);
-    }
+fn dia_steep_shallow(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::SteepShallow(cfg) = op else {
+        return false;
+    };
+    draw_steep_shallow_diagram(ui, cfg.threshold_angle);
+    true
 }
 
-fn dia_radial_finish(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::RadialFinish(cfg) = op {
-        draw_radial_diagram(ui, cfg.angular_step);
-    }
+fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::RampFinish(cfg) = op else {
+        return false;
+    };
+    draw_ramp_finish_diagram(ui, cfg.max_stepdown);
+    true
 }
 
-fn dia_drill(_op: &OperationConfig, ui: &mut egui::Ui) {
-    draw_point_set_diagram(ui, "Drill Points");
+/// S11: an unset depth has no diagram. F12: and no sentence in its place.
+fn dia_inlay(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::Inlay(cfg) = op else {
+        return false;
+    };
+    let Some(depth) = cfg.pocket_depth else {
+        return false;
+    };
+    draw_inlay_diagram(ui, depth, None);
+    true
 }
 
-fn dia_pin_drill(_op: &OperationConfig, ui: &mut egui::Ui) {
-    draw_point_set_diagram(ui, "Pin Drill Holes");
-}
-
-fn dia_pencil(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Pencil(cfg) = op {
-        draw_pencil_diagram(ui, cfg.num_offset_passes, cfg.offset_stepover);
-    }
-}
-
-fn dia_steep_shallow(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::SteepShallow(cfg) = op {
-        draw_steep_shallow_diagram(ui, cfg.threshold_angle);
-    }
-}
-
-fn dia_ramp_finish(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::RampFinish(cfg) = op {
-        draw_ramp_finish_diagram(ui, cfg.max_stepdown);
-    }
-}
-
-fn dia_inlay(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::Inlay(cfg) = op {
-        // S11: an unset depth has no diagram.
-        match cfg.pocket_depth {
-            Some(depth) => draw_inlay_diagram(ui, depth, None),
-            None => {
-                ui.label("Set the pocket depth to draw the diagram.");
-            }
-        }
-    }
-}
-
-fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) {
-    if let OperationConfig::InlayPlug(cfg) = op {
-        // S11: an unset depth has no diagram.
-        match cfg.pocket_depth {
-            Some(depth) => draw_inlay_diagram(ui, depth, Some(cfg.glue_gap)),
-            None => {
-                ui.label("Set the pocket depth to draw the diagram.");
-            }
-        }
-    }
+/// S11: an unset depth has no diagram. F12: and no sentence in its place.
+fn dia_inlay_plug(op: &OperationConfig, ui: &mut egui::Ui) -> bool {
+    let OperationConfig::InlayPlug(cfg) = op else {
+        return false;
+    };
+    let Some(depth) = cfg.pocket_depth else {
+        return false;
+    };
+    draw_inlay_diagram(ui, depth, Some(cfg.glue_gap));
+    true
 }
 
 // ── The validation arms ─────────────────────────────────────────────────
@@ -539,7 +569,10 @@ const ROW_PROFILE: OpUiRow = OpUiRow {
 const ROW_ADAPTIVE: OpUiRow = OpUiRow {
     op: OperationType::Adaptive,
     draw: ed_adaptive,
-    diagram: OpDiagram::Draw(dia_adaptive),
+    diagram: OpDiagram::None(
+        "an adaptive clear follows the material, not an Archimedean spiral; the \
+         viewport shows the real path",
+    ),
     validate: None,
 };
 const ROW_V_CARVE: OpUiRow = OpUiRow {
@@ -575,7 +608,7 @@ const ROW_TRACE: OpUiRow = OpUiRow {
 const ROW_DRILL: OpUiRow = OpUiRow {
     op: OperationType::Drill,
     draw: ed_drill,
-    diagram: OpDiagram::Draw(dia_drill),
+    diagram: OpDiagram::Holes,
     validate: Some(val_drill),
 };
 const ROW_BORE: OpUiRow = OpUiRow {
@@ -601,13 +634,19 @@ const ROW_DROP_CUTTER: OpUiRow = OpUiRow {
 const ROW_ADAPTIVE3D: OpUiRow = OpUiRow {
     op: OperationType::Adaptive3d,
     draw: ed_adaptive3d,
-    diagram: OpDiagram::Draw(dia_adaptive3d),
+    diagram: OpDiagram::None(
+        "a 3D rough clears each level by contour-parallel or geodesic offsets, \
+         not an Archimedean spiral; the viewport shows the real path",
+    ),
     validate: None,
 };
 const ROW_WATERLINE: OpUiRow = OpUiRow {
     op: OperationType::Waterline,
     draw: ed_waterline,
-    diagram: OpDiagram::Stepover,
+    diagram: OpDiagram::None(
+        "the Z step is a vertical step; a plan view of inset rings drew it as an \
+         XY stepover",
+    ),
     validate: None,
 };
 const ROW_PENCIL: OpUiRow = OpUiRow {
@@ -619,7 +658,10 @@ const ROW_PENCIL: OpUiRow = OpUiRow {
 const ROW_SCALLOP: OpUiRow = OpUiRow {
     op: OperationType::Scallop,
     draw: ed_scallop,
-    diagram: OpDiagram::Stepover,
+    diagram: OpDiagram::None(
+        "the scallop step follows the surface slope and the tool tip; the Pocket \
+         contour picture with a fixed step misreported it",
+    ),
     validate: None,
 };
 const ROW_UNIFIED_FINISH: OpUiRow = OpUiRow {
@@ -667,13 +709,16 @@ const ROW_HORIZONTAL_FINISH: OpUiRow = OpUiRow {
 const ROW_PROJECT_CURVE: OpUiRow = OpUiRow {
     op: OperationType::ProjectCurve,
     draw: ed_project_curve,
-    diagram: OpDiagram::Draw(dia_project_curve),
+    diagram: OpDiagram::None(
+        "the curves are the picked drawing items; a fixed rectangle read no field \
+         of the op",
+    ),
     validate: None,
 };
 const ROW_ALIGNMENT_PIN_DRILL: OpUiRow = OpUiRow {
     op: OperationType::AlignmentPinDrill,
     draw: ed_alignment_pin_drill,
-    diagram: OpDiagram::Draw(dia_pin_drill),
+    diagram: OpDiagram::Holes,
     validate: None,
 };
 

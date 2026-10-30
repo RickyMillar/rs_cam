@@ -385,6 +385,29 @@ impl FeedsInputs<'_> {
         let previews = dry_run(operation, &result, tool, machine, material, *model_bbox);
         Ok((result, previews))
     }
+
+    /// The explanation payload the Feeds tab chart reads (W3i). It is
+    /// infallible: a refused pairing still has its explanation.
+    fn preview(&self) -> rs_cam_core::feeds::suggest::FeedsPreview {
+        rs_cam_core::feeds::suggest::feeds_preview_for_operation(
+            self.operation,
+            self.tool,
+            self.material,
+            self.machine,
+            rs_cam_core::feeds::embedded_vendor_lut(),
+            self.spindle_strategy,
+        )
+    }
+}
+
+/// What the Feeds tab recommendation card reads from the apply funnel
+/// (W3i): the Suggest warnings of the invariant pass and the funnel dry run
+/// of `⚡ Apply all` (`None` on a refused pairing). [`FeedsMemo::card`]
+/// builds it once per input change.
+#[derive(Debug, Clone, Default)]
+pub struct FeedsCard {
+    pub suggest_warnings: Option<Vec<rs_cam_core::feeds::suggest::SuggestWarning>>,
+    pub previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
 }
 
 /// The memo of the toolpath panel's feeds work (F216).
@@ -400,6 +423,15 @@ pub struct FeedsMemo {
     previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
     /// The calculator's refusal. The Feeds tab prints it.
     refusal: Option<FeedsError>,
+    /// The explanation payload of the same inputs: the Feeds tab chart and
+    /// the recommendation card read it (W3i). Shared, because the panel
+    /// copies the memo in and back on each frame.
+    preview: Option<Arc<rs_cam_core::feeds::suggest::FeedsPreview>>,
+    /// The Feeds tab card's funnel answers and the key they were built for
+    /// (W3i). The card's Suggest context reads the dressups too, so it has
+    /// its own key; see [`Self::card`].
+    card_key: Option<String>,
+    card: Option<Arc<FeedsCard>>,
     /// The count of builds: the instrument of the F216 sentry.
     builds: u64,
 }
@@ -421,6 +453,7 @@ impl FeedsMemo {
             return;
         };
         self.builds += 1;
+        self.preview = Some(Arc::new(inputs.preview()));
         match inputs.build(dry_run) {
             Ok((answer, previews)) => {
                 *result = Some(answer);
@@ -438,6 +471,29 @@ impl FeedsMemo {
     /// The funnel dry run for the stored result.
     pub fn previews(&self) -> Option<&rs_cam_core::feeds::suggest::FieldApplyPreviews> {
         self.previews.as_ref()
+    }
+
+    /// The explanation payload of the stored inputs (W3i).
+    pub fn preview(&self) -> Option<&rs_cam_core::feeds::suggest::FeedsPreview> {
+        self.preview.as_deref()
+    }
+
+    /// The shared explanation payload, for a caller that also writes the
+    /// memo in the same frame ([`Self::card`]).
+    pub fn preview_shared(&self) -> Option<Arc<rs_cam_core::feeds::suggest::FeedsPreview>> {
+        self.preview.clone()
+    }
+
+    /// The card's funnel answers (W3i). `key` is the `Debug` text of every
+    /// input of `build` (the `FeedsKey` idiom); `build` runs only when the
+    /// key moves, so the card runs the funnel once per input change, not on
+    /// every frame.
+    pub fn card(&mut self, key: String, build: impl FnOnce() -> FeedsCard) -> Arc<FeedsCard> {
+        if self.card_key.as_deref() != Some(key.as_str()) {
+            self.card = None;
+            self.card_key = Some(key);
+        }
+        Arc::clone(self.card.get_or_insert_with(|| Arc::new(build())))
     }
 
     /// Why the calculator refused, when it did.

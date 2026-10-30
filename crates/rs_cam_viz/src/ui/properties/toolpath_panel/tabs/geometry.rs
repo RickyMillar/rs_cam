@@ -18,8 +18,8 @@ pub(crate) const BOUNDARY_OFF: &str = "Off";
 /// (`geometry_tab.rs`, events only, L-1), the Boundary rows and the
 /// boundary selection list directly under them, then the Reach row of a
 /// reach-capable op. `selection_findings` are the findings that
-/// `placement::place` anchors to the `selection` field: the state and the
-/// hover of the Cuts row. `properties::tests` renders it (D3, G-C, G-D,
+/// `placement::place` anchors to the `selection` field: the state mark of
+/// the selection list header (W3h). `properties::tests` renders it (D3, G-C, G-D,
 /// R7a).
 #[expect(
     clippy::too_many_arguments,
@@ -32,7 +32,7 @@ pub(in crate::ui::properties) fn draw_geometry_tab(
     selection_ui: &mut crate::state::pick::SelectionUi,
     containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
     reach_view: &mut ReachView,
-    selection_findings: &[&rs_cam_core::diagnostics::Diagnostic],
+    selection_findings: &[crate::ui::properties::placement::Finding<'_>],
     events: &mut Vec<AppEvent>,
 ) {
     ui.add_space(4.0);

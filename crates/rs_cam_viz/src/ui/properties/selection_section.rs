@@ -1,37 +1,46 @@
 //! One selection block of the Geometry tab (geometry selection P4.3, GT-2,
-//! GT-3): the summary, the actions, the filter box, the selected list and
-//! the notes of one selection of a toolpath.
+//! GT-3, W3h): the list of one selection of a toolpath, and its notes.
 //!
 //! The Geometry tab (`geometry_tab.rs`) draws it for the op selection and,
 //! under the Boundary row, for the boundary selection (operator ruling
-//! GT-Q7). W3a: the summary is two `PropRow`s: "Cuts" (or "Items" for the
-//! boundary) with the quiet action Pick, and off the default "Selected"
-//! with the quiet action Reset. A refusal is the state of the summary row,
-//! with its text on the hover.
+//! GT-Q7).
 //!
-//! The list shows the SELECTED items only (operator ruling GT-Q6, L-R1):
-//! the default row while the selection holds its default rule (L-R2), one
-//! group per rule, and one group per picked kind. A group of more than
-//! [`GROUP_CAP`] rows starts closed; an open group shows [`GROUP_CAP`]
-//! rows, then "Show N more". The rows draw through
-//! `egui::ScrollArea::show_rows`, so only the visible rows are laid out.
+//! W3h (operator design 2026-10-30): the list IS the selection UI. One
+//! `ListBox`, always drawn, never closed:
+//!
+//! - the header: the title, the counts ("3 loops · 2 islands",
+//!   [`row_counts_text`]) at the right, the state mark (a refusal, a
+//!   finding of the `selection` field, the notes, the lost picks, a report
+//!   that the query cannot read: the role glyph, the texts on hover),
+//!   "Pick" only while the operator left the pick mode, and the `⋯` menu
+//!   ([`header_menu`]: the rule presets, "Remove rule", "Clear selection",
+//!   "Reset to default" for an op whose default holds a rule: Face);
+//! - one row per selected item, rule members and picks alike: the label
+//!   (it truncates), the `⋯` menu ("Rule…", "Use as floor", "Show me"),
+//!   then `×`. A row under the pointer lights its item in the viewport
+//!   (`SelectionUi::row_hover`). A long list scrolls inside the box
+//!   ([`LIST_CAP`] rows); above the cap a filter field sits under the
+//!   header;
+//! - an empty list: one grey placeholder row ([`placeholder_text`]: "Select
+//!   faces or loops", from the kinds of the pick bar chips).
 //!
 //! Lead ruling L-1: the block sends `AppEvent::EditToolpathSelection`,
-//! `AppEvent::UseAsFloor` and `AppEvent::ClearFloorFace` only. It never
-//! writes `entry.operation` or `entry.boundary`. The controller applies
-//! each act through one `Command`, so one act is one undo step.
+//! `AppEvent::UseAsFloor`, `AppEvent::FrameSelectionItems` and (the Drill
+//! fix) `AppEvent::AddBoreFromDrill` only. It never writes
+//! `entry.operation` or `entry.boundary`. The controller applies each act
+//! through one `Command`, so one act is one undo step.
 //!
 //! The counts, the rows, the notes, the lost picks and the refusal come
 //! from the `selection_status` report (the `SelectionStatus` query), which
 //! MCP `selection_status` also gives. The "Rule…" offers come from core
-//! `ProjectSession::rule_offers` (L-R4: the facts of one picked item).
+//! `ProjectSession::rule_offers` (L-R4: the facts of one item).
 
 use std::collections::BTreeSet;
 
 use rs_cam_core::compute::catalog::ItemUse;
 use rs_cam_core::ids::ModelId;
 use rs_cam_core::selection::{
-    Facing, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, MatchedBy, NoteCause,
+    Facing, Filter, HoleFit, HoleFitRule, ItemKind, KindFilter, MatchKey, MatchedBy, NoteCause,
     RefusalCause, Rule, Selection, SelectionEdit, SelectionNote, SourceRef, kind_noun,
 };
 use rs_cam_core::session::{
@@ -39,39 +48,19 @@ use rs_cam_core::session::{
 };
 
 use super::SelectionRead;
-use crate::state::pick::{OffersFor, PickMode, SelectionUi};
+use super::placement::Finding;
+use crate::state::pick::{OffersFor, PickFilter, PickMode, SelectionUi};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
 use crate::ui::components::{
-    Button, DataRow, DataTable, Details, ListBox, ListLine, PropRow, Role, list_header, list_row,
+    Act, DataRow, DataTable, Details, ListBox, Mark, Role, list_header, list_line,
+    list_placeholder, list_row,
 };
 use crate::ui::tokens;
 
-/// The most rows that a group shows before "Show N more", and the count
-/// above which a group starts closed (L-R1).
-pub(crate) const GROUP_CAP: usize = 8;
-
-/// The fix line of a selection that has nothing to cut while the toolpath
-/// model holds faces that the reader can cut (geometry selection P4.D).
-pub(crate) const PICK_A_FACE_FIX: &str = "Fix: pick a face of the model.";
-
-/// The hover of [`PICK_A_FACE_FIX`].
-const PICK_A_FACE_HOVER: &str = "The selection holds nothing that this operation cuts, and this \
-    model holds faces. Click Pick on the Cuts row, then click a flat face in the viewport.";
-
-/// True when the selection refuses with nothing to cut (`Empty`) and a
-/// face pick is a fix: the toolpath model holds faces, and the reader cuts
-/// faces (P4.D).
-pub(crate) fn wants_a_face_pick(
-    inputs: &SelectionSectionInputs<'_>,
-    report: &SelectionReport,
-) -> bool {
-    matches!(
-        report.refusal.as_ref().map(|r| &r.cause),
-        Some(RefusalCause::Empty { .. })
-    ) && inputs.model_kinds.contains(&ItemKind::Face)
-        && ItemKind::Face.serves(inputs.item_use)
-}
+/// The most rows that the list shows before it scrolls, and the count
+/// above which the filter field shows (W3h).
+pub(crate) const LIST_CAP: usize = 8;
 
 /// Everything the section reads. The section owns no project state.
 pub(crate) struct SelectionSectionInputs<'a> {
@@ -82,8 +71,9 @@ pub(crate) struct SelectionSectionInputs<'a> {
     pub target: SelectionTarget,
     /// The stored selection of `target`.
     pub selection: &'a Selection,
-    /// The selection that `Reset` restores: the op default, or for the
-    /// boundary the value of the "Selection" source button.
+    /// The selection that `Reset` restores: the op default (W3h: no item,
+    /// except Face: the stock outline), or for the boundary the value of
+    /// the "Selection" source button.
     pub op_default: &'a Selection,
     /// The `selection_status` answer of `target`.
     pub report: Option<&'a SelectionRead>,
@@ -95,9 +85,9 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// The "Rule…" offers of the open row menu (core `rule_offers`).
     /// Empty while no menu of this selection is open.
     pub offers: &'a [RuleOffer],
-    /// The op label, for the default row ("nothing that Drill cuts").
+    /// The op label, for the note of the kinds that the op never cuts.
     pub op_label: &'static str,
-    /// True when a picked face or model ring offers "Use as floor": the op
+    /// True when a face or a model ring offers "Use as floor": the op
     /// target of an op that holds a floor (L-R5).
     pub floor_op: bool,
     /// For each note of the report, the keys that "Show me" frames
@@ -105,20 +95,22 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// kind and layer, or the one face of an at-the-top note.
     pub note_items: &'a [Vec<MatchKey>],
     /// The item kinds that the toolpath model holds
-    /// (`state::pick::held_kinds`): the "pick a face" fix reads it (P4.D).
+    /// (`state::pick::held_kinds`): the placeholder and the rule presets
+    /// read it.
     pub model_kinds: &'a BTreeSet<ItemKind>,
     /// The diameter of the tool of the toolpath (`ToolConfig::diameter`),
     /// for the hole size rows (P6.7): "drilled at" a diameter and the Bore
     /// helix radius. `None` with no tool, and for the boundary.
     pub tool_diameter: Option<f64>,
-    /// W3a: the findings that `placement::place` anchors to the
-    /// `selection` field. They set the state and the hover of the summary
-    /// row. Empty for the boundary selection.
-    pub findings: &'a [&'a rs_cam_core::diagnostics::Diagnostic],
+    /// The findings that `placement::place` anchors to the `selection`
+    /// field. They set the state mark of the list header. Empty for the
+    /// boundary selection.
+    pub findings: &'a [Finding<'a>],
 }
 
 impl SelectionSectionInputs<'_> {
-    /// One edit of this selection: the only write of the section (L-1).
+    /// One edit of this selection: the only selection write of the
+    /// section (L-1).
     fn send(&self, events: &mut Vec<AppEvent>, edit: SelectionEdit) {
         events.push(AppEvent::EditToolpathSelection {
             toolpath_id: self.toolpath_id,
@@ -154,65 +146,136 @@ pub(crate) fn draw_selection_section(
     ui_state: &mut SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
-    // W3a: a report that the query cannot read is the Danger state of the
-    // summary row, with the error on its hover. No wrapped line.
+    // A report that the query cannot read is the Danger mark of the list
+    // header, with the error on its hover.
     let (report, read_error) = match inputs.report {
         Some(Ok(report)) => (Some(report.as_ref()), None),
         Some(Err(error)) => (None, Some(error.as_str())),
         None => (None, None),
     };
-
-    // ── 1. The summary: two `PropRow`s (W3a) ───────────────────────
-    // The Cuts row: what the op cuts, its field state and the quiet
-    // action Pick. A refusal, a finding of the `selection` field
-    // (`placement::place`) and a read error are its state and hover.
-    let cuts = cuts_state(inputs, report, read_error);
+    let rows = report.map_or_else(Vec::new, |report| list_rows(inputs, report));
+    let header = header_state(inputs, report, read_error);
     let on = ui_state.pick_is_on(inputs.toolpath_id, inputs.target);
-    // W3g (operator ruling 2026-10-30): the pick mode stays on while a 2D
-    // toolpath is selected, and the pick bar has "Done". So the row shows
-    // no action while the mode is on, and "Pick" when the operator left it.
-    let mut row = PropRow::new(summary_label(inputs.target))
-        .state(cuts.state)
-        .hover(Some(summary_hover(inputs.target)))
-        .detail(cuts.detail.as_deref());
-    if !on {
-        row = row.action(PICK);
-    }
-    if row.show_read_only(ui, cuts.value).action_clicked {
-        // L-3: one Pick at a time. A click on this action replaces the
-        // mode of any other block.
-        ui_state.set_pick(Some(PickMode::new(
-            inputs.toolpath_id,
-            inputs.target,
-            inputs.item_use,
-        )));
-    }
-    // GUI/MCP parity (operator rule): "Selected" is the held count, the
-    // same number as MCP `selection_status`. On the default rule there is
-    // no Selected row: the Cuts row says what the op cuts, and the default
-    // row says the rule (FR-2 F32). Reset sits on this row: away from the
-    // default is the only state in which Reset does something.
-    let default = inputs.is_default();
-    if !default {
-        let held = report.map_or(0, |r| r.rows.len());
-        let reset = PropRow::new("Selected")
-            .hover(Some(match inputs.target {
-                SelectionTarget::Op => {
-                    "The items that this selection names: the rule matches and the picks. \
-                     Reset goes back to the default selection of the operation."
-                }
-                SelectionTarget::Boundary => {
-                    "The items that this selection names: the rule matches and the picks. \
-                     Reset goes back to the selection that the Selection source writes."
-                }
-            }))
-            .action("Reset")
-            .show_read_only(ui, format!("{held} {}", items_word(held)))
-            .action_clicked;
-        if reset {
-            inputs.send(events, SelectionEdit::Reset);
+
+    let _ = ListBox::new(inputs.salt("selected_list")).show(ui, |ui| {
+        // ── The header ─────────────────────────────────────────────
+        let mut header_choice: Option<HeaderAct> = None;
+        let mut acts: Vec<Act<'_>> = Vec::new();
+        // W3g (operator ruling 2026-10-30): the pick mode stays on while
+        // the toolpath is selected, and the pick bar has "Done". So the
+        // header shows "Pick" only when the operator left the mode.
+        if !on {
+            acts.push(Act::Button(
+                PICK,
+                "Turn on the viewport pick for this selection.",
+            ));
         }
-    }
+        let menu = header_menu(inputs);
+        let choice = &mut header_choice;
+        acts.push(Act::Menu(
+            "Add a rule, remove a rule, or clear the selection.",
+            Box::new(move |ui: &mut egui::Ui| {
+                for (index, (label, hover, enabled)) in menu.iter().enumerate() {
+                    if ui
+                        .add_enabled(*enabled, egui::Button::new(label.as_str()))
+                        .on_hover_text(hover.as_str())
+                        .on_disabled_hover_text(hover.as_str())
+                        .clicked()
+                    {
+                        *choice = Some(HeaderAct::Menu(index));
+                    }
+                }
+            }),
+        ));
+        let mark = header.role.map(|role| Mark {
+            role,
+            hover: header.detail.as_deref().unwrap_or(""),
+        });
+        let line = list_header(
+            ui,
+            list_title(inputs.target),
+            &header.count,
+            list_hover(inputs.target),
+            mark,
+            acts,
+        );
+        if line.clicked == Some(0) && !on {
+            header_choice = Some(HeaderAct::Pick);
+        }
+        match header_choice {
+            Some(HeaderAct::Pick) => {
+                // L-3: one Pick at a time. A click replaces the mode of
+                // any other block.
+                ui_state.set_pick(Some(PickMode::new(
+                    inputs.toolpath_id,
+                    inputs.target,
+                    inputs.item_use,
+                )));
+            }
+            Some(HeaderAct::Menu(index)) => {
+                if let Some(edit) = header_menu_edit(inputs, index) {
+                    inputs.send(events, edit);
+                }
+            }
+            None => {}
+        }
+
+        // ── The filter field, above the cap ────────────────────────
+        if rows.len() > LIST_CAP {
+            ui.add(
+                egui::TextEdit::singleline(&mut ui_state.list_filter)
+                    .id_salt(inputs.salt("list_filter"))
+                    .hint_text("Filter the selected items")
+                    .desired_width(f32::INFINITY),
+            )
+            .on_hover_text(
+                "Show only the rows whose text holds this text. It does not search the model.",
+            );
+        }
+        let filter = if rows.len() > LIST_CAP {
+            ui_state.list_filter.trim().to_lowercase()
+        } else {
+            String::new()
+        };
+        let kept: Vec<&ListRow> = rows
+            .iter()
+            .filter(|row| filter.is_empty() || row.full.to_lowercase().contains(&filter))
+            .collect();
+
+        // ── The rows, or the placeholder ───────────────────────────
+        if rows.is_empty() {
+            list_placeholder(
+                ui,
+                &placeholder_text(inputs.item_use, inputs.model_kinds),
+                "Nothing is selected. Click items in the viewport (Pick), or add a rule from \
+                 the \u{22EF} menu of the list.",
+            );
+        } else {
+            ListBox::rows(
+                ui,
+                inputs.salt("rows"),
+                kept.len(),
+                LIST_CAP,
+                |ui, index| {
+                    if let Some(row) = kept.get(index) {
+                        draw_row(ui, inputs, row, ui_state, events);
+                    }
+                },
+            );
+        }
+
+        // ── The "Rule…" offers of the open row ─────────────────────
+        let open = ui_state
+            .offers_for(inputs.toolpath_id, inputs.target)
+            .map(|o| o.key.clone());
+        if let Some(key) = open
+            && rows.iter().any(|row| row.key == key)
+            && draw_offers(ui, inputs, events)
+        {
+            ui_state.offers_for = None;
+        }
+    });
+
     // The hole sizes (P6.7): one derived row per size (IC2).
     let sizes = report.map_or_else(Vec::new, |report| hole_sizes(inputs, report));
     if !sizes.is_empty() {
@@ -229,59 +292,81 @@ pub(crate) fn draw_selection_section(
         }
     }
 
-    // ── 3. The filter box and 4. the selected list ─────────────────
-    if let Some(report) = report {
-        if report.rows.len() > GROUP_CAP {
-            ui.add(
-                egui::TextEdit::singleline(&mut ui_state.list_filter)
-                    .id_salt(inputs.salt("list_filter"))
-                    .hint_text("Filter the selected items")
-                    .desired_width(f32::INFINITY),
-            )
-            .on_hover_text(
-                "Show only the rows whose text holds this text. It does not search the model.",
-            );
-        }
-        let filter = ui_state.list_filter.trim().to_lowercase();
-        let groups = list_groups(inputs, report);
-        // W3g: the default rule is the field row "Source" (outside the
-        // list); its ▸ opens the list of its items.
-        if let Some(group) = groups.iter().find(|g| g.kind == GroupKind::Default) {
-            draw_source_row(ui, inputs, group, &filter);
-        }
-        // W3g: the groups and their rows are ONE list box under the field
-        // rows, so the list does not read as one more control.
-        let shown = groups
-            .iter()
-            .any(|g| g.kind != GroupKind::Default || group_view(ui, group_id(inputs, g), g).0);
-        if shown {
-            let _ = ListBox::new(inputs.salt("selected_list")).show(ui, |ui| {
-                for group in &groups {
-                    draw_group(ui, inputs, group, &filter, ui_state, events);
-                }
-            });
-        }
-    }
-
-    // ── 6. The notes ───────────────────────────────────────────────
+    // ── The notes ──────────────────────────────────────────────────
     draw_add_bore(ui, inputs, &sizes, events);
     if let Some(report) = report {
         draw_extend_summary(ui, inputs, report, events);
         draw_findings(ui, inputs, report, events);
-        // P4.D: a new 2D op on a STEP model can start with nothing to cut.
-        // The fix is a face pick; the one Pick is on the Cuts row.
-        if wants_a_face_pick(inputs, report) {
-            line_with_action(
-                ui,
-                "",
-                PICK_A_FACE_FIX,
-                tokens::TEXT_BODY,
-                PICK_A_FACE_HOVER,
-                None,
-            );
-        }
         draw_details(ui, inputs, report);
     }
+}
+
+/// What the header of the list reported.
+enum HeaderAct {
+    Pick,
+    /// The item of [`header_menu`] at this index.
+    Menu(usize),
+}
+
+/// The title of the list of a selection: "Selection" for the op,
+/// "Boundary selection" for the boundary (it sits under the Boundary row).
+pub(crate) fn list_title(target: SelectionTarget) -> &'static str {
+    match target {
+        SelectionTarget::Op => "Selection",
+        SelectionTarget::Boundary => "Boundary selection",
+    }
+}
+
+/// The explanation of the list header.
+fn list_hover(target: SelectionTarget) -> &'static str {
+    match target {
+        SelectionTarget::Op => {
+            "What this operation cuts: one row per item, the counts at the right. Pick turns \
+             on the viewport pick; the \u{22EF} menu adds a rule or clears the selection."
+        }
+        SelectionTarget::Boundary => {
+            "The items that bound where the tool may go. Pick turns on the viewport pick; the \
+             \u{22EF} menu adds a rule or clears the selection."
+        }
+    }
+}
+
+/// The plural noun of a pick kind in the placeholder.
+fn placeholder_noun(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Loop => "loops",
+        ItemKind::Path => "open paths",
+        ItemKind::Circle => "circles",
+        ItemKind::Face => "faces",
+        ItemKind::Point => "points",
+    }
+}
+
+/// W3h: the placeholder row of an empty list, from the kinds of the pick
+/// bar chips (`PickFilter::cut_kinds`: the kinds that the reader serves
+/// and that the model holds; every served kind when the model holds none).
+/// A hole reader reads "Select holes"; else "Select faces or loops".
+pub(crate) fn placeholder_text(item_use: ItemUse, model_kinds: &BTreeSet<ItemKind>) -> String {
+    if matches!(item_use, ItemUse::Holes { .. }) {
+        return "Select holes".to_owned();
+    }
+    let mut kinds = PickFilter::cut_kinds(item_use, model_kinds);
+    if kinds.is_empty() {
+        kinds = PickFilter::served(item_use).effective_kinds(item_use, &all_kinds());
+    }
+    // Faces first: the pick of a STEP model is a face pick.
+    kinds.sort_by_key(|k| *k != ItemKind::Face);
+    let nouns: Vec<&str> = kinds.into_iter().map(placeholder_noun).collect();
+    match nouns.as_slice() {
+        [] => "Select items".to_owned(),
+        [one] => format!("Select {one}"),
+        [rest @ .., last] => format!("Select {} or {last}", rest.join(", ")),
+    }
+}
+
+/// Every item kind, as a set.
+fn all_kinds() -> BTreeSet<ItemKind> {
+    KINDS.into_iter().collect()
 }
 
 /// "item" or "items".
@@ -298,8 +383,8 @@ const KINDS: [ItemKind; 5] = [
     ItemKind::Point,
 ];
 
-/// The count of the items that the default rule holds and that the op
-/// never cuts: the skipped items of a kind that does not serve the op.
+/// The count of the items that the rules hold and that the op never
+/// cuts: the skipped items of a kind that does not serve the op.
 fn never_cut_count(inputs: &SelectionSectionInputs<'_>, report: &SelectionReport) -> usize {
     report
         .skipped_by_kind
@@ -335,16 +420,23 @@ fn is_never_cut(note: &SelectionNote) -> bool {
     matches!(note.cause, NoteCause::KindNotServed)
 }
 
-/// What a row of the selected list offers (L-R4, L-R5, GT-Q8).
+/// What the `⋯` menu of a row offers besides `×` (L-R4, L-R5, GT-Q8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct RowActs {
-    /// "Rule…": the offers from the facts of this picked item.
+    /// "Rule…": the offers from the facts of this item.
     pub rule: bool,
-    /// "Use as floor": a picked face or model ring of a floor op.
+    /// "Use as floor": a face or a model ring of a floor op.
     pub floor: bool,
-    /// "×": drop the item. On a rule member, core turns the rule into
-    /// picks less this item (GT-Q8, `rule_drop_edit`).
-    pub remove: bool,
+}
+
+/// Where a row of the list comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowFrom {
+    /// A member of the rule at this index. Its `×` turns the rule into
+    /// picks of its other members (GT-Q8, core `rule_drop_edit`).
+    Rule(usize),
+    /// A pick. Its `×` removes the pick.
+    Pick,
 }
 
 /// One row of the selected list.
@@ -354,62 +446,13 @@ pub(crate) struct ListRow {
     /// The short text of the row: the kind, the size and the Z (FR-2 F22).
     pub label: String,
     /// The full text of the row: the place and the layer too. The hover
-    /// shows it, and the filter box reads it.
+    /// shows it, and the filter field reads it.
     pub full: String,
     /// The report state of the item.
     pub state: ItemState,
+    pub from: RowFrom,
     pub acts: RowActs,
 }
-
-/// What a group of the list stands for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GroupKind {
-    /// The default row (L-R2): the default rule while the selection holds
-    /// it. Its rows have no acts.
-    Default,
-    /// The rule at this index; "×" on the group removes it.
-    Rule(usize),
-    /// The picks of one kind.
-    Picked(ItemKind),
-}
-
-/// One group of the selected list: a header row and its item rows.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ListGroup {
-    pub kind: GroupKind,
-    /// The header text, with no count.
-    pub title: String,
-    /// The hover of the header: the full rule text.
-    pub hover: String,
-    pub rows: Vec<ListRow>,
-}
-
-impl ListGroup {
-    /// The rows that the filter text keeps (lower case; empty keeps all).
-    pub(crate) fn kept<'a>(&'a self, filter: &str) -> Vec<&'a ListRow> {
-        self.rows
-            .iter()
-            .filter(|row| filter.is_empty() || row.full.to_lowercase().contains(filter))
-            .collect()
-    }
-
-    /// The count text of the header: "24", or "6 of 24" under a filter.
-    pub(crate) fn count_text(&self, filter: &str) -> String {
-        let kept = self.kept(filter).len();
-        if kept == self.rows.len() {
-            kept.to_string()
-        } else {
-            format!("{kept} of {}", self.rows.len())
-        }
-    }
-
-    /// True when the group starts closed: the default row (L-R2), and a
-    /// group of more than [`GROUP_CAP`] rows (L-R1).
-    pub(crate) fn starts_closed(&self) -> bool {
-        self.kind == GroupKind::Default || self.rows.len() > GROUP_CAP
-    }
-}
-
 /// The short text of one item row (FR-2 F22): the kind, the size and the
 /// Z, so that the row fits the inspector column with its acts. The place
 /// and the layer are in [`row_full_label`], on the hover. A circle reads
@@ -479,253 +522,81 @@ pub(crate) fn state_word(state: ItemState) -> &'static str {
     }
 }
 
-/// The groups of the selected list (L-R1, L-R2): the default row while the
-/// selection holds its default rule, else one group per rule (in rule
-/// order), then one group per picked kind. Each row of the report is in
-/// one group only, so the rows of the groups ARE the report rows.
-pub(crate) fn list_groups(
+/// The rows of the selected list (W3h): the members of each rule, in rule
+/// order, then the picks. Each row of the report is one row. FR-2 F32: a
+/// rule member of a kind that the op never cuts is not a row; the one
+/// "not cut" note holds it. A pick of such a kind stays a row (it refuses,
+/// and its `×` is the fix).
+pub(crate) fn list_rows(
     inputs: &SelectionSectionInputs<'_>,
     report: &SelectionReport,
-) -> Vec<ListGroup> {
-    let default = inputs.is_default();
+) -> Vec<ListRow> {
     // R-E: a hole row reads the one core hole text ("Ø6 hole, 8 deep").
     // R-A: the part outline row reads "Part outline Z0".
-    let row_of = |row: &rs_cam_core::session::SelectedRow, acts: RowActs| ListRow {
-        key: row.key.clone(),
-        label: if row.outline {
-            outline_label(row.plane_z)
-        } else {
-            row.hole
-                .as_ref()
-                .map_or_else(|| row_label(&row.key, row.plane_z), HoleSummary::label)
-        },
-        full: match (&row.hole, row.outline) {
-            (_, true) => outline_full_label(&row.key, row.plane_z),
-            (Some(hole), false) => format!(
-                "{} \u{00B7} {}",
-                hole.label(),
-                row_full_label(&row.key, row.plane_z)
-            ),
-            (None, false) => row_full_label(&row.key, row.plane_z),
-        },
-        state: report.row_state(row),
-        acts,
-    };
-    if default {
-        // FR-2 F32: the default row lists the items of a kind that the op
-        // cuts. The other items are the one "not cut" note.
-        let rows: Vec<ListRow> = report
-            .rows
-            .iter()
-            .filter(|row| row.key.kind.serves(inputs.item_use))
-            .map(|row| row_of(row, RowActs::default()))
-            .collect();
-        let kinds: BTreeSet<ItemKind> = rows.iter().map(|r| r.key.kind).collect();
-        let only_outline = !report.rows.is_empty() && report.rows.iter().all(|row| row.outline);
-        let title = if rows.is_empty() {
-            format!("Default: nothing that {} cuts", inputs.op_label)
-        } else if only_outline {
-            // R-A: the default Profile on a mesh model.
-            format!(
-                "Default: the {}",
-                rs_cam_core::selection::PART_OUTLINE_LABEL.to_lowercase()
-            )
-        } else {
-            let names: Vec<&str> = kinds.iter().map(|k| kind_noun(*k, 1)).collect();
-            format!("Default: every {}", names.join(", "))
-        };
-        let rules: Vec<String> = inputs
-            .op_default
-            .rules()
-            .iter()
-            .map(|rule| rule_text(rule, inputs.models))
-            .collect();
-        let hover = format!(
-            "{title}. The default rule of {}: {}.",
-            inputs.op_label,
-            if rules.is_empty() {
-                "no rule".to_owned()
-            } else {
-                rules.join("; ")
-            }
-        );
-        return vec![ListGroup {
-            kind: GroupKind::Default,
-            title,
-            hover,
-            rows,
-        }];
-    }
-    let mut groups = Vec::new();
-    for (index, rule) in inputs.selection.rules().iter().enumerate() {
-        let rows = report
-            .rows
-            .iter()
-            .filter(|row| {
-                matches!(row.by, MatchedBy::Named { rule } | MatchedBy::Default { rule } if rule == index)
-            })
-            .map(|row| {
-                row_of(
-                    row,
-                    RowActs {
-                        remove: true,
-                        ..RowActs::default()
-                    },
-                )
-            })
-            .collect();
-        let title = rule_text(rule, inputs.models);
-        groups.push(ListGroup {
-            kind: GroupKind::Rule(index),
-            hover: title.clone(),
-            title,
-            rows,
-        });
-    }
-    let mut picked: Vec<(ItemKind, Vec<ListRow>)> = Vec::new();
-    for row in report.rows.iter().filter(|row| row.by == MatchedBy::Pick) {
-        let kind = row.key.kind;
+    let row_of = |row: &rs_cam_core::session::SelectedRow, from: RowFrom| {
         let floor = inputs.floor_op
-            && match kind {
+            && match row.key.kind {
                 ItemKind::Face => true,
                 ItemKind::Loop => row.key.z.is_some(),
                 ItemKind::Path | ItemKind::Point | ItemKind::Circle => false,
             };
-        let list_row = row_of(
-            row,
-            RowActs {
-                rule: true,
-                floor,
-                remove: true,
+        ListRow {
+            key: row.key.clone(),
+            label: if row.outline {
+                outline_label(row.plane_z)
+            } else {
+                row.hole
+                    .as_ref()
+                    .map_or_else(|| row_label(&row.key, row.plane_z), HoleSummary::label)
             },
+            full: match (&row.hole, row.outline) {
+                (_, true) => outline_full_label(&row.key, row.plane_z),
+                (Some(hole), false) => format!(
+                    "{} \u{00B7} {}",
+                    hole.label(),
+                    row_full_label(&row.key, row.plane_z)
+                ),
+                (None, false) => row_full_label(&row.key, row.plane_z),
+            },
+            state: report.row_state(row),
+            from,
+            acts: RowActs { rule: true, floor },
+        }
+    };
+    let mut rows = Vec::new();
+    for index in 0..inputs.selection.rules().len() {
+        rows.extend(
+            report
+                .rows
+                .iter()
+                .filter(|row| {
+                    matches!(row.by, MatchedBy::Named { rule } | MatchedBy::Default { rule } if rule == index)
+                })
+                .filter(|row| row.key.kind.serves(inputs.item_use))
+                .map(|row| row_of(row, RowFrom::Rule(index))),
         );
-        match picked.iter_mut().find(|(k, _)| *k == kind) {
-            Some((_, rows)) => rows.push(list_row),
-            None => picked.push((kind, vec![list_row])),
-        }
     }
-    for (kind, rows) in picked {
-        let title = format!("Picked {}", kind_noun(kind, 2));
-        groups.push(ListGroup {
-            kind: GroupKind::Picked(kind),
-            hover: title.clone(),
-            title,
-            rows,
-        });
-    }
-    groups
+    rows.extend(
+        report
+            .rows
+            .iter()
+            .filter(|row| row.by == MatchedBy::Pick)
+            .map(|row| row_of(row, RowFrom::Pick)),
+    );
+    rows
 }
 
-/// The open state of a group, kept in egui memory (a view toggle, not
-/// content): `(open, show_all)`.
-fn group_view(ui: &egui::Ui, id: egui::Id, group: &ListGroup) -> (bool, bool) {
-    ui.data(|d| d.get_temp::<(bool, bool)>(id))
-        .unwrap_or((!group.starts_closed(), false))
+/// One act of the `⋯` menu of a row, or its `×`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RowAct {
+    Rule,
+    Floor,
+    ShowMe,
+    Remove,
 }
 
-/// The memory id of the view state of a group. It does not depend on the
-/// `Ui` that draws it: the Source row and the list box read one state.
-fn group_id(inputs: &SelectionSectionInputs<'_>, group: &ListGroup) -> egui::Id {
-    egui::Id::new(inputs.salt(&format!("group {:?}", group.kind)))
-}
-
-/// The value of the Source row: the default title with no "Default: "
-/// prefix, its first letter in upper case. "Every closed loop".
-pub(crate) fn source_value(title: &str) -> String {
-    let rest = title.strip_prefix("Default: ").unwrap_or(title);
-    let mut chars = rest.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
-}
-
-/// W3g: the default rule as the read-only field row "Source" (FR-2 F32,
-/// L-R2). Its quiet action ▸ (▾ while open) opens the list of the items
-/// that the rule holds; the hover names the rule and the count.
-fn draw_source_row(
-    ui: &mut egui::Ui,
-    inputs: &SelectionSectionInputs<'_>,
-    group: &ListGroup,
-    filter: &str,
-) {
-    let id = group_id(inputs, group);
-    let (open, show_all) = group_view(ui, id, group);
-    let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
-    let hover = format!("{} ({})", group.hover, group.count_text(filter));
-    let clicked = PropRow::new("Source")
-        .hover(Some(&hover))
-        .action(arrow)
-        .action_hover("Show or hide the items of the default rule.")
-        .show_read_only(ui, source_value(&group.title))
-        .action_clicked;
-    if clicked {
-        ui.data_mut(|d| d.insert_temp(id, (!open, show_all)));
-    }
-}
-
-/// Draw one group in the list box: the list header and, when open, its
-/// rows. The default group has no header: the Source row is its header.
-fn draw_group(
-    ui: &mut egui::Ui,
-    inputs: &SelectionSectionInputs<'_>,
-    group: &ListGroup,
-    filter: &str,
-    ui_state: &mut SelectionUi,
-    events: &mut Vec<AppEvent>,
-) {
-    let id = group_id(inputs, group);
-    let (mut open, mut show_all) = group_view(ui, id, group);
-    if group.kind != GroupKind::Default {
-        let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
-        let mut actions: Vec<(&str, &str)> = vec![(arrow, "Open or close this group.")];
-        if let GroupKind::Rule(_) = group.kind {
-            actions.push(("\u{2715}", "Remove this rule."));
-        }
-        let count = group.count_text(filter);
-        let hover = format!("{} ({count})", group.hover);
-        match list_header(ui, &group.title, &count, &hover, &actions).clicked {
-            Some(0) => open = !open,
-            Some(_) => {
-                if let GroupKind::Rule(index) = group.kind {
-                    inputs.send(events, SelectionEdit::RemoveRule(index));
-                }
-            }
-            None => {}
-        }
-    }
-    if open {
-        let kept = group.kept(filter);
-        let shown = if show_all {
-            kept.len()
-        } else {
-            kept.len().min(GROUP_CAP)
-        };
-        let row_height = tokens::ROW_DENSE + ui.spacing().item_spacing.y;
-        egui::ScrollArea::vertical()
-            .id_salt(inputs.salt(&format!("rows {:?}", group.kind)))
-            .max_height(row_height * GROUP_CAP as f32 * 1.5)
-            .auto_shrink([false, true])
-            .show_rows(ui, row_height, shown, |ui, range| {
-                for row in kept.iter().skip(range.start).take(range.len()) {
-                    draw_row(ui, inputs, row, ui_state, events);
-                }
-            });
-        if !show_all && kept.len() > GROUP_CAP {
-            let more = kept.len() - GROUP_CAP;
-            if ui
-                .add(Button::quiet(format!("Show {more} more")))
-                .on_hover_text("Show every row of this group.")
-                .clicked()
-            {
-                show_all = true;
-            }
-        }
-    }
-    ui.data_mut(|d| d.insert_temp(id, (open, show_all)));
-}
-
-/// The acts of a row, in order, with their hover.
-fn row_actions(acts: RowActs) -> Vec<(RowAct, &'static str, &'static str)> {
+/// The items of the `⋯` menu of a row, in order, with their hover.
+fn row_menu(acts: RowActs) -> Vec<(RowAct, &'static str, &'static str)> {
     let mut out = Vec::new();
     if acts.rule {
         out.push((
@@ -738,28 +609,30 @@ fn row_actions(acts: RowActs) -> Vec<(RowAct, &'static str, &'static str)> {
         out.push((
             RowAct::Floor,
             "Use as floor",
-            "The op cuts down to the plane of this face. The face leaves the picks.",
+            "The op cuts down to the plane of this face. The face leaves the selection.",
         ));
     }
-    if acts.remove {
-        out.push((
-            RowAct::Remove,
-            "\u{2715}",
-            "Remove this item. On a rule member, the rule turns into picks of its other items.",
-        ));
-    }
+    out.push((RowAct::ShowMe, SHOW_ME, "Frame this item in the viewport."));
     out
 }
 
-/// One act of a row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RowAct {
-    Rule,
-    Floor,
-    Remove,
+/// The text of the remove act of a row (W3h): `×`. It is not the Danger
+/// glyph `✕` of the header mark.
+pub(crate) const REMOVE: &str = "\u{00D7}";
+
+/// The hover of the `×` of a row.
+fn remove_hover(from: RowFrom) -> &'static str {
+    match from {
+        RowFrom::Pick => "Remove this pick from the selection.",
+        RowFrom::Rule(_) => {
+            "Remove this item. The rule that holds it turns into picks of its other items."
+        }
+    }
 }
 
-/// Draw one item row, its acts, and its open "Rule…" offers.
+/// Draw one item row: the label and the state word, the `⋯` menu, then
+/// `×`. W3h: a row under the pointer lights its item in the viewport,
+/// for every row kind (a pick, a rule member, a face).
 fn draw_row(
     ui: &mut egui::Ui,
     inputs: &SelectionSectionInputs<'_>,
@@ -767,23 +640,42 @@ fn draw_row(
     ui_state: &mut SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
-    let acts = row_actions(row.acts);
-    let labels: Vec<(&str, &str)> = acts.iter().map(|(_, l, h)| (*l, *h)).collect();
     let text = format!("{} \u{00B7} {}", row.label, state_word(row.state));
     let hover = format!("{} \u{00B7} {}", row.full, state_word(row.state));
     let color = match row.state {
         ItemState::Cut | ItemState::Island => tokens::TEXT_BODY,
         ItemState::Skipped | ItemState::Excluded | ItemState::NotSelected => tokens::TEXT_MUTED,
     };
-    let ListLine { clicked, hovered } = list_row(ui, &text, color, &hover, &labels);
-    if hovered {
+    let menu = row_menu(row.acts);
+    let mut chosen: Option<RowAct> = None;
+    let choice = &mut chosen;
+    let line = list_row(
+        ui,
+        &text,
+        color,
+        &hover,
+        vec![
+            Act::Menu(
+                "More acts for this item.",
+                Box::new(move |ui: &mut egui::Ui| {
+                    for (act, label, act_hover) in &menu {
+                        if ui.button(*label).on_hover_text(*act_hover).clicked() {
+                            *choice = Some(*act);
+                        }
+                    }
+                }),
+            ),
+            Act::Button(REMOVE, remove_hover(row.from)),
+        ],
+    );
+    if line.clicked == Some(1) {
+        chosen = Some(RowAct::Remove);
+    }
+    if line.hovered {
         // GT-2: the viewport hover buffer draws the row item.
         ui_state.row_hover = Some(row.key.clone());
     }
-    match clicked
-        .and_then(|index| acts.get(index))
-        .map(|(act, _, _)| *act)
-    {
+    match chosen {
         Some(RowAct::Rule) => {
             let open = ui_state
                 .offers_for(inputs.toolpath_id, inputs.target)
@@ -801,15 +693,145 @@ fn draw_row(
             toolpath_id: inputs.toolpath_id,
             key: row.key.clone(),
         }),
+        Some(RowAct::ShowMe) => show_me(inputs, events, vec![row.key.clone()]),
+        // GT-Q8: on a rule member, core turns the rule into picks of its
+        // other members (`rule_drop_edit`).
         Some(RowAct::Remove) => inputs.send(events, SelectionEdit::RemovePick(row.key.clone())),
         None => {}
     }
-    let open = ui_state
-        .offers_for(inputs.toolpath_id, inputs.target)
-        .is_some_and(|o| o.key == row.key);
-    if open && draw_offers(ui, inputs, events) {
-        ui_state.offers_for = None;
+}
+
+/// The rule of a preset: every item of `kinds` on the toolpath model, or
+/// every item that the reader cuts when `kinds` is `None`.
+fn preset_rule(kinds: Option<ItemKind>) -> Rule {
+    Rule {
+        source: SourceRef::ToolpathModel,
+        filter: Filter {
+            kinds: kinds.map_or(KindFilter::Served, |k| KindFilter::Only(vec![k])),
+            ..Filter::default()
+        },
     }
+}
+
+/// One item of the header `⋯` menu: what it writes.
+#[derive(Debug, Clone, PartialEq)]
+enum HeaderItem {
+    /// "Every closed loop", "Every circle", "Every item it cuts".
+    AddRule(Rule),
+    /// "Remove rule: …".
+    RemoveRule(usize),
+    /// "Clear selection".
+    Clear,
+    /// "Reset to default" (an op whose default holds a rule: Face).
+    Reset,
+}
+
+/// The items of the header `⋯` menu (W3h), each with its label and
+/// whether it does something now:
+///
+/// - the rule presets: one "Every …" per kind that the reader cuts and
+///   the model holds, and "Every item it cuts" when there is more than one
+///   such kind (a layer rule comes from the "Rule…" menu of a row);
+/// - "Remove rule: …" for each rule of the selection;
+/// - "Clear selection";
+/// - "Reset to default" while the default of the op holds a rule (Face:
+///   the stock outline) and the selection is not that default.
+fn header_items(inputs: &SelectionSectionInputs<'_>) -> Vec<(HeaderItem, String, String, bool)> {
+    let mut out = Vec::new();
+    let kinds = PickFilter::cut_kinds(inputs.item_use, inputs.model_kinds);
+    let holds = |rule: &Rule| inputs.selection.rules().contains(rule);
+    for kind in &kinds {
+        let rule = preset_rule(Some(*kind));
+        let enabled = !holds(&rule);
+        out.push((
+            HeaderItem::AddRule(rule),
+            format!("Every {}", kind_noun(*kind, 1)),
+            format!(
+                "Add the rule: every {} of the model of this toolpath, on every layer.",
+                kind_noun(*kind, 1)
+            ),
+            enabled,
+        ));
+    }
+    if kinds.len() > 1 {
+        let rule = preset_rule(None);
+        let enabled = !holds(&rule);
+        out.push((
+            HeaderItem::AddRule(rule),
+            "Every item it cuts".to_owned(),
+            "Add the rule: every item of the model of this toolpath that this operation can \
+             cut, on every layer."
+                .to_owned(),
+            enabled,
+        ));
+    }
+    for (index, rule) in inputs.selection.rules().iter().enumerate() {
+        let text = rule_text(rule, inputs.models);
+        out.push((
+            HeaderItem::RemoveRule(index),
+            format!("Remove rule: {text}"),
+            format!("Remove the rule \u{201C}{text}\u{201D} and the items that only it holds."),
+            true,
+        ));
+    }
+    out.push((
+        HeaderItem::Clear,
+        "Clear selection".to_owned(),
+        "Remove every rule and every pick: the selection holds nothing.".to_owned(),
+        !inputs.selection.is_empty(),
+    ));
+    if inputs.target == SelectionTarget::Op && !inputs.op_default.is_empty() {
+        out.push((
+            HeaderItem::Reset,
+            "Reset to default".to_owned(),
+            "Go back to the default selection of the operation.".to_owned(),
+            !inputs.is_default(),
+        ));
+    }
+    out
+}
+
+/// The labels, the hovers and the enabled states of the header menu.
+fn header_menu(inputs: &SelectionSectionInputs<'_>) -> Vec<(String, String, bool)> {
+    header_items(inputs)
+        .into_iter()
+        .map(|(_, label, hover, enabled)| (label, hover, enabled))
+        .collect()
+}
+
+/// The edit of the header menu item at `index`.
+fn header_menu_edit(inputs: &SelectionSectionInputs<'_>, index: usize) -> Option<SelectionEdit> {
+    let (item, _, _, enabled) = header_items(inputs).into_iter().nth(index)?;
+    if !enabled {
+        return None;
+    }
+    Some(match item {
+        HeaderItem::AddRule(rule) => SelectionEdit::AddRule(rule),
+        HeaderItem::RemoveRule(index) => SelectionEdit::RemoveRule(index),
+        HeaderItem::Clear => SelectionEdit::Replace(Box::new(Selection::empty())),
+        HeaderItem::Reset => SelectionEdit::Reset,
+    })
+}
+
+/// The labels of the header menu, for the tests.
+#[cfg(test)]
+pub(crate) fn header_menu_labels(inputs: &SelectionSectionInputs<'_>) -> Vec<String> {
+    header_menu(inputs)
+        .into_iter()
+        .map(|(label, _, _)| label)
+        .collect()
+}
+
+/// The edit of the header menu item `label`, for the tests.
+#[cfg(test)]
+pub(crate) fn header_menu_edit_of(
+    inputs: &SelectionSectionInputs<'_>,
+    label: &str,
+) -> Option<SelectionEdit> {
+    let index = header_menu(inputs)
+        .iter()
+        .position(|(l, _, _)| l == label)?;
+    header_menu_edit(inputs, index)
 }
 
 /// The "Rule…" offers of the open row (L-R4). Each offer shows its match
@@ -821,13 +843,12 @@ fn draw_offers(
     events: &mut Vec<AppEvent>,
 ) -> bool {
     if inputs.offers.is_empty() {
-        line_with_action(
+        let _ = list_line(
             ui,
-            "",
             "No rule fits this item.",
             tokens::TEXT_MUTED,
             "This item has no fact that a rule can read.",
-            None,
+            &[],
         );
         return false;
     }
@@ -836,27 +857,28 @@ fn draw_offers(
         let text = format!("  {} ({})", offer.label, offer.count);
         match &offer.edit {
             Some(edit) => {
-                if line_with_action(
+                if list_line(
                     ui,
-                    "",
                     &text,
                     tokens::TEXT_BODY,
                     "The rule replaces the picks that it holds and every rule whose items it \
                      holds.",
-                    Some(("Add", "Add this rule.")),
-                ) {
+                    &[("Add", "Add this rule.")],
+                )
+                .clicked
+                .is_some()
+                {
                     inputs.send(events, edit.clone());
                     added = true;
                 }
             }
             None => {
-                line_with_action(
+                let _ = list_line(
                     ui,
-                    "",
                     &text,
                     tokens::TEXT_MUTED,
                     "A rule of this selection holds these items already.",
-                    None,
+                    &[],
                 );
             }
         }
@@ -871,7 +893,7 @@ pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
     counts_with(report, kind_noun)
 }
 
-/// The noun of a kind on the Cuts row (W3g): "loop" for a closed loop, so
+/// The noun of a kind in the list header (W3g, W3h): "loop" for a closed loop, so
 /// "3 loops · 2 islands" fits the 340-point inspector. The other kinds keep
 /// core `kind_noun`; [`counts_text`] keeps the full nouns.
 fn row_noun(kind: ItemKind, count: usize) -> &'static str {
@@ -884,7 +906,7 @@ fn row_noun(kind: ItemKind, count: usize) -> &'static str {
     }
 }
 
-/// The counts of the Cuts row (W3g): [`counts_text`] with the short nouns
+/// The counts of the list header (W3g, W3h): [`counts_text`] with the short nouns
 /// of [`row_noun`]. "3 loops · 2 islands".
 pub(crate) fn row_counts_text(report: &SelectionReport) -> Option<String> {
     counts_with(report, row_noun)
@@ -916,53 +938,33 @@ fn counts_with(
 }
 
 /// The quiet action of the summary row that turns Pick on.
+/// The quiet act of the list header that turns Pick on.
 pub(crate) const PICK: &str = "Pick";
 
-/// The label of the summary row of a selection: "Cuts" for the op
-/// selection, "Items" for the boundary selection (it sits under the
-/// Boundary row, so a second "Cuts" row would read as the op).
-pub(crate) fn summary_label(target: SelectionTarget) -> &'static str {
-    match target {
-        SelectionTarget::Op => "Cuts",
-        SelectionTarget::Boundary => "Items",
-    }
-}
-
-/// The explanation of the summary row.
-fn summary_hover(target: SelectionTarget) -> &'static str {
-    match target {
-        SelectionTarget::Op => {
-            "What this operation cuts: the count of each kind of item that it reads. \
-             Pick turns on the viewport pick for this selection."
-        }
-        SelectionTarget::Boundary => {
-            "The items that bound where the tool may go. Pick turns on the viewport pick \
-             for this selection."
-        }
-    }
-}
-
-/// What the summary row draws: the value, the field state and the problem
-/// detail of its hover.
-struct CutsState {
-    value: String,
-    state: Option<Role>,
+/// What the list header draws: the counts, the state mark and the texts
+/// of its hover.
+struct HeaderState {
+    count: String,
+    role: Option<Role>,
     detail: Option<String>,
 }
 
-/// The summary row of a selection (W3a). The state is the worst of:
+/// The header of a selection list (W3h). The mark is the worst of:
 ///
 /// - a report that the query cannot read (Danger);
-/// - the refusal of the report (Danger);
-/// - the findings of the `selection` field (`placement::place`);
+/// - the findings of the `selection` field (`placement::place`; W3h: the
+///   empty selection of a new op is the finding "Select the geometry to
+///   cut");
+/// - the refusal of the report (Danger), except the refusal of an empty
+///   selection: the placeholder row and the finding state it;
 /// - the notes and the lost picks of the report (Caution).
 ///
-/// The texts of each go on the hover, one per line.
-fn cuts_state(
+/// The texts of each go on the hover of the mark, one per paragraph.
+fn header_state(
     inputs: &SelectionSectionInputs<'_>,
     report: Option<&SelectionReport>,
     read_error: Option<&str>,
-) -> CutsState {
+) -> HeaderState {
     let mut lines: Vec<String> = Vec::new();
     let mut roles: Vec<Role> = Vec::new();
     if let Some(error) = read_error {
@@ -976,8 +978,8 @@ fn cuts_state(
         lines.push(hover);
     }
     roles.extend(super::placement::tool_role(inputs.findings));
-    let value = match report {
-        None => "N/A".to_owned(),
+    let count = match report {
+        None => String::new(),
         // P4.7: the flat faces of an STL are not computed yet. No count
         // and no refusal; the job fills the cache, and Generate computes
         // them too.
@@ -986,13 +988,20 @@ fn cuts_state(
         }
         Some(report) => {
             if let Some(refusal) = &report.refusal {
+                let empty = inputs.selection.is_empty()
+                    && matches!(refusal.cause, RefusalCause::Empty { .. });
                 let text = refusal.to_string();
                 // A `selection` finding states the same refusal; the hover
                 // holds it once.
-                if !lines.iter().any(|line| line.contains(&text)) {
+                if !empty && !lines.iter().any(|line| line.contains(&text)) {
                     lines.push(text);
+                    roles.push(Role::Danger);
+                } else if empty && inputs.findings.is_empty() {
+                    // The boundary selection has no finding: the empty
+                    // list says it on the mark.
+                    lines.push("Nothing is selected.".to_owned());
+                    roles.push(Role::Caution);
                 }
-                roles.push(Role::Danger);
             }
             // One finding per note row: the items of the kinds that the op
             // never cuts are one row (F32).
@@ -1007,13 +1016,13 @@ fn cuts_state(
                 });
                 roles.push(Role::Caution);
             }
-            row_counts_text(report).unwrap_or_else(|| "nothing".to_owned())
+            row_counts_text(report).unwrap_or_default()
         }
     };
-    let state = roles.into_iter().min_by_key(|role| role.severity_rank());
-    CutsState {
-        value,
-        state,
+    let role = roles.into_iter().min_by_key(|role| role.severity_rank());
+    HeaderState {
+        count,
+        role,
         detail: (!lines.is_empty()).then(|| lines.join("\n\n")),
     }
 }
@@ -1312,8 +1321,9 @@ pub(crate) const SHOW_ME: &str = "Show me";
 /// The hover end of a note row that answers a click (P4.4).
 const SHOW_ME_NOTE_HOVER: &str = "Click to show these items in the viewport.";
 
-/// One line with a truncated label in `color` and, at the right edge, one
-/// quiet button. Returns true when the button was clicked.
+/// One line with a truncated text in `color` and, at the right edge, one
+/// quiet button (the kit `list_line`). Returns true when the button was
+/// clicked.
 fn line_with_action(
     ui: &mut egui::Ui,
     name: &str,
@@ -1336,56 +1346,12 @@ pub(super) fn line_with_actions(
     hover: &str,
     actions: &[(&str, &str)],
 ) -> Option<usize> {
-    line_with_actions_hover(ui, name, text, color, hover, actions).0
-}
-
-/// [`line_with_actions`], and true when the pointer is over the line.
-fn line_with_actions_hover(
-    ui: &mut egui::Ui,
-    name: &str,
-    text: &str,
-    color: egui::Color32,
-    hover: &str,
-    actions: &[(&str, &str)],
-) -> (Option<usize>, bool) {
-    let mut clicked = None;
-    // FR-2 F22: the act buttons take their width first, at the right edge;
-    // the label takes what is left and truncates, with the full text on
-    // hover. No width estimate, so the row never grows the panel.
-    let line = ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            for (index, (label, action_hover)) in actions.iter().enumerate().rev() {
-                if ui
-                    .add(Button::quiet(*label))
-                    .on_hover_text(*action_hover)
-                    .clicked()
-                {
-                    clicked = Some(index);
-                }
-            }
-            let rest = ui.available_width().max(0.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(rest, tokens::ROW_DENSE),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.set_max_width(rest);
-                    let face = if name.is_empty() {
-                        text.to_owned()
-                    } else {
-                        format!("{name}  {text}")
-                    };
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(face).color(color))
-                            .truncate()
-                            .show_tooltip_when_elided(false),
-                    )
-                    .on_hover_text(hover);
-                },
-            );
-        });
-    });
-    let hovered = ui.rect_contains_pointer(line.response.rect);
-    (clicked, hovered)
+    let face = if name.is_empty() {
+        text.to_owned()
+    } else {
+        format!("{name}  {text}")
+    };
+    list_line(ui, &face, color, hover, actions).clicked
 }
 
 /// P4.4: ask the viewport to frame and flash `keys`.

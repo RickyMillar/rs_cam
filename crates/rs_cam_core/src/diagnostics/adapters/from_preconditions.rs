@@ -69,6 +69,11 @@ pub struct PreconditionContext {
     /// `ProjectSession::selection_status`). `None` when the selection
     /// gives the op its items.
     pub selection_refusal: Option<String>,
+    /// W3h: true when the op selection holds no rule, no pick and no
+    /// exclude (a new op starts so). The selection finding of a Drill and
+    /// of every other op that is not a Pin Drill is then
+    /// `PRECOND_SELECTION_EMPTY`, not the refusal id.
+    pub selection_empty: bool,
     /// UX-1c: the refusal that generation gives for a face pick below the
     /// stock top on a one-depth op on fresh stock
     /// (`ToolpathHeights::buried_face_refusal`). `None` when the op does
@@ -267,6 +272,9 @@ fn buried_face(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
 /// item, the cause and the fix), from the session's `selection_status`.
 fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnostic> {
     let message = ctx.selection_refusal.as_ref()?;
+    if ctx.selection_empty {
+        return Some(selection_empty(scope));
+    }
     Some(Diagnostic {
         id: DiagnosticId::from(ids::PRECOND_SELECTION_REFUSED),
         scope: scope.clone(),
@@ -285,12 +293,37 @@ fn selection_refused(scope: &Scope, ctx: &PreconditionContext) -> Option<Diagnos
     })
 }
 
+/// W3h: the op selection holds nothing (a new op starts so). The face
+/// asks for the pick; the selection list header shows it.
+fn selection_empty(scope: &Scope) -> Diagnostic {
+    Diagnostic {
+        id: DiagnosticId::from(ids::PRECOND_SELECTION_EMPTY),
+        scope: scope.clone(),
+        category: Category::Geometry,
+        severity: Severity::Blocking,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::PRECOND_SELECTION_EMPTY),
+        anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_SELECTION_EMPTY),
+        message: "Nothing is selected. Pick the items to cut in the viewport, or add a rule \
+                  on the Geometry tab — generation will fail."
+            .to_owned(),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }
+}
+
 fn drill_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     // Drill drills the points and circles of its selection. A polygon
     // outline is not a hole source (G-DRILLCENTROID). The session gives
     // the generator's own refusal sentence for the selection.
-    if let Some(message) = &ctx.selection_refusal {
+    if ctx.selection_refusal.is_some() && ctx.selection_empty {
+        out.push(selection_empty(scope));
+    } else if let Some(message) = &ctx.selection_refusal {
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::PRECOND_DRILL_NO_HOLES),
             scope: scope.clone(),
@@ -414,6 +447,43 @@ mod tests {
             "got {:?}",
             diags[0].message
         );
+    }
+
+    /// W3h: an empty selection (a new op) gives the one "Select the
+    /// geometry to cut" finding on the `selection` field, for a Drill and
+    /// for a Pocket; a refusal of a selection that holds items keeps its
+    /// own id.
+    #[test]
+    fn an_empty_selection_asks_for_the_pick_w3h() {
+        let empty = PreconditionContext {
+            selection_refusal: Some("nothing to cut".to_owned()),
+            selection_empty: true,
+            ..Default::default()
+        };
+        let pocket =
+            OperationConfig::Pocket(crate::compute::operation_configs::PocketConfig::default());
+        for op in [drill_op(), pocket] {
+            let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &op, &empty);
+            let selection: Vec<&Diagnostic> = diags
+                .iter()
+                .filter(|d| {
+                    d.anchor == crate::diagnostics::presentation::Anchor::field("selection")
+                })
+                .collect();
+            assert_eq!(selection.len(), 1, "one selection finding: {diags:?}");
+            assert_eq!(selection[0].id.as_str(), ids::PRECOND_SELECTION_EMPTY);
+            assert_eq!(selection[0].face, "Select the geometry to cut");
+            assert_eq!(
+                selection[0].anchor,
+                crate::diagnostics::presentation::Anchor::field("selection")
+            );
+        }
+        let refused = PreconditionContext {
+            selection_empty: false,
+            ..empty
+        };
+        let diags = diagnostics_from_preconditions(ToolpathId::from_raw(0), &drill_op(), &refused);
+        assert_eq!(diags[0].id.as_str(), ids::PRECOND_DRILL_NO_HOLES);
     }
 
     #[test]

@@ -18,7 +18,11 @@
 //! - every `OperationType::ALL` variant has exactly one `OpUiRow`;
 //! - no row names an operation the enum does not carry;
 //! - a row that shows no diagram states a reason, and the reason is not
-//!   empty.
+//!   empty. On screen, no diagram is no box at all (F12): no empty box and
+//!   no sentence;
+//! - the Drill and the Pin Drill draw their real holes (`OpDiagram::Holes`),
+//!   and no row draws the fixed "representative pattern" of the deleted
+//!   point-set picture.
 //!
 //! # NOT MEASURED
 //!
@@ -102,20 +106,22 @@ fn a_blank_diagram_states_its_reason_ui05() {
 
 #[test]
 fn the_diagram_decision_covers_every_operation_ui05() {
-    // Every row resolves to one of the three decisions. This is a `match`
-    // on purpose: a fourth `OpDiagram` variant must be considered here.
+    // Every row resolves to one of the four decisions. This is a `match`
+    // on purpose: a fifth `OpDiagram` variant must be considered here.
     let mut stepover = 0usize;
     let mut drawn = 0usize;
+    let mut holes = 0usize;
     let mut blank = 0usize;
     for entry in OP_UI_ROWS {
         match entry.diagram {
             OpDiagram::Stepover => stepover += 1,
             OpDiagram::Draw(_) => drawn += 1,
+            OpDiagram::Holes => holes += 1,
             OpDiagram::None(_) => blank += 1,
         }
     }
     assert_eq!(
-        stepover + drawn + blank,
+        stepover + drawn + holes + blank,
         OperationType::ALL.len(),
         "every operation must reach exactly one diagram decision"
     );
@@ -123,5 +129,34 @@ fn the_diagram_decision_covers_every_operation_ui05() {
         stepover > 0 && drawn > 0,
         "the table lost a whole decision kind: {stepover} stepover, \
          {drawn} drawn, {blank} blank"
+    );
+}
+
+#[test]
+fn the_drills_draw_their_real_holes_f12() {
+    // F12: the Drill and the Pin Drill drew a fixed 7-point
+    // "representative pattern" for any selection. Their rows now draw the
+    // holes that generation drills, and no other row claims the picture.
+    let hole_rows: Vec<String> = OP_UI_ROWS
+        .iter()
+        .filter(|r| matches!(r.diagram, OpDiagram::Holes))
+        .map(|r| format!("{:?}", r.op))
+        .collect();
+    assert_eq!(
+        hole_rows,
+        vec![
+            format!("{:?}", OperationType::Drill),
+            format!("{:?}", OperationType::AlignmentPinDrill),
+        ],
+        "only the Drill and the Pin Drill draw the hole diagram"
+    );
+    let src = include_str!("../src/ui/properties/operations/shape_diagrams.rs");
+    assert!(
+        src.contains("fn draw_hole_diagram("),
+        "the anchor is gone, so the scan below reads the wrong file"
+    );
+    assert!(
+        !src.contains("representative pattern"),
+        "a fixed point pattern returned to the shape diagrams"
     );
 }

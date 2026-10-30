@@ -5,8 +5,8 @@
 //! `SelectionEdit::AddPicks` and `RemovePicks` go through the one
 //! `EditSelection` door:
 //!
-//! 1. A batch of two keys on the op default replaces the default with the
-//!    two picks (O-PICK, once per batch).
+//! 1. A batch of two keys on the op default (W3h: a new op holds no item)
+//!    gives the two picks and no rule.
 //! 2. On a selection that holds a rule, the picks join the rule.
 //! 3. `RemovePicks` of rule members turns each rule that holds any of them
 //!    into picks of its members less ALL the keys (GT-Q8), with no exclude.
@@ -63,7 +63,7 @@ fn loop_item(layer: &str, cx: f64) -> Item {
 }
 
 /// Loops a, b on layer CUT and c, d on layer OTHER; one Pocket at its
-/// default selection.
+/// new-op default selection (W3h: no item).
 fn session() -> (ProjectSession, [MatchKey; 4]) {
     let items = vec![
         loop_item("CUT", -30.0),
@@ -82,7 +82,10 @@ fn session() -> (ProjectSession, [MatchKey; 4]) {
         endmill_tool_config(2.0),
         model,
         "sel4 pocket",
-        OperationConfig::Pocket(PocketConfig::default()),
+        OperationConfig::Pocket(PocketConfig {
+            selection: Selection::empty(),
+            ..PocketConfig::default()
+        }),
         |_| {},
     );
     (s, keys)
@@ -125,7 +128,7 @@ fn a_batch_on_the_default_replaces_it_once_sel4() {
     let (mut s, [a, b, _, _]) = session();
     edit(&mut s, SelectionEdit::AddPicks(vec![a.clone(), b.clone()])).unwrap();
     let sel = stored(&s);
-    assert!(sel.rules().is_empty(), "the default rule is gone: {sel:?}");
+    assert!(sel.rules().is_empty(), "the batch adds no rule: {sel:?}");
     assert_eq!(sel.picks().len(), 2);
     assert!(holds(&sel, &a) && holds(&sel, &b));
 }

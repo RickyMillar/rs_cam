@@ -10,15 +10,16 @@
 //! From top to bottom (design revision 2, R2.5; W3a: every row is a
 //! `PropRow`):
 //!
-//! 1. The op selection block (`selection_section.rs`): the Cuts row with
-//!    Pick, the Selected row with Reset, the filter box, the selected list
-//!    and the notes. An op with no op selection (every 3D op) gets the
-//!    Surface row of its boundary selection instead, with Pick.
+//! 1. The op selection block (`selection_section.rs`, W3h): ONE list box
+//!    (the header with the counts, the state mark, Pick and the `⋯` menu;
+//!    one row per selected item; a placeholder while empty) and the notes.
+//!    An op with no op selection (every 3D op) gets the Surface row of its
+//!    boundary selection instead, with Pick.
 //! 2. On an op that holds a floor: the Floor row and, under the floor
 //!    "A picked face" (UX-8), the Floor face row with "Clear" (L-R5).
 //! 3. Operator ruling GT-Q7, [`draw_boundary_selection`]: the boundary
-//!    selection block, with the same rows, while the boundary source is a
-//!    selection. It sits directly under the Boundary row.
+//!    selection block, in the same list form, while the boundary source is
+//!    a selection. It sits directly under the Boundary row.
 //!
 //! The file writes through events only (L-1): `EditToolpathSelection`,
 //! `UseAsFloor`, `ClearFloorFace`. It never writes the draft entry.
@@ -33,7 +34,8 @@ use crate::ui::AppEvent;
 use crate::ui::components::{PropRow, Role};
 
 /// The quiet action of the Surface row of a 3D op (geometry selection
-/// P4.D): it turns the face pick on. W3a: "Pick", as on the Cuts row; at
+/// P4.D): it turns the face pick on. W3a: "Pick", as on the selection
+/// list header (W3h); at
 /// the 240-point rail "Pick faces" left the value no room ("Whole model"
 /// painted past its clip, IC1). The row label and the hover name the faces.
 pub(super) const PICK_FACES_LABEL: &str = super::selection_section::PICK;
@@ -54,7 +56,7 @@ pub(super) fn draw_geometry_tab(
     entry: &crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     selection_ui: &mut crate::state::pick::SelectionUi,
-    selection_findings: &[&rs_cam_core::diagnostics::Diagnostic],
+    selection_findings: &[crate::ui::properties::placement::Finding<'_>],
     events: &mut Vec<AppEvent>,
 ) {
     ui.add_space(4.0);

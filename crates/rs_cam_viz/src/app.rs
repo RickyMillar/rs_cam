@@ -1155,8 +1155,8 @@ impl RsCamApp {
             crate::ui::multitool_planner::draw(ctx, state, events);
         }
 
-        // Feeds & Speeds modal (redesigned Feeds tab)
-        if self.controller.state().feeds_modal.is_some() {
+        // The vendor cutting data window (W3i)
+        if self.controller.state().vendor_data.is_some() {
             let (state, events) = self.controller.state_ref_and_events_mut();
             crate::ui::feeds::draw(ctx, state, events);
         }

@@ -222,7 +222,7 @@ fn model_eye(
 /// F218: the dialog runs off the frame. The pick goes through
 /// `AfterPick::ImportModel`, which classifies the path with
 /// `model_import_event`, the File menu import route.
-fn import_model_from_disk(events: &mut Vec<AppEvent>) {
+pub(in crate::ui) fn import_model_from_disk(events: &mut Vec<AppEvent>) {
     events.push(
         crate::app::file_dialog::FileDialogRequest::pick_file()
             .filter("Model Files", MODEL_FILE_EXTENSIONS)

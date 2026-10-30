@@ -237,13 +237,18 @@ fn ends(item: &Item) -> (P2, P2) {
 }
 
 /// Pick `item` into the op selection of toolpath 0.
+/// W3h: a pick on a new op (nothing selected) is the selection. The
+/// fixture op holds the drawing rule (the default of the default claims),
+/// so a pick on it writes that one pick.
 fn pick(s: &mut ProjectSession, item: &Item) {
     let key = item.key().clone().for_toolpath_model(s.models()[0].id);
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,
-            edit: SelectionEdit::AddPick(key),
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::from_picks(
+                vec![key],
+            ))),
         }))
         .expect("the op holds a selection");
 }

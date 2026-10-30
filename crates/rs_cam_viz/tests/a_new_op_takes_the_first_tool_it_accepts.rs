@@ -165,7 +165,7 @@ fn an_add_that_no_tool_fits_makes_the_op_with_no_tool_r2() {
 
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Bore));
 
-    let configs = controller.state.session().toolpath_configs();
+    let configs = controller.state.session().toolpath_configs().to_vec();
     assert_eq!(
         configs.len(),
         1,
@@ -174,7 +174,20 @@ fn an_add_that_no_tool_fits_makes_the_op_with_no_tool_r2() {
     );
     assert_eq!(configs[0].operation.op_type(), OperationType::Bore);
     assert_eq!(configs[0].tool_id, None, "no tool fits, so the op has none");
-    // Q9: a Bore state names the size limit of its held circle (Ø10).
+    // W3h: a new op holds no item, so the state names no hole size.
+    assert_eq!(
+        controller.state.session().no_tool_state(0).as_deref(),
+        Some("No tool fits: needs a flat end mill or a bull nose")
+    );
+    // Q9: with its circle selected (Ø10), a Bore state names the size limit.
+    let id = configs[0].id;
+    controller.handle_internal_event(AppEvent::EditToolpathSelection {
+        toolpath_id: id,
+        target: rs_cam_core::session::SelectionTarget::Op,
+        edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(
+            rs_cam_core::selection::Selection::drawing(),
+        )),
+    });
     let state = "No tool fits: needs a flat end mill or a bull nose \
                  smaller than Ø10.00 and at least Ø5.00";
     assert_eq!(

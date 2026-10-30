@@ -14,15 +14,10 @@ use crate::ui::properties::{ToolpathPanelInputs, operations, rest_grid_footprint
 /// parameters and the rest analysis. The tool is the header Tool row; the
 /// input model and the machining boundary are on the Geometry tab.
 /// `properties::tests` renders it (D3).
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the tab reads the entry, the inputs and the field states of the placement"
-)]
 pub(in crate::ui::properties) fn draw_passes_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
     fields: Fields<'_>,
@@ -35,9 +30,6 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     // W2: the rest-heatmap overlay is on FOR THIS TOOLPATH. It is the
     // second demand for the rest dials, beside a regions consumer.
     let rest_heatmap_on = inputs.rest_heatmap_on;
-    let material = &inputs.material;
-    let machine = &inputs.machine;
-    let spindle_strategy = inputs.spindle_strategy;
     let toolpath_heights = inputs
         .toolpath_heights
         .as_ref()
@@ -56,29 +48,13 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     // footer diagnostic row with its Fix button. A banner here printed the
     // same finding a second time, with a three-row paragraph.
 
-    // The LUT feeds result the Geometry-row ⚡ pills (stepover /
-    // depth-per-pass) read. Feed advice and the single validated Apply
-    // all route live on the Feeds tab. F216: the memo runs the
-    // calculator and the funnel dry run only when an input moved, not
-    // on every frame.
+    // The LUT feeds result the ⚡ pills (stepover / depth-per-pass) read.
+    // F216, W3i: the panel host fills the memo once per frame before any
+    // tab draws (`feeds_speeds::refresh_feeds_memo`); this tab reads it.
     let pill_tool_cfg = tool_configs
         .iter()
         .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, t)| t);
-    if let Some(tool_cfg) = pill_tool_cfg {
-        entry.feeds_memo.refresh(
-            &mut entry.feeds_result,
-            crate::state::runtime::FeedsInputs {
-                operation: &entry.operation,
-                tool: tool_cfg,
-                material,
-                machine,
-                spindle_strategy,
-                model_bbox,
-            },
-            crate::ui::properties::pills::pill_previews,
-        );
-    }
     // G-PILLCLAMP (UX-R03-014): the dry run of the apply funnel, so
     // every ⚡ pill below offers and writes the value the canonical
     // Apply all route would write for its field — not the raw
@@ -128,6 +104,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
         tools,
         models,
         holes,
+        pin_holes: &inputs.pin_holes,
         pills: feeds_for_pills,
         depth_caution,
         through_cut,

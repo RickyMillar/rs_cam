@@ -21,6 +21,9 @@
 //!    (`a_generate_refusal_takes_one_line_g_e`).
 //! 2. The number of visible text rows on each surface stays under a cap.
 //!    Every cap is the measured W3f state with no margin (W6 rule).
+//! 3. W6: in every W0 bad state (`inspector_bad_states`), no painted text
+//!    is over the 60-character face limit, counted on the full galley
+//!    text (`no_painted_text_is_over_the_face_limit_w6`).
 //!
 //! Run it with `--nocapture` to print the inventory of each surface.
 
@@ -30,6 +33,8 @@
     clippy::print_stderr,
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
+
+mod inspector_bad_states;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -383,10 +388,17 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // the "⚡" action of Depth/pass and Stepover on Passes): Feeds 13/12/13
     // -> 12/11/12. The other tabs keep their measure (each W3g fix swaps a
     // line for a line).
+    // W3i (2026-10-30): the Feeds tab holds the chart inline, a Chipload
+    // row, the two apply buttons (two lines at 280 points), the
+    // `Recommendation` Details and `Vendor data…`; the Explore button and
+    // the vendor expander are gone. Measured: Feeds 22/21/23. The chart is
+    // ONE block, but this counter reads painted text, so the plot's axis
+    // ticks and axis names count as lines here (the feed ticks stack, one
+    // line each). Each cap is the measure, with the chart's text in it.
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [10, 15, 12, 17, 22]),
-        ("3D Rough", [7, 13, 11, 15, 15]),
-        ("3D Finish", [9, 10, 12, 16, 14]),
+        ("Pocket", [10, 15, 22, 17, 22]),
+        ("3D Rough", [7, 13, 21, 15, 15]),
+        ("3D Finish", [9, 10, 23, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -518,6 +530,75 @@ fn the_inspector_text_is_bounded_ic1() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// W6: the face of a last-run refusal over the face limit
+/// (`toolpath_panel/issues.rs` `LAST_RUN_REFUSED`).
+const LAST_RUN_REFUSED: &str = "The last run was refused";
+
+/// The face limit of design rule 6 (core `diagnostics::FACE_MAX_CHARS`).
+const FACE_LIMIT: usize = rs_cam_core::diagnostics::FACE_MAX_CHARS;
+
+/// W6 (PLAN_EXECUTION §3 W6): in every W0 bad state, on every tab of the
+/// three op families, at the default width, no painted text is over the
+/// face limit (60 characters). The count reads the full galley text, not
+/// the elided row, so a truncated row counts its whole text. The rule
+/// covers each finding face, each issue row, each refusal and each label.
+///
+/// Red proof: the W0 record measured two texts over the limit before W6,
+/// the 406-character D53 refusal on the issue row and the 108-character
+/// "Feeds unavailable: …" line; each fails this test.
+///
+/// One id paints at most once per screen: `one_place_per_diagnostic_w2b`
+/// (`each_diagnostic_paints_at_most_once_w2b`) holds it over the same
+/// states and tabs.
+#[test]
+fn no_painted_text_is_over_the_face_limit_w6() {
+    use inspector_bad_states::{Family, State, fixture, screen};
+    assert_eq!(FACE_LIMIT, 60, "design rule 6");
+    assert!(
+        inspector_bad_states::REFUSAL.chars().count() > FACE_LIMIT,
+        "non-vacuity: the Refused state holds a refusal over the limit"
+    );
+    let mut failures = Vec::new();
+    let mut screens = 0_usize;
+    let mut short_faces = 0_usize;
+    let mut longest = 0_usize;
+    for family in Family::ALL {
+        for bad in State::ALL {
+            if bad.skip_reason(family).is_some() {
+                continue;
+            }
+            let (mut state, id) = fixture(family, bad);
+            for tab in ToolpathTab::ALL {
+                screens += 1;
+                for p in screen(&mut state, id, *tab) {
+                    let n = p.text.chars().count();
+                    longest = longest.max(n);
+                    if p.text == LAST_RUN_REFUSED || p.text == "Feeds unavailable" {
+                        short_faces += 1;
+                    }
+                    if n > FACE_LIMIT {
+                        failures.push(format!(
+                            "{} / {} / {tab:?}: {n} characters: {:?}",
+                            family.name(),
+                            bad.name(),
+                            p.text
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("W6: {screens} screens, longest painted text {longest} characters");
+    assert!(screens > 100, "non-vacuity: {screens} screens");
+    assert!(
+        short_faces > 0,
+        "non-vacuity: no state painted the short face of a long refusal"
+    );
+    failures.sort();
+    failures.dedup();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Non-vacuity for the two measures above. A wrapped sentence in a narrow
 /// column must count as a multi-row galley and as more than one visible
 /// line, and the one-line component must keep the same sentence on one row.
@@ -617,7 +698,8 @@ fn a_generate_refusal_takes_one_line_g_e() {
         PANEL_WIDTH,
     );
     // W2b: the status word of core `RunState::Failed`, and the reason as
-    // ONE issue row (it truncates; the galley holds the full text).
+    // ONE issue row. W6: the reason is over the face limit, so the row
+    // paints the short face and the reason is its hover.
     assert!(
         refused.painted.iter().any(|p| p.text == "Failed"),
         "the state word: {:?}",
@@ -627,8 +709,12 @@ fn a_generate_refusal_takes_one_line_g_e() {
         refused
             .painted
             .iter()
-            .any(|p| p.text == REFUSAL && p.rows == 1),
-        "the issue row holds the full text on one row"
+            .any(|p| p.text == LAST_RUN_REFUSED && p.rows == 1),
+        "the issue row paints the short face on one row"
+    );
+    assert!(
+        !refused.painted.iter().any(|p| p.text == REFUSAL),
+        "the full refusal is the hover, not the face"
     );
     let wrapped: Vec<&String> = refused
         .painted

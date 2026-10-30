@@ -182,24 +182,15 @@ fn picks_at_add_become_the_selection_q7() {
     );
     let selection = draft.config.operation.selection().unwrap();
     let op_default = draft.config.operation.default_selection().unwrap();
-    assert!(
-        !selection.is_default_of(&op_default),
-        "the pick replaces the default"
-    );
+    assert!(op_default.is_empty(), "W3h: a new op holds no item");
+    assert!(selection.rules().is_empty(), "no rule: {selection:?}");
     assert_eq!(selection.picks().len(), 1, "one pick: {selection:?}");
 
-    // Non-vacuity: with no pick the draft keeps the default.
+    // Non-vacuity: with no pick the draft keeps the default (no item).
     let plain = s
         .draft_toolpath(DraftRequest::new(OperationType::Pocket, 0, "Plain"))
         .unwrap();
-    assert!(
-        plain
-            .config
-            .operation
-            .selection()
-            .unwrap()
-            .is_default_of(&op_default)
-    );
+    assert_eq!(plain.config.operation.selection(), Some(&op_default));
 
     let effects = s
         .apply(Command::AddToolpath(AddToolpathArgs {

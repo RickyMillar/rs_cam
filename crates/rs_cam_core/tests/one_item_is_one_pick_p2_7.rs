@@ -252,9 +252,12 @@ fn a_pick_on_the_own_model_follows_a_retarget_and_flags() {
         "the re-target drops the lost pick: {effects:?}"
     );
     let tc = s.toolpath_configs()[0].clone();
-    assert!(
-        s.holds_its_default(&tc, rs_cam_core::session::SelectionTarget::Op)
-            .expect("the op holds a selection"),
+    // W3h: the default of a Drill holds no item. `holds_its_default` names
+    // a default that holds a rule (O-PICK), so the test compares the
+    // selection with the default itself.
+    assert_eq!(
+        tc.operation.selection(),
+        tc.operation.default_selection().as_ref(),
         "the selection with no pick left is back to its default"
     );
     let report = s

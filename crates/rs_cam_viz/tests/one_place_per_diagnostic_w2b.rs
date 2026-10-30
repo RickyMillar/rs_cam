@@ -103,6 +103,10 @@ fn each_diagnostic_paints_at_most_once_w2b() {
                 continue;
             }
             let (mut state, id) = fixture(family, bad);
+            // W6: the first render fills the feeds memo, and its findings
+            // (the feeds notes) join the list. Before W6 this test placed
+            // the list before any render, so it never saw them.
+            let _ = screen(&mut state, id, ToolpathTab::FeedsSpeeds);
             let placed = properties::placed_findings(id, &state).expect("the toolpath exists");
             let all = every_finding(&placed);
             let by_id = faces_by_id(&all);

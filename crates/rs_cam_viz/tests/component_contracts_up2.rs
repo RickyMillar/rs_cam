@@ -714,11 +714,6 @@ const HAND_ROLLED_EMPHASIS: &[(&str, usize, &str)] = &[
         "one playback notice, a sentence rather than a title",
     ),
     (
-        "ui/feeds/explore.rs",
-        2,
-        "the feeds surfaces are the power session's; UI-03 does not edit them",
-    ),
-    (
         "ui/readiness_panel.rs",
         2,
         "one grid column-header loop and one inline lead-in inside a \

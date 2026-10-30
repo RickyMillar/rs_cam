@@ -282,6 +282,13 @@ fn release_events(
 #[test]
 fn a_left_drag_in_pick_mode_sends_one_add_picks_sel4() {
     let mut c = controller();
+    // W3h: the op starts at its new-op default selection (no item).
+    let tp = c.state().session().toolpath_configs()[0].id;
+    c.handle_internal_event(AppEvent::EditToolpathSelection {
+        toolpath_id: tp,
+        target: rs_cam_core::session::SelectionTarget::Op,
+        edit: SelectionEdit::Reset,
+    });
     let camera = camera(&c);
     let mut corners = screen_of(&c, &camera, &rect_ring(10.0, 10.0, 40.0, 30.0));
     corners.extend(screen_of(&c, &camera, &rect_ring(55.0, 45.0, 75.0, 60.0)));
@@ -310,7 +317,7 @@ fn a_left_drag_in_pick_mode_sends_one_add_picks_sel4() {
         .clone();
     assert!(
         stored.rules().is_empty(),
-        "the first box replaced the default (O-PICK)"
+        "the first box adds picks and no rule"
     );
     assert_eq!(stored.picks().len(), 2);
     assert_eq!(

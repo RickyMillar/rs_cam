@@ -603,11 +603,15 @@ fn a_picked_chain_stops_short_as_the_default_does_chamferclear() {
         })
         .expect("the Z 20 chain at Y 0");
     let key = chain.key().clone().for_toolpath_model(model.id);
+    // W3h: a pick on a new op (nothing selected) is the selection. The
+    // fixture op holds the drawing rule, so the case writes that one pick.
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,
-            edit: SelectionEdit::AddPick(key),
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::from_picks(
+                vec![key],
+            ))),
         }))
         .expect("the pick");
     let tp = generate(&mut s, 0).expect("the picked chain generates");

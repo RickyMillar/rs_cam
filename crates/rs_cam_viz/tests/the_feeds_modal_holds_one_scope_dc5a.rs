@@ -32,6 +32,14 @@
 //! exact regression that grew the 3 450-line file. A screenshot cannot see a
 //! field's owner at all, and the owner is the defect. Each arm below names a
 //! fact that is cheap to check and expensive to get wrong.
+//!
+//! # W3i (2026-10-30): no feeds window exists
+//!
+//! The operator design deleted the Explore window. The Feeds tab holds the
+//! chart inline and ONE `Details` for the recommendation, and the vendor
+//! data is its own window. Arm 1b holds that contract: no feeds window, no
+//! per-operation feeds modal state, the chart and the card drawn from the
+//! tab.
 
 #![expect(
     clippy::unwrap_used,
@@ -46,7 +54,7 @@ use rs_cam_viz::state::{AppState, ProjectFeedsSort, ProjectFeedsState};
 
 /// The per-operation feeds jobs. Every one of them answers about ONE
 /// operation; none may answer about the project.
-const OPERATION_SCOPE_FILES: [&str; 6] = ["mod", "window", "shared", "compare", "why", "explore"];
+const OPERATION_SCOPE_FILES: [&str; 6] = ["mod", "vendor", "shared", "compare", "why", "explore"];
 
 /// The commands and fields whose scope is THE WHOLE PROJECT.
 const PROJECT_SCOPE_NAMES: [&str; 5] = [
@@ -73,9 +81,8 @@ fn feeds_file(stem: &str) -> String {
 /// The text of ONE dispatch arm: from its `UiCommand::<Name>(` to the next
 /// `UiCommand::` at any indent.
 ///
-/// A fixed-size window would bleed into the following arm. `SetFeedsExplore`
-/// sits directly after `SetFeedsProjectSort` and legitimately reaches into
-/// the per-operation modal, so a coarse window reports the wrong arm.
+/// A fixed-size window would bleed into the following arm, so a coarse
+/// window reports the wrong arm.
 fn dispatch_arm<'a>(dispatch: &'a str, name: &str) -> &'a str {
     let at = dispatch
         .find(&format!("UiCommand::{name}("))
@@ -181,59 +188,70 @@ fn the_feeds_window_has_no_mode_to_switch() {
             "ui/feeds/{stem}.rs names FeedsModalMode"
         );
     }
-    // And the per-operation window no longer draws a rollup. D-3 moved the
-    // window out of `mod.rs` into `window.rs`; both files are read, so the
-    // rollup cannot come back through the module root either.
-    for stem in ["mod", "window"] {
-        let window = strip_comments(&feeds_file(stem));
+    // And no feeds file draws a rollup, the module root included.
+    for stem in ["mod", "explore", "compare"] {
+        let src = strip_comments(&feeds_file(stem));
         assert!(
-            !window.contains("draw_project"),
+            !src.contains("draw_project"),
             "ui/feeds/{stem}.rs draws a project-scope view again"
         );
     }
 }
 
-// ── UR4, W3c — the modal holds one scope, one body call ────────────────
+// ── arm 1b, W3i — the Feeds tab holds the chart and one Details ──────────
 
-/// The window frame makes ONE body call, to Explore. W3c (2026-10-30) moved
-/// the comparison card off the Feeds tab face (R1 seeds the speeds there),
-/// so the Explore body draws the card above the nomogram: the scope stays
-/// this operation, and the card has one home, the window.
+/// W3i (operator design, 2026-10-30): no feeds window exists. The Feeds tab
+/// draws the chart inline (`explore::draw_inline`), and the recommendation
+/// is the two apply buttons, the problem rows and ONE `Details`.
 #[test]
-fn the_feeds_modal_body_is_explore_only() {
-    let modal = strip_comments(&feeds_file("window"));
-    let body_at = modal
-        .find(".show(ctx, |ui| {")
-        .expect("feeds modal body moved");
-    let body = &modal[body_at..];
+fn the_feeds_tab_holds_the_chart_inline_and_one_details() {
     assert!(
-        body.contains("explore::"),
-        "the modal body must draw Explore"
+        !crate_root().join("src/ui/feeds/window.rs").is_file(),
+        "ui/feeds/window.rs is back: the Explore window was deleted (W3i)"
     );
+    let state = strip_comments(&read("src/state/mod.rs"));
+    for gone in ["FeedsModalState", "feeds_modal", "NomogramExplore"] {
+        assert!(
+            !state.contains(gone),
+            "state/mod.rs names `{gone}` again: no per-operation feeds window exists"
+        );
+    }
+    let registry = strip_comments(&read("src/ui_command.rs"));
+    for gone in ["CloseFeedsModal", "SetFeedsExplore"] {
+        assert!(
+            !registry.contains(gone),
+            "the command registry declares `{gone}` again"
+        );
+    }
+    let tab = strip_comments(&read("src/ui/properties/feeds_speeds.rs"));
     assert!(
-        !body.contains("compare::") && !body.contains("why::"),
-        "the window frame draws Compare or Why itself; it makes one Explore call"
+        tab.contains("fn draw_speed_controls(") && tab.contains("explore::draw_inline("),
+        "W3i: the Feeds tab draws the speed rows and the inline chart"
+    );
+    let compare = strip_comments(&feeds_file("compare"));
+    let at = compare
+        .find("pub(crate) fn draw_inspector_comparison(")
+        .expect("the recommendation card moved");
+    let card = &compare[at..];
+    let end = card.find("\n}\n").map_or(card.len(), |e| e + 3);
+    let card = &card[..end];
+    assert_eq!(
+        card.matches("Details::new(").count(),
+        1,
+        "the recommendation holds ONE Details (IC2)"
     );
     let explore = strip_comments(&feeds_file("explore"));
     assert!(
-        explore.contains("compare::draw_comparison_for("),
-        "W3c: the Explore body draws the comparison card"
-    );
-    let tab = strip_comments(&read("src/ui/properties/feeds_speeds.rs"));
-    assert!(
-        tab.contains("fn draw_speed_controls(") && !tab.contains("draw_inspector_comparison"),
-        "W3c: the Feeds tab face draws the speed rows and no comparison card"
+        !explore.contains("What the colours mean") && !explore.contains("egui::Window"),
+        "the chart draws no legend block and no window; the legend is its hover"
     );
 }
 
 // ── arm 2 — THE CAUSE: the state is split, not just the drawing ──────────
 
 /// **The invariant that makes the split real.** Project-scope state lives on
-/// `AppState::project_feeds`, never on the per-operation `FeedsModalState`.
-///
-/// This is driven against the real types, not the source: a field moved back
-/// onto `FeedsModalState` would stop this file compiling, which is a stronger
-/// signal than a text scan.
+/// `AppState::project_feeds`. W3i deleted the per-operation feeds window
+/// state; the vendor data window holds only a toolpath id.
 #[test]
 fn the_project_scope_state_is_not_on_the_per_operation_modal() {
     // The project-scope record exists and carries the four fields.
@@ -250,32 +268,31 @@ fn the_project_scope_state_is_not_on_the_per_operation_modal() {
     );
     assert!(!rollup.show_scatter);
 
-    // And a fresh AppState carries it beside the modal, not inside it.
+    // And a fresh AppState carries it, with no window open.
     let state = AppState::new();
     assert!(
-        state.feeds_modal.is_none(),
-        "no feeds modal is open in a fresh project"
+        state.vendor_data.is_none(),
+        "no vendor data window is open in a fresh project"
     );
     assert!(
         state.project_feeds.selected.is_empty(),
         "the rollup's selection is project-scope state and must exist \
-         whether or not a per-operation modal is open"
+         whether or not any window is open"
     );
 
-    // The source half: FeedsModalState must not carry a project field.
+    // The source half: the vendor window state carries no project field.
     let state_src = strip_comments(&read("src/state/mod.rs"));
     let at = state_src
-        .find("pub struct FeedsModalState {")
-        .expect("FeedsModalState is gone");
+        .find("pub struct VendorDataState {")
+        .expect("VendorDataState is gone");
     let end = state_src[at..].find("\n}").expect("unterminated struct");
     let block = &state_src[at..at + end];
     for field in ["project_sort", "project_selected", "project_show_scatter"] {
         assert!(
             !block.contains(field),
-            "FeedsModalState carries `{field}` again. A per-operation record \
+            "VendorDataState carries `{field}` again. A per-operation record \
              holding the project's state is the CAUSE of the defect DC5a \
-             fixed: the rollup's controls then work only while a \
-             per-operation modal is open."
+             fixed."
         );
     }
 }
@@ -303,8 +320,8 @@ fn the_project_handlers_read_the_project_state() {
              functions while that modal is open."
         );
         assert!(
-            !arm.contains("feeds_modal.as_mut()"),
-            "{handler}'s arm still reaches into the per-operation modal"
+            !arm.contains("vendor_data"),
+            "{handler}'s arm reaches into the per-operation window"
         );
     }
     assert!(
@@ -341,14 +358,14 @@ fn the_rollup_seeds_its_selection_when_it_opens() {
         "the seed and Select all must share one expansion"
     );
 
-    // And the seed no longer rides the per-operation modal's door.
+    // And the seed does not ride the per-operation window's door.
     let at = events
-        .find("fn open_feeds_modal(")
-        .expect("open_feeds_modal is gone");
+        .find("fn open_vendor_data(")
+        .expect("open_vendor_data is gone");
     let body = &events[at..(at + 1200).min(events.len())];
     assert!(
         !body.contains("project_selected") && !body.contains("project_feeds"),
-        "opening a PER-OPERATION modal still seeds project-scope state"
+        "opening a PER-OPERATION window seeds project-scope state"
     );
 }
 
@@ -456,11 +473,11 @@ fn the_scans_are_not_vacuous() {
          and arm 4 now asserts nothing."
     );
 
-    // 4. The Explore-only scan has a live, non-comment anchor.
-    let modal = strip_comments(&feeds_file("window"));
+    // 4. The inline-chart scan has a live, non-comment anchor.
+    let explore = strip_comments(&feeds_file("explore"));
     assert!(
-        modal.contains("explore::draw_modal_body"),
-        "Explore modal body moved or was renamed"
+        explore.contains("pub(crate) fn draw_inline("),
+        "the inline chart entry moved or was renamed"
     );
 
     // 5. The old single file stays deleted.

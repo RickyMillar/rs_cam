@@ -2,6 +2,13 @@
 //! With it, operator ruling GT-Q8: to drop one item from a rule, the rule
 //! turns into picks.
 //!
+//! W3h (operator ruling 2026-10-30): a new op starts with nothing
+//! selected, so the first pick of a new op IS the selection; the O-PICK
+//! replace arm still serves an op whose default holds a rule (Face: the
+//! stock outline). The claims below run on a new Profile (no item); the
+//! "every item it can cut" rule (`Selection::drawing`, the old default) is
+//! a rule like any other: a click on a member turns it into picks.
+//!
 //! # The defect
 //!
 //! Fixture A (`fixtures/selection_p4_4/states.dxf`), a Profile with the
@@ -17,23 +24,23 @@
 //! `ProjectSession::pick_edit` sends `AddPick` while the selection is the
 //! default), so every surface takes it:
 //!
-//! 1. On a default selection, the first pick (GUI click: `pick_edit`, then
-//!    `EditSelection`) replaces the default: the selection is that one
-//!    pick, the square is `Cut`, every other item (the circle too) is
+//! 1. On a new op (nothing selected), the first pick (GUI click:
+//!    `pick_edit`, then `EditSelection`) is the selection: that one pick,
+//!    the square is `Cut`, every other item (the circle too) is
 //!    `NotSelected`, and generation cuts only near the square.
 //! 2. A second click adds a pick.
 //! 3. A click on each picked item removes it. The empty selection refuses
 //!    as an empty selection does (`RefusalCause::Empty`) at the report
 //!    and at generation.
-//! 4. `Reset` brings the default rule back, with the item states of the
-//!    start.
+//! 4. `Reset` brings the default (no item) back, with the item states of
+//!    the start.
 //! 5. The MCP route (`add_pick` sent as it is) gives the same selection and
 //!    the same item states as the GUI route.
-//! 6. A layer rule (shift-click, `layer_rule_edit`) on the default replaces
-//!    it; a later click adds a pick beside the rule.
+//! 6. A layer rule (shift-click, `layer_rule_edit`) on the default is the
+//!    one rule; a later click adds a pick beside the rule.
 //! 7. GT-Q8: a click on an item that a rule holds turns the rule into
 //!    picks of all its members less that item, in ONE command. The MCP
-//!    `remove_pick` gives the same selection. On the default rule, the
+//!    `remove_pick` gives the same selection. On the drawing rule, the
 //!    members are the items that the op cuts: the open path that the
 //!    Profile leaves out does not become a pick.
 //!
@@ -109,14 +116,18 @@ fn stock() -> StockConfig {
     }
 }
 
-/// A Profile with its default config (the default rule) on fixture A.
+/// A new Profile on fixture A: its new-op default selection (W3h: no
+/// item, `default_selection`).
 fn session() -> ProjectSession {
     single_op_session(
         stock(),
         endmill_tool_config(TOOL_DIAMETER),
         load(),
         OperationType::Profile.kind_str(),
-        OperationConfig::new_default(OperationType::Profile),
+        OperationConfig::Profile(rs_cam_core::compute::operation_configs::ProfileConfig {
+            selection: Selection::empty(),
+            ..rs_cam_core::compute::operation_configs::ProfileConfig::default()
+        }),
     )
 }
 
@@ -214,14 +225,11 @@ fn a_click_on_the_default_cuts_only_the_picked_square() {
     let keep = key(&s, "KEEP", ItemKind::Loop, [80.0, 40.0]);
     let circle = key(&s, "HOLES", ItemKind::Circle, [5.0, 5.0]);
     let start = states(&s);
-    // Non-vacuity: the default rule cuts the circle and the square.
-    assert!(
-        matches!(state_of(&s, &circle), ItemState::Cut | ItemState::Island),
-        "the default rule holds the circle"
-    );
-    assert_eq!(state_of(&s, &spare), ItemState::Cut);
+    // Non-vacuity: a new op holds no item.
+    assert_eq!(state_of(&s, &circle), ItemState::NotSelected);
+    assert_eq!(state_of(&s, &spare), ItemState::NotSelected);
 
-    // Claim 1: the first click replaces the default.
+    // Claim 1: the first click is the selection.
     assert_eq!(click(&mut s, &spare), SelectionEdit::AddPick(spare.clone()));
     assert_eq!(selection(&s), Selection::from_picks(vec![stored(&spare)]));
     assert_eq!(state_of(&s, &spare), ItemState::Cut);
@@ -287,9 +295,9 @@ fn a_click_on_the_default_cuts_only_the_picked_square() {
         "generation refuses the empty selection as the report does"
     );
 
-    // Claim 4: Reset brings the default back.
+    // Claim 4: Reset brings the default (no item) back.
     apply(&mut s, SelectionEdit::Reset);
-    assert_eq!(selection(&s), Selection::drawing());
+    assert_eq!(selection(&s), Selection::empty());
     assert_eq!(states(&s), start);
 }
 
@@ -304,7 +312,7 @@ fn the_mcp_pick_and_the_click_give_one_result() {
     apply(&mut mcp, SelectionEdit::AddPick(spare));
     assert_eq!(selection(&gui), selection(&mcp));
     assert_eq!(states(&gui), states(&mcp));
-    // The MCP `add_rule` on the default replaces it too.
+    // The MCP `add_rule` on the default is the one rule.
     let mut rule_session = session();
     let rule = Rule {
         source: SourceRef::ToolpathModel,
@@ -406,9 +414,13 @@ fn a_click_on_a_rule_item_turns_the_rule_into_picks_gt_q8() {
     assert_eq!(selection(&mcp), after);
     assert_eq!(states(&mcp), states(&gui));
 
-    // On the default rule: the members are the items the op cuts, so the
+    // On the drawing rule: the members are the items the op cuts, so the
     // open path that the Profile leaves out does not become a pick.
     let mut dflt = session();
+    apply(
+        &mut dflt,
+        SelectionEdit::Replace(Box::new(Selection::drawing())),
+    );
     let circle = key(&dflt, "HOLES", ItemKind::Circle, [5.0, 5.0]);
     let cut_before: Vec<MatchKey> = in_state(&dflt, ItemState::Cut)
         .into_iter()

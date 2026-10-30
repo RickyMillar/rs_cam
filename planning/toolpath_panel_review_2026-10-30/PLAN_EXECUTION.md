@@ -156,3 +156,51 @@ Runs alongside W2-W3 as each tab moves, not as a separate rewrite:
 - GUI and MCP agree on run-state and on each diagnostic's face and anchor.
 - The operator has looked at the GUI on screen after W2 and after W3 and
   signed off.
+
+## Parked for later (operator, 2026-10-30)
+
+- **Overlapping picks make overlapping paths.** When the operator picks a face
+  AND the edge loop of the same area, the op cuts two overlapping paths.
+  Either core detects the duplicate area and cuts it once (preferred: the
+  selection resolves to regions, and two items that bound the same region are
+  one region), or the selection calls it out on the Cuts row ("2 items cover
+  the same area"). Owner: core selection resolver + the Cuts row state.
+
+## Status 2026-10-30 (W6): the "Done means" items
+
+- **The W0 fixtures pass the W6 asserts on every tab of every op family:**
+  HOLDS. IC1 `no_painted_text_is_over_the_face_limit_w6` and
+  `one_place_per_diagnostic_w2b` render all W0 states × 3 families × 5 tabs.
+  W6 found that w2b placed the list before any render, so it never saw the
+  feeds findings (the feeds memo fills on the first Feeds or Passes render);
+  w2b and the W6 note test now place after a Feeds render.
+- **No diagnostic id paints twice; no face over 60 chars:** HOLDS.
+  `each_diagnostic_paints_at_most_once_w2b`; IC1 `_w6` counts the full
+  galley text (longest painted text now under 60; before W6 the D53
+  refusal row was 406 chars and "Feeds unavailable: …" 108).
+- **Zero raw rows (allow-list empty, or each entry has a reason):** HOLDS
+  with one entry. `the_inspector_draws_only_kit_rows_w6`: the one entry is
+  `selection_section.rs` `ui.horizontal(` ×1, "W3h rewrites this file".
+  Scope R5: the Setup-side panels are not scanned yet.
+- **A finding reaches the inspector only through the placement:** HOLDS by
+  type (`placement::Finding`, private `Diagnostic`) and by the same sentry
+  (`only_the_placement_reads_a_finding_w6`); three W3h files keep
+  `Placement::selection_findings` until W3h.
+- **Issue stack ≤ 3 rows + blockers; notes only in the counter:** HOLDS.
+  `the_issue_stack_is_capped_w6`.
+- **GUI and MCP agree on run-state and on face and anchor:** run-state
+  HOLDS (`the_header_word_is_the_mcp_run_state_w2b`); face and anchor parity
+  is not asserted by a W6 sentry.
+- **Operator sign-off after W2 and W3:** open (operator).
+- **Dead explore path.** W3i deleted the feeds Explore window, so nothing
+  sends `AppEvent::ApplyFeedsExplore` now. Delete it with its handler, the two
+  `apply_contract_a3` arms, the core `ApplyFeeds { explored }` field and
+  `ExploredSpeeds` / `with_explored_speeds` (core, CLI, f114, g10 tests).
+- **Hung test seen during W3i:** `set_memory_budget_changes_the_next_job`
+  (compute worker) ran over 60 s once. Not in this programme's area; check it.
+- **Older reds seen during this programme** (not from it): core
+  `every_op_conforms_w4` check6 (adaptive3d `contour_each_level` names no
+  field); viz `new_3d_op_boundary_is_silhouette_plus_tool_r2`
+  `both_creation_doors_call_the_shared_constructor` (its anchors left
+  `controller/events/toolpath.rs` in e53629116, 2026-10-24); the 8 S11 core
+  tests whose fixtures set no feeds; viz fm5 and fscontrol.

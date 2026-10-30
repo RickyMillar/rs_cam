@@ -11,15 +11,17 @@
 //!
 //! 1. A recommendation row whose recommended value prints the same as the
 //!    current value is not drawn in the default view. It is in the Feeds
-//!    card's `Details`. W3c: the card is in the Explore window.
+//!    card's `Details`. W3i: the card is on the Feeds tab under the chart,
+//!    and every recipe row is in its ONE `Details` (`Recommendation`); the
+//!    chart shows the gap on the face.
 //! 2. The derivation rows (the Suggest stages, the long-tool share, the
 //!    force line) are inside a `Details` disclosure that is closed by
 //!    default. They paint only when it is open.
 //! 3. Every surface that shows derived data renders it through the one
 //!    table component, and the deleted per-section renderers stay deleted.
 //!
-//! The behavioural arms render the real inspector (`properties::draw`) and
-//! the Explore window (`ui::feeds::draw`) twice:
+//! The behavioural arms render the real inspector (`properties::draw`)
+//! twice:
 //! once as the operator first sees it, and once with every disclosure open
 //! (`set_everything_is_visible`), so each absence has a presence beside it.
 
@@ -45,7 +47,6 @@ use rs_cam_core::session::{
 use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
-use rs_cam_viz::ui::components::data_table::DETAILS_LABEL;
 use rs_cam_viz::ui::{properties, tokens};
 
 /// The default inspector width (`app.rs`).
@@ -188,10 +189,6 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
     }
     let id = state.session().toolpath_configs()[0].id;
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
-    state.feeds_modal = Some(rs_cam_viz::state::FeedsModalState {
-        toolpath_id: id,
-        explore: None,
-    });
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -205,8 +202,6 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
                         properties::draw(ui, state, &mut events);
                     });
                 });
-            let mut events = Vec::new();
-            rs_cam_viz::ui::feeds::draw(ui.ctx(), state, &mut events);
         });
         if pass == 1 {
             for clipped in &out.shapes {
@@ -232,13 +227,20 @@ fn row_label(name: &str) -> String {
 #[test]
 fn a_level_recommendation_is_not_drawn_ic2() {
     let mut state = fixture();
-    // Non-vacuity: before the apply the DOC and WOC rows differ, so the
-    // default view draws them.
+    // W3i: before the apply the DOC and WOC rows differ. The chart shows
+    // the gap on the face; the rows are in the `Details` (non-vacuity: open,
+    // each is there once).
     let before = painted(&mut state, false);
+    let before_open = painted(&mut state, true);
     for name in ["DOC", "WOC"] {
         assert!(
-            before.contains(&row_label(name)),
-            "before the apply the {name} row must be on the face; runs {before:#?}"
+            !before.contains(&row_label(name)),
+            "W3i: the {name} row is in the recommendation Details, not on the face; \
+             runs {before:#?}"
+        );
+        assert!(
+            before_open.contains(&row_label(name)),
+            "before the apply the {name} row must be in the open Details; runs {before_open:#?}"
         );
     }
 
@@ -262,8 +264,8 @@ fn a_level_recommendation_is_not_drawn_ic2() {
         );
     }
     assert!(
-        face.iter().any(|t| t.contains("at the recommendation")),
-        "a card with no difference says so in one status line; runs {face:#?}"
+        open.iter().any(|t| t.contains("at the recommendation")),
+        "a card with no difference says so in one status line; runs {open:#?}"
     );
 }
 
@@ -281,19 +283,23 @@ const DERIVATION_PREFIXES: [&str; 4] = [
     "Vendor row",
 ];
 
+/// The label of the Feeds card's one disclosure (W3i).
+const RECOMMENDATION_DETAILS: &str = "Recommendation";
+
 #[test]
 fn derivation_rows_are_in_a_closed_details_ic2() {
     let mut state = fixture();
     let face = painted(&mut state, false);
+    // W3i: the one disclosure names its content (F28).
     assert!(
-        face.iter().any(|t| t.starts_with(DETAILS_LABEL)),
-        "the Feeds card draws no `{DETAILS_LABEL}` disclosure; runs {face:#?}"
+        face.iter().any(|t| t.starts_with(RECOMMENDATION_DETAILS)),
+        "the Feeds card draws no `{RECOMMENDATION_DETAILS}` disclosure; runs {face:#?}"
     );
     for prefix in DERIVATION_PREFIXES {
         assert!(
             !face.iter().any(|t| t.starts_with(prefix)),
             "`{prefix}` is derivation and paints in the default view; it belongs \
-             in the closed `{DETAILS_LABEL}`. Runs {face:#?}"
+             in the closed `{RECOMMENDATION_DETAILS}`. Runs {face:#?}"
         );
     }
     // Non-vacuity: each one is there when Details is open.

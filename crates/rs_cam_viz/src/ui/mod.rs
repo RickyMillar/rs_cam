@@ -304,15 +304,14 @@ pub enum AppEvent {
     /// notification, and closes the wizard on success.
     WizardSave,
 
-    // Feeds & Speeds modal (Feeds-tab redesign)
-    /// Open the redesigned Feeds & Speeds modal focused on a specific
-    /// toolpath. The modal renders the current/recommended comparison
-    /// card plus three machinist charts; it re-derives the underlying
-    /// `FeedsExplain` from session state every frame.
-    OpenFeedsModal(ToolpathId),
+    // Feeds (W3i: the chart and the card are on the Feeds tab)
+    /// Open the vendor cutting data window for the tool of a toolpath
+    /// (W3i). The Feeds tab's `Vendor data…` button and MCP
+    /// `set_ui_view modal: vendor_data` route here.
+    OpenVendorData(ToolpathId),
     /// Set the project-level spindle policy (chart-fidelity vs
     /// max-speed). Persists into `ProjectPostConfig.spindle_strategy`.
-    /// All Suggest calls and the Feeds modal use the new policy on the
+    /// All Suggest calls and the Feeds tab use the new policy on the
     /// next frame. Re-emit per change since the strategy alters every
     /// toolpath's recommendation simultaneously.
     SetSpindleStrategy(rs_cam_core::feeds::SpindleStrategy),
@@ -354,9 +353,9 @@ pub enum AppEvent {
     /// Apply the Feeds recommendation across every selected toolpath
     /// in project-rollup mode.
     ApplyFeedsProject,
-    /// Apply a custom (feed, rpm) pair from the Chart C drag-to-explore
-    /// interaction. Routed only when the user releases the drag inside
-    /// the chart bounds and confirms.
+    /// Apply a custom (feed, rpm) pair through the Speeds funnel. W3i
+    /// deleted its GUI producer (the Explore window's drag-to-explore); the
+    /// handler and its A-3 contract tests remain.
     ApplyFeedsExplore {
         toolpath_id: ToolpathId,
         feed_mm_min: f64,

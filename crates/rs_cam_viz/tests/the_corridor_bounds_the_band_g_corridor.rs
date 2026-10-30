@@ -85,11 +85,14 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::material::Material;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
-use rs_cam_viz::state::{AppState, FeedsModalState};
-use rs_cam_viz::ui::{feeds, tokens};
+use rs_cam_viz::state::AppState;
+use rs_cam_viz::ui::{properties, tokens};
 
 /// Room for the whole window, so the plot is drawn unclipped.
 const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
+
+/// The inspector width the chart draws in (W3i: the chart is inline).
+const PANEL_WIDTH: f32 = 340.0;
 
 /// The alpha of the corridor's two lines in `explore.rs`
 /// (`CORRIDOR_LINE_ALPHA`).
@@ -230,10 +233,18 @@ fn fixture(cutter: &Cutter) -> AppState {
     let mut state = AppState::new();
     state.replace_session(builder.build());
     let toolpath_id = state.session().toolpath_configs()[0].id;
-    state.feeds_modal = Some(FeedsModalState {
+    // W3i: the chart is on the Feeds tab of the selected toolpath.
+    state.gui.toolpath_rt.insert(
         toolpath_id,
-        explore: None,
-    });
+        rs_cam_viz::state::runtime::ToolpathRuntime::new(true),
+    );
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(
+        toolpath_id,
+    ));
+    state.gui.pending_toolpath_tab = Some((
+        toolpath_id,
+        rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds,
+    ));
     state
 }
 
@@ -253,24 +264,36 @@ struct Ray {
     rise: f64,
 }
 
-/// Draw the Explore window and return every open line painted in `colour`.
+/// Draw the Feeds tab and return every open line painted in `colour`.
 ///
 /// Twelve passes, as in `the_nomogram_readout_abstains_g_hoverbound.rs`:
 /// the plot needs a settled layout before its transform maps plot
 /// coordinates onto meaningful screen positions.
-fn painted_rays(state: &AppState, colour: egui::Color32) -> Vec<Ray> {
+fn painted_rays(state: &mut AppState, colour: egui::Color32) -> Vec<Ray> {
     let ctx = egui::Context::default();
     tokens::apply(&ctx);
     tokens::apply_fonts(&ctx);
     let mut rays = Vec::new();
+    // The tab override is one-shot: each draw asks for the Feeds tab again.
+    let id = state.session().toolpath_configs()[0].id;
+    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
     for pass in 0..12 {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
             ..Default::default()
         };
         let mut events = Vec::new();
+        // W3i: the chart is inline on the Feeds tab of the inspector.
         let mut out = ctx.run_ui(input, |ui| {
-            feeds::draw(ui.ctx(), state, &mut events);
+            egui::Panel::right("corridor_properties")
+                .default_size(PANEL_WIDTH)
+                .max_size(PANEL_WIDTH)
+                .resizable(false)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        properties::draw(ui, state, &mut events);
+                    });
+                });
         });
         if pass == 11 {
             for clipped in &out.shapes {
@@ -307,7 +330,7 @@ fn painted_rays(state: &AppState, colour: egui::Color32) -> Vec<Ray> {
 
 /// The ONE solid line at the suggested advance per tooth, which every
 /// corridor line is positioned against.
-fn suggested_ray(state: &AppState) -> Ray {
+fn suggested_ray(state: &mut AppState) -> Ray {
     let rays = painted_rays(state, suggested_colour());
     assert_eq!(
         rays.len(),
@@ -358,9 +381,9 @@ fn assert_ratio(what: &str, painted: f64, expected: f64) {
 /// advance per tooth.
 #[test]
 fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
-    let state = fixture(&LONG_AND_THIN);
-    let suggested = suggested_ray(&state);
-    let mut lines = painted_rays(&state, corridor_colour());
+    let mut state = fixture(&LONG_AND_THIN);
+    let suggested = suggested_ray(&mut state);
+    let mut lines = painted_rays(&mut state, corridor_colour());
     assert_eq!(
         lines.len(),
         2,
@@ -396,9 +419,9 @@ fn the_corridor_draws_both_bounds_when_the_ceiling_is_on_chart_g_corridor() {
 /// be a limit.
 #[test]
 fn the_ceiling_line_is_absent_when_the_ceiling_is_off_scale_g_corridor() {
-    let state = fixture(&STUBBY);
-    let suggested = suggested_ray(&state);
-    let lines = painted_rays(&state, corridor_colour());
+    let mut state = fixture(&STUBBY);
+    let suggested = suggested_ray(&mut state);
+    let lines = painted_rays(&mut state, corridor_colour());
     assert_eq!(
         lines.len(),
         1,
@@ -424,8 +447,8 @@ fn the_ceiling_line_is_absent_when_the_ceiling_is_off_scale_g_corridor() {
 /// beside it.
 #[test]
 fn the_rubbing_floor_line_is_drawn_g_corridor() {
-    let state = fixture(&STUBBY);
-    let lines = painted_rays(&state, corridor_colour());
+    let mut state = fixture(&STUBBY);
+    let lines = painted_rays(&mut state, corridor_colour());
     assert!(
         !lines.is_empty(),
         "the nomogram painted NO corridor line. Arm 2 asserts that the \
@@ -433,7 +456,7 @@ fn the_rubbing_floor_line_is_drawn_g_corridor() {
          that draws nothing satisfies it for the wrong reason: the floor is \
          always on chart, because its ray leaves the origin."
     );
-    let suggested = suggested_ray(&state);
+    let suggested = suggested_ray(&mut state);
     assert!(
         suggested.rise > 0.0 && lines[0].rise > 0.0,
         "the painted lines do not rise from the origin: suggested {}, floor {}",

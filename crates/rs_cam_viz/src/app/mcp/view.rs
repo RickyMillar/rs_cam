@@ -615,7 +615,7 @@ impl RsCamApp {
             match m {
                 ModalParam::None => {
                     let events = self.controller.events_mut();
-                    events.push(AppEvent::Ui(UiCommand::CloseFeedsModal(NoArgs)));
+                    events.push(AppEvent::Ui(UiCommand::CloseVendorData(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseExportWizard(NoArgs)));
                     events.push(AppEvent::Ui(UiCommand::CloseToolLibrary(NoArgs)));
                     // R5a: "none" also closes the load-warning modal and
@@ -632,16 +632,16 @@ impl RsCamApp {
                     );
                     self.controller.state_mut().panels.pin_wizard = Some(wizard);
                 }
-                ModalParam::FeedsModal => {
+                ModalParam::VendorData => {
                     let Selection::Toolpath(tp_id) = *self.controller.state().focus() else {
                         return json_str(serde_json::json!({
-                            "error": "'feeds_modal' needs a toolpath — pass toolpath_index in \
+                            "error": "'vendor_data' needs a toolpath — pass toolpath_index in \
                                       this call or select a toolpath first"
                         }));
                     };
                     self.controller
                         .events_mut()
-                        .push(AppEvent::OpenFeedsModal(tp_id));
+                        .push(AppEvent::OpenVendorData(tp_id));
                 }
                 ModalParam::ExportWizard => {
                     self.controller

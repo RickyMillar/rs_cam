@@ -56,7 +56,7 @@ const CHART_FILES: [&str; 5] = [
     "src/ui/feeds/shared.rs",
     "src/ui/feeds/compare.rs",
     "src/ui/feeds/why.rs",
-    "src/ui/feeds/window.rs",
+    "src/ui/feeds/vendor.rs",
 ];
 
 /// Text that paints a filled region with `egui_plot`. None of it may appear
@@ -155,7 +155,7 @@ fn the_vendor_band_is_the_published_band_g_chartlines() {
         "src/ui/feeds/explore.rs",
         "src/ui/feeds/why.rs",
         "src/ui/feeds/compare.rs",
-        "src/ui/feeds/window.rs",
+        "src/ui/feeds/vendor.rs",
     ] {
         let code = code_of(relative);
         assert!(

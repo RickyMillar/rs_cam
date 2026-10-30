@@ -3,7 +3,7 @@
 //! call stay in `draw_toolpath_panel`; the Tool row is
 //! `tab_badges::draw_tool_row`.
 
-use crate::ui::components::{NotesCounter, Notice};
+use crate::ui::components::{Notice, StatusLine};
 
 /// W2b: the state words of the status line, one per core `RunState`.
 pub(crate) const WORD_DISABLED: &str = "Disabled";
@@ -27,8 +27,9 @@ pub(in crate::ui::properties) struct HeaderRow<'a> {
     /// The sentence of a blocked submit of a waiting rest op, when the GUI
     /// holds one (the hover of "Waiting").
     pub waiting_detail: Option<&'a str>,
-    /// F20: the first blocking finding of the stored result.
-    pub blocking: Option<&'a rs_cam_core::diagnostics::Diagnostic>,
+    /// F20: the hover of the first blocking finding of the stored result
+    /// (`placement::blocking_hover`).
+    pub blocking: Option<&'a str>,
     /// The move count of the stored result.
     pub moves: Option<usize>,
     pub feed_stage: Option<rs_cam_core::session::FeedStage>,
@@ -63,15 +64,12 @@ impl HeaderRow<'_> {
         use crate::ui::tokens;
         use rs_cam_core::session::RunState;
         if self.is_blocked()
-            && let Some(finding) = self.blocking
+            && let Some(hover) = self.blocking
         {
             return (
                 crate::ui::toolpath_panel::BLOCKED_HEADER,
                 tokens::DANGER,
-                format!(
-                    "A blocking finding stands, so this toolpath does not go to G-code. {}",
-                    finding.message
-                ),
+                hover.to_owned(),
             );
         }
         match self.run_state {
@@ -173,57 +171,18 @@ pub(in crate::ui::properties) fn draw_generate_row(
     notes: &[Notice],
 ) -> bool {
     let (word, colour, hover) = row.word();
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let clicked = row.button().is_some_and(|button| ui.add(button).clicked());
-            let _ = NotesCounter::new(notes).show(ui);
-            if let Some(text) = row.moves_text() {
-                let word_room = if row.is_blocked() {
-                    let font = egui::TextStyle::Body.resolve(ui.style());
-                    ui.painter()
-                        .layout_no_wrap(word.to_owned(), font, colour)
-                        .size()
-                        .x
-                } else {
-                    0.0
-                };
-                if small_width(ui, &text) + word_room <= ui.available_width() {
-                    ui.label(
-                        egui::RichText::new(text)
-                            .small()
-                            .color(crate::ui::tokens::TEXT_FAINT),
-                    )
-                    .on_hover_text(figures_hover(row));
-                }
-            }
-            let rest = ui.available_width().max(0.0);
-            ui.allocate_ui_with_layout(
-                egui::vec2(rest, crate::ui::tokens::ROW_DENSE),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.set_max_width(rest);
-                    let text = egui::RichText::new(word).color(colour);
-                    let label = if row.is_blocked() {
-                        egui::Label::new(text).extend()
-                    } else {
-                        egui::Label::new(text)
-                            .truncate()
-                            .show_tooltip_when_elided(false)
-                    };
-                    let figures = figures_hover(row);
-                    let hover = if figures.is_empty() {
-                        hover
-                    } else {
-                        format!("{hover}\n{figures}")
-                    };
-                    ui.add(label).on_hover_text(hover);
-                },
-            );
-            clicked
-        })
-        .inner
-    })
-    .inner
+    let figures = figures_hover(row);
+    let hover = if figures.is_empty() {
+        hover
+    } else {
+        format!("{hover}\n{figures}")
+    };
+    StatusLine::new(word, colour, hover)
+        .keep_whole(row.is_blocked())
+        .meta(row.moves_text().map(|text| (text, figures)))
+        .button(row.button())
+        .notes(notes)
+        .show(ui)
 }
 
 /// The figures as one hover line, for a state word that may push them
@@ -240,14 +199,4 @@ fn figures_hover(row: &HeaderRow<'_>) -> String {
         parts.push(stage.statement());
     }
     parts.join("\n")
-}
-
-/// The width of one small label of `text`.
-fn small_width(ui: &egui::Ui, text: &str) -> f32 {
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    ui.painter()
-        .layout_no_wrap(text.to_owned(), font, crate::ui::tokens::TEXT_FAINT)
-        .size()
-        .x
-        + ui.spacing().item_spacing.x
 }

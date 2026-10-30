@@ -1,19 +1,19 @@
-//! The feeds and speeds domain: the Explore window, which holds the
-//! comparison card (W3c), and the helpers the Feeds tab reads.
+//! The feeds and speeds domain: the Feeds tab's chart and recommendation
+//! card (W3i), the vendor data window, and the helpers they read.
 //!
-//! The directory is named after the domain, not after one surface. Half of
-//! what is here is reached from the properties panel and never from the
-//! window.
+//! The directory is named after the domain, not after one surface. W3i
+//! (2026-10-30) deleted the Explore window: the chart and the card are
+//! drawn inline on the Feeds tab of the inspector.
 //!
 //! # The map
 //!
 //! | File | Holds | Who draws it |
 //! |---|---|---|
-//! | [`window`] | the Explore window: frame, size cap, one body call | `app.rs`, through [`draw`] |
-//! | [`explore`] | the nomogram and the window's body | [`window`] |
-//! | [`compare`] | the comparison card: current vs recommended, and Apply | [`explore`] (W3c) |
+//! | [`vendor`] | the vendor cutting data window | `app.rs`, through [`draw`] |
+//! | [`explore`] | the nomogram and the inline block (`draw_inline`) | the Feeds tab |
+//! | [`compare`] | the recommendation: Apply, problems, one `Details` | [`explore`] (W3i) |
 //! | [`why`] | the per-row sentences behind the recommendation | [`compare`] |
-//! | [`shared`] | what more than one surface needs | [`window`], the inspector, and `ui/readiness_panel.rs` |
+//! | [`shared`] | what more than one surface needs | the inspector and `ui/readiness_panel.rs` |
 //!
 //! [`shared`] has three consumers, the third being the project rollup in
 //! `ui/readiness_panel.rs`. That is why the inspector half stays here: moving
@@ -42,15 +42,14 @@
 //!
 //! That split moved every function VERBATIM. Only the visibility and the
 //! `use` paths changed, so the split and the behaviour change can be reviewed
-//! apart. D-3 then moved the window's own `draw` out of this file into
-//! [`window`], again verbatim, so that this file is a map and nothing else.
+//! apart. W3i then deleted the window that held the one remaining scope:
+//! its chart and card are on the Feeds tab.
 
 pub(crate) mod compare;
 pub(crate) mod explore;
 pub(crate) mod shared;
+pub(crate) mod vendor;
 pub(crate) mod why;
-pub(crate) mod window;
 
-/// `app.rs` draws the Explore window through this path. The window itself
-/// lives in [`window`].
-pub use window::draw;
+/// `app.rs` draws the vendor data window through this path.
+pub use vendor::draw;

@@ -364,6 +364,27 @@ pub fn generate(session: &mut ProjectSession, index: usize) {
         .expect("generation must succeed");
 }
 
+/// W3h: a new op (the draft door) starts with nothing selected. Write the
+/// rule "every item of the toolpath model that the op can cut"
+/// (`Selection::drawing`) on the op selection of toolpath `index`, as an
+/// operator or a job would. The edit runs the add-time floor rules
+/// (`part_outline_floor_due`, `each_face_floor_due`, `each_hole_floor_due`)
+/// as a first pick does.
+#[track_caller]
+pub fn select_every_item(session: &mut ProjectSession, index: usize) {
+    let _ = session
+        .apply(rs_cam_core::session::Command::EditSelection(
+            rs_cam_core::session::EditSelectionArgs {
+                index,
+                target: rs_cam_core::session::SelectionTarget::Op,
+                edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(
+                    rs_cam_core::selection::Selection::drawing(),
+                )),
+            },
+        ))
+        .expect("the op holds a selection");
+}
+
 /// Pick the BREP faces `faces` of the toolpath model into the op selection
 /// of toolpath `index` (geometry selection P2.6: a face pick is a
 /// `MatchKey` pick, sent through `edit_toolpath_selection` as the

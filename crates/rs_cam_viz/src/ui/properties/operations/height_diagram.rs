@@ -913,15 +913,14 @@ pub fn draw_height_diagram(
         ModelProfile::Flat => {}
         ModelProfile::Absent => {
             ui.add_space(tokens::SPACE_1);
-            ui.horizontal(|ui| {
-                ui.add(crate::ui::components::NotMeasured::new().reason(
-                    "No model geometry reached this operation, so the diagram \
-                     has no model profile to draw.",
-                ));
-                ui.add(crate::ui::components::OneLine::new(
-                    "Model profile: not measured",
-                ));
-            });
+            ui.add(
+                crate::ui::components::NotMeasured::new()
+                    .reason(
+                        "No model geometry reached this operation, so the diagram \
+                         has no model profile to draw.",
+                    )
+                    .text("Model profile: not measured"),
+            );
         }
     };
 }

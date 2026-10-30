@@ -445,33 +445,19 @@ pub fn draw(
 
 /// The one action this panel is FOR, and the plan's ONE progress surface.
 ///
-/// While a plan runs the button says where it has got to and carries a bar
-/// along its bottom edge, and a click cancels. No new panel, and the five
-/// second status line no longer carries plan progress, so the plan is
-/// reported in one place.
+/// W5: a button is an action; a status is a word. The label stays
+/// "Generate All" in every state. While a plan runs, the button carries a
+/// bar along its bottom edge and a click cancels; ONE faint line under it
+/// says where the plan has got to ("3/7 Pocket", "Simulating Setup 2"). No
+/// new panel, and the five second status line no longer carries plan
+/// progress, so the plan is reported in one place.
 ///
 /// The button is never disabled while a plan runs: it IS the cancel, and a
 /// disabled control with no route would leave a long plan unstoppable from
 /// the panel. It IS disabled while a plan waits on the resolution question,
 /// because a second plan would be refused, and the hover names the question.
 fn draw_generate_all(ui: &mut egui::Ui, ctx: &PanelContext, events: &mut Vec<AppEvent>) {
-    use crate::controller::generate_all::Activity;
-
-    // The literal survives as the idle label: the DC1 sentry anchors on it,
-    // and a fully dynamic label would make every arm of that scan pass for
-    // the wrong reason.
-    let mut label = "Generate All".to_owned();
-    if let Some(plan) = ctx.plan.as_ref() {
-        match &plan.activity {
-            Activity::Generating(_, name) => {
-                label.push_str(&format!(" \u{00B7} {}/{} {name}", plan.step, plan.of));
-            }
-            Activity::Simulating(_, setup) => {
-                label.push_str(&format!(" \u{00B7} simulating {setup}"));
-            }
-        }
-    }
-
+    let label = "Generate All";
     let mut button = crate::ui::components::Button::primary(label)
         .min_width(ui.available_width())
         .enabled(ctx.pending_confirm.is_none());
@@ -484,6 +470,17 @@ fn draw_generate_all(ui: &mut egui::Ui, ctx: &PanelContext, events: &mut Vec<App
         button = button.progress(fraction);
     }
     let response = ui.add(button);
+    if let Some(status) = ctx.plan.as_ref().map(plan_status_line) {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(status)
+                    .small()
+                    .color(tokens::TEXT_FAINT),
+            )
+            .truncate()
+            .selectable(false),
+        );
+    }
 
     if let Some(question) = ctx.pending_confirm.as_deref() {
         response.on_disabled_hover_text(question);
@@ -506,6 +503,16 @@ fn draw_generate_all(ui: &mut egui::Ui, ctx: &PanelContext, events: &mut Vec<App
         // A step that cannot be stopped swallows the click rather than
         // raising an event the handler would drop.
         response.on_hover_text("This step cannot be stopped. It finishes first.");
+    }
+}
+
+/// The status line under Generate All while a plan runs: the step and the
+/// operation, or the setup that the plan simulates.
+fn plan_status_line(plan: &crate::controller::generate_all::GenerationPlanProgress) -> String {
+    use crate::controller::generate_all::Activity;
+    match &plan.activity {
+        Activity::Generating(_, name) => format!("{}/{} {name}", plan.step, plan.of),
+        Activity::Simulating(_, setup) => format!("Simulating {setup}"),
     }
 }
 
@@ -547,12 +554,14 @@ fn draw_toolpath_card(
 
     // Read every session-derived value HERE. The row body borrows
     // `state.viewport` mutably, so it cannot also hold a `&AppState`.
+    // W5: the short label (core `ToolConfig::short_label`, the label of the
+    // header Tool row) is what fits beside the op name.
     let tool_summary = state
         .session()
         .tools()
         .iter()
         .find(|t| Some(t.id) == tc.tool_id)
-        .map(|tool| tool.summary());
+        .map(|tool| tool.short_label());
     let pc = palette_color(global_idx);
     let swatch_color = tokens::from_linear_rgb(pc);
 
@@ -863,30 +872,57 @@ fn draw_eye(ui: &mut egui::Ui, tp_id: ToolpathId, visible: bool, events: &mut Ve
     }
 }
 
+/// The narrowest tool label worth drawing. A narrower slot shows "…" and
+/// little else, so the tool label drops out instead.
+const TOOL_LABEL_MIN_WIDTH: f32 = 40.0;
+
 /// The operation name and its tool, truncated and never wrapped.
 ///
 /// A wrapped name is what made two cards different heights, which Rule D
 /// forbids. R3 took the rest-dependency badge out from between them: the
 /// gutter connector says the same three things for every dependency kind,
 /// and the card loses two words at rest.
+///
+/// W5: the name has priority. The name takes the width it needs; the tool
+/// label takes what is left and truncates, and it drops first when less
+/// than [`TOOL_LABEL_MIN_WIDTH`] is left. The name truncates only when it
+/// alone is wider than the row.
 fn draw_name_and_tool(ui: &mut egui::Ui, name: &str, tool_summary: Option<&str>, dim: bool) {
     let text_color = if dim {
         tokens::TEXT_FAINT
     } else {
         tokens::TEXT_STRONG
     };
+    let available = ui.available_width();
     // `selectable(false)`: a selectable label senses click-and-drag for
     // text selection, and it sits ABOVE the card's click sense, so a click
     // on the name selected nothing (operator, 2026-10-16). The setup cards
     // use the same rule.
     let name_text = egui::RichText::new(name).color(text_color);
+    let name_width = egui::WidgetText::from(name_text.clone())
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+        .size()
+        .x;
     ui.add(egui::Label::new(name_text).truncate().selectable(false));
-    if let Some(summary) = tool_summary {
-        let tool_text = egui::RichText::new(summary)
-            .small()
-            .color(tokens::TEXT_MUTED);
-        ui.add(egui::Label::new(tool_text).truncate().selectable(false));
+    let Some(summary) = tool_summary else {
+        return;
+    };
+    let left = available - name_width.min(available) - ui.spacing().item_spacing.x;
+    if left < TOOL_LABEL_MIN_WIDTH {
+        return;
     }
+    let tool_text = egui::RichText::new(summary)
+        .small()
+        .color(tokens::TEXT_MUTED);
+    ui.scope(|ui| {
+        ui.set_max_width(left);
+        ui.add(egui::Label::new(tool_text).truncate().selectable(false));
+    });
 }
 
 /// Everything one operation card can do, as one list.
@@ -1197,7 +1233,7 @@ pub const MENU_2D_HEADER: &str = "2.5D (from a drawing or STEP faces)";
 pub const MENU_2D_REQUIRES: &str = "Requires a drawing (SVG/DXF) or a STEP model with faces";
 
 /// The add menu's items, grouped 2.5D then 3D. One list for both triggers.
-fn add_menu_items(
+pub(in crate::ui) fn add_menu_items(
     ui: &mut egui::Ui,
     setup_id: SetupId,
     state: &AppState,

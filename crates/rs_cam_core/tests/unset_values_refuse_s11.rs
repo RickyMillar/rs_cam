@@ -41,6 +41,8 @@
     reason = "test code: a panic is how a test reports a failure"
 )]
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
@@ -111,7 +113,9 @@ fn set_material(s: &mut ProjectSession, material: Material) {
         .expect("the stock door");
 }
 
-/// Draft `op_type` through THE door and add it. The index of the op.
+/// Draft `op_type` through THE door and add it. The index of the op. W3h:
+/// the draft starts with nothing selected; the op then takes the rule
+/// "every item it can cut", so each case reaches the unset value it names.
 fn add_drafted(s: &mut ProjectSession, op_type: OperationType) -> usize {
     let draft = s
         .draft_toolpath(
@@ -120,13 +124,23 @@ fn add_drafted(s: &mut ProjectSession, op_type: OperationType) -> usize {
                 .model(s.models()[0].id),
         )
         .expect("the tool fits the op");
-    s.apply(Command::AddToolpath(AddToolpathArgs {
-        setup_index: 0,
-        config: Box::new(draft.config),
-    }))
-    .expect("the add")
-    .created
-    .expect("the add creates a toolpath")
+    let index = s
+        .apply(Command::AddToolpath(AddToolpathArgs {
+            setup_index: 0,
+            config: Box::new(draft.config),
+        }))
+        .expect("the add")
+        .created
+        .expect("the add creates a toolpath");
+    let op = &s.toolpath_configs()[index].operation;
+    if op.op_type() != OperationType::AlignmentPinDrill
+        && op
+            .selection()
+            .is_some_and(rs_cam_core::selection::Selection::is_empty)
+    {
+        common::session::select_every_item(s, index);
+    }
+    index
 }
 
 fn set_param(s: &mut ProjectSession, index: usize, param: &str, value: serde_json::Value) {
@@ -287,6 +301,8 @@ fn an_unbacked_tool_refuses_with_the_feeds_text_s11() {
         .expect("the op stays in the project")
         .created
         .expect("created");
+    // W3h: the draft holds nothing; the op takes every item it can cut.
+    common::session::select_every_item(&mut s, index);
     let _ = s
         .apply(Command::SetToolpathFloor(SetToolpathFloorArgs {
             index,

@@ -18,7 +18,8 @@
 //! of `OperationConfig::new_default` of the op type, by value.
 //!
 //! 1. A face pick on a default Pocket (the MCP route: `add_pick` as it is)
-//!    stores the one pick (O-PICK) and the floor `EachFace { depth: 0 }`.
+//!    (W3h: a new op holds no item) stores the one pick and the floor
+//!    `EachFace { depth: 0 }`.
 //!    `Effects::floor_set` names the floor; `Effects::FLOOR_SET_NOTE` is
 //!    the one-line note.
 //! 2. The second face pick keeps the floor and reports no floor change.
@@ -148,7 +149,8 @@ fn stepped_block() -> LoadedModel {
     }
 }
 
-/// One op with its default config on the stepped block, stock Z 0..30.
+/// One op with its default config on the stepped block, stock Z 0..30, at
+/// its new-op default selection (W3h).
 fn session(op: OperationConfig) -> ProjectSession {
     let stock = StockConfig {
         x: 70.0,
@@ -177,7 +179,19 @@ fn session(op: OperationConfig) -> ProjectSession {
         let _ = cfg.operation.set_floor(floor);
     }
     let _ = builder.add_toolpath(0, cfg).unwrap();
-    builder.build()
+    let mut s = builder.build();
+    // W3h: the op starts at its new-op default selection (no item for a
+    // Pocket or a Trace), as the draft door gives it.
+    if s.toolpath_configs()[0].operation.selection().is_some() {
+        let _ = s
+            .apply(Command::EditSelection(EditSelectionArgs {
+                index: 0,
+                target: SelectionTarget::Op,
+                edit: SelectionEdit::Reset,
+            }))
+            .unwrap();
+    }
+    s
 }
 
 /// A face pick sent as MCP sends it (`add_pick` with the key of the face).
@@ -217,7 +231,10 @@ fn a_face_pick_on_a_default_pocket_sets_each_face() {
         "non-vacuity: the Pocket default is not set (S11)"
     );
     assert!(op(&s).floor_is_default(&stock_ctx(&s)));
-    assert!(op(&s).selection().unwrap().is_drawing());
+    assert!(
+        op(&s).selection().unwrap().is_empty(),
+        "W3h: a new op holds no item"
+    );
 
     // Claim 1.
     let effects = pick(&mut s, FACE_Z20);
@@ -226,7 +243,7 @@ fn a_face_pick_on_a_default_pocket_sets_each_face() {
     let picks = op(&s).selection().unwrap().clone();
     assert!(
         picks.rules().is_empty(),
-        "O-PICK: no default rule {picks:?}"
+        "W3h: the pick adds no rule {picks:?}"
     );
     assert_eq!(picks.face_picks().count(), 1);
     assert!(

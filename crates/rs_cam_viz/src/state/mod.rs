@@ -204,16 +204,17 @@ pub struct AppState {
     /// One writer stamps it — `AppController::submit_gui_job` — and one
     /// clears it: `AppController::deliver_gui_job`.
     pub job_run: Option<JobRun>,
-    /// Cached state of the redesigned Feeds & Speeds modal. `None`
-    /// when closed. Built on open by `explain_for_operation`; the
-    /// modal re-derives `FeedsExplain` every frame from session state
-    /// so live param edits are reflected without an extra refresh
-    /// path.
-    pub feeds_modal: Option<FeedsModalState>,
+    /// The vendor cutting data window of one toolpath's tool (W3i). `None`
+    /// when closed. The Feeds tab's `Vendor data…` button and MCP
+    /// `set_ui_view modal: vendor_data` open it; it reads the tool from the
+    /// session every frame. W3i deleted the Explore window that had this
+    /// slot (`feeds_modal`).
+    pub vendor_data: Option<VendorDataState>,
     /// Project-scope feeds state — the rollup over every toolpath.
     ///
-    /// It sits beside `feeds_modal` rather than inside it (DC5a). The two
-    /// answer at different scopes, so neither owns the other's state.
+    /// It sits beside the per-operation state rather than inside it (DC5a).
+    /// The two answer at different scopes, so neither owns the other's
+    /// state.
     pub project_feeds: ProjectFeedsState,
     /// Cached state of the Tool Library management modal. `None` when
     /// closed. Holds a snapshot of every catalog loaded on open; the
@@ -279,7 +280,7 @@ pub struct StateParts<'a> {
     pub show_export_wizard: &'a mut bool,
     pub wizard_active_step: &'a mut u8,
     pub job_run: &'a mut Option<JobRun>,
-    pub feeds_modal: &'a mut Option<FeedsModalState>,
+    pub vendor_data: &'a mut Option<VendorDataState>,
     pub project_feeds: &'a mut ProjectFeedsState,
     pub tool_library_modal: &'a mut Option<ToolLibraryModalState>,
     pub machine_library_open: &'a mut bool,
@@ -344,21 +345,16 @@ pub struct ToolLibraryModalState {
     pub catalogs: Vec<(String, rs_cam_core::io::tool_library::ToolCatalog)>,
 }
 
-/// Persistent state for the Feeds & Speeds modal. Carries the focused
-/// toolpath plus per-modal UI state (active mode, hover state, "what
-/// if" drag, etc.). The underlying recommendation + chart data is
-/// derived fresh from the session each frame.
-#[derive(Debug, Clone)]
-pub struct FeedsModalState {
+/// The vendor cutting data window (W3i): the toolpath whose tool it
+/// shows. The rows and the highlight derive from the session each frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VendorDataState {
     pub toolpath_id: rs_cam_core::ToolpathId,
-    /// Phase 3 — drag-to-explore on the feed-RPM nomogram. `Some` while
-    /// the user is dragging the operating point.
-    pub explore: Option<NomogramExplore>,
 }
 
 /// Project-scope feeds state — the rollup over EVERY toolpath.
 ///
-/// DC5a moved these fields off [`FeedsModalState`]. They were the cause of
+/// DC5a moved these fields off the per-operation feeds window state. They were the cause of
 /// the defect, not a symptom of it: a project-wide sort order, selection set
 /// and chart toggle lived on the PER-OPERATION modal, so the rollup's
 /// controls only functioned while that modal was open. One container holds
@@ -384,14 +380,6 @@ pub struct ProjectFeedsState {
     pub selected: std::collections::BTreeSet<rs_cam_core::ToolpathId>,
     /// Toggle for the scatter overlay.
     pub show_scatter: bool,
-}
-
-/// Local UI state for the drag-to-explore interaction on Chart C.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct NomogramExplore {
-    /// Currently dragged (rpm, feed) operating point.
-    pub rpm: f64,
-    pub feed_mm_min: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -532,7 +520,7 @@ impl AppState {
             show_export_wizard,
             wizard_active_step,
             job_run,
-            feeds_modal,
+            vendor_data,
             project_feeds,
             tool_library_modal,
             machine_library_open,
@@ -556,7 +544,7 @@ impl AppState {
             show_export_wizard,
             wizard_active_step,
             job_run,
-            feeds_modal,
+            vendor_data,
             project_feeds,
             tool_library_modal,
             machine_library_open,
@@ -605,7 +593,7 @@ impl AppState {
             show_export_wizard: false,
             wizard_active_step: 0,
             job_run: None,
-            feeds_modal: None,
+            vendor_data: None,
             project_feeds: ProjectFeedsState::default(),
             tool_library_modal: None,
             machine_library_open: false,
@@ -723,7 +711,7 @@ impl AppState {
     /// Tool Library over a feeds modal). A planner whose preview is in
     /// flight survives: closing it here would discard the user's run.
     pub fn close_modals_for_exclusivity(&mut self) {
-        self.feeds_modal = None;
+        self.vendor_data = None;
         self.tool_library_modal = None;
         self.machine_library_open = false;
         self.preferences = None;
@@ -760,10 +748,9 @@ impl Default for AppState {
 mod tests {
     use super::*;
 
-    fn feeds_modal_fixture() -> FeedsModalState {
-        FeedsModalState {
+    fn vendor_data_fixture() -> VendorDataState {
+        VendorDataState {
             toolpath_id: rs_cam_core::ToolpathId::from_raw(0),
-            explore: None,
         }
     }
 
@@ -773,7 +760,7 @@ mod tests {
     #[test]
     fn close_modals_for_exclusivity_closes_settled_modals() {
         let mut state = AppState::new();
-        state.feeds_modal = Some(feeds_modal_fixture());
+        state.vendor_data = Some(vendor_data_fixture());
         state.tool_library_modal = Some(ToolLibraryModalState { catalogs: vec![] });
         state.show_export_wizard = true;
         state.show_preflight = true;
@@ -785,7 +772,7 @@ mod tests {
 
         state.close_modals_for_exclusivity();
 
-        assert!(state.feeds_modal.is_none());
+        assert!(state.vendor_data.is_none());
         assert!(state.tool_library_modal.is_none());
         assert!(!state.show_export_wizard);
         assert!(!state.show_preflight);

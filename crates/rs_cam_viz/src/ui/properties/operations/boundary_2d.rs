@@ -8,11 +8,11 @@ use crate::state::toolpath::{
 
 use super::super::linking_dressup::{
     Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
-    count_param, plain_row, row_note,
+    count_param, plain_row,
 };
 use super::super::{advanced, dv, dv_opt, dv_pill, dv_pill_opt, p, through_cut_line};
 use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
-use crate::ui::components::{Button, OneLine};
+use crate::ui::components::{Button, OneLine, PropRow};
 use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::operation_configs::OpenPaths;
 
@@ -419,7 +419,7 @@ pub(in crate::ui::properties) fn draw_profile_params(
     );
     // P6.7 (design 2.2): Climb does not act on an open path.
     if cfg.side == ProfileSide::On {
-        row_note(ui, OneLine::new(CLIMB_ON_HINT).detail(CLIMB_ON_DETAIL));
+        let _ = PropRow::note(ui, OneLine::new(CLIMB_ON_HINT).detail(CLIMB_ON_DETAIL));
     }
     region_ordering_row(ui, "prof_ord", &mut cfg.region_ordering);
     ui.add_space(8.0);
@@ -523,7 +523,10 @@ fn draw_profile_tabs(
                         "Edit in viewport"
                     })
                     .show(ui, |ui| {
-                        ui.label(cfg.tab_points.len().to_string());
+                        let _ = crate::ui::components::prop_row::well_value(
+                            ui,
+                            &cfg.tab_points.len().to_string(),
+                        );
                         if !cfg.tab_points.is_empty() {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),

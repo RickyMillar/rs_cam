@@ -13,16 +13,17 @@
 //!
 //! The test drives the production inspector (`properties::draw`) through a
 //! headless `Context` and clicks each control of the Geometry tab (GT-1):
-//! `Rule…` then `Add` (one `Replace` from the facts of a picked item,
-//! GT-3), the row `✕` (`RemovePick`), the rule `✕` (`RemoveRule`) and
-//! `Reset`, on the op target of a Drill and on the boundary target of a
-//! Pocket. Each click must push exactly ONE `AppEvent::EditToolpathSelection`
+//! the row `⋯` then `Rule…` then `Add` (one `Replace` from the facts of a
+//! picked item, GT-3), the row `×` (`RemovePick`), the header `⋯` then
+//! "Remove rule: …" (`RemoveRule`) and "Clear selection" (W3h), on the op
+//! target of a Drill and on the boundary target of a Pocket. Each click must push exactly ONE `AppEvent::EditToolpathSelection`
 //! of the expected edit, and the stored operation and boundary must not
 //! change in the draw.
 //!
 //! A second test measures lead ruling L-2 as W3a states it: a refusal of
-//! the selection has one owner, the Cuts row (its Danger state and its
-//! hover); no line paints it and the issue stack holds no row for it.
+//! the selection has one owner, the header of the selection list (its
+//! Danger mark and its hover); no line paints it and the issue stack holds
+//! no row for it.
 //!
 //! # NOT MEASURED
 //!
@@ -252,9 +253,10 @@ fn click(ctx: &egui::Context, state: &mut AppState, label: &str, nth: usize) -> 
                 if let egui::epaint::Shape::Text(text) = &clipped.shape {
                     let t = text.galley.job.text.clone();
                     let centre = clipped.shape.visual_bounding_rect().center();
-                    if t == label
-                        && centre.y > strip_y
-                        && !places.iter().any(|p| p.distance(centre) < 1.0)
+                    // A label that ends with ':' matches the texts that
+                    // start with it ("Remove rule:").
+                    let hit = t == label || (label.ends_with(':') && t.starts_with(label));
+                    if hit && centre.y > strip_y && !places.iter().any(|p| p.distance(centre) < 1.0)
                     {
                         places.push(centre);
                     }
@@ -309,8 +311,10 @@ fn the_selection_section_writes_edits_only_p4_3() {
     let ctx = ctx();
     let mut state = state();
 
-    // GT-1: the `+ Rule` card went; the Geometry tab offers rules from a
-    // picked item ("Rule…", L-R4). A pick replaces the default (O-PICK).
+    // W3h: a new op holds no item, so the Drill starts at its new-op
+    // default, and a pick is the selection.
+    apply(&mut state, 0, SelectionTarget::Op, SelectionEdit::Reset);
+    apply(&mut state, 1, SelectionTarget::Op, SelectionEdit::Reset);
     let circle = state
         .session()
         .list_model_items(
@@ -328,8 +332,12 @@ fn the_selection_section_writes_edits_only_p4_3() {
         SelectionEdit::AddPick(circle.clone()),
     );
 
-    // "Rule…" opens the offers and sends nothing.
+    // W3h: "Rule…" is in the ⋯ menu of the row (the header menu is the
+    // first ⋯, the row menu the second). The menu and "Rule…" open the
+    // offers and send nothing.
     let before = stored(&state);
+    let menu = click(&ctx, &mut state, MENU, 1);
+    assert!(edits(&menu).is_empty(), "the ⋯ menu only opens");
     let opened = click(&ctx, &mut state, "Rule\u{2026}", 0);
     assert!(edits(&opened).is_empty(), "Rule… only opens the offers");
     assert_eq!(stored(&state), before);
@@ -364,37 +372,42 @@ fn the_selection_section_writes_edits_only_p4_3() {
 
     // The row × of a pick sends RemovePick (core turns a rule member into
     // picks, GT-Q8).
-    let (_, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
+    let (_, edit) = one_edit(&ctx, &mut state, "\u{00D7}", 0);
     assert_eq!(edit, SelectionEdit::RemovePick(circle));
 
-    // The rule's remove button.
+    // A rule: "Remove rule: …" in the header ⋯ menu.
     apply(
         &mut state,
         0,
         SelectionTarget::Op,
         SelectionEdit::Replace(Box::new(Selection::from_rules(vec![layer_rule("HOLES")]))),
     );
-    let (_, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
+    let _ = click(&ctx, &mut state, MENU, 0);
+    let (_, edit) = one_edit(&ctx, &mut state, "Remove rule:", 0);
     assert_eq!(edit, SelectionEdit::RemoveRule(0));
 
-    // Reset, enabled away from the default.
-    let (_, edit) = one_edit(&ctx, &mut state, "Reset", 0);
-    assert_eq!(edit, SelectionEdit::Reset);
+    // "Clear selection" in the header ⋯ menu: one Replace with nothing.
+    let _ = click(&ctx, &mut state, MENU, 0);
+    let (_, edit) = one_edit(&ctx, &mut state, "Clear selection", 0);
+    assert_eq!(edit, SelectionEdit::Replace(Box::new(Selection::empty())));
 
     // The boundary target of the Pocket (GT-Q7: the Geometry tab holds it
-    // under the Boundary row). W3a: Reset is the action of the Selected
-    // row, which a selection at its default does not draw, so the op
-    // (at its default) has no Reset and the boundary Reset is the first.
-    // The op default row has no ×.
+    // under the Boundary row). The op list of the Pocket is empty (its
+    // header ⋯ is the first), so the boundary header ⋯ is the second.
     select(&mut state, 1);
     let ctx = self::ctx();
-    let (target, edit) = one_edit(&ctx, &mut state, "Reset", 0);
-    assert_eq!(target, SelectionTarget::Boundary);
-    assert_eq!(edit, SelectionEdit::Reset);
-    let (target, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
+    let _ = click(&ctx, &mut state, MENU, 1);
+    let (target, edit) = one_edit(&ctx, &mut state, "Remove rule:", 0);
     assert_eq!(target, SelectionTarget::Boundary);
     assert_eq!(edit, SelectionEdit::RemoveRule(0));
+    // The row × of a boundary rule member: GT-Q8.
+    let (target, edit) = one_edit(&ctx, &mut state, "\u{00D7}", 0);
+    assert_eq!(target, SelectionTarget::Boundary);
+    assert!(matches!(edit, SelectionEdit::RemovePick(_)), "{edit:?}");
 }
+
+/// The text of the ⋯ menu act of a list line.
+const MENU: &str = "\u{22EF}";
 
 /// Every painted text of the production inspector for `state`, after the
 /// layout settles.
@@ -428,10 +441,12 @@ fn painted(ctx: &egui::Context, state: &mut AppState) -> Vec<String> {
     texts
 }
 
-/// L-2, W2b, W3a: a selection refusal has one owner, the Cuts row. The
-/// refusal and the core finding (field key `selection`) are its Danger
-/// state and its hover; no line paints the refusal, and the issue stack
-/// holds no row for it. The status line reads "Not ready".
+/// L-2, W2b, W3a, W3h: a selection refusal has one owner, the header of
+/// the selection list. The core finding (field key `selection`; W3h: the
+/// empty selection is "Select the geometry to cut") is its Danger mark and
+/// its hover; no line paints the refusal, the empty list paints its
+/// placeholder, and the issue stack holds no row for it. The status line
+/// reads "Not ready".
 #[test]
 fn a_selection_refusal_has_one_owner_p4_3() {
     let ctx = ctx();
@@ -457,30 +472,30 @@ fn a_selection_refusal_has_one_owner_p4_3() {
     let whole: Vec<&String> = texts.iter().filter(|t| t.contains(&refusal)).collect();
     assert!(
         whole.is_empty(),
-        "the refusal is the hover of the Cuts row, not a painted line: {whole:?}"
+        "the refusal is the hover of the list header, not a painted line: {whole:?}"
     );
     assert!(
-        texts.iter().any(|t| t == "Cuts"),
-        "the Cuts row owns the refusal; painted: {texts:?}"
+        texts.iter().any(|t| t == "Selection") && texts.iter().any(|t| t == "Select holes"),
+        "the list header owns the state; the placeholder names the pick; painted: {texts:?}"
     );
     assert!(
         texts.iter().any(|t| t == "Not ready"),
         "the status line must say why Generate is off in one word; painted: {texts:?}"
     );
     let face = rs_cam_core::diagnostics::presentation::face(
-        rs_cam_core::diagnostics::ids::PRECOND_DRILL_NO_HOLES,
+        rs_cam_core::diagnostics::ids::PRECOND_SELECTION_EMPTY,
     );
     assert_eq!(
         texts.iter().filter(|t| **t == face).count(),
         0,
-        "no issue row: the finding is the state of the Cuts row; painted: {texts:?}"
+        "no issue row: the finding is the mark of the list header; painted: {texts:?}"
     );
     // Non-vacuity: the placement gives the finding to the field row.
     let id = state.session().toolpath_configs()[0].id;
     let placed = properties::placed_findings(id, &state).expect("the toolpath exists");
     assert!(
         placed.by_field.iter().any(|d| d.face == face),
-        "the finding sits on the Cuts row: {:?}",
+        "the finding sits on the selection list: {:?}",
         placed.by_field
     );
 }

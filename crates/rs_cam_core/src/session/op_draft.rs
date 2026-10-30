@@ -29,10 +29,12 @@
 //!
 //! The draft is a value: the caller sends it as `Command::AddToolpath`,
 //! which runs the add-time floor rules (`part_outline_floor_due`,
-//! `each_face_floor_due`, `each_hole_floor_due`). R-A: a Profile on a mesh
-//! model drafts with side Outside and no tabs (the registry default); its
-//! default selection takes the part outline only, and the add sets the
-//! floor "Model bottom", depth 0.
+//! `each_face_floor_due`, `each_hole_floor_due`). W3h: the draft gives the
+//! op its `default_selection` (no item; Face: the stock outline), so for a
+//! 2.5D op these rules fire on the first selection edit, which runs the
+//! same rules. R-A: a Profile on a mesh model drafts with side Outside and
+//! no tabs (the registry default); a selection that takes the part outline
+//! sets the floor "Model bottom", depth 0.
 
 use crate::compute::catalog::OperationConfig;
 use crate::compute::catalog::{GeometryRequirement, OperationFamily, OperationType};
@@ -369,6 +371,15 @@ impl ProjectSession {
             feeds_provenance,
             planner_origin: None,
         };
+        // W3h (operator ruling 2026-10-30): a new op starts with its
+        // default selection: no item for an op that cuts model geometry,
+        // the stock outline for Face. Suggest builds the op from the
+        // config struct default, so the slot is set here, before the picks.
+        if let Some(default) = config.operation.default_selection()
+            && let Some(slot) = config.operation.selection_slot()
+        {
+            *slot = default;
+        }
         let dropped_picks = self.apply_picks(&mut config, &picked_faces);
         // R2: the state of the op as it will be added (Q9: a Bore names the
         // size limit of its holes).

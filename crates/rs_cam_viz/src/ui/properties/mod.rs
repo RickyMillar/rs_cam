@@ -1,5 +1,6 @@
 mod feeds_speeds;
 mod geometry_tab;
+mod getting_started;
 pub mod head;
 mod linking_dressup;
 mod machine_panel;
@@ -257,7 +258,7 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
     }
 
     match state.focus().clone() {
-        Selection::None => draw_nothing_selected(ui, state),
+        Selection::None => draw_nothing_selected(ui, state, events),
         Selection::Stock => draw_stock_selection(ui, state),
         Selection::PostProcessor => draw_post_selection(ui, state),
         Selection::Machine => draw_machine_selection(ui, state, events),
@@ -487,7 +488,7 @@ pub(crate) struct ToolpathPanelInputs {
     pub boundary_note_items: Vec<Vec<rs_cam_core::selection::MatchKey>>,
     /// The item kinds that the model of the toolpath holds
     /// (`state::pick::held_kinds`). The Selection section reads it for the
-    /// "pick a face" fix line (geometry selection P4.D).
+    /// placeholder of an empty list and the rule presets (W3h).
     pub toolpath_model_kinds: std::collections::BTreeSet<rs_cam_core::selection::ItemKind>,
     /// The "Rule…" offers of the open row menu of the Geometry tab
     /// (GT-3, core `ProjectSession::rule_offers`). Empty while no menu of
@@ -527,6 +528,10 @@ pub(crate) struct ToolpathPanelInputs {
     /// the items to pick, which of them the selection holds, and the
     /// refusal. `None` for every other op.
     pub holes: Option<rs_cam_core::session::HoleSelection>,
+    /// W5 (F12): the hole centres a Pin Drill drills, in the emission
+    /// frame (core `ProjectSession::pin_drill_holes`: the stock pins of its
+    /// size and its picked holes). Empty for every other op.
+    pub pin_holes: Vec<[f64; 2]>,
     /// What the Reach row of the Geometry tab prints (P5, R3).
     pub reach: ReachPanelSummary,
     /// F2.2 — the header prints this in place of the raw `ComputeStatus`,
@@ -804,6 +809,7 @@ pub(crate) fn toolpath_panel_inputs(
     let holes = session
         .find_toolpath_config_by_id(id)
         .and_then(|(_, tc)| session.hole_selection(tc));
+    let pin_holes = session.pin_drill_holes(id);
 
     // Snapshot THE heights before the mutable borrow (P3.1): the one
     // session resolver, in the setup frame, with the face top.
@@ -926,6 +932,7 @@ pub(crate) fn toolpath_panel_inputs(
         load_verdict_index,
         tab_override,
         holes,
+        pin_holes,
         reach: reach_summary,
         freshness: freshness_for_tp,
         feed_stage,
@@ -992,18 +999,18 @@ pub fn placed_findings(
         &inputs,
     );
     let placement = placement::place(&list, &snapshot.entry.operation);
-    let owned =
-        |v: &[&rs_cam_core::diagnostics::Diagnostic]| v.iter().map(|d| (*d).clone()).collect();
+    let owned = |v: &[placement::Finding<'_>]| {
+        v.iter()
+            .map(|f| f.to_owned_diagnostic())
+            .collect::<Vec<_>>()
+    };
     let field_tabs = placement
         .by_field
         .values()
         .flatten()
-        .filter_map(|d| match d.anchor {
-            rs_cam_core::diagnostics::Anchor::Field { key } => {
-                placement::field_tab(key, &snapshot.entry.operation)
-                    .map(|tab| (d.id.as_str().to_owned(), tab))
-            }
-            _ => None,
+        .filter_map(|f| {
+            f.field_tab(&snapshot.entry.operation)
+                .map(|tab| (f.id().to_owned(), tab))
         })
         .collect();
     Some(PlacedFindings {
@@ -1013,7 +1020,7 @@ pub fn placed_findings(
             .by_field
             .values()
             .flatten()
-            .map(|d| (*d).clone())
+            .map(|f| f.to_owned_diagnostic())
             .collect(),
         issues: owned(&placement.issues),
         notes: owned(&placement.notes),
@@ -1327,32 +1334,13 @@ pub(crate) enum ReachPanelSummary {
 mod tests;
 
 /// The `None` arm of [`draw`]'s selection dispatch.
-fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState) {
-    if state.session().models().is_empty()
-        && state
-            .session()
-            .list_setups()
-            .iter()
-            .all(|s| s.toolpath_indices().is_empty())
-    {
-        ui.label(
-            egui::RichText::new("Getting started:")
-                .strong()
-                .color(crate::ui::tokens::TEXT_STRONG),
-        );
-        ui.add_space(4.0);
-        ui.label("1. Import a model (File > Import)");
-        ui.label("2. Configure stock dimensions");
-        ui.label("3. Add a cutting tool");
-        ui.label("4. Create a toolpath");
-        ui.label("5. Generate toolpaths");
-        // G-WSMENU (2026-09-10): step 5 used to read "Generate and
-        // export G-code", which walks a first-time operator from a
-        // generated path straight to the machine. Simulation is
-        // where collisions, air cutting and the tool-load gates are
-        // measured, so it is a step of its own and it comes first.
-        ui.label("6. Simulate and review");
-        ui.label("7. Export G-code");
+///
+/// W5 (P13): while a step before the export is not done, the live
+/// Getting started list shows (`getting_started`); then the hint.
+fn draw_nothing_selected(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>) {
+    let progress = getting_started::Progress::of(state);
+    if progress.shows_list() {
+        getting_started::draw(ui, state, progress, events);
     } else {
         ui.label(
             // Not "the project tree": no panel of that name exists

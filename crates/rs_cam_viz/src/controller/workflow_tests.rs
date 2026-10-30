@@ -226,6 +226,26 @@ fn add_pocket(controller: &mut AppController<ScriptedBackend>) -> ToolpathId {
     add_op(controller, OperationType::Pocket)
 }
 
+/// W3h: put the op selection of `tp_id` at its new-op default (no item;
+/// `Reset` writes `default_selection`), as the draft door gives a new op.
+fn reset_to_new_op(controller: &mut AppController<ScriptedBackend>, tp_id: ToolpathId) {
+    let (index, _) = controller
+        .state
+        .session()
+        .find_toolpath_config_by_id(tp_id)
+        .unwrap();
+    let _ = controller
+        .state
+        .apply(Command::EditSelection(
+            rs_cam_core::session::EditSelectionArgs {
+                index,
+                target: rs_cam_core::session::SelectionTarget::Op,
+                edit: rs_cam_core::selection::SelectionEdit::Reset,
+            },
+        ))
+        .unwrap();
+}
+
 /// Add a default toolpath of `op_type` to the first setup and return its
 /// ID.
 fn add_op(controller: &mut AppController<ScriptedBackend>, op_type: OperationType) -> ToolpathId {
@@ -311,6 +331,7 @@ fn w3_step_import_populates_enriched_mesh() {
 fn w3_face_toggle_adds_and_removes() {
     let mut c = step_controller();
     let tp_id = add_pocket(&mut c);
+    reset_to_new_op(&mut c, tp_id);
     let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
@@ -333,9 +354,8 @@ fn w3_face_toggle_adds_and_removes() {
     );
 
     // Toggle same face OFF: the pick leaves, and no exclude is stored.
-    // Operator ruling O-PICK: the first pick replaced the default rule, so
-    // the selection is empty after the toggle off (Reset brings the
-    // default back).
+    // W3h: a new op holds no item, so the selection is empty after the
+    // toggle off.
     click_face(&mut c, tp_id, model_id, face_a);
 
     let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
@@ -799,12 +819,12 @@ fn w4_a_face_click_on_a_face_op_replaces_the_stock_rule_p4_2() {
 }
 
 /// Operator rulings O-PICK and Q2 (2026-10-22), the GUI arm. A face click
-/// on a Pocket that holds its default rule and its default floor:
+/// on a new Pocket (W3h: no item) at its default floor:
 ///
-/// - O-PICK: the click replaces the default rule with that one pick;
+/// - the click is that one pick;
 /// - Q2: the floor becomes "Each picked face", depth 0, and a notice
 ///   gives `Effects::FLOOR_SET_NOTE`;
-/// - one undo restores both the default rule and the default floor; the
+/// - one undo restores both the empty selection and the default floor; the
 ///   redo gives both back.
 ///
 /// A Pocket whose floor the operator set keeps that floor and shows no
@@ -836,6 +856,7 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
         ))
         .unwrap();
     let tp_id = add_pocket(&mut c);
+    reset_to_new_op(&mut c, tp_id);
     let model_id = c.state.session().models()[0].id;
     let enriched = c.state.session().models()[0]
         .enriched_mesh
@@ -864,7 +885,10 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
         Some(default_floor.clone()),
         "the default floor"
     );
-    assert!(op(&c).selection().unwrap().is_drawing(), "the default rule");
+    assert!(
+        op(&c).selection().unwrap().is_empty(),
+        "W3h: a new op holds no item"
+    );
     let key = {
         let (_, tc) = c.state.session().find_toolpath_config_by_id(tp_id).unwrap();
         c.state
@@ -879,7 +903,7 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
     assert_eq!(
         op(&c).selection().cloned(),
         Some(OpSelection::from_picks(vec![key])),
-        "O-PICK: the click replaces the default rule"
+        "the click is the one pick"
     );
     assert_eq!(
         op(&c).floor(),
@@ -897,8 +921,8 @@ fn w4_the_first_face_pick_sets_each_face_floor_o_pick_q2() {
     c.handle_internal_event(AppEvent::Undo);
     assert_eq!(op(&c).floor(), Some(default_floor), "one undo: the floor");
     assert!(
-        op(&c).selection().unwrap().is_drawing(),
-        "one undo: the default rule"
+        op(&c).selection().unwrap().is_empty(),
+        "one undo: the new-op default"
     );
     c.handle_internal_event(AppEvent::Redo);
     assert_eq!(op(&c).floor(), Some(Floor::EachFace { depth: 0.0 }));

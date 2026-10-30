@@ -681,7 +681,9 @@ pub use dressup_apply::{
     DRESSUP_PIPELINE, DressupContext, DressupStage, DressupStep, apply_dressups,
 };
 pub use drilling::{build_drill_op_for_config, drill_depth_bases};
-pub(crate) use drilling::{generate_alignment_pin_drill, generate_drill};
+pub(crate) use drilling::{
+    generate_alignment_pin_drill, generate_drill, pin_holes_in_emission_frame,
+};
 pub(crate) use findings::OffsetFailures;
 pub(crate) use finish_3d::{
     generate_horizontal_finish, generate_pencil, generate_radial_finish, generate_ramp_finish,

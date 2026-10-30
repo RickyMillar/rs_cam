@@ -562,7 +562,9 @@ mod tests {
 
     /// The five ops: 0 Pocket with a rule on `CUT`; 1 Drill with one
     /// pick (a `list_model_items` key); 2 Trace, default; 3 Pocket, default
-    /// (skips the open line); 4 Drill with a lost pick.
+    /// (skips the open line); 4 Drill with a lost pick. "Default" here is
+    /// the config default: the drawing rule ([`project_new_op3`] puts
+    /// toolpath 3 at its new-op default, W3h).
     fn project() -> ProjectSession {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../rs_cam_core/tests/fixtures/selection_p2_7/layers.dxf");
@@ -647,6 +649,14 @@ mod tests {
             lost,
             SelectionEdit::Replace(Box::new(Selection::from_picks(vec![gone]))),
         );
+        s
+    }
+
+    /// [`project`] with toolpath 3 at its new-op default (W3h: a new op
+    /// holds no item; `Reset` writes `default_selection`).
+    fn project_new_op3() -> ProjectSession {
+        let mut s = project();
+        edit(&mut s, 3, SelectionEdit::Reset);
         s
     }
 
@@ -1058,22 +1068,22 @@ mod tests {
             .unwrap();
         let key = circles[0].key.clone();
 
-        let mut gui = project();
-        assert!(stored(&gui, 3).is_drawing(), "fixture: the default rule");
+        let mut gui = project_new_op3();
+        assert!(stored(&gui, 3).is_empty(), "fixture: the new-op default");
         let tc = gui.toolpath_config_at(3).unwrap().clone();
         let click = gui
             .pick_edit(&tc, SelectionTarget::Op, key.clone())
             .unwrap();
         assert_eq!(click, SelectionEdit::AddPick(key.clone()));
         edit(&mut gui, 3, click);
-        let mut mcp = project();
+        let mut mcp = project_new_op3();
         wire_edit(
             &mut mcp,
             3,
             &serde_json::json!({ "add_pick": serde_json::to_value(&key).unwrap() }),
         );
         assert_eq!(stored(&mcp, 3), stored(&gui, 3), "one rule, two doors");
-        assert!(stored(&gui, 3).rules().is_empty(), "the default is gone");
+        assert!(stored(&gui, 3).rules().is_empty(), "the pick adds no rule");
         assert_eq!(stored(&gui, 3).picks().len(), 1);
 
         // GT-Q8: a click on an item of the CUT layer rule of toolpath 0 (a
@@ -1210,18 +1220,18 @@ mod tests {
 
         // Ctrl+A under the default: both doors store the rule in place of
         // the default.
-        let mut gui = project();
+        let mut gui = project_new_op3();
         let tc = gui.toolpath_config_at(3).unwrap().clone();
         assert!(
-            gui.holds_its_default(&tc, SelectionTarget::Op).unwrap(),
-            "fixture: toolpath 3 holds its default"
+            tc.operation.selection().unwrap().is_empty(),
+            "fixture: toolpath 3 holds its new-op default (W3h: no item)"
         );
         let select_all = gui
             .kind_rule_edit(&tc, SelectionTarget::Op, &kinds, None)
             .unwrap()
             .expect("Ctrl+A writes under the default");
         edit(&mut gui, 3, select_all);
-        let mut mcp = project();
+        let mut mcp = project_new_op3();
         wire_edit(
             &mut mcp,
             3,
@@ -1292,7 +1302,7 @@ mod tests {
     /// (`SelectionEdit::AddPicks` / `RemovePicks` through `EditSelection`)
     /// and the wire `add_picks` / `remove_picks` / `replace` of the same
     /// keys store ONE selection and give ONE `selection_status` report.
-    /// Arms: on the default (O-PICK replaces once), on a rule (the picks
+    /// Arms: on the new-op default (W3h: no item), on a rule (the picks
     /// join), `remove_picks` of a rule item (GT-Q8), `{replace: {}}`. A wire
     /// batch with a lost key refuses and changes nothing.
     #[test]
@@ -1354,9 +1364,9 @@ mod tests {
             ),
         ];
         for (name, index, gui_edit, wire) in arms {
-            let mut gui = project();
+            let mut gui = project_new_op3();
             edit(&mut gui, index, gui_edit);
-            let mut mcp = project();
+            let mut mcp = project_new_op3();
             wire_edit(&mut mcp, index, &wire);
             assert_eq!(
                 stored(&mcp, index),
@@ -1370,7 +1380,7 @@ mod tests {
             );
             match name {
                 "on the default" => {
-                    assert!(stored(&gui, 3).rules().is_empty(), "the default is gone");
+                    assert!(stored(&gui, 3).rules().is_empty(), "the batch adds no rule");
                     assert_eq!(stored(&gui, 3).picks().len(), 2);
                 }
                 "on a rule" => {
@@ -1455,9 +1465,9 @@ mod tests {
         assert_eq!(stored(&mcp, 1), stored(&gui, 1), "one item is one pick");
         assert_eq!(stored(&gui, 1).picks().len(), 2);
 
-        // Shift-click on a HOLES circle of the default Pocket (toolpath 3),
+        // Shift-click on a HOLES circle of the new Pocket (toolpath 3),
         // loops and circles on, Ø range on.
-        let mut gui = project();
+        let mut gui = project_new_op3();
         let tc = gui.toolpath_config_at(3).unwrap().clone();
         let range = rs_cam_core::selection::DiameterRange {
             nominal_mm: circles[0].measure,
@@ -1473,7 +1483,7 @@ mod tests {
             )
             .unwrap();
         edit(&mut gui, 3, layer);
-        let mut mcp = project();
+        let mut mcp = project_new_op3();
         wire_edit(
             &mut mcp,
             3,

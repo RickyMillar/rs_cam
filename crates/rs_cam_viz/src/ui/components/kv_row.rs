@@ -203,7 +203,12 @@ impl egui::Widget for KeyValueRow {
 ///
 /// The tint covers the ROW, never a cell: a cell-level hover reads as a
 /// selection the table does not support.
-pub fn row_hover_tint(ui: &egui::Ui, rect: egui::Rect, id: egui::Id, hovered: bool) {
+pub(in crate::ui::components) fn row_hover_tint(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    hovered: bool,
+) {
     let t = motion::fast(ui.ctx(), id, hovered);
     if t <= 0.0 {
         return;

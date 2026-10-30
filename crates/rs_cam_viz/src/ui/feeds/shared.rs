@@ -50,8 +50,6 @@ pub(crate) mod chart {
     pub const BAND: egui::Color32 = tokens::CHART_SERIES[1];
     /// The vendor RPM window, marked on the RPM axis.
     pub const RPM_RANGE: egui::Color32 = tokens::CHART_SERIES[3];
-    /// The drag-to-explore proposal.
-    pub const EXPLORE: egui::Color32 = tokens::CHART_SERIES[2];
     // ADMITTED, ISO_MIN, ISO_MID and ISO_MAX were deleted on 2026-09-16 with
     // the series they coloured: three iso-advance lines that restated the
     // band's own edges and midpoint, and a ±5 % ribbon pair. Four colours
@@ -104,6 +102,24 @@ pub(crate) fn hardness_label(kind: Option<HardnessKind>, value: Option<f64>) -> 
 }
 
 // ── Comparison card ─────────────────────────────────────────────────
+
+/// One operation's feeds inputs, as the Feeds tab holds them (W3i).
+///
+/// The tab draws the chart and the recommendation card from the panel's
+/// scratch entry and inputs, not from `AppState`. `preview` and `card` are
+/// the memo's answers (`FeedsMemo::preview`, `FeedsMemo::card`, F216), so
+/// neither the chart nor the card runs the calculator or the funnel on a
+/// frame where no input moved.
+pub(crate) struct OpFeeds<'a> {
+    pub(crate) toolpath_id: rs_cam_core::ToolpathId,
+    pub(crate) operation: &'a crate::state::toolpath::OperationConfig,
+    pub(crate) tool: &'a crate::state::job::ToolConfig,
+    pub(crate) material: &'a rs_cam_core::material::Material,
+    pub(crate) machine: &'a rs_cam_core::machine::MachineProfile,
+    pub(crate) preview: &'a rs_cam_core::feeds::suggest::FeedsPreview,
+    /// The card's funnel answers, memoised with the preview (`FeedsMemo::card`).
+    pub(crate) card: &'a crate::state::runtime::FeedsCard,
+}
 
 /// Live current values pulled from the toolpath's `OperationConfig`.
 /// All values are denormalised so the card can render without

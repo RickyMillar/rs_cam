@@ -53,8 +53,9 @@
 //!    [`check8_no_op_puts_the_tool_inside_an_obstacle`].
 //! 9. **Selection** (geometry selection P2.3b, DESIGN 3.1). An op holds a
 //!    selection exactly when its `item_use` reads items; the selection is
-//!    a driver-set field with the op's own default, and a default
-//!    selection writes no key. See
+//!    a driver-set field; the config default writes no key and loads back
+//!    from a file with no key; the new-op default (`default_selection`,
+//!    W3h) is empty except for Face (the stock outline). See
 //!    [`check9_an_op_holds_a_selection_exactly_when_it_cuts_items`].
 //!
 //! # The simulation cell
@@ -1587,11 +1588,14 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
 /// - an op whose `item_use` is not `None` holds a selection
 ///   (`OperationConfig::selection`) and states a default
 ///   (`default_selection`); an op whose `item_use` is `None` has neither;
-/// - the default config holds its default selection;
 /// - `selection` is a driver-set field (check 6 refuses it), never a
 ///   published param;
-/// - a default selection writes no `selection` key, and a file with no key
-///   loads it back.
+/// - the selection of the default config writes no `selection` key, and a
+///   file with no key loads it back;
+/// - W3h (operator ruling 2026-10-30): the new-op default
+///   (`default_selection`, the draft door and Reset) is empty, except for
+///   Face, whose default is the stock outline (it machines the stock top,
+///   not model geometry); it round-trips through a file.
 #[test]
 fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
     let mut defects = Vec::new();
@@ -1632,19 +1636,41 @@ fn check9_an_op_holds_a_selection_exactly_when_it_cuts_items() {
         }
         let Some(held) = held else { continue };
         slots += 1;
-        if Some(held) != default.as_ref() {
-            defects.push(format!(
-                "{key}/check9: the default config holds {held:?}, not its default {default:?}"
-            ));
-        }
         let value = serde_json::to_value(&cfg).expect("an op serializes");
         if value.pointer("/params/selection").is_some() {
-            defects.push(format!("{key}/check9: a default selection wrote a key"));
+            defects.push(format!(
+                "{key}/check9: a default config selection wrote a key"
+            ));
         }
         let back: OperationConfig = serde_json::from_value(value).expect("an op loads");
-        if back.selection() != default.as_ref() {
+        if back.selection() != Some(held) {
             defects.push(format!(
-                "{key}/check9: a file with no key loaded {:?}",
+                "{key}/check9: a file with no key loaded {:?}, not {held:?}",
+                back.selection()
+            ));
+        }
+        let Some(default) = default else { continue };
+        let want = if op == OperationType::Face {
+            rs_cam_core::selection::Selection::stock()
+        } else {
+            rs_cam_core::selection::Selection::empty()
+        };
+        if default != want {
+            defects.push(format!(
+                "{key}/check9: the new-op default is {default:?}, not {want:?}"
+            ));
+        }
+        let mut value = serde_json::to_value(&cfg).expect("an op serializes");
+        if let Some(params) = value.pointer_mut("/params").and_then(|p| p.as_object_mut()) {
+            let _ = params.insert(
+                "selection".to_owned(),
+                serde_json::to_value(&default).expect("a selection serializes"),
+            );
+        }
+        let back: OperationConfig = serde_json::from_value(value).expect("an op loads");
+        if back.selection() != Some(&default) {
+            defects.push(format!(
+                "{key}/check9: the new-op default loaded back as {:?}",
                 back.selection()
             ));
         }

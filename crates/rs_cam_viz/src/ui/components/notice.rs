@@ -567,6 +567,8 @@ impl EmptyState {
 /// looking alike.
 pub struct NotMeasured {
     reason: Option<String>,
+    /// W6: a caption after the glyph, on the same line.
+    text: Option<String>,
 }
 
 impl Default for NotMeasured {
@@ -578,7 +580,18 @@ impl Default for NotMeasured {
 impl NotMeasured {
     #[must_use]
     pub fn new() -> Self {
-        Self { reason: None }
+        Self {
+            reason: None,
+            text: None,
+        }
+    }
+
+    /// W6: a caption after the glyph, on the same line (a `OneLine`), for
+    /// a surface that says in words what it did not measure.
+    #[must_use]
+    pub fn text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
     }
 
     /// Why the measurement was not taken. Shown on hover.
@@ -590,7 +603,16 @@ impl NotMeasured {
 }
 
 impl egui::Widget for NotMeasured {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+    fn ui(mut self, ui: &mut egui::Ui) -> egui::Response {
+        if let Some(text) = self.text.take() {
+            return ui
+                .horizontal(|ui| {
+                    let glyph = ui.add(self);
+                    let _ = ui.add(super::OneLine::new(text));
+                    glyph
+                })
+                .inner;
+        }
         let response = ui.label(
             egui::RichText::new(tokens::GLYPH_UNKNOWN)
                 .font(tokens::font_numeric())

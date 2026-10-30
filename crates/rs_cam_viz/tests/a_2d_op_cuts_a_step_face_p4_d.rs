@@ -145,6 +145,20 @@ fn add_op(session: &mut ProjectSession, op: OperationType) -> usize {
     session.toolpath_configs().len() - 1
 }
 
+/// [`add_op`] at the new-op default selection (W3h: no item; `Reset`
+/// writes `default_selection`), as the draft door gives a new op.
+fn add_new_op(session: &mut ProjectSession, op: OperationType) -> usize {
+    let index = add_op(session, op);
+    let _ = session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Reset,
+        }))
+        .unwrap();
+    index
+}
+
 /// The largest flat up face of the model below (`below_top`) or at the
 /// stock top: its pick key (as a click stores it) and its rings.
 fn up_face(session: &ProjectSession, below_top: bool) -> (MatchKey, Polygon2) {
@@ -254,7 +268,7 @@ fn a_new_pocket_on_a_step_model_takes_the_face_rings_ux7() {
         .expect("the op selection resolves");
     assert!(
         report.refusal.is_none(),
-        "the default rule takes the face rings (Q3): {:?}",
+        "the drawing rule (the config default) takes the face rings (Q3): {:?}",
         report.refusal
     );
     let items = &session.models()[0].items;
@@ -275,7 +289,7 @@ fn a_new_pocket_on_a_step_model_takes_the_face_rings_ux7() {
 #[test]
 fn a_pocket_cuts_inside_the_clicked_step_face_p4_d() {
     let mut session = step_only_session();
-    let index = add_op(&mut session, OperationType::Pocket);
+    let index = add_new_op(&mut session, OperationType::Pocket);
     let (key, face) = case_face(&session);
     click(&mut session, index, key);
 
@@ -301,7 +315,7 @@ fn a_pocket_cuts_inside_the_clicked_step_face_p4_d() {
 #[test]
 fn a_pocket_on_the_top_face_refuses_floor_above_top_ux7b() {
     let mut session = step_only_session();
-    let index = add_op(&mut session, OperationType::Pocket);
+    let index = add_new_op(&mut session, OperationType::Pocket);
     let (key, _) = up_face(&session, false);
     click(&mut session, index, key);
     let cancel = AtomicBool::new(false);
@@ -317,7 +331,7 @@ fn a_pocket_on_the_top_face_refuses_floor_above_top_ux7b() {
 #[test]
 fn a_trace_follows_the_clicked_step_face_p4_d() {
     let mut session = step_only_session();
-    let index = add_op(&mut session, OperationType::Trace);
+    let index = add_new_op(&mut session, OperationType::Trace);
     let (key, face) = case_face(&session);
     click(&mut session, index, key);
 

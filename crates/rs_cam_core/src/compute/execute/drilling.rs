@@ -248,7 +248,7 @@ fn selected_holes(holes: &Holes, spans: &[HoleSpan]) -> Vec<([f64; 2], HoleSpan)
 ///   D6), are in the emission frame already: the frame door moved them
 ///   (G-DRILLPICK-FRAME). They never take the stock-relative translation;
 ///   applying both would move them twice.
-fn pin_holes_in_emission_frame(
+pub(crate) fn pin_holes_in_emission_frame(
     cfg: &crate::compute::operation_configs::AlignmentPinDrillConfig,
     pins: &[crate::compute::alignment_pins::AlignmentPin],
     stock_bbox: &BoundingBox3,

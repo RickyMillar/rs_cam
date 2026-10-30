@@ -175,6 +175,9 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
             .model(model_id),
         )
         .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?;
+    // W3h: a new op starts with nothing selected; the run has no picker,
+    // so it writes the batch rule (every item the op can cut).
+    let batch = crate::job::batch_selection(op_type, draft.config.operation.selection());
     let tp_index = apply_command(
         &mut session,
         Command::AddToolpath(AddToolpathArgs {
@@ -185,6 +188,17 @@ pub fn run_generic(args: &RunArgs) -> Result<()> {
     .map_err(|e| anyhow::anyhow!("adding toolpath: {e}"))?
     .created
     .context("add_toolpath reports no new toolpath index")?;
+    if let Some(selection) = batch {
+        let _ = apply_command(
+            &mut session,
+            Command::EditSelection(rs_cam_core::session::EditSelectionArgs {
+                index: tp_index,
+                target: rs_cam_core::session::SelectionTarget::Op,
+                edit: rs_cam_core::selection::SelectionEdit::Replace(Box::new(selection)),
+            }),
+        )
+        .map_err(|e| anyhow::anyhow!("selection: {e}"))?;
+    }
 
     // Registry-driven parameter application: the SAME serde round-trip
     // the GUI/MCP use, so type coercion, validation, and unknown-param

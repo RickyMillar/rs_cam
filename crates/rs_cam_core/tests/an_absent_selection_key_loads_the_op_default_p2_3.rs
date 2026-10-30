@@ -15,7 +15,10 @@
 //! - a saved default selection writes no `selection` key, so a project that
 //!   uses only defaults saves as before P2.3b;
 //! - a selection that is not the default (a layer rule) saves its key and
-//!   loads back equal.
+//!   loads back equal;
+//! - W3h: a new op starts with nothing selected (`default_selection` is
+//!   empty), but an absent key still loads the drawing rule, so an empty
+//!   selection saves its key and loads back empty.
 //!
 //! ```text
 //! cargo test -p rs_cam_core -q --test an_absent_selection_key_loads_the_op_default_p2_3
@@ -149,6 +152,28 @@ fn an_absent_selection_key_loads_the_op_default() {
     assert_eq!(
         loaded.toolpath_configs()[0].operation.selection(),
         Some(&layer_rule())
+    );
+
+    // W3h: a new op starts with nothing selected (`default_selection`).
+    // An absent key loads the drawing rule (the files that omit it were
+    // written while that was the default), so the empty selection saves
+    // its key and loads back empty.
+    let empty = dir.join("p2_3_empty.toml");
+    session(vec![OperationConfig::Pocket(PocketConfig {
+        selection: Selection::empty(),
+        ..PocketConfig::default()
+    })])
+    .save(&empty)
+    .unwrap();
+    let text = std::fs::read_to_string(&empty).unwrap();
+    assert!(
+        !selection_lines(&text).is_empty(),
+        "the empty selection wrote no key:\n{text}"
+    );
+    let loaded = ProjectSession::load(&empty).unwrap();
+    assert_eq!(
+        loaded.toolpath_configs()[0].operation.selection(),
+        Some(&Selection::empty())
     );
 
     std::fs::remove_dir_all(&dir).unwrap();

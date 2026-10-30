@@ -44,6 +44,7 @@ pub mod prop_row;
 pub mod provenance;
 pub mod section;
 pub mod sparkline;
+pub mod status_line;
 pub mod suggest;
 pub mod tab_strip;
 pub mod text;
@@ -59,7 +60,7 @@ pub use freshness::{Freshness, FreshnessGate};
 pub use histogram::{DistributionChart, DistributionChartResponse};
 pub use kv_row::{KeyValueRow, Value as KeyValue};
 pub use line::OneLine;
-pub use list_box::{ListBox, ListLine, list_header, list_row};
+pub use list_box::{Act, ListBox, ListLine, Mark, list_header, list_line, list_placeholder, list_row};
 pub use notes_counter::NotesCounter;
 pub use notice::{
     Banner, CollapsedNotice, EmptyState, IssueStackResponse, NotMeasured, Notice, NoticeStack,
@@ -72,6 +73,7 @@ pub use prop_row::{PropRow, PropRowResponse, RowRects};
 pub use provenance::{ProvKind, ProvenanceBadge};
 pub use section::{SummaryCard, UiExt};
 pub use sparkline::{ChartFace, ChartFlip, Sparkline, SparklineResponse, TraceOpen};
+pub use status_line::StatusLine;
 pub use suggest::{SuggestButton, SuggestScope, Suggestion};
 pub use tab_strip::{TabBadge, TabStrip};
 pub use value_row::{OptionalValueRow, ValueRow, ValueRowOutcome};

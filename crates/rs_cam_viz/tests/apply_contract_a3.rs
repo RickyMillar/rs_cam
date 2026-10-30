@@ -189,7 +189,7 @@ const COMPARE_SRC: &str = include_str!("../src/ui/components/compare.rs");
 /// of them would turn the split into a hole in this contract.
 const FEEDS_MODAL_SRCS: [&str; 7] = [
     include_str!("../src/ui/feeds/mod.rs"),
-    include_str!("../src/ui/feeds/window.rs"),
+    include_str!("../src/ui/feeds/vendor.rs"),
     include_str!("../src/ui/feeds/shared.rs"),
     include_str!("../src/ui/feeds/compare.rs"),
     include_str!("../src/ui/feeds/why.rs"),

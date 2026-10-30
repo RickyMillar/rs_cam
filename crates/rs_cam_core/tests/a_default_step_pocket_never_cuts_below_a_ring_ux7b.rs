@@ -153,10 +153,11 @@ fn stepped_session() -> ProjectSession {
 
 /// Add `op_type` as every add door does: THE draft door
 /// (`ProjectSession::draft_toolpath`, S11), through the `AddToolpath` row.
+/// W3h: the op holds nothing.
 /// The effects of the add. S11: the fixture states the feeds that a tool
 /// with no feeds data leaves unset, and the dressup values before S11; the
 /// floor stays as the door leaves it.
-fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> Effects {
+fn add_drafted(session: &mut ProjectSession, op_type: OperationType) -> Effects {
     let tool_id = session.tools()[0].id;
     let model_id = session.models()[0].id;
     let mut cfg = session
@@ -179,6 +180,29 @@ fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> 
             config: Box::new(cfg),
         }))
         .expect("the add")
+}
+
+/// [`add_drafted`], then select every item the op can cut (W3h).
+fn add_as_the_doors_do(session: &mut ProjectSession, op_type: OperationType) -> Effects {
+    let add = add_drafted(session, op_type);
+    // W3h: the draft starts with nothing selected. The op then takes the
+    // rule "every item it can cut" (the default of the claims), and that
+    // edit runs the add-time floor rules; its effects name the floor.
+    let index = add.created.expect("the add creates a toolpath");
+    if !session.toolpath_configs()[index]
+        .operation
+        .selection()
+        .is_some_and(rs_cam_core::selection::Selection::is_empty)
+    {
+        return add;
+    }
+    session
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::drawing())),
+        }))
+        .expect("the op holds a selection")
 }
 
 fn floor_of(session: &ProjectSession, index: usize) -> Floor {
@@ -316,7 +340,7 @@ fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
     let stock_default = Floor::Unset;
     for kind in [ItemKind::Face, ItemKind::Loop] {
         let mut s = stepped_session();
-        let _ = add_as_the_doors_do(&mut s, OperationType::Pocket);
+        let _ = add_drafted(&mut s, OperationType::Pocket);
         set_floor(&mut s, 0, stock_default.clone());
         assert!(
             s.toolpath_configs()[0]
@@ -342,7 +366,7 @@ fn a_face_or_ring_pick_at_the_stock_default_floor_sets_each_face_ux7b() {
 #[test]
 fn a_pocket_below_the_z30_ring_is_blocked_ux7b() {
     let mut s = stepped_session();
-    let _ = add_as_the_doors_do(&mut s, OperationType::Pocket);
+    let _ = add_drafted(&mut s, OperationType::Pocket);
     let ring = item_at(&s, ItemKind::Loop, 30.0);
     let _ = pick(&mut s, 0, &ring);
     set_floor(&mut s, 0, Floor::top(5.0));
@@ -374,7 +398,7 @@ fn a_pocket_below_the_z30_ring_is_blocked_ux7b() {
 #[test]
 fn a_ring_profile_through_the_stock_is_blocked_ux7b() {
     let mut s = stepped_session();
-    let _ = add_as_the_doors_do(&mut s, OperationType::Profile);
+    let _ = add_drafted(&mut s, OperationType::Profile);
     let ring = item_at(&s, ItemKind::Loop, 30.0);
     let _ = pick(&mut s, 0, &ring);
     set_floor(&mut s, 0, Floor::top(STOCK_TOP));
@@ -400,7 +424,7 @@ fn a_ring_profile_through_the_stock_is_blocked_ux7b() {
 fn a_tool_tangent_to_a_wall_is_clean_and_a_tool_in_it_is_not_ux7b() {
     // A Pocket of the Z 20 ring, at the tool radius from the Z 30 wall.
     let mut s = stepped_session();
-    let _ = add_as_the_doors_do(&mut s, OperationType::Pocket);
+    let _ = add_drafted(&mut s, OperationType::Pocket);
     let ring = item_at(&s, ItemKind::Loop, 20.0);
     let _ = pick(&mut s, 0, &ring);
     assert_eq!(floor_of(&s, 0), Floor::EachFace { depth: 0.0 });

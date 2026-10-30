@@ -339,8 +339,9 @@ pub struct TraceConfig {
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -411,8 +412,9 @@ pub struct DrillConfig {
     )]
     pub size_tolerance: f64,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut. The
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h). The
     /// drill holes are the points and circle centres of the selected
     /// items (P2.3c); an empty selection refuses (`Empty`).
     #[serde(
@@ -575,8 +577,9 @@ pub struct BoreConfig {
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op: every
-    /// drawing item of the toolpath model that the op can cut. The op cuts
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h). The op cuts
     /// the circles larger than the tool (P6.6); a point states no size, so
     /// a Bore does not cut it.
     #[serde(
@@ -735,8 +738,9 @@ pub struct ChamferConfig {
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -854,8 +858,9 @@ pub struct PocketConfig {
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -985,8 +990,9 @@ pub struct ProfileConfig {
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -1087,8 +1093,9 @@ pub struct AdaptiveConfig {
     #[serde(default)]
     pub path_strategy: crate::adaptive::PathStrategy2d,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -1155,8 +1162,9 @@ pub struct VCarveConfig {
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -1273,8 +1281,9 @@ pub struct InlayConfig {
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -1388,8 +1397,9 @@ pub struct InlayPlugConfig {
     #[param(gt = 0.0)]
     pub spindle_rpm: Option<u32>,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -1483,8 +1493,9 @@ pub struct ZigzagConfig {
     #[param(help = HELP_REGION_ORDERING)]
     pub region_ordering: RegionOrdering,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -3333,8 +3344,9 @@ pub struct ProjectCurveConfig {
     )]
     pub chain_distance_mm: f64,
     /// The items this op cuts (geometry selection P2.3b, DESIGN 3.1). A
-    /// file with no `selection` key loads the default of this op:
-    /// every drawing item of the toolpath model that the op can cut.
+    /// file with no `selection` key loads the drawing rule: every drawing
+    /// item of the toolpath model that the op can cut (the files that omit
+    /// the key were written while it was the op default; W3h).
     #[serde(
         default = "Selection::drawing",
         skip_serializing_if = "Selection::is_drawing"
@@ -4068,7 +4080,7 @@ mod tests {
             "retract_z": 2.0
         }"#;
         let cfg: DrillConfig = serde_json::from_str(no_key).unwrap();
-        assert!(cfg.selection.is_drawing(), "no key => the Drill default");
+        assert!(cfg.selection.is_drawing(), "no key => the drawing rule");
 
         let chosen = DrillConfig {
             selection: Selection::from_picks(vec![MatchKey {
@@ -4088,5 +4100,15 @@ mod tests {
 
         let default_json = serde_json::to_string(&DrillConfig::default()).unwrap();
         assert!(!default_json.contains("selection"));
+        // W3h: a new op holds an empty selection. It writes its key and
+        // loads back empty (no key would load the drawing rule).
+        let empty = DrillConfig {
+            selection: Selection::empty(),
+            ..DrillConfig::default()
+        };
+        let empty_json = serde_json::to_string(&empty).unwrap();
+        assert!(empty_json.contains("selection"), "{empty_json}");
+        let back: DrillConfig = serde_json::from_str(&empty_json).unwrap();
+        assert!(back.selection.is_empty(), "the empty selection round-trips");
     }
 }

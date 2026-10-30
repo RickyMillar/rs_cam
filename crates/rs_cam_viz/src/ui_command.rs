@@ -53,7 +53,7 @@ use crate::state::job::{FaceUp, ToolConfig};
 use crate::state::runtime::StaleResultPolicy;
 use crate::state::selection::Selection;
 use crate::state::toolpath::ToolpathId;
-use crate::state::{NomogramExplore, ProjectFeedsSort, Workspace};
+use crate::state::{ProjectFeedsSort, Workspace};
 use rs_cam_core::session::CommandId;
 
 pub use rs_cam_core::session::{CommandKind, Reach, Surfaces};
@@ -222,9 +222,6 @@ pub(crate) type SetProjectFeedsOpenArgs = bool;
 
 /// Which sort order the project rollup table takes.
 pub(crate) type SetFeedsProjectSortArgs = ProjectFeedsSort;
-
-/// Where to put the drag-to-explore overlay point, or `None` to clear it.
-pub(crate) type SetFeedsExploreArgs = Option<NomogramExplore>;
 
 /// Which project rollup row to select or deselect.
 pub(crate) type ToggleFeedsProjectRowArgs = ToolpathId;
@@ -649,12 +646,14 @@ macro_rules! for_each_ui_command {
                  cli: Reach::Skip("the batch CLI draws no planner"),
              }),
 
-            // ── Feeds modal view state ──────────────────────────────
-            (UiCommand, CloseFeedsModal, "close_feeds_modal", NoArgs, (),
+            // ── Feeds view state ────────────────────────────────────
+            // W3i deleted the Explore window and its `close_feeds_modal`
+            // and `set_feeds_explore` rows; the chart is on the Feeds tab.
+            (UiCommand, CloseVendorData, "close_vendor_data", NoArgs, (),
              Surfaces {
                  gui: Reach::Reached,
-                 mcp: Reach::Skip("apply_feeds writes the recipe without a modal"),
-                 cli: Reach::Skip("the batch CLI draws no modal"),
+                 mcp: Reach::Skip("set_ui_view modal none closes every window"),
+                 cli: Reach::Skip("the batch CLI draws no window"),
              }),
             // DC5a deleted `SetFeedsModalMode`. The feeds modal held TWO
             // scopes behind a mode flip; the project rollup moved to the
@@ -673,12 +672,6 @@ macro_rules! for_each_ui_command {
                  gui: Reach::Reached,
                  mcp: Reach::Skip("no wire tool sorts a table it cannot see"),
                  cli: Reach::Skip("the batch CLI draws no table"),
-             }),
-            (UiCommand, SetFeedsExplore, "set_feeds_explore", SetFeedsExploreArgs, (),
-             Surfaces {
-                 gui: Reach::Reached,
-                 mcp: Reach::Skip("no wire tool drags a chart overlay"),
-                 cli: Reach::Skip("the batch CLI draws no chart"),
              }),
             (UiCommand, ToggleFeedsProjectRow, "toggle_feeds_project_row",
              ToggleFeedsProjectRowArgs, (),

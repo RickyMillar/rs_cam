@@ -500,8 +500,6 @@ fn every_text_style_and_named_family_lays_out_up1() {
 const RAW_GRID_ALLOWANCE: &[(&str, usize)] = &[
     // 4 columns, striped — the per-tool summary table.
     ("ui/export_wizard.rs", 1),
-    // 7 columns, striped — the vendor LUT viewer.
-    ("ui/properties/feeds_speeds.rs", 1),
     // 4 and 7 columns, both striped — the tool list and the tier list.
     ("ui/multitool_planner.rs", 2),
     // 9 columns, striped — the project feeds table.
@@ -513,8 +511,9 @@ const GRID_HOME: &str = "ui/components/";
 
 /// The fewest raw grids the allow-list must still account for, so a sweep
 /// that deleted the tables rather than the duplication fails this arm.
-/// W3d moved the heights ladder onto `PropRow`s (6 → 5).
-const MIN_ALLOWED_GRIDS: usize = 5;
+/// W3d moved the heights ladder onto `PropRow`s (6 → 5). W6 moved the
+/// vendor LUT viewer onto a `DataTable` in a `Details` (5 → 4).
+const MIN_ALLOWED_GRIDS: usize = 4;
 
 fn rel_path(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)

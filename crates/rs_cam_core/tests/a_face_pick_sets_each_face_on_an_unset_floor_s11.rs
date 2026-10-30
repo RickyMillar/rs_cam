@@ -9,10 +9,11 @@
 //! # The claims
 //!
 //! 1. A Pocket drafted on a STEP model (THE draft door) and added through
-//!    `AddToolpath` holds "Each picked face", depth 0, and the add names it
-//!    in `floor_set`: the default rule takes the face rings of the model.
-//! 2. With the floor cleared back to `Floor::Unset`, `floor_is_default` is
-//!    true, and a face pick below the stock top sets "Each picked face".
+//!    `AddToolpath` holds nothing (W3h: a new op starts with nothing
+//!    selected), so its floor stays `Floor::Unset` and the add names no
+//!    floor in `floor_set`.
+//! 2. With the floor at `Floor::Unset`, `floor_is_default` is true, and a
+//!    face pick below the stock top sets "Each picked face".
 //! 3. A floor the operator typed (`Top Z` 4) is not a default, and a pick
 //!    keeps it.
 //!
@@ -143,12 +144,13 @@ fn a_face_pick_still_sets_each_face_on_an_unset_floor_s11() {
     let mut s = stepped_session();
     let effects = add_drafted_pocket(&mut s);
     assert_eq!(
-        effects.floor_set,
-        Some(Floor::EachFace { depth: 0.0 }),
-        "the add sets 'Each picked face' on the rings of the model"
+        effects.floor_set, None,
+        "W3h: the add holds nothing, so no floor rule fires"
     );
-
-    set_floor(&mut s, Floor::Unset);
+    assert_eq!(
+        s.toolpath_configs()[0].operation.floor(),
+        Some(Floor::Unset)
+    );
     assert!(floor_is_default(&s), "an unset floor counts as the default");
     let effects = pick_the_low_face(&mut s);
     assert_eq!(effects.floor_set, Some(Floor::EachFace { depth: 0.0 }));

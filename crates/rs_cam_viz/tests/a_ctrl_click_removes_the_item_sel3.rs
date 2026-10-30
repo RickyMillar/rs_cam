@@ -225,8 +225,15 @@ fn a_ctrl_click_removes_the_item_in_one_undo_step_sel3() {
         source: SourceRef::ToolpathModel,
         ..k.clone()
     };
+    // W3h: the op starts at its new-op default selection (no item).
+    let tp = c.state().session().toolpath_configs()[0].id;
+    c.handle_internal_event(AppEvent::EditToolpathSelection {
+        toolpath_id: tp,
+        target: rs_cam_core::session::SelectionTarget::Op,
+        edit: rs_cam_core::selection::SelectionEdit::Reset,
+    });
 
-    // A Ctrl-click on the default selection writes nothing.
+    // A Ctrl-click on the default selection (W3h: no item) writes nothing.
     let before = stored(&c);
     let undo_before = c.state().history.undo_len();
     let e = event(&mut c, &cut, None, PickClick::Ctrl).expect("an event");
@@ -234,7 +241,7 @@ fn a_ctrl_click_removes_the_item_in_one_undo_step_sel3() {
     assert_eq!(stored(&c), before, "a Ctrl-click on the default wrote");
     assert_eq!(c.state().history.undo_len(), undo_before, "no undo step");
 
-    // Two shift-clicks pick both loops (the first replaces the default).
+    // Two shift-clicks pick both loops.
     for key in [&cut, &text] {
         let e = event(&mut c, key, None, PickClick::Shift).expect("an event");
         c.handle_internal_event(e);

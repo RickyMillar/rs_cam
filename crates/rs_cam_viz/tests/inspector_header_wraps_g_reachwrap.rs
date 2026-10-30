@@ -199,15 +199,17 @@ fn the_diagnostic_message_is_one_line_with_the_whole_message_on_hover() {
         "the per-tab footer row is back; the issue stack replaces it (W2b)"
     );
     let stack = function_body(&src, "draw_issue_stack");
-    // W7: the stack is in `toolpath_panel/issues.rs`, so it names the
-    // placement module in full, and rustfmt breaks the call over lines.
-    // The needles read the body without white space.
+    // W6: a placed finding builds its own row (`Finding::notice`: the face,
+    // the detail on hover), so the stack cannot read the finding text.
     let flat: String = stack.split_whitespace().collect();
     assert!(
-        flat.contains("Notice::new(crate::ui::properties::placement::role_of(d),d.face.as_str(),)")
-            && flat.contains(".detail(crate::ui::properties::placement::detail(d))")
-            && flat.contains(".show_issues(ui)"),
+        flat.contains("letmutnotice=d.notice();") && flat.contains(".show_issues(ui)"),
         "a finding must be one issue row with its detail on hover:\n{stack}"
+    );
+    let notice = function_body(&src, "notice_as");
+    assert!(
+        notice.contains(".detail(detail(self.0))"),
+        "the issue row of a finding must carry its detail on hover:\n{notice}"
     );
     let detail = function_body(&src, "detail");
     assert!(
@@ -227,7 +229,7 @@ fn the_validation_errors_are_one_line() {
     let stack = function_body(&src, "draw_issue_stack");
     assert!(
         stack.contains("for gate in gates {")
-            && stack.contains("Notice::new(Role::Danger, gate.as_str())"),
+            && stack.contains("refusal_notice(gate, INPUTS_REFUSED)"),
         "the validator refusals are issue rows:\n{stack}"
     );
     assert!(
@@ -256,13 +258,21 @@ fn every_sentence_in_the_header_is_wrapped() {
     let header = &src[start..end];
     // W2b: the status line draws ONE state word from core `RunState`
     // (`HeaderRow::word`), as a truncating label with its text on hover.
+    // W6: the kit `StatusLine` draws the line; the header passes the word.
     let state = function_body(&src, "draw_generate_row");
     assert!(
-        state.contains("row.word()")
-            && state.contains(".truncate()")
-            && state.contains(".on_hover_text(hover)")
-            && !state.contains(".wrap()"),
-        "the state word is one truncating label with its text on hover:\n{state}"
+        state.contains("row.word()") && state.contains("StatusLine::new(word, colour, hover)"),
+        "the header draws its state word through the kit StatusLine:\n{state}"
+    );
+    let line = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui/components/status_line.rs"),
+    )
+    .expect("read the kit status line");
+    assert!(
+        line.contains(".truncate()")
+            && line.contains(".on_hover_text(hover)")
+            && !line.contains(".wrap()"),
+        "the state word is one truncating label with its text on hover:\n{line}"
     );
     let words = function_body(&src, "word");
     for existing in ["WORD_WAITING", "WORD_FAILED", "WORD_NOT_READY"] {

@@ -29,8 +29,8 @@ use super::AppController;
 ///
 /// Two project-scope feeds handlers need this set: the rollup's seed and its
 /// `Select all`. Before DC5a the same expression was written out twice — once
-/// in `open_feeds_modal` as the seed, once in the select-all arm — so the two
-/// could drift. One expansion now serves both.
+/// in the per-operation feeds window's open as the seed, once in the
+/// select-all arm — so the two could drift. One expansion now serves both.
 fn enabled_toolpath_ids(
     state: &crate::state::AppState,
 ) -> std::collections::BTreeSet<rs_cam_core::ToolpathId> {
@@ -703,8 +703,8 @@ impl<B: ComputeBackend> AppController<B> {
             }
 
             // --- Feeds & Speeds modal (redesigned Feeds tab) ---
-            AppEvent::OpenFeedsModal(toolpath_id) => {
-                self.open_feeds_modal(toolpath_id);
+            AppEvent::OpenVendorData(toolpath_id) => {
+                self.open_vendor_data(toolpath_id);
             }
             AppEvent::SetSpindleStrategy(strategy) => {
                 // Project-level setting in the session post config
@@ -879,8 +879,8 @@ impl<B: ComputeBackend> AppController<B> {
                 UiCommand::CloseMultitoolPlanner(NoArgs) => {
                     self.close_multitool_planner();
                 }
-                UiCommand::CloseFeedsModal(NoArgs) => {
-                    self.state.feeds_modal = None;
+                UiCommand::CloseVendorData(NoArgs) => {
+                    self.state.vendor_data = None;
                 }
                 UiCommand::SetProjectFeedsOpen(open) => {
                     self.state.project_feeds.open = open;
@@ -897,11 +897,6 @@ impl<B: ComputeBackend> AppController<B> {
                 }
                 UiCommand::SetFeedsProjectSort(sort) => {
                     self.state.project_feeds.sort = sort;
-                }
-                UiCommand::SetFeedsExplore(explore) => {
-                    if let Some(modal) = self.state.feeds_modal.as_mut() {
-                        modal.explore = explore;
-                    }
                 }
                 UiCommand::ToggleFeedsProjectRow(id) => {
                     if !self.state.project_feeds.selected.insert(id) {
@@ -1008,17 +1003,14 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
-    // ── Feeds & Speeds modal ───────────────────────────────────────
+    // ── Vendor cutting data window (W3i) ───────────────────────────
 
-    /// Open the redesigned Feeds & Speeds modal for the given
-    /// toolpath. Idempotent — re-opening for the same toolpath just
-    /// refocuses; opening for a different toolpath swaps the target.
-    /// The modal re-derives `FeedsExplain` every frame, so no payload
-    /// needs to be stashed here.
-    fn open_feeds_modal(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        // Validate that the toolpath exists. The button that fires
-        // this event should already be hidden when no toolpath is
-        // selected, but a stray automation call could land here.
+    /// Open the vendor cutting data window for the tool of a toolpath.
+    /// Re-opening for another toolpath swaps the target. The window reads
+    /// the tool from the session every frame, so nothing is cached here.
+    fn open_vendor_data(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
+        // The button that fires this event is on the toolpath's own Feeds
+        // tab, but a stray automation call could land here.
         if !self
             .state
             .session()
@@ -1027,16 +1019,13 @@ impl<B: ComputeBackend> AppController<B> {
             .any(|tc| tc.id == toolpath_id)
         {
             self.push_notification(
-                format!("Feeds modal: toolpath id {} not found", toolpath_id.raw()),
+                format!("Vendor data: toolpath id {} not found", toolpath_id.raw()),
                 crate::controller::Severity::Error,
             );
             return;
         }
         self.state.close_modals_for_exclusivity();
-        self.state.feeds_modal = Some(crate::state::FeedsModalState {
-            toolpath_id,
-            explore: None,
-        });
+        self.state.vendor_data = Some(crate::state::VendorDataState { toolpath_id });
     }
 
     /// **The GUI's one apply path from a recommendation into an

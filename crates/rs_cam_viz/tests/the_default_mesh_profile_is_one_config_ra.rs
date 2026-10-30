@@ -7,10 +7,12 @@
 //! # The claims
 //!
 //! 1. The GUI add door (`AppEvent::AddToolpath(Profile)`) on
-//!    `stepped_block.step` stores the config that the core add door gives:
-//!    the operation (every param, nulls included), the floor "Model
-//!    bottom" depth 0, side Outside, no tabs. The GUI notice names the
-//!    note `Effects::MODEL_BOTTOM_FLOOR_NOTE`.
+//!    `stepped_block.step` stores the config that the core add door gives.
+//!    W3h: a new op holds nothing, so the floor rule fires on the first
+//!    selection edit: with the rule "every item it can cut" (the part
+//!    outline) both doors give the operation (every param, nulls
+//!    included), the floor "Model bottom" depth 0, side Outside, no tabs.
+//!    The GUI notice names the note `Effects::MODEL_BOTTOM_FLOOR_NOTE`.
 //! 2. MCP: `one_draft_for_every_add_door_s11` pins that the MCP arm calls
 //!    the same draft door and sends the same row; the CLI twin is
 //!    `rs_cam_cli/src/job.rs::a_job_profile_on_a_step_model_cuts_the_outline_ra`.
@@ -99,9 +101,13 @@ fn session() -> ProjectSession {
     builder.build()
 }
 
-/// Claim 1.
+/// Claim 1. W3h: the add holds nothing, so no floor rule fires at the add;
+/// the rule "every item it can cut" (the part outline) then sets "Model
+/// bottom" on both doors, with the one note.
 #[test]
 fn the_gui_door_gives_the_core_default_mesh_profile_ra() {
+    use rs_cam_core::selection::{Selection, SelectionEdit};
+    use rs_cam_core::session::{EditSelectionArgs, SelectionTarget};
     let mut core = session();
     let draft = core
         .draft_toolpath(
@@ -120,6 +126,14 @@ fn the_gui_door_gives_the_core_default_mesh_profile_ra() {
             config: Box::new(draft.config),
         }))
         .expect("the add");
+    assert_eq!(effects.floor_set_note(), None, "W3h: the add holds nothing");
+    let effects = core
+        .apply(Command::EditSelection(EditSelectionArgs {
+            index: 0,
+            target: SelectionTarget::Op,
+            edit: SelectionEdit::Replace(Box::new(Selection::drawing())),
+        }))
+        .expect("the selection edit");
     assert_eq!(
         effects.floor_set_note(),
         Some(Effects::MODEL_BOTTOM_FLOOR_NOTE)
@@ -135,9 +149,17 @@ fn the_gui_door_gives_the_core_default_mesh_profile_ra() {
     let mut controller = AppController::with_backend(SilentBackend);
     controller.state.replace_session(session());
     controller.handle_internal_event(AppEvent::AddToolpath(OperationType::Profile));
-    let configs = controller.state.session().toolpath_configs();
-    assert_eq!(configs.len(), 1, "the GUI door creates the op");
-    let gui = &configs[0];
+    let id = {
+        let configs = controller.state.session().toolpath_configs();
+        assert_eq!(configs.len(), 1, "the GUI door creates the op");
+        configs[0].id
+    };
+    controller.handle_internal_event(AppEvent::EditToolpathSelection {
+        toolpath_id: id,
+        target: SelectionTarget::Op,
+        edit: SelectionEdit::Replace(Box::new(Selection::drawing())),
+    });
+    let gui = &controller.state.session().toolpath_configs()[0];
     assert_eq!(
         gui.operation.params_value_including_nulls(),
         want.operation.params_value_including_nulls(),

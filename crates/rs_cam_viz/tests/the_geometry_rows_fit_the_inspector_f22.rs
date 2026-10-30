@@ -16,10 +16,10 @@
 //!
 //! 1. a STEP Drill (`block_with_blind_hole.step`) on its default rule
 //!    (R-B: one hole row), and the same Drill with a pick of the floor
-//!    circle: the refusal (F27; W3a: the Danger state of the Cuts row,
-//!    the text on its hover);
+//!    circle: the refusal (F27; W3h: the Danger mark of the selection list
+//!    header, the text on its hover);
 //! 2. the same Drill with a pick of the rim circle at Z 20: a row with
-//!    "Rule…" and "×";
+//!    its "⋯" menu and "×" (W3h);
 //! 3. a DXF Drill with circles of three sizes, a point and open paths on
 //!    six layers, on its default rule and with picks;
 //! 4. a STEP Pocket (`stepped_block.step`) on two faces with one face as
@@ -429,8 +429,10 @@ fn the_geometry_rows_fit_the_inspector_f22() {
     edit(&mut session, SelectionEdit::AddPick(rim));
     let mut state = state_of(session);
     let f = settle(&mut state);
+    // W3h: every row has its ⋯ menu ("Rule…" is in it) and its ×.
     assert!(
-        f.texts.iter().any(|(t, _)| t == "Rule\u{2026}"),
+        f.texts.iter().any(|(t, _)| t == "\u{22EF}")
+            && f.texts.iter().any(|(t, _)| t == "\u{00D7}"),
         "the picked row has its acts: {:?}",
         f.texts
     );
@@ -521,11 +523,11 @@ fn each_picked_face_shows_the_floor_range_f25() {
     );
 }
 
-/// F27 (IC1), W2b, W3a: a refusal of the selection is the Danger state of
-/// the Cuts row (field key `selection`, drawn for a Pocket: `placement::drawn_fields`); its text is
-/// the row hover and paints nowhere. The status line reads "Not ready",
-/// and the issue stack holds no row for it: the placement gives the core
-/// finding to the Cuts row.
+/// F27 (IC1), W2b, W3h: a refusal of the selection is the Danger mark of
+/// the selection list header (field key `selection`:
+/// `placement::drawn_fields`); its text is the mark hover and paints
+/// nowhere. The status line reads "Not ready", and the issue stack holds
+/// no row for it: the placement gives the core finding to the list.
 #[test]
 fn a_refusal_paints_once_f27() {
     let session = refused_hole_drill();
@@ -548,8 +550,8 @@ fn a_refusal_paints_once_f27() {
         .collect();
     assert!(full.is_empty(), "the refusal is the row hover: {full:#?}");
     assert!(
-        f.texts.iter().any(|(t, _)| t == "Cuts"),
-        "the Cuts row paints: {:?}",
+        f.texts.iter().any(|(t, _)| t == "Selection"),
+        "the selection list header paints: {:?}",
         f.texts
     );
     assert!(
@@ -579,16 +581,15 @@ fn a_refusal_paints_once_f27() {
         rs_cam_viz::ui::properties::placed_findings(id, &state).expect("the toolpath is placed");
     assert!(
         placed.by_field.iter().any(|d| faces.contains(&d.face)),
-        "the selection finding sits on the Cuts row: {:?}",
+        "the selection finding sits on the selection list: {:?}",
         placed.by_field
     );
 }
 
 /// F32, F28: on the default rule of a DXF Drill, the six open paths (a
-/// kind that a Drill never cuts) are ONE line, not one line per layer. On
-/// the default rule there is no "Selected" row (GUI/MCP parity: the GUI
-/// shows no count that MCP `selection_status` does not give). The default
-/// list holds only the kinds that the Drill cuts. The per-layer list is in the Skipped items list,
+/// kind that a Drill never cuts) are ONE line, not one line per layer.
+/// There is no "Selected" row (W3h deleted it; the list header gives the
+/// counts). The list holds only the kinds that the Drill cuts. The per-layer list is in the Skipped items list,
 /// which names what it holds (F28). A size that the Drill can cut keeps its
 /// own note.
 ///
@@ -621,13 +622,15 @@ fn a_kind_the_op_never_cuts_is_one_line_f32() {
         !texts.iter().any(|t| t.starts_with("Selected")),
         "no Selected row on the default rule: {texts:#?}"
     );
-    // The default list holds the 3 circles and the point, not the paths.
-    // W3g: the default rule is the Source row; the Cuts row gives the
-    // count of the kinds that the Drill cuts.
+    // The list holds the 3 circles and the point, not the paths. W3h: the
+    // list header gives the count of the kinds that the Drill cuts.
     assert!(
-        texts.iter().any(|t| *t == "Every point, circle")
-            && texts.iter().any(|t| *t == "1 point \u{00B7} 3 circles"),
-        "the default list holds the kinds that the Drill cuts: {texts:#?}"
+        texts.iter().any(|t| *t == "1 point \u{00B7} 3 circles"),
+        "the list holds the kinds that the Drill cuts: {texts:#?}"
+    );
+    assert!(
+        !texts.iter().any(|t| t.starts_with("Path")),
+        "no open path row: {texts:#?}"
     );
     assert!(
         texts
@@ -637,28 +640,40 @@ fn a_kind_the_op_never_cuts_is_one_line_f32() {
     );
 }
 
-/// GUI/MCP parity: with picks, "Selected" is the held count, the same
-/// number as MCP `selection_status` (`selected`).
+/// GUI/MCP parity (W3h): with picks, the list header gives the counts of
+/// MCP `selection_status` (`counts`), with the short nouns of the list.
 #[test]
-fn selected_is_the_held_count_with_picks() {
+fn the_header_counts_are_the_mcp_counts_with_picks() {
     let mut session = dxf_drill();
     for key in keys(&session, |item| {
         matches!(item.kind(), ItemKind::Circle | ItemKind::Point)
     }) {
         edit(&mut session, SelectionEdit::AddPick(key));
     }
-    let held = session
+    let report = session
         .selection_status(&session.toolpath_configs()[0], SelectionTarget::Op)
-        .expect("the status answers")
-        .selected
-        .len();
+        .expect("the status answers");
+    let mut parts: Vec<String> = report
+        .counts
+        .iter()
+        .filter(|(_, n)| **n > 0)
+        .map(|(kind, n)| format!("{n} {}", rs_cam_core::selection::kind_noun(*kind, *n)))
+        .collect();
+    if report.islands > 0 {
+        parts.push(format!("{} islands", report.islands));
+    }
+    let want = parts.join(" \u{00B7} ");
+    assert!(!want.is_empty(), "fixture: the picks are held");
     let mut state = state_of(session);
     let f = settle(&mut state);
-    let want = format!("{held} items");
-    let at = f
-        .texts
-        .iter()
-        .position(|(t, _)| t.starts_with("Selected"))
-        .expect("a Selected row with picks");
-    assert_eq!(f.texts[at + 1].0, want, "{:?}", f.texts);
+    assert!(
+        f.texts.iter().any(|(t, _)| *t == want),
+        "the header paints {want}: {:?}",
+        f.texts
+    );
+    assert!(
+        !f.texts.iter().any(|(t, _)| t.starts_with("Selected")),
+        "no Selected row: {:?}",
+        f.texts
+    );
 }

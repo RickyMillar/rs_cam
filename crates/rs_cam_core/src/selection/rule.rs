@@ -1022,6 +1022,18 @@ mod tests {
             toml::from_str::<Selection>(&drawing).unwrap(),
             Selection::drawing()
         );
+        // W3h: the empty selection (a new op) round-trips through TOML and
+        // JSON.
+        let empty = toml::to_string(&Selection::empty()).unwrap();
+        assert_eq!(
+            toml::from_str::<Selection>(&empty).unwrap(),
+            Selection::empty()
+        );
+        let empty = serde_json::to_string(&Selection::empty()).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Selection>(&empty).unwrap(),
+            Selection::empty()
+        );
         // An unknown key refuses.
         assert!(toml::from_str::<Selection>("pickz = []").is_err());
     }

@@ -441,11 +441,15 @@ fn hole_floor_session(open_sides: bool) -> ProjectSession {
         })
         .expect("the hole floor face at Z 12");
     let key = floor.key().clone().for_toolpath_model(model.id);
+    // W3h: a pick on a new op (nothing selected) is the selection. The
+    // fixture op holds the drawing rule, so the case writes that one pick.
     let _ = s
         .apply(Command::EditSelection(EditSelectionArgs {
             index: 0,
             target: SelectionTarget::Op,
-            edit: SelectionEdit::AddPick(key),
+            edit: SelectionEdit::Replace(Box::new(rs_cam_core::selection::Selection::from_picks(
+                vec![key],
+            ))),
         }))
         .expect("the pick");
     s

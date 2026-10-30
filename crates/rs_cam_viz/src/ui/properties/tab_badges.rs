@@ -279,7 +279,7 @@ pub(super) fn draw_tool_row(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     inputs: &super::ToolpathPanelInputs,
-    findings: &[&rs_cam_core::diagnostics::Diagnostic],
+    findings: &[super::placement::Finding<'_>],
     events: &mut Vec<crate::ui::AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();

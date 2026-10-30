@@ -38,6 +38,12 @@
 //! deliberate. So the guard is the plot's own bounds. Arm 3 pins that
 //! distinction, because tightening the guard to the machine's cap would
 //! silently delete a working feature.
+//!
+//! # W3i (2026-10-30): the readout is the plot hover
+//!
+//! The chart is inline on the Feeds tab, and the readout and the legend are
+//! the hover of the plot. A pointer off the chart opens no hover, so it
+//! paints no reading and no legend; a pointer on the chart paints both.
 
 #![expect(
     clippy::expect_used,
@@ -54,14 +60,54 @@ use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
 use rs_cam_core::material::{Material, PlywoodGrade};
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
-use rs_cam_viz::state::{AppState, FeedsModalState};
-use rs_cam_viz::ui::{feeds, tokens};
+use rs_cam_viz::state::AppState;
+use rs_cam_viz::ui::{properties, tokens};
 
 /// Room for the whole window, so the plot is drawn unclipped.
 const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
 
-/// The line the readout shows when there is nothing to report.
-const ABSTENTION: &str = "Hover the chart to read an operating point.";
+/// The first legend line of the plot hover: it paints only while the
+/// pointer is over the plot (W3i).
+const LEGEND_MARK: &str = "Recommended";
+
+/// The inspector width the chart draws in.
+const PANEL_WIDTH: f32 = 340.0;
+
+/// One frame of the inspector on the Feeds tab, with the pointer at
+/// `pointer` (when given). Tooltips show at once.
+fn frame(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    pointer: Option<egui::Pos2>,
+) -> egui::FullOutput {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+        events: pointer
+            .map(|p| vec![egui::Event::PointerMoved(p)])
+            .unwrap_or_default(),
+        ..Default::default()
+    };
+    ctx.run_ui(input, |ui| {
+        egui::Panel::right("hoverbound_properties")
+            .default_size(PANEL_WIDTH)
+            .max_size(PANEL_WIDTH)
+            .resizable(false)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let mut events = Vec::new();
+                    properties::draw(ui, state, &mut events);
+                });
+            });
+    })
+}
+
+fn ctx() -> egui::Context {
+    let ctx = egui::Context::default();
+    tokens::apply(&ctx);
+    tokens::apply_fonts(&ctx);
+    ctx.all_styles_mut(|style| style.interaction.tooltip_delay = 0.0);
+    ctx
+}
 
 /// A readout of a real operating point contains this phrase.
 ///
@@ -138,10 +184,18 @@ fn fixture() -> AppState {
     let mut state = AppState::new();
     state.replace_session(builder.build());
     let toolpath_id = state.session().toolpath_configs()[0].id;
-    state.feeds_modal = Some(FeedsModalState {
+    // W3i: the chart is on the Feeds tab of the selected toolpath.
+    state.gui.toolpath_rt.insert(
         toolpath_id,
-        explore: None,
-    });
+        rs_cam_viz::state::runtime::ToolpathRuntime::new(true),
+    );
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(
+        toolpath_id,
+    ));
+    state.gui.pending_toolpath_tab = Some((
+        toolpath_id,
+        rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds,
+    ));
     state
 }
 
@@ -152,22 +206,12 @@ fn fixture() -> AppState {
 /// while it is being told about one, and the plot needs a settled layout
 /// before the coordinate it reports means anything.
 fn painted_with_pointer(pointer: egui::Pos2) -> Vec<String> {
-    let ctx = egui::Context::default();
-    tokens::apply(&ctx);
-    tokens::apply_fonts(&ctx);
-    let state = fixture();
+    let ctx = ctx();
+    let mut state = fixture();
     let mut texts = Vec::new();
-    for pass in 0..4 {
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
-            events: vec![egui::Event::PointerMoved(pointer)],
-            ..Default::default()
-        };
-        let mut events = Vec::new();
-        let mut out = ctx.run_ui(input, |ui| {
-            feeds::draw(ui.ctx(), &state, &mut events);
-        });
-        if pass == 3 {
+    for pass in 0..6 {
+        let mut out = frame(&ctx, &mut state, Some(pointer));
+        if pass == 5 {
             for clipped in &out.shapes {
                 if let egui::epaint::Shape::Text(text) = &clipped.shape {
                     texts.push(text.galley.job.text.clone());
@@ -180,52 +224,34 @@ fn painted_with_pointer(pointer: egui::Pos2) -> Vec<String> {
 }
 
 /// A point inside the plot of the nomogram, read from the painted frame:
-/// half-way down between the chart title and the "10000" RPM tick, at the
-/// x of that tick. W3c moved the comparison card into the window above the
-/// chart, so a fixed offset from the window centre went stale; the point
-/// now follows the layout.
+/// 40 points above the "10000" RPM tick, at the x of that tick. W3i: the
+/// chart is inline on the Feeds tab, so the point follows the layout.
 fn a_point_on_the_chart() -> egui::Pos2 {
-    let ctx = egui::Context::default();
-    tokens::apply(&ctx);
-    tokens::apply_fonts(&ctx);
-    let state = fixture();
-    let mut title_bottom = None;
+    let ctx = ctx();
+    let mut state = fixture();
     let mut tick = None;
     for pass in 0..3 {
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
-            ..Default::default()
-        };
-        let mut events = Vec::new();
-        let mut out = ctx.run_ui(input, |ui| {
-            feeds::draw(ui.ctx(), &state, &mut events);
-        });
+        let mut out = frame(&ctx, &mut state, None);
         if pass == 2 {
             for clipped in &out.shapes {
-                if let egui::epaint::Shape::Text(text) = &clipped.shape {
-                    let rect = text.visual_bounding_rect();
-                    let job = &text.galley.job.text;
-                    if job.starts_with("Feed vs RPM") {
-                        title_bottom = Some(rect.bottom());
-                    } else if job == "10000" {
-                        tick = Some(rect);
-                    }
+                if let egui::epaint::Shape::Text(text) = &clipped.shape
+                    && text.galley.job.text == "10000"
+                {
+                    tick = Some(text.visual_bounding_rect());
                 }
             }
         }
         out.textures_delta.clear();
     }
-    let title_bottom = title_bottom.expect("the chart title paints");
     let tick = tick.expect("the 10000 RPM tick paints");
-    egui::pos2(tick.center().x, 0.5 * (title_bottom + tick.top()))
+    egui::pos2(tick.center().x, tick.top() - 40.0)
 }
 
 // ── arm 1 — the pointer is off the chart ─────────────────────────────────
 
 #[test]
 fn the_readout_abstains_when_the_pointer_is_off_the_chart_g_hoverbound() {
-    // Top-left of the screen: outside the window entirely, which is where
-    // the pointer was when the defect was photographed (over the inspector).
+    // Top-left of the screen: outside the inspector and the chart.
     let texts = painted_with_pointer(egui::pos2(4.0, 4.0));
     let readings: Vec<&String> = texts.iter().filter(|t| t.contains(READING_MARK)).collect();
     assert!(
@@ -235,11 +261,11 @@ fn the_readout_abstains_when_the_pointer_is_off_the_chart_g_hoverbound() {
          pointer outside the drawn bounds; a verdict built from one is a \
          hazard reading manufactured from an absence."
     );
+    // W3i: the readout is the plot hover, so a pointer off the chart
+    // opens no hover at all.
     assert!(
-        texts.iter().any(|t| t == ABSTENTION),
-        "the readout line neither reported nor abstained. It must hold its \
-         place, or the legend below it jumps as the pointer crosses the plot \
-         edge."
+        !texts.iter().any(|t| t.contains(LEGEND_MARK)),
+        "the plot hover painted for a pointer that is not on the chart"
     );
 }
 
@@ -258,8 +284,9 @@ fn the_readout_reports_when_the_pointer_is_on_the_chart_g_hoverbound() {
          runs: {texts:?}"
     );
     assert!(
-        !texts.iter().any(|t| t == ABSTENTION),
-        "the readout reported AND abstained in the same frame"
+        texts.iter().any(|t| t.contains(LEGEND_MARK)),
+        "W3i: the plot hover holds the legend beside the readout; it is missing. \
+         Painted runs: {texts:?}"
     );
 }
 
