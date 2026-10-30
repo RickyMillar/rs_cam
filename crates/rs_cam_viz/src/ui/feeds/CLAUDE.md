@@ -3,7 +3,7 @@
 ## Files
 
 - `mod.rs` — the facade and the map. No feeds window holds the chart (W3i deleted Explore).
-- `explore.rs` — the nomogram, inline on the Feeds tab (`draw_inline`, `draw_chart_c`); W3k: no navigation (every egui_plot zoom/drag/reset flag off, bounds set each frame), labels on the chart (`layout_labels`), hover = one line; `explore_tests.rs` the label fit test; the plot starts `AXIS_LABEL_GAP` of the title height in (up4 reads the rotated edge).
+- `explore.rs` — the nomogram, inline on the Feeds tab (`draw_inline`, `draw_chart_c`); W3k: no navigation (every egui_plot zoom/drag/reset flag off, bounds set each frame), labels on the chart (`layout_labels`: along each line, never across a drawn line, ≤ `MAX_LABELS`; a moved mark label takes a leader), no past-cap axis marks, Min RPM = an amber wall, hover = one line; `explore_tests.rs` the label fit test; the plot starts `AXIS_LABEL_GAP` of the title height in (up4 reads the rotated edge).
 - `compare.rs` — the recommendation (`draw_recommendation`): problem rows, ONE `Details` "Recommended" with `⚡ Apply all` / `⚡ Speeds only` at its top (W3k); `why.rs` — the lines behind each number.
 - `vendor.rs` — the vendor cutting data window (`Vendor data…`, MCP `set_ui_view modal: vendor_data`).
 - `shared.rs` — what more than one feeds job needs; `OpFeeds` is the tab's inputs.

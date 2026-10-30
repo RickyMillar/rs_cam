@@ -48,8 +48,8 @@ pub(crate) mod chart {
     /// in this colour. The vendor limits are two fainter lines in the same
     /// colour, and the chart draws them only when the row publishes both.
     pub const BAND: egui::Color32 = tokens::CHART_SERIES[1];
-    /// The vendor RPM window, marked on the RPM axis.
-    pub const RPM_RANGE: egui::Color32 = tokens::CHART_SERIES[3];
+    // RPM_RANGE went with the vendor RPM window mark on 2026-10-31 (W3k):
+    // the inline chart drew it unlabelled under the spindle minimum band.
     // ADMITTED, ISO_MIN, ISO_MID and ISO_MAX were deleted on 2026-09-16 with
     // the series they coloured: three iso-advance lines that restated the
     // band's own edges and midpoint, and a ±5 % ribbon pair. Four colours

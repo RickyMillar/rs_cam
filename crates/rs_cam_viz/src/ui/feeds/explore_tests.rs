@@ -124,11 +124,19 @@ fn fixture(diameter: f64, stickout: f64) -> AppState {
 
 /// Draw the inspector at `width` until the layout settles. Returns the
 /// recorded layout and every text run of the last frame with its rect.
-fn paint_at(width: f32, mut state: AppState) -> (Recorded, Vec<(String, egui::Rect)>) {
+/// What one settled frame painted: the text runs with their rects, and
+/// every open line (`Shape::Path`) with its half width.
+struct Painted {
+    texts: Vec<(String, egui::Rect)>,
+    paths: Vec<(Vec<egui::Pos2>, f32, egui::Color32)>,
+}
+
+fn paint_at(width: f32, mut state: AppState) -> (Recorded, Painted) {
     let ctx = egui::Context::default();
     tokens::apply(&ctx);
     tokens::apply_fonts(&ctx);
     let mut texts = Vec::new();
+    let mut paths = Vec::new();
     LAST.with(|last| *last.borrow_mut() = None);
     for pass in 0..6 {
         let input = egui::RawInput {
@@ -153,8 +161,18 @@ fn paint_at(width: f32, mut state: AppState) -> (Recorded, Vec<(String, egui::Re
         });
         if pass == 5 {
             for clipped in &out.shapes {
-                if let egui::epaint::Shape::Text(text) = &clipped.shape {
-                    texts.push((text.galley.job.text.clone(), text.visual_bounding_rect()));
+                match &clipped.shape {
+                    egui::epaint::Shape::Text(text) => {
+                        texts.push((text.galley.job.text.clone(), text.visual_bounding_rect()));
+                    }
+                    egui::epaint::Shape::Path(path) if !path.closed && path.points.len() >= 2 => {
+                        let color = match &path.stroke.color {
+                            egui::epaint::ColorMode::Solid(c) => *c,
+                            egui::epaint::ColorMode::UV(_) => egui::Color32::TRANSPARENT,
+                        };
+                        paths.push((path.points.clone(), path.stroke.width / 2.0, color));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -163,37 +181,120 @@ fn paint_at(width: f32, mut state: AppState) -> (Recorded, Vec<(String, egui::Re
     let recorded = LAST
         .with(|last| last.borrow().clone())
         .expect("the Feeds tab drew the chart");
-    (recorded, texts)
+    (recorded, Painted { texts, paths })
 }
 
-/// The labels that must paint on every fixture at both widths. "Now"
-/// and "Before derate" may drop when the plot is short of room.
-const MUST_PAINT: [&str; 5] = [
-    super::LABEL_RECOMMENDED,
+/// The farthest a line label's box may sit from its own line, in points
+/// (lead, 2026-10-31: "within ~4 px").
+const LINE_LABEL_REACH: f32 = 4.0;
+
+/// The labels that must paint on every fixture at both widths. The others
+/// may drop when the plot is short of room or past `MAX_LABELS`.
+const MUST_PAINT: [&str; 3] = [
     super::LABEL_MAX_FEED,
     super::LABEL_MAX_RPM,
     super::LABEL_RUBBING,
-    super::LABEL_MIN_RPM,
 ];
 
+/// The labels that must paint at 340 beyond `MUST_PAINT`. At the 240 rail
+/// the plot is 152 points wide; with the spindle minimum wall at 8000 RPM
+/// "Recommended" (82 points) has no place beside the ring that crosses no
+/// line (it may cross only the faint vendor range lines), so it drops there
+/// and the blue ring stands alone.
+const MUST_PAINT_AT_340: [&str; 2] = [super::LABEL_RECOMMENDED, super::LABEL_MIN_RPM];
+
 /// The fixtures: (diameter, stickout, the labels it must paint beyond
-/// `MUST_PAINT`).
-const CASES: [(f64, f64, &[&str]); 2] =
-    [(6.0, 45.0, &[]), (2.0, 120.0, &[super::LABEL_CHIP_LIMIT])];
+/// `MUST_PAINT`). On Ø2 at 120 mm the deflection ceiling is on the chart,
+/// but its line runs between the rubbing floor and the suggested line with
+/// at most 13 points (to the suggested line) and 22 points (to the floor,
+/// over the length of the label) of room: "Chip limit" has no place that
+/// crosses no line, so it drops (lead, 2026-10-31: "move or drop a label
+/// that cannot fit"). The case stays for the line test.
+const CASES: [(f64, f64, &[&str]); 2] = [(6.0, 45.0, &[]), (2.0, 120.0, &[])];
 
 /// W3k (operator, 2026-10-31: "check they fit well and are legible"):
 /// at the 340-point default and the 240-point rail, every label paints,
-/// no two labels overlap, every label is inside the plot rect, and the
-/// text is at least the small text size.
+/// no two labels overlap, no label crosses a drawn line (lead, 2026-10-31:
+/// "Min RPM" painted over the rubbing line), every label is inside the
+/// plot rect, at most `MAX_LABELS` paint, and the text is at least the
+/// small text size. The lines are the painted `Shape::Path`s of the frame,
+/// read from the output, not from the layout's own list.
 #[test]
 fn the_chart_labels_fit_at_340_and_240_w3k() {
     for (width, (diameter, stickout, extra)) in [340.0, 240.0]
         .into_iter()
         .flat_map(|w| CASES.into_iter().map(move |c| (w, c)))
     {
-        let (recorded, texts) = paint_at(width, fixture(diameter, stickout));
+        let (recorded, painted) = paint_at(width, fixture(diameter, stickout));
+        let texts = &painted.texts;
+        assert!(
+            recorded.labels.len() <= super::MAX_LABELS,
+            "at {width} {} labels paint",
+            recorded.labels.len()
+        );
+        // A faint vendor range line may run under a label that has no
+        // other place (`DrawnLine::soft`); every other line may not.
+        let faint = super::wash(super::chart::BAND, super::BAND_LIMIT_ALPHA);
+        let plot_lines: Vec<&(Vec<egui::Pos2>, f32, egui::Color32)> = painted
+            .paths
+            .iter()
+            .filter(|(points, _, _)| {
+                points
+                    .iter()
+                    .all(|p| recorded.frame.expand(2.0).contains(*p))
+            })
+            .collect();
+        assert!(
+            plot_lines.iter().filter(|(_, _, c)| *c != faint).count() >= 4,
+            "non-vacuity: the plot paints its lines (walls, rubbing, suggested); found {}",
+            plot_lines.len()
+        );
+        for label in &recorded.labels {
+            for (points, half, color) in &plot_lines {
+                if *color == faint {
+                    continue;
+                }
+                let crosses = points
+                    .windows(2)
+                    .any(|w| matches!(w, [a, b] if label.quad.hits_segment(*a, *b, *half)));
+                assert!(
+                    !crosses,
+                    "at {width}, Ø{diameter}, `{}` {:?} crosses a drawn line {points:?}",
+                    label.text, label.quad
+                );
+            }
+        }
+        // Lead, 2026-10-31: a line label touches its line. Its box is
+        // within `LINE_LABEL_REACH` of the line it names, and that line is
+        // one the frame painted (so the recorded line is not a stand-in).
+        for label in &recorded.labels {
+            let Some(line) = &label.line else {
+                continue;
+            };
+            let painted_line = painted.paths.iter().any(|(points, _, _)| {
+                points.len() == line.len()
+                    && points.iter().zip(line).all(|(p, q)| p.distance(*q) < 1.0)
+            });
+            assert!(
+                painted_line,
+                "at {width} `{}` names a line the frame did not paint: {line:?}",
+                label.text
+            );
+            let gap = label.quad.distance_to_line(line);
+            assert!(
+                gap <= LINE_LABEL_REACH,
+                "at {width}, Ø{diameter}, `{}` floats {gap:.1} points off its line \
+                 (at most {LINE_LABEL_REACH})",
+                label.text
+            );
+        }
         let names: Vec<&str> = recorded.labels.iter().map(|l| l.text).collect();
-        for &must in MUST_PAINT.iter().chain(extra.iter()) {
+        let at_340: &[&str] = if width > 300.0 {
+            &MUST_PAINT_AT_340
+        } else {
+            &[]
+        };
+        for &must in MUST_PAINT.iter().chain(extra.iter()).chain(at_340.iter()) {
             assert!(
                 names.contains(&must),
                 "at {width}, Ø{diameter}, the label `{must}` has no place; placed \
@@ -203,34 +304,38 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
         }
         for label in &recorded.labels {
             assert!(
-                recorded.frame.contains_rect(label.rect),
+                label.quad.inside(recorded.frame),
                 "at {width} `{}` {:?} is outside the plot {:?}",
                 label.text,
-                label.rect,
+                label.quad,
                 recorded.frame
             );
-            // The text paints, inside its background.
             let painted = texts
                 .iter()
                 .find(|(t, _)| t == label.text)
                 .unwrap_or_else(|| panic!("at {width} `{}` did not paint", label.text));
-            assert!(
-                label.rect.expand(0.5).contains_rect(painted.1),
-                "at {width} the text of `{}` {:?} leaves its background {:?}",
-                label.text,
-                painted.1,
-                label.rect
-            );
+            // An upright text sits inside its background. (The
+            // `visual_bounding_rect` of a turned text ignores its angle.)
+            if label.quad.angle.abs() < f32::EPSILON {
+                let background =
+                    egui::Rect::from_center_size(label.quad.center, 2.0 * label.quad.half);
+                assert!(
+                    background.expand(0.5).contains_rect(painted.1),
+                    "at {width} the text of `{}` {:?} leaves its background {background:?}",
+                    label.text,
+                    painted.1
+                );
+            }
         }
         for (i, a) in recorded.labels.iter().enumerate() {
             for b in recorded.labels.iter().skip(i + 1) {
                 assert!(
-                    !a.rect.intersects(b.rect),
+                    !a.quad.intersects(&b.quad),
                     "at {width} `{}` {:?} overlaps `{}` {:?}",
                     a.text,
-                    a.rect,
+                    a.quad,
                     b.text,
-                    b.rect
+                    b.quad
                 );
             }
         }
@@ -240,5 +345,40 @@ fn the_chart_labels_fit_at_340_and_240_w3k() {
             recorded.font_size,
             tokens::SIZE_CAPTION
         );
+    }
+}
+
+/// W3k (lead, 2026-10-31: "a reader must see which line a label names"):
+/// every place a line label tries has its near corner `LABEL_GAP` off the
+/// line, for a level, an upright and a sloped line.
+#[test]
+fn a_line_label_sits_next_to_its_line_w3k() {
+    let size = egui::vec2(50.0, 15.0);
+    for (a, b) in [
+        (egui::pos2(0.0, 100.0), egui::pos2(200.0, 100.0)),
+        (egui::pos2(100.0, 200.0), egui::pos2(100.0, 0.0)),
+        (egui::pos2(0.0, 200.0), egui::pos2(200.0, 150.0)),
+        (egui::pos2(0.0, 200.0), egui::pos2(60.0, 0.0)),
+    ] {
+        let anchor = super::LabelAnchor::Line(vec![a, b]);
+        let dir = (b - a).normalized();
+        let normal = egui::vec2(dir.y, -dir.x);
+        for quad in super::candidates(&anchor, size) {
+            // The distance from the line to the nearest corner of the label.
+            let near = quad
+                .corners()
+                .iter()
+                .map(|c| (*c - a).dot(normal).abs())
+                .fold(f32::INFINITY, f32::min);
+            assert!(
+                (near - super::LABEL_GAP).abs() < 0.01,
+                "a label place {quad:?} sits {near} off the line {a:?}-{b:?}, not {}",
+                super::LABEL_GAP
+            );
+            assert!(
+                !quad.hits_segment(a, b, 0.0),
+                "a label place {quad:?} crosses its own line"
+            );
+        }
     }
 }
