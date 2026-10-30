@@ -1020,10 +1020,9 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
         }
         out.textures_delta.clear();
     }
+    // W3g: the list header paints the title and, at its right, the count.
     assert!(
-        texts
-            .iter()
-            .any(|t| t.contains("\u{00D8} 6.00") && t.ends_with("(24)")),
+        texts.iter().any(|t| t.contains("\u{00D8} 6.00")) && texts.iter().any(|t| t == "24"),
         "the rule header holds its count: {texts:?}"
     );
     assert!(
@@ -2556,5 +2555,63 @@ fn drawn_field_rows_match_the_painted_rows_w3f() {
         drawn_count > 200 && anchored.len() > 10,
         "non-vacuity: {drawn_count} drawn rows, {} anchored keys",
         anchored.len()
+    );
+}
+
+/// W3g (fix 1): a field whose shown value is in tool diameters never paints
+/// the unit "mm". Linking "Max distance" painted "8 x D" with "mm": an
+/// unset rule value shows its rule text, and that text is not a length.
+/// The same row with a value set paints "mm".
+///
+/// Red proof: give `opt_row` the unit whatever the value: the unset arm
+/// paints "mm" beside "8 x D" and fails.
+#[test]
+fn a_tool_diameter_value_never_shows_mm_w3g() {
+    let paint = |value: Option<f64>| -> Vec<String> {
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut v = value;
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(340.0);
+                super::linking_dressup::dv_dressup_rule(
+                    ui,
+                    "link_max_distance",
+                    "Max distance",
+                    &mut v,
+                    " mm",
+                    0.5,
+                    1.0..=50.0,
+                    "8 x D",
+                    super::linking_dressup::Fields::default(),
+                );
+            });
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            out.textures_delta.clear();
+        }
+        texts
+    };
+    let unset = paint(None);
+    assert!(
+        unset.iter().any(|t| t.contains("x D")),
+        "non-vacuity: the rule text paints: {unset:?}"
+    );
+    assert!(
+        !unset.iter().any(|t| t.contains("mm")),
+        "a value in tool diameters paints \"mm\": {unset:?}"
+    );
+    let set = paint(Some(20.0));
+    assert!(
+        set.iter().any(|t| t == "mm"),
+        "a set length paints its unit: {set:?}"
     );
 }

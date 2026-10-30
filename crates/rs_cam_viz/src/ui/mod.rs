@@ -343,11 +343,6 @@ pub enum AppEvent {
     /// verdict row tells the operator their chipload is thin, and this is the
     /// answer to it that does not also rewrite the cut geometry.
     ApplyFeedsSpeeds(ToolpathId),
-    /// R1 (W3c, 2026-10-30): apply the recommended CUT only (DOC and WOC),
-    /// holding the speeds. The quiet `Cut` row of the Feeds tab routes
-    /// here. It is the same funnel as [`AppEvent::ApplyFeedsAll`], with
-    /// `ApplyScope::CutGeometry`.
-    ApplyFeedsCut(ToolpathId),
     /// S1 — set (or clear) the scallop-driven-stepover target on a
     /// DropCutter toolpath. `Some(h)` switches WOC to be derived from
     /// the cusp height + tool tip radius; `None` restores the formula

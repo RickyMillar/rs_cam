@@ -26,7 +26,7 @@ use super::operations::validate_toolpath;
 use super::tab_badges::{compute_tab_badges, draw_tool_row, draw_toolpath_tabs};
 use super::{ToolpathPanelInputs, ToolpathPanelSnapshot, ToolpathTab, operations};
 use crate::ui::AppEvent;
-use crate::ui::components::{Notice, Role};
+use crate::ui::components::{Notice, PropRow, Role};
 
 #[expect(
     clippy::too_many_arguments,
@@ -93,12 +93,13 @@ pub(super) fn draw_toolpath_panel(
     // read-only heading was dropped (density pass 2026-06-11).
     // IC1: the operation's description is the hover of the name row. It used
     // to be an italic line at the top of the Geometry tab.
+    // W3g: a `PropRow` like the Tool row under it, so the header reads Name,
+    // Tool and the status line on one label column.
     let spec = entry.operation.op_type().spec();
-    ui.horizontal(|ui| {
-        ui.label("Name:")
-            .on_hover_text(format!("{}: {}", spec.label, spec.description));
-        ui.text_edit_singleline(&mut entry.name);
-    });
+    let name_hover = format!("{}: {}", spec.label, spec.description);
+    let _ = PropRow::new("Name")
+        .hover(Some(&name_hover))
+        .show_widget(ui, egui::TextEdit::singleline(&mut entry.name));
     // W2b: THE finding list of this toolpath and THE placement of each
     // finding. `placement::place` is the only reader of the list here.
     let tool_for_diags = tool_configs

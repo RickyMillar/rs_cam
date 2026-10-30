@@ -1,4 +1,4 @@
-//! The Feeds tab: the speed rows, the quiet Cut row, the measured
+//! The Feeds tab: the speed rows, the measured
 //! operating point, the vendor LUT viewer and the entry-style preview
 //! diagram. The comparison card (current against recommended, and Apply) is
 //! in the Explore window (`ui/feeds/compare.rs`, W3c).
@@ -7,7 +7,6 @@ use super::linking_dressup::{Fields, help_for};
 use crate::state::toolpath::{
     DressupConfig, DressupEntryStyle, HeightsConfig, OperationConfig, ToolpathEntry,
 };
-use crate::ui::AppEvent;
 use crate::ui::components::{
     DataRow, DataTable, Details, PropRow, ProvKind, Role, SectionHeader, Source,
 };
@@ -24,20 +23,16 @@ const SUGGESTED_HOVER: &str = "Suggested by the calculator. Type a value to repl
 const NOT_SET_HOVER: &str = "Not set. The calculator has no data for this tool and \
      material, so type a value. The operation does not generate until it is set.";
 
-/// The hover of the quiet Cut row.
-const CUT_ROW_HOVER: &str = "The depth per pass and the stepover that the calculator \
-     suggests for this tool and material. Use writes them through the safety clamps and \
-     keeps the speeds. The Explore window shows the full comparison.";
-
 /// Run the LUT calculator (read-only) through the entry's `FeedsMemo`
-/// (F216), and draw the derived rows of the tab: the quiet Cut row and the
-/// measured operating point. With no basis, one line gives the refusal.
+/// (F216), and draw the derived rows of the tab: the measured operating
+/// point. With no basis, one line gives the refusal.
 ///
 /// R1 (operator ruling 2026-10-30) replaces F.5 ("the calculator never
 /// writes"): core seeds each EMPTY feed field with the Suggest value on op
 /// add, and each empty or suggested one on a tool change
 /// (`ProjectSession::seed_feeds`). This draw
-/// writes nothing; the Cut row asks for the cut half through the funnel.
+/// writes nothing. W3g: the cut half of the recommendation is the "⚡"
+/// action of the Depth/pass and Stepover rows on the Passes tab.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -53,7 +48,6 @@ pub(super) fn calculate_and_apply_feeds(
     // Q1: the bbox of the model this toolpath machines, from
     // `ToolpathPanelSnapshot`. The memo key reads it.
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
-    events: &mut Vec<AppEvent>,
 ) {
     // F216: the same memo the Geometry tab's pills read. The calculator
     // runs only when an input moved.
@@ -73,7 +67,7 @@ pub(super) fn calculate_and_apply_feeds(
         entry.feeds_result.is_some(),
         entry.feeds_memo.refusal().map(ToString::to_string),
     ) {
-        (true, _) => draw_feeds_card(ui, entry, load_verdict, events),
+        (true, _) => draw_feeds_card(ui, load_verdict),
         (false, Some(e)) => {
             ui.add_space(8.0);
             // G-E (4): one line that truncates; its hover is the full text.
@@ -261,7 +255,7 @@ fn speed_prop_row<'a>(
     )
 }
 
-/// One speed row: a `DragValue` that fills the control area, the unit
+/// One speed row: a `DragValue` in the numeric well (W3g), the unit
 /// inside the well, and ⚡ in amber in the left padding of the well when
 /// Suggest wrote the value (R1). The mark takes no width from the value, so
 /// a five-digit RPM fits the 240-point rail.
@@ -285,14 +279,18 @@ fn speed_row(
 ) -> bool {
     let mut changed = false;
     let was_set = val.is_some();
-    let out = row.detail(detail.as_deref()).unit(unit).show(ui, |ui| {
-        // An empty value draws "—" (`NumberSpec::new`).
-        let spec = crate::ui::components::NumberSpec::new(speed).range(range);
-        let (resp, edited) =
-            crate::ui::components::optional_number_field(ui, val, &spec, ui.available_size());
-        changed |= edited;
-        resp
-    });
+    let out = row
+        .detail(detail.as_deref())
+        .numeric()
+        .unit(unit)
+        .show(ui, |ui| {
+            // An empty value draws "—" (`NumberSpec::new`).
+            let spec = crate::ui::components::NumberSpec::new(speed).range(range);
+            let (resp, edited) =
+                crate::ui::components::optional_number_field(ui, val, &spec, ui.available_size());
+            changed |= edited;
+            resp
+        });
     let mark = suggested && was_set;
     if mark {
         // The mark sits in the left padding of the well, before the value.
@@ -316,66 +314,19 @@ fn speed_row(
     changed
 }
 
-/// The derived rows of the tab: the quiet Cut row, then the measured
-/// operating point. W3c moved the comparison card (the recommendation
-/// table, `⚡ Apply all`, `⚡ Speeds only`) into the Explore window.
+/// The derived rows of the tab: the measured operating point. W3c moved
+/// the comparison card (the recommendation table, `⚡ Apply all`,
+/// `⚡ Speeds only`) into the Explore window.
 fn draw_feeds_card(
     ui: &mut egui::Ui,
-    entry: &ToolpathEntry,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    events: &mut Vec<AppEvent>,
 ) {
-    draw_cut_row(ui, entry, events);
-
-    // This is accepted simulation evidence, not a recommendation. Keep it
-    // apart from the Cut row so planned and measured values never read as
-    // interchangeable.
+    // This is accepted simulation evidence, not a recommendation.
     if let Some(v) = load_verdict
         && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
     {
         ui.add_space(8.0);
         draw_operating_point(ui, v);
-    }
-}
-
-/// The quiet Cut row (W3c): the depth per pass and the stepover that the
-/// funnel writes under `ApplyScope::CutGeometry`, where they differ from the
-/// op at the printed precision. `Use` sends `AppEvent::ApplyFeedsCut`. The
-/// values are the funnel dry run in the memo (F216), not the raw
-/// calculator values (G-PILLCLAMP).
-fn draw_cut_row(ui: &mut egui::Ui, entry: &ToolpathEntry, events: &mut Vec<AppEvent>) {
-    let Some(previews) = entry.feeds_memo.previews() else {
-        return;
-    };
-    let differs = |field: FeedsField, current: Option<f64>| {
-        previews
-            .get(field)
-            .map(|p| p.value)
-            .filter(|v| current.is_none_or(|c| format!("{c:.2}") != format!("{v:.2}")))
-    };
-    let parts: Vec<String> = [
-        (
-            "DOC",
-            differs(FeedsField::DepthPerPass, entry.operation.depth_per_pass()),
-        ),
-        (
-            "WOC",
-            differs(FeedsField::Stepover, entry.operation.stepover()),
-        ),
-    ]
-    .into_iter()
-    .filter_map(|(name, value)| value.map(|v| format!("{name} {v:.2} mm")))
-    .collect();
-    if parts.is_empty() {
-        return;
-    }
-    ui.add_space(4.0);
-    let out = PropRow::new("Cut")
-        .hover(Some(CUT_ROW_HOVER))
-        .action("Use")
-        .show_read_only(ui, format!("suggested {}", parts.join(" \u{00B7} ")));
-    if out.action_clicked {
-        events.push(AppEvent::ApplyFeedsCut(entry.id));
     }
 }
 

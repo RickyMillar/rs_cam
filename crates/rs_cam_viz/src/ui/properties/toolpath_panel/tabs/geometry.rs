@@ -150,13 +150,12 @@ fn draw_machining_boundary(
     // tab. The holes option inverts the regions: the toolpath cuts inside
     // the holes of the shapes and stays off the shapes.
     if let BoundarySource::Selection { holes, .. } = &mut entry.boundary.source {
-        let out = PropRow::new("Holes")
+        let _ = PropRow::new("Holes")
             .hover(Some(
                 "The toolpath cuts inside the holes of the shapes, for example the area \
                  inside an edge band, and stays off the shapes.",
             ))
-            .show(ui, |ui| ui.checkbox(holes, "Machine the holes"));
-        let _ = out.inner.on_hover_text(&out.hover);
+            .checkbox(ui, holes, "");
     }
 
     // Rest-regions source-toolpath picker (P2.2) — only shown when the

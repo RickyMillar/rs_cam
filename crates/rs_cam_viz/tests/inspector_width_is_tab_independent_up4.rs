@@ -484,10 +484,26 @@ fn real_warning_shaped_feeds_tab_stays_inside_its_panel_ur1() {
         "the hardwood Profile fixture must render its real rubbing-floor warning; warnings: {:?}",
         result.warnings
     );
+    // W3/W4: the rubbing-floor warning anchors to the feed rate field, so
+    // the Feeds tab shows it as the Feed row's outline with the text on
+    // hover; the long warning text no longer paints on the face. Prove the
+    // warning is placed on that row (and so reaches this tab), then keep
+    // the left-clip check below.
+    let placed = rs_cam_viz::ui::properties::placed_findings(id, &state)
+        .expect("the fixture toolpath has a panel");
     assert!(
-        rendered.rendered_rubbing_warning,
-        "the steady-state frame did not paint the real rubbing-floor warning"
+        placed
+            .by_field
+            .iter()
+            .any(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
+        "the rubbing-floor warning must sit on the feed rate row; by_field: {:?}",
+        placed
+            .by_field
+            .iter()
+            .map(|d| d.id.as_str())
+            .collect::<Vec<_>>()
     );
+    let _ = rendered.rendered_rubbing_warning;
     assert!(
         rendered.max_left_clip <= 0.5,
         "the real warning-shaped Feeds tab painted text {:.2} points left of its panel clip \

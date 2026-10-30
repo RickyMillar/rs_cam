@@ -379,10 +379,14 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // feeds card in Explore, the small-caps section labels): Pocket
     // 10/15/13/17/22, 3D Rough 7/13/12/15/15, 3D Finish 9/10/13/16/14.
     // Each cap is the measure, with no margin.
+    // W3g (2026-10-30): the Feeds tab Cut row is gone (the suggestion is
+    // the "⚡" action of Depth/pass and Stepover on Passes): Feeds 13/12/13
+    // -> 12/11/12. The other tabs keep their measure (each W3g fix swaps a
+    // line for a line).
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [10, 15, 13, 17, 22]),
-        ("3D Rough", [7, 13, 12, 15, 15]),
-        ("3D Finish", [9, 10, 13, 16, 14]),
+        ("Pocket", [10, 15, 12, 17, 22]),
+        ("3D Rough", [7, 13, 11, 15, 15]),
+        ("3D Finish", [9, 10, 12, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs

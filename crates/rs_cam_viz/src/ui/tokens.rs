@@ -831,3 +831,26 @@ pub const FIX_BUTTON_WIDTH: f32 = 100.0;
 /// `LABEL_COL_WIDTH` and the grid gap it fits the 240-point Simulation rail;
 /// a longer choice truncates and shows in full in the open menu.
 pub const INSPECTOR_COMBO_WIDTH: f32 = 72.0;
+
+/// The width of the value of a numeric `PropRow` well (W3g). The lib test
+/// `the_number_tokens_hold_the_widest_text_w3g` measures the widest value
+/// text ("-8888.88": a feed of four digits, a Z of three) at `SIZE_BODY`
+/// plus the button padding against it, on the 4-point grid. With an action
+/// such as "⚡ 0.83" the well still fits the 340-point inspector.
+pub const NUMBER_VALUE_WIDTH: f32 = 68.0;
+
+/// The width of the unit slot at the right end of a numeric well (W3g).
+/// Every numeric well keeps this slot, so the numbers of a column end at
+/// one x whatever the unit. The same lib test measures each unit of the
+/// inspector ("mm/min" is the widest, 42.0 points on 2026-10-30) at
+/// `SIZE_CAPTION` against it, on the 4-point grid.
+pub const UNIT_SLOT_WIDTH: f32 = 44.0;
+
+/// The width of a numeric `PropRow` well (W3g): the value, the gap, the
+/// unit slot and the inner padding on each side. The well starts at the
+/// control column and does not stretch across it.
+pub const NUMBER_WELL_WIDTH: f32 = NUMBER_VALUE_WIDTH + SPACE_2 + UNIT_SLOT_WIDTH + 2.0 * SPACE_3;
+
+/// The fill of a list box (W3g): an inset surface under the field rows, so
+/// a list of items does not read as one more control.
+pub const LIST_FILL: Color32 = SURFACE_SUNKEN;

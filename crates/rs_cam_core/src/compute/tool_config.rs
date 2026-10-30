@@ -477,6 +477,48 @@ impl ToolConfig {
         }
     }
 
+    /// The short label of the tool for a closed dropdown (W3g): the type
+    /// and the size that sets the cut, in the unit of
+    /// [`Self::effective_size_units`]. [`Self::summary`] is the full text.
+    ///
+    /// - End mill: `End mill Ø6.00` (with ` R0.50` for a corner radius)
+    /// - Ball nose: `Ball nose Ø6.00`
+    /// - Bull nose: `Bull nose Ø6.00 R1.00`
+    /// - V-bit: `V-bit Ø12.70 60°`
+    /// - Tapered ball: `Tapered ball R1.00 · 5.7°` (the tip radius and the
+    ///   taper half-angle)
+    pub fn short_label(&self) -> String {
+        let length = |mm: f64| match self.effective_size_units() {
+            SizeUnits::Metric => format!("{mm:.2}"),
+            SizeUnits::Imperial => size_units::inch_text(mm),
+        };
+        let d = self.diameter;
+        match self.tool_type {
+            ToolType::EndMill if self.corner_radius_mm > 0.0 => format!(
+                "End mill \u{00D8}{} R{}",
+                length(d),
+                length(self.corner_radius_mm)
+            ),
+            ToolType::EndMill => format!("End mill \u{00D8}{}", length(d)),
+            ToolType::BallNose => format!("Ball nose \u{00D8}{}", length(d)),
+            ToolType::BullNose => format!(
+                "Bull nose \u{00D8}{} R{}",
+                length(d),
+                length(self.corner_radius)
+            ),
+            ToolType::VBit => format!(
+                "V-bit \u{00D8}{} {:.0}\u{00B0}",
+                length(d),
+                self.included_angle
+            ),
+            ToolType::TaperedBallNose => format!(
+                "Tapered ball R{} \u{00B7} {:.1}\u{00B0}",
+                length(d / 2.0),
+                self.taper_half_angle
+            ),
+        }
+    }
+
     /// The unit this tool's size is shown and entered in: the stored
     /// [`Self::size_units`], else Imperial when the name carries an inch
     /// token (`"`, `”`, `in`, `inch`, a fraction such as `1/4"`, a
@@ -1923,6 +1965,10 @@ product_id = ""
             "Tapered Ball Nose tip \u{00D8}2.00 mm (R1.00), shank \u{00D8}6.00, 5.7\u{00B0} half-angle"
         );
         assert_eq!(taper.diameter_field_label(), "Tip \u{00D8}:");
+        assert_eq!(
+            taper.short_label(),
+            "Tapered ball R1.00 \u{00B7} 5.7\u{00B0}"
+        );
         assert_eq!(taper.derived_tip_radius_text().as_deref(), Some("= R1.00"));
 
         let mut bull = ToolConfig::new_default(ToolId::from_raw(0), ToolType::BullNose);
@@ -1937,6 +1983,10 @@ product_id = ""
         assert_eq!(vbit.size_label(), "\u{00D8}12.70 mm, 60\u{00B0}");
         assert_eq!(vbit.summary(), "V-Bit \u{00D8}12.70 mm, 60\u{00B0}");
         assert_eq!(vbit.diameter_field_label(), "Diameter \u{00D8}:");
+        assert_eq!(vbit.short_label(), "V-bit \u{00D8}12.70 60\u{00B0}");
+        assert_eq!(bull.short_label(), "Bull nose \u{00D8}6.00 R1.00");
+        assert_eq!(ball.short_label(), "Ball nose \u{00D8}6.00");
+        assert_eq!(end_mill.short_label(), "End mill \u{00D8}6.00 R0.50");
     }
 
     /// The tokens the parse reads, each checked against a tool whose

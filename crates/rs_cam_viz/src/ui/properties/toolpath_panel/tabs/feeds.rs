@@ -8,7 +8,7 @@ use crate::ui::properties::feeds_speeds::{
 use crate::ui::properties::linking_dressup::Fields;
 
 /// The Feeds tab: how fast. The speed rows (R1: a suggested value shows
-/// ⚡), the quiet Cut row, the measured operating point, `Explore…` (the
+/// ⚡), the measured operating point, `Explore…` (the
 /// nomogram and the full comparison card) and the vendor data of the tool.
 pub(in crate::ui::properties::toolpath_panel) fn draw_feeds_tab(
     ui: &mut egui::Ui,
@@ -36,7 +36,6 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_feeds_tab(
             inputs.spindle_strategy,
             inputs.load_verdict(),
             model_bbox,
-            events,
         );
         ui.add_space(4.0);
         if ui

@@ -33,6 +33,7 @@ pub mod freshness;
 pub mod histogram;
 pub mod kv_row;
 pub mod line;
+pub mod list_box;
 pub mod motion;
 pub mod notes_counter;
 pub mod notice;
@@ -58,6 +59,7 @@ pub use freshness::{Freshness, FreshnessGate};
 pub use histogram::{DistributionChart, DistributionChartResponse};
 pub use kv_row::{KeyValueRow, Value as KeyValue};
 pub use line::OneLine;
+pub use list_box::{ListBox, ListLine, list_header, list_row};
 pub use notes_counter::NotesCounter;
 pub use notice::{
     Banner, CollapsedNotice, EmptyState, IssueStackResponse, NotMeasured, Notice, NoticeStack,

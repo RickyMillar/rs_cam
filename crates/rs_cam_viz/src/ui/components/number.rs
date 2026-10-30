@@ -118,7 +118,7 @@ fn sized_with_unit(
     widget: impl egui::Widget,
 ) -> egui::Response {
     let Some(unit) = spec.unit else {
-        return ui.add_sized(size, widget);
+        return add_right_aligned(ui, size, widget);
     };
     let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
     let unit_w = ui
@@ -129,7 +129,7 @@ fn sized_with_unit(
     let gap = tokens::SPACE_2;
     // The value gives up width first, so the unit stays inside the area.
     let value_w = size.x.min((ui.available_width() - unit_w - gap).max(0.0));
-    let response = ui.add_sized(egui::vec2(value_w, size.y), widget);
+    let response = add_right_aligned(ui, egui::vec2(value_w, size.y), widget);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(unit_w + gap, size.y), egui::Sense::hover());
     ui.painter().text(
         egui::pos2(rect.right(), rect.center().y),
@@ -138,6 +138,43 @@ fn sized_with_unit(
         font,
         tokens::TEXT_FAINT,
     );
+    response
+}
+
+/// W3g: draw `widget` at the right edge of an area of `size`, at the width
+/// of its text. A number then ends at the right edge of its area, so the
+/// numbers of a column of rows end at one x (the digits of the body font
+/// are tabular). The area is allocated in full.
+fn add_right_aligned(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    widget: impl egui::Widget,
+) -> egui::Response {
+    let out = ui.allocate_ui_with_layout(
+        size,
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.set_min_size(size);
+            // The widget takes the width of its text, not the minimum
+            // interact width, so a short value does not centre in it.
+            ui.spacing_mut().interact_size.x = 0.0;
+            ui.add(widget)
+        },
+    );
+    let response = out.inner;
+    // A click in the empty part of the area starts the edit of the value,
+    // as a click on the value does.
+    let rest = egui::Rect::from_min_max(
+        out.response.rect.min,
+        egui::pos2(response.rect.left(), out.response.rect.max.y),
+    );
+    if rest.width() > 0.0
+        && ui
+            .interact(rest, response.id.with("rest"), egui::Sense::click())
+            .clicked()
+    {
+        ui.memory_mut(|m| m.request_focus(response.id));
+    }
     response
 }
 
@@ -227,7 +264,9 @@ impl PropRow<'_> {
         value: &mut N,
         spec: &NumberSpec<'_>,
     ) -> PropRowResponse<egui::Response> {
-        let mut out = self.show(ui, |ui| number_field(ui, value, spec, ui.available_size()));
+        let mut out = self
+            .numeric()
+            .show(ui, |ui| number_field(ui, value, spec, ui.available_size()));
         out.inner = out.inner.on_hover_text(&out.hover);
         out
     }
@@ -240,7 +279,7 @@ impl PropRow<'_> {
         value: &mut Option<f64>,
         spec: &NumberSpec<'_>,
     ) -> PropRowResponse<(egui::Response, bool)> {
-        let mut out = self.show(ui, |ui| {
+        let mut out = self.numeric().show(ui, |ui| {
             optional_number_field(ui, value, spec, ui.available_size())
         });
         out.inner.0 = out.inner.0.on_hover_text(&out.hover);
@@ -289,6 +328,10 @@ pub fn suggest_hover(label: &str, suffix: &str, s: &Suggestion<'_>, matches: boo
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::panic,
+    reason = "test code: a panic is how a test reports a failure"
+)]
 mod tests {
     use super::*;
     use crate::ui::components::ProvKind;
@@ -345,5 +388,107 @@ mod tests {
         let text = suggest_hover("Stepover:", " mm", &s, false);
         assert!(!text.contains("Calculator"), "{text}");
         assert!(!text.contains("not clamped"), "{text}");
+    }
+
+    fn ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        tokens::apply(&ctx);
+        tokens::apply_fonts(&ctx);
+        let mut warmup = ctx.run_ui(egui::RawInput::default(), |_ui| {});
+        warmup.textures_delta.clear();
+        ctx
+    }
+
+    /// The painted text runs of one frame, with their rectangles.
+    fn painted(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        out.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::epaint::Shape::Text(t) => {
+                    Some((t.galley.job.text.clone(), c.shape.visual_bounding_rect()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// W3g (operator, 2026-10-30: "the units shift them off centre"): two
+    /// numeric wells with the units "mm" and "mm/min" put the right edge of
+    /// the number at the same x, and a short and a long number end at one
+    /// x too.
+    #[test]
+    fn numbers_end_at_one_x_whatever_the_unit_w3g() {
+        let ctx = ctx();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(340.0);
+            let mut a = 1.5_f64;
+            let mut b = 3999.0_f64;
+            let spec = NumberSpec::new(1.0).decimals(1);
+            let _ = PropRow::new("Depth/pass")
+                .unit("mm")
+                .number(ui, &mut a, &spec);
+            let _ = PropRow::new("Feed")
+                .unit("mm/min")
+                .number(ui, &mut b, &spec);
+        });
+        let texts = painted(&out);
+        out.textures_delta.clear();
+        let right = |needle: &str| {
+            texts
+                .iter()
+                .find(|(t, _)| t == needle)
+                .map(|(_, r)| r.right())
+                .unwrap_or_else(|| panic!("{needle} not painted: {texts:?}"))
+        };
+        let (short, long) = (right("1.5"), right("3999.0"));
+        assert!(
+            (short - long).abs() < 1.0,
+            "the numbers end at {short} and {long}"
+        );
+        let (mm, mm_min) = (
+            texts.iter().find(|(t, _)| t == "mm").map(|(_, r)| r.left()),
+            texts
+                .iter()
+                .find(|(t, _)| t == "mm/min")
+                .map(|(_, r)| r.left()),
+        );
+        assert!(
+            mm.zip(mm_min).is_some_and(|(a, b)| (a - b).abs() < 1.0),
+            "{texts:?}"
+        );
+    }
+
+    /// W3g: the number tokens hold the widest text that they carry. The
+    /// widths are measured with the inspector fonts, not typed.
+    #[test]
+    fn the_number_tokens_hold_the_widest_text_w3g() {
+        let ctx = ctx();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let width = |text: &str, size: f32| {
+                ui.painter()
+                    .layout_no_wrap(
+                        text.to_owned(),
+                        egui::FontId::proportional(size),
+                        tokens::TEXT_FAINT,
+                    )
+                    .size()
+                    .x
+            };
+            let value = width("-8888.88", tokens::SIZE_BODY) + 2.0 * ui.spacing().button_padding.x;
+            assert!(
+                value <= tokens::NUMBER_VALUE_WIDTH,
+                "the widest value is {value} points, the token {}",
+                tokens::NUMBER_VALUE_WIDTH
+            );
+            for unit in ["mm", "mm/min", "RPM", "deg", "s", "1/mm", "\u{00D7} D", "%"] {
+                let w = width(unit, tokens::SIZE_CAPTION);
+                assert!(
+                    w <= tokens::UNIT_SLOT_WIDTH,
+                    "the unit {unit:?} is {w} points, the slot {}",
+                    tokens::UNIT_SLOT_WIDTH
+                );
+            }
+        });
+        out.textures_delta.clear();
     }
 }

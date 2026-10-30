@@ -622,10 +622,11 @@ fn a_kind_the_op_never_cuts_is_one_line_f32() {
         "no Selected row on the default rule: {texts:#?}"
     );
     // The default list holds the 3 circles and the point, not the paths.
+    // W3g: the default rule is the Source row; the Cuts row gives the
+    // count of the kinds that the Drill cuts.
     assert!(
-        texts
-            .iter()
-            .any(|t| t.starts_with("Default: every") && t.ends_with("(4)")),
+        texts.iter().any(|t| *t == "Every point, circle")
+            && texts.iter().any(|t| *t == "1 point \u{00B7} 3 circles"),
         "the default list holds the kinds that the Drill cuts: {texts:#?}"
     );
     assert!(

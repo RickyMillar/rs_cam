@@ -271,26 +271,18 @@ fn draw_surface_row(
             .unwrap_or_else(|| "no face".to_owned()),
         _ => "Whole model".to_owned(),
     };
+    // W3g: no action while the pick is on (the pick bar has "Done"); "Pick"
+    // when the operator left it.
     let on = selection_ui.pick_is_on(entry.id, SelectionTarget::Boundary);
-    let action = if on {
-        super::selection_section::PICK_DONE
-    } else {
-        PICK_FACES_LABEL
-    };
-    if PropRow::new("Surface")
-        .hover(Some(PICK_FACES_HOVER))
-        .action(action)
-        .show_read_only(ui, value)
-        .action_clicked
-    {
-        selection_ui.set_pick(if on {
-            None
-        } else {
-            Some(crate::state::pick::PickMode::new(
-                entry.id,
-                SelectionTarget::Boundary,
-                BOUNDARY_ITEM_USE,
-            ))
-        });
+    let mut row = PropRow::new("Surface").hover(Some(PICK_FACES_HOVER));
+    if !on {
+        row = row.action(PICK_FACES_LABEL);
+    }
+    if row.show_read_only(ui, value).action_clicked {
+        selection_ui.set_pick(Some(crate::state::pick::PickMode::new(
+            entry.id,
+            SelectionTarget::Boundary,
+            BOUNDARY_ITEM_USE,
+        )));
     }
 }

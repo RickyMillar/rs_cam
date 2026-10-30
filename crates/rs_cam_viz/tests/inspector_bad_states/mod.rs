@@ -38,8 +38,12 @@ use rs_cam_viz::state::toolpath::ToolpathResult;
 use rs_cam_viz::ui::properties::{self, ToolpathTab};
 use rs_cam_viz::ui::tokens;
 
-/// The default inspector width of IC1 (`app.rs`).
-pub const PANEL_WIDTH: f32 = 280.0;
+/// The default toolpath inspector width (`app.rs`; R4, operator ruling
+/// 2026-10-30: 340). W3g moved the W0 screens from 280 to it.
+pub const PANEL_WIDTH: f32 = 340.0;
+
+/// The Simulation workspace's right rail, the narrowest inspector.
+pub const RAIL_WIDTH: f32 = 240.0;
 
 /// The 6 mm flat end mill.
 pub const TOOL_FLAT: usize = 1;
@@ -595,6 +599,20 @@ pub fn render_with_outlines(
 /// context and return the second frame.
 pub fn screen(state: &mut AppState, id: ToolpathId, tab: ToolpathTab) -> Vec<Painted> {
     screen_with_outlines(state, id, tab).0
+}
+
+/// [`screen`] at `width`.
+pub fn screen_at(
+    state: &mut AppState,
+    id: ToolpathId,
+    tab: ToolpathTab,
+    width: f32,
+) -> Vec<Painted> {
+    let ctx = ctx();
+    state.gui.pending_toolpath_tab = Some((id, tab));
+    let _ = state.set_focus(Selection::Toolpath(id));
+    let _ = render(&ctx, state, width);
+    render(&ctx, state, width)
 }
 
 /// [`screen`], and the number of field rows in a Danger or Caution state.

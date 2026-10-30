@@ -731,9 +731,6 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyFeedsSpeeds(toolpath_id) => {
                 self.apply_feeds_speeds(toolpath_id);
             }
-            AppEvent::ApplyFeedsCut(toolpath_id) => {
-                self.apply_feeds_cut(toolpath_id);
-            }
             AppEvent::SetDropCutterScallopHeight { toolpath_id, value } => {
                 self.set_drop_cutter_scallop_height(toolpath_id, value);
             }
@@ -1177,21 +1174,6 @@ impl<B: ComputeBackend> AppController<B> {
         ) {
             self.push_notification(
                 format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
-                crate::controller::Severity::Warning,
-            );
-        }
-    }
-
-    /// R1 (W3c): the cut half of the recommendation (DOC and WOC) through
-    /// the one funnel, `ApplyScope::CutGeometry`. The speeds stay.
-    fn apply_feeds_cut(&mut self, toolpath_id: crate::state::toolpath::ToolpathId) {
-        if let Err(why) = self.apply_feeds_through_funnel(
-            toolpath_id,
-            rs_cam_core::feeds::suggest::ApplyScope::CutGeometry,
-            None,
-        ) {
-            self.push_notification(
-                format!("Cut not applied to toolpath {}: {why}", toolpath_id.raw()),
                 crate::controller::Severity::Warning,
             );
         }

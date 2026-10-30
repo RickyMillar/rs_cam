@@ -17,6 +17,13 @@
 //! A read-only row ([`PropRow::show_read_only`]) has the same geometry with
 //! no well; its state is a line under the value in the role colour.
 //!
+//! W3g: a numeric row ([`PropRow::numeric`]) has a well of
+//! `NUMBER_WELL_WIDTH` at the start of the control column, not one across
+//! the column. Its unit slot has the fixed `UNIT_SLOT_WIDTH`, so the
+//! numbers of a column end at one x whatever the unit. A checkbox row
+//! ([`PropRow::checkbox`]) draws the box alone at the start of the control
+//! column, with no well.
+//!
 //! The row is a standalone line. It does not call `end_row`, so it does not
 //! need an `egui::Grid`: the label column is a fixed allocation.
 //!
@@ -138,6 +145,20 @@ pub struct PropRow<'a> {
     explanation: Option<&'a str>,
     detail: Option<&'a str>,
     action: Option<&'a str>,
+    action_hover: Option<&'a str>,
+    numeric: bool,
+    unit_slot: bool,
+}
+
+/// What the row draws around its control.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Frame {
+    /// The editable well.
+    Well,
+    /// No well; a state is a line under the value (the read-only row).
+    ReadOnly,
+    /// No well and no line; the control draws its own state (a checkbox).
+    Bare,
 }
 
 impl<'a> PropRow<'a> {
@@ -149,7 +170,34 @@ impl<'a> PropRow<'a> {
             explanation: None,
             detail: None,
             action: None,
+            action_hover: None,
+            numeric: false,
+            unit_slot: true,
         }
+    }
+
+    /// W3g: a numeric row. The well is `NUMBER_WELL_WIDTH` wide at the start
+    /// of the control column, and it keeps a unit slot of `UNIT_SLOT_WIDTH`
+    /// at its right end, with or without a unit. A number that the control
+    /// right-aligns then ends at the same x in every numeric row.
+    pub fn numeric(mut self) -> Self {
+        self.numeric = true;
+        self
+    }
+
+    /// A numeric row whose control takes the unit slot too: an unset value
+    /// that shows a rule text ("8 x D") has no unit, and the text needs
+    /// the room.
+    pub fn without_unit_slot(mut self) -> Self {
+        self.unit = None;
+        self.unit_slot = false;
+        self
+    }
+
+    /// The hover of the trailing action.
+    pub fn action_hover(mut self, hover: &'a str) -> Self {
+        self.action_hover = Some(hover);
+        self
     }
 
     /// The unit, drawn as a suffix inside the well.
@@ -191,7 +239,7 @@ impl<'a> PropRow<'a> {
         ui: &mut egui::Ui,
         control: impl FnOnce(&mut egui::Ui) -> R,
     ) -> PropRowResponse<R> {
-        self.draw(ui, true, |ui| {
+        self.draw(ui, Frame::Well, |ui| {
             let visuals = ui.visuals_mut();
             for w in [
                 &mut visuals.widgets.inactive,
@@ -229,7 +277,7 @@ impl<'a> PropRow<'a> {
         value: impl Into<String>,
     ) -> PropRowResponse<egui::Response> {
         let value = value.into();
-        let mut out = self.draw(ui, false, |ui| {
+        let mut out = self.draw(ui, Frame::ReadOnly, |ui| {
             ui.add(
                 egui::Label::new(
                     egui::RichText::new(&value)
@@ -244,16 +292,62 @@ impl<'a> PropRow<'a> {
         out
     }
 
+    /// W3g: draw an on/off row. The box sits alone at the start of the
+    /// control column, with no well; `text` (empty for none) follows the
+    /// box. A field state draws the outline of the box in the role colour.
+    /// The box has the row hover.
+    pub fn checkbox(
+        self,
+        ui: &mut egui::Ui,
+        on: &mut bool,
+        text: &str,
+    ) -> PropRowResponse<egui::Response> {
+        let state = field_state(self.state);
+        let mut out = self.draw(ui, Frame::Bare, |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            if text.is_empty() {
+                ui.add(egui::Checkbox::without_text(on))
+            } else {
+                ui.checkbox(on, text)
+            }
+        });
+        if let Some(role) = state {
+            let side = ui.spacing().icon_width;
+            let box_rect = egui::Rect::from_center_size(
+                egui::pos2(
+                    out.inner.rect.left() + side / 2.0,
+                    out.inner.rect.center().y,
+                ),
+                egui::vec2(side, side),
+            )
+            .expand(1.0);
+            ui.painter().rect_stroke(
+                box_rect,
+                egui::CornerRadius::from(tokens::RADIUS_SM),
+                egui::Stroke::new(1.0, role.text()),
+                egui::StrokeKind::Outside,
+            );
+        }
+        out.inner = out.inner.on_hover_text(&out.hover);
+        out
+    }
+
     fn draw<R>(
         self,
         ui: &mut egui::Ui,
-        well: bool,
+        frame: Frame,
         control: impl FnOnce(&mut egui::Ui) -> R,
     ) -> PropRowResponse<R> {
         let width = ui.available_width().max(tokens::LABEL_COL_WIDTH);
         let (row, response) =
             ui.allocate_exact_size(egui::vec2(width, tokens::ROW_ACTION), egui::Sense::hover());
-        let rects = layout(ui, row, self.unit, self.action);
+        let rects = layout(
+            ui,
+            row,
+            self.unit,
+            self.action,
+            self.numeric.then_some(self.unit_slot),
+        );
         // egui gives the hover to the top widget only, so the hover goes on
         // the row, on the label and (in `show_widget`, `show_read_only`) on
         // the control.
@@ -273,7 +367,7 @@ impl<'a> PropRow<'a> {
             .on_hover_text(&hover);
 
         // The well.
-        if well {
+        if frame == Frame::Well {
             ui.painter().rect(
                 rects.well,
                 egui::CornerRadius::from(tokens::RADIUS_SM),
@@ -281,7 +375,9 @@ impl<'a> PropRow<'a> {
                 egui::Stroke::new(1.0, outline_color(self.state)),
                 egui::StrokeKind::Inside,
             );
-        } else if let Some(role) = field_state(self.state) {
+        } else if frame == Frame::ReadOnly
+            && let Some(role) = field_state(self.state)
+        {
             // A read-only row has no box; its state is a line under the
             // value, in the role colour.
             ui.painter().line_segment(
@@ -309,7 +405,11 @@ impl<'a> PropRow<'a> {
         let mut action_clicked = false;
         if let (Some(action), Some(rect)) = (self.action, rects.action) {
             let mut action_ui = child(ui, rect);
-            action_clicked = action_ui.add(Button::quiet(action)).clicked();
+            let mut clicked = action_ui.add(Button::quiet(action));
+            if let Some(hover) = self.action_hover {
+                clicked = clicked.on_hover_text(hover);
+            }
+            action_clicked = clicked.clicked();
         }
 
         let response = response.on_hover_text(&hover);
@@ -336,7 +436,20 @@ fn child(ui: &mut egui::Ui, rect: egui::Rect) -> egui::Ui {
 }
 
 /// The rectangles of a row in `row`. Pure geometry from the tokens.
-fn layout(ui: &egui::Ui, row: egui::Rect, unit: Option<&str>, action: Option<&str>) -> RowRects {
+///
+/// A numeric row (W3g) bounds the well to `NUMBER_WELL_WIDTH` and keeps the
+/// unit slot of `UNIT_SLOT_WIDTH` whether it has a unit or not.
+/// `numeric` is `None` for a row that is not numeric, else whether the row
+/// keeps the unit slot.
+fn layout(
+    ui: &egui::Ui,
+    row: egui::Rect,
+    unit: Option<&str>,
+    action: Option<&str>,
+    numeric: Option<bool>,
+) -> RowRects {
+    let slot = numeric == Some(true);
+    let numeric = numeric.is_some();
     let gap = tokens::SPACE_3;
     let label = egui::Rect::from_min_size(
         row.min,
@@ -356,21 +469,46 @@ fn layout(ui: &egui::Ui, row: egui::Rect, unit: Option<&str>, action: Option<&st
         rect
     });
     let well_left = label.right() + gap;
+    let well_right = if numeric {
+        right.min(well_left + tokens::NUMBER_WELL_WIDTH)
+    } else {
+        right
+    };
     let well = egui::Rect::from_min_max(
         egui::pos2(well_left, row.top()),
-        egui::pos2(right.max(well_left), row.bottom()),
+        egui::pos2(well_right.max(well_left), row.bottom()),
     );
     let pad = tokens::SPACE_3;
     let mut control_right = well.right() - pad;
-    let unit_rect = unit.map(|u| {
-        let w = text_width(ui, u, egui::FontId::proportional(tokens::SIZE_CAPTION));
+    // A rail too narrow for the whole numeric well (the 240-point rail)
+    // gives the value the room first: the unit takes its own width, as in
+    // a row that is not numeric.
+    let slot = slot && well.width() + 0.5 >= tokens::NUMBER_WELL_WIDTH;
+    let numeric = numeric && (slot || unit.is_none());
+    // W3g: the fixed unit slot of a numeric row. The unit paints at the
+    // left edge of the slot; the value ends at one x in every numeric row.
+    let numeric_slot = slot.then(|| {
+        let slot_w = tokens::UNIT_SLOT_WIDTH.min((control_right - well.left() - pad).max(0.0));
         let rect = egui::Rect::from_min_max(
-            egui::pos2(control_right - w, well.top()),
+            egui::pos2(control_right - slot_w, well.top()),
             egui::pos2(control_right, well.bottom()),
         );
         control_right = rect.left() - tokens::SPACE_2;
         rect
     });
+    let unit_rect = if numeric {
+        unit.and(numeric_slot)
+    } else {
+        unit.map(|u| {
+            let w = text_width(ui, u, egui::FontId::proportional(tokens::SIZE_CAPTION));
+            let rect = egui::Rect::from_min_max(
+                egui::pos2(control_right - w, well.top()),
+                egui::pos2(control_right, well.bottom()),
+            );
+            control_right = rect.left() - tokens::SPACE_2;
+            rect
+        })
+    };
     let control_left = well.left() + pad;
     let control = egui::Rect::from_min_max(
         egui::pos2(control_left, well.top()),
@@ -396,6 +534,7 @@ fn text_width(ui: &egui::Ui, text: &str, font: egui::FontId) -> f32 {
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 mod tests {
@@ -553,6 +692,75 @@ mod tests {
         assert_eq!(outline_color(Some(Role::Caution)), tokens::CAUTION);
         assert_eq!(outline_color(Some(Role::Ok)), tokens::BORDER);
         assert_eq!(outline_color(None), tokens::BORDER);
+    }
+
+    /// W3g: a numeric well does not stretch across the control column. It
+    /// is `NUMBER_WELL_WIDTH` wide, it starts at the control column, and
+    /// the unit slot sits at its right end with or without a unit.
+    #[test]
+    fn a_numeric_well_is_bounded_w3g() {
+        let (rows, _) = draw(340.0, |ui| {
+            let mut v = 2.5_f64;
+            vec![
+                PropRow::new("Feed")
+                    .numeric()
+                    .unit("mm/min")
+                    .show_widget(ui, egui::DragValue::new(&mut v))
+                    .rects,
+                PropRow::new("Count")
+                    .numeric()
+                    .show_widget(ui, egui::DragValue::new(&mut v))
+                    .rects,
+                PropRow::new("Pattern").show_read_only(ui, "Contour").rects,
+            ]
+        });
+        let [feed, count, wide] = rows.as_slice() else {
+            panic!("three rows")
+        };
+        assert!(
+            (feed.well.width() - tokens::NUMBER_WELL_WIDTH).abs() < 0.01,
+            "{feed:?}"
+        );
+        assert!(
+            (feed.well.left() - wide.well.left()).abs() < 0.01,
+            "one well column"
+        );
+        assert!(wide.well.width() > feed.well.width() + 20.0, "{wide:?}");
+        // The control ends at the same x with and without a unit.
+        assert!((feed.control.right() - count.control.right()).abs() < 0.01);
+        let unit = feed.unit.unwrap();
+        assert!(
+            (unit.width() - tokens::UNIT_SLOT_WIDTH).abs() < 0.01,
+            "{unit:?}"
+        );
+    }
+
+    /// W3g: a checkbox row draws no well: no rectangle of the well fill in
+    /// the row, and the box sits at the start of the control column.
+    #[test]
+    fn a_checkbox_row_has_no_well_w3g() {
+        let ctx = ctx();
+        let mut rects = None;
+        let mut box_left = 0.0;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_width(340.0);
+            let mut on = true;
+            let row = PropRow::new("Climb").checkbox(ui, &mut on, "");
+            box_left = row.inner.rect.left();
+            rects = Some(row.rects);
+        });
+        let rects = rects.unwrap();
+        let wells = out
+            .shapes
+            .iter()
+            .filter(|c| matches!(&c.shape, egui::epaint::Shape::Rect(r) if r.fill == tokens::INPUT_WELL && r.rect.width() > 40.0))
+            .count();
+        out.textures_delta.clear();
+        assert_eq!(wells, 0, "a checkbox row paints no well");
+        assert!(
+            (box_left - rects.control.left()).abs() < 1.0,
+            "{box_left} vs {rects:?}"
+        );
     }
 
     /// At the 240-point rail the row still fits: nothing paints past the

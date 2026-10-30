@@ -227,16 +227,11 @@ pub const REST_MACHINING_CHECK: &str = "From previous ops";
 /// gives the full text.
 pub fn rest_machining_row(ui: &mut egui::Ui, source: &mut StockSource) -> egui::Response {
     let mut on = *source == StockSource::FromRemainingStock;
-    let out = crate::ui::components::PropRow::new(REST_MACHINING_LABEL)
+    // W3g: the checkbox form of the row: the box and its text, no well.
+    let response = crate::ui::components::PropRow::new(REST_MACHINING_LABEL)
         .hover(Some(START_FROM_HOVER))
-        .show(ui, |ui| {
-            // The row clears the widget fills for a field well; a checkbox
-            // needs its own box, so it draws with the normal style.
-            ui.reset_style();
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.checkbox(&mut on, REST_MACHINING_CHECK)
-        });
-    let response = out.inner.on_hover_text(&out.hover);
+        .checkbox(ui, &mut on, REST_MACHINING_CHECK)
+        .inner;
     if response.changed() {
         *source = if on {
             StockSource::FromRemainingStock
@@ -315,10 +310,18 @@ pub(super) fn draw_tool_row(
         .state(state)
         .hover(Some(TOOL_ROW_HOVER))
         .detail(Some(detail.as_str()));
+    // W3g: the closed dropdown shows the short label of the tool (core
+    // `ToolConfig::short_label`, the type and the size that sets the cut);
+    // the list and the hover show the full name.
+    let short = inputs
+        .tool_configs
+        .iter()
+        .find(|(id, _)| Some(*id) == entry.tool_id)
+        .map(|(_, tc)| tc.short_label());
     let out = row.show(ui, |ui| {
-        let selected = match current.as_deref() {
-            Some(name) => egui::RichText::new(name),
-            None => egui::RichText::new(CHOOSE_A_TOOL).color(crate::ui::tokens::DANGER),
+        let selected = match (short.as_deref(), current.as_deref()) {
+            (Some(text), _) | (None, Some(text)) => egui::RichText::new(text),
+            (None, None) => egui::RichText::new(CHOOSE_A_TOOL).color(crate::ui::tokens::DANGER),
         };
         egui::ComboBox::from_id_salt("tp_tool")
             .truncate()
@@ -363,7 +366,11 @@ pub(super) fn draw_tool_row(
             })
             .response
     });
-    let _ = out.inner.on_hover_text(&out.hover);
+    let hover = match current.as_deref() {
+        Some(name) => format!("{name}\n\n{}", out.hover),
+        None => out.hover,
+    };
+    let _ = out.inner.on_hover_text(hover);
 }
 
 /// The rest machining row and its rest comparison: the first rows of the

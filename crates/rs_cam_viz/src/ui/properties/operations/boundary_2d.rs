@@ -218,8 +218,9 @@ fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths, fields: Fields
 }
 
 /// The label of the Pocket "Cut past open sides" row (operator ruling
-/// 2026-10-23). The hover is the registry help of the parameter.
-pub(in crate::ui::properties) const OPEN_SIDES_LABEL: &str = "Cut past open sides";
+/// 2026-10-23). The hover is the registry help of the parameter. W3g: the
+/// label is short, so it fits the label column at 340 points.
+pub(in crate::ui::properties) const OPEN_SIDES_LABEL: &str = "Past open sides";
 
 /// The "Cut past open sides" row of Pocket (operator ruling 2026-10-23):
 /// one checkbox. On, the area of each model face grows out through each

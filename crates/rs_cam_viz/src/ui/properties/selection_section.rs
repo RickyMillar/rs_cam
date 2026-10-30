@@ -42,7 +42,9 @@ use super::SelectionRead;
 use crate::state::pick::{OffersFor, PickMode, SelectionUi};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
-use crate::ui::components::{Button, DataRow, DataTable, Details, PropRow, Role};
+use crate::ui::components::{
+    Button, DataRow, DataTable, Details, ListBox, ListLine, PropRow, Role, list_header, list_row,
+};
 use crate::ui::tokens;
 
 /// The most rows that a group shows before "Show N more", and the count
@@ -166,25 +168,24 @@ pub(crate) fn draw_selection_section(
     // (`placement::place`) and a read error are its state and hover.
     let cuts = cuts_state(inputs, report, read_error);
     let on = ui_state.pick_is_on(inputs.toolpath_id, inputs.target);
-    let picked = PropRow::new(summary_label(inputs.target))
+    // W3g (operator ruling 2026-10-30): the pick mode stays on while a 2D
+    // toolpath is selected, and the pick bar has "Done". So the row shows
+    // no action while the mode is on, and "Pick" when the operator left it.
+    let mut row = PropRow::new(summary_label(inputs.target))
         .state(cuts.state)
         .hover(Some(summary_hover(inputs.target)))
-        .detail(cuts.detail.as_deref())
-        .action(if on { PICK_DONE } else { PICK })
-        .show_read_only(ui, cuts.value)
-        .action_clicked;
-    if picked {
+        .detail(cuts.detail.as_deref());
+    if !on {
+        row = row.action(PICK);
+    }
+    if row.show_read_only(ui, cuts.value).action_clicked {
         // L-3: one Pick at a time. A click on this action replaces the
         // mode of any other block.
-        ui_state.set_pick(if on {
-            None
-        } else {
-            Some(PickMode::new(
-                inputs.toolpath_id,
-                inputs.target,
-                inputs.item_use,
-            ))
-        });
+        ui_state.set_pick(Some(PickMode::new(
+            inputs.toolpath_id,
+            inputs.target,
+            inputs.item_use,
+        )));
     }
     // GUI/MCP parity (operator rule): "Selected" is the held count, the
     // same number as MCP `selection_status`. On the default rule there is
@@ -243,8 +244,22 @@ pub(crate) fn draw_selection_section(
         }
         let filter = ui_state.list_filter.trim().to_lowercase();
         let groups = list_groups(inputs, report);
-        for group in &groups {
-            draw_group(ui, inputs, group, &filter, ui_state, events);
+        // W3g: the default rule is the field row "Source" (outside the
+        // list); its ▸ opens the list of its items.
+        if let Some(group) = groups.iter().find(|g| g.kind == GroupKind::Default) {
+            draw_source_row(ui, inputs, group, &filter);
+        }
+        // W3g: the groups and their rows are ONE list box under the field
+        // rows, so the list does not read as one more control.
+        let shown = groups
+            .iter()
+            .any(|g| g.kind != GroupKind::Default || group_view(ui, group_id(inputs, g), g).0);
+        if shown {
+            let _ = ListBox::new(inputs.salt("selected_list")).show(ui, |ui| {
+                for group in &groups {
+                    draw_group(ui, inputs, group, &filter, ui_state, events);
+                }
+            });
         }
     }
 
@@ -608,7 +623,48 @@ fn group_view(ui: &egui::Ui, id: egui::Id, group: &ListGroup) -> (bool, bool) {
         .unwrap_or((!group.starts_closed(), false))
 }
 
-/// Draw one group: the header row and, when open, its rows.
+/// The memory id of the view state of a group. It does not depend on the
+/// `Ui` that draws it: the Source row and the list box read one state.
+fn group_id(inputs: &SelectionSectionInputs<'_>, group: &ListGroup) -> egui::Id {
+    egui::Id::new(inputs.salt(&format!("group {:?}", group.kind)))
+}
+
+/// The value of the Source row: the default title with no "Default: "
+/// prefix, its first letter in upper case. "Every closed loop".
+pub(crate) fn source_value(title: &str) -> String {
+    let rest = title.strip_prefix("Default: ").unwrap_or(title);
+    let mut chars = rest.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
+/// W3g: the default rule as the read-only field row "Source" (FR-2 F32,
+/// L-R2). Its quiet action ▸ (▾ while open) opens the list of the items
+/// that the rule holds; the hover names the rule and the count.
+fn draw_source_row(
+    ui: &mut egui::Ui,
+    inputs: &SelectionSectionInputs<'_>,
+    group: &ListGroup,
+    filter: &str,
+) {
+    let id = group_id(inputs, group);
+    let (open, show_all) = group_view(ui, id, group);
+    let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
+    let hover = format!("{} ({})", group.hover, group.count_text(filter));
+    let clicked = PropRow::new("Source")
+        .hover(Some(&hover))
+        .action(arrow)
+        .action_hover("Show or hide the items of the default rule.")
+        .show_read_only(ui, source_value(&group.title))
+        .action_clicked;
+    if clicked {
+        ui.data_mut(|d| d.insert_temp(id, (!open, show_all)));
+    }
+}
+
+/// Draw one group in the list box: the list header and, when open, its
+/// rows. The default group has no header: the Source row is its header.
 fn draw_group(
     ui: &mut egui::Ui,
     inputs: &SelectionSectionInputs<'_>,
@@ -617,28 +673,25 @@ fn draw_group(
     ui_state: &mut SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
-    let id = ui.make_persistent_id(inputs.salt(&format!("group {:?}", group.kind)));
+    let id = group_id(inputs, group);
     let (mut open, mut show_all) = group_view(ui, id, group);
-    let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
-    let mut actions: Vec<(&str, &str)> = vec![(arrow, "Open or close this group.")];
-    if let GroupKind::Rule(_) = group.kind {
-        actions.push(("\u{2715}", "Remove this rule."));
-    }
-    let header = format!("{} ({})", group.title, group.count_text(filter));
-    let color = if group.kind == GroupKind::Default {
-        tokens::TEXT_MUTED
-    } else {
-        tokens::TEXT_BODY
-    };
-    let hover = format!("{} ({})", group.hover, group.count_text(filter));
-    match line_with_actions(ui, "", &header, color, &hover, &actions) {
-        Some(0) => open = !open,
-        Some(_) => {
-            if let GroupKind::Rule(index) = group.kind {
-                inputs.send(events, SelectionEdit::RemoveRule(index));
-            }
+    if group.kind != GroupKind::Default {
+        let arrow = if open { "\u{25BE}" } else { "\u{25B8}" };
+        let mut actions: Vec<(&str, &str)> = vec![(arrow, "Open or close this group.")];
+        if let GroupKind::Rule(_) = group.kind {
+            actions.push(("\u{2715}", "Remove this rule."));
         }
-        None => {}
+        let count = group.count_text(filter);
+        let hover = format!("{} ({count})", group.hover);
+        match list_header(ui, &group.title, &count, &hover, &actions).clicked {
+            Some(0) => open = !open,
+            Some(_) => {
+                if let GroupKind::Rule(index) = group.kind {
+                    inputs.send(events, SelectionEdit::RemoveRule(index));
+                }
+            }
+            None => {}
+        }
     }
     if open {
         let kept = group.kept(filter);
@@ -722,7 +775,7 @@ fn draw_row(
         ItemState::Cut | ItemState::Island => tokens::TEXT_BODY,
         ItemState::Skipped | ItemState::Excluded | ItemState::NotSelected => tokens::TEXT_MUTED,
     };
-    let (clicked, hovered) = line_with_actions_hover(ui, "", &text, color, &hover, &labels);
+    let ListLine { clicked, hovered } = list_row(ui, &text, color, &hover, &labels);
     if hovered {
         // GT-2: the viewport hover buffer draws the row item.
         ui_state.row_hover = Some(row.key.clone());
@@ -815,6 +868,33 @@ fn draw_offers(
 /// loops · 3 islands · 2 circles". P3.4: the faces name their down count,
 /// "4 faces (1 down)", in the setup frame. `None` when nothing is cut.
 pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
+    counts_with(report, kind_noun)
+}
+
+/// The noun of a kind on the Cuts row (W3g): "loop" for a closed loop, so
+/// "3 loops · 2 islands" fits the 340-point inspector. The other kinds keep
+/// core `kind_noun`; [`counts_text`] keeps the full nouns.
+fn row_noun(kind: ItemKind, count: usize) -> &'static str {
+    match kind {
+        ItemKind::Loop if count == 1 => "loop",
+        ItemKind::Loop => "loops",
+        ItemKind::Path | ItemKind::Point | ItemKind::Circle | ItemKind::Face => {
+            kind_noun(kind, count)
+        }
+    }
+}
+
+/// The counts of the Cuts row (W3g): [`counts_text`] with the short nouns
+/// of [`row_noun`]. "3 loops · 2 islands".
+pub(crate) fn row_counts_text(report: &SelectionReport) -> Option<String> {
+    counts_with(report, row_noun)
+}
+
+/// The counts with the noun of `noun` for each kind.
+fn counts_with(
+    report: &SelectionReport,
+    noun: fn(ItemKind, usize) -> &'static str,
+) -> Option<String> {
     let mut parts: Vec<String> = report
         .counts
         .iter()
@@ -822,9 +902,9 @@ pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
         .map(|(kind, n)| {
             let down = report.faces_by_facing.down;
             if *kind == ItemKind::Face && down > 0 {
-                format!("{n} {} ({down} down)", kind_noun(*kind, *n))
+                format!("{n} {} ({down} down)", noun(*kind, *n))
             } else {
-                format!("{n} {}", kind_noun(*kind, *n))
+                format!("{n} {}", noun(*kind, *n))
             }
         })
         .collect();
@@ -837,10 +917,6 @@ pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
 
 /// The quiet action of the summary row that turns Pick on.
 pub(crate) const PICK: &str = "Pick";
-
-/// The quiet action of the summary row while its Pick is on: it turns Pick
-/// off.
-pub(crate) const PICK_DONE: &str = "Done";
 
 /// The label of the summary row of a selection: "Cuts" for the op
 /// selection, "Items" for the boundary selection (it sits under the
@@ -931,7 +1007,7 @@ fn cuts_state(
                 });
                 roles.push(Role::Caution);
             }
-            counts_text(report).unwrap_or_else(|| "nothing".to_owned())
+            row_counts_text(report).unwrap_or_else(|| "nothing".to_owned())
         }
     };
     let state = roles.into_iter().min_by_key(|role| role.severity_rank());

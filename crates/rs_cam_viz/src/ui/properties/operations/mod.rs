@@ -636,6 +636,18 @@ pub(super) fn draw_heights_params(
     let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
 }
 
+/// The text of the closed reference combo of the Bottom height row (W3g):
+/// core `Floor::reference_label`, with a short form for the two "each"
+/// references, so the text fits the combo beside the value at 340 points.
+/// The open list and the hover keep the full label.
+fn floor_display_label(floor: &Floor) -> &'static str {
+    match floor {
+        Floor::EachFace { .. } => "Each face",
+        Floor::EachHole { .. } => "Each hole",
+        _ => floor.reference_label(),
+    }
+}
+
 /// The hover of the reference combo of the Bottom height row (ruling L-10).
 const FLOOR_FROM_HOVER: &str = "The floor of the operation: the tool cuts down to this Z. The \
     combo sets the reference. A change of reference keeps the floor Z: the value is \
@@ -795,7 +807,7 @@ fn draw_bottom_height(
                     egui::ComboBox::from_id_salt(("floor_from", op.name()))
                         .truncate()
                         .width(ui.available_width())
-                        .selected_text(current.reference_label())
+                        .selected_text(floor_display_label(&current))
                         .show_ui(ui, |ui| {
                             // UX-8: "A picked face" is not offered here.
                             // "Use as floor" in the Geometry tab is its one

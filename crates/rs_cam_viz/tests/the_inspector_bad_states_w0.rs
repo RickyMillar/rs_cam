@@ -44,7 +44,9 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use inspector_bad_states::{Family, Painted, State, fixture, screen, visible_lines};
+use inspector_bad_states::{
+    Family, PANEL_WIDTH, Painted, RAIL_WIDTH, State, fixture, screen, screen_at, visible_lines,
+};
 use rs_cam_viz::ui::properties::ToolpathTab;
 
 /// A face over this many characters breaks the W6 rule (PLAN_EXECUTION §3).
@@ -644,15 +646,94 @@ fn the_raw_rows_are_counted_w0() {
     // Non-vacuity: the scan read the folder and found the raw rows that the
     // toolpath panel has today.
     assert!(rows.len() > 10, "the scan read {} files", rows.len());
+    // W3g: the header Name row is a `PropRow`, so the tab host has no raw
+    // row left. Some files of the folder still have raw rows, so the scan
+    // sees them.
     let panel = rows
         .iter()
         .find(|r| r.0 == "toolpath_panel.rs")
         .expect("the scan reads toolpath_panel.rs");
+    assert_eq!(
+        panel.1 + panel.2,
+        0,
+        "toolpath_panel.rs has no raw row since W3g"
+    );
     assert!(
-        panel.1 + panel.2 > 0,
-        "toolpath_panel.rs has raw rows today"
+        rows.iter().map(|r| r.1 + r.2).sum::<usize>() > 0,
+        "non-vacuity: the folder has raw rows"
     );
     // The comment rule: a line that is only a comment counts zero.
     let code = "// ui.label(\"x\")".split("//").next().unwrap_or("");
     assert_eq!(code.matches("ui.label(").count(), 0);
+}
+
+/// W3g: no field row text truncates in a W0 state at the default width
+/// (340). Each label, value and control text fits; the hover is for the
+/// explanation, not for the rest of a cut text. The allowed truncations:
+///
+/// - the issue stack and the notes: a finding face truncates by design
+///   (W1 `NoticeStack::issues`), and its hover has the text;
+/// - the model file name of the Input row: a file name, with the full name
+///   on the hover.
+///
+/// The 240-point rail may truncate; the test prints that count.
+#[test]
+fn no_field_text_truncates_at_340_w3g() {
+    let mut failures = Vec::new();
+    let mut rail_truncated = 0_usize;
+    let mut allowed = 0_usize;
+    let mut screens = 0_usize;
+    for state in State::ALL {
+        for family in Family::ALL {
+            if state.skip_reason(family).is_some() {
+                continue;
+            }
+            let (mut app, id) = fixture(family, state);
+            for tab in ToolpathTab::ALL {
+                screens += 1;
+                let painted = screen_at(&mut app, id, *tab, PANEL_WIDTH);
+                for p in painted.iter().filter(|p| p.truncated()) {
+                    if allowed_truncation(p) {
+                        allowed += 1;
+                    } else {
+                        failures.push(format!(
+                            "{} / {} / {tab:?}: {:?} truncates to {:?}",
+                            family.name(),
+                            state.name(),
+                            p.text,
+                            p.face
+                        ));
+                    }
+                }
+                let rail = screen_at(&mut app, id, *tab, RAIL_WIDTH);
+                rail_truncated += rail.iter().filter(|p| p.truncated()).count();
+            }
+        }
+    }
+    eprintln!(
+        "W3g: {screens} screens; at {PANEL_WIDTH} points {allowed} allowed truncations; at \
+         {RAIL_WIDTH} points {rail_truncated} texts truncate"
+    );
+    assert!(screens > 100, "non-vacuity: {screens} screens");
+    // Non-vacuity of the measure: the narrow rail truncates texts, so the
+    // test sees a truncation where one paints.
+    assert!(
+        rail_truncated > 0,
+        "non-vacuity: no truncation at {RAIL_WIDTH} points"
+    );
+    failures.sort();
+    failures.dedup();
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The truncations [`no_field_text_truncates_at_340_w3g`] allows, by exact
+/// text: the refusal of the Refused state (the issue stack face), the
+/// one-line feeds refusal, and a model file name. A field text (a label, a
+/// value, a count such as "3 loops · 2 islands") is never allowed.
+fn allowed_truncation(p: &Painted) -> bool {
+    p.text == inspector_bad_states::REFUSAL
+        || p.text.starts_with("Feeds unavailable:")
+        || [".stl", ".dxf", ".svg", ".step"]
+            .iter()
+            .any(|suffix| p.text.ends_with(suffix))
 }

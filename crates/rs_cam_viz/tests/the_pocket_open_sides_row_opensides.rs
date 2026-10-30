@@ -37,7 +37,9 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::selection::ItemSet;
 
-const ROW: &str = "Cut past open sides";
+/// W3g: the label is short ("Past open sides"), so it fits the 340-point
+/// label column; the hover keeps the registry help.
+const ROW: &str = "Past open sides";
 
 fn stock() -> StockConfig {
     StockConfig {

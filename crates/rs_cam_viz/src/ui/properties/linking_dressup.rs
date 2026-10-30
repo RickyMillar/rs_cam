@@ -121,12 +121,13 @@ struct NumOut {
     suggested: bool,
 }
 
-/// One numeric row: a `DragValue` that fills the well, the unit inside the
-/// well, and the ⚡ of a suggestion inside the well before the unit (the
-/// design rule 8 form: a value with a ⚡ mark).
+/// One numeric row: a `DragValue` in the bounded numeric well (W3g), the
+/// unit in the unit slot, and a suggestion as the quiet action of the row:
+/// "⚡ 0.83" (W3g, operator 2026-10-30: the cut half of the recommendation
+/// sits on the field it changes).
 ///
-/// G-PILLCLAMP: the ⚡ writes `Suggestion::recommended` verbatim, and it is
-/// grey when the value already matches it (`value_row::near_match`).
+/// G-PILLCLAMP: the ⚡ writes `Suggestion::recommended` verbatim. The row
+/// shows no action when the value already matches it (`near_match`).
 #[expect(
     clippy::too_many_arguments,
     reason = "the row, the value and its unit, speed and range, and the suggestion"
@@ -143,34 +144,36 @@ fn num_row(
 ) -> NumOut {
     use crate::ui::components::number::{near_match, suggest_hover};
     use crate::ui::components::{NumberSpec, number_field};
-    let mut suggested = false;
     let spec = NumberSpec::new(speed).range(range);
-    let out = row.unit(suffix.trim()).show(ui, |ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(s) = suggestion {
-                let matches = near_match(*val, s.recommended);
-                let hover = suggest_hover(label, suffix, &s, matches);
-                if ui
-                    .add(
-                        crate::ui::components::SuggestButton::field(s.source)
-                            .enabled(!matches)
-                            .hover(hover),
-                    )
-                    .clicked()
-                {
-                    *val = s.recommended;
-                    suggested = true;
-                }
-            }
-            number_field(ui, val, &spec, ui.available_size())
-        })
-        .inner
-    });
+    let offer = suggestion.filter(|s| !near_match(*val, s.recommended));
+    let action = offer.as_ref().map(|s| suggest_action(s.recommended));
+    let hover = offer
+        .as_ref()
+        .map(|s| suggest_hover(label, suffix, s, false));
+    let mut row = row.numeric().unit(suffix.trim());
+    if let (Some(action), Some(hover)) = (action.as_deref(), hover.as_deref()) {
+        row = row.action(action).action_hover(hover);
+    }
+    let out = row.show(ui, |ui| number_field(ui, val, &spec, ui.available_size()));
+    let suggested = out.action_clicked;
+    if suggested && let Some(s) = &offer {
+        *val = s.recommended;
+    }
     let response = out.inner.on_hover_text(&out.hover);
     NumOut {
         response,
         row: out.response,
         suggested,
+    }
+}
+
+/// The quiet action of a suggestion (W3g): "⚡ 0.83". A value of 100 or
+/// more prints no decimals.
+pub(super) fn suggest_action(recommended: f64) -> String {
+    if recommended.abs() >= 100.0 {
+        format!("\u{26A1} {recommended:.0}")
+    } else {
+        format!("\u{26A1} {recommended:.2}")
     }
 }
 
@@ -195,29 +198,37 @@ fn opt_row(
     use crate::ui::components::{NumberSpec, optional_number_field};
     let mut changed = false;
     let spec = NumberSpec::new(speed).range(range).empty(hint);
-    let out = row.unit(suffix.trim()).show(ui, |ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if clearable
-                && val.is_some()
-                && ui
-                    .add(crate::ui::components::Button::quiet("\u{00D7}"))
-                    .on_hover_text(format!("Clear: {hint}"))
-                    .clicked()
-            {
-                *val = None;
-                changed = true;
-            }
-            let (resp, edited) = optional_number_field(ui, val, &spec, ui.available_size());
-            changed |= edited;
-            resp
-        })
-        .inner
+    // W3g: an unset value with a rule shows the rule text ("8 x D",
+    // "tool R", "machine max"). That text is not a number in the unit of
+    // the field, so the row shows no unit until a value is set.
+    // The rule text takes the unit slot too, so it fits the well.
+    let rule_shown = val.is_none() && clearable;
+    let mut row = row.numeric();
+    row = if rule_shown {
+        row.without_unit_slot()
+    } else {
+        row.unit(suffix.trim())
+    };
+    // A set value with a rule has the quiet action "×": it clears the
+    // value back to the rule.
+    let clear_hover = format!("Clear: {hint}");
+    if clearable && val.is_some() {
+        row = row.action("\u{00D7}").action_hover(&clear_hover);
+    }
+    let out = row.show(ui, |ui| {
+        let (resp, edited) = optional_number_field(ui, val, &spec, ui.available_size());
+        changed |= edited;
+        resp
     });
+    if out.action_clicked {
+        *val = None;
+        changed = true;
+    }
     let _ = out.inner.on_hover_text(&out.hover);
     changed
 }
 
-/// One on/off parameter row: a checkbox with no text in the well.
+/// One on/off parameter row: the box alone, no well (W3g).
 pub(super) fn check_param(
     ui: &mut egui::Ui,
     param: Param,
@@ -230,13 +241,7 @@ pub(super) fn check_param(
 
 /// One on/off row of a `PropRow` the caller built ([`plain_row`]).
 pub(super) fn check_in_row(ui: &mut egui::Ui, row: PropRow<'_>, on: &mut bool) -> egui::Response {
-    let out = row.show(ui, |ui| {
-        // The row clears the widget fills for a field well; a checkbox
-        // needs its own box, so it draws with the normal style.
-        ui.reset_style();
-        ui.add(egui::Checkbox::without_text(on))
-    });
-    out.inner.on_hover_text(&out.hover)
+    row.checkbox(ui, on, "").inner
 }
 
 /// One dropdown parameter row. `menu` adds the entries.
