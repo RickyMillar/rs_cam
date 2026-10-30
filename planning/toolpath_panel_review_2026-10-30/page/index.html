@@ -1,0 +1,397 @@
+<title>Toolpath Panel Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review sheet. Verdict first, then the journey strip, the findings table,
+   the proposed inspector (interactive) beside the real one, then the rulings asked. */
+:root{
+  --bg:#f3f4f6; --panel:#ffffff; --ink:#1b2129; --muted:#5b6672; --line:#d9dde3;
+  --accent:#2f6fb3; --accent-soft:#e3eefa;
+  --ok:#2e7d4f; --warn:#a86800; --bad:#b3362f; --info:#2f6fb3;
+  --chip:#eef0f3; --shot:#1d2127;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Public Sans",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,monospace;
+  /* mock inspector (the app is dark in every theme) */
+  --app-bg:#1b1e23; --app-panel:#20242a; --app-ink:#dfe3e8; --app-muted:#8b95a1; --app-line:#323840;
+  --app-field:#2a2f36; --app-accent:#4a90d9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14171b; --panel:#1b1f24; --ink:#e3e7ec; --muted:#97a1ad; --line:#2d333b;
+  --accent:#6aa8e8; --accent-soft:#1e2c3c; --ok:#5cc28a; --warn:#e0a640; --bad:#ef7a70; --info:#6aa8e8;
+  --chip:#252a31; --shot:#0f1114; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171b; --panel:#1b1f24; --ink:#e3e7ec; --muted:#97a1ad; --line:#2d333b;
+  --accent:#6aa8e8; --accent-soft:#1e2c3c; --ok:#5cc28a; --warn:#e0a640; --bad:#ef7a70; --info:#6aa8e8;
+  --chip:#252a31; --shot:#0f1114; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:44px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;text-wrap:balance;margin:0}
+h1{font-size:2.6rem;line-height:1.05}
+h2{font-size:1.75rem;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:14px}
+h3{font-size:1.2rem}
+p{margin:0;max-width:68ch}
+code,.mono{font-family:var(--f-mono);font-size:.84em}
+.eyebrow{font-family:var(--f-mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+a{color:var(--accent)}
+.stack{display:grid;gap:12px}
+/* verdict */
+.verdict{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:28px;align-items:start}
+.tally{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tally div{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.tally b{display:block;font-family:var(--f-display);font-size:2rem;line-height:1}
+.tally span{font-size:.8rem;color:var(--muted)}
+.callout{background:var(--accent-soft);border-left:3px solid var(--accent);padding:12px 14px;border-radius:0 6px 6px 0}
+/* journey */
+.journey{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px,1fr);gap:12px;overflow-x:auto;padding-bottom:8px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:grid;grid-template-rows:auto 150px auto;overflow:hidden;min-width:0}
+.step header{padding:8px 10px;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.step header b{font-family:var(--f-display);font-size:1.05rem}
+.step .thumb{background:var(--shot);overflow:hidden;cursor:zoom-in;border:0;padding:0;display:block;width:100%}
+.step .thumb img{width:100%;display:block;object-fit:cover;object-position:top}
+.step p{padding:8px 10px 10px;font-size:.84rem}
+.state{font-family:var(--f-mono);font-size:.72rem;padding:1px 6px;border-radius:3px;white-space:nowrap}
+.s-bad{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.s-warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.s-ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.s-info{background:color-mix(in srgb,var(--info) 18%,transparent);color:var(--info)}
+/* findings */
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.filters button{font:inherit;font-size:.82rem;background:var(--chip);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:3px 11px;cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.filters button:focus-visible,.thumb:focus-visible,.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:.88rem}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+td.id{font-family:var(--f-mono);font-weight:500;white-space:nowrap}
+td .own{font-family:var(--f-mono);font-size:.76rem;color:var(--muted);display:block;margin-top:4px;word-break:break-word}
+.tag{font-family:var(--f-mono);font-size:.72rem;padding:1px 6px;border-radius:3px;background:var(--chip);border:1px solid var(--line)}
+.shots{display:flex;gap:4px;flex-wrap:wrap}
+.shots button{font:inherit;font-family:var(--f-mono);font-size:.72rem;background:none;border:1px solid var(--line);color:var(--accent);border-radius:3px;padding:1px 5px;cursor:zoom-in}
+.rep{font-size:.72rem;color:var(--warn);font-family:var(--f-mono)}
+/* compare */
+.compare{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+.figure{display:grid;gap:8px;justify-items:start}
+.figure img{width:340px;max-width:100%;border:1px solid var(--line);border-radius:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-wrap:wrap}
+.seg button{font:inherit;font-size:.82rem;background:var(--panel);color:var(--ink);border:0;border-right:1px solid var(--line);padding:5px 10px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+/* the mock inspector: one row grid, colour only for state */
+.mk{--m-bg:#1e2126;--m-raise:#272b31;--m-line:#363c44;--m-ink:#e4e7eb;--m-dim:#a0a9b3;--m-faint:#6f7883;
+  --m-blue:#5B9DD9;--m-red:#E87B77;--m-amber:#E0A83C;--m-green:#5FBF7A;
+  width:340px;max-width:100%;background:var(--m-bg);color:var(--m-ink);border:1px solid var(--m-line);border-radius:6px;
+  font:13px/1.35 var(--f-body);padding:14px;display:grid;gap:14px}
+.mk-name{font-size:15px;font-weight:600}
+.mk-grid{display:grid;grid-template-columns:116px minmax(0,1fr);gap:6px 10px;align-items:center}
+.mk-grid>label{color:var(--m-dim);font-size:12.5px}
+.fld{height:26px;box-sizing:border-box;background:var(--m-raise);border:1px solid var(--m-line);border-radius:4px;padding:0 9px;
+  display:flex;align-items:center;gap:8px;min-width:0;font-variant-numeric:tabular-nums}
+.fld .v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fld .u,.fld .c{color:var(--m-faint);font-size:12px}
+.fld.need{border-color:var(--m-red)}.fld.need .v{color:var(--m-red)}
+.fld.ro{background:transparent;border-color:transparent;padding-left:0}
+.fld .act{color:var(--m-blue);font-size:12px}
+.sug{color:var(--m-amber);font-size:12px}
+.mk-menu{grid-column:2;background:#2c3138;border:1px solid var(--m-line);border-radius:4px;padding:4px 0;margin-top:-2px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.mk-menu div{padding:5px 10px}
+.mk-menu .h{font-size:11px;color:var(--m-faint);text-transform:uppercase;letter-spacing:.06em;padding-bottom:2px}
+.mk-menu .e{color:var(--m-faint)}
+.mk-menu .a{color:var(--m-blue)}
+.mk-menu hr{border:0;border-top:1px solid var(--m-line);margin:4px 0}
+.mk-run{display:flex;align-items:center;gap:8px;min-width:0}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.mk-run .w{font-weight:600}
+.mk-run .meta{color:var(--m-faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.btn{margin-left:auto;font:inherit;font-size:12.5px;height:28px;padding:0 14px;border-radius:4px;border:1px solid transparent;flex:none;cursor:default}
+.btn.p{background:var(--m-blue);color:#fff}
+.btn.q{background:transparent;border-color:var(--m-line);color:var(--m-ink)}
+.btn.off{background:var(--m-raise);color:var(--m-faint)}
+.mk-iss{display:flex;gap:8px;align-items:center;background:color-mix(in srgb,var(--m-amber) 12%,transparent);border-radius:4px;padding:6px 9px;font-size:12.5px}
+.mk-iss span{flex:1;min-width:0}
+.mk-iss a{color:var(--m-blue);text-decoration:none}
+.mk-tabs{display:flex;gap:2px;border-bottom:1px solid var(--m-line);margin-bottom:-4px}
+.mk-tabs span{font-size:12.5px;padding:6px 8px;color:var(--m-dim);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.mk-tabs span.on{color:var(--m-ink);border-color:var(--m-blue)}
+.mk-sec{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--m-faint);margin-bottom:-6px}
+/* design rules */
+.rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;counter-reset:r}
+.rule{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:4px;align-content:start}
+.rule b{font-family:var(--f-display);font-size:1.08rem}
+.rule p{font-size:.86rem}
+.tokens{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.tok{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:.76rem;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:4px 8px}
+.tok i{width:12px;height:12px;border-radius:3px;display:inline-block}
+/* proposals */
+.props{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.prop{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;gap:6px;align-content:start}
+.prop header{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.prop header b{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+.prop h3{font-size:1.08rem}
+.prop p{font-size:.86rem}
+.prop .del{font-size:.8rem;color:var(--bad)}
+.prop .dis{font-family:var(--f-mono);font-size:.74rem;color:var(--muted)}
+.rulings{display:grid;gap:10px}
+.ruling{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.ruling b{font-family:var(--f-display);font-size:1.3rem;color:var(--accent)}
+.foot{font-size:.82rem;color:var(--muted)}
+/* lightbox */
+dialog{border:0;padding:0;background:transparent;max-width:min(96vw,1400px)}
+dialog::backdrop{background:rgba(5,7,10,.82)}
+dialog img{max-width:100%;max-height:88vh;display:block;border-radius:4px}
+dialog p{color:#e3e7ec;font-family:var(--f-mono);font-size:.8rem;margin-top:6px}
+@media (max-width:820px){.verdict,.compare{grid-template-columns:minmax(0,1fr)}.tally{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="wrap">
+
+<section class="verdict">
+  <div class="stack">
+    <span class="eyebrow">rs_cam · toolpath inspector · review 2026-10-30 · HEAD 4d2639487</span>
+    <h1>Toolpath Panel Review</h1>
+    <p>I drove the GUI through MCP with two projects: a STEP solid (Pocket, Profile, Drill, Face) and the rivmap100 mesh (Face, 3D Rough, Scallop, Project Curve). I followed one Pocket from "Add" to "Done" and took a shot at each step. Then I read the code that draws each block.</p>
+    <p class="callout"><strong>Verdict.</strong> The panel does not have a rendering problem. It has a structure problem and a message problem. It shows the same fact in up to four places, shows status words that do not follow the real state, and uses developer prose as operator text. HTML would carry all of this over unchanged. Keep egui, and build a small component set.</p>
+  </div>
+  <div class="stack">
+    <div class="tally">
+      <div><b>14</b><span>findings</span></div>
+      <div><b>12</b><span>tag A: existing egui parts</span></div>
+      <div><b>2</b><span>tag B: new component</span></div>
+    </div>
+    <div class="tally">
+      <div><b>0</b><span>tag C: egui blocks it</span></div>
+      <div><b>13</b><span>proposals, each deletes a control</span></div>
+      <div><b>3</b><span>rulings needed</span></div>
+    </div>
+    <p class="foot">The GUI binary is from 10:23. It does not have ce32777f3 (reach legend text). The shots are 1920×1165 px at scale 1.2; the inspector is at its 280 px default. Click a shot to enlarge it.</p>
+  </div>
+</section>
+
+<section>
+  <h2>The journey: one Pocket from Add to Done</h2>
+  <p style="margin-bottom:14px">Each card is the inspector at that step. The tag is the status word the panel shows. Compare it with the real state written under it.</p>
+  <div class="journey" id="journey"></div>
+</section>
+
+<section>
+  <h2>Findings</h2>
+  <div class="filters" id="filters" role="toolbar" aria-label="Filter findings"></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>Finding and owner</th><th>Shots</th><th>Tag</th><th>Status</th></tr></thead>
+    <tbody id="findings"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Proposed inspector</h2>
+  <p style="margin-bottom:14px">Left: the inspector today. Right: a mock-up at the proposed 340 px default, built to the design rules below. Each fact shows once. In "Needs setup" the tool appears one time: the Tool dropdown, open to show its menu. This is a proposal, not a measurement.</p>
+  <div class="compare">
+    <div class="figure">
+      <span class="eyebrow" id="nowcap">Today</span>
+      <img id="nowimg" alt="The current inspector for the same state">
+    </div>
+    <div class="figure">
+      <div class="seg" role="group" aria-label="Mock state">
+        <button type="button" data-st="setup" aria-pressed="true">Needs setup</button>
+        <button type="button" data-st="ready" aria-pressed="false">Ready</button>
+        <button type="button" data-st="done" aria-pressed="false">Done, 1 issue</button>
+        <button type="button" data-st="finish" aria-pressed="false">3D finish</button>
+      </div>
+      <div class="mk" id="mock" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Design rules</h2>
+  <p style="margin-bottom:14px">A design system exists. The premium programme (UP1–UP8, 2026-09-13/14) built the tokens (<code>ui/tokens.rs</code>), the type scale and the component set to <code>planning/ui_premium_2026-09-13/DESIGN_SPEC.md</code>. Its own close-out says it "polished the clutter": its rule 1 forbade removing or moving a control. The declutter phase (2026-09-14), the UI-02 grid kit (2026-09-18) and the text audit (2026-10-02) followed. Since 2026-10-13, 110 commits touched <code>ui/properties/</code> (geometry selection, reach map, floors), and each new feature added rows and text. The tokens survived; the placement rules did not, because nothing enforces them. The rules below add placement to the existing tokens. The mock-up obeys each one.</p>
+  <div class="rules">
+    <div class="rule"><b>1 · One fact, one home</b><p>A value, a state or a problem shows in one place. A second mention is deleted, not made smaller.</p></div>
+    <div class="rule"><b>2 · The header answers two questions</b><p>What is this (name, tool)? Can it run (one status word, one button)? Nothing else goes above the tabs.</p></div>
+    <div class="rule"><b>3 · A problem sits on its field</b><p>A missing or wrong value turns its own field red. Only a problem with no field gets an issue row: one line, one Fix, at most three.</p></div>
+    <div class="rule"><b>4 · One row shape</b><p>Label column <code>LABEL_COL_WIDTH</code>, muted. The control fills the rest at <code>ROW_ACTION</code> height. The unit sits inside the control, right side, faint. A read-only value uses the same row with no box. One label width, not three.</p></div>
+    <div class="rule"><b>5 · Colour means state</b><p>Red blocks. Amber asks you to check. Green is done. Blue is the thing you can click. All other text is neutral.</p></div>
+    <div class="rule"><b>6 · Three text sizes</b><p>15 px name, 13 px values, 12 px labels and meta. Sentence case. No category prefixes. 60 characters or fewer; the derivation goes on hover.</p></div>
+    <div class="rule"><b>7 · Space groups, lines separate tabs</b><p>Sections are 14 px apart with a small caps label. The only rule line is under the tabs.</p></div>
+    <div class="rule"><b>8 · A suggestion is a value with a mark</b><p>A suggested value fills its field with ⚡. A suggestion that differs from a typed value is a small ⚡ button beside it. No separate recommendation table on the face.</p></div>
+  </div>
+  <div class="tokens">
+    <span class="tok"><i style="background:#E87B77"></i>DANGER · blocks</span>
+    <span class="tok"><i style="background:#E0A83C"></i>CAUTION · check</span>
+    <span class="tok"><i style="background:#5FBF7A"></i>OK · done</span>
+    <span class="tok"><i style="background:#5B9DD9"></i>ACCENT · action / selected</span>
+    <span class="tok">existing tokens: ACCENT · OK · CAUTION · DANGER · SPACE_1–7 · ROW_ACTION · LABEL_COL_WIDTH</span>
+    <span class="tok">the swatches above are the tokens.rs values</span>
+  </div>
+</section>
+
+<section>
+  <h2>Messages: one owner, one place</h2>
+  <div class="stack">
+    <p>Today one diagnostic can render in the header, on a tab, in the footer of every tab, in a toast and in a viewport banner, each with its own long text. The fix is a placement model in one render path. Each diagnostic names its owner, and the owner decides where it shows. Nothing else may draw it.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Owner</th><th>Where it shows</th><th>Face</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td class="id">Field</td><td>On that field only: red or amber outline; the text on hover</td><td>No sentence on the face</td><td>No tool → the Tool dropdown is red</td></tr>
+        <tr><td class="id">Operation</td><td>The issue row under the header, max 3, each one line with one Fix</td><td>60 characters or fewer</td><td>"Depth/pass 1.5 mm is over the rigid limit 0.83 mm · Fix"</td></tr>
+        <tr><td class="id">Note</td><td>The "i n" counter in the status line; a popover lists them</td><td>One line each, detail on hover</td><td>"Long tool: load target ×0.75"</td></tr>
+        <tr><td class="id">Project</td><td>Readiness workspace and the rail; never the op inspector</td><td>One line</td><td>"Simulation is out of date"</td></tr>
+        <tr><td class="id">Event</td><td>A toast, for a thing that just happened; never for a state</td><td>One line, 4 s</td><td>"Added Pocket 1"</td></tr>
+        <tr><td class="id">View</td><td>The viewport legend; never the inspector</td><td>One line, notes on hover</td><td>Reach grid floor, over-statement band</td></tr>
+      </tbody>
+    </table></div>
+    <h3 style="margin-top:8px">What this removes, counted from the shots</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Message</th><th>Shows today</th><th>After</th><th>Shot</th></tr></thead>
+      <tbody>
+        <tr><td>No tool</td><td>header line · Cut-tab red text · toast → <b>3</b></td><td>red Tool field → <b>1</b></td><td><div class="shots"><button type="button" data-img="j01_pocket_notool_cut" data-cap="No tool">j01</button></div></td></tr>
+        <tr><td>No feeds data</td><td>header · footer row on each tab · toast → <b>3</b></td><td>fields seeded (R1), or red Feed field → <b>1 or 0</b></td><td><div class="shots"><button type="button" data-img="j02_pocket_tool_feeds" data-cap="No feeds data">j02</button></div></td></tr>
+        <tr><td>Wrong tool kind</td><td>header · footer row · Cut-tab dot → <b>3</b></td><td>red Tool field; refused tools grey in its menu → <b>1</b></td><td><div class="shots"><button type="button" data-img="m05_scallop_wrongtool_cut" data-cap="Wrong tool">m05</button></div></td></tr>
+        <tr><td>Reach notes (2 long sentences)</td><td>footer of Geometry, Cut, Feeds, Dressup · legend → <b>5</b></td><td>legend hover → <b>1</b></td><td><div class="shots"><button type="button" data-img="m02_scallop_reach_feeds" data-cap="Reach notes">m02</button></div></td></tr>
+        <tr><td>"Gates: run simulation to evaluate"</td><td>footer of every tab of every op → <b>6 per op</b></td><td>Readiness only → <b>0 in the inspector</b></td><td><div class="shots"><button type="button" data-img="s01_profile_cut" data-cap="Gates row">s01</button></div></td></tr>
+        <tr><td>Old refusal after the fix</td><td>header until regenerate</td><td>cleared when the cause clears</td><td><div class="shots"><button type="button" data-img="j03_pocket_speeds_applied_feeds" data-cap="Stale refusal">j03</button></div></td></tr>
+      </tbody>
+    </table></div>
+    <h3 style="margin-top:8px">How it stays fixed</h3>
+    <p><strong>Type.</strong> Core <code>Diagnostic</code> gets an <code>owner</code> (field id, op, project, view) and two texts: <code>face</code> (60 characters or fewer, plain words) and <code>detail</code> (the derivation; MCP returns both). The viz crate draws diagnostics through one function that reads the owner. A panel cannot call <code>ui.label</code> with diagnostic text, because the text is not a <code>String</code> it can reach.</p>
+    <p><strong>Sentry.</strong> Render each tab in each bad state (no tool, no feeds, wrong tool, reach on, refused). Assert that each diagnostic id paints at most once on screen and that no face is longer than 60 characters. This replaces the "+3 lines" cap.</p>
+    <p><strong>Rewrite pass.</strong> Each message source in the core diagnostic adapters and the viz crate gets a short face. Examples: "Long tool: stickout 37.0 mm is 6.2 x D … load target x0.75 (repo rule, unsourced). The feed does not take it." becomes "Long tool: load target ×0.75". "the grid over-states gaps by up to its floor (1.062 mm), so the true unreachable share is AT OR BELOW 0.0 %…" becomes the legend hover "Grid accuracy ±1.06 mm".</p>
+  </div>
+</section>
+
+<section>
+  <h2>Proposals</h2>
+  <div class="props" id="props"></div>
+</section>
+
+<section>
+  <h2>egui or HTML?</h2>
+  <div class="stack">
+    <p>The tags answer this. Twelve findings need only the components that exist today. Two need a new egui component: one property row with one label width, and a tab strip that does not wrap. No finding needs a toolkit change.</p>
+    <p>egui costs more than CSS in two places: text reflow and responsive layout. The clip "Through cut of a 25 mm bc" and the two-row tab strip show this. <code>app.rs:170-176</code> records that <code>wrap_mode = Wrap</code> was reverted because it broke grid labels mid-word. These items cost real work, but they do not block.</p>
+    <p>The 2026-09-13 ruling stands: egui stays. The premium programme then built the tokens and the component set, so the parts exist. What is missing is enforcement: a raw <code>ui.label</code> or <code>ui.horizontal</code> row still compiles beside the kit, and each new feature since 2026-10-13 used that door. Build P9 and P6 first, so the property row and the one diagnostic render path are the only doors, and the compiler holds the grid and the placement.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Rulings needed</h2>
+  <div class="rulings">
+    <div class="ruling"><b>R1</b><div><strong>Feeds seed on empty (P4).</strong> You asked for the suggestion to be the default. Today three rulings keep the fields empty: F.5 "the calculator never writes", no underived defaults (2026-10-23), and no background field locking. A Suggest value is derived, so the second ruling allows it. The proposal: on op add and on tool change, write Suggest into empty fields only, mark them "suggested", never overwrite a typed value, never lock.</div></div>
+    <div class="ruling"><b>R2</b><div><strong>Op-aware tabs (P5).</strong> The tool moves into the header. The proposed tabs are Geometry (selection, floor, boundary), Passes, Feeds, Heights and Linking (entry, links, arc fit, dogbone where it applies). A tab with no control for the op is not drawn. The panel CLAUDE.md pins the current tab order (sentry <code>_d7</code>), so this is a ruled break.</div></div>
+    <div class="ruling"><b>R3</b><div><strong>Reach map leaves the panel (P7).</strong> The dock toggle and the legend own the reach map. The panel keeps one line with a Show link on the Geometry tab of a finishing op. The grid-floor and over-statement notes move to the legend hover; MCP keeps the full text.</div></div>
+  </div>
+</section>
+
+<p class="foot">Evidence: <code>planning/toolpath_panel_review_2026-10-30/</code> — <code>PLAN.md</code>, <code>FINDINGS.md</code>, <code>CODE_INVENTORY.md</code>, <code>shots/</code>, <code>crops/</code>. Sources for other CAM tools: <a href="https://help.autodesk.com/cloudhelp/ENU/Fusion-CAM/files/MFG-OVERVIEW-PARAMETERS-OVERVIEW.htm">Fusion operation parameters</a>, <a href="https://wiki.freecad.org/CAM_Profile">FreeCAD CAM Profile</a>, <a href="https://wiki.freecad.org/CAM_Slot">FreeCAD CAM Slot</a>.</p>
+</div>
+
+<dialog id="lb"><img id="lbimg" alt=""><p id="lbcap"></p></dialog>
+
+<script>
+const J=[
+ {t:"0 · Empty project",img:"full_00_empty_toolpaths",st:["info","—"],real:"Nothing loaded",p:"A 7-step \"Getting started\" list in plain text. No step ticks when done, and no step is a link."},
+ {t:"1 · Add Pocket, no tool",img:"j01_pocket_notool_geometry",st:["ok","Ready"],real:"Blocked twice: no tool, no feeds",p:"Status says Ready. The no-tool sentence shows in the header, on the Cut tab and in a toast. \"No tool fits\" is wrong: no tool exists. The pick bar opens by itself."},
+ {t:"1b · Its Cut tab",img:"j01_pocket_notool_cut",st:["ok","Ready"],real:"Blocked",p:"\"Set a tool on the Cut tab\" while on the Cut tab. The tool combo has no \"Add tool\"."},
+ {t:"2 · Tool bound",img:"j02_pocket_tool_feeds",st:["bad","Refused"],real:"Feeds missing; a recommendation is on screen",p:"The op refuses \"no feeds data for this tool\" beside a full Recommendation table. The footer files it under \"Geometry\". The tab strip wraps to two rows."},
+ {t:"3 · Speeds applied",img:"j03_pocket_speeds_applied_feeds",st:["bad","Refused"],real:"Ready",p:"The old refusal stays in the header after its cause is fixed, until a regenerate."},
+ {t:"4 · Generated",img:"j04_pocket_done_geometry",st:["ok","Done"],real:"Done, 1 caution",p:"\"415 moves modulated\". A new amber row warns that DOC exceeds the rigidity rule: \"Speeds only\" kept the DOC that the calculator flags."},
+ {t:"5 · Stepover edited",img:"j05_pocket_stale_cut",st:["ok","Done"],real:"Done (auto regenerate)",p:"\"371 moves planned\". The word changes from modulated to planned, and the footer changes as background jobs land."}
+];
+const F=[
+ {id:"F1",s:"bad",t:"The status word does not follow readiness: \"Ready\" with two blocking errors; \"Manual\" for an op never generated.",o:"properties/toolpath_panel.rs:1714-1822",sh:["j01_pocket_notool_geometry","m04_projcurve_geometry"],g:"A",st:"new"},
+ {id:"F2",s:"bad",t:"A last-run refusal stays in the header after its cause is fixed.",o:"toolpath_panel.rs:149-165",sh:["j03_pocket_speeds_applied_feeds"],g:"A",st:"new"},
+ {id:"F3",s:"bad",t:"No tool: the same sentence 3× plus a toast; it points to the Cut tab from the Cut tab; no \"Add tool\" in the inspector; a new project tool does not bind the waiting op; Generate greys with no reason.",o:"tab_badges.rs:741-748 · operations/validate.rs:66-74 · toolpath_panel.rs:127",sh:["j01_pocket_notool_geometry","j01_pocket_notool_cut"],g:"A",st:"new"},
+ {id:"F4",s:"bad",t:"Feeds: the calculator shows a recommendation, but Feed/Plunge/Spindle stay empty and the op refuses \"no feeds data for this tool\".",o:"feeds_speeds.rs:15-18, 69-118 · ui/feeds/compare.rs",sh:["j02_pocket_tool_feeds","j01_pocket_notool_feeds"],g:"A",st:"ruling"},
+ {id:"F5",s:"bad",t:"One value, two controls that disagree: Entry Style Helix (Cut) vs None (Linking) on 3D Rough; Heights grid 15/5/3/0 vs diagram 40/30/28/25/20 vs Linking \"Top height 25\"; the reach toggle in panel and dock.",o:"operations/surface_3d.rs · linking_dressup.rs:423 · operations/mod.rs:145 · mod.rs:1747,1794",sh:["m03_rough_cut","m03_rough_linking","j01_pocket_notool_heights","j01_pocket_notool_linking"],g:"A",st:"new"},
+ {id:"F6",s:"warn",t:"Tabs are not op-aware: six for every op. On 11 3D ops the Geometry tab is one \"Pick faces\" button. Dogbone on 3D. Machining Boundary at the foot of Cut. \"6/8 dressups active\" counts 6 controls on Linking.",o:"tab_badges.rs:614 · geometry_tab.rs:236-266 · toolpath_panel.rs:1331-1341",sh:["m02_scallop_reach_geometry","m02_scallop_reach_dressup","j01_pocket_notool_dressup","s03_face_cut"],g:"A",st:"new"},
+ {id:"F7",s:"warn",t:"The footer repeats on every tab: the reach block (5 rows), \"Gates: run simulation to evaluate\", findings and hints. Scallop shows the same 5 reach rows on Geometry, Cut, Feeds and Dressup.",o:"toolpath_panel.rs:345-497",sh:["m02_scallop_reach_geometry","m02_scallop_reach_cut","m02_scallop_reach_feeds","m02_scallop_reach_dressup"],g:"A",st:"new"},
+ {id:"F8",s:"warn",t:"Messages are developer prose: \"(repo rule, unsourced)\", \"common scale 0.688, before the depth snaps…\", \"AT OR BELOW\", \"discretisation, not geometry\". Wrong category prefixes (\"Geometry:\" for feeds, \"Tool load:\" for a tool kind). \"1 hints\".",o:"core diagnostics adapters · state/runtime.rs:996-1016 · core maps/reach_map.rs:576-583",sh:["j02_pocket_tool_geometry","m05_scallop_wrongtool_cut"],g:"A",st:"new"},
+ {id:"F9",s:"warn",t:"An error has no fix: a wrong tool kind gives no \"choose a ball nose\" button; the reach map still computes for the refused tool (79.1 %).",o:"tab_badges.rs:383-498",sh:["m05_scallop_wrongtool_geometry","m05_scallop_wrongtool_cut"],g:"A",st:"new"},
+ {id:"F10",s:"warn",t:"Fit at 280 px: truncated header error, status (\"Done · edite…\"), Cuts summary, recommendation deltas (\"↓ 0.5…\"), chips (\"! within ban…\"), \"Each picked fa…\"; a mid-word clip; the Strategy combo overflows; a tab dot wraps the strip to 2 rows.",o:"app.rs:633-638 · components/tab_strip.rs",sh:["m02_scallop_reach_feeds","s01_profile_cut","m03_rough_cut","j02_pocket_tool_geometry"],g:"A+B",st:"repeat",r:"UR1 2026-09-14"},
+ {id:"F11",s:"info",t:"Grid: 3 label widths (token 116, DataTable 0.42×W, natural), 4 unit placements, two misaligned grids on Heights, raw label+combo rows (Tool, Input, Source, Entry Style).",o:"CODE_INVENTORY.md §7",sh:["j01_pocket_notool_heights","m02_scallop_reach_cut"],g:"B",st:"repeat",r:"premium-feel 2026-09-13, not built"},
+ {id:"F12",s:"info",t:"Diagrams mislead: Drill draws a fixed 7-point pattern for a 1-hole selection; Scallop shows the Pocket contour picture; the CZ/RZ/FZ/TZ/F1 codes have no legend.",o:"operations/shape_diagrams.rs:861 · height_diagram.rs",sh:["s02_drill_cut","m02_scallop_reach_cut","j01_pocket_notool_heights"],g:"A",st:"new"},
+ {id:"F13",s:"info",t:"Hints: closed by default, one truncated line each, no evidence on hover, open state shared across toolpaths. (Code only; not opened on screen.)",o:"toolpath_panel.rs:229-268, 484-497",sh:["j04_pocket_done_geometry"],g:"A",st:"new"},
+ {id:"F14",s:"info",t:"Sentries: IC1 renders only a clean fixture, so it never sees the error and footer states; a truncated note counts as one row; caps are after-state + 3. IC2 scans the Feeds tab of one Pocket.",o:"tests/the_inspector_text_is_bounded_ic1.rs · tests/tabular_data_reads_one_table_ic2.rs",sh:[],g:"A",st:"repeat",r:"UR1 up4 sentry"}
+];
+const P=[
+ ["P1","Header: name, tool, run","Name; the Tool dropdown (the only tool control); one status word with one button. Status words: Not ready / Ready / Generating / Done / Out of date / Failed. A refusal clears when its cause clears.","The refusal line; the Cut-tab Tool row; \"planned/modulated\" (to hover).","F1 F2 F3 F8","A"],
+ ["P2","A problem sits on its field","A missing tool turns the Tool dropdown red; a missing feed turns its field red. Generate stays off. No checklist and no sentence that repeats the field.","The 3 no-tool sentences, the toast and the tab dot.","F3 F9","A"],
+ ["P3","The tool menu is the library door","The Tool dropdown lists project tools (refused ones grey, reason on hover), then \"Add from library…\" and \"New tool…\". The first fitting project tool binds an op that has none.","The trip to the Setup rail.","F3","A"],
+ ["P4","Feeds seed on empty","On add and on tool change, empty fields take the Suggest value with a ⚡ \"suggested\" mark. A typed value stays. Needs R1.","The \"set a value\" boxes beside a recommendation.","F4","A"],
+ ["P5","Op-aware tabs, Fusion order","Geometry · Passes · Feeds · Heights · Linking; the tool is in the header. No tab without a control. Entry Style on Linking only. Boundary on Geometry. Needs R2.","Dressup tab; \"n/8 dressups\"; the empty Geometry tab.","F5 F6","A"],
+ ["P6","One owner, one place","Each diagnostic names its owner: field, operation, note, project, event or view. The owner decides the one place it shows (see Messages). Operation issues: max 3 one-line rows with a Fix. Notes: an \"i n\" counter.","The per-tab footer; \"Gates: run simulation to evaluate\".","F7 F9 F13","A"],
+ ["P7","Reach map in the viewport","Dock toggle and legend own it. The panel keeps one line: Reach 37 % · worst 5.9 mm · Show. Needs R3.","The panel checkbox and its 4 rows.","F5 F7","A"],
+ ["P8","Message rewrite pass","Every operator-visible diagnostic: 60 chars or fewer on the face, plain words, correct category, derivation on hover. MCP keeps the full text.","Developer prose on the face.","F8","A"],
+ ["P9","One property row, type-enforced","PropRow { label, control, unit, hint } with one label width token; the unit is always a suffix. A raw label + combo in a properties tab fails to compile or fails a sentry.","Raw ui.horizontal rows.","F11","B"],
+ ["P10","Width and tab strip","Default 340 px (max 420 stays). The strip never wraps: labels shrink to icons with tooltips, or the tail goes into a » menu.","Two-row strip; most truncation.","F10","A+B"],
+ ["P11","Real diagrams or none","Drill draws the picked holes. An op with no faithful picture draws none. The heights diagram uses the grid's numbers and names its lines on hover.","Placeholder pictures.","F12 F5","A"],
+ ["P12","Sentries with teeth","IC1 fixtures for no-tool, refused, wrong-tool, reach-on and boundary-on. Count the full text of a truncated row. Fixed caps.","The +3 ratchet.","F14","A"],
+ ["P13","Live empty state","The Getting started list ticks each done step; each step is a link.","A static list.","journey 0","A"]
+];
+const HEAD=(name,tool,toolCls,menu,run)=>`<div class="mk-name">${name}</div>
+  <div class="mk-grid"><label>Tool</label><div class="fld ${toolCls}"><span class="v">${tool}</span><span class="c">▾</span></div>${menu||""}</div>
+  <div class="mk-run">${run}</div>`;
+const TABS=on=>`<div class="mk-tabs">${["Geometry","Passes","Feeds","Heights","Linking"].map(t=>`<span class="${t===on?"on":""}">${t}</span>`).join("")}</div>`;
+const ROW=(l,v,tail="")=>`<label>${l}</label><div class="fld"><span class="v">${v}</span>${tail}</div>`;
+const RO=(l,v,tail="")=>`<label>${l}</label><div class="fld ro"><span class="v">${v}</span>${tail}</div>`;
+const MOCK={
+ setup:{now:"j01_pocket_notool_cut",cap:"Today · Pocket, no tool (Cut tab)",html:
+  HEAD("Pocket 1","Choose a tool","need",
+   `<div class="mk-menu"><div class="h">In this project</div><div class="e">No tools yet</div><hr><div class="a">Add from library…</div><div class="a">New tool…</div></div>`,
+   `<span class="dot" style="border:1.5px solid #6f7883"></span><span class="w">Not ready</span><button class="btn off" type="button" tabindex="-1">Generate</button>`)
+  +TABS("Geometry")
+  +`<div class="mk-grid">${RO("Cuts","3 loops · 2 islands",'<span class="act">Pick</span>')}${RO("Source","Every closed loop",'<span class="act">Reset</span>')}${RO("Floor","Each picked face",'<span class="u">Z 20.00</span>')}</div>`},
+ ready:{now:"j02_pocket_tool_feeds",cap:"Today · Pocket, tool bound (Feeds tab)",html:
+  HEAD("Pocket 1","End mill Ø6 · 2 flute","","",
+   `<span class="dot" style="background:#5b9be0"></span><span class="w">Ready</span><button class="btn p" type="button" tabindex="-1">Generate</button>`)
+  +TABS("Feeds")
+  +`<div class="mk-sec"><span>Speeds</span><span class="sug">⚡ suggested</span></div>
+  <div class="mk-grid">${ROW("Feed",'3999 <span class="sug">⚡</span>','<span class="u">mm/min</span>')}${ROW("Plunge",'1999 <span class="sug">⚡</span>','<span class="u">mm/min</span>')}${ROW("Spindle",'9842 <span class="sug">⚡</span>','<span class="u">rpm</span>')}</div>
+  <div class="mk-sec"><span>Cut</span></div>
+  <div class="mk-grid">${ROW("Depth/pass","1.50",'<span class="sug">⚡ 0.83</span><span class="u">mm</span>')}${ROW("Stepover","2.00",'<span class="sug">⚡ 1.45</span><span class="u">mm</span>')}</div>`},
+ done:{now:"j04_pocket_done_geometry",cap:"Today · Pocket, generated (Geometry tab)",html:
+  HEAD("Pocket 1","End mill Ø6 · 2 flute","","",
+   `<span class="dot" style="background:#5bb98a"></span><span class="w">Done</span><span class="meta">415 moves · 2 m 10 s</span><button class="btn q" type="button" tabindex="-1">Regenerate</button>`)
+  +`<div class="mk-iss"><span style="color:#d9a441">▲</span><span>Depth/pass 1.5 mm is over the rigid limit 0.83 mm</span><a href="#" onclick="return false">Fix</a></div>`
+  +TABS("Geometry")
+  +`<div class="mk-grid">${RO("Cuts","3 loops · 2 islands",'<span class="act">Pick</span>')}${RO("Source","Every closed loop",'<span class="act">Reset</span>')}${RO("Floor","Each picked face",'<span class="u">Z 20.00</span>')}${ROW("Boundary","Off",'<span class="c">▾</span>')}</div>`},
+ finish:{now:"m02_scallop_reach_geometry",cap:"Today · Scallop Finish, reach map on (Geometry tab)",html:
+  HEAD("Scallop Finish","Tapered ball R1 · 6° ","","",
+   `<span class="dot" style="background:#5bb98a"></span><span class="w">Done</span><span class="meta">185 953 moves</span><button class="btn q" type="button" tabindex="-1">Regenerate</button>`)
+  +TABS("Geometry")
+  +`<div class="mk-grid">${RO("Surface","Whole model",'<span class="act">Pick faces</span>')}${ROW("Boundary","Model silhouette",'<span class="c">▾</span>')}${ROW("Containment","Centre",'<span class="c">▾</span>')}${ROW("Offset","1.0",'<span class="u">mm</span>')}${RO("Reach",'<span style="color:#d9a441">37 %</span> not reachable','<span class="act">Show</span>')}</div>`}
+};
+const $=s=>document.querySelector(s);
+const lb=$("#lb");
+function open(name,cap){$("#lbimg").src=`img/${name}.jpg`;$("#lbimg").alt=cap;$("#lbcap").textContent=cap;lb.showModal()}
+lb.addEventListener("click",()=>lb.close());
+$("#journey").innerHTML=J.map(j=>`<article class="step"><header><b>${j.t}</b><span class="state s-${j.st[0]}">${j.st[1]}</span></header>
+ <button type="button" class="thumb" data-img="${j.img}" data-cap="${j.t}" aria-label="Enlarge: ${j.t}"><img loading="lazy" src="img/${j.img}.jpg" alt="${j.t}"></button>
+ <p><strong>Real state:</strong> ${j.real}. ${j.p}</p></article>`).join("");
+const stLabel={new:"new",repeat:"repeat",ruling:"needs ruling"};
+const sev={bad:"s-bad",warn:"s-warn",info:"s-info"};
+let filt="all";
+function renderF(){
+ $("#findings").innerHTML=F.filter(f=>filt==="all"||(filt==="B"?f.g.includes("B"):filt===f.st||filt===f.s)).map(f=>`<tr>
+  <td class="id"><span class="state ${sev[f.s]}">${f.id}</span></td>
+  <td>${f.t}<span class="own">${f.o}</span></td>
+  <td><div class="shots">${f.sh.map(s=>`<button type="button" data-img="${s}" data-cap="${f.id} · ${s}">${s.split("_")[0]}</button>`).join("")||"—"}</div></td>
+  <td><span class="tag">${f.g}</span></td>
+  <td>${stLabel[f.st]}${f.r?`<br><span class="rep">${f.r}</span>`:""}</td></tr>`).join("");
+}
+const FL=[["all","All 14"],["bad","Blocking or wrong"],["warn","Noise"],["info","Structure"],["repeat","Repeats"],["ruling","Needs ruling"],["B","Needs a new component"]];
+$("#filters").innerHTML=FL.map(([k,l])=>`<button type="button" data-f="${k}" aria-pressed="${k==="all"}">${l}</button>`).join("");
+$("#filters").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;filt=b.dataset.f;
+ document.querySelectorAll("#filters button").forEach(x=>x.setAttribute("aria-pressed",x===b));renderF()});
+renderF();
+document.addEventListener("click",e=>{const b=e.target.closest("[data-img]");if(b)open(b.dataset.img,b.dataset.cap)});
+function setMock(k){const m=MOCK[k];$("#mock").innerHTML=m.html;$("#nowimg").src=`img/${m.now}.jpg`;$("#nowcap").textContent=m.cap;
+ document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.st===k))}
+document.querySelector(".seg").addEventListener("click",e=>{const b=e.target.closest("button");if(b)setMock(b.dataset.st)});
+setMock("setup");
+$("#props").innerHTML=P.map(p=>`<article class="prop"><header><b>${p[0]}</b><span class="tag">${p[5]}</span></header><h3>${p[1]}</h3><p>${p[2]}</p><p class="del">Deletes: ${p[3]}</p><p class="dis">Discharges ${p[4]}</p></article>`).join("");
+</script>
