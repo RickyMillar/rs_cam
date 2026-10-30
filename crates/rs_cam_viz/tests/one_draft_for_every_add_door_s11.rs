@@ -10,7 +10,8 @@
 //!    dressups, the heights and the boundary are equal. On a drawing with
 //!    a backed end mill the Pocket has no floor (`unset_fields` =
 //!    `["floor"]`); with a ball nose in plywood (an `Unbacked` cell) it has
-//!    no feeds either, and the GUI toast names the feeds text.
+//!    no feeds either: the op names them as unset, and no toast repeats
+//!    that state (W2b).
 //! 2. The MCP `add_toolpath` arm (`RsCamApp::core_add_toolpath`) builds its
 //!    config through `draft_toolpath` and replies with `unset_fields`, and
 //!    the GUI door calls the same door. `RsCamApp` needs an
@@ -126,11 +127,17 @@ fn assert_gui_is_the_draft(mut controller: AppController<SilentBackend>) -> Vec<
     assert_eq!(gui.model_id, draft.config.model_id);
     let unset = gui.operation.unset_fields();
     if draft.feeds_refusal.is_some() {
+        // W2b: a state is not a toast. The unset feeds are a field finding
+        // of the op (the Feeds rows show it); no toast repeats it.
         let toast = controller
             .notifications()
             .iter()
             .any(|n| n.message.contains(FEEDS_NOT_SET_TEXT));
-        assert!(toast, "the GUI names the feeds text");
+        assert!(!toast, "no toast repeats the unset feeds (W2b)");
+        assert!(
+            unset.contains(&"feed_rate"),
+            "the op names the unset feed rate: {unset:?}"
+        );
     }
     unset
 }

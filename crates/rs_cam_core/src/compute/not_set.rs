@@ -67,6 +67,45 @@ impl NotSet {
     pub fn first_field(&self) -> Option<&'static str> {
         self.fields.first().copied()
     }
+
+    /// The operator text of the refusal, for the diagnostic detail: plain
+    /// field names, no parameter keys. The `Display` text (the generation
+    /// refusal) keeps the keys for an agent; the diagnostic anchor holds
+    /// the first key.
+    #[must_use]
+    pub fn detail(&self) -> String {
+        let names: Vec<&str> = self.fields.iter().map(|name| field_phrase(name)).collect();
+        let list = match names.as_slice() {
+            [] => String::new(),
+            [one] => (*one).to_owned(),
+            [head @ .., last] => format!("{} and {last}", head.join(", ")),
+        };
+        match self.kind {
+            NotSetKind::Depth => format!(
+                "{}: no rule gives a depth for this operation. Set the {list}.",
+                self.op
+            ),
+            NotSetKind::Feeds => format!(
+                "{}: no feed data for this tool. Set the {list} on the Feeds tab.",
+                self.op
+            ),
+        }
+    }
+}
+
+/// The operator name of a [`NOT_SET_FIELDS`] key ("feed_rate" gives "feed
+/// rate"). A key with no entry reads as itself.
+#[must_use]
+pub fn field_phrase(name: &str) -> &str {
+    match name {
+        "depth" => "depth",
+        "max_depth" => "maximum depth",
+        "pocket_depth" => "pocket depth",
+        "feed_rate" => "feed rate",
+        "plunge_rate" => "plunge rate",
+        "spindle_rpm" => "spindle speed",
+        other => other,
+    }
 }
 
 impl std::fmt::Display for NotSet {

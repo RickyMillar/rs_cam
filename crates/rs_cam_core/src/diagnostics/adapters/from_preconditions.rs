@@ -193,35 +193,38 @@ fn not_set(scope: &Scope, op: &OperationConfig, ctx: &PreconditionContext) -> Op
     // W1: the face and the anchor name the value that is not set.
     let field =
         |name: &str| FieldKey::parse(name).map_or(Anchor::Operation, |key| Anchor::Field { key });
-    let (message, face, anchor) = if let Some(text) = &ctx.stock_thickness_refusal {
+    let (message, face, anchor, category) = if let Some(text) = &ctx.stock_thickness_refusal {
         (
             text.clone(),
             "Stock thickness not set".to_owned(),
             Anchor::Project,
+            Category::Geometry,
         )
     } else if op.floor().is_some_and(|floor| floor.is_unset()) {
         (
             format!(
                 "{}: {}",
                 op.op_type().label(),
-                crate::compute::floor::FLOOR_UNSET_TEXT
+                crate::compute::floor::FLOOR_UNSET_DETAIL
             ),
             "Floor not set".to_owned(),
             field("floor"),
+            Category::Geometry,
         )
     } else {
         let not_set = op.not_set()?;
         let anchor = not_set.first_field().map_or(Anchor::Operation, field);
-        let face = match not_set.kind {
-            NotSetKind::Depth => "Depth not set",
-            NotSetKind::Feeds => "Feed and spindle not set",
+        // The feeds are a tool-load fault, a depth a geometry fault.
+        let (face, category) = match not_set.kind {
+            NotSetKind::Depth => ("Depth not set", Category::Geometry),
+            NotSetKind::Feeds => ("Feed and spindle not set", Category::ToolLoad),
         };
-        (not_set.to_string(), face.to_owned(), anchor)
+        (not_set.detail(), face.to_owned(), anchor, category)
     };
     Some(Diagnostic {
         id: DiagnosticId::from(ids::PRECOND_NOT_SET),
         scope: scope.clone(),
-        category: Category::Geometry,
+        category,
         severity: Severity::Blocking,
         confidence: Confidence::Static,
         state: DiagnosticState::Current,
@@ -324,9 +327,9 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             source: Source::StaticValidation,
             face: crate::diagnostics::presentation::face(ids::PRECOND_PROJECT_CURVE_NO_CURVE),
             anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_PROJECT_CURVE_NO_CURVE),
-            message: "Project Curve needs a source curve. The selected model has no 2D \
-                      polygons — import an SVG/DXF with the curve and select it as the \
-                      toolpath's model."
+            message: "Project Curve needs a curve to follow. The selected model has no 2D \
+                      curves. Import an SVG or DXF file with the curve, and select it as the \
+                      model of this toolpath."
                 .to_owned(),
             evidence: None,
             fix: None,
@@ -348,9 +351,9 @@ fn project_curve_checks(scope: &Scope, ctx: &PreconditionContext) -> Vec<Diagnos
             source: Source::StaticValidation,
             face: crate::diagnostics::presentation::face(ids::PRECOND_PROJECT_CURVE_NO_SURFACE),
             anchor: crate::diagnostics::presentation::anchor(ids::PRECOND_PROJECT_CURVE_NO_SURFACE),
-            message: "Project Curve needs a target surface mesh. No mesh model is loaded \
-                      in the project — import the surface (e.g. an STL) before adding \
-                      this op."
+            message: "Project Curve needs a 3D surface to project the curve on. The \
+                      project has no 3D model. Import the surface (for example an STL file) \
+                      first."
                 .to_owned(),
             evidence: None,
             fix: None,

@@ -811,7 +811,7 @@ fn the_grid_note_says_the_bias_over_states_and_names_its_area_base() {
          over-state, so the truth is at or BELOW the figure. Got: {note}"
     );
     assert!(
-        note.contains("AT OR BELOW"),
+        note.contains("% or less"),
         "the grid note must say which way the error runs. Got: {note}"
     );
     assert!(

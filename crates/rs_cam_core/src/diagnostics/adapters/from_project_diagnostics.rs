@@ -46,10 +46,18 @@ pub fn verdict_to_diagnostic(v: &Verdict) -> Diagnostic {
         [only] => Scope::Toolpath { id: *only },
         _ => Scope::Project,
     };
+    // The severity carries the class, so the detail drops the shouted
+    // "ERROR: " / "WARNING: " prefix of the project report line.
+    let headline = v
+        .headline
+        .strip_prefix("ERROR: ")
+        .or_else(|| v.headline.strip_prefix("WARNING: "))
+        .unwrap_or(&v.headline);
     let message = if v.fix_hint.is_empty() {
-        v.headline.clone()
+        headline.to_owned()
     } else {
-        format!("{} — {}", v.headline, v.fix_hint)
+        let stop = if headline.ends_with('.') { "" } else { "." };
+        format!("{headline}{stop} {}", v.fix_hint)
     };
     Diagnostic {
         id: DiagnosticId::from(id),

@@ -89,7 +89,9 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_FEED_CLAMPED),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_FEED_CLAMPED),
             message: format!(
-                "Feed clamped to machine limit: {actual:.0} mm/min (asked {requested:.0})"
+                "The machine allows a feed rate of at most {actual:.0} mm/min. The \
+                 calculator asked for {requested:.0} mm/min, so the feed rate is held at \
+                 {actual:.0} mm/min."
             ),
             evidence: None,
             fix: None,
@@ -110,7 +112,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_POWER_LIMITED),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_POWER_LIMITED),
             message: format!(
-                "Power limited: {required_kw:.2} kW needed, {available_kw:.2} kW available"
+                "The cut needs {required_kw:.2} kW. The spindle gives {available_kw:.2} kW."
             ),
             evidence: None,
             fix: None,
@@ -142,7 +144,7 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 moved.push(format!("width {a:.2} → {b:.2} mm"));
             }
             if let Some(f) = feed_factor {
-                moved.push(format!("feed x{f:.3} (last resort)"));
+                moved.push(format!("feed rate to {:.1} % (last resort)", f * 100.0));
             }
             let cleared = required_kw_after <= available_kw;
             Diagnostic {
@@ -161,16 +163,21 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                     ids::FEEDS_POWER_LADDER_REDUCED_CUT,
                 ),
                 message: format!(
-                    "Cut reduced to fit spindle power ({}): {required_kw_before:.2} → \
-                     {required_kw_after:.2} kW against {available_kw:.2} kW available{}. {}",
+                    "The calculator made the cut smaller to fit the spindle power ({}). The \
+                     cut needs {required_kw_after:.2} kW, not {required_kw_before:.2} kW; the \
+                     spindle gives {available_kw:.2} kW.{} {}",
                     moved.join(", "),
-                    if cleared { "" } else { " — still over" },
+                    if cleared {
+                        ""
+                    } else {
+                        " The cut still needs more power than the spindle gives."
+                    },
                     // Only the last-resort feed rung changes the chip. Saying
                     // "unchanged" when it fired would misreport the recipe.
                     if feed_factor.is_some() {
-                        "Advance per tooth was thinned as a last resort."
+                        "The feed per tooth was made smaller as a last resort."
                     } else {
-                        "Advance per tooth unchanged."
+                        "The feed per tooth does not change."
                     }
                 ),
                 evidence: None,
@@ -189,7 +196,10 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             source: Source::FeedsCalculator,
             face: crate::diagnostics::presentation::face(ids::FEEDS_SHANK_TOO_LARGE),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SHANK_TOO_LARGE),
-            message: format!("Shank {shank_mm:.1} mm exceeds max {max_mm:.1} mm"),
+            message: format!(
+                "The tool shank is {shank_mm:.1} mm. The machine takes shanks up to \
+                 {max_mm:.1} mm."
+            ),
             evidence: None,
             fix: None,
             supersedes: vec![],
@@ -206,7 +216,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_DOC_EXCEEDS_FLUTE),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_DOC_EXCEEDS_FLUTE),
             message: format!(
-                "Depth-per-pass {requested:.1} mm capped to flute length {capped:.1} mm"
+                "The depth per pass {requested:.1} mm is longer than the flutes. The \
+                 calculator limits it to the flute length, {capped:.1} mm."
             ),
             evidence: None,
             fix: None,
@@ -224,7 +235,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_SLOTTING_DETECTED),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SLOTTING_DETECTED),
             message: format!(
-                "Slotting detected — depth-per-pass reduced to {doc_reduced_to:.1} mm"
+                "The tool cuts a full-width slot. The calculator lowers the depth per pass \
+                 to {doc_reduced_to:.1} mm."
             ),
             evidence: None,
             fix: None,
@@ -245,7 +257,8 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_SCALLOP_INVALID),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_SCALLOP_INVALID),
             message: format!(
-                "Scallop target {target:.3} mm unachievable (max {max_possible:.1} mm)"
+                "This tool cannot leave a scallop of {target:.3} mm. The largest scallop it \
+                 can give is {max_possible:.1} mm."
             ),
             evidence: None,
             fix: None,
@@ -270,9 +283,9 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             face: crate::diagnostics::presentation::face(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_CHIPLOAD_BELOW_FLOOR),
             message: format!(
-                "Advance per tooth below the rubbing floor: {commanded:.4} mm/tooth \
-                 (floor {floor:.4}, {}). The feed is not raised. The tool can rub and \
-                 burn the work: raise the feed or lower the RPM.",
+                "The feed per tooth is {commanded:.4} mm, below the rubbing limit of \
+                 {floor:.4} mm ({}). The calculator does not raise the feed rate. The tool \
+                 can rub and burn the wood: raise the feed rate or lower the spindle speed.",
                 source.describe()
             ),
             evidence: None,
@@ -301,13 +314,16 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             source: Source::FeedsCalculator,
             face: crate::diagnostics::presentation::face(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_RPM_LOWERED_FOR_CEILING),
-            message: crate::feeds::rpm_lowered_text(
-                *rpm_from,
-                *rpm_to,
-                *feed_ceiling_mm_min,
-                *rpm_floor,
-                *floor_source,
-                *held,
+            message: format!(
+                "{}. The feed rate moves down with the RPM.",
+                crate::feeds::rpm_lowered_text(
+                    *rpm_from,
+                    *rpm_to,
+                    *feed_ceiling_mm_min,
+                    *rpm_floor,
+                    *floor_source,
+                    *held,
+                )
             ),
             evidence: None,
             fix: None,
@@ -329,12 +345,14 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
             source: Source::FeedsCalculator,
-            face: format!("Long tool: load target \u{00D7}{factor:.2}"),
+            face: format!("Long tool: load target {:.0} %", factor * 100.0),
             anchor: crate::diagnostics::presentation::anchor(ids::FEEDS_LONG_TOOL_DERATE),
             message: format!(
-                "Long tool: stickout {stickout_mm:.1} mm is {ratio:.1} x D \
-                 (D {diameter_mm:.3} mm); load target x{factor:.2} (repo rule, unsourced). \
-                 The feed does not take it."
+                "The tool sticks out {stickout_mm:.1} mm, which is {ratio:.1} \u{00D7} its \
+                 diameter ({diameter_mm:.3} mm). The calculator lowers the load target to \
+                 {pct:.0} % to limit deflection. This limit has no published source. The \
+                 feed rate does not change.",
+                pct = factor * 100.0
             ),
             evidence: None,
             fix: None,
@@ -359,8 +377,9 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 ids::FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE,
             ),
             message: format!(
-                "Drill feed clamped into material envelope: {requested:.0} → {actual:.0} mm/min \
-                 (safe band {envelope_lo:.0}–{envelope_hi:.0} mm/min for this diameter)"
+                "The drill feed {requested:.0} mm/min is outside the safe range for this \
+                 diameter and material ({envelope_lo:.0}–{envelope_hi:.0} mm/min). The \
+                 calculator sets {actual:.0} mm/min."
             ),
             evidence: None,
             fix: None,
@@ -389,10 +408,10 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 ids::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
             ),
             message: format!(
-                "No vendor data for {operation_kind} on a {tool_family} cutter — this \
-                 recommendation is entirely formula-derived and carries no band, and the \
-                 post-simulation chipload gate will report Unmodeled(NoVendorData) for the \
-                 same reason. Missing: {missing_rows}."
+                "No vendor data for {operation_kind} with a {tool_family} cutter. The feeds \
+                 come from a formula only and have no safe range. For the same reason, the \
+                 chipload check after simulation cannot judge this cut. Missing: \
+                 {missing_rows}."
             ),
             evidence: None,
             fix: None,
@@ -422,25 +441,24 @@ fn feeds_warning_to_diagnostic(tp_id: ToolpathId, w: &FeedsWarning) -> Diagnosti
                 ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
             ),
             message: format!(
-                "Vendor row {observation_id} is an RPM anchor and publishes no chipload \
-                 column — the recommended {formula_chipload_mm:.4} mm/tooth is the \
-                 empirical formula's, not this vendor's, and this recommendation carries \
-                 no band.{}",
+                "Vendor row {observation_id} gives an RPM but no chipload. The recommended \
+                 {formula_chipload_mm:.4} mm/tooth comes from a formula, not from this \
+                 vendor, so it has no safe range.{}",
                 match floor_band_from {
                     // P1: the floor is the one clamp that now DOES see that
                     // row. Say which, or the operator reads the sentence
                     // above and assumes nothing did.
                     Some(row) => format!(
-                        " The post-simulation gate resolves a different, chipload-bearing \
-                         row, so its verdict is judged against bounds this recipe never \
-                         saw. The rubbing floor was subordinated to that row ({row}) rather \
-                         than to the global constant."
+                        " After simulation, the chipload check uses a different vendor row \
+                         that gives a chipload, so it judges the cut against limits this \
+                         recipe did not use. The rubbing limit comes from that row ({row}), \
+                         not from the fixed limit."
                     ),
                     // Ruling B4: a V-bit recipe rests on an RPM anchor only
                     // when no chipload-bearing row matches, so the gate has
                     // no row either.
-                    None => " No chipload-bearing row matches this cut, so the \
-                             post-simulation gate has no band to judge it against."
+                    None => " No vendor row with a chipload matches this cut, so the \
+                             chipload check after simulation has no range to judge it."
                         .to_owned(),
                 }
             ),
@@ -480,8 +498,9 @@ pub fn heuristic_hints_from_recommendation(
                 tp_id,
                 ids::FEEDS_FEED_VS_LUT_HIGH,
                 format!(
-                    "Feed {feed_rate_mm_min:.0} mm/min is {ratio:.1}× recommendation \
-                     ({rec_feed:.0}) — tool breakage risk pre-sim"
+                    "The feed rate {feed_rate_mm_min:.0} mm/min is {ratio:.1} \u{00D7} the \
+                     recommended {rec_feed:.0} mm/min. The tool can break. Run the simulation \
+                     to check the load."
                 ),
                 "feed",
                 feed_rate_mm_min,
@@ -494,8 +513,9 @@ pub fn heuristic_hints_from_recommendation(
                 tp_id,
                 ids::FEEDS_FEED_VS_LUT_LOW,
                 format!(
-                    "Feed {feed_rate_mm_min:.0} mm/min is {pct:.0}% of recommendation \
-                     ({rec_feed:.0}) — rubbing/heat risk pre-sim",
+                    "The feed rate {feed_rate_mm_min:.0} mm/min is {pct:.0} % of the \
+                     recommended {rec_feed:.0} mm/min. The tool can rub and burn the wood. Run \
+                     the simulation to check the load.",
                     pct = ratio * 100.0
                 ),
                 "feed",
@@ -515,7 +535,8 @@ pub fn heuristic_hints_from_recommendation(
             tp_id,
             ids::FEEDS_STEPOVER_VS_LUT,
             format!(
-                "Stepover {stepover:.2} mm is {ratio:.1}× recommendation ({rec_radial:.2})",
+                "The stepover {stepover:.2} mm is {ratio:.1} \u{00D7} the recommended \
+                 {rec_radial:.2} mm.",
                 ratio = stepover / rec_radial
             ),
             "stepover",
@@ -534,7 +555,8 @@ pub fn heuristic_hints_from_recommendation(
             tp_id,
             ids::FEEDS_DPP_VS_LUT,
             format!(
-                "Depth/pass {dpp:.2} mm is {ratio:.1}× recommendation ({rec_axial:.2})",
+                "The depth per pass {dpp:.2} mm is {ratio:.1} \u{00D7} the recommended \
+                 {rec_axial:.2} mm.",
                 ratio = dpp / rec_axial
             ),
             "depth_per_pass",

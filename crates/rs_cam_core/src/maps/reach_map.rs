@@ -591,7 +591,7 @@ impl ReachMap {
     #[must_use]
     pub fn over_statement_note(&self) -> String {
         format!(
-            "the grid over-states gaps by up to its floor ({:.3} mm), so the true unreachable share is AT OR BELOW {:.1} %, and the {:.1} % unresolved is the band the grid cannot classify either way",
+            "the grid over-states gaps by up to {:.3} mm, so the tool cannot reach {:.1} % or less of the surface; {:.1} % is too close to call",
             self.discretisation_floor_mm,
             self.unreachable_pct(),
             self.unresolved_pct()

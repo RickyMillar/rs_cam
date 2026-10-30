@@ -1001,6 +1001,12 @@ pub const FLOOR_UNSET_TEXT: &str = "the floor is not set: no rule gives a depth 
      op. Set the floor (field `floor`: for example { from = \"top\", depth = 6.0 }, the MCP \
      tool set_toolpath_floor, or the Bottom height row of the Heights tab)";
 
+/// The operator text of a floor that is not set, for the diagnostic detail
+/// (S11). [`FLOOR_UNSET_TEXT`] is the generation refusal and keeps the
+/// field key and the MCP tool for an agent.
+pub const FLOOR_UNSET_DETAIL: &str = "no rule gives a floor depth for this operation. Set \
+     the floor in the Bottom height row of the Heights tab.";
+
 impl std::fmt::Display for FloorRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

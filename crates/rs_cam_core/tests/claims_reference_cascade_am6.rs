@@ -598,14 +598,14 @@ fn the_footgun_produces_a_caution_diagnostic_naming_the_consequence() {
     );
     // The message has to name what happened AND what it cost, or it is a
     // label rather than a warning.
-    assert!(d.message.contains("analytic self-probe"));
+    assert!(d.message.contains("the model shape only"));
     assert!(
         d.message.contains("territory_clip"),
         "the skipped confinement is the mechanism and must be named: {}",
         d.message
     );
     assert!(
-        d.message.contains("FULL territory"),
+        d.message.contains("FULL area"),
         "the consequence — an all-over pass wearing a rest pass's name —          must be spelled out: {}",
         d.message
     );
@@ -661,8 +661,12 @@ fn the_derived_resolution_is_reported_as_info() {
         .find(|d| d.id.as_str() == rs_cam_core::diagnostics::ids::CONFIG_CLAIMS_REFERENCE)
         .expect("a derived resolution must still be recorded");
     assert_eq!(d.severity, rs_cam_core::diagnostics::Severity::Info);
-    assert!(d.message.contains("derived"), "{}", d.message);
-    assert!(d.message.contains("machined prior stock"), "{}", d.message);
+    assert!(d.message.contains("chosen automatically"), "{}", d.message);
+    assert!(
+        d.message.contains("the stock the earlier pass left"),
+        "{}",
+        d.message
+    );
     // The rough-chain caveat travels with the derivation, because `Auto`
     // cannot see the difference and the operator can.
     assert!(d.message.contains("ROUGHING"), "{}", d.message);

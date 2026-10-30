@@ -691,17 +691,19 @@ impl BoundaryClipDroppedFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "`{containment:?}` containment was requested and its offset \
-             collapsed to nothing across all {regions} source region(s) at a \
-             {dia:.3} mm tool, so this toolpath was emitted with NO boundary \
-             clip — not with a smaller one. The usual cause is benign: the \
-             tool is wider than the region it was asked to stay inside, \
-             nothing there is machinable, and leaving the path unclipped is \
-             better than silently deleting it. But nothing is containing this \
-             path. Check it against the boundary you meant before running it, \
-             or use a smaller tool. [Generation stage; report-only — no gate \
+            "You asked the toolpath to stay {containment} the boundary, but with \
+             a {dia:.3} mm tool no area is left inside it, in all {regions} \
+             region(s). So the toolpath has NO boundary limit, not a smaller \
+             one. Usually this is harmless: the tool is wider than the area, and \
+             nothing there can be cut. But nothing keeps this toolpath inside \
+             the boundary. Check it against the boundary before you run it, or \
+             use a smaller tool. [Generation stage; report-only — no gate \
              consumes this.]",
-            containment = self.containment,
+            containment = match self.containment {
+                crate::compute::config::BoundaryContainment::Center => "centred on",
+                crate::compute::config::BoundaryContainment::Inside => "inside",
+                crate::compute::config::BoundaryContainment::Outside => "outside",
+            },
             regions = self.source_region_count,
             dia = self.tool_diameter_mm,
         )
@@ -860,8 +862,8 @@ impl WaterlineLadderFinding {
     #[must_use]
     pub fn message(&self) -> String {
         let mut s = format!(
-            "waterline ladder from Z {top:.3} to Z {bottom:.3} by {step:.3} mm: \
-             {planned} level(s) planned, {delivered} cut",
+            "Waterline levels from Z {top:.3} to Z {bottom:.3}, {step:.3} mm \
+             apart: {planned} level(s) planned, {delivered} cut",
             top = self.requested_top_z_mm,
             bottom = self.requested_bottom_z_mm,
             step = self.z_step_mm,
@@ -870,21 +872,22 @@ impl WaterlineLadderFinding {
         );
         if self.nudged_levels > 0 {
             s.push_str(&format!(
-                "; {} level(s) sat on a horizontal face and moved 0.01 mm down",
+                "; {} level(s) sat on a flat face and moved 0.01 mm down",
                 self.nudged_levels
             ));
         }
         if self.floored() {
             s.push_str(&format!(
-                "; {} level(s) at or below the stock bottom (Z {:.3}) were DROPPED — a \
-                 level at the stock bottom cuts the bed; pin bottom_z above it",
+                "; {} level(s) at or below the stock bottom (Z {:.3}) were DROPPED, \
+                 because a level at the stock bottom cuts the bed; set the bottom height \
+                 above it",
                 self.dropped_below_stock, self.stock_bottom_z_mm
             ));
         }
         if self.degenerate() {
             s.push_str(
-                "; fewer than two levels reached the cutter, so this waterline cut \
-                 nothing between its top and bottom — check top_z and bottom_z \
+                "; fewer than two levels reached the tool, so this waterline cut \
+                 nothing between its top and bottom; check the top and bottom heights \
                  against the model",
             );
         }
@@ -1037,16 +1040,15 @@ impl ZeroRemovalFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "This rest pass removes no material: over {samples} sampled \
-             cutting positions the tool never gets under the stock the prior \
-             operation left (deepest reach {deepest:+.4} mm against a \
-             {floor:.4} mm floor, which is what the reference's own sampling \
-             can manufacture; positive would be INTO material). It still \
-             costs {cutting:.0} mm of cutting travel plus its retracts. Most \
-             often the reference is not what was intended — check that the \
-             prior operation actually left something here, and that this \
-             pass's stock-to-leave is BELOW what the prior pass left. Keeping \
-             the pass is a legitimate choice; running it unknowingly is not. \
+            "This rest pass removes no material. At {samples} sampled cutting \
+             positions the tool never goes below the stock the earlier \
+             operation left (deepest reach {deepest:+.4} mm, against a \
+             {floor:.4} mm sampling limit; a positive value means INTO \
+             material). It still costs {cutting:.0} mm of cutting travel plus \
+             its retracts. Usually the earlier stock is not what you expect: \
+             check that the earlier operation left material here, and that the \
+             stock to leave of this pass is BELOW what the earlier pass left. \
+             You can keep the pass, but know that it cuts nothing. \
              [Material standing above the CUTTER's own surface, mm; measured \
              at generation against the prior stock snapshot; sampled along \
              the swept path at the stock grid cell. Report-only — no gate \
@@ -1094,10 +1096,9 @@ impl BuriedCurveFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "The tool cuts {deepest:.3} mm into the stock, not the commanded \
+            "The tool cuts {deepest:.3} mm into the stock, not the set depth of \
              {commanded:.3} mm: stock stands above the surface the curve is \
-             projected on. The feeds and the chip load are for the commanded \
-             depth. Rough the stock nearer to the surface first, or set the \
+             projected on. The feeds and the chip load are for the set depth. Rough the stock nearer to the surface first, or set the \
              feeds for the deeper cut. [Tool tip below the remaining stock, \
              mm; measured at generation over {samples} sampled cutting \
              positions against the stock this operation reads, {floor:.4} mm \
@@ -1149,8 +1150,8 @@ impl SelectionNoteFinding {
     pub fn message(&self) -> String {
         let notes: Vec<String> = self.notes.iter().map(ToString::to_string).collect();
         format!(
-            "{}: {} [Counted at generation over the drawing this operation \
-             reads. The other items were cut.]",
+            "{}: {} The other items are cut. [Counted at generation over the \
+             drawing this operation reads.]",
             self.op,
             notes.join(" ")
         )
@@ -1379,16 +1380,35 @@ impl InertClaimsDialFinding {
         let mut parts: Vec<String> = Vec::new();
         if self.min_rest_depth_inert {
             parts.push(format!(
-                "`min_rest_depth_mm` = {value:.4} (default {default:.4})",
+                "Min Rest Depth to {value:.4} mm (default {default:.4} mm)",
                 value = self.min_rest_depth_mm,
                 default = self.default_min_rest_depth_mm,
             ));
         }
         if self.claims_reference_inert {
             let reference = self.claims_reference;
-            parts.push(format!("`claims_reference` = {reference:?}"));
+            let reference = match reference {
+                crate::finish::unified_finish::ClaimsReference::Auto => "Auto",
+                crate::finish::unified_finish::ClaimsReference::SelfProbe => "Self Probe",
+                crate::finish::unified_finish::ClaimsReference::MachinedStock => "Machined Stock",
+            };
+            parts.push(format!("Rest Reference to {reference}"));
         }
         parts.join(" and ")
+    }
+
+    /// The config keys of the inert dials, for the provenance tail an agent
+    /// reads (`set_toolpath_param` takes these names).
+    #[must_use]
+    pub fn keys(&self) -> String {
+        let mut keys: Vec<&str> = Vec::new();
+        if self.min_rest_depth_inert {
+            keys.push("min_rest_depth_mm");
+        }
+        if self.claims_reference_inert {
+            keys.push("claims_reference");
+        }
+        keys.join(", ")
     }
 
     /// Why those dials did nothing, naming the switch that would make them
@@ -1397,14 +1417,12 @@ impl InertClaimsDialFinding {
     #[must_use]
     pub const fn why(&self) -> &'static str {
         if self.pencil_claims {
-            "`territory_clip = false`, and the S4 mask-AND it gates is the \
-             only thing that reads these numbers, so no rest-territory \
-             confinement was applied and this pass covered its full territory"
+            "Territory Clip is off, and only Territory Clip reads this value, \
+             so the pass is not limited to the rest areas"
         } else {
-            "`territory_clip = false` AND `pencil_claims = false`: the claims \
-             pipeline never ran, so no rest field was even built, and the S4 \
-             mask-AND that `territory_clip` gates — the only consumer of these \
-             numbers — never ran either. This pass covered its full territory"
+            "Territory Clip AND Pencil Claims are off: the rest analysis did not \
+             run, so nothing reads this value, and the pass is not limited to the \
+             rest areas"
         }
     }
 
@@ -1420,16 +1438,17 @@ impl InertClaimsDialFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "{dials} — but {why}. This operation therefore cut its FULL \
-             territory, not rest islands, and its emitted toolpath is \
-             byte-identical to what the default value would have produced. \
-             Set `territory_clip = true` (which also needs \
-             `pencil_claims = true` and a machined-stock reference in scope) \
-             to make the number live, or return it to its default. [Read from \
-             this operation's config at generation; report-only — no gate \
-             consumes this, and recording it changes no emitted motion.]",
+            "You set {dials}, but {why}. So this operation cut its FULL area, \
+             not only the rest islands, and its toolpath is the same as with the \
+             default value. To make the setting work, turn on Territory Clip \
+             (it also needs Pencil Claims on and the machined stock as the rest \
+             reference). Or set the value back to its default. [Keys: {keys}; \
+             territory_clip, pencil_claims. Read from this operation's config at \
+             generation; report-only — no gate consumes this, and recording it \
+             changes no emitted motion.]",
             dials = self.dials(),
             why = self.why(),
+            keys = self.keys(),
         )
     }
 }
@@ -1624,6 +1643,27 @@ impl HeightClip {
             Self::BottomZ => "bottom_z",
             Self::TopZ => "top_z",
         }
+    }
+
+    /// The height in operator words, for a diagnostic sentence.
+    #[must_use]
+    pub const fn phrase(self) -> &'static str {
+        match self {
+            Self::BottomZ => "bottom height",
+            Self::TopZ => "top height",
+        }
+    }
+}
+
+/// The slope band of a finish in operator words, for a diagnostic sentence
+/// (`FinishBand::label` is the stable token).
+#[must_use]
+pub const fn band_phrase(band: crate::finish::finish_planner::FinishBand) -> &'static str {
+    use crate::finish::finish_planner::FinishBand;
+    match band {
+        FinishBand::Shallow => "shallow",
+        FinishBand::MidSteep => "medium-slope",
+        FinishBand::VerySteep => "steep",
     }
 }
 
@@ -1835,19 +1875,19 @@ impl ClippedBandFinding {
     #[must_use]
     pub fn message(&self) -> String {
         format!(
-            "{area:.1} mm² of the {band} band across {count} planned \
-             region(s) cut only PART of its depth: the resolved {clip} = \
-             {clip_z:.3} mm shortened the ladder from \
-             {req_lo:.3}..{req_hi:.3} mm to {del_lo:.3}..{del_hi:.3} mm \
-             ({planned} levels planned, {resolved} laddered), leaving up to \
-             {lost:.3} mm of the feature unfinished. If that was not \
-             deliberate, pin {clip} to the real depth of the feature. \
-             Band clip coverage: {coverage}. \
-             [{provenance}. Report-only — no gate consumes this.]",
+            "{area:.1} mm² of the {band} surface in {count} planned area(s) is \
+             cut to only PART of its depth: the {clip} of {clip_z:.3} mm limits \
+             the cut from Z {req_lo:.3}..{req_hi:.3} mm to Z \
+             {del_lo:.3}..{del_hi:.3} mm ({planned} levels planned, {resolved} \
+             cut). Up to {lost:.3} mm of the feature stays unfinished. If you did \
+             not want this, set the {clip} to the real depth of the feature. \
+             [{key} = {clip_z:.3} mm; {provenance}; band clip coverage: {coverage}. \
+             Report-only — no gate consumes this.]",
             area = self.area_mm2,
-            band = self.band.label(),
+            band = band_phrase(self.band),
             count = self.region_count,
-            clip = self.clip.clip.label(),
+            clip = self.clip.clip.phrase(),
+            key = self.clip.clip.label(),
             clip_z = self.clip.clip_z_mm,
             req_lo = self.clip.requested_bottom_z_mm,
             req_hi = self.clip.requested_top_z_mm,
@@ -1935,13 +1975,12 @@ impl TipFloatFinding {
     pub fn message(&self) -> String {
         let pct = 100.0 * self.floating_fraction().unwrap_or(0.0);
         format!(
-            "{floating} of {total} centreline points ({pct:.0}%) sit over \
-             material this tool CANNOT reach — it wedges between the valley \
-             walls and rides above the floor. Worst residual {max:.3} mm is \
-             left uncut BENEATH the emitted line (float > \
-             {TIP_FLOAT_THRESHOLD_MM} mm counts). The pass as emitted cannot \
-             remove it: use a smaller tip, or route these valleys to a finer \
-             tool. [{provenance}. Report-only — no gate consumes this.]",
+            "{floating} of {total} centreline points ({pct:.0} %) are over \
+             material this tool CANNOT reach: the tool touches the valley walls \
+             and stays above the floor. Up to {max:.3} mm is left uncut BELOW \
+             the toolpath (a point counts above {TIP_FLOAT_THRESHOLD_MM} mm). \
+             This pass cannot remove it: use a smaller tip, or cut these valleys \
+             with a finer tool. [{provenance}. Report-only — no gate consumes this.]",
             floating = self.floating_points,
             total = self.centreline_points,
             max = self.max_float_mm,
@@ -2045,7 +2084,7 @@ pub const RETRACT_TRIP_PROVENANCE: crate::measurement::MeasurementProvenance =
         "one contiguous run of MoveType::Rapid moves = one retract round trip; the \
          in-node / between-nodes split classifies each run by whether its FIRST move \
          sits inside a planner territory Region node (RegionSpanRole::Node) — see \
-         `AnnotatedToolpath::spans_valid` for when that split is trustworthy",
+         AnnotatedToolpath::spans_valid for when that split is trustworthy",
     );
 
 /// Measurement domain of [`RetractTripCount::total`] and its split.

@@ -222,7 +222,7 @@ fn tool_op_compat_checks(
             face: crate::diagnostics::presentation::face(ids::COMPAT_BALL_NOSE_FLAT_CLEARING),
             anchor: crate::diagnostics::presentation::anchor(ids::COMPAT_BALL_NOSE_FLAT_CLEARING),
             message:
-                "Ball nose tools leave scallops on flat surfaces. Consider a flat end mill for clearing."
+                "A ball nose leaves ridges on flat floors. Use a flat end mill to clear flat areas."
                     .to_owned(),
             evidence: None,
             fix: None,
@@ -241,7 +241,9 @@ fn tool_op_compat_checks(
         out.push(Diagnostic {
             id: DiagnosticId::from(ids::COMPAT_TOOL_KIND_REFUSED),
             scope: scope.clone(),
-            category: Category::ToolLoad,
+            // The wrong kind of tool is a fit fault, not a load fault: the
+            // same category as the other refusals of the op.
+            category: Category::Geometry,
             severity: Severity::Critical,
             confidence: Confidence::Static,
             state: DiagnosticState::Current,
@@ -341,8 +343,8 @@ fn stepover_checks(
             face: crate::diagnostics::presentation::face(ids::GEOM_STEPOVER_EXCEEDS_DIAMETER),
             anchor: crate::diagnostics::presentation::anchor(ids::GEOM_STEPOVER_EXCEEDS_DIAMETER),
             message: format!(
-                "Stepover ({stepover:.2} mm) exceeds tool diameter ({diameter:.1} mm) \
-                 — will leave uncut strips."
+                "The stepover ({stepover:.2} mm) is wider than the tool ({diameter:.1} mm). \
+                 The toolpath leaves strips of uncut material."
             ),
             evidence: Some(DiagnosticEvidence::GeometryCompare {
                 lhs_label: "stepover".to_owned(),
@@ -370,7 +372,7 @@ fn stepover_checks(
             face: crate::diagnostics::presentation::face(ids::QUALITY_STEPOVER_OVER_80_PCT),
             anchor: crate::diagnostics::presentation::anchor(ids::QUALITY_STEPOVER_OVER_80_PCT),
             message: format!(
-                "Stepover is {:.0}% of tool diameter — may leave visible scallops.",
+                "The stepover is {:.0} % of the tool diameter. It can leave visible ridges.",
                 (stepover / diameter) * 100.0
             ),
             evidence: None,
@@ -391,7 +393,7 @@ fn stepover_checks(
             source: Source::StaticValidation,
             face: crate::diagnostics::presentation::face(ids::EFFICIENCY_VERY_FINE_STEPOVER),
             anchor: crate::diagnostics::presentation::anchor(ids::EFFICIENCY_VERY_FINE_STEPOVER),
-            message: "Very fine stepover — cycle time will be significantly longer.".to_owned(),
+            message: "The stepover is very fine. The cycle time is much longer.".to_owned(),
             evidence: None,
             fix: None,
             supersedes: vec![],
@@ -409,9 +411,12 @@ fn stepover_checks(
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
             face: crate::diagnostics::presentation::face(ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT),
-            anchor: crate::diagnostics::presentation::anchor(ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT),
+            anchor: crate::diagnostics::presentation::anchor(
+                ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT,
+            ),
             message: format!(
-                "Stepover ({stepover:.2} mm) is >{:.0}% of tool diameter. Finish quality may suffer.",
+                "The stepover ({stepover:.2} mm) is more than {:.0} % of the tool diameter. The \
+                 finish can be rough.",
                 (stepover / diameter) * 100.0
             ),
             evidence: None,
@@ -448,8 +453,8 @@ fn stepover_checks(
                             ids::QUALITY_BALL_SCALLOP_HEIGHT,
                         ),
                         message: format!(
-                            "Scallop height {scallop_h:.3} mm at this stepover. \
-                             Reduce stepover for a smoother finish."
+                            "At this stepover the ball nose leaves ridges {scallop_h:.3} mm \
+                             high. Make the stepover smaller for a smoother finish."
                         ),
                         evidence: None,
                         fix: None,
@@ -484,8 +489,8 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
             face: crate::diagnostics::presentation::face(ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH),
             anchor: crate::diagnostics::presentation::anchor(ids::GEOM_DPP_EXCEEDS_CUTTING_LENGTH),
             message: format!(
-                "Depth per pass ({dpp:.1} mm) exceeds cutting length ({:.1} mm). \
-                 Tool shank will contact material.",
+                "The depth per pass ({dpp:.1} mm) is more than the cutting length ({:.1} mm). \
+                 The tool shank touches the material.",
                 tool.cutting_length
             ),
             evidence: Some(DiagnosticEvidence::GeometryCompare {
@@ -522,9 +527,9 @@ fn depth_checks(scope: &Scope, op: &OperationConfig, tool: &ToolConfig) -> Vec<D
                 ids::FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE,
             ),
             message: format!(
-                "Depth per pass ({dpp:.1} mm) is {:.1}× the tool diameter ({:.1} mm). \
-                 The vendors print the depth de-rate to {last_ratio:.0}× diameter only. \
-                 The feed and the chipload band hold the last printed point, 50 %.",
+                "The depth per pass ({dpp:.1} mm) is {:.1} \u{00D7} the tool diameter ({:.1} mm). \
+                 Vendor tables go to {last_ratio:.0} \u{00D7} the diameter only. The feed and \
+                 the chipload range use the last table value, 50 %.",
                 dpp / tool.diameter,
                 tool.diameter
             ),
@@ -564,8 +569,8 @@ fn feed_checks(scope: &Scope, feed: Option<f64>, plunge: Option<f64>) -> Vec<Dia
             face: crate::diagnostics::presentation::face(ids::GEOM_PLUNGE_EXCEEDS_FEED),
             anchor: crate::diagnostics::presentation::anchor(ids::GEOM_PLUNGE_EXCEEDS_FEED),
             message: format!(
-                "Plunge rate ({plunge:.0}) exceeds feed rate ({feed:.0}). \
-                 Unusual — plunge is typically 30–50% of feed."
+                "The plunge rate ({plunge:.0} mm/min) is more than the feed rate ({feed:.0} \
+                 mm/min). A plunge rate is usually 30–50 % of the feed rate."
             ),
             evidence: None,
             fix: None,
@@ -607,7 +612,10 @@ impl DepthBeyondStock {
     /// The operator-facing sentence. Kept identical to the GUI rule F1.6
     /// shipped, so the switchover does not change what the operator reads.
     pub fn message(&self) -> String {
-        format!("Depth exceeds stock thickness by {:.2} mm", self.excess_mm)
+        format!(
+            "The cut goes {:.2} mm below the bottom of the stock",
+            self.excess_mm
+        )
     }
 }
 

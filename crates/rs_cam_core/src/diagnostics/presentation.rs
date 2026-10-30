@@ -226,14 +226,18 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::LOAD_DEPTH_EXCEEDS,
         OP,
-        "Depth of cut past the rigidity cap",
+        "Depth of cut too deep for this tool",
     ),
-    (ids::LOAD_DEPTH_REPORTED, NOTE, "Depth of cut measured"),
+    (
+        ids::LOAD_DEPTH_REPORTED,
+        NOTE,
+        "Finish pass: depth of cut has no cap",
+    ),
     (ids::LOAD_DEPTH_UNMODELED, NOTE, "Depth of cut not measured"),
     (
         ids::LOAD_MATERIAL_NOT_JUDGED,
         NOTE,
-        "Added material not judged",
+        "Cuts in added material not checked",
     ),
     (
         ids::DRILL_CHIP_WELDING,
@@ -271,8 +275,12 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         PROJECT,
         "Path hits an obstacle",
     ),
-    (ids::PROJECT_PLUNGE_STRESS, f("entry_style"), "Hard plunge"),
-    (ids::PROJECT_AIR_CUT_HIGH, NOTE, "High air cutting"),
+    (
+        ids::PROJECT_PLUNGE_STRESS,
+        f("entry_style"),
+        "Hard plunge: use a ramp or helix entry",
+    ),
+    (ids::PROJECT_AIR_CUT_HIGH, NOTE, "Much of the path cuts air"),
     (ids::PROJECT_GENERATED_EMPTY, OP, "Removes no material"),
     (
         ids::PROJECT_ALIGNMENT_PINS_UNKEYED,
@@ -319,7 +327,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::PROJECT_ROUGH_LEAVES_ISLANDS,
         OP,
-        "Rough leaves islands",
+        "Roughing leaves islands of stock",
     ),
     (
         ids::PROJECT_PLUNGE_CLASS_LOAD,
@@ -329,7 +337,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::PROJECT_REST_SLOWER_THAN_FRESH,
         NOTE,
-        "Rest is slower than fresh stock",
+        "Rest pass is slower than a fresh pass",
     ),
     (
         ids::PROJECT_KINEMATIC_UTILIZATION,
@@ -352,7 +360,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         f("feed_rate"),
         "Cut reduced to fit spindle power",
     ),
-    (ids::FEEDS_SHANK_TOO_LARGE, TOOL, "Shank too large"),
+    (
+        ids::FEEDS_SHANK_TOO_LARGE,
+        TOOL,
+        "Tool shank too large for the machine",
+    ),
     (
         ids::FEEDS_DOC_EXCEEDS_FLUTE,
         f("depth_per_pass"),
@@ -381,7 +393,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::FEEDS_AGGRESSIVENESS_ENGAGEMENT,
         OP,
-        "Engagement reduced for aggressiveness",
+        "Cut made smaller for the aggressiveness",
     ),
     (
         ids::FEEDS_RPM_LOWERED_FOR_CEILING,
@@ -396,7 +408,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD,
         NOTE,
-        "Vendor row gives no chipload",
+        "Vendor data gives no chipload",
     ),
     (
         ids::FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION,
@@ -411,22 +423,22 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::FEEDS_FEED_VS_LUT_HIGH,
         NOTE,
-        "Feed above recommendation",
+        "Feed far above the recommended feed",
     ),
     (
         ids::FEEDS_FEED_VS_LUT_LOW,
         NOTE,
-        "Feed below recommendation",
+        "Feed far below the recommended feed",
     ),
     (
         ids::FEEDS_STEPOVER_VS_LUT,
         NOTE,
-        "Stepover above recommendation",
+        "Stepover far above the recommended value",
     ),
     (
         ids::FEEDS_DPP_VS_LUT,
         NOTE,
-        "Depth per pass above recommendation",
+        "Depth per pass far above the recommended value",
     ),
     // Geometry of the op and its heights.
     (
@@ -442,12 +454,12 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::GEOM_BOTTOM_ABOVE_TOP_Z,
         f("bottom_z"),
-        "Bottom above top",
+        "Bottom height above top height",
     ),
     (
         ids::GEOM_FEED_Z_BELOW_TOP_Z,
         f("feed_z"),
-        "Feed height below top",
+        "Feed height below top height",
     ),
     (
         ids::GEOM_RETRACT_Z_BELOW_FEED_Z,
@@ -462,7 +474,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::GEOM_RETRACT_Z_BELOW_TOP_Z,
         f("retract_z"),
-        "Retract height below top",
+        "Retract height below top height",
     ),
     (
         ids::GEOM_PLUNGE_EXCEEDS_FEED,
@@ -475,86 +487,142 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         OP,
         "Material left uncut inside",
     ),
-    (ids::GEOM_UNMACHINED_BAND, OP, "Band left uncut"),
-    (ids::GEOM_CLIPPED_BAND, NOTE, "Band clipped by heights"),
-    (ids::GEOM_TIP_FLOAT, OP, "Tool tip floats above the surface"),
+    (
+        ids::GEOM_UNMACHINED_BAND,
+        OP,
+        "Heights leave a feature uncut",
+    ),
+    (
+        ids::GEOM_CLIPPED_BAND,
+        NOTE,
+        "Heights leave part of a feature unfinished",
+    ),
+    (
+        ids::GEOM_TIP_FLOAT,
+        OP,
+        "Tool too large to reach some valley floors",
+    ),
     (
         ids::GEOM_RAMP_REACH_CLAMP,
         f("entry_style"),
         "Ramp raised: tool cannot reach",
     ),
     (ids::GEOM_ZERO_REMOVAL, OP, "Cuts no material"),
-    (ids::GEOM_BURIED_CURVE, NOTE, "Curve below the surface"),
-    (ids::GEOM_SELECTION_NOTE, OP, "Selection note"),
-    (ids::GEOM_TAB_PLACEMENT, NOTE, "Tab placement"),
-    (ids::GEOM_OFFSET_LIBRARY_FAILURE, OP, "Offset failed"),
-    (ids::GEOM_BOUNDARY_CLIP_DROPPED, OP, "Boundary removed cuts"),
+    (
+        ids::GEOM_BURIED_CURVE,
+        NOTE,
+        "Curve cuts deeper than its set depth",
+    ),
+    (
+        ids::GEOM_SELECTION_NOTE,
+        OP,
+        "Some selected items are not cut",
+    ),
+    (ids::GEOM_TAB_PLACEMENT, NOTE, "Tabs not placed as asked"),
+    (
+        ids::GEOM_OFFSET_LIBRARY_FAILURE,
+        OP,
+        "Offset failed: material can be left",
+    ),
+    (
+        ids::GEOM_BOUNDARY_CLIP_DROPPED,
+        OP,
+        "Boundary not applied: the tool is too wide",
+    ),
     (
         ids::GEOM_WATERLINE_LEVELS_BELOW_STOCK,
         OP,
-        "Levels below the stock dropped",
+        "Z levels below the stock dropped",
     ),
-    (ids::GEOM_WATERLINE_LADDER_EMPTY, OP, "Too few Z levels"),
-    (ids::GEOM_WATERLINE_PART_UNHELD, OP, "Part not held"),
-    (ids::GEOM_REGION_CAP_TRUNCATED, OP, "Rest regions dropped"),
+    (
+        ids::GEOM_WATERLINE_LADDER_EMPTY,
+        OP,
+        "Too few Z levels to cut",
+    ),
+    (
+        ids::GEOM_WATERLINE_PART_UNHELD,
+        OP,
+        "Part not held at the end: add tabs",
+    ),
+    (
+        ids::GEOM_REGION_CAP_TRUNCATED,
+        OP,
+        "Some rest areas dropped: too many found",
+    ),
     (
         ids::GEOM_REST_LEVELS_FALLBACK,
         OP,
         "Rest cut the whole outline",
     ),
-    (ids::CONFIG_DERIVED_STEPOVER, NOTE, "Stepover derived"),
+    (
+        ids::CONFIG_DERIVED_STEPOVER,
+        NOTE,
+        "Stepover sized for this tool",
+    ),
     // Caution when the reference needs attention, so not a note.
-    (ids::CONFIG_CLAIMS_REFERENCE, OP, "Rest reference"),
+    (
+        ids::CONFIG_CLAIMS_REFERENCE,
+        OP,
+        "Check the rest stock source",
+    ),
     (ids::CONFIG_INERT_CLAIMS_DIAL, OP, "Rest dial has no effect"),
     // Tool and op compatibility.
     (ids::COMPAT_TOOL_KIND_REFUSED, TOOL, "Wrong tool kind"),
     (
         ids::COMPAT_BALL_NOSE_FLAT_CLEARING,
         NOTE,
-        "Ball nose on flat clearing",
+        "Ball nose leaves ridges on flat floors",
     ),
     (
         ids::COMPAT_PROJECT_CURVE_POINT_PROJECTION,
         f("projection"),
-        "Point projection",
+        "Point projection can cut the far surface",
     ),
     (
         ids::TOOL_NAME_SIZE_MISMATCH,
         NOTE,
         "Tool name and size differ",
     ),
-    (ids::QUALITY_STEPOVER_OVER_80_PCT, NOTE, "Wide stepover"),
+    (
+        ids::QUALITY_STEPOVER_OVER_80_PCT,
+        NOTE,
+        "Wide stepover can leave ridges",
+    ),
     (
         ids::QUALITY_FINISH_STEPOVER_OVER_50_PCT,
         NOTE,
-        "Wide finish stepover",
+        "Wide finish stepover: rough surface",
     ),
-    (ids::QUALITY_BALL_SCALLOP_HEIGHT, NOTE, "Scallop height"),
+    (
+        ids::QUALITY_BALL_SCALLOP_HEIGHT,
+        NOTE,
+        "Ball nose leaves ridges at this stepover",
+    ),
     (
         ids::EFFICIENCY_VERY_FINE_STEPOVER,
         NOTE,
-        "Very fine stepover",
+        "Very fine stepover: long cycle time",
     ),
     // Stale defaults.
     (
         ids::STALE_DROP_CUTTER_MIN_Z,
         OP,
-        "Old default: drop cutter min Z",
+        "Min Z is at an old default value",
     ),
     (
         ids::STALE_TAPERED_BALL_PLUNGE,
         OP,
-        "Old default: tapered ball plunge",
+        "Plunge too fast for a small ball nose",
     ),
     (
         ids::STALE_WOOD_ADAPTIVE_STEPOVER,
         f("stepover"),
-        "Old default: adaptive stepover",
+        "Adaptive stepover narrower than the wood target",
     ),
     (
         ids::STALE_PROJECT_CURVE_NEGATIVE_DEPTH,
         f("depth"),
-        "Old default: negative depth",
+        "Negative depth: the toolpath cuts air",
     ),
     // Preconditions.
     (
@@ -570,7 +638,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (
         ids::PRECOND_SELECTION_REFUSED,
         f("selection"),
-        "Selection refused",
+        "Fix the selection: generation refuses it",
     ),
     (
         ids::PRECOND_BURIED_FACE,
@@ -578,7 +646,7 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Face below the stock top",
     ),
     (ids::PRECOND_NOT_SET, OP, "Value not set"),
-    (ids::PRECOND_NO_TOOL, TOOL, "No tool"),
+    (ids::PRECOND_NO_TOOL, TOOL, "No tool chosen"),
     (ids::SAFETY_CUTS_INTO_MODEL, OP, "Cuts into the model"),
     (ids::PRECOND_PROJECT_CURVE_NO_CURVE, OP, "No source curve"),
     (
@@ -586,7 +654,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         PROJECT,
         "No surface mesh",
     ),
-    (ids::REF_MODEL_MISSING, OP, "Model missing"),
+    (
+        ids::REF_MODEL_MISSING,
+        OP,
+        "Model missing: pick a loaded model",
+    ),
 ];
 
 fn row(id: &str) -> Option<&'static (&'static str, Anchor, &'static str)> {

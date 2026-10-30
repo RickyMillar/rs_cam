@@ -711,6 +711,251 @@ fn every_id_has_an_anchor_and_a_short_face_w1() {
     }
 }
 
+/// W4 (message rewrite): a face says what is wrong or what to do, not only
+/// the topic. Each face of `presentation::TABLE` fits the panel, is not its
+/// id, has at least three words, and does not end in a bare topic word
+/// ("Selection note", "Tab placement", "Rest reference" fail). A face that
+/// ends in "height" passes only as a relation ("Feed height below top
+/// height"), because the three-word rule stops "Scallop height".
+#[test]
+fn every_face_says_what_is_wrong_w4() {
+    use crate::diagnostics::presentation::{FACE_MAX_CHARS, TABLE};
+
+    const TOPIC_WORDS: &[&str] = &[
+        "note",
+        "notes",
+        "placement",
+        "reference",
+        "derived",
+        "projection",
+        "info",
+        "issue",
+        "warning",
+    ];
+    let mut bad = Vec::new();
+    for (id, _, face) in TABLE {
+        let words: Vec<&str> = face.split_whitespace().collect();
+        let last = words
+            .last()
+            .map(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+            })
+            .unwrap_or_default();
+        if face.chars().count() > FACE_MAX_CHARS {
+            bad.push(format!(
+                "{id}: {face:?} is over {FACE_MAX_CHARS} characters"
+            ));
+        }
+        if face == id || face.eq_ignore_ascii_case(&id.replace(['.', '_'], " ")) {
+            bad.push(format!("{id}: {face:?} repeats the id"));
+        }
+        if words.len() < 3 {
+            bad.push(format!(
+                "{id}: {face:?} names a topic only (fewer than 3 words)"
+            ));
+        }
+        if TOPIC_WORDS.contains(&last.as_str()) {
+            bad.push(format!("{id}: {face:?} ends in the topic word {last:?}"));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "faces that do not say what is wrong:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// The developer phrases that a diagnostic detail (`message`) must not
+/// carry. Agent evidence lives in `evidence` or in the bracketed
+/// provenance tail, in plain words.
+const DETAIL_DENY_LIST: &[&str] = &[
+    "repo rule",
+    "unsourced",
+    "snaps to a step",
+    "AT OR BELOW",
+    "does not take the dial",
+    "pre-sim",
+];
+
+/// The production half of a source file: the text before its test module,
+/// with the comment lines dropped. What stays in a line is code and string
+/// literals, so a backtick in it is in a string literal.
+fn production_lines(source: &str) -> Vec<(usize, &str)> {
+    let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+    production
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim_start().starts_with("//"))
+        .map(|(index, line)| (index + 1, line))
+        .collect()
+}
+
+/// W4 (message rewrite): every adapter detail is free of developer
+/// phrases and of backticked identifiers ("`feed_rate`" reads "feed
+/// rate"). The adapters and the generation findings they convert build
+/// the text, so the check reads their source. A runtime arm covers the
+/// text that a source layer writes (the rubbing-floor source, the
+/// long-tool share).
+#[test]
+fn no_adapter_detail_carries_developer_text_w4() {
+    let sources: &[(&str, &str)] = &[
+        ("from_feeds.rs", include_str!("adapters/from_feeds.rs")),
+        (
+            "from_generation.rs",
+            include_str!("adapters/from_generation.rs"),
+        ),
+        (
+            "from_model_refs.rs",
+            include_str!("adapters/from_model_refs.rs"),
+        ),
+        (
+            "from_preconditions.rs",
+            include_str!("adapters/from_preconditions.rs"),
+        ),
+        (
+            "from_project_diagnostics.rs",
+            include_str!("adapters/from_project_diagnostics.rs"),
+        ),
+        (
+            "from_stale_default.rs",
+            include_str!("adapters/from_stale_default.rs"),
+        ),
+        (
+            "from_static_checks.rs",
+            include_str!("adapters/from_static_checks.rs"),
+        ),
+        (
+            "from_tool_load.rs",
+            include_str!("adapters/from_tool_load.rs"),
+        ),
+        (
+            "toolpath_stats.rs",
+            include_str!("../compute/toolpath_stats.rs"),
+        ),
+        ("validate.rs", include_str!("../compute/validate.rs")),
+    ];
+    let mut bad = Vec::new();
+    for (name, source) in sources {
+        for (line_no, line) in production_lines(source) {
+            if line.contains('`') {
+                bad.push(format!(
+                    "{name}:{line_no}: backticked identifier: {}",
+                    line.trim()
+                ));
+            }
+            for phrase in DETAIL_DENY_LIST {
+                if line.contains(phrase) {
+                    bad.push(format!("{name}:{line_no}: {phrase:?}: {}", line.trim()));
+                }
+            }
+        }
+    }
+
+    // The runtime arm: the text that `feeds` writes into a detail.
+    use crate::feeds::{FeedsWarning, RubbingFloorSource};
+    let mut warnings = vec![FeedsWarning::LongToolDerate {
+        stickout_mm: 37.0,
+        diameter_mm: 6.0,
+        ratio: 37.0 / 6.0,
+        factor: 0.75,
+    }];
+    for source in [
+        RubbingFloorSource::RepoConstant,
+        RubbingFloorSource::BandMinimum,
+        RubbingFloorSource::BandMaximum,
+        RubbingFloorSource::PrintedPoint,
+    ] {
+        warnings.push(FeedsWarning::ChiploadBelowRubbingFloor {
+            commanded: 0.01,
+            floor: 0.025,
+            source,
+            band_min: None,
+            band_max: None,
+        });
+    }
+    for w in &warnings {
+        let mut result = fixture_feeds_result();
+        result.warnings = vec![w.clone()];
+        for d in
+            adapters::from_feeds::diagnostics_from_feeds_result(ToolpathId::from_raw(1), &result)
+        {
+            for phrase in DETAIL_DENY_LIST {
+                if d.message.contains(phrase) || d.face.contains(phrase) {
+                    bad.push(format!("{}: {phrase:?}: {}", d.id.as_str(), d.message));
+                }
+            }
+            if d.message.contains('`') {
+                bad.push(format!("{}: backtick: {}", d.id.as_str(), d.message));
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "developer text in a detail:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// W4: the long-tool share reads as a percent on the face and in the
+/// detail, with the caveat that the limit has no published source.
+#[test]
+fn the_long_tool_share_reads_as_a_percent_w4() {
+    use crate::feeds::FeedsWarning;
+    let mut result = fixture_feeds_result();
+    result.warnings = vec![FeedsWarning::LongToolDerate {
+        stickout_mm: 37.0,
+        diameter_mm: 6.0,
+        ratio: 37.0 / 6.0,
+        factor: 0.75,
+    }];
+    let found =
+        adapters::from_feeds::diagnostics_from_feeds_result(ToolpathId::from_raw(1), &result);
+    let d = found.first().expect("one finding");
+    assert_eq!(d.face, "Long tool: load target 75 %");
+    assert!(d.message.contains("37.0 mm"), "{}", d.message);
+    assert!(d.message.contains("6.2 \u{00D7}"), "{}", d.message);
+    assert!(d.message.contains("75 %"), "{}", d.message);
+    assert!(d.message.contains("no published source"), "{}", d.message);
+    assert!(
+        d.message.contains("The feed rate does not change"),
+        "{}",
+        d.message
+    );
+}
+
+/// A plain recommendation with no warnings, for the feeds adapter tests.
+fn fixture_feeds_result() -> crate::feeds::FeedsResult {
+    use crate::feeds::{ChiploadSource, FeedsResult};
+    FeedsResult {
+        rpm: 18_000.0,
+        chip_load_mm: 0.02,
+        feed_rate_mm_min: 1000.0,
+        plunge_rate_mm_min: 400.0,
+        plunge: crate::feeds::PlungeBasis::DrillCycle,
+        ramp: crate::feeds::RampBasis::NoChip {
+            reason: crate::feeds::RampFallback::NoLut,
+        },
+        axial_depth_mm: 4.0,
+        radial_width_mm: 1.0,
+        power_kw: 0.3,
+        available_power_kw: 0.6,
+        power_limited: false,
+        mrr_mm3_min: 1200.0,
+        warnings: vec![],
+        vendor_source: None,
+        support: crate::feeds::FeedsSupport::FormulaOnly {
+            source: crate::feeds::support::MILLING_FORMULA_SOURCE,
+        },
+        chipload_source: ChiploadSource::FormulaFallback,
+        chipload_bounds: None,
+        chipload_point_mm: None,
+        matched_lut_row: None,
+        effective_diameter_mm: 6.0,
+        derates: crate::feeds::FeedsDerates::default(),
+    }
+}
+
 /// W1: a field anchor names a field of every op the rule can fire on.
 /// The static and feeds rules fire on an op only when the op carries the
 /// value (`OperationConfig::stepover` and its siblings are `Some`). Where
@@ -865,7 +1110,7 @@ fn the_adapters_fill_the_face_and_the_anchor_w1() {
         .iter()
         .find(|d| d.id.as_str() == ids::PRECOND_NO_TOOL)
         .expect("no tool gives precondition.no_tool");
-    assert_eq!(no_tool.face, "No tool");
+    assert_eq!(no_tool.face, "No tool chosen");
     assert_eq!(no_tool.anchor, Anchor::Tool);
 
     // Each op with its values unset: the not-set anchor names a field the op
@@ -907,7 +1152,7 @@ fn the_json_carries_the_face_and_the_anchor_w1() {
     );
     d.anchor = Anchor::field("feed_rate");
     let json = serde_json::to_value(&d).expect("serialise");
-    assert_eq!(json["face"], "Feed above recommendation");
+    assert_eq!(json["face"], "Feed far above the recommended feed");
     assert_eq!(
         json["anchor"],
         serde_json::json!({"kind": "field", "key": "feed_rate"})

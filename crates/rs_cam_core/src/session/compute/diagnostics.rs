@@ -1590,13 +1590,11 @@ impl ProjectSession {
                      in-material cut"
                 ),
                 offender_toolpath_ids: vec![*id],
-                fix_hint: "Check that the setup orientation, stock alignment, and target \
-                           model geometry overlap. For project_curve specifically, \
-                           `depth` follows the \"positive = into material\" convention — \
-                           a negative depth lifts the cutter into air. The \
-                           project_curve_negative_depth validator rule flags this \
-                           pre-generation; the project_summary.stale_defaults entry has \
-                           a one-click flip-sign fix."
+                fix_hint: "Check that the setup orientation, the stock position and the \
+                           model overlap. For a Project Curve, a positive depth goes into \
+                           the material, and a negative depth lifts the tool into the air. \
+                           The negative-depth check flags this before generation, and its \
+                           fix flips the sign."
                     .to_owned(),
                 evidence: VerdictEvidence {
                     move_index: None,

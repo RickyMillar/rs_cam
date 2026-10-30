@@ -287,18 +287,20 @@ fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<Rat
     }
     if let (Some(a), Some(b)) = (section_mm2_before, section_mm2_after) {
         loads.push(format!(
-            "chip section {a:.3} -> {b:.3} mm² (proxy: no primary-source Kc)"
+            "chip area {a:.3} -> {b:.3} mm² (an estimate: no measured cutting force for \
+             this material)"
         ));
     }
     let loads = if loads.is_empty() {
-        "no load model".to_owned()
+        "no load estimate".to_owned()
     } else {
         loads.join(", ")
     };
     let target = if (*ld_factor - 1.0).abs() > 1e-12 {
         format!(
-            "aggressiveness {aggressiveness:.2} x long-tool share {ld_factor:.2} = load \
-             target {pct:.1} %"
+            "aggressiveness {aggressiveness:.2} \u{00D7} long-tool factor {ld_pct:.0} % = \
+             load target {pct:.1} %",
+            ld_pct = ld_factor * 100.0
         )
     } else {
         format!("aggressiveness {aggressiveness:.2}: load target {pct:.1} %")
@@ -307,9 +309,10 @@ fn aggressiveness_rows(w: &SuggestWarning) -> Option<(RationaleEntry, Option<Rat
     // opener below: a headline that already states `{target}` must not get
     // it again in its detail (audit WRONG #1, 2026-10-02).
     let mut tail = format!(
-        "of the base engagement (common scale {scale:.3}, before the depth snaps to a step \
-         the generator cuts); {loads}. The chipload does not change. The plunge does not \
-         take the dial: the plunge rule sets it."
+        "of the full cut: the depth and the stepover both scale to {scale_pct:.0} %, then \
+         the depth rounds to a step the generator can cut; {loads}. The chipload does not \
+         change. The dial does not change the plunge rate.",
+        scale_pct = scale * 100.0
     );
     if *target_share > 1.0 {
         tail.push_str(&format!(" Caution, {AGGRESSIVENESS_ABOVE_BASE_TEXT}."));
@@ -820,8 +823,8 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
                 *held,
             ),
             detail: Some(
-                "The feed moves down with the RPM, so the advance per tooth stays at the \
-                 band value (ruling R4 Q10)."
+                "The feed moves down with the RPM, so the feed per tooth stays at the \
+                 vendor value."
                     .to_owned(),
             ),
         },
@@ -836,7 +839,7 @@ fn entry_for_warning(w: &SuggestWarning) -> RationaleEntry {
             headline: reason.card_text().to_owned(),
             detail: Some(format!(
                 "Machine aggressiveness {aggressiveness:.2} did not change this operation. The \
-                 plunge does not take the dial: the plunge rule sets it."
+                 dial does not change the plunge rate."
             )),
         },
         SuggestWarning::RampFeed {
@@ -1218,7 +1221,7 @@ mod tests {
     /// `message()`, and each detail still carries a full sentence.
     #[test]
     fn the_aggressiveness_message_states_the_load_target_once() {
-        let formula = "aggressiveness 0.85 x long-tool share 0.75 = load target 63.7 %";
+        let formula = "aggressiveness 0.85 \u{00D7} long-tool factor 75 % = load target 63.7 %";
         for (tag, w) in [
             ("applied", aggressiveness_warning(0.75, true, 4.325)),
             ("speeds-only", aggressiveness_warning(0.75, false, 4.325)),
@@ -1236,7 +1239,7 @@ mod tests {
                 assert_no_repeated_clause(&message);
                 let detail = entry.detail.as_deref().unwrap_or_default();
                 assert!(
-                    detail.contains("of the base engagement"),
+                    detail.contains("of the full cut"),
                     "{tag}: the detail must still name the base: {detail}"
                 );
             }

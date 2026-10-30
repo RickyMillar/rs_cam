@@ -642,8 +642,9 @@ pub struct FeedsDerates {
 }
 
 /// The card and finding text of [`FeedsWarning::RpmLoweredForFeedCeiling`]:
-/// "RPM lowered 18000 -> 15750 to hold the chip at the 4000 mm/min feed
-/// ceiling". When the chip is not held in full it names the stop.
+/// "RPM lowered from 18000 to 15750 to keep the chip at the 4000 mm/min
+/// feed limit of the machine". When the chip is not held in full it names
+/// the stop.
 #[must_use]
 pub fn rpm_lowered_text(
     rpm_from: f64,
@@ -654,19 +655,19 @@ pub fn rpm_lowered_text(
     held: bool,
 ) -> String {
     let head = format!(
-        "RPM lowered {rpm_from:.0} -> {rpm_to:.0} to hold the chip at the \
-         {feed_ceiling_mm_min:.0} mm/min feed ceiling"
+        "RPM lowered from {rpm_from:.0} to {rpm_to:.0} to keep the chip at the \
+         {feed_ceiling_mm_min:.0} mm/min feed limit of the machine"
     );
     if held {
         head
     } else {
         let floor = match floor_source {
-            RpmFloorSource::RowRpmMin => "the vendor row's rpm_min",
-            RpmFloorSource::MachineMinimum => "the machine minimum",
+            RpmFloorSource::RowRpmMin => "the lowest RPM of the vendor data",
+            RpmFloorSource::MachineMinimum => "the lowest RPM of the machine",
         };
         format!(
-            "{head}; the descent stopped at {rpm_to:.0} rpm ({floor} is {rpm_floor:.0} rpm, or \
-             the spindle power at a lower speed), so the chip is thinner at the ceiling"
+            "{head}; the RPM stops at {rpm_to:.0} ({floor} is {rpm_floor:.0}, or the spindle \
+             power limits a lower speed), so the chip is thinner at the feed limit"
         )
     }
 }
@@ -1201,18 +1202,17 @@ impl RubbingFloorSource {
     #[must_use]
     pub fn describe(self) -> String {
         match self {
-            Self::RepoConstant => "repo rule, unsourced".to_owned(),
+            Self::RepoConstant => "a fixed limit with no published source".to_owned(),
             Self::BandMinimum => format!(
-                "the published vendor band minimum, below the {RUBBING_FLOOR_MM_TOOTH:.3} \
-                 repo floor"
+                "the lowest vendor value, below the {RUBBING_FLOOR_MM_TOOTH:.3} mm fixed limit"
             ),
             Self::BandMaximum => format!(
-                "the vendor band maximum; the band publishes no minimum and sits below \
-                 the {RUBBING_FLOOR_MM_TOOTH:.3} repo floor"
+                "the highest vendor value; the vendor gives no lowest value, and this one is \
+                 below the {RUBBING_FLOOR_MM_TOOTH:.3} mm fixed limit"
             ),
             Self::PrintedPoint => format!(
-                "the one printed vendor value (a point, no band), below the \
-                 {RUBBING_FLOOR_MM_TOOTH:.3} repo floor"
+                "the one vendor value (no range), below the {RUBBING_FLOOR_MM_TOOTH:.3} mm \
+                 fixed limit"
             ),
         }
     }

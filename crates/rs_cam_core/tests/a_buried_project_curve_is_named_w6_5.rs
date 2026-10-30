@@ -108,5 +108,5 @@ fn a_curve_under_the_rough_allowance_is_named() {
         .find(|d| d.id.as_str() == ids::GEOM_BURIED_CURVE)
         .expect("the diagnostics carry the finding");
     assert_eq!(d.severity, Severity::Info, "lead ruling W6.5: Info");
-    assert!(d.message.contains("not the commanded"), "{}", d.message);
+    assert!(d.message.contains("not the set depth"), "{}", d.message);
 }

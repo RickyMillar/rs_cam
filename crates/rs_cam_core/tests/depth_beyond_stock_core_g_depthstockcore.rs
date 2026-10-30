@@ -143,7 +143,7 @@ fn a_pocket_deeper_than_the_board_cautions_in_the_core_list() {
     );
     assert_eq!(
         finding.message(),
-        "Depth exceeds stock thickness by 7.00 mm",
+        "The cut goes 7.00 mm below the bottom of the stock",
         "the sentence must stay identical to the GUI rule's, or the \
          switchover changes what the operator reads"
     );

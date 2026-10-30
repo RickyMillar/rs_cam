@@ -246,8 +246,9 @@ fn reports_when_the_dial_is_set_and_territory_clip_is_off() {
         !finding.claims_reference_inert,
         "`claims_reference` was left at its default — only the dial that MOVED is inert"
     );
-    assert!(finding.dials().contains("min_rest_depth_mm"));
-    assert!(finding.why().contains("territory_clip"));
+    assert!(finding.dials().contains("Min Rest Depth"));
+    assert!(finding.keys().contains("min_rest_depth_mm"));
+    assert!(finding.why().contains("Territory Clip"));
 
     // (b) Narration — the surface an agent reads.
     let narration = session.narrate_toolpath(0).expect("narrate");
@@ -356,9 +357,10 @@ fn a_pinned_reference_is_only_inert_when_the_claims_pipeline_is_off() {
         !finding.min_rest_depth_inert,
         "min_rest_depth was left at its default here"
     );
-    assert!(finding.dials().contains("claims_reference"));
+    assert!(finding.dials().contains("Rest Reference"));
+    assert!(finding.keys().contains("claims_reference"));
     assert!(
-        finding.why().contains("pencil_claims"),
+        finding.why().contains("Pencil Claims"),
         "the message must name the stronger cause too: {}",
         finding.why()
     );

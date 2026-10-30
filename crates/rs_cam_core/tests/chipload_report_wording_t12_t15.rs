@@ -201,10 +201,10 @@ fn the_chipload_message_names_its_statistic_unit_and_multipliers() {
     eprintln!("\n  chipload message:\n    {}\n", chipload.message);
 
     // Case-insensitive: the same clause appears sentence-initial on the
-    // trip arm ("Feed-per-tooth too high ...") and mid-sentence on the
-    // Within arm ("Observed feed-per-tooth within band ...").
+    // trip arm ("Feed per tooth too high ...") and mid-sentence on the
+    // advisory arm ("The feed per tooth 0.0092 mm is BELOW ...").
     assert!(
-        chipload.message.to_lowercase().contains("feed-per-tooth"),
+        chipload.message.to_lowercase().contains("feed per tooth"),
         "the message must name the quantity as a FEED-PER-TOOTH (linear advance), \
          not a bare \"chipload\": {}",
         chipload.message
@@ -268,7 +268,7 @@ fn the_commanded_over_band_alarm_is_surfaced() {
         "this report must silence nothing — it is not sim-backed evidence"
     );
     assert!(
-        alarm.message.contains("same unit, same stage"),
+        alarm.message.contains("Both are the same measure"),
         "the message must say WHY this comparison is legitimate, since every \
          neighbouring one is not: {}",
         alarm.message

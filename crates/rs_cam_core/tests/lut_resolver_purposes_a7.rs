@@ -156,15 +156,15 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
     }
     let text = rendered.join("\n");
     assert!(
-        text.contains("is an RPM anchor and publishes no chipload column"),
+        text.contains("gives an RPM but no chipload"),
         "the disclosure must render, not merely exist as a typed variant:\n{text}"
     );
     assert!(
-        text.contains("this recommendation carries no band"),
+        text.contains("so it has no safe range"),
         "and it must say the consequence, not only the cause:\n{text}"
     );
     assert!(
-        text.contains("No chipload-bearing row matches this cut"),
+        text.contains("No vendor row with a chipload matches this cut"),
         "the fixture has no chip row, so the text must not claim a gate row:\n{text}"
     );
 }

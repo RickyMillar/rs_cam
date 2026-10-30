@@ -330,7 +330,7 @@ fn a_top_z_pinned_below_the_stock_top_still_cautions() {
     let (row, header) = read_case(&case);
     assert_eq!(
         row.as_deref(),
-        Some("Depth exceeds stock thickness by 2.00 mm"),
+        Some("The cut goes 2.00 mm below the bottom of the stock"),
         "a Top Z pinned 5 mm down turns a 15 mm pocket into a 2 mm cut \
          through an 18 mm board. The generators cut `top_z - depth`, so the \
          GUI must read the pinned top."

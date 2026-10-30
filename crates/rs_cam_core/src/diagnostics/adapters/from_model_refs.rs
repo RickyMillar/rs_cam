@@ -70,10 +70,10 @@ pub fn diagnostics_from_model_refs(
             face: crate::diagnostics::presentation::face(ids::REF_MODEL_MISSING),
             anchor: crate::diagnostics::presentation::anchor(ids::REF_MODEL_MISSING),
             message: format!(
-                "Selected model is missing — toolpath references model_id {} but no loaded \
+                "The selected model is missing: this toolpath uses model {}, but no loaded \
                  model has that id. Add the toolpath again on a loaded model. An MCP agent \
-                 can call `inspect_model` and set the toolpath's model to a valid `id` from \
-                 the response.",
+                 can call inspect_model and set the model of the toolpath to an id from the \
+                 reply.",
                 ctx.model_id
             ),
             evidence: None,

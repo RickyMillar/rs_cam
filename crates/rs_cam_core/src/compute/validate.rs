@@ -83,14 +83,12 @@ impl StaleDefaultRule {
 
     pub fn title(self) -> &'static str {
         match self {
-            Self::DropCutterMinZPreB1 => "Drop-cutter min_z is at the pre-2026-04 default",
-            Self::TaperedBallPlungePreFix2 => "Plunge rate exceeds the small-ball safety cap",
+            Self::DropCutterMinZPreB1 => "Min Z is at an old default value",
+            Self::TaperedBallPlungePreFix2 => "Plunge rate is too fast for a small ball nose",
             Self::WoodAdaptiveStepoverPreFix1 => {
-                "Adaptive stepover is narrower than the wood/rigidity target"
+                "Adaptive stepover is narrower than the target for wood"
             }
-            Self::ProjectCurveNegativeDepth => {
-                "Project-curve depth is negative — toolpath will cut air"
-            }
+            Self::ProjectCurveNegativeDepth => "Project Curve depth is negative: it cuts air",
         }
     }
 }
@@ -215,9 +213,8 @@ fn check_drop_cutter_min_z(tc: &ToolpathConfig, stock_bottom_z: f64) -> Option<S
         toolpath_name: tc.name.clone(),
         title: StaleDefaultRule::DropCutterMinZPreB1.title().to_owned(),
         detail: format!(
-            "Current `min_z` is {:.3} mm (pre-Roadmap-B.1 default). \
-             Tightening to the stock bottom ({:.3} mm) makes a future \
-             deeper model load visible.",
+            "Min Z is {:.3} mm, an old default value. Set it to the stock bottom \
+             ({:.3} mm) so that a deeper model shows up in the cut.",
             cfg.min_z, stock_bottom_z
         ),
         new_value: stock_bottom_z,
@@ -250,9 +247,9 @@ fn check_tapered_ball_plunge(tc: &ToolpathConfig, tool: &ToolConfig) -> Option<S
             .title()
             .to_owned(),
         detail: format!(
-            "Tool is a small ball/tapered-ball; plunge rate {plunge:.0} mm/min exceeds \
-             the {cap:.0} mm/min flute-tip safety cap. Pre-Fix-2 projects bypass the \
-             tool-geometry-aware cap."
+            "The tool is a small ball nose or tapered ball nose. The plunge rate \
+             {plunge:.0} mm/min is more than the {cap:.0} mm/min safe limit for its tip. \
+             Older projects do not apply this limit."
         ),
         new_value: cap,
         current_value: plunge,
@@ -293,9 +290,9 @@ fn check_wood_adaptive_stepover(
             .title()
             .to_owned(),
         detail: format!(
-            "Adaptive stepover {stepover:.3} mm is below the 0.15×D wood/rigidity \
-             floor ({floor:.3} mm). Fix 1 raised the wood adaptive ae_factor from \
-             0.14 to 0.20 — bumping to {new_value:.3} mm matches the post-fix target."
+            "The adaptive stepover {stepover:.3} mm is below 15 % of the tool diameter \
+             ({floor:.3} mm), the lower limit for wood. The current target for wood is \
+             20 % of the diameter, {new_value:.3} mm."
         ),
         new_value,
         current_value: stepover,
@@ -321,11 +318,11 @@ fn check_project_curve_negative_depth(tc: &ToolpathConfig) -> Option<StaleDefaul
             .title()
             .to_owned(),
         detail: format!(
-            "ProjectCurve `depth` is {:.3} mm (negative). The geometric convention is \
-             \"positive depth = into material\" — with `direction = {direction_label}`, a \
-             negative depth lifts the cutter into air for the whole toolpath (0 mm of \
-             in-material cut). Flipping to {new_value:+.3} mm restores the intended \
-             {new_value:.1} mm-deep cut.",
+            "The Project Curve depth is {:.3} mm, a negative value. A positive depth \
+             goes into the material. With the direction {direction_label}, a negative \
+             depth lifts the tool into the air for the whole toolpath, so it cuts \
+             nothing. Set the depth to {new_value:+.3} mm for a {new_value:.1} mm deep \
+             cut.",
             depth,
         ),
         new_value,

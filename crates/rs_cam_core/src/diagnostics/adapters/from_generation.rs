@@ -105,18 +105,17 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
     };
     let cause = match fallback {
         RestLevelsFallback::StockOffOutline => {
-            "the XY box of the machined stock does not overlap the outline, so the \
-             stock and the outline are probably in different frames"
+            "the machined stock does not overlap the outline in X and Y, so the stock \
+             and the outline are probably in different positions"
                 .to_owned()
         }
         RestLevelsFallback::RegionCap { total_before_cap } => format!(
-            "the standing material split into {total_before_cap} islands, more than \
-             the region cap"
+            "the remaining material split into {total_before_cap} islands, more than \
+             the limit"
         ),
-        RestLevelsFallback::WindowTooLarge { cells, limit } => format!(
-            "the outline needs a window of {cells} stock cells, more than the limit \
-             of {limit}"
-        ),
+        RestLevelsFallback::WindowTooLarge { cells, limit } => {
+            format!("the outline covers {cells} stock cells, more than the limit of {limit}")
+        }
     };
     vec![Diagnostic {
         id: DiagnosticId::from(ids::GEOM_REST_LEVELS_FALLBACK),
@@ -130,8 +129,8 @@ fn rest_levels_fallback(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_REST_LEVELS_FALLBACK),
         message: format!(
             "This rest operation cut its whole outline at every level, because \
-             {cause}. The remaining stock did not remove the air cuts. [Recorded \
-             at generation. Report-only: no gate consumes this.]"
+             {cause}. It cuts air where the earlier operations already removed the \
+             stock. [Recorded at generation. Report-only: no gate consumes this.]"
         ),
         evidence: None,
         fix: None,
@@ -174,18 +173,16 @@ fn region_cap_truncated(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<D
         face: crate::diagnostics::presentation::face(ids::GEOM_REGION_CAP_TRUNCATED),
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_REGION_CAP_TRUNCATED),
         message: format!(
-            "Rest-region extraction found {total} islands and kept only the \
-             largest {kept} (cap {cap}); {dropped} were DROPPED. Anything \
-             using these regions as a `derived_rest_regions` boundary is \
-             confined to the {kept} that survived, so the dropped territory \
-             will not be cut by that operation and nothing else will mention \
-             it. The usual cause is a threshold below the prior pass's cusp \
-             height, which turns the cusp pattern itself into the mask — \
-             raise Min Valley Depth (`min_valley_depth`) or Min Rest Depth \
-             (`min_rest_depth_mm`) until the island \
-             count is a handful to a few dozen. [Count of grouped region \
-             polygons before truncation; extraction stage. Report-only — no \
-             gate consumes this.]",
+            "The rest analysis found {total} islands of remaining material and \
+             kept only the largest {kept} (limit {cap}). It dropped {dropped}. An \
+             operation that uses these rest areas as its boundary cuts only the \
+             {kept} it kept, so it does not cut the dropped islands, and no other \
+             message tells you. The usual cause is a threshold below the ridge \
+             height the earlier pass left, so the ridges themselves become islands. \
+             Raise Min Valley Depth or Min Rest Depth until the count is a few to a \
+             few dozen. [Keys: min_valley_depth, min_rest_depth_mm. Count of \
+             grouped region polygons before truncation; extraction stage. \
+             Report-only — no gate consumes this.]",
             total = r.total_before_cap,
             kept = r.kept,
             cap = r.cap,
@@ -355,21 +352,17 @@ fn offset_library_failures(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Ve
         face: crate::diagnostics::presentation::face(ids::GEOM_OFFSET_LIBRARY_FAILURE),
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_OFFSET_LIBRARY_FAILURE),
         message: format!(
-            "{n} 2D offset call(s) in this operation FAILED rather than \
-             collapsing: cavalier_contours panicked on the input and the \
-             failure was contained into an empty result, or an input guard \
-             refused the ring. Whatever the offset was bounding — a pocket \
-             ring, a cutter-compensated contour, an inset — is missing from \
-             this toolpath, which can therefore leave material where it looks \
-             finished. Check the source geometry for self-intersecting or \
-             pinched rings, repeated vertices and non-finite coordinates. \
-             This count is NOT build-invariant: most of the assertions behind \
-             it are `debug_assert!`s in a dependency, so a release build \
-             reports fewer and proceeds on the unvalidated input instead — a \
-             lower number there is not an improvement. [Count of offset \
-             CALLS, not distinct rings — a depth-stepped operation re-offsets \
-             the same geometry once per Z level; generation stage. \
-             Report-only — no gate.]"
+            "{n} 2D offset(s) in this operation failed. The offset library could \
+             not process the shape, or a check refused it. The cut that the offset \
+             makes (a pocket ring, a contour, an inset) is missing from this \
+             toolpath, so material can stay where the part looks finished. Look \
+             for loops in the drawing that cross themselves or pinch, repeated \
+             points and bad coordinates. A release build finds fewer of these \
+             failures and cuts the bad shape anyway, so a lower count there is not \
+             a sign of improvement. [Count of offset CALLS, not distinct rings: a \
+             depth-stepped operation re-offsets the same geometry once per Z \
+             level; most failures are cavalier_contours debug assertions; \
+             generation stage. Report-only — no gate.]"
         ),
         evidence: None,
         fix: None,
@@ -526,11 +519,21 @@ fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
     // under a machined-stock reference. Skipping it silently is how a rest
     // pass becomes an all-over pass that still calls itself a rest pass.
     let clip_note = if f.territory_clip_skipped() {
-        " Rest-territory confinement (`territory_clip`) was requested and \
-         SKIPPED — it needs the machined-stock reference — so this operation \
-         generated over its FULL territory, not over rest islands."
+        " You asked to cut only the rest areas (Territory Clip, key \
+         territory_clip), but that needs the machined stock as the reference. So \
+         this operation cut its FULL area, not only the rest islands."
     } else {
         ""
+    };
+    // The face says what is wrong, or which stock the rest reads.
+    let face = if f.territory_clip_skipped() {
+        "Rest pass cut the full area".to_owned()
+    } else if r.needs_attention() {
+        crate::diagnostics::presentation::face(ids::CONFIG_CLAIMS_REFERENCE)
+    } else if r.is_derived() {
+        "Rest areas found automatically".to_owned()
+    } else {
+        "Rest areas use the stock source you set".to_owned()
     };
     vec![Diagnostic {
         id: DiagnosticId::from(ids::CONFIG_CLAIMS_REFERENCE),
@@ -542,23 +545,25 @@ fn claims_reference(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         severity,
         state: DiagnosticState::Current,
         source: Source::StaticValidation,
-        face: crate::diagnostics::presentation::face(ids::CONFIG_CLAIMS_REFERENCE),
+        face,
         anchor: crate::diagnostics::presentation::anchor(ids::CONFIG_CLAIMS_REFERENCE),
         message: format!(
-            "Rest reference: {used} ({verb} — `{label}`). {why}{clip_note} \
-             [Report-only — no gate.]",
+            "The rest areas are measured against {used} ({verb}). {why}{clip_note} \
+             [Resolution {label}; key claims_reference. Report-only — no gate.]",
             used = match r.reference() {
                 crate::finish::unified_finish::CreaseReference::MachinedStock =>
-                    "machined prior stock",
-                crate::finish::unified_finish::CreaseReference::SelfProbe => "analytic self-probe",
+                    "the stock the earlier pass left",
+                crate::finish::unified_finish::CreaseReference::SelfProbe => {
+                    "the model shape only"
+                }
             },
             verb = if r.is_derived() {
-                "derived"
+                "chosen automatically"
             } else {
-                "pinned by claims_reference"
+                "set by Rest Reference"
             },
-            label = r.label(),
             why = r.why(),
+            label = r.label(),
         ),
         evidence: None,
         fix: None,
@@ -607,16 +612,14 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
         face: crate::diagnostics::presentation::face(ids::GEOM_RAMP_REACH_CLAMP),
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_RAMP_REACH_CLAMP),
         message: format!(
-            "Ramp descent TRUNCATED by cutter reach: {clamped} of {total} \
-             ramp points ({pct:.0}%) were raised, by up to {lift:.3} mm, \
-             across {area}, because this cutter cannot hold the commanded \
-             depth there; and the descent's bottom was lifted \
-             {ladder_lift:.3} mm (from {requested:.3} to {holdable:.3} mm) \
-             because nothing below that is reachable at all. The pass is safe \
-             as emitted — that material is simply LEFT, and no simulation can \
-             tell you so. Use a smaller or longer-reach tool for these \
-             features, or follow with an operation that can. [Report-only — \
-             no gate.]",
+            "The tool cannot reach the full depth of the ramp. The toolpath \
+             raises {clamped} of {total} ramp points ({pct:.0} %) by up to \
+             {lift:.3} mm, across {area}. The lowest level moves up \
+             {ladder_lift:.3} mm (from {requested:.3} to {holdable:.3} mm), \
+             because the tool cannot reach below that. The toolpath is safe, but \
+             that material is LEFT, and a simulation does not show it. Use a \
+             smaller tool or a tool with a longer reach, or add an operation that \
+             can reach. [Report-only — no gate.]",
             clamped = f.clamped_points,
             total = f.ramp_points,
             lift = f.max_lift_mm,
@@ -631,7 +634,7 @@ fn ramp_reach_clamp(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
                     area.mm2(),
                     provenance.describe()
                 ),
-                None => "an unmeasured extent".to_owned(),
+                None => "an area that was not measured".to_owned(),
             },
         ),
         evidence: None,
@@ -671,19 +674,23 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
             confidence: Confidence::Verified,
             state: DiagnosticState::Current,
             source: Source::StaticValidation,
-            face: crate::diagnostics::presentation::face(ids::CONFIG_DERIVED_STEPOVER),
+            face: if f.slope_derate.is_some() {
+                "Stepover lowered for a steep slope".to_owned()
+            } else {
+                crate::diagnostics::presentation::face(ids::CONFIG_DERIVED_STEPOVER)
+            },
             anchor: crate::diagnostics::presentation::anchor(ids::CONFIG_DERIVED_STEPOVER),
             message: match f.slope_derate {
                 // Honest raster (Track B, 2026-09-01): a slope-keyed
                 // derivation, not a reach-policy one — the reach-policy
                 // sentence below would misdescribe it.
                 Some(sd) => format!(
-                    "{site}: region {region} raster stepover derated to \
-                 {stepover:.3} mm from the configured {configured:.3} mm \
-                 (× cos {slope:.1}°, the region's max slope). The XY \
-                 lattice widens to the achieved surface spacing by \
-                 1/cos(slope); the derate lands it at the configured \
-                 value on the worst slope. [Report-only — no gate.]",
+                    "{site}: in region {region} the stepover is {stepover:.3} mm, \
+                 not the {configured:.3} mm you set, because the steepest slope \
+                 there is {slope:.1}°. On a slope the passes are further apart \
+                 on the surface than in plan view. The smaller stepover gives the \
+                 spacing you set on the steepest slope. [Stepover × cos(max \
+                 slope). Report-only — no gate.]",
                     site = f.site,
                     region = sd.region_index,
                     stepover = f.stepover_mm,
@@ -691,11 +698,12 @@ fn derived_stepover(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagn
                     slope = sd.slope_max_deg,
                 ),
                 None => format!(
-                    "{site}: offset stepover {stepover:.3} mm, sized by the reach \
-             policy at {depth:.3} mm rest depth ({basis}). The retired \
-             envelope rule (half the cutter's widest radius) would have used \
-             {envelope:.3} mm — {ratio:.1}× wider — which on a tapered tool \
-             is the SHANK, not anything the tip cuts. [Report-only — no gate.]",
+                    "{site}: the stepover is {stepover:.3} mm, sized for what the \
+             tool tip can reach at a rest depth of {depth:.3} mm ({basis}). \
+             Half the widest radius of the tool would give {envelope:.3} mm \
+             ({ratio:.1} \u{00D7} wider), but on a tapered tool that is the \
+             shank, not the tip that cuts. [Reach policy against the retired \
+             envelope rule. Report-only — no gate.]",
                     site = f.site,
                     stepover = f.stepover_mm,
                     depth = f.reference_depth_mm,
@@ -757,12 +765,12 @@ fn truncated_core(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagnos
         face: crate::diagnostics::presentation::face(ids::GEOM_STANDING_MATERIAL),
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_STANDING_MATERIAL),
         message: format!(
-            "{area:.0} mm² of material left UNCUT inside the machining \
-             region: the scallop ring cascade hit its ring cap before the \
-             offsets collapsed, so the INTERIOR was never reached. The part \
-             will have a raised island. Reduce the region, coarsen the \
-             scallop height, or split the operation.{split} \
-             [{domain}; {stage}; {resolution}. Report-only — no gate.]",
+            "{area:.0} mm² of material is left UNCUT inside the area: the \
+             scallop rings reached their limit before they met in the middle, \
+             so the tool never cut the centre. The part has a raised island. \
+             Make the area smaller, use a larger scallop height, or split the \
+             operation.{split} [{domain}; {stage}; {resolution}. Report-only — \
+             no gate.]",
             split = untouched_standing_clause(stats),
             domain = TRUNCATED_CORE_DOMAIN,
             stage = TRUNCATED_CORE_STAGE,
@@ -801,9 +809,9 @@ fn untouched_standing_clause(stats: &ToolpathStats) -> String {
                 .filter(|v| v.is_finite())
                 .map_or_else(|| "not measured".to_owned(), |v| format!("~{v:.0} mm²"));
             format!(
-                " Split: {untouched} never reached (hole-aware, exact) and \
-                 {standing} reached but left high (an estimator, not an area). \
-                 Different measurements — do not add them."
+                " Of this, the tool never reached {untouched} (an exact area), and \
+                 it reached but left high {standing} (an estimate, not a measured \
+                 area). These are different measures: do not add them."
             )
         }
     }
@@ -880,16 +888,16 @@ fn unmachined_band(toolpath_id: ToolpathId, stats: &ToolpathStats) -> Vec<Diagno
         face: crate::diagnostics::presentation::face(ids::GEOM_UNMACHINED_BAND),
         anchor: crate::diagnostics::presentation::anchor(ids::GEOM_UNMACHINED_BAND),
         message: format!(
-            "{area:.1} mm² of the {band} band across {count} planned \
-             region(s) emitted NO cutting: the resolved {clip} = \
-             {clip_z:.3} mm clipped its Z range away, so the feature will be \
-             left at full stock. Pin {clip} to the real depth of the \
-             feature. Band clip coverage: {coverage}. \
-             [{provenance}. Report-only — no gate.]",
+            "{area:.1} mm² of the {band} surface in {count} planned area(s) \
+             is NOT cut: the {clip} of {clip_z:.3} mm removes its full Z range, \
+             so the feature stays at full stock. Set the {clip} to the real depth \
+             of the feature. [{key} = {clip_z:.3} mm; {provenance}; band clip \
+             coverage: {coverage}. Report-only — no gate.]",
             area = f.area_mm2,
-            band = f.band.label(),
+            band = crate::compute::toolpath_stats::band_phrase(f.band),
             count = f.region_count,
-            clip = f.clip.clip.label(),
+            clip = f.clip.clip.phrase(),
+            key = f.clip.clip.label(),
             clip_z = f.clip.clip_z_mm,
             coverage = f.bands_measured.describe(),
             provenance = f.provenance.describe(),

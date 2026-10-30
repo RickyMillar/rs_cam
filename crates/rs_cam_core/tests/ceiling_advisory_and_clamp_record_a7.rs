@@ -304,9 +304,9 @@ fn a_recipe_below_the_floor_reads_below_the_floor_and_is_not_clamped() {
         .unwrap_or_else(|| panic!("no feeds.chipload_below_floor finding:\n{rendered:#?}"));
     assert!(
         floor_line.starts_with("[Caution]")
-            && floor_line.contains("below the rubbing floor")
-            && floor_line.contains("The feed is not raised")
-            && floor_line.contains("published vendor band minimum"),
+            && floor_line.contains("below the rubbing limit")
+            && floor_line.contains("does not raise the feed rate")
+            && floor_line.contains("the lowest vendor value"),
         "the finding must read as below the floor, not as a clamp: {floor_line}"
     );
     assert!(

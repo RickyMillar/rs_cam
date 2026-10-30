@@ -477,7 +477,7 @@ fn the_untouched_standing_split_reaches_the_diagnostic_and_the_summary() {
     );
     assert!(
         d.message
-            .contains(&format!("{untouched:.0} mm² never reached")),
+            .contains(&format!("never reached {untouched:.0} mm²")),
         "the diagnostic must print the measured hole-aware area itself:\n{}",
         d.message
     );

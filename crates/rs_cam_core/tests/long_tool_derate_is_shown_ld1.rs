@@ -161,7 +161,7 @@ fn the_diagnostic_is_an_info_finding_with_its_own_id_ld1() {
         });
     assert_eq!(finding.severity, Severity::Info);
     assert!(
-        finding.message.contains("load target x0.75") && finding.message.contains("7.5 x D"),
+        finding.message.contains("load target to 75 %") && finding.message.contains("7.5 \u{00D7}"),
         "the finding must carry the factor and the ratio: {:?}",
         finding.message
     );

@@ -250,9 +250,9 @@ fn commanded_above_band_to_diagnostic(
         face: crate::diagnostics::presentation::face(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
         anchor: crate::diagnostics::presentation::anchor(ids::LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND),
         message: format!(
-            "Commanded feed-per-tooth {:.4} mm/tooth is {ratio:.1}× the matched \
-             band maximum {:.4} mm/tooth — same unit, same stage, so this \
-             comparison needs no conversion{}",
+            "The set feed per tooth {:.4} mm is {ratio:.1} \u{00D7} the vendor \
+             maximum of {:.4} mm/tooth. Both are the same measure, so no conversion \
+             applies{}",
             e.commanded.feed_per_tooth_mm,
             e.band.max_mm_per_tooth,
             row_provenance_clause(explanation),
@@ -323,16 +323,16 @@ fn chipload_to_diagnostic(
                 // point" (`ChipBounds::burn_reference_mm`); the bounds
                 // carry no minimum.
                 Some(advisory) => format!(
-                    "Observed feed-per-tooth {:.4} mm is BELOW the {:.4} mm/tooth {} \
-                     — not refused because its provenance is {} (advisory only)\
-                     {qualifier}{provenance}",
+                    "The feed per tooth {:.4} mm is BELOW the {:.4} mm/tooth {}. The \
+                     tool can rub. The check does not refuse it, because the limit comes \
+                     from {} (advisory only){qualifier}{provenance}",
                     advisory.observed_mm_per_tooth,
                     advisory.bounds.burn_reference_mm().unwrap_or(f64::NAN),
                     advisory.bounds.burn_reference_label(),
                     advisory.bounds.source.row_id(),
                 ),
                 None => format!(
-                    "Observed feed-per-tooth within band ({:.4} mm){qualifier}{provenance}",
+                    "Feed per tooth within the vendor range ({:.4} mm){qualifier}{provenance}",
                     approach_to_max.observed_mm_per_tooth
                 ),
             };
@@ -371,14 +371,17 @@ fn chipload_to_diagnostic(
             triggering,
             confidence,
         } => {
-            let (id_str, msg_prefix) = match side {
+            let (id_str, (msg_prefix, risk)) = match side {
                 crate::tool_load::verdict::ChipSide::Low => (
                     ids::LOAD_CHIPLOAD_LOW,
-                    "Feed-per-tooth too low — burn / rubbing risk",
+                    (
+                        "Feed per tooth too low",
+                        "The tool can rub and burn the wood.",
+                    ),
                 ),
                 crate::tool_load::verdict::ChipSide::High => (
                     ids::LOAD_CHIPLOAD_HIGH,
-                    "Feed-per-tooth too high — breakage risk",
+                    ("Feed per tooth too high", "The tool can break."),
                 ),
             };
             // T1.2 — same qualifier on the trip arm as on the Within
@@ -397,7 +400,7 @@ fn chipload_to_diagnostic(
                 face: crate::diagnostics::presentation::face(id_str),
                 anchor: crate::diagnostics::presentation::anchor(id_str),
                 message: format!(
-                    "{msg_prefix}: {:.4} mm{qualifier}{provenance}{}",
+                    "{msg_prefix} ({:.4} mm). {risk}{qualifier}{provenance}{}",
                     triggering.observed_mm_per_tooth,
                     vacuity_clause(&triggering.evidence)
                 ),
@@ -720,7 +723,8 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Info,
             confidence,
             format!(
-                "Depth of cut within the rigidity rule of thumb ({:.3} mm / {:.3} mm){}",
+                "Depth of cut within the rule-of-thumb limit for this tool ({:.3} mm of \
+                 {:.3} mm){}",
                 peak_mm,
                 bound.cap_mm(),
                 vacuity_clause(evidence)
@@ -739,9 +743,9 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Caution,
             confidence,
             format!(
-                "Depth of cut exceeds the rigidity rule of thumb: {:.3} mm > {:.3} mm \
-                 ({:.2} × {:.2} mm); the rule has no published source and does not \
-                 block export{}",
+                "Depth of cut {:.3} mm is more than the rule-of-thumb limit of {:.3} mm \
+                 ({:.2} \u{00D7} the {:.2} mm diameter). The rule has no published source \
+                 and does not stop the export{}",
                 peak_mm,
                 bound.cap_mm(),
                 bound.factor,
@@ -761,8 +765,8 @@ fn depth_to_diagnostic(tp_id: ToolpathId, v: &DepthVerdict) -> Option<Diagnostic
             Severity::Info,
             confidence,
             format!(
-                "Depth of cut {:.3} mm peak; a finishing pass has no axial cap, and \
-                 the deflection gate is its limit{}",
+                "Depth of cut peaks at {:.3} mm. A finishing pass has no depth limit: \
+                 the deflection check limits it{}",
                 peak_mm,
                 vacuity_clause(evidence)
             ),
@@ -1019,51 +1023,54 @@ fn unmodeled_to_diagnostic(
     let (state, msg) = match reason {
         UnmodeledReason::SimulationRequired => (
             DiagnosticState::NeedsSimulation,
-            format!("{label}: run simulation to evaluate"),
+            format!("{label}: run the simulation to check this"),
         ),
         UnmodeledReason::ArcEngagementNotCaptured => (
             DiagnosticState::NeedsSimulation,
-            format!("{label}: the cut trace holds no arc engagement — re-run the simulation"),
+            format!(
+                "{label}: the simulation data does not show how the tool engages. Run the \
+                 simulation again"
+            ),
         ),
         UnmodeledReason::SteadyStateSamplesNotPresent => (
             DiagnosticState::NeedsSimulation,
             format!(
-                "{label}: not enough steady-state cutting samples to evaluate \
-                 (toolpath may be all entry/exit ramps)"
+                "{label}: not enough steady cutting to check (the toolpath can be all \
+                 entry and exit moves)"
             ),
         ),
         UnmodeledReason::AllSamplesAirCutOrRapid => (
             DiagnosticState::NeedsSimulation,
             format!(
-                "{label}: every sample is air-cut or rapid — verify stock alignment \
-                 and depth"
+                "{label}: every sample cuts air or is a rapid move. Check the stock \
+                 position and the depth"
             ),
         ),
         UnmodeledReason::StaleSimulation => (
             DiagnosticState::StaleEvidence,
-            format!("{label}: simulation stale — re-run to verify"),
+            format!("{label}: the simulation is out of date. Run it again to check"),
         ),
         UnmodeledReason::NoVendorData => (
             DiagnosticState::NeedsSimulation,
             format!(
-                "{label}: no vendor LUT row matches this tool/material — supply \
-                 vendor data to enable this gate"
+                "{label}: no vendor data matches this tool and material. Add vendor \
+                 data to check this"
             ),
         ),
         UnmodeledReason::MaterialUnvalidated => (
             DiagnosticState::NeedsSimulation,
             format!(
-                "{label}: material has no measured force line (ruling B6) — set a validated \
-                 material on the stock to model this"
+                "{label}: the material has no measured cutting force. Set a material \
+                 with measured data on the stock to check this"
             ),
         ),
         UnmodeledReason::CutterModeUnsupported(detail) => (
             DiagnosticState::NotApplicable,
-            format!("{label}: cutter mode unsupported ({detail})"),
+            format!("{label}: this check does not support this tool ({detail})"),
         ),
         UnmodeledReason::NotImplemented(detail) => (
             DiagnosticState::NeedsSimulation,
-            format!("{label}: model deferred ({detail})"),
+            format!("{label}: this check is not available yet ({detail})"),
         ),
         UnmodeledReason::NotApplicableForOp(_) => return None,
     };

@@ -203,7 +203,7 @@ fn a_bound_ceiling_lowers_the_rpm_and_holds_the_chip_fm8() {
     assert_eq!(finding.severity, Severity::Info);
     assert!(
         finding.message.starts_with(&format!(
-            "RPM lowered {:.0} -> {:.0} to hold the chip at the",
+            "RPM lowered from {:.0} to {:.0} to keep the chip at the",
             from, to
         )),
         "{}",
@@ -245,7 +245,7 @@ fn a_row_rpm_min_stops_the_descent_fm8() {
         .find(|d| d.id.as_str() == ids::FEEDS_RPM_LOWERED_FOR_CEILING)
         .expect("the finding")
         .message;
-    assert!(text.contains("the vendor row's rpm_min"), "{text}");
+    assert!(text.contains("the lowest RPM of the vendor data"), "{text}");
 }
 
 /// (d) through Suggest on the generic router's 4000 mm/min ceiling.

@@ -30,7 +30,7 @@ fn stale_default_to_diagnostic(d: &StaleDefault) -> Diagnostic {
         source: Source::StaleDefault,
         face: crate::diagnostics::presentation::face(id),
         anchor: crate::diagnostics::presentation::anchor(id),
-        message: format!("{} — {}", d.title, d.detail),
+        message: format!("{}. {}", d.title, d.detail),
         evidence: None,
         fix: Some(DiagnosticFix::ApplyStaleDefault {
             rule_id: rule_id_string(d.rule_id),

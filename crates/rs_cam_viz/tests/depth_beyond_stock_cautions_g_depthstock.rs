@@ -70,7 +70,7 @@ const MODEL_2D: usize = 4;
 const MODEL_3D: usize = 5;
 const STOCK_THICKNESS_MM: f64 = 18.0;
 
-const CAUTION_TEXT: &str = "exceeds stock thickness";
+const CAUTION_TEXT: &str = "below the bottom of the stock";
 
 fn polygon_model(id: usize) -> LoadedModel {
     LoadedModel {
@@ -265,7 +265,7 @@ fn a_pocket_deeper_than_the_stock_cautions_on_the_header_and_does_not_block() {
     );
     let caution = cautions[0];
     assert_eq!(
-        caution.message, "Depth exceeds stock thickness by 7.00 mm",
+        caution.message, "The cut goes 7.00 mm below the bottom of the stock",
         "(a) the caution names the excess"
     );
     assert_eq!(
@@ -306,7 +306,7 @@ fn a_the_rule_reads_the_excess_and_the_diagnostic_carries_its_id() {
     assert!((finding.stock_thickness_mm - STOCK_THICKNESS_MM).abs() < 1e-9);
     assert_eq!(
         finding.message(),
-        "Depth exceeds stock thickness by 7.00 mm"
+        "The cut goes 7.00 mm below the bottom of the stock"
     );
 
     let snapshot = panel_snapshot(&session, idx);

@@ -202,7 +202,7 @@ fn the_within_arm_discloses_its_burn_advisory() {
         "severity is deliberately unchanged by H4 — raising it moves badge counts"
     );
     assert!(
-        !chip.message.contains("within band"),
+        !chip.message.contains("within the vendor range"),
         "the message still claims the chipload is within band while carrying a burn advisory \
          that says it is below the floor: {:?}",
         chip.message
@@ -237,7 +237,7 @@ fn a_genuine_within_still_reads_within_band() {
         .find(|d| d.id.as_str() == ids::LOAD_CHIPLOAD_WITHIN)
         .expect("clean Within still emits");
     assert!(
-        chip.message.contains("within band"),
+        chip.message.contains("within the vendor range"),
         "a genuine pass must keep its wording, got {:?}",
         chip.message
     );
