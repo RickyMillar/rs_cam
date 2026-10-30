@@ -104,7 +104,9 @@ has no CI (operator ruling 2026-10-19, F151): no remote job runs a gate.
 Do not use workspace-wide `cargo test`; it can loop in this repository.
 
 On a shared machine run every cargo command through `scripts/cargo_lane.sh
-<cargo args>`. It serialises cargo jobs and waits for free memory; two
+<cargo args>`. It runs at most two cargo jobs at once (`CARGO_LANE_SLOTS`)
+and waits for free memory. Two jobs on one target directory still compile one
+at a time; never give a job its own target directory to get past that. Two
 concurrent builds have crashed the machine.
 
 A lint exception is `#[expect(lint, reason = "..")]`; the workspace lints deny
