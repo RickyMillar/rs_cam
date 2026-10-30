@@ -330,3 +330,9 @@ between them is wider than two radii), faces that touch give one.
   triangles are not refined and share vertices with the refined top
   faces, so the GPU interpolates a measured colour across the wall.
   Defect; fix = own grey vertices for every non-up-facing triangle.
+
+Ruling (operator, 2026-10-30) on the rim band: "yes. the toolpath hits
+those areas so why wouldn't it measure it?" → the reach map samples cutter
+locations one envelope radius past the model box and the blanket rim
+erosion goes (R7d, core instrument change; the 0.20 mm sloped-edge artefact
+becomes a per-cell floor question). The wall wedges: fixed ce32777f3.
