@@ -134,6 +134,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 fn slot_cut(machine: &MachineProfile, species: WoodSpecies, diameter: f64) -> FeedsResult {
     let material = Material::SolidWood { species };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: diameter,
         flute_count: 2,
         flute_length: 3.0 * diameter,
@@ -164,6 +165,7 @@ fn light_finish(machine: &MachineProfile) -> FeedsResult {
         species: WoodSpecies::RadiataPine,
     };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 3.0,
         flute_count: 2,
         flute_length: 18.0,

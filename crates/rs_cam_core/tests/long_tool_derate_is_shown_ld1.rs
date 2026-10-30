@@ -49,6 +49,7 @@ fn pocket(stickout_mm: Option<f64>) -> FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: DIAMETER_MM,
         flute_count: 2,
         flute_length: 22.0,

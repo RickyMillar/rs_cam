@@ -467,6 +467,7 @@ fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
     let machine = open_machine();
     let material = mdf();
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 12.7,
         flute_count: 2,
         flute_length: 19.05,
@@ -527,6 +528,7 @@ fn the_vbit_parallel_finish_cells_refuse_b4() {
         for material in &materials {
             for d in [6.35, 12.7] {
                 let support = feeds_support(&FeedsInput {
+                    tool_series: None,
                     tool_diameter: d,
                     flute_count: 2,
                     flute_length: 19.05,
@@ -664,6 +666,7 @@ fn the_band_de_rate_follows_the_nominal_diameter_not_the_engaged_width_b4() {
         // Suggest: `feeds::calculate` at this depth.
         let machine = open_machine();
         let result = calculate(&FeedsInput {
+            tool_series: None,
             tool_diameter: d,
             flute_count: 1,
             flute_length: 19.05,

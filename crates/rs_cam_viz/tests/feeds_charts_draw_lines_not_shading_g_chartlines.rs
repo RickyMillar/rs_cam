@@ -182,6 +182,7 @@ fn explain_with_a_row() -> FeedsExplain {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let input = FeedsInput {
+        tool_series: None,
         tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 22.0,

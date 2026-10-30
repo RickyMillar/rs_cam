@@ -38,6 +38,7 @@ fn calc_oak_12mm(strategy: SpindleStrategy) -> rs_cam_core::feeds::FeedsResult {
     };
 
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 12.0,
         flute_count: 4,
         flute_length: 38.0,

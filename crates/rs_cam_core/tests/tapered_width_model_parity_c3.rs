@@ -161,6 +161,7 @@ fn tapered_finish_input<'a>(
     doc: f64,
 ) -> FeedsInput<'a> {
     FeedsInput {
+        tool_series: None,
         tool_diameter: 1.0,
         flute_count: 2,
         flute_length: 12.0,

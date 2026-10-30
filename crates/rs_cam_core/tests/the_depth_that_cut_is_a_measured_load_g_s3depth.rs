@@ -689,6 +689,7 @@ fn the_suggest_clamp_still_fires_at_the_helper_s_own_cap() {
     });
 
     let input = FeedsInput {
+        tool_series: None,
         tool_diameter: CLAMP_DIAMETER_MM,
         flute_count: 2,
         flute_length: 50.0,

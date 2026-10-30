@@ -1338,6 +1338,7 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
         for step in 1..=120 {
             let commanded_ap = f64::from(step) * 0.1;
             let result = calculate(&FeedsInput {
+                tool_series: None,
                 tool_diameter: *nominal_d,
                 flute_count: FLUTES,
                 flute_length: 40.0,

@@ -142,6 +142,7 @@ fn a_tapered_row_is_read_at_the_tip_a1() {
 
     // 1. The Suggest key: the query that `feeds::calculate` looks up.
     let input = FeedsInput {
+        tool_series: None,
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,

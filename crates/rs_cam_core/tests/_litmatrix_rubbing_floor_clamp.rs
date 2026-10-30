@@ -239,6 +239,7 @@ fn calc_ipe_6mm(setup: SetupContext) -> rs_cam_core::feeds::FeedsResult {
     };
 
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 22.0,
@@ -399,6 +400,7 @@ fn calc_oak_6mm() -> rs_cam_core::feeds::FeedsResult {
     };
 
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 22.0,

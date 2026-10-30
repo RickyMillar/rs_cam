@@ -99,43 +99,30 @@ const DEFAULT_FIXTURE_STICKOUT_MM: f64 = 18.0;
 /// The diameter of every fixture except [`in_band`].
 const FIXTURE_DIAMETER_MM: f64 = 6.0;
 
-/// Softwood under a Ø6 flat 2F pocket on a slow gantry: the machine's
+/// Softwood under a Ø6 flat 2F profile on a slow gantry: the machine's
 /// cutting-feed ceiling holds the recommendation below the matched vendor
 /// band, so the verdict is `Thin` and both ratios exist.
 ///
-/// Feeds matrix R5 re-bless (2026-09-23). Until R5 this fixture was Baltic
-/// birch under a 3D adaptive pass. R5 moved that cell onto
-/// `amana-flat-plywood-hardwood-pocket-6000-2f-spektra`, which prints ONE
-/// value (max only). The chart-display ruling (5199e06e) gives a one-value
-/// row no band, so the row painted "no vendor chipload range matched".
+/// **RE-BLESSED 2026-10-31, series ruling (`feeds::series`).** Until then
+/// this fixture was the Ø6 softwood Pocket on the ZrN carving row
+/// `amana-zrn-flat-softwood-pocket-6000-2f` (0.1778-0.2286 mm/tooth). The
+/// ruling sends a generic end mill to the standard Spektra row, which
+/// prints ONE value, and a one-value row paints no range. The Profile cell
+/// reads a printed band. From
+/// `tests/fixtures/feeds_matrix_2026-09-23/matrix_2026-09-23.csv` (EndMill
+/// 6.0 Profile softwood):
 ///
-/// This cell was the in-band fixture until R5. It resolves to the printed
-/// row `amana-zrn-flat-softwood-pocket-6000-2f`, which publishes BOTH
-/// limits: 0.1778-0.2286 mm/tooth at Ø6.0 and Janka 600, so the diameter
-/// and hardness scales are 1.0 for generic softwood (Janka 600). The
-/// arithmetic, from `planning/feeds_matrix_2026-09-23/matrix_2026-09-23.csv`:
-///
-/// * The recommended axial depth is 4.2 mm = 0.7 x D, so the depth scale
-///   is 1.0 and the band stays 0.1778-0.2286.
-/// * The seed chipload is the band midpoint, 0.2032 mm/tooth. At 18 000 rpm
-///   and 2 flutes that asks for 0.2032 x 18 000 x 2 = 7315 mm/min.
-/// * **RE-BLESSED 2026-09-24, ruling R4 Q10.** The RPM now follows a
-///   binding cutting-feed ceiling down to hold the chip. On the generic
-///   router's 4000 mm/min ceiling the RPM went to 4000 / 0.4064 = 9842 and
-///   the chip stayed at the band value 0.2032, so the fixture read "in
-///   vendor range". The fixture now needs a floor that STOPS the descent.
-/// * The machine is the generic router with a cutting-feed ceiling of
-///   1000 mm/min ([`thin_machine`]). Its spindle range is 8000-24 000 rpm.
-/// * The chip per rev is 7315 / 18 000 = 0.4064 mm. The RPM that holds the
-///   chip at the ceiling is 1000 / 0.4064 = 2460, under the 8000 rpm machine
-///   minimum, so the descent stops at 8000 (`RpmLoweredForFeedCeiling`,
-///   `held: false`). The feed there, 0.4064 x 8000 = 3251 mm/min, is still
-///   over the ceiling, so Step 7 clamps it to 1000 (`FeedRateClamped`).
-/// * chipload = 1000 / (8000 x 2) = 0.0625 mm/tooth, below the 0.1778
-///   minimum and above the 0.025 rubbing floor, so the verdict is `Thin`.
-///   The band midpoint gives the time ratio 0.2032 / 0.0625 = 3.25x. If the
-///   vendor row's `rpm_min` is above 8000, the descent stops there instead
-///   and the chip is thinner still; the verdict stays `Thin`.
+/// * The row is `onsrud-softwood-60-200-1_4-finish` (Onsrud 60-200, 1/4 in,
+///   .005-.007 in/tooth), carried to Ø6 by the G1 size claim (form B,
+///   scale 0.9790): band 0.1243-0.1741 mm/tooth on the matrix machine.
+/// * The machine here is the generic router with a cutting-feed ceiling of
+///   1000 mm/min ([`thin_machine`]); its spindle range is 8000-24 000 rpm.
+///   The Q10 descent cannot hold the chip at that ceiling above the 8000 rpm
+///   minimum, so it stops there and Step 7 clamps the feed to 1000.
+/// * chipload = 1000 / (8000 x 2) = 0.0625 mm/tooth, below the band minimum
+///   and above the 0.025 rubbing floor, so the verdict is `Thin`. If the
+///   descent stops at a higher RPM the chip is thinner still; the verdict
+///   stays `Thin`.
 fn thin() -> Fixture {
     Fixture {
         tool_type: ToolType::EndMill,
@@ -143,7 +130,7 @@ fn thin() -> Fixture {
         material: Material::SolidWood {
             species: WoodSpecies::GenericSoftwood,
         },
-        operation: OperationConfig::Pocket(Default::default()),
+        operation: OperationConfig::Profile(Default::default()),
         stickout_mm: DEFAULT_FIXTURE_STICKOUT_MM,
         machine: Some(thin_machine()),
     }

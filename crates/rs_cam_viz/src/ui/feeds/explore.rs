@@ -316,6 +316,18 @@ pub(crate) fn draw_chart_c(
         .size()
         .y;
     let title_overhang = (AXIS_LABEL_GAP * title_height).ceil();
+    // The screen room that a wall label needs above the feed wall: the
+    // label box, its gap to the line, the wall's half width and the one
+    // point the layout keeps inside the frame.
+    let wall_label_room = {
+        let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
+        let text_height = ui
+            .painter()
+            .layout_no_wrap(LABEL_MAX_FEED.to_owned(), font, tokens::DANGER)
+            .size()
+            .y;
+        f64::from(text_height + 2.0 * LABEL_PADDING.y + LABEL_GAP + WALL_WIDTH / 2.0 + 1.5)
+    };
     let plot_response = ui
         .horizontal(|ui| {
             ui.add_space(title_overhang);
@@ -346,7 +358,16 @@ pub(crate) fn draw_chart_c(
                     // W3k: the bounds are set on every frame, so a bound kept
                     // in the plot memory from an older build cannot stay.
                     plot_ui.set_plot_bounds_x(x_bounds.clone());
-                    plot_ui.set_plot_bounds_y(y_bounds.clone());
+                    // The feed wall is the top line of the chart. The plot
+                    // keeps room above it for its label, so "Max feed" has
+                    // a place on a narrow rail (lead, 2026-10-31).
+                    let plot_height = f64::from(plot_ui.transform().frame().height());
+                    plot_ui.set_plot_bounds_y(with_wall_label_room(
+                        y_bounds.clone(),
+                        env.max_feed_mm_min,
+                        plot_height,
+                        wall_label_room,
+                    ));
                     // 0. The corridor: the two bounds that turn the vendor band into
                     //    a place the cut can live. Each is a thin line in the machine
                     //    wall's hue. They were shaded wedges until 2026-09-23
@@ -444,7 +465,7 @@ pub(crate) fn draw_chart_c(
                     //    window mark on the axis went too: it had no label.
                     //    `draw_machine_envelope`
                     //    keeps them for the project scatter.
-                    for wall in walls(env, rpm_axis_max, feed_axis_max) {
+                    for wall in walls(env, rpm_axis_max) {
                         plot_ui.line(
                             Line::new("", PlotPoints::from(wall.to_vec()))
                                 .color(wash(tokens::DANGER, WALL_ALPHA))
@@ -452,7 +473,7 @@ pub(crate) fn draw_chart_c(
                                 .allow_hover(false),
                         );
                     }
-                    if let Some(wall) = min_wall(env, feed_axis_max) {
+                    if let Some(wall) = min_wall(env) {
                         plot_ui.line(
                             Line::new("", PlotPoints::from(wall.to_vec()))
                                 .color(tokens::CAUTION)
@@ -606,7 +627,7 @@ pub(crate) fn draw_chart_c(
         push_line(iso_screen(lo), BAND_LIMIT_WIDTH, true);
         push_line(iso_screen(hi), BAND_LIMIT_WIDTH, true);
     }
-    let [rpm_wall, feed_wall] = walls(env, rpm_axis_max, feed_axis_max);
+    let [rpm_wall, feed_wall] = walls(env, rpm_axis_max);
     push_line(
         rpm_wall.iter().copied().map(at).collect(),
         WALL_WIDTH,
@@ -618,7 +639,7 @@ pub(crate) fn draw_chart_c(
         false,
     );
     let min_line: Option<Vec<egui::Pos2>> =
-        min_wall(env, feed_axis_max).map(|wall| wall.iter().copied().map(at).collect());
+        min_wall(env).map(|wall| wall.iter().copied().map(at).collect());
     if let Some(line) = &min_line {
         push_line(line.clone(), WALL_WIDTH, false);
     }
@@ -780,31 +801,54 @@ fn chart_bounds(
 /// The margin of each axis, a fraction of its range (egui_plot's default).
 const PLOT_MARGIN: f64 = 0.05;
 
-/// The two machine walls, in plot coordinates: the spindle maximum (an
-/// upright line to the top of the feed axis) and the feed maximum (a level
-/// line to the end of the RPM axis).
+/// The feed bounds with room above the feed wall at `feed_max` for one wall
+/// label: the top bound rises until the screen gap between the wall and the
+/// top of the plot is at least `room_px` on a plot `plot_height_px` high.
+/// The bottom bound does not move; a top bound that is already high enough
+/// does not move either.
+///
+/// With bottom `b`, top `t` and the wall at `f`, the gap is
+/// `(t - f) / (t - b) x height`. The gap is `room` at
+/// `t = (f - k b) / (1 - k)`, with `k = room / height`.
+fn with_wall_label_room(
+    bounds: std::ops::RangeInclusive<f64>,
+    feed_max: f64,
+    plot_height_px: f64,
+    room_px: f64,
+) -> std::ops::RangeInclusive<f64> {
+    let (bottom, top) = (*bounds.start(), *bounds.end());
+    let k = room_px / plot_height_px;
+    // A room of half the plot or more would leave no chart under the wall:
+    // keep the bounds then.
+    if !(k.is_finite() && k > 0.0 && k < 0.5) || !feed_max.is_finite() {
+        return bounds;
+    }
+    let needed = (feed_max - k * bottom) / (1.0 - k);
+    bottom..=top.max(needed)
+}
+
 /// The spindle minimum wall, in plot coordinates: an upright line at the
-/// machine's minimum RPM to the top of the feed axis. `None` for a machine
-/// with no minimum.
-fn min_wall(
-    env: &rs_cam_core::feeds::MachineEnvelope,
-    feed_axis_max: f64,
-) -> Option<[[f64; 2]; 2]> {
+/// machine's minimum RPM up to the feed maximum. `None` for a machine with
+/// no minimum.
+///
+/// The upright walls stop at the feed wall (lead, 2026-10-31): the three
+/// walls close the machine envelope, and the band above the feed wall is
+/// free for the "Max feed" label, which had no place on the 240 rail.
+fn min_wall(env: &rs_cam_core::feeds::MachineEnvelope) -> Option<[[f64; 2]; 2]> {
     (env.spindle_min_rpm > 0.0).then_some([
         [env.spindle_min_rpm, 0.0],
-        [env.spindle_min_rpm, feed_axis_max],
+        [env.spindle_min_rpm, env.max_feed_mm_min],
     ])
 }
 
-fn walls(
-    env: &rs_cam_core::feeds::MachineEnvelope,
-    rpm_axis_max: f64,
-    feed_axis_max: f64,
-) -> [[[f64; 2]; 2]; 2] {
+/// The two machine walls, in plot coordinates: the spindle maximum (an
+/// upright line up to the feed maximum, see [`min_wall`]) and the feed
+/// maximum (a level line to the end of the RPM axis).
+fn walls(env: &rs_cam_core::feeds::MachineEnvelope, rpm_axis_max: f64) -> [[[f64; 2]; 2]; 2] {
     [
         [
             [env.spindle_max_rpm, 0.0],
-            [env.spindle_max_rpm, feed_axis_max],
+            [env.spindle_max_rpm, env.max_feed_mm_min],
         ],
         [
             [0.0, env.max_feed_mm_min],

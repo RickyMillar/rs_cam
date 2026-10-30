@@ -187,6 +187,7 @@ fn report_what_suggest_commands_for_a_relief_finish() {
     for ap in [0.1, 0.2, 0.3, 0.5, 1.0] {
         let d = engaged(ap);
         let input = FeedsInput {
+            tool_series: None,
             tool_diameter: TIP_DIAMETER_MM,
             flute_count: 2,
             flute_length: 25.0,

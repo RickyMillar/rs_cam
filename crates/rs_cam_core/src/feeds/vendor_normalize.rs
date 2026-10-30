@@ -225,7 +225,7 @@ pub fn to_lookup_query(input: &FeedsInput) -> Option<LookupQuery> {
 pub fn to_lookup_query_unrouted(input: &FeedsInput) -> LookupQuery {
     LookupQuery {
         tool_family: input.tool_geometry.cutter_kind().lut_family(),
-        tool_subfamily: None,
+        tool_subfamily: input.tool_series.map(|s| s.key().to_owned()),
         diameter_mm: lookup_diameter_for_input(input),
         flute_count: input.flute_count,
         material_family: material_to_lut(input.material).0,
@@ -443,6 +443,7 @@ mod tests {
         op: OperationFamily,
     ) -> FeedsInput<'a> {
         FeedsInput {
+            tool_series: None,
             tool_diameter: 6.0,
             flute_count: 2,
             flute_length: 18.0,

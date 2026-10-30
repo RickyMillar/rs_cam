@@ -70,6 +70,7 @@ fn calc_3mm_pocket(material: &Material) -> rs_cam_core::feeds::FeedsResult {
     let machine = MachineProfile::generic_wood_router();
 
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 3.0,
         flute_count: 2,
         flute_length: 12.0,

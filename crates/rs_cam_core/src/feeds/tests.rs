@@ -18,6 +18,7 @@ fn softwood_flat_6mm_pocket() -> FeedsInput<'static> {
     }));
     let machine: &'static MachineProfile = Box::leak(Box::new(MachineProfile::shapeoko_vfd()));
     FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -110,6 +111,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let adaptive = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -128,6 +130,7 @@ fn test_adaptive_deeper_narrower_than_pocket() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
     let pocket = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -179,6 +182,7 @@ fn test_roughing_deeper_than_finishing() {
 
     for family in families {
         let rough = calculate(&FeedsInput {
+            tool_series: None,
             tool_diameter: 6.0,
             flute_count: 2,
             flute_length: 18.0,
@@ -197,6 +201,7 @@ fn test_roughing_deeper_than_finishing() {
             spindle_strategy: crate::feeds::SpindleStrategy::default(),
         });
         let finish = calculate(&FeedsInput {
+            tool_series: None,
             tool_diameter: 6.0,
             flute_count: 2,
             flute_length: 18.0,
@@ -244,6 +249,7 @@ fn test_small_tapered_ball_plunge_derated() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 1.0,
         flute_count: 1,
         flute_length: 6.0,
@@ -288,6 +294,7 @@ fn test_flat_endmill_plunge_is_the_g10_flat_claim() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -337,6 +344,7 @@ fn test_wood_adaptive_stepover_tracks_machine_factor() {
     let target = machine.rigidity.adaptive_woc_factor * 6.0;
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -376,6 +384,7 @@ fn test_metal_adaptive_stepover_keeps_metal_base() {
     let machine_factor_ae = machine.rigidity.adaptive_woc_factor * 6.0;
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -472,6 +481,7 @@ fn test_drill_family_rpm_in_drill_band() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -530,6 +540,7 @@ fn test_drill_feed_within_envelope_and_plunge_aliased() {
         let machine = MachineProfile::shapeoko_vfd();
         for d in [3.0, 6.0, 12.0] {
             let result = calculate(&FeedsInput {
+                tool_series: None,
                 tool_diameter: d,
                 flute_count: 2,
                 flute_length: 18.0,
@@ -584,6 +595,7 @@ fn test_drill_envelope_ceiling_drops_rpm_to_hold_chipload() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 2.0,
         flute_count: 3,
         flute_length: 12.0,
@@ -649,6 +661,7 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 2.0,
         flute_count: 3,
         flute_length: 12.0,
@@ -701,6 +714,7 @@ fn test_pocket_family_unaffected_by_drill_fix() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -754,6 +768,7 @@ fn test_vbit_rpm_uses_engaged_diameter() {
     // ideal RPM exceeds the machine ceiling, so the result clamps
     // to machine max.
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 5.5,
         flute_count: 2,
         flute_length: 12.0,
@@ -800,6 +815,7 @@ fn test_flat_tool_rpm_chipload_unchanged_by_engaged_d() {
         (material.base_cutting_speed_m_min() * 1000.0 / (std::f64::consts::PI * d)).round();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: d,
         flute_count: 2,
         flute_length: 18.0,
@@ -845,6 +861,7 @@ fn test_wood_adaptive_stepover_solid_wood_by_janka_eastern_white_pine() {
     let target = machine.rigidity.adaptive_woc_factor * 6.0;
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -880,6 +897,7 @@ fn test_flute_guard_caps_doc() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 5.0, // very short flutes
@@ -921,6 +939,7 @@ fn test_power_limiting_on_low_power_machine() {
     machine.power = crate::machine::PowerModel::ConstantPower { power_kw: 0.01 }; // extremely tiny
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 12.0,
         flute_count: 4,
         flute_length: 25.0,
@@ -960,6 +979,7 @@ fn test_scallop_stepover_used_for_ball_nose() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -991,6 +1011,7 @@ fn test_machine_feed_clamp() {
     machine.max_feed_mm_min = 500.0; // very low max feed
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1030,6 +1051,7 @@ fn no_machine_factor_multiplies_the_feed() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1063,6 +1085,7 @@ fn test_slotting_detection() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1105,6 +1128,7 @@ fn test_lut_chipload_overrides_formula() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let with_lut = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1123,6 +1147,7 @@ fn test_lut_chipload_overrides_formula() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
     let without_lut = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1195,6 +1220,7 @@ fn chipload_bounds_derate_with_doc_ratio_for_milling() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let mut input = FeedsInput {
+        tool_series: None,
         tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 24.0,
@@ -1250,6 +1276,7 @@ fn chipload_bounds_skip_doc_derating_for_drill_ops() {
     };
     let machine = MachineProfile::shapeoko_vfd();
     let mut input = FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 30.0,
@@ -1310,6 +1337,7 @@ fn test_lut_rpm_override_within_machine_range() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1344,6 +1372,7 @@ fn test_no_lut_backward_compatible() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1377,6 +1406,7 @@ fn test_setup_derate_long_overhang() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let normal = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1398,6 +1428,7 @@ fn test_setup_derate_long_overhang() {
     });
 
     let long = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1438,6 +1469,7 @@ fn test_setup_derate_medium_overhang() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let normal = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1459,6 +1491,7 @@ fn test_setup_derate_medium_overhang() {
     });
 
     let medium = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1497,6 +1530,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
     let machine = MachineProfile::shapeoko_vfd();
 
     let flat = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1515,6 +1549,7 @@ fn test_lut_ball_nose_different_chipload_than_flat() {
         spindle_strategy: crate::feeds::SpindleStrategy::default(),
     });
     let ball = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1556,6 +1591,7 @@ fn test_lut_fallback_when_no_match() {
 
     // Foam has no LUT data — should fall back to formula
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1592,6 +1628,7 @@ fn spindle_strategy_max_speed_lifts_rpm_and_scales_feed() {
         species: crate::material::WoodSpecies::GenericSoftwood,
     };
     let base = FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -1679,6 +1716,7 @@ fn spindle_strategy_max_speed_respects_hard_cap() {
         species: crate::material::WoodSpecies::GenericSoftwood,
     };
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,

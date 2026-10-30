@@ -24,7 +24,7 @@
 //! | 3.175 mm 2F | `amana-flat-softwood-pocket-3175-2f-spektra` 0.1016 -> 0.0508 | `amana-flat-hardwood-pocket-3175-2f-spektra` 0.1016 -> 0.0508 | `amana-flat-plywood-hardwood-pocket-3175-2f-spektra` 0.1016 -> 0.0508 | `amana-flat-mdf-pocket-3175-2f-spektra` 0.127 -> 0.0635 |
 //!
 //! The worked example at the chart's 18 000 RPM (6 mm 2F flat, generic
-//! softwood). The Suggest pipeline can ship a lower RPM (9842 on the
+//! softwood). The Suggest pipeline can ship a lower RPM (15 748 on the
 //! default pocket), so the cases derive the expected values from the RPM
 //! and the feed that ship:
 //!

@@ -1607,6 +1607,10 @@ pub struct ToolSummary {
     pub included_angle_deg: f64,
     /// Flute count — used by both feeds/speeds and chipload-per-tooth.
     pub flute_count: u32,
+    /// The flute direction. It declares the tool's cutter series for the
+    /// vendor lookup (`feeds::series`, ruling 2026-10-31): `up_cut` is a
+    /// generic tool that reads the standard rows first.
+    pub cut_direction: crate::compute::tool_config::BitCutDirection,
     /// The size as a person reads it, from [`ToolConfig::size_label`]:
     /// `Ø` prefixes a diameter and `R` a radius, for example
     /// "tip Ø2.00 mm (R1.00), shank Ø6.00". The numeric fields above stay
@@ -2115,6 +2119,7 @@ impl ProjectSession {
                 corner_radius_mm: t.corner_radius_mm.max(t.corner_radius),
                 included_angle_deg: t.included_angle,
                 flute_count: t.flute_count,
+                cut_direction: t.cut_direction,
                 size_label: t.size_label(),
                 size_units: t.effective_size_units(),
             })

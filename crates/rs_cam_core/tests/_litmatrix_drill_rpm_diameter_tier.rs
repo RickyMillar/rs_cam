@@ -41,6 +41,7 @@ fn drill_input(d: f64, strategy: SpindleStrategy) -> FeedsInput<'static> {
         species: WoodSpecies::WhiteOak,
     }));
     FeedsInput {
+        tool_series: None,
         tool_diameter: d,
         flute_count: 2,
         flute_length: d * 4.0,

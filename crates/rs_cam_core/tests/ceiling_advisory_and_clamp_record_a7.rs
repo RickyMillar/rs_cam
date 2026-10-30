@@ -242,6 +242,7 @@ fn b3_recipe() -> FeedsResult {
         species: WoodSpecies::HardMaple,
     };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 1.0,
         flute_count: FLUTES,
         flute_length: 20.0,

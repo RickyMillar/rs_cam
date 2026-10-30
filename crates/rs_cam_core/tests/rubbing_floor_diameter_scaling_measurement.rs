@@ -677,6 +677,7 @@ fn sweep() -> Vec<Row> {
                 for species in ALL_SPECIES {
                     let material = Material::SolidWood { species };
                     let input = FeedsInput {
+                        tool_series: None,
                         tool_diameter: tool.diameter_mm,
                         flute_count: tool.flutes,
                         flute_length: tool.flute_length_mm,

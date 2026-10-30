@@ -45,6 +45,7 @@ fn max_speed_cannot_lift_drill_above_ceiling() {
     };
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 3.0,
         flute_count: 2,
         flute_length: 12.0,
@@ -83,6 +84,7 @@ fn match_chart_drill_stays_at_ceiling() {
     };
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 3.0,
         flute_count: 2,
         flute_length: 12.0,

@@ -52,5 +52,6 @@ pub fn build_cutter(tool: &ToolConfig) -> Result<ToolDefinition, ToolGeometryErr
         tool.stickout,
         tool.flute_count,
         tool.tool_material,
-    ))
+    )
+    .with_cut_direction(tool.cut_direction))
 }

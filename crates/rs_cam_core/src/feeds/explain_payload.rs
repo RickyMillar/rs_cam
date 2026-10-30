@@ -225,6 +225,7 @@ mod tests {
         lut: Option<&'a VendorLut>,
     ) -> FeedsInput<'a> {
         FeedsInput {
+            tool_series: None,
             tool_diameter: 6.35,
             flute_count: 2,
             flute_length: 22.0,

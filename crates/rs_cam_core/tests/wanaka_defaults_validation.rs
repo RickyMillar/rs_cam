@@ -45,6 +45,7 @@ fn wanaka_adaptive3d_6mm_em_lands_stepover_at_target() {
     let target_mm = machine.rigidity.adaptive_woc_factor * 6.0;
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,
@@ -84,6 +85,7 @@ fn wanaka_1mm_tapered_ball_plunge_capped() {
     // TP4/TP5 case — project_curve family maps to Trace
     for op in [OperationFamily::Trace, OperationFamily::Parallel] {
         let result = calculate(&FeedsInput {
+            tool_series: None,
             tool_diameter: 1.0,
             flute_count: 1,
             flute_length: 6.0,
@@ -125,6 +127,7 @@ fn wanaka_6mm_em_plunge_not_derated() {
     let material = wanaka_material();
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 18.0,

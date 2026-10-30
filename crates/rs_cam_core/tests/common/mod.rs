@@ -29,6 +29,7 @@
 //! | [`adaptive_islands`] | the six-island 2D Adaptive pocket, generated and simulated, and its load limit (G-ADAPTORDER, G-ADAPTLINKLOAD, G-ADAPTPASSLOAD) |
 //! | [`adversarial2d`] | R2's hostile 2D fixtures, their non-vacuity measures, the wall-clock/RSS watchdog, the cancellation seam, and the SVG renderers |
 //! | [`bandmap`] | the finish-planner band-territory `BandMap` + deviation-histogram instrument (stock-mesh-vertex-deviation lineage — see its module doc for why this is NOT the `column_deviations`/COLUMNS lineage h4 uses) |
+//! | [`feeds_cells`] | the feeds cell walk of the series sentries: the FM1 tool, op and Suggest door at 2 and 3 flutes (ruling 2026-10-31) |
 //! | [`chain`] | the F.4 generate/simulate fixpoint ladder + measurement-resolution re-sim, shared by wanaka-chain harnesses |
 //! | [`meshes`] | synthetic mesh generators: plateau, grooved block, sawtooth plate, height fields, profile extrusion |
 //! | [`monge`] | Monge-quadric heightfield curvature: scale-normalised 6x6 fit, shape operator, `t1` axis, Zou strip width, line-field statistics — extracted from `wanaka_curvature_anisotropy.rs` + `zone_coherence_census.rs`, which keep their own copies per the migration policy below |
@@ -65,6 +66,7 @@ pub mod adaptive_islands;
 pub mod adversarial2d;
 pub mod bandmap;
 pub mod chain;
+pub mod feeds_cells;
 pub mod fingerprint;
 pub mod gcode_fixtures;
 pub mod kernels;

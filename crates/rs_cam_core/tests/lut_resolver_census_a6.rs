@@ -590,6 +590,7 @@ fn refusal_asymmetry_through_calculate() -> (usize, usize) {
             for flutes in [2u32, 3] {
                 let make = |kind: Option<OperationType>| {
                     calculate(&FeedsInput {
+                        tool_series: None,
                         tool_diameter: d,
                         flute_count: flutes,
                         flute_length: 20.0,

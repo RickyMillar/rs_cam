@@ -132,6 +132,7 @@ fn run(probe: &Probe) -> FeedsResult {
     let lut = embedded_vendor_lut();
     let machine = MachineProfile::generic_wood_router();
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: probe.diameter_mm,
         flute_count: probe.flutes,
         flute_length: probe.diameter_mm * 4.0,

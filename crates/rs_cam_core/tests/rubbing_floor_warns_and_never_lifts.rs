@@ -104,6 +104,7 @@ fn b3_scallop_on(machine: &MachineProfile) -> FeedsResult {
     };
 
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 1.0,
         flute_count: 2,
         flute_length: 20.0,
@@ -291,6 +292,7 @@ fn a_tool_whose_band_sits_above_the_floor_does_not_warn() {
     };
 
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 22.0,

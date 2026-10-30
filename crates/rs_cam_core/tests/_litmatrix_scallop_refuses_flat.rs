@@ -43,6 +43,7 @@ fn base_input<'a>(
     target_scallop_mm: Option<f64>,
 ) -> FeedsInput<'a> {
     FeedsInput {
+        tool_series: None,
         tool_diameter: 6.0,
         flute_count: 2,
         flute_length: 22.0,

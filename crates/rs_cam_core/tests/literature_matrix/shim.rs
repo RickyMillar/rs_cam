@@ -461,6 +461,7 @@ fn run_cell_in_material(
     let tool_def = build_cutter(&tool).unwrap();
     let (auto_axial, auto_radial, auto_scallop) = operation_feeds_hints(&operation);
     let feeds_input = FeedsInput {
+        tool_series: None,
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,

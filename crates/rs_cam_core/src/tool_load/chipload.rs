@@ -142,7 +142,10 @@ pub(crate) fn matched_chip_envelope(
     let diameter_mm = lookup_diameter_mm;
     let query = LookupQuery {
         tool_family,
-        tool_subfamily: None,
+        // Ruling 2026-10-31: the same series key as the Suggest query
+        // (`vendor_normalize::to_lookup_query_unrouted`).
+        tool_subfamily: crate::feeds::series::ToolSeries::for_cut_direction(tool.cut_direction)
+            .map(|s| s.key().to_owned()),
         diameter_mm,
         flute_count: tool.flute_count,
         material_family,
@@ -1242,18 +1245,51 @@ mod tests {
         // 0.38 is in both bands. The routing assertion (ProjectCurve→Trace
         // → contour/finish row) is unchanged.
         //
+        //
+        // RE-PINNED 2026-10-31 (series ruling, `feeds::series`): the sample
+        // is the midpoint of the band that the gate's own resolver gives, so
+        // the test pins the routing (a contour row), not a transcribed
+        // number. The Onsrud 60-100MW row is a compression row; no standard
+        // row ties with it on material and size, so it still serves here.
+        let maple = Material::SolidWood {
+            species: WoodSpecies::HardMaple,
+        };
+        let row = matched_chip_envelope(
+            &tool(),
+            &maple,
+            OperationType::ProjectCurve,
+            LutOperationFamily::Trace,
+            LutPassRole::Finish,
+            crate::feeds::geometry::lut_key_diameter_for_cutter(&tool(), 0.5),
+        )
+        .expect("the routed query matches a chipload row");
+        assert_eq!(
+            row.family_basis.claim().map_or_else(
+                || embedded_lut()
+                    .observations
+                    .iter()
+                    .find(|o| o.observation_id == row.observation_id)
+                    .map(|o| o.operation_family),
+                |c| Some(c.home.0)
+            ),
+            Some(LutOperationFamily::Contour),
+            "ProjectCurve routes to a contour row: {}",
+            row.observation_id
+        );
+        let (lo, hi) = (
+            row.chip_load_min_mm.expect("a band"),
+            row.chip_load_max_mm.expect("a band"),
+        );
         // Arc override prevents D9's per-sample normalization from
         // perturbing row selection (contour-finish rows have narrower
         // nominal arcs than the pocket-roughing default in `sample()`).
-        let mut s = sample(0, 0, 0.38, 0.5);
+        let mut s = sample(0, 0, 0.5 * (lo + hi), 0.5);
         s.arc_engagement_radians = Some(0.459);
         let t = trace(vec![s]);
         let v = evaluate_args(
             0,
             &tool(),
-            &Material::SolidWood {
-                species: WoodSpecies::HardMaple,
-            },
+            &maple,
             Some(&t),
             None,
             LutOperationFamily::Trace,

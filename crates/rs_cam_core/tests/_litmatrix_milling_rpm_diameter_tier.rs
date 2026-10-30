@@ -43,6 +43,7 @@ fn pocket_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'static
     let machine = Box::leak(Box::new(MachineProfile::shapeoko_vfd()));
     let material = Box::leak(Box::new(Material::SolidWood { species }));
     FeedsInput {
+        tool_series: None,
         tool_diameter: d,
         flute_count: flutes,
         flute_length: d * 4.0,
@@ -67,6 +68,7 @@ fn adaptive_input(d: f64, flutes: u32, species: WoodSpecies) -> FeedsInput<'stat
     let machine = Box::leak(Box::new(MachineProfile::shapeoko_vfd()));
     let material = Box::leak(Box::new(Material::SolidWood { species }));
     FeedsInput {
+        tool_series: None,
         tool_diameter: d,
         flute_count: flutes,
         flute_length: d * 4.0,

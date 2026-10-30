@@ -32,6 +32,7 @@ pub mod provenance;
 pub mod quantities;
 pub mod ramp;
 pub mod rationale;
+pub mod series;
 pub mod suggest;
 pub mod support;
 pub mod vendor_lookup;
@@ -380,6 +381,12 @@ pub struct FeedsInput<'a> {
     pub flute_length: f64,
     pub shank_diameter: Option<f64>,
     pub tool_geometry: ToolGeometryHint,
+    /// The tool's cutter series (operator ruling 2026-10-31,
+    /// [`series::ToolSeries`]): `None` is a generic (plain upcut) tool, and
+    /// the vendor lookup reads the standard rows first. The product builder
+    /// (`suggest::feeds_input_for_operation`) reads
+    /// `ToolConfig::cut_direction`.
+    pub tool_series: Option<series::ToolSeries>,
     pub material: &'a Material,
     pub machine: &'a MachineProfile,
     pub operation: OperationFamily,

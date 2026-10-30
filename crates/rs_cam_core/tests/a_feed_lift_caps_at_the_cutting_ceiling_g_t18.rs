@@ -117,6 +117,7 @@ fn drill_12mm() -> ToolConfig {
 fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     let material = white_oak();
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,
@@ -142,6 +143,7 @@ fn pocket_rough(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
 fn drill_cycle(machine: &MachineProfile, tool: &ToolConfig) -> FeedsResult {
     let material = white_oak();
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,

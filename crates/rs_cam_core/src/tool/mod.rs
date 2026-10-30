@@ -22,7 +22,7 @@ pub use tapered_ball::{TaperedBallEndmill, ball_cone_radius_at_height};
 pub use vbit::{VBitEndmill, vbit_cone_radius_at_height};
 // Re-export ToolDefinition (defined below the trait in this file)
 
-use crate::compute::tool_config::ToolMaterial;
+use crate::compute::tool_config::{BitCutDirection, ToolMaterial};
 use crate::geo::{P3, Triangle};
 
 /// Contact point from a drop-cutter test.
@@ -643,6 +643,11 @@ pub struct ToolDefinition {
     pub flute_count: u32,
     /// Cutter substrate material.
     pub tool_material: ToolMaterial,
+    /// The flute direction (`ToolConfig::cut_direction`). It declares the
+    /// tool's cutter series for the vendor lookup
+    /// (`feeds::series::ToolSeries::for_cut_direction`, ruling 2026-10-31).
+    /// [`Self::new`] sets `UpCut`, a generic tool.
+    pub cut_direction: BitCutDirection,
 }
 
 impl ToolDefinition {
@@ -659,7 +664,15 @@ impl ToolDefinition {
             stickout,
             flute_count,
             tool_material,
+            cut_direction: BitCutDirection::UpCut,
         }
+    }
+
+    /// The same tool with the flute direction `cut_direction`.
+    #[must_use]
+    pub fn with_cut_direction(mut self, cut_direction: BitCutDirection) -> Self {
+        self.cut_direction = cut_direction;
+        self
     }
 
     /// The shank length between the flutes and the holder face (mm):

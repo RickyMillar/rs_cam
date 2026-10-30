@@ -69,6 +69,7 @@ fn ball_pocket(machine: &MachineProfile, lut: &VendorLut) -> FeedsResult {
         species: WoodSpecies::WhiteOak,
     };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 6.35,
         flute_count: 2,
         flute_length: 22.0,

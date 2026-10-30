@@ -302,10 +302,11 @@ mod tests {
     /// The feed-floor fixture: the demo pocket in generic hardwood (Janka
     /// 1450), on a machine whose cutting-feed ceiling is not an integer.
     ///
-    /// Feeds matrix R5 re-bless (2026-09-23). The demo pocket's default
-    /// stock resolves to the printed row `amana-zrn-flat-softwood-pocket-6000-2f`
-    /// (0.2032 mm/tooth). Its raw feed is 0.2032 x 18 000 x 2 = 7315 mm/min,
-    /// which the 4000 mm/min cutting ceiling clamps to the integer 4000. A
+    /// Series ruling (2026-10-31). The demo pocket's default stock (generic
+    /// softwood) resolves to the printed Spektra row
+    /// `amana-flat-softwood-pocket-6000-2f-spektra` (0.127 mm/tooth). Its raw
+    /// feed is 0.127 x 18 000 x 2 = 4572 mm/min, which the 4000 mm/min
+    /// cutting ceiling clamps to the integer 4000. A
     /// floor and a nearest rounding agree on an integer, so the demo pocket
     /// cannot tell them apart.
     ///

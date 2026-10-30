@@ -174,6 +174,7 @@ fn sub_floor_lut() -> VendorLut {
 /// 0.025 rubbing floor, so it is the canonical floor==ceiling case.
 fn b3_scallop() -> FeedsResult {
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 1.0,
         flute_count: 2,
         flute_length: 20.0,

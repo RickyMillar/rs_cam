@@ -120,6 +120,7 @@ fn the_rpm_anchor_disclosure_renders_as_operator_text() {
     let lut = rpm_anchor_lut();
     let machine = MachineProfile::generic_wood_router();
     let result = calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 3.175,
         flute_count: 2,
         flute_length: 20.0,
@@ -196,6 +197,7 @@ fn sweep(lut: &VendorLut) -> Sweep {
                     for pass_role in [PassRole::Roughing, PassRole::Finish] {
                         total += 1;
                         let result = calculate(&FeedsInput {
+                            tool_series: None,
                             tool_diameter: diameter,
                             flute_count: flutes,
                             flute_length: 20.0,

@@ -244,6 +244,7 @@ fn adaptive_op(dpp: f64) -> OperationConfig {
 
 fn feeds_input<'a>(machine: &'a MachineProfile, material: &'a Material, ap: f64) -> FeedsInput<'a> {
     FeedsInput {
+        tool_series: None,
         tool_diameter: DIAMETER_MM,
         flute_count: FLUTES,
         flute_length: 40.0,

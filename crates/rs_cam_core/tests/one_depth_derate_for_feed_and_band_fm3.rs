@@ -73,6 +73,7 @@ fn the_returned_band_carries_the_feed_depth_derate_fm3() {
         species: WoodSpecies::GenericSoftwood,
     };
     let input = FeedsInput {
+        tool_series: None,
         tool_diameter: D_MM,
         flute_count: 2,
         flute_length: 30.0,

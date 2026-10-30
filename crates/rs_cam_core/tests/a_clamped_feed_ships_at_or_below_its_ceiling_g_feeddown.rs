@@ -102,6 +102,7 @@ fn feeds_input<'a>(
     ae_mm: f64,
 ) -> FeedsInput<'a> {
     FeedsInput {
+        tool_series: None,
         tool_diameter: DIAMETER_MM,
         flute_count: 2,
         flute_length: 3.0 * DIAMETER_MM,

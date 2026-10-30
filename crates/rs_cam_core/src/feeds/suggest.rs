@@ -995,6 +995,9 @@ pub fn feeds_input_for_operation<'a>(
     let (family, role) = operation.feeds_style();
     let (axial_hint, radial_hint, scallop_hint) = operation_feeds_hints(operation);
     FeedsInput {
+        // Ruling 2026-10-31: the cut direction declares the cutter series;
+        // `UpCut` is a generic tool.
+        tool_series: crate::feeds::series::ToolSeries::for_cut_direction(tool.cut_direction),
         tool_diameter: tool.diameter,
         flute_count: tool.flute_count,
         flute_length: tool.cutting_length,

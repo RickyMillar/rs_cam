@@ -55,6 +55,7 @@ fn recipe(machine: &MachineProfile, pinned_depth: Option<f64>) -> rs_cam_core::f
         species: WoodSpecies::WhiteOak,
     };
     calculate(&FeedsInput {
+        tool_series: None,
         tool_diameter: 12.0,
         flute_count: 4,
         flute_length: 38.0,

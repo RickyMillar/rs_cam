@@ -301,16 +301,13 @@ pub fn chip_target_for_toolpath(
                 .fold(0.0_f64, f64::max)
         })
         .unwrap_or(0.0);
-    // F3.4 — same canonical resolver as the gate, at the same
-    // lookup key (ruling A1: the tip of a tapered ball; ruling B4: the
-    // nominal diameter of a V-bit).
-    let matched = chipload::matched_chip_envelope(
+    let matched = chip_envelope_row_for(
         &tool_def,
         material,
-        operation.op_type(),
+        operation,
         lut_op_family,
         lut_pass_role,
-        crate::feeds::geometry::lut_key_diameter_for_cutter(&tool_def, axial_doc),
+        axial_doc,
     )?;
     // DOC-derate exactly like the gate's trip bounds, so the
     // operator-facing colors agree with the export verdict, via the
@@ -350,6 +347,57 @@ pub fn chip_target_for_toolpath(
         }
         crate::feeds::vendor_lookup::PrintedChipload::Unpublished => None,
     }
+}
+
+/// The chipload row that the gate judges this operation against, at the
+/// axial depth `axial_doc_mm`: the envelope resolver
+/// (`chipload::matched_chip_envelope`) at the gate's lookup key. `None` for
+/// a custom material, a tool outside its domain, no matched row, or a
+/// refused size basis.
+///
+/// [`chip_target_for_toolpath`] reads its row here, so the modulator, the
+/// advisor and a sentry read the row that the gate reads (ruling
+/// 2026-10-31: feed, ramp and gate read one chart cell).
+pub fn chip_envelope_row(
+    material: &Material,
+    tool_cfg: &crate::compute::tool_config::ToolConfig,
+    operation: &crate::compute::catalog::OperationConfig,
+    axial_doc_mm: f64,
+) -> Option<crate::feeds::vendor_lookup::LookupResult> {
+    if matches!(material, Material::Custom { .. }) {
+        return None;
+    }
+    let tool_def = crate::compute::cutter::build_cutter(tool_cfg).ok()?;
+    let spec = operation.spec();
+    chip_envelope_row_for(
+        &tool_def,
+        material,
+        operation,
+        spec.feeds_family.into(),
+        spec.feeds_pass_role.into(),
+        axial_doc_mm,
+    )
+}
+
+/// F3.4 — the canonical resolver of the gate, at the same lookup key
+/// (ruling A1: the tip of a tapered ball; ruling B4: the nominal diameter
+/// of a V-bit).
+fn chip_envelope_row_for(
+    tool_def: &crate::tool::ToolDefinition,
+    material: &Material,
+    operation: &crate::compute::catalog::OperationConfig,
+    lut_op_family: LutOperationFamily,
+    lut_pass_role: LutPassRole,
+    axial_doc_mm: f64,
+) -> Option<crate::feeds::vendor_lookup::LookupResult> {
+    chipload::matched_chip_envelope(
+        tool_def,
+        material,
+        operation.op_type(),
+        lut_op_family,
+        lut_pass_role,
+        crate::feeds::geometry::lut_key_diameter_for_cutter(tool_def, axial_doc_mm),
+    )
 }
 
 /// Soft fractional widenings on the chipload + power hard-gate triggers.

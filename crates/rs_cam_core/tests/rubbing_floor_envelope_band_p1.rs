@@ -211,6 +211,7 @@ fn observe(lut: &VendorLut) -> Vec<Observed> {
                                 (d * 0.3).min(1.0)
                             };
                             let input = FeedsInput {
+                                tool_series: None,
                                 tool_diameter: d,
                                 flute_count: flutes,
                                 flute_length: d * 4.0,
@@ -387,6 +388,7 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         species: WoodSpecies::HardMaple,
     };
     let input = FeedsInput {
+        tool_series: None,
         tool_diameter: 1.5,
         flute_count: 4,
         flute_length: 4.0,
@@ -523,6 +525,7 @@ fn the_fallback_lowers_the_floor_only_to_a_published_bound() {
                                 (d * 0.3).min(1.0)
                             };
                             let input = FeedsInput {
+                                tool_series: None,
                                 tool_diameter: d,
                                 flute_count: flutes,
                                 flute_length: d * 4.0,

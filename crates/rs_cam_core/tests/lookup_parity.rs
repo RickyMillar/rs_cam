@@ -204,6 +204,7 @@ fn calculator_and_gate_match_same_observation_id() {
 
         // --- Calculator path ---
         let input = FeedsInput {
+            tool_series: None,
             tool_diameter: case.diameter_mm,
             flute_count: case.flute_count,
             flute_length: 18.0,

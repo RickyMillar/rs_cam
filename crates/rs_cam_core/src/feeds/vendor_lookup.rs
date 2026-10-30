@@ -16,6 +16,9 @@ use super::vendor_lut::{
 #[derive(Debug, Clone)]
 pub struct LookupQuery {
     pub tool_family: ToolFamily,
+    /// The tool's series key (`feeds::series::ToolSeries::key`), or a row
+    /// subfamily. `None` is a generic tool: the lookup reads the standard
+    /// rows first (operator ruling 2026-10-31).
     pub tool_subfamily: Option<String>,
     pub diameter_mm: f64,
     pub flute_count: u32,
@@ -302,7 +305,16 @@ fn find_best_vbit_row_where(
     query_included_angle_deg: Option<f64>,
     extra: impl Fn(&VendorObservation) -> bool,
 ) -> Option<MatchedRow> {
-    let mut best: Option<(i64, i64, bool, usize)> = None;
+    find_best_vbit_row_in(lut, criteria, query_included_angle_deg, extra)
+}
+
+fn find_best_vbit_row_in(
+    lut: &VendorLut,
+    criteria: &LookupCriteria,
+    query_included_angle_deg: Option<f64>,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<MatchedRow> {
+    let mut candidates: Vec<Candidate> = Vec::new();
     for (i, obs) in lut.observations.iter().enumerate() {
         let transferred = is_transferred(criteria, obs);
         if !passes_must_match(criteria, obs, transferred) || !extra(obs) {
@@ -319,41 +331,25 @@ fn find_best_vbit_row_where(
             _ => 0,
         };
         let (base_score, diam_score) = score_observation(criteria, obs, transferred);
-        let score = base_score + angle_bonus;
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`best.i` was stored from this same iteration over `lut.observations`, so the index is in range."
-        )]
-        if beats(
-            (
-                score,
-                // Ruling B4: a V-bit is keyed at its nominal diameter, so it
-                // takes the nearer-diameter tie-break of every other family.
-                diameter_distance(criteria, obs),
-                transferred,
-                obs.observation_id.as_str(),
-            ),
-            best.map(|(s, _, t, bi)| {
-                let b = &lut.observations[bi];
-                (
-                    s,
-                    diameter_distance(criteria, b),
-                    t,
-                    b.observation_id.as_str(),
-                )
-            }),
-        ) {
-            best = Some((score, diam_score, transferred, i));
-        }
+        // Ruling B4: a V-bit is keyed at its nominal diameter, so it takes
+        // the nearer-diameter tie-break of every other family
+        // (`best_by_score`).
+        candidates.push((i, base_score + angle_bonus, diam_score, transferred));
     }
-    best.map(|(score, diameter_match_score, _, i)| {
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`i` was stored from a valid iteration over `lut.observations`"
-        )]
-        let obs = &lut.observations[i];
-        build_result(lut, obs, criteria, score, diameter_match_score)
-    })
+    let best = best_by_score(lut, criteria, candidates.iter().copied())?;
+    let (i, score, diameter_match_score, _) = prefer_series(lut, criteria, &candidates, best);
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "`i` was stored from a valid iteration over `lut.observations`"
+    )]
+    let obs = &lut.observations[i];
+    Some(build_result(
+        lut,
+        obs,
+        criteria,
+        score,
+        diameter_match_score,
+    ))
 }
 
 /// **The RECIPE resolver.** Answers "which vendor row best describes
@@ -766,18 +762,27 @@ fn lookup_best_where(
     query: &LookupQuery,
     extra: impl Fn(&VendorObservation) -> bool,
 ) -> Option<LookupResult> {
-    let mut best: Option<(i64, i64, bool, usize)> = None;
+    lookup_best_in(lut, query, extra)
+}
 
-    for (i, obs) in lut.observations.iter().enumerate() {
-        let transferred = is_transferred(query, obs);
-        if !passes_must_match(query, obs, transferred) || !extra(obs) {
-            continue;
-        }
-        let (score, diam_score) = score_observation(query, obs, transferred);
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`best.i` was stored from this same iteration over `lut.observations`, so the index is in range."
-        )]
+/// One candidate of a lookup pass: its index in `lut.observations`, its
+/// score, its diameter-proximity score and whether a rule transfers it.
+type Candidate = (usize, i64, i64, bool);
+
+/// The best candidate by the score order of [`beats`].
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every candidate index was taken from an iteration over `lut.observations`"
+)]
+fn best_by_score(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    candidates: impl Iterator<Item = Candidate>,
+) -> Option<Candidate> {
+    let mut best: Option<Candidate> = None;
+    for c in candidates {
+        let (i, score, _, transferred) = c;
+        let obs = &lut.observations[i];
         if beats(
             (
                 score,
@@ -785,23 +790,91 @@ fn lookup_best_where(
                 transferred,
                 obs.observation_id.as_str(),
             ),
-            best.map(|(s, _, t, bi)| {
+            best.map(|(bi, s, _, t)| {
                 let b = &lut.observations[bi];
                 (s, diameter_distance(query, b), t, b.observation_id.as_str())
             }),
         ) {
-            best = Some((score, diam_score, transferred, i));
+            best = Some(c);
         }
     }
+    best
+}
 
-    best.map(|(score, diameter_match_score, _, i)| {
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "`i` was stored from a valid iteration over `lut.observations`"
-        )]
+/// The series rule (operator and lead rulings 2026-10-31,
+/// `feeds::series`): the series decides only between rows that tie on
+/// material and size. The score picks `best`. When another candidate is
+/// printed for the same material family at the same size and ranks better
+/// in series (`series::series_rank`: the tool's own series, then the
+/// standard rows, then the other specialty rows), the best of the
+/// better-ranked rows takes its place. So a generic tool reads the standard
+/// row where the ZrN carving row and the Spektra row both print 6 mm
+/// softwood, and a specialty row still ships where no row of a better rank
+/// prints its material and size. Every other ranking rule stays the score.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "every candidate index was taken from an iteration over `lut.observations`"
+)]
+fn prefer_series(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    candidates: &[Candidate],
+    best: Candidate,
+) -> Candidate {
+    let key = query.tool_subfamily.as_deref();
+    let rank = |i: usize| super::series::series_rank(key, &lut.observations[i]);
+    let best_obs = &lut.observations[best.0];
+    let ties = |i: usize| {
         let obs = &lut.observations[i];
-        build_result(lut, obs, query, score, diameter_match_score)
-    })
+        obs.material_family == best_obs.material_family
+            && match (obs.diameter_mm, best_obs.diameter_mm) {
+                (Some(a), Some(b)) => (a - b).abs() < 1e-9,
+                (None, None) => true,
+                _ => false,
+            }
+    };
+    let best_rank = rank(best.0);
+    let Some(top) = candidates
+        .iter()
+        .filter(|c| ties(c.0) && rank(c.0) < best_rank)
+        .map(|c| rank(c.0))
+        .min()
+    else {
+        return best;
+    };
+    best_by_score(
+        lut,
+        query,
+        candidates
+            .iter()
+            .copied()
+            .filter(|c| ties(c.0) && rank(c.0) == top),
+    )
+    .unwrap_or(best)
+}
+
+fn lookup_best_in(
+    lut: &VendorLut,
+    query: &LookupQuery,
+    extra: impl Fn(&VendorObservation) -> bool,
+) -> Option<LookupResult> {
+    let mut candidates: Vec<Candidate> = Vec::new();
+    for (i, obs) in lut.observations.iter().enumerate() {
+        let transferred = is_transferred(query, obs);
+        if !passes_must_match(query, obs, transferred) || !extra(obs) {
+            continue;
+        }
+        let (score, diam_score) = score_observation(query, obs, transferred);
+        candidates.push((i, score, diam_score, transferred));
+    }
+    let best = best_by_score(lut, query, candidates.iter().copied())?;
+    let (i, score, diameter_match_score, _) = prefer_series(lut, query, &candidates, best);
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "`i` was stored from a valid iteration over `lut.observations`"
+    )]
+    let obs = &lut.observations[i];
+    Some(build_result(lut, obs, query, score, diameter_match_score))
 }
 
 /// Group `MaterialFamily` into the categories a row may serve across.
@@ -949,8 +1022,10 @@ fn score_observation(
         score += h_score;
     }
 
-    if let (Some(qs), Some(os)) = (&query.tool_subfamily, &obs.tool_subfamily)
-        && qs == os
+    // The tool's series key (`feeds::series`): a row of that series, or a
+    // row whose subfamily is the key.
+    if let Some(qs) = &query.tool_subfamily
+        && super::series::row_matches_key(qs, obs)
     {
         score += 50;
     }
