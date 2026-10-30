@@ -71,7 +71,9 @@ fn the_serialised_block_carries_exactly_three_keys() {
 /// each row names a literal the file must still contain.
 const PRODUCERS: [(&str, &str); 6] = [
     (
-        "crates/rs_cam_viz/src/app/mcp/project.rs",
+        // W2b moved the `list_toolpaths` row builder here from
+        // `app/mcp/project.rs` (`build_list_toolpaths_response`).
+        "crates/rs_cam_viz/src/mcp_bridge.rs",
         "awaiting_prior_stock",
     ),
     (
@@ -154,6 +156,7 @@ fn the_generate_all_reply_renders_the_one_row_shape() {
     let summary = GenerateAllSummary {
         generated: 1,
         already_current: 0,
+        not_ready: Vec::new(),
         enabled: 2,
         failed: 0,
         errors: Vec::new(),

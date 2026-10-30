@@ -28,7 +28,7 @@
 - The plan advances by DIRECT CALL from `drain_compute_results`. A step that pushed an `AppEvent` would
   wait for a painted frame, which a parked compositor never gives (the 137 s stall).
 - One plan at a time: `process_auto_regen` returns early while one runs, an edit cancels it, and a
-  blocked submit never toasts (the row reads WAIT).
+  blocked submit never toasts (the row reads WAIT). W2c: an AUTOMATIC submit (the sweep, a plan step that is not `plan.target`) skips a disabled or not-ready op through `automatic_submit_skip` (core `skips_automatic_generate`): no toast, no refusal, the plan counts `not_ready`. The explicit target refuses.
 - F072: the session holds the only post config. Every reader takes `session.post_config()`; every
   write is `Command::SetPostConfig`. The Post panel edits a one-frame copy (`properties::commit_post_edit`).
 

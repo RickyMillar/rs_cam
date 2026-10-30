@@ -10,6 +10,12 @@
 //! | [`Variant::Quiet`] | transparent | `TEXT_MUTED` | a tertiary action, a row affordance |
 //! | [`Variant::Danger`] | `TINT_DANGER` | `DANGER` | deletes or refuses something |
 //!
+//! W2c: a disabled button of every variant reads as disabled. It has no
+//! accent or tint fill: `SURFACE_RAISED` (`Quiet` stays transparent), a
+//! `BORDER` stroke (`Quiet` has none) and `TEXT_FAINT` text. egui does not
+//! dim an explicit fill, so the variant gives the disabled colours itself.
+//! [`Button::disabled_reason`] shows the reason on hover.
+//!
 //! # Contrast, computed
 //!
 //! Ruling R8. `INK_05` on `ACCENT` is **6.22**, and on `ACCENT_PRESSED`
@@ -68,6 +74,31 @@ impl Variant {
         }
     }
 
+    /// The fill while the button is disabled. No variant keeps its accent
+    /// or tint fill, so a disabled button does not read as an action.
+    #[must_use]
+    pub fn disabled_fill(self) -> egui::Color32 {
+        match self {
+            Self::Primary | Self::Default | Self::Danger => tokens::SURFACE_RAISED,
+            Self::Quiet => egui::Color32::TRANSPARENT,
+        }
+    }
+
+    /// The text colour while the button is disabled.
+    #[must_use]
+    pub fn disabled_text(self) -> egui::Color32 {
+        tokens::TEXT_FAINT
+    }
+
+    /// The border while the button is disabled.
+    #[must_use]
+    pub fn disabled_stroke(self) -> egui::Stroke {
+        match self {
+            Self::Primary | Self::Default | Self::Danger => egui::Stroke::new(1.0, tokens::BORDER),
+            Self::Quiet => egui::Stroke::NONE,
+        }
+    }
+
     /// The border. `Quiet` has none until it is hovered.
     #[must_use]
     pub fn stroke(self) -> egui::Stroke {
@@ -86,6 +117,7 @@ pub struct Button {
     enabled: bool,
     min_width: Option<f32>,
     progress: Option<f32>,
+    disabled_reason: Option<String>,
 }
 
 impl Button {
@@ -96,6 +128,7 @@ impl Button {
             enabled: true,
             min_width: None,
             progress: None,
+            disabled_reason: None,
         }
     }
 
@@ -126,6 +159,14 @@ impl Button {
     #[must_use]
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// The reason the button is disabled. The hover shows it while the
+    /// button is disabled; an enabled button ignores it.
+    #[must_use]
+    pub fn disabled_reason(mut self, reason: impl Into<String>) -> Self {
+        self.disabled_reason = Some(reason.into());
         self
     }
 
@@ -177,14 +218,26 @@ impl egui::Widget for Button {
         // Keep egui responsible for the button's frame, disabled state, and
         // WidgetInfo label. The transparent native label reserves its space
         // without competing with the one centered label painted below.
+        // W2c: egui does not dim an explicit fill, so a disabled button
+        // takes the variant's disabled colours.
+        let (fill, stroke) = if self.enabled {
+            (self.variant.fill(), self.variant.stroke())
+        } else {
+            (self.variant.disabled_fill(), self.variant.disabled_stroke())
+        };
         let widget =
             egui::Button::new(egui::RichText::new(&self.text).color(egui::Color32::TRANSPARENT))
                 .min_size(min)
                 .corner_radius(tokens::RADIUS_SM)
-                .stroke(self.variant.stroke())
-                .fill(self.variant.fill());
+                .stroke(stroke)
+                .fill(fill);
 
-        let response = ui.add_enabled(self.enabled, widget);
+        let mut response = ui.add_enabled(self.enabled, widget);
+        if !self.enabled
+            && let Some(reason) = &self.disabled_reason
+        {
+            response = response.on_disabled_hover_text(reason);
+        }
 
         // Hover and press repaint the fill through the token ladder rather
         // than through egui's own widget visuals, so a variant keeps its
@@ -229,7 +282,7 @@ impl egui::Widget for Button {
         let text_color = if self.enabled {
             self.variant.text()
         } else {
-            ui.visuals().widgets.noninteractive.fg_stroke.color
+            self.variant.disabled_text()
         };
         ui.painter().text(
             response.rect.center(),
@@ -240,5 +293,43 @@ impl egui::Widget for Button {
         );
 
         response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Variant;
+    use crate::ui::tokens;
+
+    const ALL: [Variant; 4] = [
+        Variant::Primary,
+        Variant::Default,
+        Variant::Quiet,
+        Variant::Danger,
+    ];
+
+    /// W2c: a disabled primary button looked enabled, because its blue fill
+    /// stayed. The disabled fill is not the enabled fill and not the accent.
+    #[test]
+    fn a_disabled_primary_has_no_accent_fill_w2c() {
+        let disabled = Variant::Primary.disabled_fill();
+        assert_ne!(disabled, Variant::Primary.fill());
+        assert_ne!(disabled, tokens::ACCENT);
+        assert_ne!(disabled, tokens::ACCENT_PRESSED);
+    }
+
+    /// W2c: no variant keeps an accent or tint fill when it is disabled, and
+    /// every variant gives its disabled text in `TEXT_FAINT`.
+    #[test]
+    fn every_disabled_variant_reads_as_disabled_w2c() {
+        for variant in ALL {
+            let fill = variant.disabled_fill();
+            assert!(
+                fill == tokens::SURFACE_RAISED || fill == egui::Color32::TRANSPARENT,
+                "{variant:?} disabled fill {fill:?} is not a neutral fill"
+            );
+            assert_eq!(variant.disabled_text(), tokens::TEXT_FAINT, "{variant:?}");
+            assert_ne!(variant.disabled_text(), variant.text(), "{variant:?}");
+        }
     }
 }

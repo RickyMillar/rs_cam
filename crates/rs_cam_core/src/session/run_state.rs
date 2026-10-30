@@ -31,6 +31,12 @@
 //! 7. No result, after a result an edit dropped, gives
 //!    [`RunState::OutOfDate`].
 //! 8. Else [`RunState::Ready`].
+//!
+//! W2c: an AUTOMATIC submit (the GUI regenerate sweep after an edit, a
+//! plan step that is not the plan's target) skips a toolpath for which
+//! [`skips_automatic_generate`] is true. It records no refusal. An explicit
+//! generate (the GUI button, MCP `generate_toolpath`) still refuses with
+//! its reason.
 
 use std::collections::{HashMap, HashSet};
 
@@ -121,6 +127,15 @@ pub fn next_action(state: &RunState) -> NextAction {
         RunState::Failed { .. } => NextAction::Retry,
         RunState::Disabled | RunState::Generating | RunState::Done => NextAction::None,
     }
+}
+
+/// W2c: true when an AUTOMATIC submit skips the toolpath in `state`: the
+/// op is switched off, or a current finding refuses generation. The GUI
+/// regenerate sweep and every plan step that is not the plan's target read
+/// this rule. An explicit generate does not read it and still refuses.
+#[must_use]
+pub fn skips_automatic_generate(state: &RunState) -> bool {
+    matches!(state, RunState::Disabled | RunState::NotReady { .. })
 }
 
 /// True when the finding refuses generation while it is current: a

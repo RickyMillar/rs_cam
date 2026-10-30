@@ -31,7 +31,7 @@ One renderer per repeated UI element; `DESIGN_SPEC.md` gives the sections.
 
 - One renderer per element; it reads `ui/tokens.rs`. Staleness has one cue,
   `Freshness`; provenance one vocabulary, `ProvKind`.
-- A long-job button reports through `Button::progress`; it paints its label once.
+- A long-job button reports through `Button::progress`; it paints its label once. W2c: a disabled `Button` of every variant takes `Variant::disabled_fill`/`disabled_text` (no accent); `disabled_reason` is its hover.
 
 ## Sentries (`cargo test -p rs_cam_viz -q --test <name>`)
 

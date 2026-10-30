@@ -243,6 +243,10 @@ pub struct GenerationPlan {
     /// made two operations current or had not, and the plan counted only the
     /// operations it generated.
     pub already_current: usize,
+    /// W2c: `Generate` steps that submitted nothing because the operation
+    /// is not ready (core `skips_automatic_generate`). The raw toolpath id
+    /// of each. Not a failure: the plan records no refusal for them.
+    pub not_ready: Vec<usize>,
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
     pub errors: Vec<(usize, String)>,
@@ -278,6 +282,7 @@ impl GenerationPlan {
             target: None,
             generated: 0,
             already_current: 0,
+            not_ready: Vec::new(),
             failed: 0,
             errors: Vec::new(),
             blocked: Vec::new(),
@@ -330,6 +335,13 @@ impl GenerationPlan {
         self.already_current += 1;
     }
 
+    /// W2c: count one `Generate` step that submitted nothing, because its
+    /// operation is not ready. The driver calls this at the one skip site,
+    /// in `controller::events::compute::submit_plan_step`.
+    pub fn note_not_ready(&mut self, id: ToolpathId) {
+        self.not_ready.push(id.raw());
+    }
+
     /// How many enabled operations the plan covers: one `Generate` step each.
     ///
     /// Core's plan emits a `Generate` step for every enabled operation in
@@ -358,6 +370,7 @@ impl GenerationPlan {
         GenerateAllSummary {
             generated: self.generated,
             already_current: self.already_current,
+            not_ready: self.not_ready.clone(),
             enabled: self.enabled_in_scope(),
             failed: self.failed,
             errors: self.errors.clone(),
@@ -376,9 +389,13 @@ pub struct GenerateAllSummary {
     /// Operations the plan did not generate, because each already held a
     /// current result. Not a failure and not a skip for a missing input.
     pub already_current: usize,
+    /// W2c: the raw ids of the operations the plan did not generate, because
+    /// each is not ready (a current finding refuses generation). Not a
+    /// failure: the plan records no refusal.
+    pub not_ready: Vec<usize>,
     /// Enabled operations in the plan's scope (the whole project for Generate
-    /// All and MCP `generate_all`). `generated + already_current + failed +
-    /// blocked.len()` is at most this count.
+    /// All and MCP `generate_all`). `generated + already_current +
+    /// not_ready.len() + failed + blocked.len()` is at most this count.
     pub enabled: usize,
     pub failed: usize,
     /// `(toolpath id, message)` for genuine failures.
@@ -403,6 +420,9 @@ pub fn generate_all_headline(summary: &GenerateAllSummary) -> String {
     let mut headline = format!("Generated {} toolpaths", summary.generated);
     if summary.already_current > 0 {
         headline.push_str(&format!(", {} already current", summary.already_current));
+    }
+    if !summary.not_ready.is_empty() {
+        headline.push_str(&format!(", {} not ready", summary.not_ready.len()));
     }
     if summary.failed > 0 {
         headline.push_str(&format!(", {} failed", summary.failed));

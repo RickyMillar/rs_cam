@@ -12,6 +12,7 @@
 //! freshness and undo fixtures. A child reaches them with
 //! `use super::*;`.
 
+mod automatic_submit_skips_not_ready_w2c;
 mod crud;
 mod diagnostics_null_without_trace_u2;
 mod drain_results;

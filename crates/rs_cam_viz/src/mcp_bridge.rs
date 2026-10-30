@@ -1707,6 +1707,9 @@ pub fn build_generate_all_response(summary: &GenerateAllSummary) -> String {
         // generated again. Without this count "generated" read 5 or 7 for
         // one project, by the time the GUI's auto-regeneration had taken.
         "already_current": summary.already_current,
+        // W2c: the raw ids of the operations the plan skipped because each
+        // is not ready. `list_toolpaths` names the blocking findings.
+        "not_ready": summary.not_ready,
         // Enabled operations in the plan's scope: the whole project here.
         "enabled": summary.enabled,
         "failed": summary.failed,

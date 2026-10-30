@@ -81,7 +81,10 @@ pub use command::{
     Surfaces, TabLayoutArgs, ToolpathCycleTimeAnswer, ToolpathCycleTimeArgs,
     UpdateStockFromBboxArgs,
 };
-pub use run_state::{NextAction, RunState, next_action, refuses_generation, toolpath_run_state};
+pub use run_state::{
+    NextAction, RunState, next_action, refuses_generation, skips_automatic_generate,
+    toolpath_run_state,
+};
 // E5: one line of its own, so the re-export block above keeps its shape.
 pub use command::RuleOffersArgs;
 pub use compute::{

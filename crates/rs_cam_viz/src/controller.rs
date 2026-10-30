@@ -716,12 +716,20 @@ impl<B: ComputeBackend> AppController<B> {
             })
             .collect();
 
-        let count = stale_ids.len();
+        let mut count = 0_usize;
         for id in stale_ids {
             if let Some(rt) = self.state.gui.toolpath_rt.get_mut(&id) {
                 rt.stale_since = None;
             }
+            // W2c: the sweep is an automatic submit. A disabled or not-ready
+            // op submits nothing: no toast and no recorded refusal. The
+            // header already names the issue. The edit that fixes the
+            // inputs stamps `stale_since` again through `Effects.stale`.
+            if self.automatic_submit_skip(id).is_some() {
+                continue;
+            }
             self.submit_toolpath_compute(id);
+            count += 1;
         }
         if count > 0 {
             self.push_notification(

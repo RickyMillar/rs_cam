@@ -204,6 +204,25 @@ impl<B: ComputeBackend> AppController<B> {
         }
     }
 
+    /// W2c: the run state of `tp_id` when an AUTOMATIC submit skips it,
+    /// else `None`.
+    ///
+    /// The rule is core `skips_automatic_generate` (a disabled op, or a
+    /// current finding that refuses generation). The 500 ms sweep
+    /// (`process_auto_regen`) and every plan step that is not the plan's
+    /// target read it, so an automatic submit gives no toast and records no
+    /// refusal for an op that the header already shows as Not ready. An
+    /// explicit generate (the plan target: the GUI button, MCP
+    /// `generate_toolpath`) does not read it and still refuses with its
+    /// reason.
+    pub(crate) fn automatic_submit_skip(
+        &self,
+        tp_id: ToolpathId,
+    ) -> Option<rs_cam_core::session::RunState> {
+        crate::state::freshness::run_state_of(self.state.session(), &self.state.gui, tp_id)
+            .filter(rs_cam_core::session::skips_automatic_generate)
+    }
+
     /// Submit one toolpath generation to the compute lane.
     ///
     /// WP11b: this used to resolve every generation input itself — the
@@ -1899,6 +1918,32 @@ impl<B: ComputeBackend> AppController<B> {
                 // `generate_toolpath` turns the debug trace on for exactly
                 // that run.
                 let target = self.plan.as_ref().and_then(|plan| plan.target);
+                // W2c: a step the operator did not name is automatic. A
+                // disabled or not-ready op submits nothing: no toast and no
+                // recorded refusal. The header already names the issue. The
+                // setup joins `blocked_setups`, because the op leaves no
+                // result and a later prefix simulation cannot unlock it.
+                if target != Some(id)
+                    && let Some(state) = self.automatic_submit_skip(id)
+                {
+                    let setup = self
+                        .state
+                        .session()
+                        .setup_of_toolpath_id(id)
+                        .and_then(|position| self.state.session().list_setups().get(position))
+                        .map(|setup| setup.id);
+                    if let Some(plan) = self.plan.as_mut() {
+                        plan.note_not_ready(id);
+                        if let Some(setup) = setup {
+                            plan.blocked_setups.insert(setup);
+                        }
+                    }
+                    self.record_step_outcome(StepOutcome::Skipped(format!(
+                        "it is {}",
+                        state.label()
+                    )));
+                    return;
+                }
                 if target != Some(id) && self.state.session().result_at(index).is_some() {
                     if let Some(plan) = self.plan.as_mut() {
                         plan.note_already_current();
