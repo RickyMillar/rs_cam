@@ -12,11 +12,338 @@ use crate::state::toolpath::{
     ToolpathEntry,
 };
 use crate::ui::automation;
+use crate::ui::components::PropRow;
 use crate::ui::components::UiExt as _;
-use crate::ui::components::ValueRow;
 use rs_cam_core::compute::catalog::OperationType;
+use rs_cam_core::diagnostics::Diagnostic;
 
-// --- Parameter grid helpers ---
+// --- Parameter row helpers ---
+//
+// W3b: every helper below draws ONE `PropRow` (the label column, the
+// control in one well, the unit inside the well, the field state outline).
+// The rows stack; no helper needs an `egui::Grid`. Each helper takes the
+// `Fields` of the toolpath as its LAST argument, so the ui04 scan still
+// finds the `dv(ui, p(..))` call shape, and the row reads its field state
+// from `placement::place`.
+
+/// W3b: the field state of the op parameter rows of one toolpath.
+///
+/// It holds the findings that `placement::place` gives each field key
+/// (`Placement::by_field`), and the G-DEPTHSTOCK caution of the depth row.
+/// A row reads its state by its registry parameter name.
+#[derive(Clone, Copy, Default)]
+pub(super) struct Fields<'a> {
+    by_field: Option<&'a std::collections::BTreeMap<&'static str, Vec<&'a Diagnostic>>>,
+    depth_caution: Option<(&'static str, &'a operations::DepthBeyondStock)>,
+}
+
+/// The state of one field row: the role of the worst finding, and the
+/// hover text of the findings.
+#[derive(Default)]
+pub(super) struct FieldState {
+    pub role: Option<crate::ui::components::Role>,
+    pub detail: Option<String>,
+}
+
+impl<'a> Fields<'a> {
+    /// The field states of one toolpath, from `Placement::by_field`.
+    pub(super) fn new(
+        by_field: &'a std::collections::BTreeMap<&'static str, Vec<&'a Diagnostic>>,
+    ) -> Self {
+        Self {
+            by_field: Some(by_field),
+            depth_caution: None,
+        }
+    }
+
+    /// The same states, with the G-DEPTHSTOCK caution on the row of `key`.
+    /// The caution is the outline of the depth row, and its text is the
+    /// hover. The issue stack prints the finding; the row prints no line.
+    #[must_use]
+    pub(super) fn with_depth_caution(
+        self,
+        key: &'static str,
+        caution: Option<&'a operations::DepthBeyondStock>,
+    ) -> Self {
+        Self {
+            depth_caution: caution.map(|c| (key, c)),
+            ..self
+        }
+    }
+
+    /// The state of the row of the field `key`.
+    pub(super) fn state(self, key: &str) -> FieldState {
+        super::placement::note_drawn(key);
+        if let Some((caution_key, caution)) = self.depth_caution
+            && caution_key == key
+        {
+            return FieldState {
+                role: Some(crate::ui::components::Role::Caution),
+                detail: Some(format!(
+                    "{}\n{}",
+                    caution.message(),
+                    depth_caution_hover(caution)
+                )),
+            };
+        }
+        let Some(findings) = self.by_field.and_then(|m| m.get(key)) else {
+            return FieldState::default();
+        };
+        FieldState {
+            role: super::placement::tool_role(findings),
+            detail: super::placement::tool_hover(findings),
+        }
+    }
+}
+
+/// The `PropRow` of one parameter: its label, its registry help on the
+/// hover, and its field state.
+pub(super) fn param_row<'a>(param: Param, state: &'a FieldState) -> PropRow<'a> {
+    PropRow::new(param.label)
+        .hover(help_for(param.op, param.name))
+        .state(state.role)
+        .detail(state.detail.as_deref())
+}
+
+/// The `PropRow` of a row that is not a registry parameter (the rest
+/// analysis dials, a reference picker): a label and an explanation.
+pub(super) fn plain_row<'a>(label: &'a str, explanation: Option<&'a str>) -> PropRow<'a> {
+    PropRow::new(label).hover(explanation)
+}
+
+/// What a numeric row reports.
+struct NumOut {
+    /// The response of the value field, with the row hover.
+    response: egui::Response,
+    /// The response of the whole row.
+    row: egui::Response,
+    /// The ⚡ of the row wrote its value this frame.
+    suggested: bool,
+}
+
+/// One numeric row: a `DragValue` that fills the well, the unit inside the
+/// well, and the ⚡ of a suggestion inside the well before the unit (the
+/// design rule 8 form: a value with a ⚡ mark).
+///
+/// G-PILLCLAMP: the ⚡ writes `Suggestion::recommended` verbatim, and it is
+/// grey when the value already matches it (`value_row::near_match`).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the row, the value and its unit, speed and range, and the suggestion"
+)]
+fn num_row(
+    ui: &mut egui::Ui,
+    row: PropRow<'_>,
+    label: &str,
+    val: &mut f64,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    suggestion: Option<crate::ui::components::suggest::Suggestion<'_>>,
+) -> NumOut {
+    use crate::ui::components::number::{near_match, suggest_hover};
+    use crate::ui::components::{NumberSpec, number_field};
+    let mut suggested = false;
+    let spec = NumberSpec::new(speed).range(range);
+    let out = row.unit(suffix.trim()).show(ui, |ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(s) = suggestion {
+                let matches = near_match(*val, s.recommended);
+                let hover = suggest_hover(label, suffix, &s, matches);
+                if ui
+                    .add(
+                        crate::ui::components::SuggestButton::field(s.source)
+                            .enabled(!matches)
+                            .hover(hover),
+                    )
+                    .clicked()
+                {
+                    *val = s.recommended;
+                    suggested = true;
+                }
+            }
+            number_field(ui, val, &spec, ui.available_size())
+        })
+        .inner
+    });
+    let response = out.inner.on_hover_text(&out.hover);
+    NumOut {
+        response,
+        row: out.response,
+        suggested,
+    }
+}
+
+/// One numeric row whose value can be not set (S11). A set value draws
+/// the value field; with `clearable`, a "×" in the well sets it back to
+/// `None`. An unset value draws an empty field with `hint`; a typed number
+/// sets the value, clamped to the range. `true` when the value changed.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the row, the value and its unit, speed and range, the hint and the clear"
+)]
+fn opt_row(
+    ui: &mut egui::Ui,
+    row: PropRow<'_>,
+    val: &mut Option<f64>,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    hint: &str,
+    clearable: bool,
+) -> bool {
+    use crate::ui::components::{NumberSpec, optional_number_field};
+    let mut changed = false;
+    let spec = NumberSpec::new(speed).range(range).empty(hint);
+    let out = row.unit(suffix.trim()).show(ui, |ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if clearable
+                && val.is_some()
+                && ui
+                    .add(crate::ui::components::Button::quiet("\u{00D7}"))
+                    .on_hover_text(format!("Clear: {hint}"))
+                    .clicked()
+            {
+                *val = None;
+                changed = true;
+            }
+            let (resp, edited) = optional_number_field(ui, val, &spec, ui.available_size());
+            changed |= edited;
+            resp
+        })
+        .inner
+    });
+    let _ = out.inner.on_hover_text(&out.hover);
+    changed
+}
+
+/// One on/off parameter row: a checkbox with no text in the well.
+pub(super) fn check_param(
+    ui: &mut egui::Ui,
+    param: Param,
+    on: &mut bool,
+    fields: Fields<'_>,
+) -> egui::Response {
+    let state = fields.state(param.name);
+    check_in_row(ui, param_row(param, &state), on)
+}
+
+/// One on/off row of a `PropRow` the caller built ([`plain_row`]).
+pub(super) fn check_in_row(ui: &mut egui::Ui, row: PropRow<'_>, on: &mut bool) -> egui::Response {
+    let out = row.show(ui, |ui| {
+        // The row clears the widget fills for a field well; a checkbox
+        // needs its own box, so it draws with the normal style.
+        ui.reset_style();
+        ui.add(egui::Checkbox::without_text(on))
+    });
+    out.inner.on_hover_text(&out.hover)
+}
+
+/// One dropdown parameter row. `menu` adds the entries.
+pub(super) fn combo_param<R>(
+    ui: &mut egui::Ui,
+    param: Param,
+    fields: Fields<'_>,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    selected: impl Into<egui::WidgetText>,
+    menu: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::Response {
+    let state = fields.state(param.name);
+    combo_in_row(ui, param_row(param, &state), id_salt, selected, menu)
+}
+
+/// One dropdown row of a `PropRow` the caller built ([`plain_row`]).
+pub(super) fn combo_in_row<R>(
+    ui: &mut egui::Ui,
+    row: PropRow<'_>,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    selected: impl Into<egui::WidgetText>,
+    menu: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::Response {
+    let out = row.show(ui, |ui| combo_control(ui, id_salt, selected, menu));
+    out.inner.on_hover_text(&out.hover)
+}
+
+/// The dropdown control of a row: it fills the control area.
+pub(super) fn combo_control<R>(
+    ui: &mut egui::Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    selected: impl Into<egui::WidgetText>,
+    menu: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::Response {
+    egui::ComboBox::from_id_salt(id_salt)
+        .width(ui.available_width())
+        .truncate()
+        .selected_text(selected)
+        .show_ui(ui, menu)
+        .response
+}
+
+/// The `PropRow` of a parameter whose registry entry states no help: the
+/// row names its own explanation, and it reads the field state of `key`.
+pub(super) fn keyed_row<'a>(
+    label: &'a str,
+    explanation: &'a str,
+    state: &'a FieldState,
+) -> PropRow<'a> {
+    PropRow::new(label)
+        .hover(Some(explanation))
+        .state(state.role)
+        .detail(state.detail.as_deref())
+}
+
+/// One integer row of a `PropRow` the caller built ([`keyed_row`]). The
+/// clamp range is [`schema_range`] of `op` and `name`.
+pub(super) fn count_in_row(
+    ui: &mut egui::Ui,
+    row: PropRow<'_>,
+    val: &mut usize,
+    speed: f64,
+    (op, name): (OperationType, &str),
+) -> egui::Response {
+    let spec = crate::ui::components::NumberSpec::new(speed).range(schema_range(op, name));
+    row.number(ui, val, &spec).inner
+}
+
+/// One integer parameter row (UI-10: the field edits the `usize` itself,
+/// so a partial edit commits the value the operator typed).
+pub(super) fn count_param(
+    ui: &mut egui::Ui,
+    param: Param,
+    val: &mut usize,
+    speed: f64,
+    fields: Fields<'_>,
+) -> egui::Response {
+    let state = fields.state(param.name);
+    count_in_row(
+        ui,
+        param_row(param, &state),
+        val,
+        speed,
+        (param.op, param.name),
+    )
+}
+
+/// One numeric row of a `PropRow` the caller built ([`plain_row`]): a
+/// value that is not a registry parameter.
+pub(super) fn num_in_row(
+    ui: &mut egui::Ui,
+    row: PropRow<'_>,
+    val: &mut f64,
+    suffix: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+) -> egui::Response {
+    num_row(ui, row, "", val, suffix, speed, range, None).response
+}
+
+/// A note under a row (G-THROUGHCUT, a hint): one line at the well column.
+pub(super) fn row_note(ui: &mut egui::Ui, note: crate::ui::components::OneLine) {
+    ui.horizontal(|ui| {
+        ui.add_space(crate::ui::tokens::LABEL_COL_WIDTH + crate::ui::tokens::SPACE_3);
+        ui.add(note);
+    });
+}
 
 /// One parameter row's identity: which operation owns it, the registry name
 /// the help text is keyed on, and the label the operator reads.
@@ -50,17 +377,25 @@ pub(super) fn schema_range(op: OperationType, name: &str) -> std::ops::RangeIncl
 }
 
 /// One numeric parameter row. The clamp range is [`schema_range`].
-pub(super) fn dv(ui: &mut egui::Ui, param: Param, val: &mut f64, suffix: &str, speed: f64) {
-    // Delegates to the shared `ValueRow` component (the one labelled-input row).
-    let out = ValueRow::new(
+pub(super) fn dv(
+    ui: &mut egui::Ui,
+    param: Param,
+    val: &mut f64,
+    suffix: &str,
+    speed: f64,
+    fields: Fields<'_>,
+) {
+    let state = fields.state(param.name);
+    let out = num_row(
+        ui,
+        param_row(param, &state),
         param.label,
         val,
         suffix,
         speed,
         schema_range(param.op, param.name),
-    )
-    .tooltip(help_for(param.op, param.name))
-    .show(ui);
+        None,
+    );
     record_stock_to_leave(ui, param.name, &out);
 }
 
@@ -75,19 +410,19 @@ pub(super) fn dv_opt(
     suffix: &str,
     speed: f64,
     hint: Option<&str>,
+    fields: Fields<'_>,
 ) {
-    let mut row = crate::ui::components::OptionalValueRow::new(
-        param.label,
+    let state = fields.state(param.name);
+    let _ = opt_row(
+        ui,
+        param_row(param, &state),
         val,
         suffix,
         speed,
         schema_range(param.op, param.name),
-    )
-    .tooltip(help_for(param.op, param.name));
-    if let Some(rule) = hint {
-        row = row.hint(rule).clearable();
-    }
-    let _ = row.show(ui);
+        hint.unwrap_or(rs_cam_core::compute::not_set::SET_A_VALUE_HINT),
+        hint.is_some(),
+    );
 }
 
 /// [`dv`] for a row whose range a GUI rule narrows inside [`schema_range`].
@@ -103,28 +438,37 @@ pub(super) fn dv_narrowed(
     suffix: &str,
     speed: f64,
     narrow: std::ops::RangeInclusive<f64>,
+    fields: Fields<'_>,
 ) {
     let schema = schema_range(param.op, param.name);
     let lo = narrow.start().max(*schema.start());
     let hi = narrow.end().min(*schema.end()).max(lo);
-    let out = ValueRow::new(param.label, val, suffix, speed, lo..=hi)
-        .tooltip(help_for(param.op, param.name))
-        .show(ui);
+    let state = fields.state(param.name);
+    let out = num_row(
+        ui,
+        param_row(param, &state),
+        param.label,
+        val,
+        suffix,
+        speed,
+        lo..=hi,
+        None,
+    );
     record_stock_to_leave(ui, param.name, &out);
 }
 
 /// IC1: the ONE collapsed "Advanced" section of a tab.
 ///
-/// It holds the parameters an operator rarely changes, in a parameter grid
-/// of its own, so the tab opens on the parameters that decide the cut. Every
-/// parameter in it stays settable; only its default visibility changes. The
-/// section is collapsed until the operator opens it, and egui keeps that
-/// choice per `id_salt`.
+/// It holds the parameters an operator rarely changes, so the tab opens on
+/// the parameters that decide the cut. Every parameter in it stays
+/// settable; only its default visibility changes. The section is collapsed
+/// until the operator opens it, and egui keeps that choice per `id_salt`.
+/// W3b: the rows are `PropRow`s that stack, so the section has no grid.
 pub(super) fn advanced(ui: &mut egui::Ui, id_salt: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.add_space(crate::ui::tokens::SPACE_2);
-    ui.disclosure(id_salt, "Advanced", false, |ui| {
-        ui.param_grid((id_salt, "grid"), add);
-    });
+    // A test that records the drawn rows opens the section, so its rows
+    // draw (`placement::recording`).
+    ui.disclosure(id_salt, "Advanced", super::placement::recording(), add);
 }
 
 /// The help line for one operation parameter, from the core registry.
@@ -154,7 +498,22 @@ pub(super) fn dressup_help(field: &'static str) -> Option<&'static str> {
         .map(|d| d.description)
 }
 
-/// [`dv`] for a dressup dial, keyed on the published dressup field name.
+/// The `PropRow` of one dressup dial: its label, the help of the published
+/// dressup field `field` on the hover (ui04), and the field state of
+/// `field` in `fields`.
+fn dressup_row<'a>(field: &'static str, label: &'a str, state: &'a FieldState) -> PropRow<'a> {
+    PropRow::new(label)
+        .hover(dressup_help(field))
+        .state(state.role)
+        .detail(state.detail.as_deref())
+}
+
+/// One numeric `PropRow` of a dressup dial, keyed on the published dressup
+/// field name. The unit is inside the well.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the field, the label, the value and its unit, speed and range, and the field states"
+)]
 pub(super) fn dv_dressup(
     ui: &mut egui::Ui,
     field: &'static str,
@@ -163,10 +522,17 @@ pub(super) fn dv_dressup(
     suffix: &str,
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
+    fields: Fields<'_>,
 ) {
-    ValueRow::new(label, val, suffix, speed, range)
-        .tooltip(dressup_help(field))
-        .show(ui);
+    let state = fields.state(field);
+    let _ = num_in_row(
+        ui,
+        dressup_row(field, label, &state),
+        val,
+        suffix,
+        speed,
+        range,
+    );
 }
 
 /// S11: [`dv_dressup`] for a dressup value that a rule derives when it is
@@ -185,66 +551,56 @@ pub(super) fn dv_dressup_rule(
     speed: f64,
     range: std::ops::RangeInclusive<f64>,
     rule: &str,
+    fields: Fields<'_>,
 ) {
-    let _ = crate::ui::components::OptionalValueRow::new(label, val, suffix, speed, range)
-        .hint(rule)
-        .clearable()
-        .tooltip(dressup_help(field))
-        .show(ui);
+    let state = fields.state(field);
+    let _ = opt_row(
+        ui,
+        dressup_row(field, label, &state),
+        val,
+        suffix,
+        speed,
+        range,
+        rule,
+        true,
+    );
 }
 
-/// G-DEPTHSTOCK (UX-R03-007): the caution row under a 2.5D depth field.
+/// The hover of the G-DEPTHSTOCK caution.
 ///
-/// Rendered inside the operation's parameter grid, directly below the depth
-/// row, in the same amber the diagnostics ribbon uses for a `Caution`. It is
-/// the row form of the finding the header ribbon prints; both read
-/// [`operations::depth_beyond_stock`]. Nothing is drawn when there is no
-/// finding, so the grid keeps its shape.
-pub(super) fn depth_caution_row(ui: &mut egui::Ui, caution: Option<&operations::DepthBeyondStock>) {
-    let Some(caution) = caution else {
-        return;
-    };
-    ui.label("");
-    ui.label(
-        egui::RichText::new(caution.message())
-            .small()
-            .color(crate::ui::tokens::CAUTION),
-    )
-    // F1.18: the last clause used to name the Bottom Z on the Heights tab as
-    // a third thing to check. The rule no longer reads that field, and on
-    // every operation this caution fires for the pin moves no motion at all
-    // (F1.19), so naming it sent the operator to a dial that cannot fix this.
-    .on_hover_text(format!(
+/// F1.18: the last clause used to name the Bottom Z on the Heights tab as a
+/// third thing to check. The rule no longer reads that field, and on every
+/// operation this caution fires for the pin moves no motion at all (F1.19),
+/// so naming it sent the operator to a dial that cannot fix this.
+fn depth_caution_hover(caution: &operations::DepthBeyondStock) -> String {
+    format!(
         "The cut floor sits {:.2} mm below the bottom of a {:.2} mm board, so the \
          tool cuts into the bed. Generate stays enabled. Check the operation's \
          Depth field, or the stock thickness on the Stock panel.",
         caution.excess_mm, caution.stock_thickness_mm
-    ));
-    ui.end_row();
+    )
 }
 
-/// G-THROUGHCUT (UX-R03-006): the through-cut line under the Profile depth
-/// field.
+/// G-THROUGHCUT (UX-R03-006): the through-cut line under the Profile Side
+/// row.
 ///
 /// Informational, in the panel's own text colour: a through cut is the
 /// normal way to cut a part out, and zero tabs is a valid holding choice.
 /// The hover names the consequence (the last pass frees the part) and the
-/// holding options. Drawn before [`depth_caution_row`], so a depth beyond
-/// the board shows this line first and the amber caution under it. Nothing
-/// is drawn for a partial-depth profile, so the grid keeps its shape.
-pub(super) fn through_cut_row(ui: &mut egui::Ui, through_cut: Option<&operations::ThroughCut>) {
+/// holding options. Nothing is drawn for a partial-depth profile.
+pub(super) fn through_cut_line(ui: &mut egui::Ui, through_cut: Option<&operations::ThroughCut>) {
     let Some(through_cut) = through_cut else {
         return;
     };
-    ui.label("");
-    ui.label(egui::RichText::new(through_cut.message()).small())
-        .on_hover_text(format!(
+    row_note(
+        ui,
+        crate::ui::components::OneLine::new(through_cut.message()).detail(format!(
             "The cut bottom reaches the bottom of the {:.2} mm board, so the last pass \
              frees the part. Tabs hold it in the sheet until you cut them; zero tabs \
              is valid when a vacuum table or double-sided tape holds the part.",
             through_cut.stock_thickness_mm
-        ));
-    ui.end_row();
+        )),
+    );
 }
 
 /// The "Stock to Leave" UI-automation hook, shared by `dv`/`dv_pill`.
@@ -254,40 +610,27 @@ pub(super) fn through_cut_row(ui: &mut egui::Ui, through_cut: Option<&operations
 /// Adaptive3d spells its field `stock_to_leave_axial` and every other op
 /// spells it `stock_to_leave`; both carry the hook, exactly as the label
 /// match did.
-fn record_stock_to_leave(
-    ui: &mut egui::Ui,
-    param: &'static str,
-    out: &crate::ui::components::ValueRowOutcome,
-) {
+fn record_stock_to_leave(ui: &mut egui::Ui, param: &'static str, out: &NumOut) {
     if param.starts_with("stock_to_leave") {
         automation::record(
             ui,
             "properties_stock_to_leave",
-            &out.value_response,
+            &out.response,
             "Stock to Leave",
         );
         automation::record(
             ui,
             "properties_stock_to_leave_label",
-            &out.label_response,
+            &out.row,
             "Stock to Leave",
         );
     }
 }
 
-// PR-2D Phase 2 — per-field LUT Suggest pills.
-//
-// `dv_pill` is `dv` with an optional ⚡ Suggest pill rendered inline to the
-// right of the DragValue. Both now delegate to the shared `ValueRow` /
-// `SuggestButton` components; pill colour + source wording come from the one
-// `ProvKind` vocabulary (green for a vendor LUT row, amber for the formula
-// fallback or edge-radius floor) rather than the old local
-// `pill_color_for_source` / `source_short_label` helpers.
-
 /// Same as [`dv`] (the clamp range is [`schema_range`]) but with an optional
-/// inline ⚡ Suggest pill that pushes the recommended value into the field on
-/// click. Delegates to [`ValueRow`]
-/// with the [`Suggestion`] a [`PillSuggestions`] built for this field.
+/// ⚡ inside the field that writes the recommended value on click. The
+/// suggestion is the one a [`pills::PillSuggestions`] built for this field;
+/// the ⚡ takes the colour of its `ProvKind` source.
 ///
 /// G-PILLCLAMP (2026-09-10): the suggestion is the apply funnel's as-applied
 /// value for the field (or a labelled raw fallback when the funnel does not
@@ -301,22 +644,23 @@ pub(super) fn dv_pill(
     suffix: &str,
     speed: f64,
     suggestion: Option<pills::PillSuggestion<'_>>,
+    fields: Fields<'_>,
 ) -> bool {
-    let mut row = ValueRow::new(
+    let (suggestion, click) = match suggestion.map(pills::PillSuggestion::into_parts) {
+        Some((s, c)) => (Some(s), Some(c)),
+        None => (None, None),
+    };
+    let state = fields.state(param.name);
+    let out = num_row(
+        ui,
+        param_row(param, &state),
         param.label,
         val,
         suffix,
         speed,
         schema_range(param.op, param.name),
-    )
-    .tooltip(help_for(param.op, param.name));
-    let mut click = None;
-    if let Some(pill) = suggestion {
-        let (s, c) = pill.into_parts();
-        row = row.suggest(s);
-        click = Some(c);
-    }
-    let out = row.show(ui);
+        suggestion,
+    );
     record_stock_to_leave(ui, param.name, &out);
     if out.suggested
         && let Some(c) = &click
@@ -335,11 +679,12 @@ pub(super) fn dv_pill_opt(
     suffix: &str,
     speed: f64,
     suggestion: Option<pills::PillSuggestion<'_>>,
+    fields: Fields<'_>,
 ) -> bool {
     match val.as_mut() {
-        Some(value) => dv_pill(ui, param, value, suffix, speed, suggestion),
+        Some(value) => dv_pill(ui, param, value, suffix, speed, suggestion, fields),
         None => {
-            dv_opt(ui, param, val, suffix, speed, None);
+            dv_opt(ui, param, val, suffix, speed, None, fields);
             false
         }
     }
@@ -347,42 +692,96 @@ pub(super) fn dv_pill_opt(
 
 // ── Dressup configuration ────────────────────────────────────────────────
 
-/// Linking tab (W3.2): how moves connect — Entry & Exit and Move
-/// Optimization. Split out of the old monolithic dressup panel; the
-/// remaining edge-work (arc fitting / dogbone) stays in [`draw_dressup_params`].
+/// One section label of the Linking tab: the small-caps label of the kit.
+/// Design rule 7: space groups the sections, so the label has no rule line
+/// under it.
+fn section(ui: &mut egui::Ui, title: &str) {
+    crate::ui::components::SectionHeader::new(title)
+        .small_caps()
+        .show(ui);
+}
+
+/// One on/off row of the dressup field `key` ([`check_in_row`]), with the
+/// field state of `key`. `disabled` greys the box and gives the reason on
+/// the hover. Returns true when the operator changed the value.
+fn check_row(
+    ui: &mut egui::Ui,
+    key: &str,
+    label: &str,
+    explanation: &str,
+    on: &mut bool,
+    disabled: Option<&str>,
+    fields: Fields<'_>,
+) -> bool {
+    let state = fields.state(key);
+    let row = keyed_row(label, explanation, &state);
+    let resp = match disabled {
+        Some(reason) => ui
+            .add_enabled_ui(false, |ui| check_in_row(ui, row, on))
+            .inner
+            .on_disabled_hover_text(format!("{label}\n\n{explanation}\n\n{reason}")),
+        None => check_in_row(ui, row, on),
+    };
+    resp.changed()
+}
+
+/// The hover of the Entry style row.
+const ENTRY_STYLE_HOVER: &str = "How the tool enters the material. None plunges straight \
+     down. Ramp descends at an angle and prevents plunge burns. Helix descends in a \
+     spiral, for deep pockets and hard materials.";
+
+/// The Entry style row: a `PropRow` with a dropdown. Its field state is the
+/// state of the `entry_style` field in `fields`.
+fn entry_style_row(ui: &mut egui::Ui, style: &mut DressupEntryStyle, fields: Fields<'_>) {
+    let state = fields.state("entry_style");
+    let selected = match *style {
+        DressupEntryStyle::None => "None",
+        DressupEntryStyle::Ramp => "Ramp",
+        DressupEntryStyle::Helix => "Helix",
+    };
+    let _ = combo_in_row(
+        ui,
+        keyed_row("Entry style", ENTRY_STYLE_HOVER, &state),
+        "dressup_entry",
+        selected,
+        |ui| {
+            ui.selectable_value(style, DressupEntryStyle::None, "None")
+                .on_hover_text("Plunge straight down. Fast but can burn in hard materials.");
+            ui.selectable_value(style, DressupEntryStyle::Ramp, "Ramp")
+                .on_hover_text("Angled descent into material. Prevents plunge burns. Recommended for most operations.");
+            ui.selectable_value(style, DressupEntryStyle::Helix, "Helix")
+                .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
+        },
+    );
+}
+
+/// The Linking tab (R2, W3e): the "Entry & exit" and "Links" sections.
+/// Path quality is [`draw_dressup_params`]; the ONE Advanced section of the
+/// tab is [`draw_linking_advanced`].
+///
+/// `fields` holds the field state of each row (`placement::place`).
 pub(super) fn draw_linking_params(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
     tool: Option<&rs_cam_core::compute::tool_config::ToolConfig>,
     toolpath_heights: Option<&rs_cam_core::session::ToolpathHeights>,
+    fields: Fields<'_>,
 ) {
     // Some dressups are geometrically incompatible with specific operations
     // (project_curve traces many small rings; drop_cutter 3D finish emits
-    // hundreds of raster segments — a ramp entry / lead-in / link-move at
-    // each one produces diagonal trenches carving through the stock). Grey
-    // those controls out so the UI reflects what compute actually does.
-    // Read from the SAME registry policy `DressupConfig::normalize_for_op`
-    // applies (Phase 1 T5) — no hand-synced duplicate table.
+    // hundreds of raster segments — a lead-in or a link move at each one
+    // produces diagonal trenches carving through the stock). Grey those
+    // controls out so the UI reflects what compute actually does. Read from
+    // the SAME registry policy `DressupConfig::normalize_for_op` applies.
     let dressup_policy = entry.operation.op_type().registry_entry().dressup_policy;
     let op_incompatible_msg: Option<&str> = dressup_policy.strip_all_reason;
-    // W1.2/P2-003 — adaptive3d (and other planner-emitted / single-pass
-    // ops) coerce the dressup entry style to None via
-    // EntryStylePolicy::ForceNone, independently of strip_all_reason. The
-    // entry combo was gated only on the latter, so it stayed editable while
-    // compute silently ignored it. Gate the entry combo on the entry policy
-    // too (lead-in/out and link moves are unaffected by ForceNone, so they
-    // keep using op_incompatible_msg).
-    let entry_disabled_msg: Option<&str> = op_incompatible_msg.or_else(|| {
-        matches!(
-            dressup_policy.entry,
-            rs_cam_core::compute::catalog::EntryStylePolicy::ForceNone
-        )
-        .then_some("This operation sets its entry move directly — the dressup entry style isn't used here.")
-    });
+    // F5 (W3e): ONE predicate. An op that strips the dressups, or that plans
+    // its own entries (3D Rough, Drill, Trace, Pin Drill), ignores the
+    // dressup entry style. The row, its diagram and its dependent rows then
+    // do not draw, so the tab never shows a second Entry style control.
+    let entry_applies = dressup_policy.entry_style_applies();
     // The rapid-order pass reads the op's own capability (Face, 2D Adaptive
     // and 3D Rough refuse it: the planner stock depends on the cut order).
-    // Grey the box
-    // out so it does not claim an effect compute never applies.
     let reorder_ok = entry
         .operation
         .capabilities()
@@ -394,337 +793,346 @@ pub(super) fn draw_linking_params(
     let cutter = tool.and_then(|t| rs_cam_core::compute::cutter::build_cutter(t).ok());
     let cfg = &mut entry.dressups;
 
-    // ── Entry & Exit ──────────────────────────────────────────
-    crate::ui::components::SectionHeader::new("Entry & Exit").show(ui);
-    // IC1: the entry diagram summarises the entry move, so it opens the
-    // section, above the rows that set it.
-    // P3.1: the diagram reads THE heights of the session; with no answer
-    // it draws nothing rather than invented planes.
-    if let Some(answer) = toolpath_heights {
-        let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
-        draw_entry_preview_diagram(ui, cfg, helix_radius_mm, answer, &entry.heights);
-        ui.add_space(4.0);
-    }
-
-    ui.horizontal(|ui| {
-        ui.label("Entry Style:");
-        ui.add_enabled_ui(entry_disabled_msg.is_none(), |ui| {
-            let combo = egui::ComboBox::from_id_salt("dressup_entry")
-.truncate()
-                .selected_text(match cfg.entry_style {
-                    DressupEntryStyle::None => "None",
-                    DressupEntryStyle::Ramp => "Ramp",
-                    DressupEntryStyle::Helix => "Helix",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::None, "None")
-                        .on_hover_text("Plunge straight down. Fast but can burn in hard materials.");
-                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Ramp, "Ramp")
-                        .on_hover_text("Angled descent into material. Prevents plunge burns. Recommended for most operations.");
-                    ui.selectable_value(&mut cfg.entry_style, DressupEntryStyle::Helix, "Helix")
-                        .on_hover_text("Spiral descent. Best for deep pockets and hard materials. Spreads heat and load evenly.");
-                });
-            if let Some(msg) = entry_disabled_msg {
-                combo.response.on_hover_text(msg);
-            }
-        });
-    });
-    match cfg.entry_style {
-        DressupEntryStyle::Ramp => {
-            ui.param_grid("ramp_p", |ui| {
+    // ── Entry & exit ──────────────────────────────────────────
+    section(ui, "Entry & exit");
+    if entry_applies {
+        // IC1: the entry diagram summarises the entry move, so it opens the
+        // section, above the rows that set it.
+        // P3.1: the diagram reads THE heights of the session; with no answer
+        // it draws nothing rather than invented planes.
+        if let Some(answer) = toolpath_heights {
+            let helix_radius_mm = cutter.as_ref().map(|c| cfg.helix_radius_for(c).emitted_mm);
+            draw_entry_preview_diagram(ui, cfg, helix_radius_mm, answer, &entry.heights);
+            ui.add_space(4.0);
+        }
+        entry_style_row(ui, &mut cfg.entry_style, fields);
+        match cfg.entry_style {
+            DressupEntryStyle::Ramp => {
                 dv_dressup(
                     ui,
                     "ramp_angle",
-                    "  Max Angle:",
+                    "Max angle",
                     &mut cfg.ramp_angle,
                     " deg",
                     0.5,
                     0.5..=15.0,
+                    fields,
                 );
                 dv_dressup(
                     ui,
                     "entry_clearance_mm",
-                    "  Clearance:",
+                    "Clearance",
                     &mut cfg.entry_clearance_mm,
                     " mm",
                     0.1,
                     0.0..=5.0,
+                    fields,
                 );
-            });
-        }
-        DressupEntryStyle::Helix => {
-            // G10 D2: `None` is the rule 0.3 x D; `Some` is an operator
-            // value. Unticking the rule starts the value at the radius the
-            // rule gives this tool.
-            let resolved = cutter.as_ref().map(|c| cfg.helix_radius_for(c));
-            let radius_range = 0.5..=20.0;
-            let mut rule = cfg.helix_radius.is_none();
-            let resp = ui
-                .checkbox(
-                    &mut rule,
-                    format!(
-                        "Helix radius {} x D (rule)",
-                        rs_cam_core::compute::config::HELIX_RADIUS_OVER_D
-                    ),
-                )
-                .on_hover_text(
+            }
+            DressupEntryStyle::Helix => {
+                // G10 D2: `None` is the rule 0.3 x D; `Some` is an operator
+                // value. Clearing the rule starts the value at the radius
+                // the rule gives this tool.
+                let resolved = cutter.as_ref().map(|c| cfg.helix_radius_for(c));
+                let radius_range = 0.5..=20.0;
+                let mut rule = cfg.helix_radius.is_none();
+                let rule_label = format!(
+                    "Radius {} x D",
+                    rs_cam_core::compute::config::HELIX_RADIUS_OVER_D
+                );
+                if check_row(
+                    ui,
+                    "helix_radius",
+                    &rule_label,
                     "Repo rule, no source (G10): the helix radius is 0.3 x the tool \
-                     diameter. Untick to set an operator value. Either way the engine caps \
-                     the radius at the flat bottom, so the helix leaves no core.",
-                );
-            if resp.changed() {
-                cfg.helix_radius = if rule {
-                    None
-                } else {
-                    Some(resolved.map_or(*radius_range.start(), |h| h.requested_mm))
-                };
-            }
-            if let Some(h) = resolved {
-                let text = if h.capped() {
-                    format!(
-                        "  Emits r {:.2} mm: capped {:.2} → {:.2} mm (no-core rule, geometry)",
-                        h.emitted_mm, h.requested_mm, h.emitted_mm
-                    )
-                } else {
-                    format!("  Emits r {:.2} mm", h.emitted_mm)
-                };
-                ui.add(crate::ui::components::OneLine::new(text));
-            }
-            ui.param_grid("helix_p", |ui| {
+                         diameter. Clear the box to set an operator value. Either way the \
+                         engine caps the radius at the flat bottom, so the helix leaves no \
+                         core.",
+                    &mut rule,
+                    None,
+                    fields,
+                ) {
+                    cfg.helix_radius = if rule {
+                        None
+                    } else {
+                        Some(resolved.map_or(*radius_range.start(), |h| h.requested_mm))
+                    };
+                }
                 if let Some(radius) = cfg.helix_radius.as_mut() {
                     dv_dressup(
                         ui,
                         "helix_radius",
-                        "  Radius:",
+                        "Radius",
                         radius,
                         " mm",
                         0.1,
                         radius_range,
+                        fields,
                     );
+                }
+                // The radius the engine emits: a derived value, so a
+                // read-only row.
+                if let Some(h) = resolved {
+                    let value = if h.capped() {
+                        format!(
+                            "r {:.2} mm (capped from {:.2})",
+                            h.emitted_mm, h.requested_mm
+                        )
+                    } else {
+                        format!("r {:.2} mm", h.emitted_mm)
+                    };
+                    let _ = PropRow::new("Emits")
+                        .hover(Some(
+                            "The helix radius the engine emits. The no-core rule caps it \
+                             at the flat bottom of the tool (geometry).",
+                        ))
+                        .show_read_only(ui, value);
                 }
                 dv_dressup(
                     ui,
                     "helix_pitch",
-                    "  Pitch:",
+                    "Pitch",
                     &mut cfg.helix_pitch,
                     " mm",
                     0.1,
                     0.2..=10.0,
+                    fields,
                 );
                 dv_dressup(
                     ui,
                     "entry_clearance_mm",
-                    "  Clearance:",
+                    "Clearance",
                     &mut cfg.entry_clearance_mm,
                     " mm",
                     0.1,
                     0.0..=5.0,
+                    fields,
                 );
-            });
+            }
+            DressupEntryStyle::None => {}
         }
-        DressupEntryStyle::None => {}
     }
 
-    ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
-        // CUT-13: the parameters live inside the `Option`. The checkbox reads
-        // a local bool and puts the module defaults back on a fresh enable.
-        let mut on = cfg.lead_in_out.is_some();
-        let resp = ui
-            .checkbox(&mut on, "Lead-in / lead-out")
-            .on_hover_text("Add smooth arc transitions at cut start and end. Prevents tool marks at entry/exit points. Best for finishing and profile cuts.");
-        if resp.changed() {
-            cfg.lead_in_out = on.then(LeadParams::default);
-        }
-        if let Some(msg) = op_incompatible_msg {
-            resp.on_hover_text(msg);
-        }
-    });
+    // CUT-13: the parameters live inside the `Option`. The box reads a
+    // local bool and puts the module defaults back on a fresh enable.
+    let mut lead_on = cfg.lead_in_out.is_some();
+    if check_row(
+        ui,
+        "lead_in_out",
+        "Lead-in / out",
+        "Add smooth arc transitions at cut start and end. Prevents tool marks at \
+             entry/exit points. Best for finishing and profile cuts.",
+        &mut lead_on,
+        op_incompatible_msg,
+        fields,
+    ) {
+        cfg.lead_in_out = lead_on.then(LeadParams::default);
+    }
     if op_incompatible_msg.is_none()
         && let Some(lead) = cfg.lead_in_out.as_mut()
     {
-        ui.param_grid("lead_p", |ui| {
-            dv_dressup(
-                ui,
-                "lead_radius",
-                "  Radius:",
-                &mut lead.radius,
-                " mm",
-                0.1,
-                0.5..=20.0,
-            );
-        });
-        let radius = lead.radius;
-        draw_lead_in_out_diagram(ui, radius);
+        // IC1: the diagram comes before the row it shows.
+        draw_lead_in_out_diagram(ui, lead.radius);
+        dv_dressup(
+            ui,
+            "lead_radius",
+            "Radius",
+            &mut lead.radius,
+            " mm",
+            0.1,
+            0.5..=20.0,
+            fields,
+        );
     }
 
-    ui.add_space(6.0);
-
-    // ── Optimization ──────────────────────────────────────────
-    crate::ui::components::SectionHeader::new("Optimization").show(ui);
-
-    ui.add_enabled_ui(op_incompatible_msg.is_none(), |ui| {
-        let mut on = cfg.link_moves.is_some();
-        let resp = ui
-            .checkbox(&mut on, "Link moves (keep tool down)")
-            .on_hover_text("Replace short retract-rapid-plunge sequences with slow linear feeds. Major time saver for operations with many small regions. Keeps the tool in the material instead of retracting.");
-        if resp.changed() {
-            cfg.link_moves = on.then(LinkDressupParams::default);
-        }
-        if let Some(msg) = op_incompatible_msg {
-            resp.on_hover_text(msg);
-        }
-    });
+    // ── Links ─────────────────────────────────────────────────
+    section(ui, "Links");
+    let mut link_on = cfg.link_moves.is_some();
+    if check_row(
+        ui,
+        "link_moves",
+        "Link moves",
+        "Keep the tool down: replace short retract-rapid-plunge sequences with slow \
+             linear feeds. Major time saver for operations with many small regions.",
+        &mut link_on,
+        op_incompatible_msg,
+        fields,
+    ) {
+        cfg.link_moves = link_on.then(LinkDressupParams::default);
+    }
     if op_incompatible_msg.is_none()
         && let Some(link) = cfg.link_moves.as_mut()
     {
-        ui.param_grid("link_p", |ui| {
-            // S11: empty = 8 x the tool diameter.
-            dv_dressup_rule(
-                ui,
-                "link_max_distance",
-                "  Max Distance:",
-                &mut link.max_distance,
-                " mm",
-                0.5,
-                1.0..=50.0,
-                "8 x D",
-            );
-            dv_dressup(
-                ui,
-                "link_feed_rate",
-                "  Feed Rate:",
-                &mut link.feed_rate,
-                " mm/min",
-                10.0,
-                50.0..=5000.0,
-            );
-        });
+        // S11: empty = 8 x the tool diameter.
+        dv_dressup_rule(
+            ui,
+            "link_max_distance",
+            "Max distance",
+            &mut link.max_distance,
+            " mm",
+            0.5,
+            1.0..=50.0,
+            "8 x D",
+            fields,
+        );
+        dv_dressup(
+            ui,
+            "link_feed_rate",
+            "Feed rate",
+            &mut link.feed_rate,
+            " mm/min",
+            10.0,
+            50.0..=5000.0,
+            fields,
+        );
     }
+    let _ = check_row(
+        ui,
+        "optimize_rapid_order",
+        "Reorder rapids",
+        "Reorder disconnected toolpath segments to minimize total rapid travel distance \
+             (TSP heuristic). Only operations whose cut order does not change what later \
+             moves meet allow it.",
+        &mut cfg.optimize_rapid_order,
+        (!reorder_ok).then_some(
+            "This operation keeps its planned cut order: its entries and keep-down links \
+             are planned against the stock that earlier cuts leave, so a reorder would \
+             feed into uncut stock.",
+        ),
+        fields,
+    );
+}
 
-    ui.add_enabled_ui(reorder_ok, |ui| {
-        let resp = ui
-            .checkbox(&mut cfg.optimize_rapid_order, "Optimize rapid travel order")
-            .on_hover_text("Reorder disconnected toolpath segments to minimize total rapid travel distance (TSP heuristic). Only operations whose cut order does not change what later moves meet allow it.");
-        if !reorder_ok {
-            resp.on_disabled_hover_text("This operation keeps its planned cut order: its entries and keep-down links are planned against the stock that earlier cuts leave, so a reorder would feed into uncut stock.");
-        }
-    });
-
-    // IC1: feed-rate optimization applies to fresh-stock 2D operations only,
-    // so it is the tab's Advanced section.
+/// The ONE Advanced section of the Linking tab (IC1): the feed cap and the
+/// feed-rate optimiser.
+pub(super) fn draw_linking_advanced(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    fields: Fields<'_>,
+) {
     let feed_opt_reason = crate::state::toolpath::feed_optimization_unavailable_reason(
         &entry.operation,
         entry.stock_source,
     );
-    ui.add_space(crate::ui::tokens::SPACE_2);
-    ui.disclosure("linking_adv", "Advanced", false, |ui| {
-    // G-FEEDMAX (C2, 2026-10-28): the max rate caps every feed stage,
-    // the feed modulation after a simulation as well as the optimiser, so
-    // it is one row whatever the optimisation checkbox says. Its hover is
-    // the core field description, which says so.
-    ui.param_grid("fmax_p", |ui| {
+    let cfg = &mut entry.dressups;
+    advanced(ui, "linking_adv", |ui| {
+        // G-FEEDMAX (C2, 2026-10-28): the max rate caps every feed stage,
+        // the feed modulation after a simulation as well as the optimiser,
+        // so it is one row whatever the optimisation box says. Its hover is
+        // the core field description, which says so.
         // S11: empty = the machine maximum feed.
         dv_dressup_rule(
             ui,
             "feed_max_rate",
-            "Max Rate:",
+            "Max rate",
             &mut cfg.feed_max_rate,
             " mm/min",
             50.0,
             500.0..=20000.0,
             "machine max",
+            fields,
         );
-    });
-    if let Some(reason) = feed_opt_reason {
-        // G-LINKFEEDOPT: viewing a tab commits nothing. The disabled
-        // checkbox reads a local copy; `dressup_apply` already skips the
-        // pass when `feed_opt_stock` is `None`, so the stored flag is inert.
-        // Why-disabled lives on hover only (density pass) — the greyed
-        // checkbox is the signal; a permanent italic paragraph was noise.
+        // G-LINKFEEDOPT: viewing a tab commits nothing. A disabled box
+        // reads a local copy; `dressup_apply` already skips the pass when
+        // `feed_opt_stock` is `None`, so the stored flag is inert.
         let mut shown = false;
-        ui.add_enabled(
-            false,
-            egui::Checkbox::new(&mut shown, "Feed rate optimization"),
-        )
-        .on_disabled_hover_text(reason);
-    } else {
-        ui.checkbox(&mut cfg.feed_optimization, "Feed rate optimization")
-            .on_hover_text("Dynamically adjust feed rate based on stock engagement. Higher feed in light cuts, lower in heavy cuts. Only available for fresh-stock 2D operations.");
-    }
-    if cfg.feed_optimization && feed_opt_reason.is_none() {
-        ui.param_grid("fopt_p", |ui| {
+        let value = if feed_opt_reason.is_some() {
+            &mut shown
+        } else {
+            &mut cfg.feed_optimization
+        };
+        let _ = check_row(
+            ui,
+            "feed_optimization",
+            "Feed optimization",
+            "Dynamically adjust feed rate based on stock engagement. Higher feed in \
+             light cuts, lower in heavy cuts. Only available for fresh-stock 2D \
+             operations.",
+            value,
+            feed_opt_reason,
+            fields,
+        );
+        if cfg.feed_optimization && feed_opt_reason.is_none() {
             dv_dressup(
                 ui,
                 "feed_ramp_rate",
-                "  Ramp Rate:",
+                "Ramp rate",
                 &mut cfg.feed_ramp_rate,
                 " mm/min/mm",
                 10.0,
                 10.0..=2000.0,
+                fields,
             );
-        });
-    }
+        }
     });
 }
 
-/// The Path Quality rows of the Linking tab (R2; the Dressup tab before
-/// it): arc fitting and, where `dogbone_applies`, dogbone overcuts.
-/// Entry/exit and optimization are above them ([`draw_linking_params`]);
-/// the machining boundary is on the Geometry tab.
+/// The "Path quality" section of the Linking tab (R2; the Dressup tab
+/// before it): arc fitting and, where `dogbone_applies`, dogbone overcuts.
 pub(super) fn draw_dressup_params(
     ui: &mut egui::Ui,
     cfg: &mut DressupConfig,
     dogbone_applies: bool,
+    fields: Fields<'_>,
 ) {
-    // ── Path Quality ──────────────────────────────────────────
-    crate::ui::components::SectionHeader::new("Path Quality").show(ui);
+    section(ui, "Path quality");
 
     let mut arc_on = cfg.arc_fitting.is_some();
-    if ui
-        .checkbox(&mut arc_on, "Arc fitting (G2/G3)")
-        .on_hover_text("Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file size, improves surface finish, and produces smoother machine motion. Safe for all operations.")
-        .changed()
-    {
+    if check_row(
+        ui,
+        "arc_fitting",
+        "Arc fitting",
+        "Convert sequences of linear segments into smooth G2/G3 arcs. Reduces file \
+             size, improves surface finish, and produces smoother machine motion. Safe for \
+             all operations.",
+        &mut arc_on,
+        None,
+        fields,
+    ) {
         cfg.arc_fitting = arc_on.then(ArcFitParams::default);
     }
     if let Some(arc) = cfg.arc_fitting.as_mut() {
-        ui.param_grid("arc_p", |ui| {
-            dv_dressup(
-                ui,
-                "arc_tolerance",
-                "  Tolerance:",
-                &mut arc.tolerance,
-                " mm",
-                0.01,
-                0.01..=0.5,
-            );
-        });
+        dv_dressup(
+            ui,
+            "arc_tolerance",
+            "Tolerance",
+            &mut arc.tolerance,
+            " mm",
+            0.01,
+            0.01..=0.5,
+            fields,
+        );
     }
 
     if !dogbone_applies {
         return;
     }
     let mut dogbone_on = cfg.dogbone.is_some();
-    if ui
-        .checkbox(&mut dogbone_on, "Dogbone overcuts")
-        .on_hover_text("Add circular overcuts at inside corners so parts fit together. Essential for joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D surfaces.")
-        .changed()
-    {
+    if check_row(
+        ui,
+        "dogbone",
+        "Dogbone",
+        "Add circular overcuts at inside corners so parts fit together. Essential for \
+             joints, inlays, and press-fit assemblies. Not needed for open pockets or 3D \
+             surfaces.",
+        &mut dogbone_on,
+        None,
+        fields,
+    ) {
         cfg.dogbone = dogbone_on.then(DogboneParams::default);
     }
     if let Some(dogbone) = cfg.dogbone.as_mut() {
-        ui.param_grid("dog_p", |ui| {
-            dv_dressup(
-                ui,
-                "dogbone_angle",
-                "  Max Angle:",
-                &mut dogbone.angle,
-                " deg",
-                1.0,
-                45.0..=135.0,
-            );
-        });
-        let angle = dogbone.angle;
-        draw_dogbone_diagram(ui, angle);
+        // IC1: the diagram comes before the row it shows.
+        draw_dogbone_diagram(ui, dogbone.angle);
+        dv_dressup(
+            ui,
+            "dogbone_angle",
+            "Max angle",
+            &mut dogbone.angle,
+            " deg",
+            1.0,
+            45.0..=135.0,
+            fields,
+        );
     }
 }

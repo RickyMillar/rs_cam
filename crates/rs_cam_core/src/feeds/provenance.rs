@@ -93,6 +93,18 @@ impl ValueProvenance {
         Self::bare(ProvenanceSource::AutoCorrect)
     }
 
+    /// R1 (2026-10-30): true when Suggest wrote the value (a vendor row, the
+    /// formula, the edge-radius floor or a G10 rule), false for a typed
+    /// value (`Manual`) and an automatic correction (`AutoCorrect`). The GUI
+    /// marks a suggested value with ⚡.
+    #[must_use]
+    pub fn is_suggested(&self) -> bool {
+        !matches!(
+            self.source,
+            ProvenanceSource::Manual | ProvenanceSource::AutoCorrect
+        )
+    }
+
     /// A published rule with evidence (G10), with the rule id.
     pub fn published_rule(rule_id: impl Into<String>) -> Self {
         Self {
@@ -228,6 +240,12 @@ impl FeedsProvenance {
     /// manual / auto-correct write sites.
     pub fn set(&mut self, field: FeedsField, prov: ValueProvenance) {
         *self.slot_mut(field) = Some(prov);
+    }
+
+    /// Remove the stamp of a single dimension. The R1 seed calls it when it
+    /// clears a suggested value that has no basis for the new tool.
+    pub fn clear(&mut self, field: FeedsField) {
+        *self.slot_mut(field) = None;
     }
 
     /// Read a single dimension's stamp. `None` means the operation's struct

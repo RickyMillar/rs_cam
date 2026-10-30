@@ -3,8 +3,9 @@ use rs_cam_core::session::HoleSelection;
 
 use crate::state::toolpath::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
 
+use super::super::linking_dressup::{Fields, combo_param, plain_row};
 use super::super::{dv, dv_pill_opt, p};
-use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::components::OneLine;
 use rs_cam_core::compute::catalog::OperationType;
 
 /// What the hole sources are, printed on every drill panel so the operator
@@ -46,23 +47,31 @@ fn draw_hole_legend(ui: &mut egui::Ui, holes: Option<&HoleSelection>, needs_hole
 /// this combo out twice, label strings included, so a new cycle or a
 /// re-worded label reached one editor and not the other. `id_salt` keeps the
 /// two combos' egui ids distinct.
-fn draw_drill_cycle_combo(ui: &mut egui::Ui, id_salt: &str, cycle: &mut DrillCycleType) {
-    ui.label("Cycle:");
-    egui::ComboBox::from_id_salt(id_salt)
-        .truncate()
-        .selected_text(match cycle {
+fn draw_drill_cycle_combo(
+    ui: &mut egui::Ui,
+    op: OperationType,
+    id_salt: &str,
+    cycle: &mut DrillCycleType,
+    fields: Fields<'_>,
+) {
+    combo_param(
+        ui,
+        p(op, "cycle", "Cycle"),
+        fields,
+        id_salt,
+        match cycle {
             DrillCycleType::Simple => "Simple (G81)",
             DrillCycleType::Dwell => "Dwell (G82)",
             DrillCycleType::Peck => "Peck (G83)",
             DrillCycleType::ChipBreak => "Chip Break (G73)",
-        })
-        .show_ui(ui, |ui| {
+        },
+        |ui| {
             ui.selectable_value(cycle, DrillCycleType::Simple, "Simple (G81)");
             ui.selectable_value(cycle, DrillCycleType::Dwell, "Dwell (G82)");
             ui.selectable_value(cycle, DrillCycleType::Peck, "Peck (G83)");
             ui.selectable_value(cycle, DrillCycleType::ChipBreak, "Chip Break (G73)");
-        });
-    ui.end_row();
+        },
+    );
 }
 
 /// The feed-rate and retract rows both drill editors carry.
@@ -72,23 +81,32 @@ fn draw_drill_feed_rows(
     feed_rate: &mut Option<f64>,
     retract_z: &mut f64,
     feed_sugg: Option<super::super::pills::PillSuggestion<'_>>,
+    fields: Fields<'_>,
 ) {
     // S11: an unset feed shows the hint "set a value".
     dv_pill_opt(
         ui,
-        p(op, "feed_rate", "Feed Rate:"),
+        p(op, "feed_rate", "Feed rate"),
         feed_rate,
         " mm/min",
         10.0,
         feed_sugg,
+        fields,
     );
     dv(
         ui,
-        p(op, "retract_z", "Retract (R):"),
+        p(op, "retract_z", "Retract (R)"),
         retract_z,
         " mm",
         0.5,
+        fields,
     );
+}
+
+/// True when the cycle draws the Peck depth row: Peck and Chip-break.
+/// `placement::field_tab` reads the same predicate.
+pub(in crate::ui::properties) fn cycle_draws_peck(cycle: DrillCycleType) -> bool {
+    matches!(cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak)
 }
 
 /// The rows a cycle adds: peck depth, dwell time and chip-break retract.
@@ -105,14 +123,16 @@ fn draw_drill_cycle_rows(
     peck_depth: &mut f64,
     dwell_time: Option<&mut f64>,
     retract_amount: Option<&mut f64>,
+    fields: Fields<'_>,
 ) {
-    if matches!(cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak) {
+    if cycle_draws_peck(cycle) {
         dv(
             ui,
-            p(op, "peck_depth", "Peck Depth:"),
+            p(op, "peck_depth", "Peck depth"),
             peck_depth,
             " mm",
             0.5,
+            fields,
         );
     }
     if let Some(dwell_time) = dwell_time
@@ -120,10 +140,11 @@ fn draw_drill_cycle_rows(
     {
         dv(
             ui,
-            p(op, "dwell_time", "Dwell Time:"),
+            p(op, "dwell_time", "Dwell time"),
             dwell_time,
             " s",
             0.1,
+            fields,
         );
     }
     if let Some(retract_amount) = retract_amount
@@ -131,10 +152,11 @@ fn draw_drill_cycle_rows(
     {
         dv(
             ui,
-            p(op, "retract_amount", "Retract Amt:"),
+            p(op, "retract_amount", "Retract amount"),
             retract_amount,
             " mm",
             0.1,
+            fields,
         );
     }
 }
@@ -144,43 +166,51 @@ pub(in crate::ui::properties) fn draw_drill_params(
     cfg: &mut DrillConfig,
     holes: Option<&HoleSelection>,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     // Spec: drill ops get a feed pill (peck-cycle plunge feed) but no
     // stepover/DOC pills (Z-only kinematics — LUT radial/axial don't
     // apply). DrillConfig has no plunge_rate or spindle_rpm slot of its
     // own, so this is the only LUT-driven field on the panel.
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
-    ui.param_grid("drill_p", |ui| {
-        draw_drill_cycle_combo(ui, "drill_cycle", &mut cfg.cycle);
-        // D6: the floor is the Bottom height row of the Heights tab. A
-        // depth below the Top height counts from the rim of each hole;
-        // "Each hole floor" drills each hole of a STEP model to its own
-        // floor.
-        draw_drill_feed_rows(
-            ui,
-            OperationType::Drill,
-            &mut cfg.feed_rate,
-            &mut cfg.retract_z,
-            feed_sugg,
-        );
-        draw_drill_cycle_rows(
-            ui,
-            OperationType::Drill,
-            cfg.cycle,
-            &mut cfg.peck_depth,
-            Some(&mut cfg.dwell_time),
-            Some(&mut cfg.retract_amount),
-        );
-        // The hole fit (operator ruling 2026-10-22): a circle within this
-        // value of the tool diameter is drilled. Pin Drill has no row.
-        dv(
-            ui,
-            p(OperationType::Drill, "size_tolerance", "Size Tolerance:"),
-            &mut cfg.size_tolerance,
-            " mm",
-            0.01,
-        );
-    });
+    draw_drill_cycle_combo(
+        ui,
+        OperationType::Drill,
+        "drill_cycle",
+        &mut cfg.cycle,
+        fields,
+    );
+    // D6: the floor is the Bottom height row of the Heights tab. A
+    // depth below the Top height counts from the rim of each hole;
+    // "Each hole floor" drills each hole of a STEP model to its own
+    // floor.
+    draw_drill_feed_rows(
+        ui,
+        OperationType::Drill,
+        &mut cfg.feed_rate,
+        &mut cfg.retract_z,
+        feed_sugg,
+        fields,
+    );
+    draw_drill_cycle_rows(
+        ui,
+        OperationType::Drill,
+        cfg.cycle,
+        &mut cfg.peck_depth,
+        Some(&mut cfg.dwell_time),
+        Some(&mut cfg.retract_amount),
+        fields,
+    );
+    // The hole fit (operator ruling 2026-10-22): a circle within this
+    // value of the tool diameter is drilled. Pin Drill has no row.
+    dv(
+        ui,
+        p(OperationType::Drill, "size_tolerance", "Size tolerance"),
+        &mut cfg.size_tolerance,
+        " mm",
+        0.01,
+        fields,
+    );
     draw_hole_legend(ui, holes, true);
 }
 
@@ -189,43 +219,58 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
     cfg: &mut AlignmentPinDrillConfig,
     holes: Option<&HoleSelection>,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     let feed_sugg = pills.map(PillSuggestions::feed_rate);
     let extra = holes.map_or(0, |h| h.holes.len());
     // The op drills the live stock pins of its diameter (W6.5); the config
     // holds no copy of them.
-    ui.label(format!(
-        "The stock pins of {:.2} mm + {extra} picked hole(s)",
-        cfg.diameter
-    ));
-    ui.param_grid("pin_drill_p", |ui| {
-        dv(
-            ui,
-            p(
-                OperationType::AlignmentPinDrill,
-                "spoilboard_penetration",
-                "Spoilboard:",
-            ),
-            &mut cfg.spoilboard_penetration,
-            " mm",
-            0.5,
-        );
-        draw_drill_cycle_combo(ui, "pin_drill_cycle", &mut cfg.cycle);
-        draw_drill_feed_rows(
-            ui,
+    let _ = plain_row(
+        "Holes",
+        Some("The live stock pins of this diameter, and the picked holes."),
+    )
+    .show_read_only(
+        ui,
+        format!(
+            "Stock pins of {:.2} mm + {extra} picked hole(s)",
+            cfg.diameter
+        ),
+    );
+    dv(
+        ui,
+        p(
             OperationType::AlignmentPinDrill,
-            &mut cfg.feed_rate,
-            &mut cfg.retract_z,
-            feed_sugg,
-        );
-        draw_drill_cycle_rows(
-            ui,
-            OperationType::AlignmentPinDrill,
-            cfg.cycle,
-            &mut cfg.peck_depth,
-            None,
-            None,
-        );
-    });
+            "spoilboard_penetration",
+            "Spoilboard",
+        ),
+        &mut cfg.spoilboard_penetration,
+        " mm",
+        0.5,
+        fields,
+    );
+    draw_drill_cycle_combo(
+        ui,
+        OperationType::AlignmentPinDrill,
+        "pin_drill_cycle",
+        &mut cfg.cycle,
+        fields,
+    );
+    draw_drill_feed_rows(
+        ui,
+        OperationType::AlignmentPinDrill,
+        &mut cfg.feed_rate,
+        &mut cfg.retract_z,
+        feed_sugg,
+        fields,
+    );
+    draw_drill_cycle_rows(
+        ui,
+        OperationType::AlignmentPinDrill,
+        cfg.cycle,
+        &mut cfg.peck_depth,
+        None,
+        None,
+        fields,
+    );
     draw_hole_legend(ui, holes, false);
 }

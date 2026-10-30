@@ -12,6 +12,11 @@
 //!    (the header line, the tab row and the per-tab footer, F3/F7).
 //! 2. Every finding has exactly one place, and the face of each issue
 //!    finding paints on every tab (the issue stack is above the tabs).
+//!    W3f: a field finding is the Danger or Caution state of its row on the
+//!    tab that draws it (`PlacedFindings::field_tabs`), and its face paints
+//!    as no text; a tool finding is the state of the Tool row. Non-vacuity
+//!    counts the three places: at least `MIN_MARKED_STATES` bad states
+//!    paint a finding in one of them.
 //! 3. A finding with a project or view anchor paints nothing in the
 //!    inspector. The fixture: the stock thickness is not set, a project
 //!    finding (`precondition.not_set`, `Anchor::Project`).
@@ -41,7 +46,9 @@ mod inspector_bad_states;
 
 use std::collections::BTreeMap;
 
-use inspector_bad_states::{Family, Painted, State, fixture, fixture_with_stock_z, screen};
+use inspector_bad_states::{
+    Family, Painted, State, fixture, fixture_with_stock_z, screen, screen_with_outlines,
+};
 use rs_cam_core::ToolpathId;
 use rs_cam_core::diagnostics::{Anchor, Diagnostic};
 use rs_cam_viz::state::AppState;
@@ -76,10 +83,19 @@ fn every_finding(placed: &properties::PlacedFindings) -> Vec<Diagnostic> {
         .collect()
 }
 
+/// The fewest (family, bad state) pairs with a finding that paints in its
+/// one place: an issue row, a field row in a state, or the Tool row in a
+/// state (W3f, measured 2026-10-30: no tool x3, wrong tool x1, feeds
+/// unset x3, feeds unset + refused x3). No margin.
+const MIN_MARKED_STATES: usize = 10;
+
 #[test]
 fn each_diagnostic_paints_at_most_once_w2b() {
     let mut failures = Vec::new();
     let mut issue_faces_painted = 0_usize;
+    let mut field_rows_marked = 0_usize;
+    let mut tool_rows_marked = 0_usize;
+    let mut marked_states = 0_usize;
     let mut screens = 0_usize;
     for family in Family::ALL {
         for bad in State::ALL {
@@ -91,8 +107,9 @@ fn each_diagnostic_paints_at_most_once_w2b() {
             let all = every_finding(&placed);
             let by_id = faces_by_id(&all);
             let issue_faces: Vec<String> = placed.issues.iter().map(|d| d.face.clone()).collect();
+            let mut state_marked = !placed.issues.is_empty();
             for tab in ToolpathTab::ALL {
-                let painted = screen(&mut state, id, *tab);
+                let (painted, outlines) = screen_with_outlines(&mut state, id, *tab);
                 screens += 1;
                 for (finding, faces) in &by_id {
                     let n = painted_count(&painted, faces);
@@ -116,13 +133,73 @@ fn each_diagnostic_paints_at_most_once_w2b() {
                         ));
                     }
                 }
+                // W3f: a field finding is the state of its row. Its tab
+                // paints at least one row in a Danger or Caution state,
+                // and its face paints as no text.
+                let on_tab: Vec<&Diagnostic> = placed
+                    .by_field
+                    .iter()
+                    .filter(|d| placed.field_tabs.get(d.id.as_str()) == Some(tab))
+                    .collect();
+                for d in &on_tab {
+                    let n = painted_count(&painted, std::slice::from_ref(&d.face));
+                    if n > 0 {
+                        failures.push(format!(
+                            "{} / {} / {tab:?}: the field finding `{}` paints its face \
+                             {n} times; it is the state of its row",
+                            family.name(),
+                            bad.name(),
+                            d.id.as_str()
+                        ));
+                    }
+                }
+                // The Tool row is in the header, on every tab.
+                if !placed.tool.is_empty() {
+                    if outlines == 0 {
+                        failures.push(format!(
+                            "{} / {} / {tab:?}: a tool finding and no row in a state",
+                            family.name(),
+                            bad.name()
+                        ));
+                    } else {
+                        tool_rows_marked += 1;
+                        state_marked = true;
+                    }
+                }
+                if !on_tab.is_empty() {
+                    if outlines == 0 {
+                        failures.push(format!(
+                            "{} / {} / {tab:?}: {} field findings and no row in a state",
+                            family.name(),
+                            bad.name(),
+                            on_tab.len()
+                        ));
+                    } else {
+                        field_rows_marked += 1;
+                        state_marked = true;
+                    }
+                }
             }
+            // Every field finding has a tab that draws its row.
+            for d in &placed.by_field {
+                if !placed.field_tabs.contains_key(d.id.as_str()) {
+                    failures.push(format!(
+                        "{} / {}: the field finding `{}` has no tab",
+                        family.name(),
+                        bad.name(),
+                        d.id.as_str()
+                    ));
+                }
+            }
+            marked_states += usize::from(state_marked);
         }
     }
     assert!(screens > 100, "non-vacuity: only {screens} screens");
     assert!(
-        issue_faces_painted > 0,
-        "non-vacuity: no bad state painted an issue row"
+        field_rows_marked > 0 && tool_rows_marked > 0 && marked_states >= MIN_MARKED_STATES,
+        "non-vacuity: {issue_faces_painted} issue rows, {field_rows_marked} field rows and \
+         {tool_rows_marked} Tool rows in a state, {marked_states} bad states with a placed \
+         finding (floor {MIN_MARKED_STATES})"
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

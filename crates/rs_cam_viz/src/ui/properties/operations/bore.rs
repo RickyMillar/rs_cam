@@ -10,8 +10,9 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::operation_configs::BoreConfig;
 use rs_cam_core::session::HoleSelection;
 
+use super::super::linking_dressup::{Fields, check_in_row, plain_row};
 use super::super::{dv, p};
-use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::components::OneLine;
 
 /// What a Bore cuts, printed on the panel so the operator knows which
 /// circles the op takes (L-12).
@@ -22,26 +23,32 @@ pub(in crate::ui::properties) fn draw_bore_params(
     ui: &mut egui::Ui,
     cfg: &mut BoreConfig,
     holes: Option<&HoleSelection>,
+    fields: Fields<'_>,
 ) {
-    ui.param_grid("bore_p", |ui| {
-        dv(
-            ui,
-            p(OperationType::Bore, "pitch", "Pitch:"),
-            &mut cfg.pitch,
-            " mm",
-            0.1,
-        );
-        ui.label("Climb:");
-        ui.checkbox(&mut cfg.climb, "");
-        ui.end_row();
-        dv(
-            ui,
-            p(OperationType::Bore, "finish_allowance", "Finish Allowance:"),
-            &mut cfg.finish_allowance,
-            " mm",
-            0.05,
-        );
-    });
+    dv(
+        ui,
+        p(OperationType::Bore, "pitch", "Pitch"),
+        &mut cfg.pitch,
+        " mm",
+        0.1,
+        fields,
+    );
+    check_in_row(
+        ui,
+        plain_row(
+            "Climb",
+            Some("Climb milling: the cutter edge meets the material in the direction of the feed."),
+        ),
+        &mut cfg.climb,
+    );
+    dv(
+        ui,
+        p(OperationType::Bore, "finish_allowance", "Finish allowance"),
+        &mut cfg.finish_allowance,
+        " mm",
+        0.05,
+        fields,
+    );
     let bored = holes.map_or(0, |h| h.holes.len());
     // P6.7 (IC1): one row, the count first; the hover gives the scope.
     // The hole size rows of the Selection section give each size, its

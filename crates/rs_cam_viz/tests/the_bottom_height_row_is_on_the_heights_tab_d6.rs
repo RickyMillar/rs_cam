@@ -334,24 +334,40 @@ fn the_bottom_height_row_is_on_the_heights_tab_d6() {
 
         let mut s = state(session(operation.clone()), properties::ToolpathTab::Heights);
         let heights = settle(&ctx, &mut s);
-        let bottom = find(&heights, "Bottom height:");
+        let bottom = find(&heights, "Bottom height");
         assert_eq!(
             bottom.len(),
             1,
             "{label}: the Heights tab draws one Bottom height row: {:?}",
             heights.iter().map(|p| &p.text).collect::<Vec<_>>()
         );
-        let top = find(&heights, "Top height:");
+        // W3d: "Top height" is the label of the Top row and the reference
+        // of the floor in the Bottom height combo; the label is the one
+        // in the label column, left of the Bottom height combo.
+        let bottom_x = bottom[0].rect.left();
+        let top: Vec<_> = find(&heights, "Top height")
+            .into_iter()
+            .filter(|p| (p.rect.left() - bottom_x).abs() < 4.0)
+            .collect();
         assert_eq!(top.len(), 1, "{label}: one Top height row");
         let (top_y, bottom_y) = (top[0].rect.center().y, bottom[0].rect.center().y);
         assert!(
             bottom_y > top_y,
             "{label}: Bottom height ({bottom_y}) is not under Top height ({top_y})"
         );
+        // W3d: the labels have no colon; a row label is one of the five.
         let between: Vec<&str> = heights
             .iter()
             .filter(|p| {
-                p.text.ends_with(':')
+                [
+                    "Clearance",
+                    "Retract",
+                    "Feed",
+                    "Top height",
+                    "Bottom height",
+                ]
+                .contains(&p.text.as_str())
+                    && (p.rect.left() - bottom_x).abs() < 4.0
                     && p.rect.center().y > top_y + 1.0
                     && p.rect.center().y < bottom_y - 1.0
             })
@@ -369,9 +385,22 @@ fn the_bottom_height_row_is_on_the_heights_tab_d6() {
                 .any(|p| p.text == reference && (p.rect.center().y - bottom_y).abs() < 4.0),
             "{label}: the Bottom height row does not name {reference:?}"
         );
+        // W3d (F5): the row shows the resolved floor Z, absolute, as the
+        // diagram does.
+        let tc = &s.session().toolpath_configs()[0];
+        let floor_z = s
+            .session()
+            .toolpath_heights(tc)
+            .unwrap()
+            .floor_z(&tc.heights)
+            .unwrap()
+            .unwrap();
+        let shown = format!("{floor_z:.2}");
         assert!(
-            heights.iter().any(|p| p.text.starts_with("= Z ")),
-            "{label}: the Bottom height row does not show the resolved Z"
+            heights
+                .iter()
+                .any(|p| p.text == shown && (p.rect.center().y - bottom_y).abs() < 4.0),
+            "{label}: the Bottom height row does not show the resolved Z {shown}"
         );
         assert!(
             !heights.iter().any(|p| p.text.starts_with("Floor: ")),
@@ -380,7 +409,7 @@ fn the_bottom_height_row_is_on_the_heights_tab_d6() {
 
         let mut s = state(session(operation), properties::ToolpathTab::Passes);
         let cut = settle(&ctx, &mut s);
-        for gone in ["Bottom height:", "Floor from:"] {
+        for gone in ["Bottom height", "Floor from:"] {
             assert!(
                 find(&cut, gone).is_empty(),
                 "{label}: the Passes tab still draws {gone:?}"
@@ -411,7 +440,7 @@ fn a_bottom_height_edit_writes_the_set_toolpath_floor_floor_d6() {
     );
 
     let painted = settle(&ctx, &mut s);
-    let label = find(&painted, "Bottom height:")[0].rect;
+    let label = find(&painted, "Bottom height")[0].rect;
     let combo = painted
         .iter()
         .find(|p| p.text == "Top height" && (p.rect.center().y - label.center().y).abs() < 4.0)

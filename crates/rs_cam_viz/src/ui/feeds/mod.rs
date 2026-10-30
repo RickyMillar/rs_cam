@@ -1,4 +1,5 @@
-//! The feeds and speeds domain: the Explore window AND the inspector card.
+//! The feeds and speeds domain: the Explore window, which holds the
+//! comparison card (W3c), and the helpers the Feeds tab reads.
 //!
 //! The directory is named after the domain, not after one surface. Half of
 //! what is here is reached from the properties panel and never from the
@@ -10,8 +11,8 @@
 //! |---|---|---|
 //! | [`window`] | the Explore window: frame, size cap, one body call | `app.rs`, through [`draw`] |
 //! | [`explore`] | the nomogram and the window's body | [`window`] |
-//! | [`compare`] | the comparison card: current vs recommended, and Apply | `ui/properties/mod.rs` |
-//! | [`why`] | the per-row sentences behind the recommendation | `ui/properties/mod.rs` |
+//! | [`compare`] | the comparison card: current vs recommended, and Apply | [`explore`] (W3c) |
+//! | [`why`] | the per-row sentences behind the recommendation | [`compare`] |
 //! | [`shared`] | what more than one surface needs | [`window`], the inspector, and `ui/readiness_panel.rs` |
 //!
 //! [`shared`] has three consumers, the third being the project rollup in

@@ -106,7 +106,7 @@ pub(super) fn draw_toolpath_panel(
         .find(|(id, _)| Some(*id) == entry.tool_id)
         .map(|(_, tc)| tc);
     let diagnostics = panel_diagnostics(entry, preconditions, model_refs, suggest_warnings, inputs);
-    let placement = super::placement::place(&diagnostics);
+    let placement = super::placement::place(&diagnostics, &entry.operation);
 
     // R2 / P1: the Tool row is the one tool control of the inspector. W2b:
     // a tool finding is its state and its hover.
@@ -205,6 +205,10 @@ pub(super) fn draw_toolpath_panel(
                 selection_ui,
                 containment_autocorrect,
                 reach_view,
+                placement
+                    .by_field
+                    .get("selection")
+                    .map_or(&[], Vec::as_slice),
                 events,
             );
         }
@@ -216,19 +220,24 @@ pub(super) fn draw_toolpath_panel(
                 model_bbox,
                 strategy_suggestion(suggest_warnings),
                 selection_ui,
+                super::linking_dressup::Fields::new(&placement.by_field),
                 events,
             );
         }
 
-        ToolpathTab::FeedsSpeeds => draw_feeds_tab(ui, entry, inputs, model_bbox, events),
+        ToolpathTab::FeedsSpeeds => {
+            draw_feeds_tab(ui, entry, inputs, model_bbox, &placement, events);
+        }
 
         // How moves connect: entry/exit, move optimization, retract
         // strategy, then arc fitting and dogbone (R2: the Dressup tab is
         // deleted; its rows are here).
-        ToolpathTab::Linking => draw_linking_tab(ui, entry, tool_for_diags, toolpath_heights),
+        ToolpathTab::Linking => {
+            draw_linking_tab(ui, entry, tool_for_diags, toolpath_heights, &placement);
+        }
 
         ToolpathTab::Heights => {
-            draw_heights_tab(ui, entry, inputs, heights_refusal, events);
+            draw_heights_tab(ui, entry, inputs, heights_refusal, &placement, events);
         }
     }
 

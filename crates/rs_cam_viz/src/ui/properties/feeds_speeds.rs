@@ -1,21 +1,43 @@
-//! The Feeds tab: the LUT calculator card, the manual speed
-//! controls, the operating-point and advance-per-tooth readings, the vendor
-//! LUT viewer and the entry-style preview diagram.
+//! The Feeds tab: the speed rows, the quiet Cut row, the measured
+//! operating point, the vendor LUT viewer and the entry-style preview
+//! diagram. The comparison card (current against recommended, and Apply) is
+//! in the Explore window (`ui/feeds/compare.rs`, W3c).
 
+use super::linking_dressup::{Fields, help_for};
 use crate::state::toolpath::{
     DressupConfig, DressupEntryStyle, HeightsConfig, OperationConfig, ToolpathEntry,
 };
 use crate::ui::AppEvent;
 use crate::ui::components::{
-    DataRow, DataTable, Details, OptionalValueRow, ProvKind, Role, SectionHeader, Source, UiExt,
+    DataRow, DataTable, Details, PropRow, ProvKind, Role, SectionHeader, Source,
 };
 use crate::ui::feeds::shared::{material_family_label, tool_family_label};
+use rs_cam_core::feeds::FeedsField;
 
-/// Map OperationConfig variant to (OperationFamily, PassRole) for the feeds calculator.
+/// R1: the mark of a value that Suggest wrote (design rule 8).
+const SUGGESTED_GLYPH: &str = "\u{26A1}";
+
+/// R1: the hover of a value that Suggest wrote.
+const SUGGESTED_HOVER: &str = "Suggested by the calculator. Type a value to replace it.";
+
+/// The hover of an empty speed field (S11): the op refuses until it is set.
+const NOT_SET_HOVER: &str = "Not set. The calculator has no data for this tool and \
+     material, so type a value. The operation does not generate until it is set.";
+
+/// The hover of the quiet Cut row.
+const CUT_ROW_HOVER: &str = "The depth per pass and the stepover that the calculator \
+     suggests for this tool and material. Use writes them through the safety clamps and \
+     keeps the speeds. The Explore window shows the full comparison.";
+
 /// Run the LUT calculator (read-only) through the entry's `FeedsMemo`
-/// (F216), and draw the feeds card. The calculator never writes to the operation
-/// here (Roadmap F.5). The canonical comparison's `Apply all` is the
-/// only path that pushes calculated values into the operation.
+/// (F216), and draw the derived rows of the tab: the quiet Cut row and the
+/// measured operating point. With no basis, one line gives the refusal.
+///
+/// R1 (operator ruling 2026-10-30) replaces F.5 ("the calculator never
+/// writes"): core seeds each EMPTY feed field with the Suggest value on op
+/// add, and each empty or suggested one on a tool change
+/// (`ProjectSession::seed_feeds`). This draw
+/// writes nothing; the Cut row asks for the cut half through the funnel.
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -27,10 +49,9 @@ pub(super) fn calculate_and_apply_feeds(
     material: &rs_cam_core::material::Material,
     machine: &rs_cam_core::machine::MachineProfile,
     spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    project_default_rpm: u32,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
     // Q1: the bbox of the model this toolpath machines, from
-    // `ToolpathPanelSnapshot`. The card's Suggest call reads it.
+    // `ToolpathPanelSnapshot`. The memo key reads it.
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
 ) {
@@ -52,20 +73,7 @@ pub(super) fn calculate_and_apply_feeds(
         entry.feeds_result.is_some(),
         entry.feeds_memo.refusal().map(ToString::to_string),
     ) {
-        (true, _) => {
-            draw_feeds_card(
-                ui,
-                entry,
-                tool,
-                machine,
-                material,
-                project_default_rpm,
-                load_verdict,
-                spindle_strategy,
-                model_bbox,
-                events,
-            );
-        }
+        (true, _) => draw_feeds_card(ui, entry, load_verdict, events),
         (false, Some(e)) => {
             ui.add_space(8.0);
             // G-E (4): one line that truncates; its hover is the full text.
@@ -90,199 +98,284 @@ pub(super) fn calculate_and_apply_feeds(
 /// only `⚡ Apply all`, which overwrites the whole recipe at once. The
 /// operator found it the same day.
 ///
-/// # What it is not
+/// # The rows (W3c)
 ///
-/// This block does not consult the calculator. It sets what the operation
-/// runs. `⚡ Apply all` remains the one route from a recommendation into an
-/// operation (Checkpoint I), and nothing here reads `FeedsResult`.
+/// Each field is one `PropRow` (Feed, Plunge, Spindle, and Ramp feed when
+/// the op has one), the unit inside the well, the field state from the
+/// placement. R1: core fills an EMPTY field from Suggest on op add, and an
+/// empty or suggested field on a tool change, and stamps it with a Suggest
+/// source. Such a value shows ⚡
+/// (`ValueProvenance::is_suggested`). A typed value replaces it; nothing
+/// locks. This block does not consult the calculator: it reads the stamp.
 ///
 /// The write idiom is the panel's own: edit the scratch `ToolpathEntry` and
 /// stamp `stale_since`. The panel's write-back turns that into a `Command`,
 /// so no draw site touches the session (WP6).
-pub(super) fn draw_speed_controls(ui: &mut egui::Ui, entry: &mut ToolpathEntry) {
+pub(super) fn draw_speed_controls(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    fields: Fields<'_>,
+) {
     // A drill is Z-only: its plunge rate IS its feed rate. A second field
     // there is a duplicate that writes nothing (the W3.2 rule). F095: the
     // core drill-family predicate decides it.
     let z_only = entry.operation.op_type().is_drill_kinematics();
-    ui.named_section("Speed", |ui| {
-        ui.param_grid("feeds_speed_controls", |ui| {
-            // S11: a feed that Suggest did not write (no feeds data for the
-            // tool) is not set. The field is empty with the hint "set a
-            // value", and the op refuses to generate until it is set.
-            let mut feed = entry.operation.feed_rate();
-            // W5: an op whose schema states a feed range (the drill ops)
-            // clamps to it here too; the others keep this row's own range.
-            let feed_range =
-                OperationConfig::param_range_for_type(entry.operation.op_type(), "feed_rate")
-                    .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
-            if OptionalValueRow::new("Feed:", &mut feed, " mm/min", 50.0, feed_range).show(ui)
-                && let Some(feed) = feed
-            {
-                entry.operation.set_feed_rate(feed);
-                entry.stale_since = Some(std::time::Instant::now());
-            }
+    let op_type = entry.operation.op_type();
+    // Design rule 7: the small-caps label of the section; space groups it.
+    SectionHeader::new("Speed")
+        .small_caps()
+        .hover(
+            "The cut feed, the plunge feed and the spindle speed. ⚡ marks a value that \
+             Suggest wrote.",
+        )
+        .show(ui);
+    let stamped = |field: FeedsField| {
+        entry
+            .feeds_provenance
+            .get(field)
+            .is_some_and(rs_cam_core::feeds::ValueProvenance::is_suggested)
+    };
+    let feed_suggested = stamped(FeedsField::FeedRate);
+    let plunge_suggested = stamped(FeedsField::PlungeRate);
+    let spindle_suggested = stamped(FeedsField::SpindleRpm);
+    let ramp_suggested = stamped(FeedsField::RampFeedRate);
 
-            if z_only {
-                ui.label("Plunge:");
-                let text =
-                    feed.map_or_else(|| "not set".to_owned(), |feed| format!("{feed:.0} mm/min"));
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(text).color(crate::ui::tokens::TEXT_FAINT),
-                    )
-                    .wrap(),
-                )
-                .on_hover_text(
-                    "A drilling operation moves in Z only, so its plunge rate IS \
-                         its feed rate. Set the feed above.",
-                );
-                ui.end_row();
-            } else {
-                let mut plunge = entry.operation.plunge_rate();
-                if OptionalValueRow::new("Plunge:", &mut plunge, " mm/min", 10.0, 1.0..=10_000.0)
-                    .show(ui)
-                    && let Some(plunge) = plunge
-                {
-                    entry.operation.set_plunge_rate(plunge);
-                    entry.stale_since = Some(std::time::Instant::now());
-                }
-            }
+    // S11: a feed that Suggest did not write (no feeds data for the tool)
+    // is not set. The field is empty, and the op refuses to generate until
+    // it is set.
+    let mut feed = entry.operation.feed_rate();
+    // W5: an op whose schema states a feed range (the drill ops) clamps to
+    // it here too; the others keep this row's own range.
+    let feed_range = OperationConfig::param_range_for_type(op_type, "feed_rate")
+        .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
+    let row = speed_prop_row("Feed", op_type, "feed_rate", fields);
+    if speed_row(
+        ui,
+        row,
+        &mut feed,
+        "mm/min",
+        50.0,
+        feed_range,
+        feed_suggested,
+        NOT_SET_HOVER,
+    ) && let Some(feed) = feed
+    {
+        entry.operation.set_feed_rate(feed);
+        entry.stale_since = Some(std::time::Instant::now());
+    }
 
-            // S11: the spindle speed of the op. With no feeds data it is not
-            // set, and the op refuses to generate until it is set; the post
-            // spindle speed is no fallback.
-            let mut spindle = entry.operation.spindle_rpm().map(f64::from);
-            if OptionalValueRow::new("Spindle:", &mut spindle, " RPM", 100.0, 1_000.0..=60_000.0)
-                .tooltip(Some(
-                    "The spindle speed of this operation. Suggest writes it when the \
-                     tool has feeds data; else set it here.",
-                ))
-                .show(ui)
-                && let Some(rpm) = spindle
-            {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "the row clamps the RPM to 1 000..=60 000, inside u32"
-                )]
-                entry.operation.set_spindle_rpm(Some(rpm.round() as u32));
-                entry.stale_since = Some(std::time::Instant::now());
-            }
-        });
-    });
+    if z_only {
+        let text = feed.map_or_else(|| "not set".to_owned(), |feed| format!("{feed:.0}"));
+        let _ = PropRow::new("Plunge")
+            .unit("mm/min")
+            .hover(Some(
+                "A drilling operation moves in Z only, so its plunge rate IS its feed \
+                 rate. Set the feed above.",
+            ))
+            .show_read_only(ui, text);
+    } else {
+        let mut plunge = entry.operation.plunge_rate();
+        let row = speed_prop_row("Plunge", op_type, "plunge_rate", fields);
+        if speed_row(
+            ui,
+            row,
+            &mut plunge,
+            "mm/min",
+            10.0,
+            1.0..=10_000.0,
+            plunge_suggested,
+            NOT_SET_HOVER,
+        ) && let Some(plunge) = plunge
+        {
+            entry.operation.set_plunge_rate(plunge);
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    }
+
+    // S11: the spindle speed of the op. With no feeds data it is not set,
+    // and the op refuses to generate until it is set; the post spindle
+    // speed is no fallback.
+    let mut spindle = entry.operation.spindle_rpm().map(f64::from);
+    let row = speed_prop_row("Spindle", op_type, "spindle_rpm", fields);
+    if speed_row(
+        ui,
+        row,
+        &mut spindle,
+        "RPM",
+        100.0,
+        1_000.0..=60_000.0,
+        spindle_suggested,
+        NOT_SET_HOVER,
+    ) && let Some(rpm) = spindle
+    {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the row clamps the RPM to 1 000..=60 000, inside u32"
+        )]
+        entry.operation.set_spindle_rpm(Some(rpm.round() as u32));
+        entry.stale_since = Some(std::time::Instant::now());
+    }
+
+    // G6 ramp: the entry feed, on an op that has the field. Empty means the
+    // entry runs at the plunge rate.
+    if entry.operation.param_names().contains(&"ramp_feed_rate") {
+        let mut ramp = entry.operation.ramp_feed_rate();
+        let range = OperationConfig::param_range_for_type(op_type, "ramp_feed_rate")
+            .map_or(1.0..=50_000.0, |range| range.inclusive_bounds());
+        let row = speed_prop_row("Ramp feed", op_type, "ramp_feed_rate", fields);
+        if speed_row(
+            ui,
+            row,
+            &mut ramp,
+            "mm/min",
+            10.0,
+            range,
+            ramp_suggested,
+            "Empty: the entry runs at the plunge rate.",
+        ) && let Some(ramp) = ramp
+            && entry
+                .operation
+                .as_params_mut()
+                .set_ramp_feed_rate(Some(ramp))
+        {
+            entry.stale_since = Some(std::time::Instant::now());
+        }
+    }
 }
 
+/// The `PropRow` of one speed field: the label, the registry help of the
+/// parameter `name` (ui04) and the field state from the placement.
+fn speed_prop_row<'a>(
+    label: &'a str,
+    op_type: rs_cam_core::compute::catalog::OperationType,
+    name: &'static str,
+    fields: Fields<'a>,
+) -> (PropRow<'a>, Option<String>) {
+    let state = fields.state(name);
+    (
+        PropRow::new(label)
+            .hover(help_for(op_type, name))
+            .state(state.role),
+        state.detail,
+    )
+}
+
+/// One speed row: a `DragValue` that fills the control area, the unit
+/// inside the well, and ⚡ in amber in the left padding of the well when
+/// Suggest wrote the value (R1). The mark takes no width from the value, so
+/// a five-digit RPM fits the 240-point rail.
+///
+/// An empty value draws "—" (no long hint fits the rail); its hover adds
+/// `empty_hover`. A typed number sets it, clamped to the range.
+/// `true` when the value changed.
 #[expect(
     clippy::too_many_arguments,
-    reason = "The card reads the tool, the machine, the material, the project RPM, the accepted load verdict and two session policies to answer one question. Its caller `calculate_and_apply_feeds` carries the same allow for the same reason: bundling these into a struct would build a second data model of what the session already holds."
+    reason = "the row, the value, its unit, speed and range, the mark and the empty hover"
 )]
+fn speed_row(
+    ui: &mut egui::Ui,
+    (row, detail): (PropRow<'_>, Option<String>),
+    val: &mut Option<f64>,
+    unit: &str,
+    speed: f64,
+    range: std::ops::RangeInclusive<f64>,
+    suggested: bool,
+    empty_hover: &str,
+) -> bool {
+    let mut changed = false;
+    let was_set = val.is_some();
+    let out = row.detail(detail.as_deref()).unit(unit).show(ui, |ui| {
+        // An empty value draws "—" (`NumberSpec::new`).
+        let spec = crate::ui::components::NumberSpec::new(speed).range(range);
+        let (resp, edited) =
+            crate::ui::components::optional_number_field(ui, val, &spec, ui.available_size());
+        changed |= edited;
+        resp
+    });
+    let mark = suggested && was_set;
+    if mark {
+        // The mark sits in the left padding of the well, before the value.
+        let at = egui::pos2(out.rects.well.left() + 2.0, out.rects.well.center().y);
+        let _ = ui.painter().text(
+            at,
+            egui::Align2::LEFT_CENTER,
+            SUGGESTED_GLYPH,
+            egui::FontId::proportional(crate::ui::tokens::SIZE_CAPTION),
+            crate::ui::tokens::CAUTION,
+        );
+    }
+    let hover = if mark {
+        format!("{}\n\n{SUGGESTED_HOVER}", out.hover)
+    } else if was_set {
+        out.hover
+    } else {
+        format!("{}\n\n{empty_hover}", out.hover)
+    };
+    let _ = out.inner.on_hover_text(hover);
+    changed
+}
+
+/// The derived rows of the tab: the quiet Cut row, then the measured
+/// operating point. W3c moved the comparison card (the recommendation
+/// table, `⚡ Apply all`, `⚡ Speeds only`) into the Explore window.
 fn draw_feeds_card(
     ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
-    tool: &crate::state::job::ToolConfig,
-    machine: &rs_cam_core::machine::MachineProfile,
-    material: &rs_cam_core::material::Material,
-    project_default_rpm: u32,
+    entry: &ToolpathEntry,
     load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     events: &mut Vec<AppEvent>,
 ) {
-    ui.add_space(8.0);
-    let preview = crate::ui::feeds::compare::compute_preview_for_operation(
-        &entry.operation,
-        tool,
-        material,
-        machine,
-        spindle_strategy,
-    );
-    let current = crate::ui::feeds::compare::current_values_for_operation(
-        &entry.operation,
-        tool,
-        project_default_rpm,
-    );
-    // `FeedsPreview` carries calculator warnings; the rows also quote the
-    // invariant pass's own account of what it did. Re-run the read-only
-    // canonical Suggest path; its recommendation is the preview's validated
-    // recipe. The warnings stay: the stages that move a number paint a line
-    // of their own below the card (ruling R4, 2026-09-24).
-    let suggest_warnings = rs_cam_core::feeds::suggest::suggest_for_operation(
-        rs_cam_core::feeds::suggest::SuggestForOperationInput {
-            operation: &entry.operation,
-            tool,
-            machine,
-            material,
-            lut: rs_cam_core::feeds::embedded_vendor_lut(),
-            spindle_strategy,
-            // Q1: the box the runtime-sanity stepover back-off reads.
-            // This site passed a default context before, so the card
-            // quoted a rationale the controller and the MCP surfaces
-            // would not have produced.
-            context: rs_cam_core::feeds::suggest::SuggestContext {
-                model_bbox,
-                // G6 ramp: the entry θ the apply writes the ramp feed for.
-                dressups: Some(&entry.dressups),
-                ..rs_cam_core::feeds::suggest::SuggestContext::default()
-            },
-        },
-    )
-    .ok()
-    .map(|suggested| suggested.warnings);
-    // The rationale gives the depth-per-pass and the stepover rows one entry
-    // each for the aggressiveness record, so each row's hover carries the
-    // dial's account of its own number.
-    let rationale = suggest_warnings
-        .as_deref()
-        .map(rs_cam_core::feeds::rationale::SuggestRationale::from_warnings);
-    // G-RECOMAPPLIED: the card's recommended column prints what `⚡ Apply
-    // all` writes. This is the dry run the ⚡ pills make, with the context
-    // the controller's apply passes. A refused pairing has no apply, so the
-    // column keeps the calculator values there.
-    let previews = preview.refusal().is_none().then(|| {
-        rs_cam_core::feeds::suggest::preview_field_applies(
-            &entry.operation,
-            preview.recommended(),
-            tool,
-            machine,
-            material,
-            entry.operation.feeds_style().1,
-            rs_cam_core::feeds::suggest::SuggestContext {
-                model_bbox,
-                dressups: Some(&entry.dressups),
-                ..rs_cam_core::feeds::suggest::SuggestContext::default()
-            },
-        )
-    });
-    let applied =
-        crate::ui::feeds::shared::AppliedRecipe::new(previews, suggest_warnings.as_deref());
-
-    // W2 deleted the `Why is the recommendation here?` disclosure: every row
-    // of the card explains its own number on hover. Round 2 (2026-10-13):
-    // the card draws a problem as one status line and puts the warnings
-    // that record a stage, the Suggest stages and the row basis in its
-    // `Details` (`why::Placement`).
-    crate::ui::feeds::compare::draw_inspector_comparison(
-        ui,
-        &current,
-        &preview,
-        &applied,
-        rationale.as_ref(),
-        suggest_warnings.as_deref().unwrap_or_default(),
-        &entry.operation,
-        tool,
-        material,
-        machine,
-        entry.id,
-        events,
-    );
+    draw_cut_row(ui, entry, events);
 
     // This is accepted simulation evidence, not a recommendation. Keep it
-    // outside and below the recommendation disclosure so planned and measured
-    // values never read as interchangeable.
+    // apart from the Cut row so planned and measured values never read as
+    // interchangeable.
     if let Some(v) = load_verdict
         && (v.feed_explanation.is_some() || v.modulation_summary.is_some())
     {
+        ui.add_space(8.0);
         draw_operating_point(ui, v);
+    }
+}
+
+/// The quiet Cut row (W3c): the depth per pass and the stepover that the
+/// funnel writes under `ApplyScope::CutGeometry`, where they differ from the
+/// op at the printed precision. `Use` sends `AppEvent::ApplyFeedsCut`. The
+/// values are the funnel dry run in the memo (F216), not the raw
+/// calculator values (G-PILLCLAMP).
+fn draw_cut_row(ui: &mut egui::Ui, entry: &ToolpathEntry, events: &mut Vec<AppEvent>) {
+    let Some(previews) = entry.feeds_memo.previews() else {
+        return;
+    };
+    let differs = |field: FeedsField, current: Option<f64>| {
+        previews
+            .get(field)
+            .map(|p| p.value)
+            .filter(|v| current.is_none_or(|c| format!("{c:.2}") != format!("{v:.2}")))
+    };
+    let parts: Vec<String> = [
+        (
+            "DOC",
+            differs(FeedsField::DepthPerPass, entry.operation.depth_per_pass()),
+        ),
+        (
+            "WOC",
+            differs(FeedsField::Stepover, entry.operation.stepover()),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|v| format!("{name} {v:.2} mm")))
+    .collect();
+    if parts.is_empty() {
+        return;
+    }
+    ui.add_space(4.0);
+    let out = PropRow::new("Cut")
+        .hover(Some(CUT_ROW_HOVER))
+        .action("Use")
+        .show_read_only(ui, format!("suggested {}", parts.join(" \u{00B7} ")));
+    if out.action_clicked {
+        events.push(AppEvent::ApplyFeedsCut(entry.id));
     }
 }
 
@@ -776,7 +869,12 @@ pub(super) fn draw_entry_preview_diagram(
     );
 
     // Dashed horizontal reference lines
-    for &(z, label) in &[(feed_z, "Feed Z"), (top_z, "Top height")] {
+    // W3e: the words and the precision of the Heights rows, so the diagram
+    // and the rows print one number one way.
+    for &(z, label) in &[
+        (feed_z, "Feed"),
+        (top_z, super::operations::TOP_HEIGHT_LABEL),
+    ] {
         let y = z_to_y(z);
         // Draw dashed line
         let dash_len = 6.0;
@@ -793,7 +891,7 @@ pub(super) fn draw_entry_preview_diagram(
         painter.text(
             egui::pos2(rect.right() - 4.0, y),
             egui::Align2::RIGHT_CENTER,
-            format!("{label} {z:.1}"),
+            format!("{label} {z:.2}"),
             egui::FontId::proportional(8.0),
             dim_color,
         );

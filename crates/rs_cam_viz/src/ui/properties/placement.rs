@@ -7,11 +7,11 @@
 //!
 //! - `Anchor::Tool` — the header Tool row: its Danger or Caution state, and
 //!   the faces in its hover. No other text.
-//! - `Anchor::Field { key }` — the `PropRow` of that key: its state and the
-//!   faces and details in its hover. A field whose row is not a `PropRow`
-//!   yet (every key not in [`PROP_ROW_FIELDS`]; W3 moves the rows) goes to
-//!   the issue stack. Either way the tab that holds the field shows a dot
-//!   ([`field_tab`]).
+//! - `Anchor::Field { key }` — the `PropRow` of that key, when THIS op
+//!   draws the row in its current config ([`field_tab`]): its state and
+//!   the faces and details in its hover, and a dot on the tab that holds
+//!   the row ([`field_tab`]). A field that the op does not draw goes to
+//!   the issue stack, with no dot.
 //! - `Anchor::Operation` — the issue stack under the header.
 //! - `Anchor::Note`, and any finding of severity Info or Hint — the notes
 //!   counter of the status line. An advisory never takes an issue row.
@@ -26,16 +26,50 @@ use rs_cam_core::diagnostics::{
     Severity,
 };
 
+use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
+use rs_cam_core::compute::config::DressupConfig;
+
 use super::ToolpathTab;
 
-/// The field keys whose row is a `PropRow` that draws the field state. A
-/// finding anchored to any other field key falls back to the issue stack.
-///
-/// W2b: no field row is a `PropRow` yet, so this list is empty and every
-/// field finding falls back. W3 adds each key here when it moves the row
-/// onto `PropRow`; the work list is every key that core can anchor to
-/// (`diagnostics::presentation::known_field_names`).
-pub(crate) const PROP_ROW_FIELDS: &[&str] = &[];
+// ── The record of the drawn field rows (tests only) ─────────────────
+
+#[cfg(test)]
+thread_local! {
+    /// The field keys that the rows asked a state for, while a test records.
+    static DRAWN: std::cell::RefCell<Option<std::collections::BTreeSet<String>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Note that a field row of `key` is drawn: the row read its state. Every
+/// reader of a field state calls it (`Fields::state`, the heights rows, the
+/// Cuts row). It does nothing outside a test record.
+pub(crate) fn note_drawn(key: &str) {
+    #[cfg(test)]
+    DRAWN.with(|d| {
+        if let Some(set) = d.borrow_mut().as_mut() {
+            let _ = set.insert(key.to_owned());
+        }
+    });
+    #[cfg(not(test))]
+    let _ = key;
+}
+
+/// True while a test records the drawn rows. The `advanced` section then
+/// opens, so that its rows draw and record.
+pub(crate) fn recording() -> bool {
+    #[cfg(test)]
+    return DRAWN.with(|d| d.borrow().is_some());
+    #[cfg(not(test))]
+    false
+}
+
+/// Run `draw` and give the field keys that its rows read a state for.
+#[cfg(test)]
+pub(crate) fn record_drawn(draw: impl FnOnce()) -> std::collections::BTreeSet<String> {
+    DRAWN.with(|d| *d.borrow_mut() = Some(Default::default()));
+    draw();
+    DRAWN.with(|d| d.borrow_mut().take().unwrap_or_default())
+}
 
 /// Where each diagnostic of one toolpath goes ([`place`]).
 #[derive(Debug, Default)]
@@ -56,40 +90,90 @@ pub(crate) struct Placement<'a> {
     pub dots: Vec<(ToolpathTab, crate::ui::components::Role)>,
 }
 
-/// True when the row of `key` is a `PropRow` ([`PROP_ROW_FIELDS`]).
-pub(crate) fn field_row_is_prop_row(key: FieldKey) -> bool {
-    PROP_ROW_FIELDS.contains(&key.as_str())
+/// The tab whose `PropRow` draws the field `key` for the op `config`, or
+/// `None` when this op draws no such row in this config (W3f).
+///
+/// The rule is per tab, from the same predicates that the tabs draw with:
+///
+/// - Heights: the five heights (`HEIGHT_KEYS`). An `OpFloor` op draws the
+///   `bottom_z` state on its Bottom height row.
+/// - Geometry: the selection, on an op with a selection (the Cuts row).
+/// - Feeds: `feed_rate` and `spindle_rpm`; `plunge_rate` on an op that is
+///   not Z-only; `ramp_feed_rate` on an op that has it.
+/// - Linking: `entry_style` where core `DressupPolicy::entry_style_applies`;
+///   the 3D Rough draws its own Entry style row on Passes.
+/// - Passes: every other parameter of the op, with the exceptions of its
+///   editor: `peck_depth` only for a Peck or Chip-break cycle;
+///   `scallop_height` not on the Drop Cutter.
+///
+/// A drill draws `feed_rate` and `retract_z` on Passes too (its cycle
+/// rows); the tab here is the canonical one (Feeds, Heights).
+///
+/// `drawn_field_rows_match_the_painted_rows_w3f` (`properties::tests`)
+/// draws every tab of every op headless and holds this rule against the
+/// rows that read a field state, for each key of
+/// `presentation::anchor_field_names`.
+#[must_use]
+pub(crate) fn field_tab(key: FieldKey, config: &OperationConfig) -> Option<ToolpathTab> {
+    use rs_cam_core::diagnostics::presentation::{HEIGHT_KEYS, SELECTION_KEY, op_has_field};
+    let op = config.op_type();
+    let name = key.as_str();
+    if !op_has_field(op, name) {
+        return None;
+    }
+    let tab = match name {
+        _ if HEIGHT_KEYS.contains(&name) => ToolpathTab::Heights,
+        SELECTION_KEY => {
+            let _ = config.selection()?;
+            ToolpathTab::Geometry
+        }
+        "feed_rate" | "spindle_rpm" => ToolpathTab::FeedsSpeeds,
+        "plunge_rate" => {
+            if op.is_drill_kinematics() {
+                return None;
+            }
+            ToolpathTab::FeedsSpeeds
+        }
+        "ramp_feed_rate" => ToolpathTab::FeedsSpeeds,
+        "entry_style" if op == OperationType::Adaptive3d => ToolpathTab::Passes,
+        "entry_style" => {
+            if !op.registry_entry().dressup_policy.entry_style_applies() {
+                return None;
+            }
+            ToolpathTab::Linking
+        }
+        "peck_depth" => {
+            let cycle = match config {
+                OperationConfig::Drill(c) => c.cycle,
+                OperationConfig::AlignmentPinDrill(c) => c.cycle,
+                _ => return None,
+            };
+            if !super::operations::cycle_draws_peck(cycle) {
+                return None;
+            }
+            ToolpathTab::Passes
+        }
+        "scallop_height" if op == OperationType::DropCutter => return None,
+        _ if DressupConfig::FIELD_DEFS.iter().any(|d| d.name == name) => ToolpathTab::Linking,
+        _ => ToolpathTab::Passes,
+    };
+    tab.applies(config).then_some(tab)
 }
 
-/// The feeds fields of the Feeds tab.
-const FEEDS_FIELDS: &[&str] = &["feed_rate", "plunge_rate", "spindle_rpm", "ramp_feed_rate"];
-
-/// The tab that draws the field `key`.
-///
-/// - The heights and the op floor (the "Bottom height" row, D6): Heights.
-/// - The dressup fields (`DressupConfig::FIELD_DEFS`): Linking.
-/// - The feeds: Feeds.
-/// - The selection: Geometry.
-/// - Every other op parameter: Passes.
-///
-/// No field key is drawn in the header: the tool is not a field
-/// (`Anchor::Tool`).
+/// The field rows that the op `config` draws, for each key a finding can
+/// anchor to (`presentation::anchor_field_names`): the key and its tab
+/// ([`field_tab`]). The sentries read it; `place` asks `field_tab` per
+/// finding.
+#[cfg(test)]
 #[must_use]
-pub(crate) fn field_tab(key: FieldKey) -> ToolpathTab {
-    use rs_cam_core::compute::config::DressupConfig;
-    use rs_cam_core::diagnostics::presentation::{HEIGHT_KEYS, SELECTION_KEY};
-    let name = key.as_str();
-    if HEIGHT_KEYS.contains(&name) || name == "floor" {
-        ToolpathTab::Heights
-    } else if DressupConfig::FIELD_DEFS.iter().any(|d| d.name == name) {
-        ToolpathTab::Linking
-    } else if FEEDS_FIELDS.contains(&name) {
-        ToolpathTab::FeedsSpeeds
-    } else if name == SELECTION_KEY {
-        ToolpathTab::Geometry
-    } else {
-        ToolpathTab::Passes
-    }
+pub(crate) fn drawn_fields(config: &OperationConfig) -> BTreeMap<&'static str, ToolpathTab> {
+    rs_cam_core::diagnostics::presentation::anchor_field_names()
+        .into_iter()
+        .filter_map(|name| {
+            let key = FieldKey::parse(name)?;
+            field_tab(key, config).map(|tab| (name, tab))
+        })
+        .collect()
 }
 
 /// The issue role of a finding: Danger for a finding that blocks or is
@@ -109,9 +193,10 @@ fn is_advisory(d: &Diagnostic) -> bool {
     matches!(d.severity, Severity::Info | Severity::Hint) || matches!(d.category, Category::State)
 }
 
-/// Place each diagnostic of one toolpath. The module doc gives the rule.
+/// Place each diagnostic of one toolpath, whose op is `config`. The
+/// module doc gives the rule.
 #[must_use]
-pub(crate) fn place(diagnostics: &[Diagnostic]) -> Placement<'_> {
+pub(crate) fn place<'a>(diagnostics: &'a [Diagnostic], config: &OperationConfig) -> Placement<'a> {
     let mut out = Placement::default();
     for d in diagnostics {
         if d.state != DiagnosticState::Current {
@@ -124,18 +209,20 @@ pub(crate) fn place(diagnostics: &[Diagnostic]) -> Placement<'_> {
             Anchor::Note => out.notes.push(d),
             _ if is_advisory(d) => out.notes.push(d),
             Anchor::Operation => out.issues.push(d),
-            Anchor::Field { key } => {
-                // A Danger or Caution dot on the tab that holds the field.
-                // Efficiency findings stay quiet on the strip, as before W2b.
-                if d.category != Category::Efficiency {
-                    raise_dot(&mut out.dots, field_tab(key), role_of(d));
-                }
-                if field_row_is_prop_row(key) {
+            Anchor::Field { key } => match field_tab(key, config) {
+                Some(tab) => {
+                    // A Danger or Caution dot on the tab that holds the
+                    // row. Efficiency findings stay quiet on the strip, as
+                    // before W2b.
+                    if d.category != Category::Efficiency {
+                        raise_dot(&mut out.dots, tab, role_of(d));
+                    }
                     out.by_field.entry(key.as_str()).or_default().push(d);
-                } else {
-                    out.issues.push(d);
                 }
-            }
+                // W3f: this op draws no row for the key, so the finding
+                // is an issue row.
+                None => out.issues.push(d),
+            },
         }
     }
     out
@@ -288,39 +375,70 @@ fn evidence_line(ev: &DiagnosticEvidence) -> Option<String> {
 )]
 mod tests {
     use super::*;
-    use rs_cam_core::diagnostics::presentation::known_field_names;
 
-    /// W2b: every field key an anchor can name has a tab that draws it, and
-    /// that tab is on the strip of every op that publishes the field. This
-    /// replaces the F24 `OWNER_TAB` coverage test: the tab comes from the
-    /// anchor, not from a second id table.
+    /// W3f: the tab of each anchored field follows the op. A key that the
+    /// op does not draw has no tab; a drawn key is on a tab that the op
+    /// shows. `properties::tests::drawn_field_rows_match_the_painted_rows_w3f`
+    /// holds the rule against the painted rows.
     #[test]
-    fn every_anchor_field_has_a_tab_w2b() {
-        use rs_cam_core::compute::catalog::OperationType;
-        use rs_cam_core::diagnostics::presentation::op_has_field;
-        let mut seen = 0_usize;
-        for name in known_field_names() {
-            let key = FieldKey::parse(name).expect("a known name parses");
-            let tab = field_tab(key);
-            seen += 1;
-            for op in OperationType::ALL {
-                if op_has_field(*op, name) {
-                    let config = rs_cam_core::compute::catalog::OperationConfig::new_default(*op);
-                    assert!(
-                        tab.applies(&config),
-                        "{name} is on {tab:?}, which {op:?} does not draw"
-                    );
-                }
+    fn the_tab_of_a_field_follows_the_op_w3f() {
+        use rs_cam_core::compute::operation_configs::DrillCycleType;
+        let mut drawn = 0_usize;
+        for op in OperationType::ALL {
+            let config = OperationConfig::new_default(*op);
+            for (_, tab) in drawn_fields(&config) {
+                drawn += 1;
+                assert!(tab.applies(&config), "{op:?} does not show {tab:?}");
             }
         }
-        assert!(seen > 30, "non-vacuity: only {seen} field names");
-        let tab = |n: &str| field_tab(FieldKey::parse(n).expect("a known name"));
-        assert_eq!(tab("feed_rate"), ToolpathTab::FeedsSpeeds);
-        assert_eq!(tab("spindle_rpm"), ToolpathTab::FeedsSpeeds);
-        assert_eq!(tab("retract_z"), ToolpathTab::Heights);
-        assert_eq!(tab("entry_style"), ToolpathTab::Linking);
-        assert_eq!(tab("selection"), ToolpathTab::Geometry);
-        assert_eq!(tab("stepover"), ToolpathTab::Passes);
+        assert!(drawn > 100, "non-vacuity: only {drawn} drawn rows");
+        let tab = |op: OperationType, n: &str| {
+            field_tab(
+                FieldKey::parse(n).expect("a known name"),
+                &OperationConfig::new_default(op),
+            )
+        };
+        assert_eq!(
+            tab(OperationType::Pocket, "feed_rate"),
+            Some(ToolpathTab::FeedsSpeeds)
+        );
+        assert_eq!(
+            tab(OperationType::Pocket, "retract_z"),
+            Some(ToolpathTab::Heights)
+        );
+        assert_eq!(
+            tab(OperationType::Pocket, "entry_style"),
+            Some(ToolpathTab::Linking)
+        );
+        assert_eq!(
+            tab(OperationType::Adaptive3d, "entry_style"),
+            Some(ToolpathTab::Passes)
+        );
+        assert_eq!(tab(OperationType::Trace, "entry_style"), None);
+        assert_eq!(
+            tab(OperationType::Pocket, "selection"),
+            Some(ToolpathTab::Geometry)
+        );
+        assert_eq!(tab(OperationType::DropCutter, "selection"), None);
+        assert_eq!(
+            tab(OperationType::Pocket, "depth_per_pass"),
+            Some(ToolpathTab::Passes)
+        );
+        assert_eq!(
+            tab(OperationType::Scallop, "scallop_height"),
+            Some(ToolpathTab::Passes)
+        );
+        assert_eq!(tab(OperationType::DropCutter, "scallop_height"), None);
+        let mut simple = OperationConfig::new_default(OperationType::Drill);
+        if let OperationConfig::Drill(c) = &mut simple {
+            c.cycle = DrillCycleType::Simple;
+        }
+        let peck = FieldKey::parse("peck_depth").expect("a known name");
+        assert_eq!(
+            field_tab(peck, &simple),
+            None,
+            "a Simple cycle draws no peck row"
+        );
     }
 
     fn finding(id: &str, anchor: Anchor, severity: Severity) -> Diagnostic {
@@ -351,7 +469,10 @@ mod tests {
         stale.state = DiagnosticState::NeedsSimulation;
         let list = vec![
             finding("a", Anchor::Tool, Severity::Blocking),
-            finding("b", Anchor::field("stepover"), Severity::Caution),
+            // A Drop Cutter has no selection, so no Cuts row (W3f: the op
+            // decides). W2b dotted the Geometry tab for it.
+            finding("b", Anchor::field("selection"), Severity::Caution),
+            finding("i", Anchor::field("stepover"), Severity::Caution),
             finding("c", Anchor::Operation, Severity::Critical),
             finding("d", Anchor::Note, Severity::Info),
             stale,
@@ -359,23 +480,38 @@ mod tests {
             finding("g", Anchor::View, Severity::Info),
             finding("h", Anchor::Operation, Severity::Hint),
         ];
-        let p = place(&list);
+        let p = place(
+            &list,
+            &OperationConfig::new_default(OperationType::DropCutter),
+        );
         let ids = |v: &[&Diagnostic]| {
             v.iter()
                 .map(|d| d.id.as_str().to_owned())
                 .collect::<Vec<_>>()
         };
         assert_eq!(ids(&p.tool), ["a"]);
-        assert_eq!(ids(&p.issues), ["b", "c"], "no field is a PropRow yet");
+        assert_eq!(
+            ids(&p.issues),
+            ["b", "c"],
+            "a Drop Cutter draws no Cuts row"
+        );
         assert_eq!(ids(&p.notes), ["d", "h"]);
         assert_eq!(ids(&p.elsewhere), ["e", "f", "g"]);
-        assert!(p.by_field.is_empty());
-        let placed = p.tool.len() + p.issues.len() + p.notes.len() + p.elsewhere.len();
+        assert_eq!(
+            p.by_field.keys().copied().collect::<Vec<_>>(),
+            ["stepover"],
+            "a Drop Cutter draws the stepover row"
+        );
+        let placed = p.tool.len()
+            + p.issues.len()
+            + p.notes.len()
+            + p.elsewhere.len()
+            + p.by_field.values().map(Vec::len).sum::<usize>();
         assert_eq!(placed, list.len(), "every finding has a place");
         assert_eq!(
             p.dots,
             vec![(ToolpathTab::Passes, crate::ui::components::Role::Caution)],
-            "the field finding dots its tab"
+            "the drawn field dots its tab; the undrawn one does not"
         );
         assert_eq!(
             tool_role(&p.tool),

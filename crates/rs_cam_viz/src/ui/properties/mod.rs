@@ -42,8 +42,7 @@ pub use tab_badges::{REST_MACHINING_LABEL, height_order_badge, rest_machining_ro
 // `pills.rs` (`super::prov_from_chipload`) resolves through.
 use feeds_speeds::prov_from_chipload;
 use linking_dressup::{
-    advanced, depth_caution_row, dv, dv_narrowed, dv_opt, dv_pill, dv_pill_opt, help_for, p,
-    schema_range, through_cut_row,
+    advanced, dv, dv_narrowed, dv_opt, dv_pill, dv_pill_opt, p, through_cut_line,
 };
 use machine_panel::draw_machine_panel;
 use model_sim_panels::{draw_model_properties, draw_simulation_panel};
@@ -509,7 +508,6 @@ pub(crate) struct ToolpathPanelInputs {
     pub material: rs_cam_core::material::Material,
     pub machine: rs_cam_core::machine::MachineProfile,
     pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    pub project_default_rpm: u32,
     pub model_is_step_missing_brep: bool,
     /// THE heights of the toolpath (geometry selection P3.1:
     /// `ProjectSession::toolpath_heights`), or the text of its error.
@@ -921,7 +919,6 @@ pub(crate) fn toolpath_panel_inputs(
         material,
         machine,
         spindle_strategy: session.post_config().spindle_strategy,
-        project_default_rpm: session.post_config().spindle_speed,
         model_is_step_missing_brep,
         toolpath_heights,
         stale_default_defects,
@@ -957,6 +954,9 @@ pub struct PlacedFindings {
     pub tool: Vec<rs_cam_core::diagnostics::Diagnostic>,
     /// The field `PropRow`s (state and hover only).
     pub by_field: Vec<rs_cam_core::diagnostics::Diagnostic>,
+    /// W3f: the tab of the row of each `by_field` finding, by finding id
+    /// (`placement::field_tab` for the op of the toolpath).
+    pub field_tabs: std::collections::BTreeMap<String, ToolpathTab>,
     /// The issue rows under the header.
     pub issues: Vec<rs_cam_core::diagnostics::Diagnostic>,
     /// The notes counter (popover only).
@@ -991,10 +991,23 @@ pub fn placed_findings(
         snapshot.suggest_warnings.as_deref(),
         &inputs,
     );
-    let placement = placement::place(&list);
+    let placement = placement::place(&list, &snapshot.entry.operation);
     let owned =
         |v: &[&rs_cam_core::diagnostics::Diagnostic]| v.iter().map(|d| (*d).clone()).collect();
+    let field_tabs = placement
+        .by_field
+        .values()
+        .flatten()
+        .filter_map(|d| match d.anchor {
+            rs_cam_core::diagnostics::Anchor::Field { key } => {
+                placement::field_tab(key, &snapshot.entry.operation)
+                    .map(|tab| (d.id.as_str().to_owned(), tab))
+            }
+            _ => None,
+        })
+        .collect();
     Some(PlacedFindings {
+        field_tabs,
         tool: owned(&placement.tool),
         by_field: placement
             .by_field

@@ -2,14 +2,14 @@
 
 ## Files
 
-- `mod.rs` — the facade: the Explore window AND the inspector card.
+- `mod.rs` — the facade: the Explore window, which holds the comparison card (W3c).
 - `window.rs` — the Explore window frame; `explore.rs` — the nomogram.
-- `compare.rs` — compare and apply; `why.rs` — the lines behind each number.
+- `compare.rs` — compare and apply (`draw_comparison_for`, above the nomogram); `why.rs` — the lines behind each number.
 - `shared.rs` — what more than one feeds job needs.
 
 ## Invariants
 
-- The Feeds tab NEVER auto-locks a numeric field; Suggest is an explicit button.
+- The Feeds tab NEVER locks a field. R1: core seeds an EMPTY feed field from Suggest; the tab marks it ⚡; one quiet Cut row; the card is in Explore.
 - The apply writes through the core command path (`Command::ApplyFeeds`, F114); the write stales the result.
 - The recommended column is what `⚡ Apply all` writes; the hover has the raw value.
 - The card is `DataTable` rows (IC2). A change row shows on the face only when

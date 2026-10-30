@@ -11,14 +11,15 @@
 //!
 //! 1. A recommendation row whose recommended value prints the same as the
 //!    current value is not drawn in the default view. It is in the Feeds
-//!    card's `Details`.
+//!    card's `Details`. W3c: the card is in the Explore window.
 //! 2. The derivation rows (the Suggest stages, the long-tool share, the
 //!    force line) are inside a `Details` disclosure that is closed by
 //!    default. They paint only when it is open.
 //! 3. Every surface that shows derived data renders it through the one
 //!    table component, and the deleted per-section renderers stay deleted.
 //!
-//! The behavioural arms render the real inspector (`properties::draw`) twice:
+//! The behavioural arms render the real inspector (`properties::draw`) and
+//! the Explore window (`ui::feeds::draw`) twice:
 //! once as the operator first sees it, and once with every disclosure open
 //! (`set_everything_is_visible`), so each absence has a presence beside it.
 
@@ -170,9 +171,12 @@ fn apply_all(state: &mut AppState) {
         .expect("the apply writes through the command door");
 }
 
-/// Every text run the Feeds tab paints on its steady-state frame. `open`
-/// opens every disclosure; it also paints the hovers, which always hold a
-/// newline, so the arms read single-line runs only.
+/// Every text run the Feeds tab and its Explore window paint on their
+/// steady-state frame. `open` opens every disclosure; it also paints the
+/// hovers, which always hold a newline, so the arms read single-line runs
+/// only. W3c (2026-10-30): the comparison card moved from the Feeds tab
+/// face into the Explore window, so the reader opens the window for the
+/// toolpath and paints it beside the inspector.
 fn painted(state: &mut AppState, open: bool) -> Vec<String> {
     let ctx = egui::Context::default();
     tokens::apply(&ctx);
@@ -184,6 +188,10 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
     }
     let id = state.session().toolpath_configs()[0].id;
     state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
+    state.feeds_modal = Some(rs_cam_viz::state::FeedsModalState {
+        toolpath_id: id,
+        explore: None,
+    });
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -197,6 +205,8 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
                         properties::draw(ui, state, &mut events);
                     });
                 });
+            let mut events = Vec::new();
+            rs_cam_viz::ui::feeds::draw(ui.ctx(), state, &mut events);
         });
         if pass == 1 {
             for clipped in &out.shapes {

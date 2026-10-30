@@ -13,8 +13,7 @@ use rs_cam_core::machine::head::ShoeSetting;
 use super::ShoeRowInputs;
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
-use crate::ui::components::{ChoiceRow, OneLine, UiExt as _, ValueRow};
-use crate::ui::tokens;
+use crate::ui::components::{ChoiceRow, PropRow};
 
 /// The four settings, as the row's closed choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,46 +86,45 @@ pub(super) fn draw_shoe_row(
         });
     }
     match shoe.setting {
+        // W3d: the solver answer is the read-only form of the Shoe gap row.
         ShoeSetting::Auto => {
-            ui.add(
-                OneLine::new(shoe.auto_text.clone())
-                    .color(tokens::TEXT_MUTED)
-                    .detail(
-                        "The shoe solver's answer for this toolpath's run. A run is the \
-                         toolpaths with one tool and one shoe setting, one after the other.",
-                    ),
-            );
+            let _ = PropRow::new("Shoe gap")
+                .hover(Some(
+                    "The shoe solver's answer for this toolpath's run. A run is the \
+                     toolpaths with one tool and one shoe setting, one after the other.",
+                ))
+                .show_read_only(ui, shoe.auto_text.clone());
         }
         ShoeSetting::Gap { gap_mm } => {
             let mut gap = gap_mm;
-            ui.param_grid("toolpath_shoe_gap", |ui| {
-                // F210: a GUI drag range; `ShoeSetting::validate` reads
-                // the domain.
-                let out = ValueRow::new(
-                    "Shoe gap",
+            // W3d: the solver gap is on the hover of the row, not a line
+            // under it.
+            let hover = match shoe.needed_gap_mm {
+                Some(needed) => format!(
+                    "{GAP_HOVER}\n\nSolver: brush {needed:.0} mm above tip, the lowest gap \
+                     that keeps the shoe plate clear for this run."
+                ),
+                None => GAP_HOVER.to_owned(),
+            };
+            // F210: a GUI drag range; `ShoeSetting::validate` reads the
+            // domain. A value outside the range stays as it is.
+            let out = PropRow::new("Shoe gap")
+                .unit("mm")
+                .hover(Some(&hover))
+                .number(
+                    ui,
                     &mut gap,
-                    " mm",
-                    0.5,
-                    HeadDimension::ShoeGap.ui_range(),
-                )
-                .keep_existing()
-                .tooltip(Some(GAP_HOVER))
-                .show(ui);
-                let response = &out.value_response;
-                if response.changed() && gap != gap_mm {
-                    events.push(AppEvent::SetToolpathShoe {
-                        tp_id,
-                        shoe: ShoeSetting::Gap { gap_mm: gap },
-                        merge: response.dragged() && !response.drag_started(),
-                    });
-                }
-            });
-            if let Some(needed) = shoe.needed_gap_mm {
-                ui.add(
-                    OneLine::new(format!("Solver: brush {needed:.0} mm above tip"))
-                        .color(tokens::TEXT_MUTED)
-                        .detail("The lowest gap that keeps the shoe plate clear for this run."),
+                    &crate::ui::components::NumberSpec::new(0.5)
+                        .range(HeadDimension::ShoeGap.ui_range())
+                        .keep_out_of_range(),
                 );
+            let response = &out.inner;
+            if response.changed() && gap != gap_mm {
+                events.push(AppEvent::SetToolpathShoe {
+                    tp_id,
+                    shoe: ShoeSetting::Gap { gap_mm: gap },
+                    merge: response.dragged() && !response.drag_started(),
+                });
             }
         }
         ShoeSetting::Raised | ShoeSetting::Off => {}

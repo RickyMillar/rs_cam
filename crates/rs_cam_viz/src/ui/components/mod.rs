@@ -36,6 +36,7 @@ pub mod line;
 pub mod motion;
 pub mod notes_counter;
 pub mod notice;
+pub mod number;
 pub mod pill;
 pub mod precedence;
 pub mod prop_row;
@@ -62,6 +63,7 @@ pub use notice::{
     Banner, CollapsedNotice, EmptyState, IssueStackResponse, NotMeasured, Notice, NoticeStack,
     Resolved,
 };
+pub use number::{NumberSpec, number_field, optional_number_field};
 pub use pill::{CountPill, PillFamily, PillRole};
 pub use precedence::PrecedenceField;
 pub use prop_row::{PropRow, PropRowResponse, RowRects};

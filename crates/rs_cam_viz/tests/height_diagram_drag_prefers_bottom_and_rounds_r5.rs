@@ -344,14 +344,23 @@ fn the_height_row_marks_a_pin_and_offers_auto_r5() {
     let text = src("ui/properties/operations/mod.rs");
     let lines = code_lines(&text);
     let has = |needle: &str| lines.iter().any(|l| l.contains(needle));
-    assert!(has("(pinned)"), "the height row must print `(pinned)`");
-    assert!(has("(auto)"), "the height row must still print `(auto)`");
+    // W3d: the reference combo of the row reads "Auto" or the pinned
+    // reference, its hover says "Pinned:" or "Auto:", and its "Auto" entry
+    // is the one-click release.
     assert!(
-        has("small_button(\"Auto\")"),
+        has("Pinned: {place}"),
+        "the height row hover must say `Pinned:`"
+    );
+    assert!(
+        has("Auto: the resolver"),
+        "the height row hover must say `Auto:`"
+    );
+    assert!(
+        has("egui::Button::selectable(auto, \"Auto\")"),
         "the height row must offer a one-click `Auto` release"
     );
     assert!(
-        has("*mode = HeightMode::Auto"),
+        has("picked = Some(HeightMode::Auto)"),
         "the `Auto` release must write `HeightMode::Auto`"
     );
 }

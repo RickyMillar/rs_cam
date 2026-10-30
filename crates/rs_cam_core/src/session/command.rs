@@ -3105,6 +3105,13 @@ impl ProjectSession {
                 // R2: the first tool set on an op with no tool (the GUI Tool
                 // combo) applies THE boundary rule of the draft.
                 self.apply_first_tool_boundary(old_tool, &mut config);
+                // R1: a tool change (the GUI Tool combo) seeds each empty or
+                // suggested feed field from Suggest. The seed runs before the domain
+                // check and before the signature read below, so the write
+                // is judged with the seeded values.
+                if old_tool != config.tool_id {
+                    self.seed_feeds(&mut config);
+                }
                 // P3.2: the GUI door refuses a pinned Bottom Z on an
                 // `OpFloor` op before it writes anything.
                 config.floor_conflict()?;

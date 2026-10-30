@@ -207,11 +207,6 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
         "the material must be the stock's own, not a default"
     );
     assert_eq!(
-        inputs.project_default_rpm,
-        session.post_config().spindle_speed,
-        "the project default rpm must come from the post config"
-    );
-    assert_eq!(
         inputs.tab_override,
         Some(ToolpathTab::Heights),
         "the consumed MCP tab must reach the panel"
@@ -314,7 +309,7 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let drill_texts = rendered(|ui| {
-        super::operations::draw_drill_params(ui, &mut drill, None, None);
+        super::operations::draw_drill_params(ui, &mut drill, None, None, Default::default());
     });
 
     let mut pin = AlignmentPinDrillConfig {
@@ -322,10 +317,16 @@ fn both_drill_editors_draw_the_same_cycle_rows_ui11() {
         ..Default::default()
     };
     let pin_texts = rendered(|ui| {
-        super::operations::draw_alignment_pin_drill_params(ui, &mut pin, None, None);
+        super::operations::draw_alignment_pin_drill_params(
+            ui,
+            &mut pin,
+            None,
+            None,
+            Default::default(),
+        );
     });
 
-    for label in ["Peck (G83)", "Peck Depth:", "Feed Rate:", "Retract (R):"] {
+    for label in ["Peck (G83)", "Peck depth", "Feed rate", "Retract (R)"] {
         assert!(
             drill_texts.iter().any(|t| t.contains(label)),
             "the drill editor no longer draws `{label}`; it rendered {drill_texts:?}"
@@ -379,6 +380,7 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
                 &mut crate::state::pick::SelectionUi::default(),
                 &mut crate::state::panels::ContainmentAutoCorrect::default(),
                 &mut super::toolpath_panel::ReachView::default(),
+                &[],
                 &mut events,
             );
         });
@@ -399,15 +401,17 @@ fn a_setup_map_op_draws_no_boundary_controls_d3() {
         TerritoryXy::SetupMap,
         "the case op must be the SetupMap op"
     );
+    // W3a: the boundary controls start with ONE Boundary row (Off or a
+    // source); no section header.
     let pocket = rendered(OperationType::Pocket);
     assert!(
-        pocket.iter().any(|t| t.contains("Machining Boundary")),
+        pocket.iter().any(|t| t == "Boundary"),
         "a Pocket must draw the boundary controls; it rendered {pocket:?}"
     );
     let pin = rendered(OperationType::AlignmentPinDrill);
     assert!(
         !pin.iter()
-            .any(|t| t.contains("Machining Boundary") || t.contains("Enable boundary")),
+            .any(|t| t == "Boundary" || t == "Containment" || t == "Surface"),
         "a Pin Drill must draw no boundary controls; it rendered {pin:?}"
     );
 }
@@ -467,6 +471,7 @@ fn tab_texts(
             None,
             None,
             &mut crate::state::pick::SelectionUi::default(),
+            super::linking_dressup::Fields::default(),
             &mut events,
         ),
         // R2: the whole Geometry tab: the Input row, the selection, the
@@ -478,6 +483,7 @@ fn tab_texts(
             &mut crate::state::pick::SelectionUi::default(),
             &mut crate::state::panels::ContainmentAutoCorrect::default(),
             &mut super::toolpath_panel::ReachView::default(),
+            &[],
             &mut events,
         ),
         _ => super::geometry_tab::draw_geometry_tab(
@@ -485,6 +491,7 @@ fn tab_texts(
             &entry,
             &inputs,
             &mut crate::state::pick::SelectionUi::default(),
+            &[],
             &mut events,
         ),
     });
@@ -591,7 +598,8 @@ fn a_step_pocket_names_the_face_pick_fix_p4_d() {
 #[test]
 fn the_selection_section_shows_one_pick_p4_d() {
     // A button paints its label more than once in this harness, so the
-    // test counts Pick against Reset, which the action row holds once.
+    // test counts Pick against Reset. W3a: both are quiet actions of the
+    // summary rows (Pick on Cuts, Reset on Selected), each drawn once.
     let count = |texts: &[String], label: &str| texts.iter().filter(|t| *t == label).count();
 
     let mut session = step_pocket_session();
@@ -604,7 +612,7 @@ fn the_selection_section_shows_one_pick_p4_d() {
     );
     assert!(
         count(&refused, "Reset") > 0,
-        "fixture: the action row paints Reset: {refused:?}"
+        "fixture: the Selected row paints Reset: {refused:?}"
     );
     assert_eq!(
         count(&refused, "Pick"),
@@ -656,7 +664,7 @@ fn the_selection_section_is_at_the_top_p4_d() {
     let pick = position_of(&geometry, "Pick button", |t| t == "Pick");
     assert!(cuts < pick, "the summary opens the tab: {geometry:?}");
     // R2: the whole Geometry tab opens with the Input row and holds the
-    // Machining Boundary section under the selection.
+    // Boundary row under the selection (W3a: no section header).
     let whole = tab_texts(
         &session,
         crate::state::toolpath::OperationType::Pocket,
@@ -664,12 +672,10 @@ fn the_selection_section_is_at_the_top_p4_d() {
     );
     let input = position_of(&whole, "Input row", |t| t.starts_with("Input"));
     let cuts = position_of(&whole, "Cuts row", |t| t.starts_with("Cuts"));
-    let boundary = position_of(&whole, "boundary header", |t| {
-        t.eq_ignore_ascii_case("machining boundary")
-    });
+    let boundary = position_of(&whole, "Boundary row", |t| t == "Boundary");
     assert!(
         input < cuts && cuts < boundary,
-        "want Input < Cuts < Machining Boundary: {whole:?}"
+        "want Input < Cuts < Boundary: {whole:?}"
     );
     let passes = tab_texts(
         &session,
@@ -687,10 +693,16 @@ fn the_selection_section_is_at_the_top_p4_d() {
         "the Passes tab holds no selection, no Input row and no boundary: {passes:?}"
     );
 
+    // W3a: a 3D op holds the Surface row; Pick is its action.
     let rough = geometry_tab_texts(&session, crate::state::toolpath::OperationType::Adaptive3d);
-    let _ = position_of(&rough, "Pick faces button", |t| {
+    let surface = position_of(&rough, "Surface row", |t| t == "Surface");
+    let pick_faces = position_of(&rough, "Pick faces action", |t| {
         t == super::geometry_tab::PICK_FACES_LABEL
     });
+    assert!(
+        surface < pick_faces,
+        "the action follows the row: {rough:?}"
+    );
 }
 
 /// P3.4: the Cuts row names the down faces of the selection (setup frame),
@@ -832,6 +844,7 @@ fn groups_of(
         note_items: &[],
         model_kinds: &kinds,
         tool_diameter: Some(6.0),
+        findings: &[],
     };
     (
         super::selection_section::list_groups(&inputs, &report),
@@ -990,6 +1003,7 @@ fn the_geometry_tab_paints_the_groups_and_the_row_hover_gt2() {
                 &entry,
                 &inputs,
                 &mut selection_ui,
+                &[],
                 &mut events,
             );
         });
@@ -1073,7 +1087,7 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
         finding(ids::PROJECT_PIN_WALL_THIN, Severity::Critical),
         finding(ids::PROJECT_GENERATED_EMPTY, Severity::Critical),
     ];
-    let placement = super::placement::place(&list);
+    let placement = super::placement::place(&list, &entry.operation);
     let badges = super::tab_badges::compute_tab_badges(&entry, &placement, None);
     assert_eq!(
         badges.for_tab(ToolpathTab::Geometry),
@@ -1579,6 +1593,7 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     None,
                     None,
                     &mut crate::state::pick::SelectionUi::default(),
+                    super::linking_dressup::Fields::default(),
                     &mut events,
                 );
             } else {
@@ -1659,7 +1674,14 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
             }
             let mut out = ctx.run_ui(input, |ui| {
                 ui.set_max_width(264.0);
-                super::operations::draw_adaptive3d_params(ui, &mut cfg, None, suggestion, false);
+                super::operations::draw_adaptive3d_params(
+                    ui,
+                    &mut cfg,
+                    None,
+                    suggestion,
+                    false,
+                    Default::default(),
+                );
             });
             if pass == 2 {
                 for clipped in &out.shapes {
@@ -1689,9 +1711,9 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
     assert_eq!(run(cp, Some(ga), true), (1, ga), "a click writes the draft");
 }
 
-/// G-D (ruling D-1): with the boundary on, the Passes tab draws the `Source:`
-/// combo and no `Boundary: …` row above it; the row's text is the combo's
-/// hover. The row repeated the combo one line above.
+/// G-D (ruling D-1): with the boundary on, the Geometry tab draws the
+/// Boundary row (W3a: the switch and the source in one combo) and no
+/// `Boundary: …` summary row above it; the summary is the row hover.
 #[test]
 fn the_boundary_summary_is_the_source_hover_d1() {
     use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
@@ -1728,6 +1750,7 @@ fn the_boundary_summary_is_the_source_hover_d1() {
                 &mut crate::state::pick::SelectionUi::default(),
                 &mut crate::state::panels::ContainmentAutoCorrect::default(),
                 &mut super::toolpath_panel::ReachView::default(),
+                &[],
                 &mut events,
             );
         });
@@ -1742,12 +1765,69 @@ fn the_boundary_summary_is_the_source_hover_d1() {
         out.textures_delta.clear();
     }
     assert!(
-        texts.iter().any(|t| t == "Source:"),
-        "non-vacuity: the boundary controls draw: {texts:?}"
+        texts.iter().any(|t| t == "Boundary") && texts.iter().any(|t| t == "Stock"),
+        "non-vacuity: the Boundary row draws its source: {texts:?}"
     );
     assert!(
         !texts.iter().any(|t| t.starts_with("Boundary:")),
         "the summary row is back: {texts:?}"
+    );
+}
+
+/// W3e (F5): an op that plans its own entries (3D Rough) draws no dressup
+/// Entry style row, so the inspector never shows a second Entry style
+/// control. A Pocket draws it. "Lead-in / out" draws for both (the anchor).
+#[test]
+fn the_entry_style_row_hides_where_the_op_owns_the_entry_w3e() {
+    use crate::state::toolpath::{OperationType, ToolpathEntry};
+    let (session, _mesh) = one_pocket_session();
+    let tc = &session.toolpath_configs()[0];
+    let texts_for = |op: OperationType| {
+        let mut entry = ToolpathEntry::for_operation(
+            tc.id,
+            "Case".to_owned(),
+            tc.tool_id.expect("the case tool"),
+            tc.model_id,
+            op,
+        );
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let mut texts: Vec<String> = Vec::new();
+        for _ in 0..2 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                super::linking_dressup::draw_linking_params(
+                    ui,
+                    &mut entry,
+                    None,
+                    None,
+                    super::linking_dressup::Fields::default(),
+                );
+            });
+            texts = out
+                .shapes
+                .iter()
+                .filter_map(|c| match &c.shape {
+                    egui::epaint::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            out.textures_delta.clear();
+        }
+        texts
+    };
+    let pocket = texts_for(OperationType::Pocket);
+    let rough = texts_for(OperationType::Adaptive3d);
+    for texts in [&pocket, &rough] {
+        assert!(
+            texts.iter().any(|t| t == "Lead-in / out"),
+            "non-vacuity: the tab draws: {texts:?}"
+        );
+    }
+    assert!(pocket.iter().any(|t| t == "Entry style"), "{pocket:?}");
+    assert!(
+        !rough.iter().any(|t| t.contains("Entry style")),
+        "{rough:?}"
     );
 }
 
@@ -1772,7 +1852,9 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
     crate::ui::tokens::apply_fonts(&ctx);
     let mut advanced_at: Option<egui::Pos2> = None;
     let mut texts: Vec<String> = Vec::new();
-    for pass in 0..6 {
+    // W3e: the section opens with an animation, and the frames have no
+    // time, so the test runs enough frames for the open to end.
+    for pass in 0..20 {
         let mut input = egui::RawInput::default();
         if pass == 2
             && let Some(pos) = advanced_at
@@ -1788,7 +1870,11 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
             }
         }
         let mut out = ctx.run_ui(input, |ui| {
-            super::linking_dressup::draw_linking_params(ui, &mut entry, None, None);
+            super::linking_dressup::draw_linking_advanced(
+                ui,
+                &mut entry,
+                super::linking_dressup::Fields::default(),
+            );
         });
         texts = out
             .shapes
@@ -1806,11 +1892,11 @@ fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
         out.textures_delta.clear();
     }
     assert!(
-        texts.iter().any(|t| t == "Feed rate optimization"),
+        texts.iter().any(|t| t == "Feed optimization"),
         "non-vacuity: the Advanced section is open: {texts:?}"
     );
-    assert!(texts.iter().any(|t| t == "Max Rate:"), "{texts:?}");
-    assert!(!texts.iter().any(|t| t.contains("Ramp Rate")), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "Max rate"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("Ramp rate")), "{texts:?}");
 }
 
 /// G-E (3): the face of each rest-boundary refusal, and the `⟳` action
@@ -1978,8 +2064,7 @@ fn the_containment_hover_and_the_region_count_g_c() {
 
 /// G-C (§2 c, d): with a larger consumer on a `Center` containment, the
 /// Containment row draws `Use Inside`, and a click writes `Inside` to the
-/// draft. When `Inside` would collapse, the act is off and the click
-/// writes nothing. The two options `Center` and `Outside` are refused in
+/// draft. When `Inside` would collapse, the row draws no act (W3a). The two options `Center` and `Outside` are refused in
 /// the combo (their hover is the sizes).
 #[test]
 fn use_inside_sits_on_the_containment_row_g_c() {
@@ -2044,6 +2129,7 @@ fn use_inside_sits_on_the_containment_row_g_c() {
                     &mut crate::state::pick::SelectionUi::default(),
                     &mut badge,
                     &mut super::toolpath_panel::ReachView::default(),
+                    &[],
                     &mut events,
                 );
             });
@@ -2064,10 +2150,12 @@ fn use_inside_sits_on_the_containment_row_g_c() {
         (true, BoundaryContainment::Inside),
         "the act writes Inside"
     );
+    // W3a: a quiet action has no disabled form, so the row offers no act
+    // when Inside collapses; the Danger hover says why.
     assert_eq!(
         run(InsideAnswer::Collapses("c".to_owned())),
-        (true, BoundaryContainment::Center),
-        "the act is off when Inside collapses"
+        (false, BoundaryContainment::Center),
+        "no act when Inside collapses"
     );
 }
 
@@ -2079,7 +2167,7 @@ fn the_waterline_row_reads_helical_w1b() {
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        super::operations::draw_waterline_params(ui, &mut cfg, None);
+        super::operations::draw_waterline_params(ui, &mut cfg, None, Default::default());
     });
     let texts: Vec<String> = out
         .shapes
@@ -2090,10 +2178,14 @@ fn the_waterline_row_reads_helical_w1b() {
         })
         .collect();
     out.textures_delta.clear();
-    assert!(texts.iter().any(|t| t == "Helical:"), "{texts:?}");
-    assert!(!texts.iter().any(|t| t == "Continuous:"), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "Helical"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t == "Continuous"), "{texts:?}");
     assert!(
-        super::help_for(crate::state::toolpath::OperationType::Waterline, "helical").is_some(),
+        super::linking_dressup::help_for(
+            crate::state::toolpath::OperationType::Waterline,
+            "helical"
+        )
+        .is_some(),
         "the row's hover is the registry help"
     );
 }
@@ -2116,14 +2208,21 @@ fn contour_each_level_shows_where_it_acts_c4() {
             ..Adaptive3dConfig::default()
         };
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            super::operations::draw_adaptive3d_params(ui, &mut cfg, None, None, offered);
+            super::operations::draw_adaptive3d_params(
+                ui,
+                &mut cfg,
+                None,
+                None,
+                offered,
+                Default::default(),
+            );
         });
         let n = out
             .shapes
             .iter()
             .filter(|c| {
                 matches!(&c.shape, egui::epaint::Shape::Text(t)
-                    if t.galley.job.text == "Contour each level:")
+                    if t.galley.job.text == "Contour each level")
             })
             .count();
         out.textures_delta.clear();
@@ -2151,7 +2250,7 @@ fn contour_each_level_shows_where_it_acts_c4() {
         "C4b: a By Area rough, fresh or rest, draws it"
     );
     assert!(
-        super::help_for(
+        super::linking_dressup::help_for(
             crate::state::toolpath::OperationType::Adaptive3d,
             "contour_each_level"
         )
@@ -2209,6 +2308,7 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
                     &mut crate::state::pick::SelectionUi::default(),
                     &mut crate::state::panels::ContainmentAutoCorrect::default(),
                     &mut super::toolpath_panel::ReachView::default(),
+                    &[],
                     &mut events,
                 );
             });
@@ -2261,7 +2361,7 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
     crate::ui::tokens::apply_fonts(&ctx);
 
     // The combo shows the stored source; the click opens it.
-    click_label(&ctx, &mut entry, &inputs, "Model Silhouette");
+    click_label(&ctx, &mut entry, &inputs, "Model silhouette");
     click_label(&ctx, &mut entry, &inputs, "Selection");
     assert!(
         matches!(entry.boundary.source, BoundarySource::Selection { .. }),
@@ -2272,10 +2372,189 @@ fn the_selection_source_button_drops_the_diameter_offset_r7a() {
     assert!(entry.boundary.enabled, "the boundary stays on");
 
     click_label(&ctx, &mut entry, &inputs, "Selection");
-    click_label(&ctx, &mut entry, &inputs, "Model Silhouette");
+    click_label(&ctx, &mut entry, &inputs, "Model silhouette");
     assert_eq!(
         entry.boundary,
         BoundaryConfig::for_3d_op(diameter),
         "Model Silhouette takes the tool diameter offset again"
+    );
+}
+
+/// One op of `config` with `dressups` over one flat STL model, with one end
+/// mill. The W3f drawn-field sentry draws each tab of it.
+fn one_op_session(
+    config: crate::state::toolpath::OperationConfig,
+    dressups: rs_cam_core::compute::config::DressupConfig,
+) -> rs_cam_core::session::ProjectSession {
+    use rs_cam_core::compute::stock_config::{ModelKind, ModelUnits};
+    use rs_cam_core::session::{LoadedModel, ProjectSessionBuilder, ToolpathConfig};
+    use std::sync::Arc;
+
+    let tool = rs_cam_core::compute::tool_config::ToolConfig::new_default(
+        rs_cam_core::compute::ToolId::from_raw(1),
+        rs_cam_core::compute::tool_config::ToolType::EndMill,
+    );
+    let mut builder = ProjectSessionBuilder::new().tool(tool);
+    let _ = builder.add_model(LoadedModel {
+        id: rs_cam_core::ids::ModelId::from_raw(0),
+        path: std::path::PathBuf::from("flat.stl"),
+        name: "Flat".to_owned(),
+        kind: Some(ModelKind::Stl),
+        mesh: Some(Arc::new(rs_cam_core::mesh::make_test_flat(40.0))),
+        items: Default::default(),
+        enriched_mesh: None,
+        units: Some(ModelUnits::Millimeters),
+        winding_report: None,
+        load_error: None,
+        import_options: Default::default(),
+        import_report: None,
+        drawing: Default::default(),
+    });
+    let _ = builder
+        .add_toolpath(
+            0,
+            ToolpathConfig {
+                shoe: Default::default(),
+                id: rs_cam_core::compute::ToolpathId::from_raw(0),
+                name: "Case".to_owned(),
+                enabled: true,
+                operation: config,
+                dressups,
+                heights: Default::default(),
+                tool_id: Some(rs_cam_core::ids::ToolId::from_raw(1)),
+                model_id: rs_cam_core::ids::ModelId::from_raw(0),
+                pre_gcode: None,
+                post_gcode: None,
+                boundary: Default::default(),
+                boundary_inherit: true,
+                stock_source: Default::default(),
+                coolant: Default::default(),
+                debug_options: Default::default(),
+                feeds_provenance: Default::default(),
+                rest_analysis: Default::default(),
+                planner_origin: None,
+            },
+        )
+        .expect("the fixture toolpath is addable");
+    builder.build()
+}
+
+/// The field keys that each tab of the real inspector draws for an op of
+/// `config` with `dressups`: the key, and the tab whose rows read its
+/// state (`placement::record_drawn`). Only the keys a finding can anchor
+/// to (`known_field_names`) count.
+fn painted_fields(
+    config: &crate::state::toolpath::OperationConfig,
+    dressups: &rs_cam_core::compute::config::DressupConfig,
+) -> std::collections::BTreeMap<String, Vec<ToolpathTab>> {
+    use rs_cam_core::diagnostics::presentation::known_field_names;
+    let session = one_op_session(config.clone(), dressups.clone());
+    let id = session.toolpath_configs()[0].id;
+    let gui = crate::state::runtime::GuiState::default();
+    let mut out: std::collections::BTreeMap<String, Vec<ToolpathTab>> = Default::default();
+    for &tab in ToolpathTab::ALL {
+        if !tab.applies(config) {
+            continue;
+        }
+        let mut snapshot =
+            super::toolpath_panel_snapshot(id, &session, &gui).expect("the case toolpath");
+        let inputs = super::toolpath_panel_inputs(id, &session, &gui, None, Some(tab), false);
+        let ctx = egui::Context::default();
+        crate::ui::tokens::apply(&ctx);
+        crate::ui::tokens::apply_fonts(&ctx);
+        let keys = super::placement::record_drawn(|| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let mut events = Vec::new();
+                let _ = super::toolpath_panel::draw_toolpath_panel(
+                    ui,
+                    &mut snapshot,
+                    &inputs,
+                    &mut super::toolpath_panel::ReachView::default(),
+                    &mut crate::state::pick::SelectionUi::default(),
+                    &mut crate::state::panels::HeightsRefusal::default(),
+                    &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                    &mut events,
+                );
+            });
+            out.textures_delta.clear();
+        });
+        for key in keys {
+            if known_field_names().any(|k| k == key) {
+                out.entry(key).or_default().push(tab);
+            }
+        }
+    }
+    out
+}
+
+/// W3f: THE op-aware placement (`placement::drawn_fields`) states the
+/// field rows that the real inspector paints.
+///
+/// For every op, and for each drill cycle of both drill ops, the test draws
+/// every tab headless and records the rows that read a field state
+/// (`placement::record_drawn`). For each key a finding can anchor to
+/// (`presentation::anchor_field_names`):
+///
+/// - a key in `drawn_fields` is painted, on the tab that `field_tab` names;
+/// - a painted key is in `drawn_fields`.
+///
+/// A key whose row the op does not paint is not in the table, so its
+/// finding goes to the issue stack and is never lost.
+///
+/// Red proof: add `peck_depth` for every cycle, or drop the `scallop_height`
+/// exception of the Drop Cutter: the test names the op and the key.
+#[test]
+fn drawn_field_rows_match_the_painted_rows_w3f() {
+    use crate::state::toolpath::{OperationConfig, OperationType};
+    use rs_cam_core::compute::operation_configs::DrillCycleType;
+    use rs_cam_core::diagnostics::presentation::anchor_field_names;
+
+    let mut cases: Vec<(String, OperationConfig)> = OperationType::ALL
+        .iter()
+        .map(|op| (format!("{op:?}"), OperationConfig::new_default(*op)))
+        .collect();
+    for cycle in [
+        DrillCycleType::Simple,
+        DrillCycleType::Dwell,
+        DrillCycleType::Peck,
+        DrillCycleType::ChipBreak,
+    ] {
+        for op in [OperationType::Drill, OperationType::AlignmentPinDrill] {
+            let mut config = OperationConfig::new_default(op);
+            match &mut config {
+                OperationConfig::Drill(c) => c.cycle = cycle,
+                OperationConfig::AlignmentPinDrill(c) => c.cycle = cycle,
+                _ => {}
+            }
+            cases.push((format!("{op:?} {cycle:?}"), config));
+        }
+    }
+    let anchored = anchor_field_names();
+    let mut errors = Vec::new();
+    let mut drawn_count = 0_usize;
+    for (name, config) in &cases {
+        let painted = painted_fields(config, &Default::default());
+        let drawn = super::placement::drawn_fields(config);
+        drawn_count += drawn.len();
+        for key in &anchored {
+            match (drawn.get(key), painted.get(*key)) {
+                (Some(tab), Some(tabs)) if !tabs.contains(tab) => errors.push(format!(
+                    "{name}: `{key}` is on {tab:?} in the table, painted on {tabs:?}"
+                )),
+                (Some(tab), None) => errors.push(format!(
+                    "{name}: `{key}` is on {tab:?} in the table, and no row paints it"
+                )),
+                (None, Some(tabs)) => errors.push(format!(
+                    "{name}: a row on {tabs:?} paints `{key}`, and the table does not hold it"
+                )),
+                _ => {}
+            }
+        }
+    }
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+    assert!(
+        drawn_count > 200 && anchored.len() > 10,
+        "non-vacuity: {drawn_count} drawn rows, {} anchored keys",
+        anchored.len()
     );
 }

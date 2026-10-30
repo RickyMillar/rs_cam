@@ -875,6 +875,12 @@ fn the_hand_rolled_emphasis_list_is_not_vacuous_ui03() {
 // UI-10 converted every labelled row that already sits in a 2-column
 // parameter grid. What is left is listed below with the reason it is not a
 // `ValueRow` row. The count only ever goes down.
+//
+// W3f (2026-10-30): the inspector field rows draw their numbers through the
+// kit (`components::number`: `PropRow::number`, `optional_number`,
+// `number_field`, `optional_number_field`). The op editors, the Linking,
+// Feeds and Heights tabs and the shoe row hold no raw `DragValue::new`;
+// their allowance rows are gone. Each row left matches its file exactly.
 
 /// Files that may still name `egui::DragValue::new`, with the count and the
 /// reason. `ui/components/` is exempt by folder: it holds the renderers.
@@ -886,33 +892,10 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
          there is no label:value row to render",
     ),
     (
-        "ui/properties/toolpath_panel/tabs/geometry.rs",
-        1,
-        "the boundary offset draws in `ui.horizontal`; `ValueRow::show` calls \
-         `ui.end_row()` and needs a grid",
-    ),
-    (
-        "ui/properties/toolpath_panel/tabs/passes.rs",
-        3,
-        "the three rest-analysis dials draw in `ui.horizontal`; \
-         `ValueRow::show` calls `ui.end_row()` and needs a grid",
-    ),
-    (
         "ui/properties/stock.rs",
         1,
         "the padding draws in a `ui.horizontal` row (P7 moved the pin rows \
          to `ui/properties/pins/`, as `ValueRow` rows)",
-    ),
-    (
-        "ui/properties/operations/surface_3d.rs",
-        2,
-        "two integer fields (`ValueRow` edits an `f64`)",
-    ),
-    (
-        "ui/properties/operations/boundary_2d.rs",
-        2,
-        "integer fields: tab count and the one finishing-pass row that \
-         Pocket and Profile share (IC1)",
     ),
     (
         "ui/properties/setup.rs",
@@ -934,12 +917,6 @@ const RAW_DRAG_VALUE_ALLOWANCE: &[(&str, usize, &str)] = &[
     ),
     ("ui/properties/tool.rs", 1, "the flute count is an integer"),
     ("ui/properties/post.rs", 1, "the spindle speed is a `u32`"),
-    (
-        "ui/properties/operations/mod.rs",
-        1,
-        "the heights ladder is a 4-column grid; `ValueRow` ends the row after \
-         two cells",
-    ),
     (
         "ui/properties/model_sim_panels.rs",
         1,
@@ -997,8 +974,10 @@ fn a_labelled_numeric_row_is_the_kit_element_ui10() {
 
     assert!(
         over.is_empty(),
-        "these files draw a raw DragValue where `components::ValueRow` is \
-         the renderer. A labelled numeric parameter inside a 2-column grid \
+        "these files draw a raw DragValue where the kit is the renderer. A \
+         field row is `PropRow::number` / `PropRow::optional_number`, a \
+         field inside a composite row is `components::number_field`, and a \
+         labelled numeric parameter inside a 2-column grid \
          is `ValueRow::new(label, &mut value, suffix, speed, range)`, and a \
          panel that records edits feeds `out.value_response` to \
          `PanelEdit::drag` so the commit rule stays the panel's own. A row \

@@ -90,6 +90,9 @@ pub(in crate::ui::properties) struct OpDrawCtx<'a> {
     /// C4: the machining boundary of the draft is on. With a rest source
     /// (`stock_source`), the 3D Rough offers "Contour each level".
     pub boundary_enabled: bool,
+    /// W3b: the field state of each parameter row, from
+    /// `placement::place(..).by_field`. Every editor passes it to its rows.
+    pub fields: crate::ui::properties::linking_dressup::Fields<'a>,
 }
 
 /// What shape diagram an operation shows under its parameter grid.
@@ -252,62 +255,69 @@ editor!(ed_face, Face, |ui, cfg, cx| draw_face_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.fields
 ));
 editor!(ed_pocket, Pocket, |ui, cfg, cx| draw_pocket_params(
     ui,
     cfg,
     cx.pills,
-    cx.model_areas
+    cx.model_areas,
+    cx.fields
 ));
 editor!(ed_profile, Profile, |ui, cfg, cx| draw_profile_params(
     ui,
     cfg,
     cx.pills,
     cx.through_cut,
-    (cx.toolpath_id, &mut *cx.selection_ui)
+    (cx.toolpath_id, &mut *cx.selection_ui),
+    cx.fields
 ));
 editor!(ed_adaptive, Adaptive, |ui, cfg, cx| draw_adaptive_params(
-    ui, cfg, cx.pills
+    ui, cfg, cx.pills, cx.fields
 ));
 editor!(ed_vcarve, VCarve, |ui, cfg, cx| draw_vcarve_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.fields
 ));
 editor!(ed_inlay, Inlay, |ui, cfg, cx| draw_inlay_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.fields
 ));
 editor!(ed_inlay_plug, InlayPlug, |ui, cfg, cx| {
-    draw_inlay_plug_params(ui, cfg, cx.pills, cx.depth_caution);
+    draw_inlay_plug_params(ui, cfg, cx.pills, cx.depth_caution, cx.fields);
 });
 editor!(ed_zigzag, Zigzag, |ui, cfg, cx| draw_zigzag_params(
-    ui, cfg, cx.pills
+    ui, cfg, cx.pills, cx.fields
 ));
 editor!(ed_trace, Trace, |ui, cfg, cx| draw_trace_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.fields
 ));
 editor!(ed_drill, Drill, |ui, cfg, cx| draw_drill_params(
-    ui, cfg, cx.holes, cx.pills
+    ui, cfg, cx.holes, cx.pills, cx.fields
 ));
 editor!(ed_bore, Bore, |ui, cfg, cx| draw_bore_params(
-    ui, cfg, cx.holes
+    ui, cfg, cx.holes, cx.fields
 ));
 editor!(ed_chamfer, Chamfer, |ui, cfg, cx| draw_chamfer_params(
     ui,
     cfg,
     cx.pills,
-    cx.depth_caution
+    cx.depth_caution,
+    cx.fields
 ));
 editor!(ed_dropcutter, DropCutter, |ui, cfg, cx| {
-    draw_dropcutter_params(ui, cfg, cx.pills);
+    draw_dropcutter_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
     draw_adaptive3d_params(
@@ -316,22 +326,24 @@ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
         cx.pills,
         cx.strategy_suggestion,
         cx.stock_source == StockSource::FromRemainingStock && cx.boundary_enabled,
+        cx.fields,
     );
 });
 editor!(
     ed_waterline,
     Waterline,
-    |ui, cfg, cx| draw_waterline_params(ui, cfg, cx.pills)
+    |ui, cfg, cx| draw_waterline_params(ui, cfg, cx.pills, cx.fields)
 );
 editor!(ed_pencil, Pencil, |ui, cfg, cx| draw_pencil_params(
     ui,
     cfg,
     cx.tools,
     cx.pills,
-    cx.stock_source
+    cx.stock_source,
+    cx.fields
 ));
 editor!(ed_scallop, Scallop, |ui, cfg, cx| draw_scallop_params(
-    ui, cfg, cx.pills
+    ui, cfg, cx.pills, cx.fields
 ));
 editor!(ed_unified_finish, UnifiedFinish, |ui, cfg, cx| {
     draw_unified_finish_params(
@@ -340,28 +352,29 @@ editor!(ed_unified_finish, UnifiedFinish, |ui, cfg, cx| {
         cx.pills,
         cx.resolved_claims_reference,
         cx.stock_source,
+        cx.fields,
     );
 });
 editor!(ed_steep_shallow, SteepShallow, |ui, cfg, cx| {
-    draw_steep_shallow_params(ui, cfg, cx.pills);
+    draw_steep_shallow_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_ramp_finish, RampFinish, |ui, cfg, cx| {
-    draw_ramp_finish_params(ui, cfg, cx.pills);
+    draw_ramp_finish_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_spiral_finish, SpiralFinish, |ui, cfg, cx| {
-    draw_spiral_finish_params(ui, cfg, cx.pills);
+    draw_spiral_finish_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_radial_finish, RadialFinish, |ui, cfg, cx| {
-    draw_radial_finish_params(ui, cfg, cx.pills);
+    draw_radial_finish_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_horizontal_finish, HorizontalFinish, |ui, cfg, cx| {
-    draw_horizontal_finish_params(ui, cfg, cx.pills);
+    draw_horizontal_finish_params(ui, cfg, cx.pills, cx.fields);
 });
 editor!(ed_project_curve, ProjectCurve, |ui, cfg, cx| {
-    draw_project_curve_params(ui, cfg, cx.models, cx.pills);
+    draw_project_curve_params(ui, cfg, cx.models, cx.pills, cx.fields);
 });
 editor!(ed_alignment_pin_drill, AlignmentPinDrill, |ui, cfg, cx| {
-    draw_alignment_pin_drill_params(ui, cfg, cx.holes, cx.pills);
+    draw_alignment_pin_drill_params(ui, cfg, cx.holes, cx.pills, cx.fields);
 });
 
 // ── The bespoke diagrams ────────────────────────────────────────────────

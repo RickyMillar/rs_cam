@@ -1,8 +1,8 @@
 //! The Explore window: the frame, its size policy and its one body call.
 //!
 //! This file holds ONLY the container. The body it draws lives in
-//! [`super::explore`]; the inspector surfaces in [`super::compare`] and
-//! [`super::why`] are not reached from here at all.
+//! [`super::explore`], which draws the comparison card of
+//! [`super::compare`] above the nomogram (W3c); this file makes one call.
 
 use super::explore;
 use super::shared::toolpath_name;

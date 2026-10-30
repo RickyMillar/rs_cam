@@ -10,11 +10,15 @@ use crate::ui::properties::operations::{draw_height_diagram, draw_heights_params
 /// P3.1: the diagram and the rows read THE heights of the session
 /// (`ProjectSession::toolpath_heights`). When they do not resolve, the tab
 /// names the error and draws no row: a row needs the stock and the model Z.
+///
+/// W3d: the rows are one column of `PropRow`s. A finding that `placement`
+/// anchors to a height key or to `floor` is the state of its row.
 pub(in crate::ui::properties::toolpath_panel) fn draw_heights_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
     inputs: &crate::ui::properties::ToolpathPanelInputs,
     heights_refusal: &mut crate::state::panels::HeightsRefusal,
+    placement: &crate::ui::properties::placement::Placement<'_>,
     events: &mut Vec<AppEvent>,
 ) {
     heights_refusal.scope(entry.id);
@@ -28,11 +32,11 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_heights_tab(
         }
         None => None,
     };
-    // F1.19 / G-BOTTOMPIN: the Bottom row is annotated per operation,
+    // F1.19 / G-BOTTOMPIN: the hover of the Bottom row is per operation,
     // so the panel needs the operation. Read before the mutable
     // borrow of `entry.heights`; `OperationType` is `Copy`.
     // F-6 / R33: the diagram takes the same operation, so its Bottom
-    // line agrees with the sentence the panel prints beside the row.
+    // line agrees with the hover of the row.
     let op_type = entry.operation.op_type();
     // P3.7, D6: the floor of an `OpFloor` op. The diagram drags it in its
     // own reference (L-10), and the Bottom height row under the Top height
@@ -43,8 +47,8 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_heights_tab(
             crate::ui::properties::FloorInputs::new(answer, &entry.heights, op_report(inputs))
         })
     });
-    // G-DEPTHSTOCK: the caution of a floor below the stock bottom goes
-    // with the Bottom height row. Read before the mutable borrows.
+    // G-DEPTHSTOCK: the caution of a floor below the stock bottom is the
+    // state of the Bottom height row. Read before the mutable borrows.
     let depth_caution = answer.and_then(|answer| {
         operations::depth_beyond_stock(&entry.operation, &entry.heights, answer)
     });
@@ -76,6 +80,7 @@ pub(in crate::ui::properties::toolpath_panel) fn draw_heights_tab(
             inputs: floor_inputs.as_ref(),
             depth_caution: depth_caution.as_ref(),
         }),
+        &placement.by_field,
         heights_refusal,
     );
     if let Some(floor) = floor

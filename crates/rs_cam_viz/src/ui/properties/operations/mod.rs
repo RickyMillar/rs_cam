@@ -16,7 +16,7 @@ pub(super) use boundary_2d::{
     draw_adaptive_params, draw_face_params, draw_inlay_params, draw_inlay_plug_params,
     draw_pocket_params, draw_profile_params, draw_vcarve_params, draw_zigzag_params,
 };
-pub(super) use drill::{draw_alignment_pin_drill_params, draw_drill_params};
+pub(super) use drill::{cycle_draws_peck, draw_alignment_pin_drill_params, draw_drill_params};
 pub(super) use engrave::{draw_chamfer_params, draw_trace_params};
 pub(super) use finishing::{
     draw_horizontal_finish_params, draw_radial_finish_params, draw_ramp_finish_params,
@@ -31,7 +31,6 @@ pub(super) use surface_3d::{
 // The P4 split moved three topics into children beside this file. Each name
 // keeps its module path through these re-exports, so `ui/properties/mod.rs`
 // and the sibling operation editors import exactly what they imported before.
-pub(crate) use boundary_2d::BOTTOM_HEIGHT_LABEL;
 pub use height_diagram::{
     DiagramFloor, FaceFloor, FloorInputs, FloorRun, admit_heights_edit, draw_height_diagram,
     floor_runs, pick_line, round_pin,
@@ -52,6 +51,9 @@ pub(in crate::ui::properties) use validate::{hole_refusal, rest_consumer_refusal
 use crate::state::toolpath::{
     HeightContext, HeightMode, HeightReference, HeightsConfig, OperationType, ReferenceOffset,
 };
+use crate::ui::components::{NumberSpec, PropRow, Role, number_field, optional_number_field};
+use crate::ui::properties::placement;
+use rs_cam_core::compute::floor::{Floor, FloorRefusal};
 
 // Feed / plunge editing moved off the per-op Geometry panel into the
 // Feeds & Speeds tab's SPEED section (W3.2) — the `draw_feed_params` helper
@@ -121,121 +123,197 @@ fn commit_height_row(mode: &mut HeightMode, display: ReferenceOffset, edited: bo
     }
 }
 
-/// F360-style height row: [offset value] [from Reference ▾]
-///
-/// `default_z` is the absolute Z the core resolver produces for this row (see
-/// [`height_row_display`]). An `Auto` row displays that value and stays `Auto`
-/// until the user actually edits the row.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is a separate input that the callers supply"
-)]
-fn draw_height_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    tooltip: &str,
-    mode: &mut HeightMode,
-    default_ref: HeightReference,
-    default_z: f64,
-    ctx: &HeightContext,
-    id_salt: &str,
-) {
-    let mut display = height_row_display(mode, default_ref, default_z, ctx);
+/// The findings of the toolpath by field key (`Placement::by_field`).
+pub(in crate::ui::properties) type FieldFindings<'a> =
+    std::collections::BTreeMap<&'static str, Vec<&'a rs_cam_core::diagnostics::Diagnostic>>;
 
-    ui.label(label)
-        .on_hover_text(format!("{tooltip} The value is in mm."));
-
-    // Q8: no " mm" suffix. The label "Bottom height:" is wider than
-    // "Clearance:", and with the suffix the row did not fit the 240-point
-    // rail. Every height is in mm; the hover of the label says so, and the
-    // diagram above prints the Z values with no unit too.
-    let mut edited = ui
-        .add(
-            egui::DragValue::new(&mut display.offset)
-                .speed(0.5)
-                .range(-500.0..=500.0),
-        )
-        .changed();
-
-    // IC1: the combo names the reference only. The sign of the value says
-    // above or below; the hover says it in words.
-    // The combo takes what the state column leaves, so the row fits the
-    // 240-point rail; the reference truncates there and shows on hover.
-    let combo_width = (ui.available_width() - HEIGHT_STATE_COL_WIDTH)
-        .clamp(HEIGHT_REF_COMBO_MIN, HEIGHT_REF_COMBO_WIDTH);
-    let combo = egui::ComboBox::from_id_salt(format!("hr_{id_salt}"))
-        .truncate()
-        .width(combo_width)
-        .selected_text(display.reference.label())
-        .show_ui(ui, |ui| {
-            let mut picked = false;
-            for &href in HeightReference::ALL {
-                // `.clicked()` rather than `.changed()`: re-picking the
-                // reference an Auto row is merely *displaying* is still an
-                // explicit "pin it here" from the operator.
-                picked |= ui
-                    .selectable_value(&mut display.reference, href, href.label())
-                    .clicked();
-            }
-            picked
-        });
-    let combo_hover = ref_label(display.reference, display.offset);
-    combo
-        .response
-        .on_hover_text(format!("{:.1} mm {combo_hover}", display.offset.abs()));
-    edited |= combo.inner.unwrap_or(false);
-
-    commit_height_row(mode, display, edited);
-
-    // The state of the row. "auto" marks a row that is still deferring to
-    // the resolver. A pinned row (the operator typed it, picked a reference,
-    // or dragged the diagram) shows the `Auto` button, which releases it.
-    //
-    // R5 (2026-09-18): the row showed no sign that a height was pinned, so
-    // a diagram drag that pinned Top at −1.37 read like an Auto row
-    // (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2). The
-    // Auto button is the one-click release; the panel's snapshot diff
-    // stamps the edit stale, as it does for every heights write.
-    //
-    // IC1 (2026-10-13): the absolute Z moved to the hover. The diagram above
-    // the rows prints every absolute Z, and the fourth column painted past
-    // the 280-point panel.
-    let resolved = display.reference.resolve_z(ctx) + display.offset;
-    if mode.is_auto() {
-        ui.label(
-            egui::RichText::new("auto")
-                .small()
-                .color(crate::ui::tokens::DIAGRAM_DIM),
-        )
-        .on_hover_text(format!(
-            "= {resolved:.1} (auto). The resolver sets this height."
-        ));
-    } else if ui
-        .small_button("Auto")
-        .on_hover_text(format!("= {resolved:.1} (pinned). {PINNED_HINT}"))
-        .clicked()
-    {
-        *mode = HeightMode::Auto;
-    }
-
-    ui.end_row();
+/// The state of one field row of the Heights tab: the role of the outline
+/// and the problem detail on the hover (W3d).
+#[derive(Debug, Default, Clone, PartialEq)]
+struct RowState {
+    role: Option<Role>,
+    detail: Option<String>,
 }
 
-/// The widest and the narrowest reference combo on a height row (IC1).
-/// Between them the combo takes what the row leaves.
-const HEIGHT_REF_COMBO_WIDTH: f32 = 72.0;
-const HEIGHT_REF_COMBO_MIN: f32 = 40.0;
+impl RowState {
+    /// The state from the findings that `placement::place` anchors to `key`.
+    fn of(findings: &FieldFindings<'_>, key: &str) -> Self {
+        placement::note_drawn(key);
+        let list = findings.get(key).map_or(&[][..], Vec::as_slice);
+        Self {
+            role: placement::tool_role(list),
+            detail: placement::tool_hover(list),
+        }
+    }
 
-/// The width a height row keeps for its state: "auto", or the Auto button.
-const HEIGHT_STATE_COL_WIDTH: f32 = 44.0;
+    /// Raise the state to `role` when `role` ranks higher, and put `detail`
+    /// first on the hover.
+    fn raise(&mut self, role: Role, detail: &str) {
+        if self
+            .role
+            .is_none_or(|old| role.severity_rank() < old.severity_rank())
+        {
+            self.role = Some(role);
+        }
+        self.detail = Some(match self.detail.take() {
+            Some(old) => format!("{detail}\n\n{old}"),
+            None => detail.to_owned(),
+        });
+    }
+}
 
-/// The hover on a pinned height row's hint.
+/// One row of the heights grid.
+struct HeightRow<'a> {
+    /// The label, in sentence case.
+    label: &'a str,
+    /// The field key (`diagnostics::presentation::HEIGHT_KEYS`).
+    key: &'static str,
+    /// The explanation on the hover.
+    tooltip: &'a str,
+    /// The absolute Z that the core resolver gives the row (see
+    /// [`height_row_display`]).
+    default_z: f64,
+    /// The text of the reference combo while the row is `Auto`.
+    auto_label: &'a str,
+}
+
+/// The width of the value field of a height row and of the Bottom height
+/// row. The unit follows it; the reference combo takes the rest of the
+/// control.
+const HEIGHT_VALUE_WIDTH: f32 = 56.0;
+
+/// The size of the value field of a height row in the control area `ui`.
+fn height_value_size(ui: &egui::Ui) -> egui::Vec2 {
+    egui::vec2(
+        HEIGHT_VALUE_WIDTH.min(ui.available_width()),
+        ui.available_height(),
+    )
+}
+
+/// The hover of the "Auto" entry of a reference combo.
+const AUTO_HINT: &str = "The resolver sets this height from the stock, the model and the \
+     operation. It follows them when they change.";
+
+/// A height row (W3d): the absolute Z with the unit "mm" and the reference
+/// combo ("Auto", "Stock top", ...) in one `PropRow`.
+///
+/// F5: the row shows the absolute Z. The diagram, the Linking diagram and
+/// MCP `heights` show the same number. The reference and the offset are on
+/// the hover. An edit of the value keeps the reference of the row: it
+/// writes `FromReference { reference, offset: z - reference Z }`. A pick of
+/// a reference keeps the Z (ruling L-10, as the floor row does). A pick of
+/// "Auto" gives the row back to the resolver.
+///
+/// R5 (2026-09-18): a pinned row names its reference in the combo, and an
+/// `Auto` row reads "Auto", so a diagram drag that pins a height shows on
+/// the row (`planning/corne_case_analysis_2026-09-18/ANALYSIS.md` §4.2).
+///
+/// G-HEIGHTSTAB: a draw writes nothing. Only a changed value or a clicked
+/// entry writes `mode`.
+fn draw_height_row(
+    ui: &mut egui::Ui,
+    row: &HeightRow<'_>,
+    mode: &mut HeightMode,
+    ctx: &HeightContext,
+    state: &RowState,
+) {
+    let display = height_row_display(mode, HeightReference::StockTop, row.default_z, ctx);
+    let ref_z = display.reference.resolve_z(ctx);
+    let mut z = ref_z + display.offset;
+    let auto = mode.is_auto();
+    let place = format!(
+        "{:.2} mm {}",
+        display.offset.abs(),
+        ref_label(display.reference, display.offset)
+    );
+    let source = if auto {
+        format!("Auto: the resolver sets this height ({place}).")
+    } else {
+        format!("Pinned: {place}. {PINNED_HINT}")
+    };
+    let hover = format!("{}\n\n{source}", row.tooltip);
+    let selected = if auto {
+        row.auto_label
+    } else {
+        display.reference.label()
+    };
+    let mut picked: Option<HeightMode> = None;
+    let out = PropRow::new(row.label)
+        .state(state.role)
+        .hover(Some(&hover))
+        .detail(state.detail.as_deref())
+        .show(ui, |ui| {
+            // W3f: the unit sits in the well after the value, then the
+            // reference combo.
+            let value = number_field(
+                ui,
+                &mut z,
+                &NumberSpec::new(0.5)
+                    .range(ref_z - 500.0..=ref_z + 500.0)
+                    .decimals(2)
+                    .unit("mm"),
+                height_value_size(ui),
+            );
+            let combo = egui::ComboBox::from_id_salt(("height_ref", row.key))
+                .truncate()
+                .width(ui.available_width())
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .add(egui::Button::selectable(auto, "Auto"))
+                        .on_hover_text(AUTO_HINT)
+                        .clicked()
+                    {
+                        picked = Some(HeightMode::Auto);
+                    }
+                    for &href in HeightReference::ALL {
+                        let href_z = href.resolve_z(ctx);
+                        // `.clicked()`: a pick of the reference that an
+                        // Auto row only displays is still an explicit pin.
+                        if ui
+                            .add(egui::Button::selectable(
+                                !auto && display.reference == href,
+                                href.label(),
+                            ))
+                            .on_hover_text(format!(
+                                "{} is at Z {href_z:.2}. The height keeps its Z.",
+                                href.label()
+                            ))
+                            .clicked()
+                        {
+                            picked = Some(HeightMode::FromReference(ReferenceOffset {
+                                reference: href,
+                                offset: z - href_z,
+                            }));
+                        }
+                    }
+                });
+            (value, combo.response)
+        });
+    let (value, combo) = out.inner;
+    let edited = value.changed();
+    let _ = value.on_hover_text(&out.hover);
+    let _ = combo.on_hover_text(&out.hover);
+    commit_height_row(
+        mode,
+        ReferenceOffset {
+            reference: display.reference,
+            offset: z - ref_z,
+        },
+        edited,
+    );
+    if let Some(next) = picked {
+        *mode = next;
+    }
+}
+
+/// The hover of a pinned height row.
 const PINNED_HINT: &str = concat!(
     "The resolver does not move this height when the stock, ",
-    "the model or the operation changes. Click Auto to release it."
+    "the model or the operation changes. Pick Auto to release it."
 );
 
-/// Descriptive label for the reference dropdown: "above/below Stock Top" etc.
+/// Descriptive label for the reference dropdown: "above/below Stock top" etc.
 fn ref_label(reference: HeightReference, offset: f64) -> String {
     let dir = if offset >= 0.0 { "above" } else { "below" };
     format!("{dir} {}", reference.label())
@@ -346,189 +424,434 @@ const fn top_tooltip(source: rs_cam_core::session::TopSource) -> &'static str {
 const BOTTOM_Z_TOOLTIP: &str = "Deepest cut depth. The tool stops at this Z.";
 
 /// The label of the Top height row (ruling Q8: Fusion "Top height").
-pub(crate) const TOP_HEIGHT_LABEL: &str = "Top height:";
+pub(crate) const TOP_HEIGHT_LABEL: &str = "Top height";
+
+/// The label of the Bottom height row (D6, ruling Q8: Fusion "Bottom
+/// height", FreeCAD "Final Depth"). On an `OpFloor` op the row sets the
+/// floor of the op.
+pub(crate) const BOTTOM_HEIGHT_LABEL: &str = "Bottom height";
+
+/// The reference combo text of an `Auto` Top height row: the source of the
+/// resolved Top (P3.1, UX-1), so a face pick shows on the row.
+const fn top_auto_label(source: rs_cam_core::session::TopSource) -> &'static str {
+    match source {
+        rs_cam_core::session::TopSource::AutoFaces => "Auto: faces",
+        rs_cam_core::session::TopSource::AutoHoleRims => "Auto: hole rims",
+        rs_cam_core::session::TopSource::AutoStockTop | rs_cam_core::session::TopSource::Pinned => {
+            "Auto"
+        }
+    }
+}
 
 /// The floor of an `OpFloor` op on the Heights tab (D6): the draft floor
 /// that the Bottom height row edits, its references and the caution of a
 /// floor below the stock bottom.
 pub(in crate::ui::properties) struct BottomHeight<'a> {
     /// The draft floor. The caller writes it back to the config.
-    pub floor: &'a mut rs_cam_core::compute::floor::Floor,
+    pub floor: &'a mut Floor,
     /// The floor references; `None` when the heights do not resolve.
     pub inputs: Option<&'a FloorInputs>,
     /// G-DEPTHSTOCK: the floor below the stock bottom, or `None`.
     pub depth_caution: Option<&'a DepthBeyondStock>,
 }
 
-/// The Heights tab rows.
+/// The Heights tab rows (W3d): ONE column of `PropRow`s. Clearance,
+/// Retract, Feed, Top height, Bottom height.
 ///
 /// D6 (REFERENCE_AUDIT row D6, Fusion "Bottom height", FreeCAD "Final
 /// Depth"): on an op that holds a floor (`FloorOwner::OpFloor`) the row
-/// under Top height is the Bottom height row: the reference, the value and
-/// the resolved floor Z (`boundary_2d::floor_row`). It is the one editor
-/// of the floor (IC1); the Passes tab has no floor row, and no read-only
-/// Floor line remains. The other ops keep the Bottom height row of the
-/// Heights config. When the heights do not resolve, only the Bottom height
-/// row is drawn, so the floor stays editable.
+/// under Top height is the Bottom height row of the floor
+/// ([`draw_bottom_height`]). It is the one editor of the floor (IC1); the
+/// Passes tab has no floor row. The other ops keep the Bottom height row of
+/// the Heights config. When the heights do not resolve, only the Bottom
+/// height row is drawn, so the floor stays editable.
+///
+/// A problem sits on its row (design rule 3): a finding that
+/// `placement::place` anchors to the key of a row, the last refused edit
+/// (F033) and a model reference with no mesh (L-4) are the state of the row
+/// and the detail on its hover. The notes that stood under the grid are
+/// the hovers of their rows.
 pub(super) fn draw_heights_params(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
     answer: Option<&rs_cam_core::session::ToolpathHeights>,
     op_type: OperationType,
     bottom: Option<BottomHeight<'_>>,
+    findings: &FieldFindings<'_>,
     refusal: &mut crate::state::panels::HeightsRefusal,
 ) {
+    // F033: the last refused edit is the Danger state of the row it edited.
+    let now = ui.input(|i| i.time);
+    let refused = refusal
+        .field(now)
+        .zip(refusal.text(now))
+        .map(|(key, text)| (key, text.to_owned()));
+    let state_of = |key: &'static str| {
+        let mut state = RowState::of(findings, key);
+        if let Some((refused_key, text)) = &refused
+            && *refused_key == key
+        {
+            state.raise(Role::Danger, text);
+        }
+        state
+    };
+    // Without resolved heights no height-order finding exists (the order
+    // rule reads `answer.resolve`), so only the floor row is drawn.
     let Some(answer) = answer else {
         if let Some(bottom) = bottom {
-            draw_bottom_height(ui, op_type, bottom);
+            draw_bottom_height(ui, op_type, bottom, state_of("floor"));
         }
         return;
     };
     let ctx = &answer.context;
     // What an `Auto` row shows is the value the CORE resolver produces for
-    // THIS config — not a second set of defaults maintained here. The panel
-    // used to carry its own (feed_z defaulted to `stock_top + 2` while the
-    // resolver's is `retract - 2`), and because the panel then wrote its
-    // defaults into the config on render, the divergence was a silent edit
-    // rather than a visible disagreement. Rows other than `Auto` ignore this
-    // value and display their own stored offset / absolute Z.
-    // P3.1: THE session rule, so an auto Top shows the face top that
-    // generation cuts from.
+    // THIS config, not a second set of defaults kept here. P3.1: THE
+    // session rule, so an auto Top shows the face top that generation cuts
+    // from.
     let auto = answer.resolve(heights);
     let top_source = answer.top_source(heights);
+    // L-4: a model reference on a model with no mesh refuses generation. It
+    // is the Danger state of the row that reads the model.
     let model_refusal = answer.model_reference_refusal(heights);
+    let reads_model = |mode: &HeightMode| {
+        matches!(
+            mode,
+            HeightMode::FromReference(ReferenceOffset {
+                reference: HeightReference::ModelTop | HeightReference::ModelBottom,
+                ..
+            })
+        )
+    };
 
-    // F1.19 / G-BOTTOMPIN: the Bottom row's own tooltip used to say that
+    // F1.19 / G-BOTTOMPIN: the Bottom row's tooltip used to say that
     // pinning the row overrides the operation's floor. That is true on three
     // operations and false on twenty-one. The note replaces the claim on the
-    // twenty-one and names the dial that does set the floor.
+    // twenty-one and names the dial that does set the floor. The row stays
+    // editable, so an operator can still read a stored pin and set it back
+    // to Auto.
     let pin_note = bottom_z_pin_note(op_type);
     let bottom_tooltip = match pin_note {
         Some(note) => format!("{note} The row still shows the stored value."),
         None => BOTTOM_Z_TOOLTIP.to_owned(),
     };
+    let top_tip = format!("{} Now: {}.", top_tooltip(top_source), top_source.label());
 
     // F033: the rows edit a draft. The one order gate
-    // (`admit_heights_edit`) writes it after the grid, so a value that would
-    // invert the stack is refused before it reaches the config.
+    // (`admit_heights_edit`) writes it after the rows, so a value that
+    // would invert the stack is refused before it reaches the config.
     let mut draft = heights.clone();
     let op_floor = bottom.is_some();
-
-    // UI-02: 4 columns, so `param_grid` does not fit. IC1: the narrow column
-    // gap keeps the four columns inside the 280-point panel.
-    egui::Grid::new("heights_p")
-        .num_columns(4)
-        .min_col_width(crate::ui::tokens::SPACE_4)
-        .spacing([crate::ui::tokens::SPACE_2, crate::ui::tokens::SPACE_2])
-            .min_row_height(crate::ui::tokens::ROW_DENSE)
-        .show(ui, |ui| {
-            draw_height_row(
-                ui,
-                "Clearance:",
-                "Highest safe height. Rapid moves between separate operations travel at this Z.",
-                &mut draft.clearance_z,
-                HeightReference::StockTop,
-                auto.clearance_z,
-                ctx,
-                "h_clear",
-            );
-            draw_height_row(
-                ui,
-                "Retract:",
-                "Rapid travel height within an operation. Tool retracts here between cutting passes.",
-                &mut draft.retract_z,
-                HeightReference::StockTop,
-                auto.retract_z,
-                ctx,
-                "h_retract",
-            );
-            draw_height_row(
-                ui,
-                "Feed:",
-                "Approach height. Tool switches from rapid to feed rate here before plunging into material.",
-                &mut draft.feed_z,
-                HeightReference::StockTop,
-                auto.feed_z,
-                ctx,
-                "h_feed",
-            );
-            draw_height_row(
-                ui,
-                TOP_HEIGHT_LABEL,
-                top_tooltip(top_source),
-                &mut draft.top_z,
-                HeightReference::StockTop,
-                auto.top_z,
-                ctx,
-                "h_top",
-            );
-            // D6: an `OpFloor` op draws its Bottom height row (the floor)
-            // under this grid.
-            if !op_floor {
-                draw_height_row(
-                    ui,
-                    BOTTOM_HEIGHT_LABEL,
-                    &bottom_tooltip,
-                    &mut draft.bottom_z,
-                    HeightReference::StockTop,
-                    auto.bottom_z,
-                    ctx,
-                    "h_bottom",
-                );
-            }
-        });
-    // D6: the Bottom height row of an `OpFloor` op, directly under the Top
-    // height row. It writes the draft floor, not the heights.
+    let mut row = |row: HeightRow<'_>, mode: &mut HeightMode| {
+        let mut state = state_of(row.key);
+        if let Some(text) = &model_refusal
+            && reads_model(mode)
+        {
+            state.raise(Role::Danger, text);
+        }
+        draw_height_row(ui, &row, mode, ctx, &state);
+    };
+    row(
+        HeightRow {
+            label: "Clearance",
+            key: "clearance_z",
+            tooltip: "Highest safe height. Rapid moves between separate operations travel at \
+                      this Z.",
+            default_z: auto.clearance_z,
+            auto_label: "Auto",
+        },
+        &mut draft.clearance_z,
+    );
+    row(
+        HeightRow {
+            label: "Retract",
+            key: "retract_z",
+            tooltip: "Rapid travel height within an operation. The tool retracts here \
+                      between cutting passes.",
+            default_z: auto.retract_z,
+            auto_label: "Auto",
+        },
+        &mut draft.retract_z,
+    );
+    row(
+        HeightRow {
+            label: "Feed",
+            key: "feed_z",
+            tooltip: "Approach height. The tool changes from rapid to feed rate here before \
+                      it plunges into the material.",
+            default_z: auto.feed_z,
+            auto_label: "Auto",
+        },
+        &mut draft.feed_z,
+    );
+    row(
+        HeightRow {
+            label: TOP_HEIGHT_LABEL,
+            key: "top_z",
+            tooltip: &top_tip,
+            default_z: auto.top_z,
+            auto_label: top_auto_label(top_source),
+        },
+        &mut draft.top_z,
+    );
+    // D6: an `OpFloor` op draws the Bottom height row of its floor here.
+    if !op_floor {
+        row(
+            HeightRow {
+                label: BOTTOM_HEIGHT_LABEL,
+                key: "bottom_z",
+                tooltip: &bottom_tooltip,
+                default_z: auto.bottom_z,
+                auto_label: "Auto",
+            },
+            &mut draft.bottom_z,
+        );
+    }
     if let Some(bottom) = bottom {
-        draw_bottom_height(ui, op_type, bottom);
+        // The floor row is the bottom of an `OpFloor` op, so a finding
+        // anchored to `bottom_z` is its state too; no other row draws it.
+        let mut state = state_of("floor");
+        let bottom_z = state_of("bottom_z");
+        if let Some(role) = bottom_z.role {
+            state.raise(role, bottom_z.detail.as_deref().unwrap_or_default());
+        }
+        draw_bottom_height(ui, op_type, bottom, state);
+    }
+    // L-4: a model refusal that no row reads (the Bottom of an `OpFloor`
+    // op, which no row here draws) keeps one line.
+    if let Some(text) = &model_refusal {
+        let on_a_row = [
+            &draft.clearance_z,
+            &draft.retract_z,
+            &draft.feed_z,
+            &draft.top_z,
+        ]
+        .into_iter()
+        .chain((!op_floor).then_some(&draft.bottom_z))
+        .any(reads_model);
+        if !on_a_row {
+            ui.add(crate::ui::components::OneLine::new(text.as_str()));
+        }
     }
 
     let _ = admit_heights_edit(ui, heights, draft, answer, op_type, refusal);
-    // F033: the last refused edit, in DANGER, under the rows.
-    let now = ui.input(|i| i.time);
-    if let Some(text) = refusal.text(now) {
-        ui.add(crate::ui::components::OneLine::new(text).color(crate::ui::tokens::DANGER));
-    }
+}
 
-    // F1.19 / G-BOTTOMPIN: the note is drawn, not hidden behind a hover. The
-    // row above stays editable, so an operator can still read a stored pin
-    // and set it back to auto.
-    // P3.1: where the Top comes from ("auto: faces" with a face pick).
-    ui.add_space(2.0);
-    // UX-1: the hover states the rule of "auto: faces".
-    let _ = ui
-        .add(crate::ui::components::OneLine::new(format!(
-            "Top height: {}",
-            top_source.label()
-        )))
-        .on_hover_text(top_tooltip(top_source));
-    // L-4: a model reference on a model with no mesh refuses generation.
-    if let Some(refusal) = model_refusal {
-        ui.add(crate::ui::components::OneLine::new(refusal));
-    }
-    // The Bottom height row of an `OpFloor` op names the floor; the other
-    // ops print the pin note.
-    if let (Some(note), false) = (pin_note, op_floor) {
-        ui.add_space(2.0);
-        ui.add(crate::ui::components::OneLine::new(format!(
-            "Bottom height: {note}"
-        )));
+/// The hover of the reference combo of the Bottom height row (ruling L-10).
+const FLOOR_FROM_HOVER: &str = "The floor of the operation: the tool cuts down to this Z. The \
+    combo sets the reference. A change of reference keeps the floor Z: the value is \
+    expressed again from the new reference.";
+
+/// The short reason a reference is not offered, for the hover of its
+/// disabled entry.
+fn floor_reason(refusal: FloorRefusal) -> &'static str {
+    match refusal {
+        FloorRefusal::NoModelMesh => "The model has no mesh, so it has no Z extent.",
+        FloorRefusal::NoFace => "No up face is picked in the selection.",
+        FloorRefusal::OutOfDomain { .. } | FloorRefusal::AboveTop { .. } => {
+            "The floor would be at or above the Top height."
+        }
+        FloorRefusal::NotFinite => "The floor is not a finite number.",
+        FloorRefusal::FaceLost => "The floor face is not on the model now.",
+        FloorRefusal::NotAFloorItem { .. } => "The floor item is not a face.",
+        FloorRefusal::NoHoleDepth => "No hole of the selection has a known depth.",
+        FloorRefusal::NotForThisOp { .. } => "This operation cannot cut to this floor.",
+        FloorRefusal::Unset => "The floor is not set.",
     }
 }
 
-/// D6: the Bottom height row of an `OpFloor` op (`boundary_2d::floor_row`)
-/// and the G-DEPTHSTOCK caution under it, in a two-column grid.
-fn draw_bottom_height(ui: &mut egui::Ui, op_type: OperationType, bottom: BottomHeight<'_>) {
-    use crate::ui::components::UiExt as _;
+/// The resolved floor of the Bottom height row, for its hover: `Z ..`, the
+/// range of the item floors (FR-2 F25), or why the floor has no Z.
+fn resolved_floor_text(floor: &Floor, inputs: Option<&FloorInputs>) -> String {
+    let refs = inputs.map(|inputs| inputs.refs);
+    // F25: each face, each hole, or a depth from the rim of each hole.
+    let per_item = matches!(floor, Floor::EachFace { .. } | Floor::EachHole { .. })
+        || inputs.is_some_and(|inputs| inputs.hole_rims);
+    let item_floors = match inputs {
+        Some(inputs) if per_item => inputs.face_floors.as_slice(),
+        _ => &[],
+    };
+    // The floors are top first.
+    match (item_floors.first(), item_floors.last()) {
+        (Some(top), Some(bottom)) if top.z.to_bits() != bottom.z.to_bits() => {
+            return format!(
+                "Floors: Z {:.2} to {:.2}, {} floors. The row shows the lowest.",
+                bottom.z,
+                top.z,
+                item_floors.len()
+            );
+        }
+        (Some(only), Some(_)) => return format!("Floor: Z {:.2}.", only.z),
+        _ => {}
+    }
+    let z = match refs.map(|refs| refs.floor_z(floor)) {
+        Some(Ok(z)) => format!("Floor: Z {z:.2}."),
+        Some(Err(refusal)) => return format!("No floor Z: {}", floor_reason(refusal)),
+        None => return "No floor Z: the heights of the toolpath do not resolve.".to_owned(),
+    };
+    // GT-4: the face that the Geometry tab slot holds.
+    match (floor, refs.and_then(|refs| refs.floor_face_z)) {
+        (Floor::Face { .. }, Some(face_z)) => {
+            format!("{z} {}: face Z {face_z:.2}.", floor.reference_label())
+        }
+        _ => z,
+    }
+}
+
+/// D6, W3d: the Bottom height row of an `OpFloor` op (Pocket, Profile,
+/// Zigzag, Adaptive 2D, Bore, Drill; geometry selection P3.7, P6.6, R-B).
+/// It is one `PropRow` in the column of the height rows:
+///
+/// - the value is the resolved floor Z (absolute, as on every height row
+///   and in the diagram). An edit writes the floor in its reference
+///   (`FloorReferences::at_z`, ruling L-10), as a diagram drag does. The
+///   domain of the door refuses a bad value before it reaches the config.
+///   Under "Each picked face" and "Each hole floor" the value is the
+///   lowest floor; the range of the floors is on the hover (FR-2 F25);
+/// - the combo holds the references the op admits
+///   (`Floor::row_references`; UX-8: no "A picked face"). A change of
+///   reference keeps the floor Z (`FloorReferences::re_express`). An entry
+///   with no Z here, or whose value the domain refuses, is disabled with
+///   its reason. With no resolved heights the combo is disabled;
+/// - S11: an unset floor shows an empty field. The hint "set a value" does
+///   not fit the value field, so the field shows "—" and the hint is on
+///   its hover (`components::optional_number_field`, W3f).
+///   A typed Z sets the floor from the Top height;
+/// - G-DEPTHSTOCK: a floor below the stock bottom is the Caution state of
+///   the row, its detail on the hover.
+fn draw_bottom_height(
+    ui: &mut egui::Ui,
+    op: OperationType,
+    bottom: BottomHeight<'_>,
+    mut state: RowState,
+) {
     let BottomHeight {
         floor,
         inputs,
         depth_caution,
     } = bottom;
-    ui.param_grid("heights_floor", |ui| {
-        boundary_2d::floor_row(ui, op_type, floor, inputs);
-        super::depth_caution_row(ui, depth_caution);
-    });
+    let refs = inputs.map(|inputs| inputs.refs);
+    if let Some(caution) = depth_caution {
+        // F1.18: the hover names the floor and the stock, never the Bottom
+        // Z of the Heights config, which moves no motion on these ops.
+        state.raise(
+            Role::Caution,
+            &format!(
+                "{}. The cut floor sits {:.2} mm below the bottom of a {:.2} mm board, so \
+                 the tool cuts into the bed. Generate stays enabled. Check the floor, or the \
+                 stock thickness on the Stock panel.",
+                caution.message(),
+                caution.excess_mm,
+                caution.stock_thickness_mm
+            ),
+        );
+    }
+    let current = floor.clone();
+    let resolved = refs.map(|refs| refs.floor_z(&current));
+    if let Some(Err(refusal)) = resolved
+        && !matches!(refusal, FloorRefusal::Unset)
+    {
+        state.raise(
+            Role::Danger,
+            &format!("No floor Z: {}", floor_reason(refusal)),
+        );
+    }
+    let hover = format!(
+        "{FLOOR_FROM_HOVER}\n\n{}: {}\n{}",
+        current.reference_label(),
+        current.reference_help(),
+        resolved_floor_text(&current, inputs)
+    );
+    let mut typed: Option<f64> = None;
+    let mut picked: Option<Floor> = None;
+    let out = PropRow::new(BOTTOM_HEIGHT_LABEL)
+        .state(state.role)
+        .hover(Some(&hover))
+        .detail(state.detail.as_deref())
+        .show(ui, |ui| {
+            let size = height_value_size(ui);
+            // S11: with no Z to show, the field is empty. Only an unset
+            // floor takes a typed Z; a reference with no Z here takes a new
+            // reference first.
+            let unset = matches!(resolved, Some(Err(FloorRefusal::Unset)));
+            let empty = if unset {
+                rs_cam_core::compute::not_set::SET_A_VALUE_HINT
+            } else {
+                "no Z"
+            };
+            let spec = NumberSpec::new(0.1).decimals(2).empty(empty).unit("mm");
+            let mut shown = resolved.and_then(Result::ok);
+            let editable = shown.is_some() || unset;
+            let value = ui
+                .add_enabled_ui(editable, |ui| {
+                    let (response, changed) = optional_number_field(ui, &mut shown, &spec, size);
+                    if changed {
+                        typed = shown;
+                    }
+                    response
+                })
+                .inner;
+            let _ = ui
+                .add_enabled_ui(refs.is_some(), |ui| {
+                    egui::ComboBox::from_id_salt(("floor_from", op.name()))
+                        .truncate()
+                        .width(ui.available_width())
+                        .selected_text(current.reference_label())
+                        .show_ui(ui, |ui| {
+                            // UX-8: "A picked face" is not offered here.
+                            // "Use as floor" in the Geometry tab is its one
+                            // door (L-R5); a change away from it is offered.
+                            for template in Floor::row_references(op.capabilities().item_use) {
+                                let selected = current.same_reference(&template);
+                                let next = match refs {
+                                    Some(refs) if !selected => {
+                                        Some(refs.re_express(&current, template.clone()))
+                                    }
+                                    Some(_) | None => None,
+                                };
+                                let enabled = selected || matches!(next, Some(Ok(_)));
+                                let response = ui
+                                    .add_enabled(
+                                        enabled,
+                                        egui::Button::selectable(
+                                            selected,
+                                            template.reference_label(),
+                                        ),
+                                    )
+                                    .on_hover_text(template.reference_help())
+                                    .on_disabled_hover_text(match next {
+                                        Some(Err(refusal)) => floor_reason(refusal),
+                                        Some(Ok(_)) | None => "",
+                                    });
+                                if response.clicked()
+                                    && let Some(Ok(re_expressed)) = next
+                                {
+                                    picked = Some(re_expressed);
+                                }
+                            }
+                        });
+                })
+                .response
+                .on_disabled_hover_text(
+                    "The heights of the toolpath do not resolve, so no floor Z is kept.",
+                );
+            value
+        });
+    let _ = out.inner.on_hover_text(&out.hover);
+    if let (Some(z), Some(refs)) = (typed, refs) {
+        // S11: an unset floor has no reference; a typed Z sets it from the
+        // Top height, as `Floor::with_value` does for a typed depth.
+        let like = if current.is_unset() {
+            Floor::Top { depth: 0.0 }
+        } else {
+            current.clone()
+        };
+        if let Ok(moved) = refs.at_z(like, z) {
+            *floor = moved;
+        }
+    }
+    if let Some(next) = picked {
+        *floor = next;
+    }
 }
 
 // ── Stepover Pattern Diagram ─────────────────────────────────────────────
@@ -671,6 +994,39 @@ mod tests {
         assert!((display.offset - 0.4).abs() < 1e-9);
         // Still Manual — projecting it for display does not rewrite it.
         assert!(matches!(mode, HeightMode::Manual(v) if (v - 2.4).abs() < 1e-9));
+    }
+
+    /// W3d / G-HEIGHTSTAB: the `PropRow` rows draw an all-Auto config for
+    /// several frames and write nothing, so the Bottom stays unpinned.
+    #[test]
+    fn drawing_the_height_rows_writes_nothing_w3d() {
+        let hctx = zero_depth_3d_ctx();
+        let answer =
+            rs_cam_core::session::ToolpathHeights::from_context(&HeightsConfig::default(), hctx);
+        let mut heights = HeightsConfig::default();
+        let mut refusal = crate::state::panels::HeightsRefusal::default();
+        let findings = FieldFindings::new();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                draw_heights_params(
+                    ui,
+                    &mut heights,
+                    Some(&answer),
+                    OperationType::Waterline,
+                    None,
+                    &findings,
+                    &mut refusal,
+                );
+            });
+            out.textures_delta.clear();
+        }
+        assert_eq!(heights, HeightsConfig::default());
+        assert!(
+            !rs_cam_core::session::ToolpathHeights::from_context(&heights, hctx)
+                .heights
+                .bottom_pinned
+        );
     }
 
     fn session_polygon_model(id: usize) -> rs_cam_core::session::LoadedModel {

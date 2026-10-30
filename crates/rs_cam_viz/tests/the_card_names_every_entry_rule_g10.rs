@@ -219,6 +219,7 @@ fn ctx() -> egui::Context {
 
 /// Every text run the Feeds tab paints on its steady-state frame.
 fn painted_text(state: &mut AppState) -> Vec<String> {
+    open_explore(state);
     let ctx = ctx();
     let mut texts = Vec::new();
     for pass in 0..2 {
@@ -233,6 +234,8 @@ fn painted_text(state: &mut AppState) -> Vec<String> {
                         properties::draw(ui, state, &mut events);
                     });
                 });
+            let mut events = Vec::new();
+            rs_cam_viz::ui::feeds::draw(ui.ctx(), &*state, &mut events);
         });
         if pass == 1 {
             for clipped in &out.shapes {
@@ -425,4 +428,20 @@ fn the_mcp_basis_carries_plunge_and_entry_g10() {
         basis["ramp"]["value_mm_min"].as_f64(),
         shipped.ramp_feed_rate()
     );
+}
+
+/// W3c (2026-10-30): the comparison card left the Feeds tab face for the
+/// Explore window, so the reader opens the window for the toolpath on the
+/// Feeds tab and paints it beside the inspector.
+fn open_explore(state: &mut AppState) {
+    let id = state
+        .gui
+        .pending_toolpath_tab
+        .map(|(id, _)| id)
+        .or_else(|| state.session().toolpath_configs().first().map(|tc| tc.id))
+        .expect("a toolpath to explore");
+    state.feeds_modal = Some(rs_cam_viz::state::FeedsModalState {
+        toolpath_id: id,
+        explore: None,
+    });
 }

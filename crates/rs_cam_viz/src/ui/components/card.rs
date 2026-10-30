@@ -26,7 +26,12 @@ pub struct SectionHeader {
     trailing: Option<String>,
     rule: bool,
     hover: Option<String>,
+    small_caps: bool,
 }
+
+/// The letter spacing of a small-caps section label: 0.07 em, as the
+/// visual target (`.mk-sec` of the review page) sets it.
+const SMALL_CAPS_TRACKING_EM: f32 = 0.07;
 
 impl SectionHeader {
     pub fn new(title: impl Into<String>) -> Self {
@@ -35,7 +40,18 @@ impl SectionHeader {
             trailing: None,
             rule: true,
             hover: None,
+            small_caps: false,
         }
+    }
+
+    /// The small-caps section label of an inspector tab (design rule 7):
+    /// the title in capitals at `SIZE_CAPTION`, letter-spaced, in
+    /// `TEXT_FAINT`, with no rule line. Space groups the sections.
+    #[must_use]
+    pub fn small_caps(mut self) -> Self {
+        self.small_caps = true;
+        self.rule = false;
+        self
     }
 
     /// A count or a status word at the right end of the header.
@@ -68,7 +84,11 @@ impl SectionHeader {
     pub fn show(self, ui: &mut egui::Ui) {
         ui.add_space(tokens::SPACE_4);
         ui.horizontal(|ui| {
-            let title = ui.label(text::subhead(&self.title));
+            let title = if self.small_caps {
+                ui.label(small_caps_job(&self.title))
+            } else {
+                ui.label(text::subhead(&self.title))
+            };
             if let Some(hover) = &self.hover {
                 title.on_hover_text(hover);
             }
@@ -87,6 +107,22 @@ impl SectionHeader {
         }
         ui.add_space(tokens::SPACE_2);
     }
+}
+
+/// The text of a small-caps label ([`SectionHeader::small_caps`]).
+fn small_caps_job(title: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    job.append(
+        &title.to_uppercase(),
+        0.0,
+        egui::TextFormat {
+            font_id: egui::FontId::proportional(tokens::SIZE_CAPTION),
+            color: tokens::TEXT_FAINT,
+            extra_letter_spacing: tokens::SIZE_CAPTION * SMALL_CAPS_TRACKING_EM,
+            ..Default::default()
+        },
+    );
+    job
 }
 
 /// A raised, rounded surface holding a group of related things.

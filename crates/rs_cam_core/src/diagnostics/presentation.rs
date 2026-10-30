@@ -98,6 +98,22 @@ fn field_names_of_every_op() -> impl Iterator<Item = &'static str> {
         .chain(std::iter::once(SELECTION_KEY))
 }
 
+/// Every field name a finding can anchor to: each field anchor of
+/// [`TABLE`], and each value that S11 can name as not set
+/// (`compute::not_set::NOT_SET_FIELDS`). A name that [`FieldKey::parse`]
+/// refuses is not in the set. A panel that draws field rows covers these
+/// names (the GUI `placement::drawn_fields`).
+pub fn anchor_field_names() -> std::collections::BTreeSet<&'static str> {
+    let table = TABLE.iter().filter_map(|(_, anchor, _)| match anchor {
+        Anchor::Field { key } => Some(key.as_str()),
+        _ => None,
+    });
+    table
+        .chain(crate::compute::not_set::NOT_SET_FIELDS.iter().copied())
+        .filter(|name| FieldKey::parse(name).is_some())
+        .collect()
+}
+
 /// The anchor of a finding on an op of kind `op`. A field anchor that names
 /// an op parameter the op does not publish becomes [`Anchor::Operation`],
 /// so a panel never points at a field the op does not draw. Example: a

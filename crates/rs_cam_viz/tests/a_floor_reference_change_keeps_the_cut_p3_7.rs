@@ -317,14 +317,15 @@ fn a_reference_with_no_z_is_not_offered_p3_7() {
 #[test]
 fn each_floor_run_names_its_reference_and_faces_p3_8() {
     let mut s = session();
-    // One floor: "FL" with the reference of the floor.
+    // One floor: its name and Z with the reference of the floor (W3d: no
+    // "FL" code).
     let floor = Floor::Top { depth: DEPTH };
     let runs = floor_runs(Some((&floor, &inputs(&s))), f64::NAN);
     assert_eq!(runs.len(), 1);
     assert!(!runs[0].dashed);
     assert_eq!(
         runs[0].hover,
-        format!("FL: Z {FLOOR_Z:.1}, Bottom height from Top height")
+        format!("Bottom height: Z {FLOOR_Z:.2}, from Top height")
     );
 
     // Each picked face: pick the model top face too. The two faces are at
@@ -360,8 +361,8 @@ fn each_floor_run_names_its_reference_and_faces_p3_8() {
     assert_eq!(
         hovers,
         [
-            "F1: Z 0.0, 1 face, Bottom height from Each picked face",
-            "F2: Z -4.0, 1 face, Bottom height from Each picked face",
+            "Face floor 1: Z 0.00, 1 face, Bottom height from Each picked face",
+            "Face floor 2: Z -4.00, 1 face, Bottom height from Each picked face",
         ]
     );
     assert!(runs.iter().all(|r| r.dashed));
@@ -379,6 +380,6 @@ fn each_floor_run_names_its_reference_and_faces_p3_8() {
     let hovers: Vec<&str> = runs.iter().map(|r| r.hover.as_str()).collect();
     assert_eq!(
         hovers,
-        ["F1: Z -4.0, 2 faces, Bottom height from Each picked face"]
+        ["Face floor 1: Z -4.00, 2 faces, Bottom height from Each picked face"]
     );
 }

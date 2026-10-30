@@ -79,31 +79,35 @@ pub struct DiagramFloor<'a> {
 struct DiagramLine {
     z: f64,
     color: egui::Color32,
-    /// The text drawn beside the line. It carries the value, except on a
-    /// Bottom the operation does not read: there it names the state, and the
-    /// value stays in the Bottom field above (ruling R33).
+    /// The text drawn beside the line: the absolute Z, the number of the
+    /// row of the same plane (F5). On a Bottom the operation does not read
+    /// it names the state, and the value stays in the Bottom height row
+    /// (ruling R33). W3d: no code ("CZ", "FL") on the face; the name of the
+    /// line is on its hover.
     text: String,
     /// Which field index (0..5) for drag targeting.
     index: usize,
     /// P3.7: a run of one face floor under "each picked face": drawn
     /// dashed.
     dashed: bool,
-    /// The hover of a floor run of an `OpFloor` op ([`FloorRun::hover`]).
+    /// The hover of the line: the name of the plane and its Z, or
+    /// [`FloorRun::hover`]. `None` on an inert Bottom, whose hover is
+    /// [`bottom_z_pin_note`].
     hover: Option<String>,
 }
 
-/// One floor run of the height diagram of an `OpFloor` op: the one floor
-/// ("FL"), or one distinct face floor under "each picked face" ("F1",
-/// "F2", ...).
+/// One floor run of the height diagram of an `OpFloor` op: the one floor,
+/// or one distinct face floor under "each picked face" (face floor 1, 2,
+/// ...).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloorRun {
     /// The floor Z in the setup frame.
     pub z: f64,
-    /// The label beside the run: "FL -6.0" or "F2 15.0".
+    /// The label beside the run: its Z ("-6.00").
     pub text: String,
-    /// The hover of the run: the Z, the reference and, under "each picked
-    /// face", the face count ("F2: Z 15.0, 1 face, Bottom height from Each
-    /// picked face").
+    /// The hover of the run: the name, the Z, the reference and, under
+    /// "each picked face", the face count ("Face floor 2: Z 15.00, 1 face,
+    /// Bottom height from Each picked face").
     pub hover: String,
     /// A face floor draws dashed.
     pub dashed: bool,
@@ -126,8 +130,8 @@ pub fn floor_runs(floor: Option<(&Floor, &FloorInputs)>, bottom_z: f64) -> Vec<F
         let reference = floor.map_or("Floor", |(f, _)| f.reference_label());
         return vec![FloorRun {
             z,
-            text: format!("FL {z:.1}"),
-            hover: format!("FL: Z {z:.1}, Bottom height from {reference}"),
+            text: format!("{z:.2}"),
+            hover: format!("Bottom height: Z {z:.2}, from {reference}"),
             dashed: false,
         }];
     }
@@ -140,9 +144,9 @@ pub fn floor_runs(floor: Option<(&Floor, &FloorInputs)>, bottom_z: f64) -> Vec<F
             let noun = if run.faces == 1 { "face" } else { "faces" };
             FloorRun {
                 z,
-                text: format!("F{n} {z:.1}"),
+                text: format!("{z:.2}"),
                 hover: format!(
-                    "F{n}: Z {z:.1}, {} {noun}, Bottom height from {}",
+                    "Face floor {n}: Z {z:.2}, {} {noun}, Bottom height from {}",
                     run.faces,
                     Floor::EachFace { depth: 0.0 }.reference_label()
                 ),
@@ -216,8 +220,9 @@ pub fn round_pin(v: f64) -> f64 {
 /// adds a refusing break). The Heights rows, the Auto buttons and the
 /// diagram drag all write through this one gate, so a value that would
 /// invert the stack never reaches the config. A refused drag stops at the
-/// last accepted value. The refusal text is kept in `refusal` (GUI state,
-/// `state.panels.heights_refusal`, UI-09) for the Heights tab. Returns
+/// last accepted value. The refusal text and the key of the edited row are
+/// kept in `refusal` (GUI state, `state.panels.heights_refusal`, UI-09);
+/// the Heights tab draws them as the state of that row. Returns
 /// `true` when the draft was written.
 pub fn admit_heights_edit(
     ui: &egui::Ui,
@@ -243,9 +248,33 @@ pub fn admit_heights_edit(
                 .collect::<Vec<_>>()
                 .join("; ");
             let now = ui.input(|i| i.time);
-            refusal.refuse(format!("Refused: {text}."), now);
+            refusal.refuse(
+                edited_field(heights, &draft),
+                format!("Refused: {text}."),
+                now,
+            );
             false
         }
+    }
+}
+
+/// W3d: the field key of the one row that `draft` changes from `heights`,
+/// or `None` when no row or more than one row changes. The refusal of the
+/// edit is the state of that row.
+fn edited_field(heights: &HeightsConfig, draft: &HeightsConfig) -> Option<&'static str> {
+    let mut changed = [
+        ("clearance_z", &heights.clearance_z, &draft.clearance_z),
+        ("retract_z", &heights.retract_z, &draft.retract_z),
+        ("feed_z", &heights.feed_z, &draft.feed_z),
+        ("top_z", &heights.top_z, &draft.top_z),
+        ("bottom_z", &heights.bottom_z, &draft.bottom_z),
+    ]
+    .into_iter()
+    .filter(|(_, before, after)| before != after)
+    .map(|(key, _, _)| key);
+    match (changed.next(), changed.next()) {
+        (Some(key), None) => Some(key),
+        _ => None,
     }
 }
 
@@ -374,7 +403,7 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 ///
 /// ## Why the inert run carries no value
 ///
-/// Do not "fix" `BZ (not used)` back into `BZ 26.0 (not used)`.
+/// Do not "fix" `not used` back into `26.00 (not used)`.
 ///
 /// This diagram is a picture of CUT LIMITS. Every other run on it names a Z
 /// that bounds the cut. On an operation that does not read
@@ -388,17 +417,17 @@ pub(crate) fn model_profile(ctx: &HeightContext) -> ModelProfile {
 ///
 /// A second mechanism agrees. `LABEL_COLUMN_MAX_FRACTION` feeds
 /// `painter.layout` as a WRAP width, not a truncation cap, so
-/// `BZ 26.0 (not used)` would not clip. It would wrap to two rows in a
+/// `26.00 (not used)` would not clip. It would wrap to two rows in a
 /// five-row diagram, and then meet the label-collision push below.
 ///
 /// # P3.7: the floor of Pocket, Profile, Zigzag and Adaptive 2D
 ///
 /// An `OpFloor` op takes its floor from its floor field, so its bottom run
-/// is the floor, in `DANGER`: "FL" and its Z, or under "each picked face"
-/// one dashed run per distinct face floor ("F1", "F2", ...). A drag of a
+/// is the floor, in `DANGER`: its Z, or under "each picked face" one dashed
+/// run per distinct face floor, each named on its hover. A drag of a
 /// floor run writes `floor` in its current reference
 /// (`FloorReferences::at_z`, ruling L-10), on the 0.1 mm grid; a value the
-/// domain refuses is not written. "BZ (not used)" stays for `OpDial` ops.
+/// domain refuses is not written. "not used" stays for `OpDial` ops.
 pub fn draw_height_diagram(
     ui: &mut egui::Ui,
     heights: &mut HeightsConfig,
@@ -439,11 +468,11 @@ pub fn draw_height_diagram(
         .collect(),
         FloorOwner::HeightsBottom => vec![(
             resolved.bottom_z,
-            format!("BZ {:.1}", resolved.bottom_z),
+            format!("{:.2}", resolved.bottom_z),
             false,
-            None,
+            Some(format!("Bottom height: Z {:.2}", resolved.bottom_z)),
         )],
-        FloorOwner::OpDial => vec![(resolved.bottom_z, "BZ (not used)".to_owned(), false, None)],
+        FloorOwner::OpDial => vec![(resolved.bottom_z, "not used".to_owned(), false, None)],
     };
     let bottom_color = if bottom_drives_the_cut {
         tokens::DANGER
@@ -456,34 +485,34 @@ pub fn draw_height_diagram(
         DiagramLine {
             z: resolved.clearance_z,
             color: tokens::DIAGRAM_INK,
-            text: format!("CZ {:.1}", resolved.clearance_z),
+            text: format!("{:.2}", resolved.clearance_z),
             index: 0,
             dashed: false,
-            hover: None,
+            hover: Some(format!("Clearance: Z {:.2}", resolved.clearance_z)),
         },
         DiagramLine {
             z: resolved.retract_z,
             color: tokens::DIAGRAM_INK,
-            text: format!("RZ {:.1}", resolved.retract_z),
+            text: format!("{:.2}", resolved.retract_z),
             index: 1,
             dashed: false,
-            hover: None,
+            hover: Some(format!("Retract: Z {:.2}", resolved.retract_z)),
         },
         DiagramLine {
             z: resolved.feed_z,
             color: tokens::OK,
-            text: format!("FZ {:.1}", resolved.feed_z),
+            text: format!("{:.2}", resolved.feed_z),
             index: 2,
             dashed: false,
-            hover: None,
+            hover: Some(format!("Feed: Z {:.2}", resolved.feed_z)),
         },
         DiagramLine {
             z: resolved.top_z,
             color: tokens::CAUTION,
-            text: format!("TZ {:.1}", resolved.top_z),
+            text: format!("{:.2}", resolved.top_z),
             index: 3,
             dashed: false,
-            hover: None,
+            hover: Some(format!("Top height: Z {:.2}", resolved.top_z)),
         },
     ];
     lines.extend(
@@ -693,15 +722,17 @@ pub fn draw_height_diagram(
     {
         response = response.on_hover_text(note);
     }
-    // P3.8: a floor run of an `OpFloor` op names its reference, its Z and,
-    // under "each picked face", its face count. Every floor run shares
-    // `BOTTOM_LINE_INDEX` (the drag moves the floor), so the hover takes
-    // the floor run nearest the pointer.
-    if nearest_line == Some(BOTTOM_LINE_INDEX)
+    // W3d: the line under the pointer names its plane and its Z ("Feed: Z
+    // 28.00"), so the face carries no code. P3.8: a floor run of an
+    // `OpFloor` op names its reference, its Z and, under "each picked
+    // face", its face count. Every floor run shares `BOTTOM_LINE_INDEX`
+    // (the drag moves the floor), so the hover takes the line nearest the
+    // pointer.
+    if let Some(index) = nearest_line
         && let Some(pointer) = response.hover_pos()
         && let Some(hover) = lines
             .iter()
-            .filter(|line| line.index == BOTTOM_LINE_INDEX)
+            .filter(|line| line.index == index)
             .filter_map(|line| {
                 let hover = line.hover.as_ref()?;
                 Some(((pointer.y - z_to_y(line.z)).abs(), hover))

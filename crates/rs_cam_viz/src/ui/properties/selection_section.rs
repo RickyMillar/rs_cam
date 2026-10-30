@@ -3,7 +3,11 @@
 //! the notes of one selection of a toolpath.
 //!
 //! The Geometry tab (`geometry_tab.rs`) draws it for the op selection and,
-//! under "Boundary", for the boundary selection (operator ruling GT-Q7).
+//! under the Boundary row, for the boundary selection (operator ruling
+//! GT-Q7). W3a: the summary is two `PropRow`s: "Cuts" (or "Items" for the
+//! boundary) with the quiet action Pick, and off the default "Selected"
+//! with the quiet action Reset. A refusal is the state of the summary row,
+//! with its text on the hover.
 //!
 //! The list shows the SELECTED items only (operator ruling GT-Q6, L-R1):
 //! the default row while the selection holds its default rule (L-R2), one
@@ -38,16 +42,12 @@ use super::SelectionRead;
 use crate::state::pick::{OffersFor, PickMode, SelectionUi};
 use crate::state::toolpath::ToolpathId;
 use crate::ui::AppEvent;
-use crate::ui::components::{Button, DataRow, DataTable, Details, Role};
+use crate::ui::components::{Button, DataRow, DataTable, Details, PropRow, Role};
 use crate::ui::tokens;
 
 /// The most rows that a group shows before "Show N more", and the count
 /// above which a group starts closed (L-R1).
 pub(crate) const GROUP_CAP: usize = 8;
-
-/// The hover of the `Pick` button.
-const PICK_HOVER: &str = "Click items in the viewport to add them to this selection or to \
-    remove them. One Pick is on at a time.";
 
 /// The fix line of a selection that has nothing to cut while the toolpath
 /// model holds faces that the reader can cut (geometry selection P4.D).
@@ -55,7 +55,7 @@ pub(crate) const PICK_A_FACE_FIX: &str = "Fix: pick a face of the model.";
 
 /// The hover of [`PICK_A_FACE_FIX`].
 const PICK_A_FACE_HOVER: &str = "The selection holds nothing that this operation cuts, and this \
-    model holds faces. Click Pick below, then click a flat face in the viewport.";
+    model holds faces. Click Pick on the Cuts row, then click a flat face in the viewport.";
 
 /// True when the selection refuses with nothing to cut (`Empty`) and a
 /// face pick is a fix: the toolpath model holds faces, and the reader cuts
@@ -109,6 +109,10 @@ pub(crate) struct SelectionSectionInputs<'a> {
     /// for the hole size rows (P6.7): "drilled at" a diameter and the Bore
     /// helix radius. `None` with no tool, and for the boundary.
     pub tool_diameter: Option<f64>,
+    /// W3a: the findings that `placement::place` anchors to the
+    /// `selection` field. They set the state and the hover of the summary
+    /// row. Empty for the boundary selection.
+    pub findings: &'a [&'a rs_cam_core::diagnostics::Diagnostic],
 }
 
 impl SelectionSectionInputs<'_> {
@@ -148,78 +152,81 @@ pub(crate) fn draw_selection_section(
     ui_state: &mut SelectionUi,
     events: &mut Vec<AppEvent>,
 ) {
-    let report = match inputs.report {
-        Some(Ok(report)) => Some(report.as_ref()),
-        Some(Err(error)) => {
-            super::tab_badges::wrapped_small_label(ui, error.clone(), tokens::DANGER);
-            None
-        }
-        None => None,
+    // W3a: a report that the query cannot read is the Danger state of the
+    // summary row, with the error on its hover. No wrapped line.
+    let (report, read_error) = match inputs.report {
+        Some(Ok(report)) => (Some(report.as_ref()), None),
+        Some(Err(error)) => (None, Some(error.as_str())),
+        None => (None, None),
     };
 
-    // ── 1. The summary ─────────────────────────────────────────────
-    let mut table = DataTable::new(inputs.salt("selection_counts"));
-    table = table.row(cuts_row(inputs, report));
+    // ── 1. The summary: two `PropRow`s (W3a) ───────────────────────
+    // The Cuts row: what the op cuts, its field state and the quiet
+    // action Pick. A refusal, a finding of the `selection` field
+    // (`placement::place`) and a read error are its state and hover.
+    let cuts = cuts_state(inputs, report, read_error);
+    let on = ui_state.pick_is_on(inputs.toolpath_id, inputs.target);
+    let picked = PropRow::new(summary_label(inputs.target))
+        .state(cuts.state)
+        .hover(Some(summary_hover(inputs.target)))
+        .detail(cuts.detail.as_deref())
+        .action(if on { PICK_DONE } else { PICK })
+        .show_read_only(ui, cuts.value)
+        .action_clicked;
+    if picked {
+        // L-3: one Pick at a time. A click on this action replaces the
+        // mode of any other block.
+        ui_state.set_pick(if on {
+            None
+        } else {
+            Some(PickMode::new(
+                inputs.toolpath_id,
+                inputs.target,
+                inputs.item_use,
+            ))
+        });
+    }
     // GUI/MCP parity (operator rule): "Selected" is the held count, the
     // same number as MCP `selection_status`. On the default rule there is
     // no Selected row: the Cuts row says what the op cuts, and the default
-    // row says the rule (FR-2 F32).
+    // row says the rule (FR-2 F32). Reset sits on this row: away from the
+    // default is the only state in which Reset does something.
     let default = inputs.is_default();
     if !default {
         let held = report.map_or(0, |r| r.rows.len());
-        table = table.row(
-            DataRow::value("Selected", format!("{held} {}", items_word(held)))
-                .hover("The items that this selection names: the rule matches and the picks."),
-        );
-    }
-    // The hole sizes (P6.7): one row per size, after the counts.
-    let sizes = report.map_or_else(Vec::new, |report| hole_sizes(inputs, report));
-    for size in &sizes {
-        table = table.row(size.row(inputs.tool_diameter));
-    }
-    // A hole size row answers a click: Show me frames the holes of that
-    // size. The rows before it are Cuts and, off the default rule, Selected.
-    let first_size = if default { 1 } else { 2 };
-    if let Some(clicked) = table.show(ui).clicked
-        && let Some(size) = clicked.checked_sub(first_size).and_then(|at| sizes.get(at))
-    {
-        show_me(inputs, events, size.keys.clone());
-    }
-
-    // ── 2. The actions ─────────────────────────────────────────────
-    ui.horizontal(|ui| {
-        let on = ui_state.pick_is_on(inputs.toolpath_id, inputs.target);
-        let pick_button = if on {
-            Button::primary("Pick")
-        } else {
-            Button::new("Pick")
-        };
-        if ui.add(pick_button).on_hover_text(PICK_HOVER).clicked() {
-            // L-3: one Pick at a time. A click on this button replaces the
-            // mode of any other block.
-            ui_state.set_pick(if on {
-                None
-            } else {
-                Some(PickMode::new(
-                    inputs.toolpath_id,
-                    inputs.target,
-                    inputs.item_use,
-                ))
-            });
-        }
-        if ui
-            .add(Button::new("Reset").enabled(!inputs.is_default()))
-            .on_hover_text(match inputs.target {
-                SelectionTarget::Op => "Go back to the default selection of the operation.",
-                SelectionTarget::Boundary => {
-                    "Go back to the selection that the Selection source writes."
+        let reset = PropRow::new("Selected")
+            .hover(Some(match inputs.target {
+                SelectionTarget::Op => {
+                    "The items that this selection names: the rule matches and the picks. \
+                     Reset goes back to the default selection of the operation."
                 }
-            })
-            .clicked()
-        {
+                SelectionTarget::Boundary => {
+                    "The items that this selection names: the rule matches and the picks. \
+                     Reset goes back to the selection that the Selection source writes."
+                }
+            }))
+            .action("Reset")
+            .show_read_only(ui, format!("{held} {}", items_word(held)))
+            .action_clicked;
+        if reset {
             inputs.send(events, SelectionEdit::Reset);
         }
-    });
+    }
+    // The hole sizes (P6.7): one derived row per size (IC2).
+    let sizes = report.map_or_else(Vec::new, |report| hole_sizes(inputs, report));
+    if !sizes.is_empty() {
+        let mut table = DataTable::new(inputs.salt("selection_counts"));
+        for size in &sizes {
+            table = table.row(size.row(inputs.tool_diameter));
+        }
+        // A hole size row answers a click: Show me frames the holes of
+        // that size. The table holds the size rows only.
+        if let Some(clicked) = table.show(ui).clicked
+            && let Some(size) = sizes.get(clicked)
+        {
+            show_me(inputs, events, size.keys.clone());
+        }
+    }
 
     // ── 3. The filter box and 4. the selected list ─────────────────
     if let Some(report) = report {
@@ -247,7 +254,7 @@ pub(crate) fn draw_selection_section(
         draw_extend_summary(ui, inputs, report, events);
         draw_findings(ui, inputs, report, events);
         // P4.D: a new 2D op on a STEP model can start with nothing to cut.
-        // The fix is a face pick; the one Pick is in the action row.
+        // The fix is a face pick; the one Pick is on the Cuts row.
         if wants_a_face_pick(inputs, report) {
             line_with_action(
                 ui,
@@ -828,34 +835,110 @@ pub(crate) fn counts_text(report: &SelectionReport) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" \u{00B7} "))
 }
 
-/// The "Cuts" row: the counts and one status chip.
-fn cuts_row(inputs: &SelectionSectionInputs<'_>, report: Option<&SelectionReport>) -> DataRow {
-    let Some(report) = report else {
-        return DataRow::not_measured("Cuts");
-    };
-    // P4.7: the flat faces of an STL are not computed yet. No count and no
-    // refusal; the job fills the cache, and Generate computes them too.
-    if !report.faces_not_ready.is_empty() {
-        return DataRow::value("Cuts", crate::ui::pick_bar::COMPUTING_FACES)
-            .hover(
-                "The flat faces of the model are not computed yet. A background job \
-                 computes them; Generate also computes them.",
-            )
-            .status(Role::Info, "Wait");
+/// The quiet action of the summary row that turns Pick on.
+pub(crate) const PICK: &str = "Pick";
+
+/// The quiet action of the summary row while its Pick is on: it turns Pick
+/// off.
+pub(crate) const PICK_DONE: &str = "Done";
+
+/// The label of the summary row of a selection: "Cuts" for the op
+/// selection, "Items" for the boundary selection (it sits under the
+/// Boundary row, so a second "Cuts" row would read as the op).
+pub(crate) fn summary_label(target: SelectionTarget) -> &'static str {
+    match target {
+        SelectionTarget::Op => "Cuts",
+        SelectionTarget::Boundary => "Items",
     }
-    let text = counts_text(report).unwrap_or_else(|| "nothing".to_owned());
-    // One finding per note row: the items of the kinds that the op never
-    // cuts are one row (F32).
-    let never_cut = usize::from(never_cut_count(inputs, report) > 0);
-    let other_notes = report.notes.iter().filter(|n| !is_never_cut(n)).count();
-    let findings = never_cut + other_notes + report.lost.len();
-    let row = DataRow::value("Cuts", text.clone()).hover(text);
-    if report.refusal.is_some() {
-        row.status(Role::Danger, "Refused")
-    } else if findings > 0 {
-        row.status(Role::Caution, findings.to_string())
-    } else {
-        row.status(Role::Ok, "OK")
+}
+
+/// The explanation of the summary row.
+fn summary_hover(target: SelectionTarget) -> &'static str {
+    match target {
+        SelectionTarget::Op => {
+            "What this operation cuts: the count of each kind of item that it reads. \
+             Pick turns on the viewport pick for this selection."
+        }
+        SelectionTarget::Boundary => {
+            "The items that bound where the tool may go. Pick turns on the viewport pick \
+             for this selection."
+        }
+    }
+}
+
+/// What the summary row draws: the value, the field state and the problem
+/// detail of its hover.
+struct CutsState {
+    value: String,
+    state: Option<Role>,
+    detail: Option<String>,
+}
+
+/// The summary row of a selection (W3a). The state is the worst of:
+///
+/// - a report that the query cannot read (Danger);
+/// - the refusal of the report (Danger);
+/// - the findings of the `selection` field (`placement::place`);
+/// - the notes and the lost picks of the report (Caution).
+///
+/// The texts of each go on the hover, one per line.
+fn cuts_state(
+    inputs: &SelectionSectionInputs<'_>,
+    report: Option<&SelectionReport>,
+    read_error: Option<&str>,
+) -> CutsState {
+    let mut lines: Vec<String> = Vec::new();
+    let mut roles: Vec<Role> = Vec::new();
+    if let Some(error) = read_error {
+        lines.push(error.to_owned());
+        roles.push(Role::Danger);
+    }
+    if matches!(inputs.target, SelectionTarget::Op) {
+        super::placement::note_drawn(rs_cam_core::diagnostics::presentation::SELECTION_KEY);
+    }
+    if let Some(hover) = super::placement::tool_hover(inputs.findings) {
+        lines.push(hover);
+    }
+    roles.extend(super::placement::tool_role(inputs.findings));
+    let value = match report {
+        None => "N/A".to_owned(),
+        // P4.7: the flat faces of an STL are not computed yet. No count
+        // and no refusal; the job fills the cache, and Generate computes
+        // them too.
+        Some(report) if !report.faces_not_ready.is_empty() => {
+            crate::ui::pick_bar::COMPUTING_FACES.to_owned()
+        }
+        Some(report) => {
+            if let Some(refusal) = &report.refusal {
+                let text = refusal.to_string();
+                // A `selection` finding states the same refusal; the hover
+                // holds it once.
+                if !lines.iter().any(|line| line.contains(&text)) {
+                    lines.push(text);
+                }
+                roles.push(Role::Danger);
+            }
+            // One finding per note row: the items of the kinds that the op
+            // never cuts are one row (F32).
+            let never_cut = usize::from(never_cut_count(inputs, report) > 0);
+            let other_notes = report.notes.iter().filter(|n| !is_never_cut(n)).count();
+            let findings = never_cut + other_notes + report.lost.len();
+            if findings > 0 {
+                lines.push(if findings == 1 {
+                    "1 note under the list.".to_owned()
+                } else {
+                    format!("{findings} notes under the list.")
+                });
+                roles.push(Role::Caution);
+            }
+            counts_text(report).unwrap_or_else(|| "nothing".to_owned())
+        }
+    };
+    let state = roles.into_iter().min_by_key(|role| role.severity_rank());
+    CutsState {
+        value,
+        state,
+        detail: (!lines.is_empty()).then(|| lines.join("\n\n")),
     }
 }
 
@@ -1349,9 +1432,6 @@ fn draw_findings(
                 SelectionEdit::Replace(Box::new(Selection::from_parts(rules, picks, excludes))),
             );
         }
-    }
-    if let Some(refusal) = &report.refusal {
-        super::tab_badges::wrapped_small_label(ui, refusal.to_string(), tokens::DANGER);
     }
 }
 

@@ -193,10 +193,12 @@ fn the_feeds_window_has_no_mode_to_switch() {
     }
 }
 
-// ── UR4 — the modal has Explore scope only ─────────────────────────────
+// ── UR4, W3c — the modal holds one scope, one body call ────────────────
 
-/// The modal is a focused nomogram, not a second inspector. Its body may
-/// compose Explore helpers only; Compare and Why belong to the Feeds tab.
+/// The window frame makes ONE body call, to Explore. W3c (2026-10-30) moved
+/// the comparison card off the Feeds tab face (R1 seeds the speeds there),
+/// so the Explore body draws the card above the nomogram: the scope stays
+/// this operation, and the card has one home, the window.
 #[test]
 fn the_feeds_modal_body_is_explore_only() {
     let modal = strip_comments(&feeds_file("window"));
@@ -210,7 +212,17 @@ fn the_feeds_modal_body_is_explore_only() {
     );
     assert!(
         !body.contains("compare::") && !body.contains("why::"),
-        "the modal draws Compare or Why again; the Feeds tab is authoritative"
+        "the window frame draws Compare or Why itself; it makes one Explore call"
+    );
+    let explore = strip_comments(&feeds_file("explore"));
+    assert!(
+        explore.contains("compare::draw_comparison_for("),
+        "W3c: the Explore body draws the comparison card"
+    );
+    let tab = strip_comments(&read("src/ui/properties/feeds_speeds.rs"));
+    assert!(
+        tab.contains("fn draw_speed_controls(") && !tab.contains("draw_inspector_comparison"),
+        "W3c: the Feeds tab face draws the speed rows and no comparison card"
     );
 }
 

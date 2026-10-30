@@ -157,7 +157,8 @@ pub(crate) fn draw_spindle_strategy_row(
     });
 }
 
-/// Draw the modal's single Explore scope: spindle policy and charts.
+/// Draw the modal's single scope, this operation: the spindle policy, the
+/// comparison card (W3c), then the nomogram.
 pub(crate) fn draw_modal_body(
     ui: &mut egui::Ui,
     state: &AppState,
@@ -171,6 +172,9 @@ pub(crate) fn draw_modal_body(
         state.session().machine(),
         events,
     );
+    // W3c: the comparison card left the Feeds tab face. It comes first here,
+    // in the same scope (this operation): what to take, then where it lands.
+    super::compare::draw_comparison_for(ui, state, toolpath_id, events);
     ui.separator();
     let Some(preview) = super::compare::compute_preview(state, toolpath_id) else {
         return;

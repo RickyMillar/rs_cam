@@ -424,7 +424,7 @@ fn feeds_horizontal_rows_have_no_bare_labels_ur1() {
     assert!(
         bare_labels_in_horizontal_rows(card).is_empty(),
         "draw_feeds_card has bare ui.label calls in horizontal rows at lines {:?}; \
-         use a wrapping Label or wrapped_small_label so a caption cannot widen the inspector",
+         use a wrapping Label so a caption cannot widen the inspector",
         bare_labels_in_horizontal_rows(card),
     );
 

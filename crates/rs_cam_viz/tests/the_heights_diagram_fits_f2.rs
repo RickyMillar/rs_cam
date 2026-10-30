@@ -470,7 +470,7 @@ fn the_layout_still_measures_its_text_f2() {
 ///
 /// # The inert run carries NO value, and that is deliberate
 ///
-/// The assertion below asks for `BZ (not used)`, not `BZ 26.0 (not used)`.
+/// The assertion below asks for `not used`, not `26.00 (not used)`.
 /// The diagram pictures CUT LIMITS: every other run on it names a Z that
 /// bounds the cut, and an inert pin does not, because the operation floors
 /// at `top_z` minus its own depth dial. A number beside four real limits
@@ -479,9 +479,10 @@ fn the_layout_still_measures_its_text_f2() {
 ///
 /// # P3.7: the three owners
 ///
-/// `HeightsBottom` draws "BZ" and its value in `DANGER`; `OpFloor` (Pocket,
-/// Profile, Zigzag, Adaptive 2D, Bore) draws its floor "FL" in `DANGER`: the floor
-/// field is its cut limit; `OpDial` draws "BZ (not used)" in `UNKNOWN`.
+/// `HeightsBottom` draws its value in `DANGER`; `OpFloor` (Pocket,
+/// Profile, Zigzag, Adaptive 2D, Bore) draws its floor in `DANGER`: the floor
+/// field is its cut limit; `OpDial` draws "not used" in `UNKNOWN`. W3d: no
+/// run carries a code ("BZ", "FL"); the name of a line is on its hover.
 #[test]
 fn the_bottom_line_agrees_with_the_panel_r33() {
     let mut honoured = 0_usize;
@@ -492,15 +493,23 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
     for &op_type in OperationType::ALL {
         let drawn = draw_in(&ctx, &solid_ctx(), op_type);
         let reds = drawn.segment_count(tokens::DANGER);
+        // W3d: no run carries a line code; the hover names the line.
+        assert!(
+            !["CZ ", "RZ ", "FZ ", "TZ ", "BZ", "FL "]
+                .iter()
+                .any(|code| drawn.says(code)),
+            "{op_type:?}: a line code is on the face. Text runs: {:?}",
+            drawn.text_runs()
+        );
         // P3.7: an `OpFloor` op draws its floor, the one cut limit of its
-        // bottom, as "FL" in `DANGER`; it never says "not used".
+        // bottom, in `DANGER`; it never says "not used".
         if matches!(
             op_type.capabilities().floor_owner,
             rs_cam_core::compute::catalog::FloorOwner::OpFloor
         ) {
             floors += 1;
             assert!(
-                reds >= 1 && drawn.says("FL "),
+                reds >= 1,
                 "{op_type:?} takes its floor from its floor field, so the diagram must \
                  draw that floor. Text runs: {:?}",
                 drawn.text_runs()
@@ -547,7 +556,7 @@ fn the_bottom_line_agrees_with_the_panel_r33() {
                  line and changes the mark."
             );
             assert!(
-                drawn.says("BZ (not used)"),
+                drawn.says("not used"),
                 "{op_type:?} did not name the Bottom line's state. Text \
                  runs: {:?}",
                 drawn.text_runs()

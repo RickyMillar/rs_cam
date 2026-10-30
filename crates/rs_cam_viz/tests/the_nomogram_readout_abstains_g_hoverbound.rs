@@ -179,11 +179,45 @@ fn painted_with_pointer(pointer: egui::Pos2) -> Vec<String> {
     texts
 }
 
-/// The window is anchored CENTER_CENTER, so its centre is the screen's. The
-/// nomogram occupies the upper half of the body, which puts it under a point
-/// a little above centre.
+/// A point inside the plot of the nomogram, read from the painted frame:
+/// half-way down between the chart title and the "10000" RPM tick, at the
+/// x of that tick. W3c moved the comparison card into the window above the
+/// chart, so a fixed offset from the window centre went stale; the point
+/// now follows the layout.
 fn a_point_on_the_chart() -> egui::Pos2 {
-    egui::pos2(SCREEN.x * 0.5, SCREEN.y * 0.5 - 40.0)
+    let ctx = egui::Context::default();
+    tokens::apply(&ctx);
+    tokens::apply_fonts(&ctx);
+    let state = fixture();
+    let mut title_bottom = None;
+    let mut tick = None;
+    for pass in 0..3 {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+            ..Default::default()
+        };
+        let mut events = Vec::new();
+        let mut out = ctx.run_ui(input, |ui| {
+            feeds::draw(ui.ctx(), &state, &mut events);
+        });
+        if pass == 2 {
+            for clipped in &out.shapes {
+                if let egui::epaint::Shape::Text(text) = &clipped.shape {
+                    let rect = text.visual_bounding_rect();
+                    let job = &text.galley.job.text;
+                    if job.starts_with("Feed vs RPM") {
+                        title_bottom = Some(rect.bottom());
+                    } else if job == "10000" {
+                        tick = Some(rect);
+                    }
+                }
+            }
+        }
+        out.textures_delta.clear();
+    }
+    let title_bottom = title_bottom.expect("the chart title paints");
+    let tick = tick.expect("the 10000 RPM tick paints");
+    egui::pos2(tick.center().x, 0.5 * (title_bottom + tick.top()))
 }
 
 // ── arm 1 — the pointer is off the chart ─────────────────────────────────

@@ -5,6 +5,7 @@ use super::op_report;
 use crate::state::toolpath::{OperationConfig, StockSource};
 use crate::ui::AppEvent;
 use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::properties::linking_dressup::{Fields, combo_in_row, num_in_row, plain_row};
 use crate::ui::properties::pills::PillSuggestions;
 use crate::ui::properties::tab_badges::{draw_start_from, rest_region_pathology_line};
 use crate::ui::properties::{ToolpathPanelInputs, operations, rest_grid_footprint_area};
@@ -13,6 +14,10 @@ use crate::ui::properties::{ToolpathPanelInputs, operations, rest_grid_footprint
 /// parameters and the rest analysis. The tool is the header Tool row; the
 /// input model and the machining boundary are on the Geometry tab.
 /// `properties::tests` renders it (D3).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the tab reads the entry, the inputs and the field states of the placement"
+)]
 pub(in crate::ui::properties) fn draw_passes_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
@@ -20,6 +25,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
+    fields: Fields<'_>,
     events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
@@ -133,6 +139,7 @@ pub(in crate::ui::properties) fn draw_passes_tab(
             .is_some_and(rs_cam_core::session::SelectionReport::holds_a_model_area),
         strategy_suggestion,
         boundary_enabled: entry.boundary.enabled,
+        fields,
     };
     operations::registry::draw_editor_and_diagram(ui, &mut entry.operation, &mut draw_ctx);
     // G-PILLCLAMP: a pill wrote its field this frame — stamp the
@@ -202,78 +209,82 @@ pub(in crate::ui::properties) fn draw_passes_tab(
                 // `RestReferenceChoice::resolve` prefers the machined stock
                 // whenever it overlaps, so under "Rest machining: from previous ops"
                 // this combo is inert and naming it would be a lie.
-                ui.horizontal(|ui| {
-                    ui.label("Reference:");
-                    let ref_label = entry
-                        .rest_analysis
-                        .reference_tool_id
-                        .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
-                        .map(|(_, name, _)| name.as_str())
-                        .unwrap_or("Self / machined stock");
-                    egui::ComboBox::from_id_salt("rest_analysis_reference_tool")
-                        .truncate()
-                        .selected_text(ref_label)
-                        .show_ui(ui, |ui| {
-                            if ui
-                                .selectable_label(
-                                    entry.rest_analysis.reference_tool_id.is_none(),
-                                    "Self / machined stock",
-                                )
-                                .clicked()
-                            {
-                                entry.rest_analysis.reference_tool_id = None;
-                            }
-                            for (id, name, _) in tools {
-                                let selected = entry.rest_analysis.reference_tool_id == Some(*id);
-                                if ui.selectable_label(selected, name.as_str()).clicked() {
-                                    entry.rest_analysis.reference_tool_id = Some(*id);
-                                }
-                            }
-                        })
-                        .response
-                        .on_hover_text(
+                let ref_label = entry
+                    .rest_analysis
+                    .reference_tool_id
+                    .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+                    .map(|(_, name, _)| name.as_str())
+                    .unwrap_or("Self / machined stock");
+                combo_in_row(
+                    ui,
+                    plain_row(
+                        "Reference",
+                        Some(
                             "The reference the gate measures 'deeper than'. Unset = prefer \
                              the machined stock from a prior simulation, else a \
                              self-referenced bare-surface probe.",
-                        );
-                });
+                        ),
+                    ),
+                    "rest_analysis_reference_tool",
+                    ref_label,
+                    |ui| {
+                        if ui
+                            .selectable_label(
+                                entry.rest_analysis.reference_tool_id.is_none(),
+                                "Self / machined stock",
+                            )
+                            .clicked()
+                        {
+                            entry.rest_analysis.reference_tool_id = None;
+                        }
+                        for (id, name, _) in tools {
+                            let selected = entry.rest_analysis.reference_tool_id == Some(*id);
+                            if ui.selectable_label(selected, name.as_str()).clicked() {
+                                entry.rest_analysis.reference_tool_id = Some(*id);
+                            }
+                        }
+                    },
+                );
             }
-            ui.horizontal(|ui| {
-                ui.label("Cell Size:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.cell_mm)
-                        .speed(0.05)
-                        .range(0.05..=10.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text("XY grid cell size for the rest field. Smaller = finer regions.");
-            });
-            ui.horizontal(|ui| {
-                ui.label("Min Valley Depth:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.min_valley_depth)
-                        .speed(0.01)
-                        .range(0.0..=5.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text(
-                    "A cell counts as REST material once the reference floats more than \
-                     this above the true surface.",
-                );
-            });
-            ui.horizontal(|ui| {
-                ui.label("Region Margin:");
-                ui.add(
-                    egui::DragValue::new(&mut entry.rest_analysis.region_margin_mm)
-                        .speed(0.05)
-                        .range(0.0..=10.0)
-                        .suffix(" mm"),
-                )
-                .on_hover_text(
-                    "Extra clearance added around detected regions beyond this \
-                     toolpath's own tool radius.",
-                );
-            });
+            num_in_row(
+                ui,
+                plain_row(
+                    "Cell size",
+                    Some("XY grid cell size for the rest field. Smaller = finer regions."),
+                ),
+                &mut entry.rest_analysis.cell_mm,
+                " mm",
+                0.05,
+                0.05..=10.0,
+            );
+            num_in_row(
+                ui,
+                plain_row(
+                    "Min valley depth",
+                    Some(
+                        "A cell counts as REST material once the reference floats more than \
+                         this above the true surface.",
+                    ),
+                ),
+                &mut entry.rest_analysis.min_valley_depth,
+                " mm",
+                0.01,
+                0.0..=5.0,
+            );
+            num_in_row(
+                ui,
+                plain_row(
+                    "Region margin",
+                    Some(
+                        "Extra clearance added around detected regions beyond this \
+                         toolpath's own tool radius.",
+                    ),
+                ),
+                &mut entry.rest_analysis.region_margin_mm,
+                " mm",
+                0.05,
+                0.0..=10.0,
+            );
         })
         .header_response
         .on_hover_text(

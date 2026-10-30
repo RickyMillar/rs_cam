@@ -510,6 +510,29 @@ pub fn visible_lines(painted: &[Painted]) -> usize {
 
 /// Render the inspector the way the app does and return its painted text.
 pub fn render(ctx: &egui::Context, state: &mut AppState, width: f32) -> Vec<Painted> {
+    render_with_outlines(ctx, state, width).0
+}
+
+/// True for the well of a `PropRow` in a field state (W3f): the well fill
+/// with a Danger or Caution outline.
+fn is_state_outline(shape: &egui::epaint::Shape) -> bool {
+    use rs_cam_viz::ui::components::Role;
+    match shape {
+        egui::epaint::Shape::Rect(rect) => {
+            rect.fill == rs_cam_viz::ui::tokens::INPUT_WELL
+                && [Role::Danger.text(), Role::Caution.text()].contains(&rect.stroke.color)
+        }
+        _ => false,
+    }
+}
+
+/// [`render`], and the number of field rows in a Danger or Caution state
+/// (W3f: a field finding is the state of its row, not a text).
+pub fn render_with_outlines(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    width: f32,
+) -> (Vec<Painted>, usize) {
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(
             egui::Pos2::ZERO,
@@ -559,16 +582,30 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, width: f32) -> Vec<Pain
             _ => None,
         })
         .collect();
+    let outlines = out
+        .shapes
+        .iter()
+        .filter(|clipped| is_state_outline(&clipped.shape))
+        .count();
     out.textures_delta.clear();
-    painted
+    (painted, outlines)
 }
 
 /// Render one tab twice (the first frame settles one-shot state) on a fresh
 /// context and return the second frame.
 pub fn screen(state: &mut AppState, id: ToolpathId, tab: ToolpathTab) -> Vec<Painted> {
+    screen_with_outlines(state, id, tab).0
+}
+
+/// [`screen`], and the number of field rows in a Danger or Caution state.
+pub fn screen_with_outlines(
+    state: &mut AppState,
+    id: ToolpathId,
+    tab: ToolpathTab,
+) -> (Vec<Painted>, usize) {
     let ctx = ctx();
     state.gui.pending_toolpath_tab = Some((id, tab));
     let _ = state.set_focus(Selection::Toolpath(id));
     let _ = render(&ctx, state, PANEL_WIDTH);
-    render(&ctx, state, PANEL_WIDTH)
+    render_with_outlines(&ctx, state, PANEL_WIDTH)
 }

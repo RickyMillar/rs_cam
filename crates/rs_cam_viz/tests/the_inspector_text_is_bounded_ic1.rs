@@ -20,9 +20,7 @@
 //!    word or one line, with its text on hover
 //!    (`a_generate_refusal_takes_one_line_g_e`).
 //! 2. The number of visible text rows on each surface stays under a cap.
-//!    The caps of the toolpath tabs are the measured W2b state with no
-//!    margin (W6 rule); the other panels keep the after-state with a small
-//!    margin.
+//!    Every cap is the measured W3f state with no margin (W6 rule).
 //!
 //! Run it with `--nocapture` to print the inventory of each surface.
 
@@ -377,10 +375,14 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // notes counter replace it). Measured: Pocket 12/15/21/19/22, 3D Rough
     // 8/13/20/16/20, 3D Finish 10/10/22/18/19. W6 rule: each cap IS the
     // measure, with no margin, so a new line on a tab fails here.
+    // W3f (2026-10-30), after W3a-e (every field row a `PropRow`, the
+    // feeds card in Explore, the small-caps section labels): Pocket
+    // 10/15/13/17/22, 3D Rough 7/13/12/15/15, 3D Finish 9/10/13/16/14.
+    // Each cap is the measure, with no margin.
     let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [12, 15, 21, 19, 22]),
-        ("3D Rough", [8, 13, 20, 16, 20]),
-        ("3D Finish", [10, 10, 22, 18, 19]),
+        ("Pocket", [10, 15, 13, 17, 22]),
+        ("3D Rough", [7, 13, 12, 15, 15]),
+        ("3D Finish", [9, 10, 13, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -405,17 +407,19 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
             ));
         }
     }
+    // W3f (2026-10-30): each panel cap is its measure, with no margin (the
+    // caps before were the measure plus 3).
     let panels: [(&str, Selection, usize); 7] = [
-        ("Stock", Selection::Stock, 19),
-        ("Setup", Selection::Setup(setup), 23),
-        ("Tool", Selection::Tool(ToolId::from_raw(TOOL)), 20),
-        ("Post", Selection::PostProcessor, 9),
-        ("Machine", Selection::Machine, 21),
-        ("Model 2D", Selection::Model(ModelId::from_raw(MODEL_2D)), 7),
+        ("Stock", Selection::Stock, 16),
+        ("Setup", Selection::Setup(setup), 18),
+        ("Tool", Selection::Tool(ToolId::from_raw(TOOL)), 17),
+        ("Post", Selection::PostProcessor, 6),
+        ("Machine", Selection::Machine, 19),
+        ("Model 2D", Selection::Model(ModelId::from_raw(MODEL_2D)), 4),
         (
             "Model 3D",
             Selection::Model(ModelId::from_raw(MODEL_3D)),
-            14,
+            11,
         ),
     ];
     for (name, selection, cap) in panels {

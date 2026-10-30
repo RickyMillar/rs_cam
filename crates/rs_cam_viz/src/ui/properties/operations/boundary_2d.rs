@@ -6,252 +6,79 @@ use crate::state::toolpath::{
     ZigzagConfig,
 };
 
-use super::super::{
-    advanced, depth_caution_row, dv, dv_opt, dv_pill, dv_pill_opt, help_for, p, schema_range,
-    through_cut_row,
+use super::super::linking_dressup::{
+    Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
+    count_param, plain_row, row_note,
 };
-use super::{DepthBeyondStock, FloorInputs, ThroughCut, draw_tab_diagram};
-use crate::ui::components::value_row::label_cell;
-use crate::ui::components::{Button, OneLine, UiExt as _};
+use super::super::{advanced, dv, dv_opt, dv_pill, dv_pill_opt, p, through_cut_line};
+use super::{DepthBeyondStock, ThroughCut, draw_tab_diagram};
+use crate::ui::components::{Button, OneLine};
 use rs_cam_core::compute::catalog::OperationType;
-use rs_cam_core::compute::floor::{Floor, FloorRefusal};
 use rs_cam_core::compute::operation_configs::OpenPaths;
-
-/// The label of the Bottom height row (D6, ruling Q8: Fusion "Bottom
-/// height", FreeCAD "Final Depth"). The row sets the floor of the op.
-pub(crate) const BOTTOM_HEIGHT_LABEL: &str = "Bottom height:";
-
-/// The hover of the reference combo (ruling L-10).
-const FLOOR_FROM_HOVER: &str = "The floor of the operation: the tool cuts down to this Z. The \
-    combo sets the reference. A change of reference keeps the floor Z: the value is \
-    expressed again from the new reference.";
-
-/// The short reason a reference is not offered, for the hover of its
-/// disabled entry.
-fn floor_reason(refusal: FloorRefusal) -> &'static str {
-    match refusal {
-        FloorRefusal::NoModelMesh => "The model has no mesh, so it has no Z extent.",
-        FloorRefusal::NoFace => "No up face is picked in the selection.",
-        FloorRefusal::OutOfDomain { .. } | FloorRefusal::AboveTop { .. } => {
-            "The floor would be at or above the Top height."
-        }
-        FloorRefusal::NotFinite => "The floor is not a finite number.",
-        FloorRefusal::FaceLost => "The floor face is not on the model now.",
-        FloorRefusal::NotAFloorItem { .. } => "The floor item is not a face.",
-        FloorRefusal::NoHoleDepth => "No hole of the selection has a known depth.",
-        FloorRefusal::NotForThisOp { .. } => "This operation cannot cut to this floor.",
-        FloorRefusal::Unset => "The floor is not set.",
-    }
-}
-
-/// The Bottom height row of Pocket, Profile, Zigzag, Adaptive 2D, Bore and
-/// Drill (geometry selection P3.7, design 8.1; P6.6; R-B). D6: the Heights
-/// tab draws it, under the Top height row; the Passes tab does not. The
-/// references are the ones the op admits (`Floor::row_references`). Two
-/// grid rows:
-///
-/// 1. "Bottom height:" and the reference combo (`Floor::EACH_REFERENCE`). A
-///    change of reference re-expresses the value, so the resolved floor Z
-///    stays (ruling L-10, `FloorReferences::re_express`). An entry that
-///    has no Z here, or whose value the domain refuses, is disabled with its
-///    reason. With no resolved heights the combo is disabled: nothing keeps
-///    the Z.
-/// 2. The value ("Depth:" or "Z:"). The range is `Floor::domain`, the one
-///    rule of the door, so a refused value never reaches the config. The
-///    hover is `Floor::reference_help`: the schema text of the `floor`
-///    parameter (a driver-set field has no registry `help`).
-/// 3. In the cell of the combo: the resolved floor Z. Under "Each picked
-///    face" and "Each hole floor" (and on hole rims) the range of the floors
-///    of the items (FR-2 F25). Under "A picked face" the plane Z of the
-///    floor face that the Geometry tab slot holds (GT-4).
-pub(super) fn floor_row(
-    ui: &mut egui::Ui,
-    op: OperationType,
-    floor: &mut Floor,
-    inputs: Option<&FloorInputs>,
-) {
-    let refs = inputs.map(|inputs| inputs.refs);
-    label_cell(ui, BOTTOM_HEIGHT_LABEL).on_hover_text(FLOOR_FROM_HOVER);
-    let current = floor.clone();
-    // IC1: the resolved floor Z shares the cell of the reference combo, so
-    // the row takes two grid rows, not three. It reads the floor of the
-    // last frame; egui draws again after an edit.
-    let resolved = resolved_floor_text(&current, inputs);
-    ui.horizontal(|ui| {
-        // Half of the cell for the combo, the rest for the resolved Z.
-        let combo_width = ui.available_width() / 2.0;
-        ui.add_enabled_ui(refs.is_some(), |ui| {
-            egui::ComboBox::from_id_salt(("floor_from", op.name()))
-                .truncate()
-                .width(combo_width)
-                .selected_text(current.reference_label())
-                .show_ui(ui, |ui| {
-                    // UX-8: "A picked face" is not offered here. "Use as floor"
-                    // in the Geometry tab is its one door (L-R5); a change
-                    // away from it is offered.
-                    for template in Floor::row_references(op.capabilities().item_use) {
-                        let selected = current.same_reference(&template);
-                        let next = match refs {
-                            Some(refs) if !selected => {
-                                Some(refs.re_express(&current, template.clone()))
-                            }
-                            Some(_) | None => None,
-                        };
-                        let enabled = selected || matches!(next, Some(Ok(_)));
-                        let response = ui
-                            .add_enabled(
-                                enabled,
-                                egui::Button::selectable(selected, template.reference_label()),
-                            )
-                            .on_hover_text(template.reference_help())
-                            .on_disabled_hover_text(match next {
-                                Some(Err(refusal)) => floor_reason(refusal),
-                                Some(Ok(_)) | None => "",
-                            });
-                        if response.clicked()
-                            && let Some(Ok(re_expressed)) = next
-                        {
-                            *floor = re_expressed;
-                        }
-                    }
-                });
-        })
-        .response
-        .on_disabled_hover_text(
-            "The heights of the toolpath do not resolve, so no floor Z is kept.",
-        );
-        let color = if resolved.starts_with("= no Z") {
-            crate::ui::tokens::DANGER
-        } else {
-            crate::ui::tokens::TEXT_BODY
-        };
-        ui.add(OneLine::new(resolved).color(color).detail(
-            "The resolved floor Z in the setup frame. Under Each picked face: from the \
-             lowest to the highest floor of the cut faces, each its plane Z less the depth; \
-             a face at the top is not cut. Under Each hole floor: the range of the hole \
-             floors. Under A picked face: the plane Z of the face in the Geometry tab.",
-        ));
-    });
-    ui.end_row();
-
-    // S11: an unset floor shows an empty field with the hint "set a
-    // value"; a typed depth sets the floor below the Top height.
-    let label = match &*floor {
-        Floor::Z { .. } => "Z:",
-        _ => "Depth:",
-    };
-    let mut value = floor.value();
-    let edited = crate::ui::components::OptionalValueRow::new(
-        label,
-        &mut value,
-        " mm",
-        0.1,
-        floor.domain().inclusive_bounds(),
-    )
-    .tooltip(Some(floor.reference_help()))
-    .show(ui);
-    if edited && let Some(value) = value {
-        let next = floor.clone().with_value(value);
-        if next.domain().accepts(value) {
-            *floor = next;
-        }
-    }
-}
-
-/// The text of the resolved floor line of the Bottom height row: `= Z ..`,
-/// the range of the item floors (FR-2 F25), or why the floor has no Z.
-fn resolved_floor_text(floor: &Floor, inputs: Option<&FloorInputs>) -> String {
-    let refs = inputs.map(|inputs| inputs.refs);
-    // F25: each face, each hole, or a depth from the rim of each hole.
-    let per_item = matches!(floor, Floor::EachFace { .. } | Floor::EachHole { .. })
-        || inputs.is_some_and(|inputs| inputs.hole_rims);
-    let item_floors = match inputs {
-        Some(inputs) if per_item => inputs.face_floors.as_slice(),
-        _ => &[],
-    };
-    // The floors are top first.
-    match (item_floors.first(), item_floors.last()) {
-        (Some(top), Some(bottom)) if top.z.to_bits() != bottom.z.to_bits() => {
-            return format!(
-                "= Z {:.2} to {:.2} \u{00B7} {} floors",
-                bottom.z,
-                top.z,
-                item_floors.len()
-            );
-        }
-        (Some(only), Some(_)) => return format!("= Z {:.2}", only.z),
-        _ => {}
-    }
-    let z = match refs.map(|refs| refs.floor_z(floor)) {
-        Some(Ok(z)) => format!("= Z {z:.2}"),
-        Some(Err(refusal)) => return format!("= no Z: {}", floor_reason(refusal)),
-        None => return "= Z \u{2014}".to_owned(),
-    };
-    // GT-4: the face that the Geometry tab slot holds.
-    match (floor, refs.and_then(|refs| refs.floor_face_z)) {
-        (Floor::Face { .. }, Some(face_z)) => format!(
-            "{z} \u{00B7} {}: Face Z {face_z:.2}",
-            floor.reference_label()
-        ),
-        _ => z,
-    }
-}
 
 pub(in crate::ui::properties) fn draw_face_params(
     ui: &mut egui::Ui,
     cfg: &mut FaceConfig,
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("face_p", |ui| {
-        ui.label("Direction:");
-        egui::ComboBox::from_id_salt("face_dir")
-            .truncate()
-            .selected_text(match cfg.direction {
-                FaceDirection::OneWay => "One Way",
-                FaceDirection::Zigzag => "Zigzag",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.direction, FaceDirection::OneWay, "One Way");
-                ui.selectable_value(&mut cfg.direction, FaceDirection::Zigzag, "Zigzag");
-            });
-        ui.end_row();
-        dv_pill(
-            ui,
-            p(OperationType::Face, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.5,
-            stepover_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Face, "depth", "Depth:"),
-            &mut cfg.depth,
-            " mm",
-            0.1,
-        );
-        depth_caution_row(ui, depth_caution);
-        dv_pill(
-            ui,
-            p(OperationType::Face, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        // S11: empty = the tool radius.
-        dv_opt(
-            ui,
-            p(OperationType::Face, "stock_offset", "Stock Offset:"),
-            &mut cfg.stock_offset,
-            " mm",
-            0.5,
-            Some("tool R"),
-        );
-    });
+    // G-DEPTHSTOCK: the caution is the outline of the Depth row.
+    let fields = fields.with_depth_caution("depth", depth_caution);
+    combo_in_row(
+        ui,
+        plain_row(
+            "Direction",
+            Some("One way cuts every pass in one direction. Zigzag cuts in both directions."),
+        ),
+        "face_dir",
+        match cfg.direction {
+            FaceDirection::OneWay => "One way",
+            FaceDirection::Zigzag => "Zigzag",
+        },
+        |ui| {
+            ui.selectable_value(&mut cfg.direction, FaceDirection::OneWay, "One way");
+            ui.selectable_value(&mut cfg.direction, FaceDirection::Zigzag, "Zigzag");
+        },
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Face, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.5,
+        stepover_sugg,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::Face, "depth", "Depth"),
+        &mut cfg.depth,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Face, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    // S11: empty = the tool radius.
+    dv_opt(
+        ui,
+        p(OperationType::Face, "stock_offset", "Stock offset"),
+        &mut cfg.stock_offset,
+        " mm",
+        0.5,
+        Some("tool R"),
+        fields,
+    );
 }
 
 pub(in crate::ui::properties) fn draw_pocket_params(
@@ -259,58 +86,69 @@ pub(in crate::ui::properties) fn draw_pocket_params(
     cfg: &mut PocketConfig,
     pills: Option<&PillSuggestions>,
     model_areas: bool,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("pocket_p", |ui| {
-        ui.label("Pattern:");
-        egui::ComboBox::from_id_salt("pocket_pat")
-            .truncate()
-            .selected_text(match cfg.pattern {
-                PocketPattern::Contour => "Contour",
-                PocketPattern::Zigzag => "Zigzag",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.pattern, PocketPattern::Contour, "Contour");
-                ui.selectable_value(&mut cfg.pattern, PocketPattern::Zigzag, "Zigzag");
-            });
-        ui.end_row();
-        dv_pill(
+    combo_in_row(
+        ui,
+        plain_row(
+            "Pattern",
+            Some("Contour follows the outline inward. Zigzag cuts parallel lines."),
+        ),
+        "pocket_pat",
+        match cfg.pattern {
+            PocketPattern::Contour => "Contour",
+            PocketPattern::Zigzag => "Zigzag",
+        },
+        |ui| {
+            ui.selectable_value(&mut cfg.pattern, PocketPattern::Contour, "Contour");
+            ui.selectable_value(&mut cfg.pattern, PocketPattern::Zigzag, "Zigzag");
+        },
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Pocket, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Pocket, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    check_in_row(
+        ui,
+        plain_row(
+            "Climb",
+            Some("Climb milling: the cutter edge meets the material in the direction of the feed."),
+        ),
+        &mut cfg.climb,
+    );
+    region_ordering_row(ui, "pocket_ord", &mut cfg.region_ordering);
+    open_paths_rows(ui, &mut cfg.open_paths, fields);
+    // A drawing Pocket has no face, so it shows no row. The row stays
+    // while the setting is on, so the operator can turn it off.
+    if model_areas || cfg.cut_past_open_sides {
+        open_sides_row(ui, &mut cfg.cut_past_open_sides, fields);
+    }
+    if cfg.pattern == PocketPattern::Zigzag {
+        dv(
             ui,
-            p(OperationType::Pocket, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
+            p(OperationType::Pocket, "angle", "Angle"),
+            &mut cfg.angle,
+            " deg",
+            1.0,
+            fields,
         );
-        dv_pill(
-            ui,
-            p(OperationType::Pocket, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        ui.label("Climb:");
-        ui.checkbox(&mut cfg.climb, "");
-        ui.end_row();
-        region_ordering_row(ui, "pocket_ord", &mut cfg.region_ordering);
-        open_paths_rows(ui, &mut cfg.open_paths);
-        // A drawing Pocket has no face, so it shows no row. The row stays
-        // while the setting is on, so the operator can turn it off.
-        if model_areas || cfg.cut_past_open_sides {
-            open_sides_row(ui, &mut cfg.cut_past_open_sides);
-        }
-        if cfg.pattern == PocketPattern::Zigzag {
-            dv(
-                ui,
-                p(OperationType::Pocket, "angle", "Angle:"),
-                &mut cfg.angle,
-                " deg",
-                1.0,
-            );
-        }
-    });
+    }
     advanced(ui, "pocket_adv", |ui| {
         finishing_passes_row(ui, OperationType::Pocket, &mut cfg.finishing_passes);
     });
@@ -321,8 +159,9 @@ pub(in crate::ui::properties) fn draw_pocket_params(
 /// button uses U+2194.
 const FLIP_LABEL: &str = "\u{2194} Flip";
 
-/// The hover of [`FLIP_LABEL`].
-const FLIP_HOVER: &str = "Cut the area on the other side of each open path.";
+/// The hover of the Side row and its [`FLIP_LABEL`] action.
+const OPEN_SIDE_HOVER: &str = "The side of the drawn direction that Extend to stock cuts. \
+    Flip cuts the area on the other side of each open path.";
 
 /// The side of an open path that Extend to stock cuts, the other side
 /// (P6.7: the Flip button). `Skip` has no side and stays `Skip`.
@@ -339,17 +178,15 @@ fn flipped(open_paths: OpenPaths) -> OpenPaths {
 /// and the Flip button. The rows write the draft; the panel sends one
 /// `ReplaceToolpathConfig`. The counts and a refusal are in the Selection
 /// section, which owns the report.
-fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths) {
-    let help = help_for(OperationType::Pocket, "open_paths");
-    let label = ui.label("Open paths:");
-    if let Some(help) = help {
-        label.on_hover_text(help);
-    }
+fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths, fields: Fields<'_>) {
     let extend = *open_paths != OpenPaths::Skip;
-    egui::ComboBox::from_id_salt("pocket_open_paths")
-        .truncate()
-        .selected_text(if extend { "Extend to stock" } else { "Skip" })
-        .show_ui(ui, |ui| {
+    combo_param(
+        ui,
+        p(OperationType::Pocket, "open_paths", "Open paths"),
+        fields,
+        "pocket_open_paths",
+        if extend { "Extend to stock" } else { "Skip" },
+        |ui| {
             if ui.selectable_label(!extend, "Skip").clicked() {
                 *open_paths = OpenPaths::Skip;
             }
@@ -358,34 +195,26 @@ fn open_paths_rows(ui: &mut egui::Ui, open_paths: &mut OpenPaths) {
             if ui.selectable_label(extend, "Extend to stock").clicked() && !extend {
                 *open_paths = OpenPaths::ExtendLeft;
             }
-        })
-        .response
-        .on_hover_text(open_paths.label());
-    ui.end_row();
+        },
+    )
+    .on_hover_text(open_paths.label());
     if *open_paths == OpenPaths::Skip {
         return;
     }
-    ui.label("Side:");
-    egui::ComboBox::from_id_salt("pocket_open_side")
-        .truncate()
-        .selected_text(open_side_label(*open_paths))
-        .show_ui(ui, |ui| {
-            for side in [OpenPaths::ExtendLeft, OpenPaths::ExtendRight] {
-                ui.selectable_value(open_paths, side, open_side_label(side));
-            }
+    // The Flip button is the quiet action of the Side row.
+    let out = plain_row("Side", Some(OPEN_SIDE_HOVER))
+        .action(FLIP_LABEL)
+        .show(ui, |ui| {
+            combo_control(ui, "pocket_open_side", open_side_label(*open_paths), |ui| {
+                for side in [OpenPaths::ExtendLeft, OpenPaths::ExtendRight] {
+                    ui.selectable_value(open_paths, side, open_side_label(side));
+                }
+            })
         });
-    ui.end_row();
-    // The Flip button has its own row: beside the combo it does not fit
-    // the 240-point rail.
-    ui.label("");
-    if ui
-        .add(Button::quiet(FLIP_LABEL))
-        .on_hover_text(FLIP_HOVER)
-        .clicked()
-    {
+    let _ = out.inner.on_hover_text(&out.hover);
+    if out.action_clicked {
         *open_paths = flipped(*open_paths);
     }
-    ui.end_row();
 }
 
 /// The label of the Pocket "Cut past open sides" row (operator ruling
@@ -396,15 +225,17 @@ pub(in crate::ui::properties) const OPEN_SIDES_LABEL: &str = "Cut past open side
 /// one checkbox. On, the area of each model face grows out through each
 /// side with no wall, to the stock edge. The row writes the draft; the
 /// panel sends one `ReplaceToolpathConfig`.
-fn open_sides_row(ui: &mut egui::Ui, on: &mut bool) {
-    let help = help_for(OperationType::Pocket, "cut_past_open_sides");
-    let label = ui.label(format!("{OPEN_SIDES_LABEL}:"));
-    let check = ui.checkbox(on, "");
-    if let Some(help) = help {
-        label.on_hover_text(help);
-        check.on_hover_text(help);
-    }
-    ui.end_row();
+fn open_sides_row(ui: &mut egui::Ui, on: &mut bool, fields: Fields<'_>) {
+    check_param(
+        ui,
+        p(
+            OperationType::Pocket,
+            "cut_past_open_sides",
+            OPEN_SIDES_LABEL,
+        ),
+        on,
+        fields,
+    );
 }
 
 /// The Side label of an Extend choice (P6.7).
@@ -416,25 +247,18 @@ fn open_side_label(open_paths: OpenPaths) -> &'static str {
     }
 }
 
-/// The "Finishing Passes" row of Pocket and Profile.
-///
-/// UI-10: an integer field. `ValueRow` edits an `f64`, and a temporary f64
-/// would change what a partial edit commits.
+/// The "Finishing passes" row of Pocket and Profile.
 fn finishing_passes_row(ui: &mut egui::Ui, op: OperationType, passes: &mut usize) {
-    ui.label("Finishing Passes:");
-    let mut fp = *passes as i32;
-    if ui
-        .add(
-            egui::DragValue::new(&mut fp)
-                .range(schema_range(op, "finishing_passes"))
-                .speed(0.1),
-        )
-        .on_hover_text("Spring passes at final depth for dimensional accuracy")
-        .changed()
-    {
-        *passes = fp.max(0) as usize;
-    }
-    ui.end_row();
+    count_in_row(
+        ui,
+        plain_row(
+            "Finishing passes",
+            Some("Spring passes at final depth for dimensional accuracy."),
+        ),
+        passes,
+        0.1,
+        (op, "finishing_passes"),
+    );
 }
 
 /// The "Ordering" row of a Layered 2.5D op (ruling R4): Pocket, Zigzag,
@@ -444,20 +268,24 @@ pub(in crate::ui::properties) fn region_ordering_row(
     salt: &str,
     ordering: &mut RegionOrdering,
 ) {
-    ui.label("Ordering:");
-    egui::ComboBox::from_id_salt(salt)
-        .truncate()
-        .selected_text(match ordering {
+    combo_in_row(
+        ui,
+        plain_row(
+            "Ordering",
+            Some("The order of the outlines and the depths."),
+        ),
+        salt,
+        match ordering {
             RegionOrdering::Global => "Global",
             RegionOrdering::ByArea => "By Area",
-        })
-        .show_ui(ui, |ui| {
+        },
+        |ui| {
             ui.selectable_value(ordering, RegionOrdering::ByArea, "By Area")
                 .on_hover_text("Cut each outline to full depth before the next.");
             ui.selectable_value(ordering, RegionOrdering::Global, "Global")
                 .on_hover_text("Cut every outline at one depth before the next depth.");
-        });
-    ui.end_row();
+        },
+    );
 }
 
 /// The hover of the greyed "In Control" entry under side On (P6.7).
@@ -511,13 +339,14 @@ fn side_on_refusal(cfg: &ProfileConfig) -> Option<String> {
 /// "On the line" is greyed while the floor is Each picked face
 /// (`domain::side_on_each_face`), with the core refusal as the hover.
 fn profile_side_row(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
-    ui.label("Side:");
     let on_refusal = side_on_refusal(cfg);
     let before = cfg.side;
-    egui::ComboBox::from_id_salt("prof_side")
-        .truncate()
-        .selected_text(profile_side_label(cfg.side))
-        .show_ui(ui, |ui| {
+    combo_in_row(
+        ui,
+        plain_row("Side", Some("The side of the outline that the tool cuts.")),
+        "prof_side",
+        profile_side_label(cfg.side),
+        |ui| {
             for side in [ProfileSide::Outside, ProfileSide::Inside] {
                 ui.selectable_value(&mut cfg.side, side, profile_side_label(side));
             }
@@ -530,14 +359,14 @@ fn profile_side_row(ui: &mut egui::Ui, cfg: &mut ProfileConfig) {
                 .on_hover_text(SIDE_ON_HOVER)
                 .on_disabled_hover_text(on_refusal.as_deref().unwrap_or_default());
             });
-        });
+        },
+    );
     if cfg.side == ProfileSide::On
         && before != ProfileSide::On
         && cfg.compensation == CompensationType::InControl
     {
         cfg.compensation = CompensationType::InComputer;
     }
-    ui.end_row();
 }
 
 /// The label of a Profile side (P6.7).
@@ -565,30 +394,33 @@ pub(in crate::ui::properties) fn draw_profile_params(
         crate::state::toolpath::ToolpathId,
         &mut crate::state::pick::SelectionUi,
     ),
+    fields: Fields<'_>,
 ) {
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("profile_p", |ui| {
-        profile_side_row(ui, cfg);
-        through_cut_row(ui, through_cut);
-        dv_pill(
-            ui,
-            p(OperationType::Profile, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        ui.label("Climb:");
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut cfg.climb, "");
-            // P6.7 (design 2.2): Climb does not act on an open path.
-            if cfg.side == ProfileSide::On {
-                ui.add(OneLine::new(CLIMB_ON_HINT).detail(CLIMB_ON_DETAIL));
-            }
-        });
-        ui.end_row();
-        region_ordering_row(ui, "prof_ord", &mut cfg.region_ordering);
-    });
+    profile_side_row(ui, cfg);
+    through_cut_line(ui, through_cut);
+    dv_pill(
+        ui,
+        p(OperationType::Profile, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    check_in_row(
+        ui,
+        plain_row(
+            "Climb",
+            Some("Climb milling: the cutter edge meets the material in the direction of the feed."),
+        ),
+        &mut cfg.climb,
+    );
+    // P6.7 (design 2.2): Climb does not act on an open path.
+    if cfg.side == ProfileSide::On {
+        row_note(ui, OneLine::new(CLIMB_ON_HINT).detail(CLIMB_ON_DETAIL));
+    }
+    region_ordering_row(ui, "prof_ord", &mut cfg.region_ordering);
     ui.add_space(8.0);
     // G-THROUGHCUT: a through cut with no tabs opens the Tabs disclosure by
     // default. `default_open` only reads on the header's first frame, so the
@@ -596,20 +428,26 @@ pub(in crate::ui::properties) fn draw_profile_params(
     // dragged up to the board, tabs set back to zero). Every other frame
     // passes `None`, which leaves the stored state — and the operator's
     // collapse — alone. Same id as the old `ui.collapsing("Tabs", ..)`.
-    draw_profile_tabs(ui, cfg, through_cut, tab_editor);
+    draw_profile_tabs(ui, cfg, through_cut, tab_editor, fields);
     advanced(ui, "profile_adv", |ui| {
-        ui.label("Compensation:");
         // P6.7: under side On, In Control is greyed. Core refuses the pair
         // at every door (`domain::side_on_in_control`), so the combo reads
         // that predicate and does not state a second rule.
         let in_control_refused = in_control_refused(cfg);
-        egui::ComboBox::from_id_salt("prof_comp")
-            .truncate()
-            .selected_text(match cfg.compensation {
+        combo_in_row(
+            ui,
+            plain_row(
+                "Compensation",
+                Some(
+                    "In Computer offsets the path in the G-code. In Control writes G41/G42, and the controller offsets the path.",
+                ),
+            ),
+            "prof_comp",
+            match cfg.compensation {
                 CompensationType::InComputer => "In Computer",
                 CompensationType::InControl => "In Control",
-            })
-            .show_ui(ui, |ui| {
+            },
+            |ui| {
                 ui.selectable_value(
                     &mut cfg.compensation,
                     CompensationType::InComputer,
@@ -623,8 +461,8 @@ pub(in crate::ui::properties) fn draw_profile_params(
                     )
                     .on_disabled_hover_text(IN_CONTROL_UNDER_ON);
                 });
-            });
-        ui.end_row();
+            },
+        );
         finishing_passes_row(ui, OperationType::Profile, &mut cfg.finishing_passes);
     });
 }
@@ -643,6 +481,7 @@ fn draw_profile_tabs(
         crate::state::toolpath::ToolpathId,
         &mut crate::state::pick::SelectionUi,
     ),
+    fields: Fields<'_>,
 ) {
     let tabs_default_open =
         through_cut.is_some() && cfg.tab_count == 0 && cfg.tab_points.is_empty();
@@ -662,60 +501,61 @@ fn draw_profile_tabs(
         .default_open(tabs_default_open)
         .open(tabs_force_open)
         .show(ui, |ui| {
-            ui.param_grid("tab_p", |ui| {
-                // UI-10: an integer field. `ValueRow` edits an `f64`, and a
-                // temporary f64 would change what a partial edit commits.
-                ui.label("Count:");
-                let mut count = cfg.tab_count as i32;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut count)
-                            .range(schema_range(OperationType::Profile, "tab_count")),
-                    )
-                    .changed()
-                {
-                    cfg.tab_count = count.max(0) as usize;
-                }
-                ui.end_row();
-                // P5: hand tabs come from `tab_points`. P4.6: the viewport
-                // tab editor writes them (`Edit in viewport`); MCP and the
-                // project file write them too.
-                if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
-                    ui.label("Hand tabs:");
-                    ui.horizontal(|ui| {
+            count_param(
+                ui,
+                p(OperationType::Profile, "tab_count", "Count"),
+                &mut cfg.tab_count,
+                0.1,
+                fields,
+            );
+            // P5: hand tabs come from `tab_points`. P4.6: the viewport
+            // tab editor writes them (`Edit in viewport`); MCP and the
+            // project file write them too.
+            if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
+                // The count and its Clear share the well; the quiet
+                // action turns the viewport tab editor on and off.
+                let on = selection_ui.tab_edit(toolpath_id).is_some();
+                let out = plain_row("Hand tabs", Some(TAB_EDIT_HOVER))
+                    .action(if on {
+                        "Stop editing"
+                    } else {
+                        "Edit in viewport"
+                    })
+                    .show(ui, |ui| {
                         ui.label(cfg.tab_points.len().to_string());
-                        if !cfg.tab_points.is_empty() && ui.small_button("Clear").clicked() {
-                            cfg.tab_points.clear();
-                        }
-                        let on = selection_ui.tab_edit(toolpath_id).is_some();
-                        let button = if on {
-                            Button::primary("Edit in viewport")
-                        } else {
-                            Button::new("Edit in viewport")
-                        };
-                        if ui.add(button).on_hover_text(TAB_EDIT_HOVER).clicked() {
-                            selection_ui.set_tab_edit(toolpath_id, !on);
+                        if !cfg.tab_points.is_empty() {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.add(Button::quiet("Clear")).clicked() {
+                                        cfg.tab_points.clear();
+                                    }
+                                },
+                            );
                         }
                     });
-                    ui.end_row();
+                if out.action_clicked {
+                    selection_ui.set_tab_edit(toolpath_id, !on);
                 }
-                if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
-                    dv(
-                        ui,
-                        p(OperationType::Profile, "tab_width", "Bridge width:"),
-                        &mut cfg.tab_width,
-                        " mm",
-                        0.5,
-                    );
-                    dv(
-                        ui,
-                        p(OperationType::Profile, "tab_height", "Height:"),
-                        &mut cfg.tab_height,
-                        " mm",
-                        0.5,
-                    );
-                }
-            });
+            }
+            if cfg.tab_count > 0 || !cfg.tab_points.is_empty() {
+                dv(
+                    ui,
+                    p(OperationType::Profile, "tab_width", "Bridge width"),
+                    &mut cfg.tab_width,
+                    " mm",
+                    0.5,
+                    fields,
+                );
+                dv(
+                    ui,
+                    p(OperationType::Profile, "tab_height", "Height"),
+                    &mut cfg.tab_height,
+                    " mm",
+                    0.5,
+                    fields,
+                );
+            }
             if cfg.tab_count > 0 {
                 ui.add_space(4.0);
                 draw_tab_diagram(ui, cfg.tab_count, cfg.tab_width, cfg.tab_height);
@@ -727,60 +567,72 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
     ui: &mut egui::Ui,
     cfg: &mut AdaptiveConfig,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("adapt_p", |ui| {
-        dv_pill(
-            ui,
-            p(OperationType::Adaptive, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::Adaptive, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-    });
+    dv_pill(
+        ui,
+        p(OperationType::Adaptive, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Adaptive, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
     advanced(ui, "adapt_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Adaptive, "tolerance", "Tolerance:"),
+            p(OperationType::Adaptive, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
-        ui.label("Slot Clearing:");
-        ui.checkbox(&mut cfg.slot_clearing, "").on_hover_text(
-            "Cut full-width seeding slots before the adaptive passes. A slot \
-             line runs at full radial immersion, the one 2D Adaptive cut \
-             outside the pass load (every other cut holds the stepover as \
-             radial width). Off by default; a project saved with it on keeps \
-             it.",
+        check_in_row(
+            ui,
+            plain_row(
+                "Slot clearing",
+                Some(
+                    "Cut full-width seeding slots before the adaptive passes. A slot \
+                     line runs at full radial immersion, the one 2D Adaptive cut \
+                     outside the pass load (every other cut holds the stepover as \
+                     radial width). Off by default; a project saved with it on keeps \
+                     it.",
+                ),
+            ),
+            &mut cfg.slot_clearing,
         );
-        ui.end_row();
         dv(
             ui,
             p(
                 OperationType::Adaptive,
                 "min_cutting_radius",
-                "Min Cut Radius:",
+                "Min cut radius",
             ),
             &mut cfg.min_cutting_radius,
             " mm",
             0.1,
+            fields,
         );
-        ui.label("Cleanup:");
-        egui::ComboBox::from_id_salt("adaptive_cleanup_strategy")
-            .truncate()
-            .selected_text(format!("{:?}", cfg.cleanup_strategy))
-            .show_ui(ui, |ui| {
+        combo_in_row(
+            ui,
+            plain_row(
+                "Cleanup",
+                Some("How the adaptive clears the material that its passes leave."),
+            ),
+            "adaptive_cleanup_strategy",
+            format!("{:?}", cfg.cleanup_strategy),
+            |ui| {
                 use rs_cam_core::adaptive::CleanupStrategy;
                 ui.selectable_value(
                     &mut cfg.cleanup_strategy,
@@ -798,8 +650,8 @@ pub(in crate::ui::properties) fn draw_adaptive_params(
                     "ResidueMop",
                 );
                 ui.selectable_value(&mut cfg.cleanup_strategy, CleanupStrategy::Legacy, "Legacy");
-            });
-        ui.end_row();
+            },
+        );
     });
 }
 
@@ -808,37 +660,40 @@ pub(in crate::ui::properties) fn draw_vcarve_params(
     cfg: &mut VCarveConfig,
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
+    fields: Fields<'_>,
 ) {
+    // G-DEPTHSTOCK: the caution is the outline of the depth row.
+    let fields = fields.with_depth_caution("max_depth", depth_caution);
     // V-carve uses `max_depth` as the axial limit and `stepover` as the
     // lateral step. Map LUT axial → max_depth, radial → stepover.
     let max_depth_sugg = pills.map(PillSuggestions::depth_per_pass);
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    ui.param_grid("vcarve_p", |ui| {
-        dv_pill_opt(
-            ui,
-            p(OperationType::VCarve, "max_depth", "Max Depth:"),
-            &mut cfg.max_depth,
-            " mm",
-            0.1,
-            max_depth_sugg,
-        );
-        depth_caution_row(ui, depth_caution);
-        dv_pill(
-            ui,
-            p(OperationType::VCarve, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.05,
-            stepover_sugg,
-        );
-    });
+    dv_pill_opt(
+        ui,
+        p(OperationType::VCarve, "max_depth", "Max depth"),
+        &mut cfg.max_depth,
+        " mm",
+        0.1,
+        max_depth_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::VCarve, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.05,
+        stepover_sugg,
+        fields,
+    );
     advanced(ui, "vcarve_adv", |ui| {
         dv(
             ui,
-            p(OperationType::VCarve, "tolerance", "Tolerance:"),
+            p(OperationType::VCarve, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
     });
 }
@@ -848,53 +703,58 @@ pub(in crate::ui::properties) fn draw_inlay_params(
     cfg: &mut InlayConfig,
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
+    fields: Fields<'_>,
 ) {
+    // G-DEPTHSTOCK: the caution is the outline of the depth row.
+    let fields = fields.with_depth_caution("pocket_depth", depth_caution);
     // Spec: only the stepover field maps to LUT radial_width. The other
     // inlay fields (pocket_depth, floor_overlap) are geometry-driven, not
     // feeds-driven.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    ui.param_grid("inlay_p", |ui| {
-        dv_opt(
-            ui,
-            p(OperationType::Inlay, "pocket_depth", "Pocket Depth:"),
-            &mut cfg.pocket_depth,
-            " mm",
-            0.1,
-            None,
-        );
-        depth_caution_row(ui, depth_caution);
-        // S11: empty = 0.9 x the tool diameter.
-        dv_opt(
-            ui,
-            p(OperationType::Inlay, "floor_overlap", "Floor Overlap:"),
-            &mut cfg.floor_overlap,
-            " mm",
-            0.1,
-            Some("0.9 x D"),
-        );
-        dv(
-            ui,
-            p(OperationType::Inlay, "floor_ridge", "Floor Ridge:"),
-            &mut cfg.floor_ridge,
-            " mm",
-            0.01,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::Inlay, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-    });
+    dv_opt(
+        ui,
+        p(OperationType::Inlay, "pocket_depth", "Pocket depth"),
+        &mut cfg.pocket_depth,
+        " mm",
+        0.1,
+        None,
+        fields,
+    );
+    // S11: empty = 0.9 x the tool diameter.
+    dv_opt(
+        ui,
+        p(OperationType::Inlay, "floor_overlap", "Floor overlap"),
+        &mut cfg.floor_overlap,
+        " mm",
+        0.1,
+        Some("0.9 x D"),
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::Inlay, "floor_ridge", "Floor ridge"),
+        &mut cfg.floor_ridge,
+        " mm",
+        0.01,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Inlay, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
     advanced(ui, "inlay_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Inlay, "tolerance", "Tolerance:"),
+            p(OperationType::Inlay, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
     });
 }
@@ -904,66 +764,73 @@ pub(in crate::ui::properties) fn draw_inlay_plug_params(
     cfg: &mut InlayPlugConfig,
     pills: Option<&PillSuggestions>,
     depth_caution: Option<&DepthBeyondStock>,
+    fields: Fields<'_>,
 ) {
+    // G-DEPTHSTOCK: the caution is the outline of the depth row.
+    let fields = fields.with_depth_caution("pocket_depth", depth_caution);
     // Only stepover and depth_per_pass map to the LUT; the other plug
     // fields are geometry-driven.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("inlay_plug_p", |ui| {
-        dv_opt(
-            ui,
-            p(OperationType::InlayPlug, "pocket_depth", "Pocket Depth:"),
-            &mut cfg.pocket_depth,
-            " mm",
-            0.1,
-            None,
-        );
-        depth_caution_row(ui, depth_caution);
-        dv(
-            ui,
-            p(OperationType::InlayPlug, "glue_gap", "Glue Gap:"),
-            &mut cfg.glue_gap,
-            " mm",
-            0.01,
-        );
-        dv(
-            ui,
-            p(OperationType::InlayPlug, "proud_height", "Proud Height:"),
-            &mut cfg.proud_height,
-            " mm",
-            0.1,
-        );
-        dv(
-            ui,
-            p(OperationType::InlayPlug, "outer_margin", "Outer Margin:"),
-            &mut cfg.outer_margin,
-            " mm",
-            0.1,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::InlayPlug, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::InlayPlug, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.05,
-            stepover_sugg,
-        );
-    });
+    dv_opt(
+        ui,
+        p(OperationType::InlayPlug, "pocket_depth", "Pocket depth"),
+        &mut cfg.pocket_depth,
+        " mm",
+        0.1,
+        None,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::InlayPlug, "glue_gap", "Glue gap"),
+        &mut cfg.glue_gap,
+        " mm",
+        0.01,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::InlayPlug, "proud_height", "Proud height"),
+        &mut cfg.proud_height,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::InlayPlug, "outer_margin", "Outer margin"),
+        &mut cfg.outer_margin,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::InlayPlug, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::InlayPlug, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.05,
+        stepover_sugg,
+        fields,
+    );
     advanced(ui, "inlay_plug_adv", |ui| {
         dv(
             ui,
-            p(OperationType::InlayPlug, "tolerance", "Tolerance:"),
+            p(OperationType::InlayPlug, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
     });
 }
@@ -972,33 +839,35 @@ pub(in crate::ui::properties) fn draw_zigzag_params(
     ui: &mut egui::Ui,
     cfg: &mut ZigzagConfig,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("zigzag_p", |ui| {
-        dv_pill(
-            ui,
-            p(OperationType::Zigzag, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::Zigzag, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::Zigzag, "angle", "Angle:"),
-            &mut cfg.angle,
-            " deg",
-            1.0,
-        );
-        region_ordering_row(ui, "zigzag_ord", &mut cfg.region_ordering);
-    });
+    dv_pill(
+        ui,
+        p(OperationType::Zigzag, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Zigzag, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::Zigzag, "angle", "Angle"),
+        &mut cfg.angle,
+        " deg",
+        1.0,
+        fields,
+    );
+    region_ordering_row(ui, "zigzag_ord", &mut cfg.region_ordering);
 }

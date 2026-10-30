@@ -200,15 +200,15 @@ pub struct PanelDrafts {
     /// while the field is dragged or has focus (ui09).
     pub number_drafts: NumberDrafts,
     /// The last refused heights edit of the selected toolpath (F033). The
-    /// Heights tab names it under its rows.
+    /// Heights tab draws it as the state of the row it edited.
     pub heights_refusal: HeightsRefusal,
     /// G-C (D-2): the `⟲` badge of a containment the `Rest Regions` pick
     /// set to `Inside`, scoped to its toolpath.
     pub containment_autocorrect: ContainmentAutoCorrect,
 }
 
-/// The last refused heights edit (F033), which the Heights tab names under
-/// its rows for [`HeightsRefusal::SHOW_S`] seconds.
+/// The last refused heights edit (F033), which the Heights tab draws as the
+/// state of the row it edited for [`HeightsRefusal::SHOW_S`] seconds.
 ///
 /// The order gate (`ui::properties::admit_heights_edit`) writes it, and an
 /// accepted edit clears it. Before UI-09 it was held in egui memory under
@@ -219,6 +219,9 @@ pub struct HeightsRefusal {
     toolpath: Option<rs_cam_core::ToolpathId>,
     /// The text and the egui time (seconds) of the refusal.
     line: Option<(String, f64)>,
+    /// W3d: the field key of the row the refused edit changed, or `None`
+    /// when no one row changed. The row draws the refusal as its state.
+    field: Option<&'static str>,
 }
 
 impl HeightsRefusal {
@@ -231,17 +234,28 @@ impl HeightsRefusal {
         if self.toolpath != Some(id) {
             self.toolpath = Some(id);
             self.line = None;
+            self.field = None;
         }
     }
 
-    /// Keep `text` as the refusal at egui time `now` (seconds).
-    pub fn refuse(&mut self, text: String, now: f64) {
+    /// Keep `text` as the refusal of an edit of the row `field` at egui
+    /// time `now` (seconds).
+    pub fn refuse(&mut self, field: Option<&'static str>, text: String, now: f64) {
         self.line = Some((text, now));
+        self.field = field;
     }
 
     /// Drop the refusal: an edit was accepted.
     pub fn clear(&mut self) {
         self.line = None;
+        self.field = None;
+    }
+
+    /// The field key of the refused edit at egui time `now`, while the
+    /// refusal is recent.
+    #[must_use]
+    pub fn field(&self, now: f64) -> Option<&'static str> {
+        self.text(now).and(self.field)
     }
 
     /// The refusal text at egui time `now`, while it is recent.

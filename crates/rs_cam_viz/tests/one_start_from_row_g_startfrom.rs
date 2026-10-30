@@ -43,6 +43,10 @@ use rs_cam_viz::state::AppState;
 use rs_cam_viz::state::runtime::ToolpathRuntime;
 use rs_cam_viz::state::selection::Selection;
 use rs_cam_viz::ui::properties::{REST_MACHINING_LABEL, rest_machining_row};
+
+/// The checkbox text of the rest machining row (W3b; the label column
+/// holds [`REST_MACHINING_LABEL`]).
+const REST_MACHINING_CHECK: &str = "From previous ops";
 use rs_cam_viz::ui::{properties, tokens};
 
 /// The inspector's own width in the Toolpaths workspace (`app.rs`).
@@ -260,7 +264,7 @@ fn pencil_hides_its_reference_under_prior_stock_g_startfrom() {
         "non-vacuity: the pencil inspector painted no rest machining row; painted: {texts:?}"
     );
     assert!(
-        !texts.iter().any(|text| text == "Reference:"),
+        !texts.iter().any(|text| text == "Reference"),
         "a rest-depth pencil under Rest machining: from previous ops read the machined stock, so its \
          analytic reference is not a choice; painted: {texts:?}"
     );
@@ -276,7 +280,7 @@ fn pencil_hides_its_reference_under_prior_stock_g_startfrom() {
     let mut fresh = pencil(PencilDetector::RestDepth, StockSource::Fresh);
     let fresh_texts = painted(&ctx, &mut fresh);
     assert!(
-        fresh_texts.iter().any(|text| text == "Reference:"),
+        fresh_texts.iter().any(|text| text == "Reference"),
         "a rest-depth pencil under Stock resolves an analytic reference, so its picker \
          must be visible; painted: {fresh_texts:?}"
     );
@@ -288,7 +292,7 @@ fn a_crease_detector_keeps_its_reference_g_startfrom() {
     let mut state = pencil(PencilDetector::Dihedral, StockSource::FromRemainingStock);
     let texts = painted(&ctx, &mut state);
     assert!(
-        texts.iter().any(|text| text == "Reference:"),
+        texts.iter().any(|text| text == "Reference"),
         "the dihedral arm never reads the machined stock: it always resolves a reference \
          cutter. Hiding its picker under Rest machining: from previous ops hides a live control; \
          painted: {texts:?}"
@@ -341,7 +345,9 @@ fn the_rest_machining_row_is_one_checkbox_g_startfrom() {
                 .iter()
                 .filter_map(|clipped| match &clipped.shape {
                     egui::epaint::Shape::Text(text) => {
-                        if text.galley.job.text == REST_MACHINING_LABEL {
+                        // W3b: the label column holds the row name; the
+                        // checkbox text is the click target.
+                        if text.galley.job.text == REST_MACHINING_CHECK {
                             target = clipped.shape.visual_bounding_rect().center();
                         }
                         Some(text.galley.job.text.clone())

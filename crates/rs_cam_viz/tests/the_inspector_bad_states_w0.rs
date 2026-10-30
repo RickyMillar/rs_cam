@@ -135,23 +135,34 @@ type RowKey = (Family, State, String);
 type LongText = (usize, bool, Vec<String>);
 
 /// The text that proves a bad state painted, or `None` for the clean
-/// reference.
+/// reference. A needle that starts with `=` matches a whole galley text;
+/// any other needle matches a part of it.
 fn marker(state: State) -> Option<&'static [&'static str]> {
     match state {
         State::Clean => None,
         // W2b: the header Tool row owns the no-tool state.
         State::NoTool => Some(&["Choose a tool"]),
-        // The three empty feed fields paint "set a value". The clean state
-        // paints it too, for its unset dressup values, but fewer times.
-        State::FeedsUnset | State::FeedsUnsetRefused => Some(&["set a value"]),
+        // W3c/W3f: an empty speed field paints "—" (`NumberSpec` empty
+        // text), and nothing else in the galley. The clean state paints it
+        // too for an empty ramp feed, but fewer times.
+        State::FeedsUnset | State::FeedsUnsetRefused => Some(&["=\u{2014}"]),
         State::WrongTool => Some(&["needs a ball nose"]),
         // W2b: the status word of core `RunState::Failed`.
         State::Refused => Some(&["Failed"]),
         State::ReachOn => Some(&["Unreachable"]),
-        // The boundary rows paint only while the boundary is on.
-        State::BoundaryOn => Some(&["Containment:"]),
+        // The boundary rows paint only while the boundary is on. W3a: the
+        // Containment row is a `PropRow`; its label has no colon.
+        State::BoundaryOn => Some(&["=Containment"]),
         // W2b: the status word of core `RunState::OutOfDate`.
         State::StaleAfterEdit => Some(&["Out of date"]),
+    }
+}
+
+/// True when the galley text `text` holds the needle ([`marker`]).
+fn holds(text: &str, needle: &str) -> bool {
+    match needle.strip_prefix('=') {
+        Some(whole) => text.trim() == whole,
+        None => text.contains(needle),
     }
 }
 
@@ -162,7 +173,7 @@ fn marker_count(screens: &[Screen], family: Family, state: State, needles: &[&st
         .iter()
         .filter(|s| s.family == family && s.state == state)
         .flat_map(|s| s.painted.iter())
-        .filter(|p| needles.iter().any(|n| p.text.contains(n)))
+        .filter(|p| needles.iter().any(|n| holds(&p.text, n)))
         .count()
 }
 

@@ -20,9 +20,9 @@
 //! of the expected edit, and the stored operation and boundary must not
 //! change in the draw.
 //!
-//! A second test measures lead ruling L-2: a refusal of the selection
-//! shows its whole text once, in the section, and the footer row names the
-//! section in one line.
+//! A second test measures lead ruling L-2 as W3a states it: a refusal of
+//! the selection has one owner, the Cuts row (its Danger state and its
+//! hover); no line paints it and the issue stack holds no row for it.
 //!
 //! # NOT MEASURED
 //!
@@ -382,11 +382,13 @@ fn the_selection_section_writes_edits_only_p4_3() {
     assert_eq!(edit, SelectionEdit::Reset);
 
     // The boundary target of the Pocket (GT-Q7: the Geometry tab holds it
-    // under Boundary): its op Reset is first (disabled at the default), the
-    // boundary Reset second. The op default row has no ×.
+    // under the Boundary row). W3a: Reset is the action of the Selected
+    // row, which a selection at its default does not draw, so the op
+    // (at its default) has no Reset and the boundary Reset is the first.
+    // The op default row has no ×.
     select(&mut state, 1);
     let ctx = self::ctx();
-    let (target, edit) = one_edit(&ctx, &mut state, "Reset", 1);
+    let (target, edit) = one_edit(&ctx, &mut state, "Reset", 0);
     assert_eq!(target, SelectionTarget::Boundary);
     assert_eq!(edit, SelectionEdit::Reset);
     let (target, edit) = one_edit(&ctx, &mut state, "\u{2715}", 0);
@@ -426,9 +428,10 @@ fn painted(ctx: &egui::Context, state: &mut AppState) -> Vec<String> {
     texts
 }
 
-/// L-2, W2b: the section prints the whole refusal, once. The status line
-/// reads "Not ready", and the issue stack shows the short face of the core
-/// finding (the whole text is its hover).
+/// L-2, W2b, W3a: a selection refusal has one owner, the Cuts row. The
+/// refusal and the core finding (field key `selection`) are its Danger
+/// state and its hover; no line paints the refusal, and the issue stack
+/// holds no row for it. The status line reads "Not ready".
 #[test]
 fn a_selection_refusal_has_one_owner_p4_3() {
     let ctx = ctx();
@@ -453,14 +456,12 @@ fn a_selection_refusal_has_one_owner_p4_3() {
     let texts = painted(&ctx, &mut state);
     let whole: Vec<&String> = texts.iter().filter(|t| t.contains(&refusal)).collect();
     assert!(
-        !whole.is_empty(),
-        "the section must print the whole refusal '{refusal}'; painted: {texts:?}"
+        whole.is_empty(),
+        "the refusal is the hover of the Cuts row, not a painted line: {whole:?}"
     );
-    assert_eq!(
-        whole.len(),
-        1,
-        "the whole refusal must be painted once, by the section; the header and the \
-         footer name the section in one line: {whole:?}"
+    assert!(
+        texts.iter().any(|t| t == "Cuts"),
+        "the Cuts row owns the refusal; painted: {texts:?}"
     );
     assert!(
         texts.iter().any(|t| t == "Not ready"),
@@ -471,7 +472,15 @@ fn a_selection_refusal_has_one_owner_p4_3() {
     );
     assert_eq!(
         texts.iter().filter(|t| **t == face).count(),
-        1,
-        "the issue stack shows the short face once; painted: {texts:?}"
+        0,
+        "no issue row: the finding is the state of the Cuts row; painted: {texts:?}"
+    );
+    // Non-vacuity: the placement gives the finding to the field row.
+    let id = state.session().toolpath_configs()[0].id;
+    let placed = properties::placed_findings(id, &state).expect("the toolpath exists");
+    assert!(
+        placed.by_field.iter().any(|d| d.face == face),
+        "the finding sits on the Cuts row: {:?}",
+        placed.by_field
     );
 }

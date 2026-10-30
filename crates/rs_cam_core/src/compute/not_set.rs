@@ -27,6 +27,20 @@ pub const FEEDS_NOT_SET_TEXT: &str = "no feeds data for this tool: set feed and 
 /// The hint the GUI shows in an empty field (S11).
 pub const SET_A_VALUE_HINT: &str = "set a value";
 
+/// Every parameter name that a [`NotSet`] can name: the depths of
+/// `OperationConfig::unset_depths` and the feeds of
+/// `OperationConfig::unset_feeds`. A finding of a value that is not set
+/// anchors to one of them (`diagnostics::presentation::anchor_field_names`).
+/// The unit test holds it against every op.
+pub const NOT_SET_FIELDS: &[&str] = &[
+    "depth",
+    "max_depth",
+    "pocket_depth",
+    "feed_rate",
+    "plunge_rate",
+    "spindle_rpm",
+];
+
 /// What kind of value is not set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotSetKind {
@@ -104,4 +118,37 @@ pub fn required_depth(
         kind: NotSetKind::Depth,
         fields: vec![field],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NOT_SET_FIELDS;
+    use crate::compute::catalog::{OperationConfig, OperationType};
+
+    /// W3f: each field that an op can name as not set is in
+    /// [`NOT_SET_FIELDS`]. Each op is checked with no feeds and with its
+    /// default depths (S11: a depth that no rule gives is not set).
+    #[test]
+    fn not_set_fields_name_every_unset_field_w3f() {
+        let mut named = 0_usize;
+        for op in OperationType::ALL {
+            let mut config = OperationConfig::new_default(*op);
+            let params = config.as_params_mut();
+            params.unset_feed_rate();
+            params.unset_plunge_rate();
+            params.set_spindle_rpm(None);
+            for field in config
+                .unset_depths()
+                .into_iter()
+                .chain(config.unset_feeds())
+            {
+                named += 1;
+                assert!(
+                    NOT_SET_FIELDS.contains(&field),
+                    "{op:?} names `{field}`, which NOT_SET_FIELDS does not hold"
+                );
+            }
+        }
+        assert!(named > OperationType::ALL.len(), "non-vacuity: {named}");
+    }
 }

@@ -187,23 +187,6 @@ fn the_reach_reading_is_one_row_on_the_geometry_tab_r3() {
     }
 }
 
-/// The helper exists and does exactly one thing: wrap. It must not acquire a
-/// width, a truncation or a text change — this is a layout fix.
-#[test]
-fn the_wrapped_helper_only_wraps() {
-    let src = properties_src();
-    let body = function_body(&src, "wrapped_small_label");
-    assert!(body.contains(".wrap()"), "the helper must wrap");
-    assert!(
-        !body.contains("truncate"),
-        "truncation is the defect, not the fix"
-    );
-    assert!(
-        !body.contains("set_max_width") && !body.contains("set_width"),
-        "the helper must not pin a width; the panel owns that"
-    );
-}
-
 /// The tool-load caution — the sentence the review caught at "The whole
 /// derat". IC1, W2b: a finding is one issue row (the NoticeStack issue
 /// form truncates its face), and its hover holds the whole message first.

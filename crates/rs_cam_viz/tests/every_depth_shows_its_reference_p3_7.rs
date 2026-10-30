@@ -5,12 +5,12 @@
 //!
 //! 1. Each op that holds a floor (Pocket, Profile, Zigzag, Adaptive 2D)
 //!    draws the floor as the Bottom height row of its Heights tab (D6; the
-//!    Cut tab before D6, the Geometry tab before GT-1): "Bottom height:",
-//!    the reference of its floor, and the resolved floor Z.
+//!    Cut tab before D6, the Geometry tab before GT-1): "Bottom height",
+//!    the reference of its floor, and the resolved floor Z (W3d: absolute).
 //! 2. That row is the one floor editor (IC1): the Passes tab draws no floor
 //!    row, the Heights tab draws no read-only Floor line and no second
-//!    Bottom height row, and the Top height line names its source
-//!    ("auto: faces").
+//!    Bottom height row, and the Top height row names its source in its
+//!    reference combo ("Auto: faces").
 //!
 //! GT-1 (R2.4, FR-1 F7) removed the O-2 hint and its arm: it said "Each
 //! picked face" while the floor was Top Z and no face was picked. Q2 sets
@@ -316,7 +316,7 @@ fn every_depth_shows_its_reference_p3_7() {
         let heights = draw(&ctx, &mut s, None);
         let all = texts(&heights);
         assert_eq!(
-            all.iter().filter(|t| **t == "Bottom height:").count(),
+            all.iter().filter(|t| **t == "Bottom height").count(),
             1,
             "{label}: one Bottom height row: {all:?}"
         );
@@ -324,9 +324,20 @@ fn every_depth_shows_its_reference_p3_7() {
             all.contains(&reference),
             "{label}: the Bottom height row does not name its reference {reference:?}: {all:?}"
         );
+        // W3d (F5): the row shows the resolved floor Z, absolute, with
+        // two decimals, as the diagram does.
+        let tc = &s.session().toolpath_configs()[0];
+        let floor_z = s
+            .session()
+            .toolpath_heights(tc)
+            .unwrap()
+            .floor_z(&tc.heights)
+            .unwrap()
+            .unwrap();
+        let shown = format!("{floor_z:.2}");
         assert!(
-            all.iter().any(|t| t.starts_with("= Z ")),
-            "{label}: the Bottom height row does not show the resolved Z: {all:?}"
+            all.contains(&shown.as_str()),
+            "{label}: the Bottom height row does not show the resolved Z {shown}: {all:?}"
         );
 
         // 2. One owner: no read-only Floor line, and the Top height line
@@ -335,15 +346,17 @@ fn every_depth_shows_its_reference_p3_7() {
             !all.iter().any(|t| t.starts_with("Floor: ")),
             "{label}: the Heights tab still draws the read-only Floor line: {all:?}"
         );
+        // W3d: the reference combo of the Auto Top height row names the
+        // source.
         assert!(
-            all.contains(&"Top height: auto: faces"),
-            "{label}: the Top height line does not name its source: {all:?}"
+            all.contains(&"Auto: faces"),
+            "{label}: the Top height row does not name its source: {all:?}"
         );
         let mut s = state(operation, properties::ToolpathTab::Passes);
         let cut = draw(&ctx, &mut s, None);
         let all = texts(&cut);
         assert!(
-            !all.contains(&"Bottom height:") && !all.contains(&"Floor from:"),
+            !all.contains(&"Bottom height") && !all.contains(&"Floor from:"),
             "{label}: the Passes tab still draws a floor row: {all:?}"
         );
     }

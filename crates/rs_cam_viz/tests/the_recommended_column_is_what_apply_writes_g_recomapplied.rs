@@ -182,6 +182,7 @@ fn painted_text(controller: &mut AppController<SilentBackend>) -> Vec<String> {
     let id = controller.state.session().toolpath_configs()[0].id;
     controller.state.gui.pending_toolpath_tab =
         Some((id, rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds));
+    open_explore(&mut controller.state);
     let ctx = ctx();
     let mut texts = Vec::new();
     for pass in 0..2 {
@@ -196,6 +197,8 @@ fn painted_text(controller: &mut AppController<SilentBackend>) -> Vec<String> {
                         properties::draw(ui, &mut controller.state, &mut events);
                     });
                 });
+            let mut events = Vec::new();
+            rs_cam_viz::ui::feeds::draw(ui.ctx(), &controller.state, &mut events);
         });
         if pass == 1 {
             for clipped in &out.shapes {
@@ -430,4 +433,20 @@ fn the_power_row_reads_the_applied_cut_g_recomapplied() {
         "the power hover does not quote the calculator's cut beside the \
          applied one: {hover}"
     );
+}
+
+/// W3c (2026-10-30): the comparison card left the Feeds tab face for the
+/// Explore window, so the reader opens the window for the toolpath on the
+/// Feeds tab and paints it beside the inspector.
+fn open_explore(state: &mut rs_cam_viz::state::AppState) {
+    let id = state
+        .gui
+        .pending_toolpath_tab
+        .map(|(id, _)| id)
+        .or_else(|| state.session().toolpath_configs().first().map(|tc| tc.id))
+        .expect("a toolpath to explore");
+    state.feeds_modal = Some(rs_cam_viz::state::FeedsModalState {
+        toolpath_id: id,
+        explore: None,
+    });
 }

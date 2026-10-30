@@ -28,49 +28,10 @@
 use rs_cam_core::compute::tool_config::SizeUnits;
 use rs_cam_core::tool::size_units;
 
+use super::number::{near_match, suggest_hover};
 use super::provenance::{ProvKind, ProvenanceBadge};
 use super::suggest::{SuggestButton, Suggestion};
 use crate::ui::theme;
-
-/// Relative band inside which the configured value counts as already matching
-/// the suggestion and the pill is greyed.
-const NEAR_MATCH_BAND: f64 = 0.01;
-
-/// Does `configured` already match the value the pill would write?
-///
-/// `recommended` must be the as-applied (funnel) value — see the module doc.
-/// A non-positive recommendation never matches, so the pill stays live and
-/// the operator can see the number it offers.
-pub fn near_match(configured: f64, recommended: f64) -> bool {
-    recommended > 0.0 && (configured - recommended).abs() / recommended < NEAR_MATCH_BAND
-}
-
-/// The hover text for a suggest pill. Pure so the wording is unit-testable.
-pub fn suggest_hover(label: &str, suffix: &str, s: &Suggestion<'_>, matches: bool) -> String {
-    let trimmed = label.trim().trim_end_matches(':');
-    let src = s.source.label_with_reference(s.reference);
-    let clamp_note = match s.calculator {
-        Some(raw) if s.clamped && (raw - s.recommended).abs() > 1e-9 => {
-            format!(" Calculator {raw:.3}{suffix}, clamped by the apply funnel.")
-        }
-        _ if !s.clamped => {
-            " Calculator value, not clamped: the apply funnel does not write this field.".to_owned()
-        }
-        _ => String::new(),
-    };
-    if matches {
-        format!(
-            "{trimmed} already matches the recommendation as applied ({:.3}{}). Source: {src}.{clamp_note}",
-            s.recommended, suffix,
-        )
-    } else {
-        format!(
-            "Suggest {trimmed} = {:.3}{} (source: {src}) \u{2014} the same value Apply writes. \
-             Click to overwrite this field only.{clamp_note}",
-            s.recommended, suffix,
-        )
-    }
-}
 
 /// Outcome of a [`ValueRow::show`]. Carries the egui responses so callers that
 /// need them (e.g. UI-automation hooks) don't lose access through the wrapper.
@@ -423,64 +384,5 @@ impl<'a> OptionalValueRow<'a> {
         });
         ui.end_row();
         changed
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn suggestion(recommended: f64, clamped: bool, calculator: Option<f64>) -> Suggestion<'static> {
-        Suggestion {
-            recommended,
-            source: ProvKind::Formula,
-            reference: None,
-            clamped,
-            calculator,
-        }
-    }
-
-    /// The demo-pocket numbers (UX-R03-014): configured 1.2, raw 4.2, funnel
-    /// 1.2. The pill must be greyed because the click would change nothing.
-    #[test]
-    fn near_match_reads_the_as_applied_value_not_the_raw_one() {
-        let configured = 1.2;
-        let as_applied = 1.200_000_000_000_000_2; // 0.20 × 6.0, the clamp output
-        let raw = 4.2;
-        assert!(near_match(configured, as_applied), "1.2 vs as-applied 1.2");
-        assert!(
-            !near_match(configured, raw),
-            "1.2 vs raw 4.2 is not a match"
-        );
-    }
-
-    #[test]
-    fn near_match_never_fires_on_a_non_positive_recommendation() {
-        assert!(!near_match(0.0, 0.0));
-        assert!(!near_match(1.0, -1.0));
-    }
-
-    #[test]
-    fn hover_names_the_clamp_when_the_calculator_value_differs() {
-        let s = suggestion(1.2, true, Some(4.2));
-        let text = suggest_hover("Depth/Pass:", " mm", &s, false);
-        assert!(text.contains("1.200 mm"), "{text}");
-        assert!(text.contains("Calculator 4.200 mm, clamped"), "{text}");
-        assert!(text.contains("the same value Apply writes"), "{text}");
-    }
-
-    #[test]
-    fn hover_says_not_clamped_when_the_funnel_does_not_write_the_field() {
-        let s = suggestion(4.2, false, Some(4.2));
-        let text = suggest_hover("Max Depth:", " mm", &s, false);
-        assert!(text.contains("Calculator value, not clamped"), "{text}");
-    }
-
-    #[test]
-    fn hover_is_quiet_when_calculator_and_funnel_agree() {
-        let s = suggestion(2.1, true, Some(2.1));
-        let text = suggest_hover("Stepover:", " mm", &s, false);
-        assert!(!text.contains("Calculator"), "{text}");
-        assert!(!text.contains("not clamped"), "{text}");
     }
 }

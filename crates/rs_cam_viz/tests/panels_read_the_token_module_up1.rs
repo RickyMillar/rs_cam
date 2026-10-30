@@ -502,8 +502,6 @@ const RAW_GRID_ALLOWANCE: &[(&str, usize)] = &[
     ("ui/export_wizard.rs", 1),
     // 7 columns, striped — the vendor LUT viewer.
     ("ui/properties/feeds_speeds.rs", 1),
-    // 4 columns — the heights ladder.
-    ("ui/properties/operations/mod.rs", 1),
     // 4 and 7 columns, both striped — the tool list and the tier list.
     ("ui/multitool_planner.rs", 2),
     // 9 columns, striped — the project feeds table.
@@ -515,7 +513,8 @@ const GRID_HOME: &str = "ui/components/";
 
 /// The fewest raw grids the allow-list must still account for, so a sweep
 /// that deleted the tables rather than the duplication fails this arm.
-const MIN_ALLOWED_GRIDS: usize = 6;
+/// W3d moved the heights ladder onto `PropRow`s (6 → 5).
+const MIN_ALLOWED_GRIDS: usize = 5;
 
 fn rel_path(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)

@@ -55,7 +55,8 @@ use rs_cam_viz::ui::{properties, tokens};
 const PANEL_WIDTH: f32 = 280.0;
 
 /// The three things an operator must be able to set by hand.
-const CONTROLS: [&str; 3] = ["Feed:", "Plunge:", "Spindle:"];
+/// W3c: the labels are `PropRow` labels, sentence case with no colon.
+const CONTROLS: [&str; 3] = ["Feed", "Plunge", "Spindle"];
 
 fn ctx() -> egui::Context {
     let ctx = egui::Context::default();

@@ -139,21 +139,6 @@ pub fn height_order_badge(
     }
 }
 
-/// One small inspector line that carries a SENTENCE, wrapped explicitly.
-///
-/// G-REACHWRAP (UX-R09-001). `ui.label` inherits its wrap mode from the
-/// enclosing layout — `Wrap` under a vertical or main-wrapped one, `Extend`
-/// under a plain `ui.horizontal` — so whether a caveat survived at 1400×900
-/// depended on which row it happened to be written into. A sentence the
-/// operator has to read in full states its own wrapping instead, and does not
-/// change if the panel is later restructured.
-///
-/// Layout only. It sets no width and alters no text; the caller still owns
-/// the colour, because these lines are colour-coded by severity.
-pub(super) fn wrapped_small_label(ui: &mut egui::Ui, text: String, color: egui::Color32) {
-    ui.add(egui::Label::new(egui::RichText::new(text).small().color(color)).wrap());
-}
-
 /// R2 / 6.F4: the refusal text of the tool `id` for the op of `inputs`, or
 /// `None` when the op accepts it.
 pub(crate) fn tool_refusal(
@@ -229,7 +214,11 @@ pub(super) fn rest_region_pathology_line(
 /// The label of the rest machining row (L5, operator ruling 2026-10-23:
 /// the Fusion form, one checkbox). On = `StockSource::FromRemainingStock`,
 /// off = `StockSource::Fresh`. `StockSource` has these two values only.
-pub const REST_MACHINING_LABEL: &str = "Rest machining: from previous ops";
+pub const REST_MACHINING_LABEL: &str = "Rest machining";
+
+/// The text of the checkbox of the rest machining row (W3b: the label
+/// column holds [`REST_MACHINING_LABEL`]).
+pub const REST_MACHINING_CHECK: &str = "From previous ops";
 
 /// The rest machining row: ONE checkbox that writes `source` (G-STARTFROM:
 /// the one writer of `stock_source`). The response reports `changed` on a
@@ -238,13 +227,16 @@ pub const REST_MACHINING_LABEL: &str = "Rest machining: from previous ops";
 /// gives the full text.
 pub fn rest_machining_row(ui: &mut egui::Ui, source: &mut StockSource) -> egui::Response {
     let mut on = *source == StockSource::FromRemainingStock;
-    let response = ui
-        .scope(|ui| {
+    let out = crate::ui::components::PropRow::new(REST_MACHINING_LABEL)
+        .hover(Some(START_FROM_HOVER))
+        .show(ui, |ui| {
+            // The row clears the widget fills for a field well; a checkbox
+            // needs its own box, so it draws with the normal style.
+            ui.reset_style();
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.checkbox(&mut on, REST_MACHINING_LABEL)
-        })
-        .inner
-        .on_hover_text(START_FROM_HOVER);
+            ui.checkbox(&mut on, REST_MACHINING_CHECK)
+        });
+    let response = out.inner.on_hover_text(&out.hover);
     if response.changed() {
         *source = if on {
             StockSource::FromRemainingStock
@@ -374,52 +366,6 @@ pub(super) fn draw_tool_row(
     let _ = out.inner.on_hover_text(&out.hover);
 }
 
-/// The Input row of the Geometry tab (R2: it was on the Cut tab) and the
-/// BREP warning of the model. The row keeps its pre-R2 form; W3a moves it
-/// onto `PropRow`.
-pub(super) fn draw_input_row(
-    ui: &mut egui::Ui,
-    entry: &mut ToolpathEntry,
-    inputs: &super::ToolpathPanelInputs,
-) {
-    let models = inputs.models.as_slice();
-    let model_is_step_missing_brep = inputs.model_is_step_missing_brep;
-    // Model selector
-    ui.horizontal(|ui| {
-        ui.label("Input:");
-        let model_label = models
-            .iter()
-            .find(|(id, _)| *id == entry.model_id)
-            .map(|(_, s)| s.as_str())
-            .unwrap_or("(none)");
-        egui::ComboBox::from_id_salt("tp_model")
-            .truncate()
-            .selected_text(model_label)
-            .show_ui(ui, |ui| {
-                for (id, name) in models {
-                    ui.selectable_value(&mut entry.model_id, *id, name.as_str());
-                }
-            });
-    });
-
-    // BREP-not-loaded warning: surfaces when a STEP model loaded
-    // without its enriched mesh (older project files written before
-    // the BREP round-trip fix, or an unexpected loader regression).
-    // It stays adjacent to the Input model combo it concerns.
-    if model_is_step_missing_brep {
-        ui.add_space(4.0);
-        ui.add(
-            crate::ui::components::OneLine::new("\u{26A0} BREP topology not loaded")
-                .color(crate::ui::tokens::CAUTION)
-                .detail("The face picker is unavailable. Reload the model."),
-        );
-    }
-
-    // Geometry selection P4.3: the face picker block is in the Selection
-    // section (`selection_section.rs`). The Geometry tab draws that section
-    // directly below this row.
-}
-
 /// The rest machining row and its rest comparison: the first rows of the
 /// Passes tab (R2).
 pub(super) fn draw_start_from(
@@ -452,25 +398,25 @@ pub(super) fn draw_start_from(
     // Operator ruling 2026-10-15: a rest op compares itself with the same
     // op on fresh stock ON REQUEST. The twin is one more generation, so it
     // never runs on its own.
+    // W3b: one read-only `PropRow`: the two cycle times, and the quiet
+    // action that asks for the comparison.
     if entry.stock_source == StockSource::FromRemainingStock {
-        ui.horizontal(|ui| {
-            if ui
-                .small_button("Compare with fresh")
-                .on_hover_text(COMPARE_WITH_FRESH_HOVER)
-                .clicked()
-            {
-                events.push(crate::ui::AppEvent::CompareRestWithFresh(entry.id));
-            }
-            if let Some(times) = rest_fresh {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "rest {:.1} s \u{00B7} fresh {:.1} s",
-                        times.rest_s, times.fresh_s
-                    ))
-                    .color(crate::ui::tokens::TEXT_FAINT),
-                );
-            }
-        });
+        let value = rest_fresh.map_or_else(
+            || "Not compared".to_owned(),
+            |times| {
+                format!(
+                    "rest {:.1} s \u{00B7} fresh {:.1} s",
+                    times.rest_s, times.fresh_s
+                )
+            },
+        );
+        let out = crate::ui::components::PropRow::new("Fresh stock")
+            .hover(Some(COMPARE_WITH_FRESH_HOVER))
+            .action("Compare")
+            .show_read_only(ui, value);
+        if out.action_clicked {
+            events.push(crate::ui::AppEvent::CompareRestWithFresh(entry.id));
+        }
     }
 }
 

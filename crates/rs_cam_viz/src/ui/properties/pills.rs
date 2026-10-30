@@ -267,7 +267,7 @@ impl<'a> PillSuggestions<'a> {
 )]
 mod tests {
     use super::*;
-    use crate::ui::components::value_row::near_match;
+    use crate::ui::components::number::near_match;
     use rs_cam_core::compute::catalog::{OperationConfig, OperationType};
     use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
     use rs_cam_core::material::{Material, WoodSpecies};

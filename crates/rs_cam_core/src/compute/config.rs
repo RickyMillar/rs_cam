@@ -187,10 +187,10 @@ impl HeightReference {
 
     pub fn label(self) -> &'static str {
         match self {
-            HeightReference::StockTop => "Stock Top",
-            HeightReference::StockBottom => "Stock Bottom",
-            HeightReference::ModelTop => "Model Top",
-            HeightReference::ModelBottom => "Model Bottom",
+            HeightReference::StockTop => "Stock top",
+            HeightReference::StockBottom => "Stock bottom",
+            HeightReference::ModelTop => "Model top",
+            HeightReference::ModelBottom => "Model bottom",
         }
     }
 
@@ -2134,6 +2134,7 @@ mod tests {
                 | OperationType::Bore => {
                     assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
+                    assert!(!policy.entry_style_applies(), "{op:?}");
                 }
                 // AlignmentPinDrill joined the force-no-entry set 2026-08-21
                 // (G-WANAKA-DRILL-RAMP): it had been ANY_DRESSUP while its
@@ -2150,10 +2151,12 @@ mod tests {
                 | OperationType::Adaptive3d => {
                     assert!(policy.strip_all_reason.is_none(), "{op:?}");
                     assert_eq!(policy.entry, EntryStylePolicy::ForceNone, "{op:?}");
+                    assert!(!policy.entry_style_applies(), "{op:?}");
                 }
                 OperationType::Adaptive => {
                     assert!(policy.strip_all_reason.is_none());
                     assert_eq!(policy.entry, EntryStylePolicy::DefaultHelix);
+                    assert!(policy.entry_style_applies());
                 }
                 _ => {
                     // Pre-registry these fell through the predicate
@@ -2163,6 +2166,7 @@ mod tests {
                         "{op:?}: expected ANY_DRESSUP"
                     );
                     assert_eq!(policy.entry, EntryStylePolicy::AnyEntry, "{op:?}");
+                    assert!(policy.entry_style_applies(), "{op:?}");
                 }
             }
         }

@@ -855,6 +855,9 @@ impl ProjectSession {
         // R2: the first tool of an op with no tool applies THE boundary
         // rule of the draft (`apply_first_tool_boundary`).
         self.apply_first_tool_boundary(old_tool, &mut candidate);
+        // R1: each empty or suggested feed field takes the Suggest value of
+        // the new tool.
+        self.seed_feeds(&mut candidate);
         let enabled = candidate.enabled;
         if let Some(tc) = self.toolpath_configs.get_mut(index) {
             *tc = candidate;
@@ -864,6 +867,160 @@ impl ProjectSession {
         // `edit_toolpath_selection` and `set_heights_config`, not the
         // narrower `remove_result`.
         self.invalidate_result_chain(index, enabled);
+    }
+
+    /// R1 (operator ruling 2026-10-30, lead follow-up): THE seed of the feed
+    /// fields on a tool change.
+    ///
+    /// Each feed field of `config` (`feed_rate`, `plunge_rate`,
+    /// `spindle_rpm`, and `ramp_feed_rate` when the op has one) that is
+    /// EMPTY, or that holds a value Suggest wrote
+    /// ([`crate::feeds::ValueProvenance::is_suggested`]), takes the value of
+    /// the Apply funnel under `ApplyScope::Speeds`, the funnel that
+    /// `Command::ApplyFeeds` runs, with the stamp of the funnel. A suggested
+    /// value for the old tool is not a typed value, and it is wrong for the
+    /// new tool.
+    ///
+    /// - A typed value (`Manual`) keeps its value and its stamp.
+    /// - An `AutoCorrect` value keeps its value and its stamp, as a typed
+    ///   value does: it is not a Suggest value.
+    /// - A value with no stamp (a raw config, an old file) keeps its value:
+    ///   nothing says that Suggest wrote it.
+    /// - The seed locks no field: a typed value replaces a seeded value.
+    /// - With no tool, nothing changes.
+    /// - When Suggest refuses the new tool (`FeedsError::Unbacked`, a refused
+    ///   pairing), or gives no value for a field, each field with a Suggest
+    ///   stamp is CLEARED, with its stamp (operator ruling "no underived
+    ///   defaults"). The value was derived for the old tool. The field stays
+    ///   empty and generation refuses until it is set. An empty field stays
+    ///   empty; a typed or `AutoCorrect` value stays.
+    ///
+    /// The tool doors call it on a tool change only: `bind_tool_impl`
+    /// (`SetToolpathTool`, the P3 auto-bind) and `ReplaceToolpathConfig` (the
+    /// GUI Tool combo). A new op takes the same funnel in its draft
+    /// (`draft_toolpath`). This is a carve-out from F.5 ("the calculator
+    /// never writes") and from "no underived defaults": a Suggest value is
+    /// derived.
+    pub(crate) fn seed_feeds(&self, config: &mut ToolpathConfig) {
+        use crate::feeds::FeedsField;
+        let Ok(tool) = self.tool_of(config) else {
+            return;
+        };
+        let before = config.operation.as_params();
+        let stamps_before = &config.feeds_provenance;
+        // A field is held when it has a value that Suggest did not write.
+        let held_by = |field: FeedsField, value: bool| {
+            value
+                && !stamps_before
+                    .get(field)
+                    .is_some_and(crate::feeds::ValueProvenance::is_suggested)
+        };
+        let held = [
+            (
+                FeedsField::FeedRate,
+                held_by(FeedsField::FeedRate, before.feed_rate().is_some()),
+            ),
+            (
+                FeedsField::PlungeRate,
+                held_by(FeedsField::PlungeRate, before.plunge_rate().is_some()),
+            ),
+            (
+                FeedsField::SpindleRpm,
+                held_by(FeedsField::SpindleRpm, before.spindle_rpm().is_some()),
+            ),
+            (
+                FeedsField::RampFeedRate,
+                held_by(FeedsField::RampFeedRate, before.ramp_feed_rate().is_some()),
+            ),
+        ];
+        // An op with no ramp field reads `None` there, and the funnel writes
+        // no ramp feed to it, so the check is the same for every op.
+        if held.iter().all(|(_, held)| *held) {
+            return;
+        }
+        let slots = self.suggest_slots(config);
+        let dressups = config.dressups.clone();
+        let input = crate::feeds::suggest::OperationApplyInput {
+            tool,
+            machine: &self.machine,
+            material: &self.stock.material,
+            spindle_strategy: self.post.spindle_strategy,
+            lut: crate::feeds::embedded_vendor_lut(),
+            suggest: slots.context(&dressups),
+        };
+        let mut seeded = config.operation.clone();
+        let mut stamps = config.feeds_provenance.clone();
+        let refused = crate::feeds::suggest::apply_to_operation(
+            input,
+            crate::feeds::suggest::ApplyScope::Speeds,
+            None,
+            &mut seeded,
+            &mut stamps,
+        )
+        .is_err();
+        let from = seeded.as_params();
+        for (field, held) in held {
+            if held {
+                continue;
+            }
+            let op = &mut config.operation;
+            if refused {
+                Self::clear_suggested_feed(op, &mut config.feeds_provenance, field);
+                continue;
+            }
+            let written = match field {
+                FeedsField::FeedRate => {
+                    from.feed_rate().inspect(|v| op.set_feed_rate(*v)).is_some()
+                }
+                FeedsField::PlungeRate => from
+                    .plunge_rate()
+                    .inspect(|v| op.set_plunge_rate(*v))
+                    .is_some(),
+                FeedsField::SpindleRpm => from
+                    .spindle_rpm()
+                    .inspect(|v| op.set_spindle_rpm(Some(*v)))
+                    .is_some(),
+                FeedsField::RampFeedRate => from
+                    .ramp_feed_rate()
+                    .is_some_and(|v| op.as_params_mut().set_ramp_feed_rate(Some(v))),
+                FeedsField::Stepover | FeedsField::DepthPerPass | FeedsField::ScallopHeight => {
+                    false
+                }
+            };
+            if written && let Some(stamp) = stamps.get(field).cloned() {
+                config.feeds_provenance.set(field, stamp);
+            } else if !written {
+                Self::clear_suggested_feed(op, &mut config.feeds_provenance, field);
+            }
+        }
+    }
+
+    /// R1: clear the feed `field` of `op` when its stamp says that Suggest
+    /// wrote it, and remove the stamp. A field with no Suggest stamp (empty,
+    /// typed, `AutoCorrect`, no stamp) does not change.
+    fn clear_suggested_feed(
+        op: &mut crate::compute::catalog::OperationConfig,
+        stamps: &mut crate::feeds::FeedsProvenance,
+        field: crate::feeds::FeedsField,
+    ) {
+        use crate::feeds::FeedsField;
+        if !stamps
+            .get(field)
+            .is_some_and(crate::feeds::ValueProvenance::is_suggested)
+        {
+            return;
+        }
+        let params = op.as_params_mut();
+        match field {
+            FeedsField::FeedRate => params.unset_feed_rate(),
+            FeedsField::PlungeRate => params.unset_plunge_rate(),
+            FeedsField::SpindleRpm => params.set_spindle_rpm(None),
+            FeedsField::RampFeedRate => {
+                let _ = params.set_ramp_feed_rate(None);
+            }
+            FeedsField::Stepover | FeedsField::DepthPerPass | FeedsField::ScallopHeight => return,
+        }
+        stamps.clear(field);
     }
 
     /// Rebind a toolpath to a different **input model**, invalidating its

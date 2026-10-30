@@ -1,10 +1,10 @@
 //! Compare and apply — the per-operation feeds job.
 //!
 //! This file answers "what is this operation set to, what does the
-//! recommendation say, and do I take it?". It is the job DC5a's plan puts on
-//! the Feeds tab of the inspector, because per-operation editing is what the
-//! inspector is for. That move is a LATER package; this file is the split
-//! only, and the code inside it is unchanged.
+//! recommendation say, and do I take it?". W3c (2026-10-30) moved the card
+//! off the Feeds tab face into the Explore window
+//! ([`draw_comparison_for`], above the nomogram): R1 seeds the speeds on the tab, and the tab
+//! keeps one quiet Cut row for the cut half.
 //!
 //! **Apply contract (Checkpoint I, 2026-08-12).** Both writes — `⚡ Apply
 //! all` and the explore-chart apply — go through `feeds::suggest::apply`,
@@ -143,6 +143,95 @@ pub(crate) fn compute_preview(
         rs_cam_core::feeds::embedded_vendor_lut(),
         state.session().post_config().spindle_strategy,
     ))
+}
+
+/// W3c (2026-10-30): the comparison card of one toolpath in the Explore
+/// window. The Feeds tab face holds the speed rows and one quiet Cut row;
+/// the full card (the recommendation rows, `⚡ Apply all`, `⚡ Speeds only`
+/// and the `Details`) is here.
+///
+/// It reads the session the way the tab card read its snapshot: the tool,
+/// the stock material, the machine, the post spindle strategy and RPM, and
+/// the Suggest context of the model box and the dressups.
+pub(crate) fn draw_comparison_for(
+    ui: &mut egui::Ui,
+    state: &AppState,
+    toolpath_id: rs_cam_core::ToolpathId,
+    events: &mut Vec<AppEvent>,
+) {
+    let session = state.session();
+    let Some(tc) = session
+        .toolpath_configs()
+        .iter()
+        .find(|tc| tc.id == toolpath_id)
+    else {
+        return;
+    };
+    let Some(tool) = session.tools().iter().find(|t| Some(t.id) == tc.tool_id) else {
+        return;
+    };
+    let material = &session.stock_config().material;
+    let machine = session.machine();
+    let spindle_strategy = session.post_config().spindle_strategy;
+    let model_bbox = session.model_bbox_by_id(tc.model_id);
+    let context = || rs_cam_core::feeds::suggest::SuggestContext {
+        model_bbox: model_bbox.as_ref(),
+        // G6 ramp: the entry θ the apply writes the ramp feed for.
+        dressups: Some(&tc.dressups),
+        ..rs_cam_core::feeds::suggest::SuggestContext::default()
+    };
+    let preview =
+        compute_preview_for_operation(&tc.operation, tool, material, machine, spindle_strategy);
+    let current =
+        current_values_for_operation(&tc.operation, tool, session.post_config().spindle_speed);
+    // `FeedsPreview` carries calculator warnings; the rows also quote the
+    // invariant pass's own account of what it did (ruling R4, 2026-09-24).
+    let suggest_warnings = rs_cam_core::feeds::suggest::suggest_for_operation(
+        rs_cam_core::feeds::suggest::SuggestForOperationInput {
+            operation: &tc.operation,
+            tool,
+            machine,
+            material,
+            lut: rs_cam_core::feeds::embedded_vendor_lut(),
+            spindle_strategy,
+            context: context(),
+        },
+    )
+    .ok()
+    .map(|suggested| suggested.warnings);
+    let rationale = suggest_warnings
+        .as_deref()
+        .map(SuggestRationale::from_warnings);
+    // G-RECOMAPPLIED: the recommended column prints what `⚡ Apply all`
+    // writes: the funnel dry run. A refused pairing has no apply, so the
+    // column keeps the calculator values there.
+    let previews = preview.refusal().is_none().then(|| {
+        rs_cam_core::feeds::suggest::preview_field_applies(
+            &tc.operation,
+            preview.recommended(),
+            tool,
+            machine,
+            material,
+            tc.operation.feeds_style().1,
+            context(),
+        )
+    });
+    let applied = AppliedRecipe::new(previews, suggest_warnings.as_deref());
+    ui.separator();
+    draw_inspector_comparison(
+        ui,
+        &current,
+        &preview,
+        &applied,
+        rationale.as_ref(),
+        suggest_warnings.as_deref().unwrap_or_default(),
+        &tc.operation,
+        tool,
+        material,
+        machine,
+        toolpath_id,
+        events,
+    );
 }
 
 #[expect(

@@ -7,47 +7,54 @@ use crate::state::toolpath::{
     UnifiedFinishConfig, WaterlineConfig,
 };
 
-use super::super::{advanced, dv, dv_narrowed, dv_pill, p, schema_range};
-use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton, UiExt as _};
+use super::super::linking_dressup::{
+    Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
+    keyed_row, plain_row,
+};
+use super::super::{advanced, dv, dv_narrowed, dv_pill, p};
+use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton};
 use rs_cam_core::compute::catalog::OperationType;
 
 pub(in crate::ui::properties) fn draw_dropcutter_params(
     ui: &mut egui::Ui,
     cfg: &mut DropCutterConfig,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    ui.param_grid("dc_p", |ui| {
-        dv_pill(
-            ui,
-            p(OperationType::DropCutter, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-    });
+    dv_pill(
+        ui,
+        p(OperationType::DropCutter, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
     advanced(ui, "dc_adv", |ui| {
         dv(
             ui,
-            p(OperationType::DropCutter, "min_z", "Min Z:"),
+            p(OperationType::DropCutter, "min_z", "Min Z"),
             &mut cfg.min_z,
             " mm",
             0.5,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::DropCutter, "slope_from", "Slope From:"),
+            p(OperationType::DropCutter, "slope_from", "Slope from"),
             &mut cfg.slope_from,
             " deg",
             1.0,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::DropCutter, "slope_to", "Slope To:"),
+            p(OperationType::DropCutter, "slope_to", "Slope to"),
             &mut cfg.slope_to,
             " deg",
             1.0,
+            fields,
         );
     });
 }
@@ -58,196 +65,232 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     pills: Option<&PillSuggestions>,
     strategy_suggestion: Option<ClearingStrategy>,
     contour_each_level_offered: bool,
+    fields: Fields<'_>,
 ) {
     // Spec: pill stepover + depth_per_pass. Removal step R2: the
     // ContourSpiral "Optimal load" slider left with its strategy.
     let stepover_sugg = pills.map(PillSuggestions::stepover);
     let dpp_sugg = pills.map(PillSuggestions::depth_per_pass);
-    ui.param_grid("a3d_p", |ui| {
-        dv_pill(
-            ui,
-            p(OperationType::Adaptive3d, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::Adaptive3d, "depth_per_pass", "Depth/Pass:"),
-            &mut cfg.depth_per_pass,
-            " mm",
-            0.1,
-            dpp_sugg,
-        );
-        dv(
+    dv_pill(
+        ui,
+        p(OperationType::Adaptive3d, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::Adaptive3d, "depth_per_pass", "Depth/pass"),
+        &mut cfg.depth_per_pass,
+        " mm",
+        0.1,
+        dpp_sugg,
+        fields,
+    );
+    dv(
+        ui,
+        p(
+            OperationType::Adaptive3d,
+            "stock_to_leave_axial",
+            "Stock to leave",
+        ),
+        &mut cfg.stock_to_leave_axial,
+        " mm",
+        0.05,
+        fields,
+    );
+    // F5 (W3b): the ONE Entry style control of a 3D Rough. The planner
+    // plans its own entries from these rows (`rough_3d.rs`), and the
+    // registry row strips the dressup entry (`FORCE_NO_ENTRY`), so the
+    // Linking tab draws no Entry style row for this op.
+    combo_in_row(
+        ui,
+        keyed_row(
+            "Entry style",
+            "How the planner enters each level: Plunge, Helix or Ramp. The planner plans these entries itself.",
+            &fields.state("entry_style"),
+        ),
+        "a3d_entry",
+        match cfg.entry_style {
+            Adaptive3dEntryStyle::Plunge => "Plunge",
+            Adaptive3dEntryStyle::Helix => "Helix",
+            Adaptive3dEntryStyle::Ramp => "Ramp",
+        },
+        |ui| {
+            ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Plunge, "Plunge");
+            ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Helix, "Helix");
+            ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Ramp, "Ramp");
+        },
+    );
+    // Entry-style-specific parameters — only shown for the style in use.
+    match cfg.entry_style {
+        Adaptive3dEntryStyle::Plunge => {}
+        Adaptive3dEntryStyle::Ramp => {
+            dv(
+                ui,
+                p(OperationType::Adaptive3d, "ramp_angle_deg", "Ramp angle"),
+                &mut cfg.ramp_angle_deg,
+                " deg",
+                0.5,
+                fields,
+            );
+            dv(
+                ui,
+                p(
+                    OperationType::Adaptive3d,
+                    "entry_clearance_mm",
+                    "Entry clearance",
+                ),
+                &mut cfg.entry_clearance_mm,
+                " mm",
+                0.1,
+                fields,
+            );
+        }
+        Adaptive3dEntryStyle::Helix => {
+            dv(
+                ui,
+                p(
+                    OperationType::Adaptive3d,
+                    "helix_radius_factor",
+                    "Helix radius",
+                ),
+                &mut cfg.helix_radius_factor,
+                " × D",
+                0.05,
+                fields,
+            );
+            dv(
+                ui,
+                p(OperationType::Adaptive3d, "helix_pitch", "Helix pitch"),
+                &mut cfg.helix_pitch,
+                " mm",
+                0.1,
+                fields,
+            );
+            dv(
+                ui,
+                p(
+                    OperationType::Adaptive3d,
+                    "entry_clearance_mm",
+                    "Entry clearance",
+                ),
+                &mut cfg.entry_clearance_mm,
+                " mm",
+                0.1,
+                fields,
+            );
+        }
+    }
+    // G-D (§3): the Suggest advice is a ⚡ inside the Strategy well, not
+    // a row. It goes when the draft already holds the recommendation.
+    let suggestion = strategy_suggestion.filter(|s| *s != cfg.clearing_strategy);
+    let state = fields.state("clearing_strategy");
+    let out =
+        keyed_row("Strategy", "The clearing strategy of each slice.", &state).show(ui, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(recommended) = suggestion {
+                    let chip = SuggestButton::field(ProvKind::RepoRule).hover(format!(
+                        "Suggest: {} for this terrain (mixed-terrain classifier). Click to switch.",
+                        strategy_label(recommended)
+                    ));
+                    if ui.add(chip).clicked() {
+                        cfg.clearing_strategy = recommended;
+                    }
+                }
+                combo_control(
+                    ui,
+                    "a3d_strat",
+                    strategy_label(cfg.clearing_strategy),
+                    |ui| {
+                        ui.selectable_value(
+                            &mut cfg.clearing_strategy,
+                            ClearingStrategy::ContourParallel,
+                            "Contour Parallel",
+                        );
+                        ui.selectable_value(
+                            &mut cfg.clearing_strategy,
+                            ClearingStrategy::GeodesicAdaptive,
+                            "Geodesic Adaptive",
+                        )
+                        .on_hover_text(
+                            "Geodesic-wavefront roughing per slice: spiral wraps that hold \
+                     the pass load, with each tight turn fed down to that load. It \
+                     clears the body only; follow it with a Contour Parallel rest \
+                     op for the edges. New, not yet machine-tested.",
+                        );
+                    },
+                )
+            })
+            .inner
+        });
+    let _ = out.inner.on_hover_text(&out.hover);
+    // C4 (operator ruling D69): one visible row, shown where it acts: a
+    // rest rough (remaining stock) with a machining boundary, any rough
+    // in By Area order (C4b: the walls of each region at each level),
+    // or while it is on (the Pocket "Cut past open sides" rule). The
+    // hover is the registry help (UI-04: keyed on the parameter name).
+    if contour_each_level_offered
+        || cfg.contour_each_level
+        || cfg.region_ordering == RegionOrdering::ByArea
+    {
+        check_param(
             ui,
             p(
                 OperationType::Adaptive3d,
-                "stock_to_leave_axial",
-                "Stock to Leave:",
+                "contour_each_level",
+                "Contour each level",
             ),
-            &mut cfg.stock_to_leave_axial,
-            " mm",
-            0.05,
+            &mut cfg.contour_each_level,
+            fields,
         );
-        ui.label("Entry Style:");
-        egui::ComboBox::from_id_salt("a3d_entry")
-            .truncate()
-            .selected_text(match cfg.entry_style {
-                Adaptive3dEntryStyle::Plunge => "Plunge",
-                Adaptive3dEntryStyle::Helix => "Helix",
-                Adaptive3dEntryStyle::Ramp => "Ramp",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Plunge, "Plunge");
-                ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Helix, "Helix");
-                ui.selectable_value(&mut cfg.entry_style, Adaptive3dEntryStyle::Ramp, "Ramp");
-            });
-        ui.end_row();
-        // Entry-style-specific parameters — only shown for the style in use.
-        match cfg.entry_style {
-            Adaptive3dEntryStyle::Plunge => {}
-            Adaptive3dEntryStyle::Ramp => {
-                dv(
-                    ui,
-                    p(OperationType::Adaptive3d, "ramp_angle_deg", "Ramp Angle:"),
-                    &mut cfg.ramp_angle_deg,
-                    " deg",
-                    0.5,
-                );
-                dv(
-                    ui,
-                    p(
-                        OperationType::Adaptive3d,
-                        "entry_clearance_mm",
-                        "Entry Clearance:",
-                    ),
-                    &mut cfg.entry_clearance_mm,
-                    " mm",
-                    0.1,
-                );
-            }
-            Adaptive3dEntryStyle::Helix => {
-                dv(
-                    ui,
-                    p(
-                        OperationType::Adaptive3d,
-                        "helix_radius_factor",
-                        "Helix Radius:",
-                    ),
-                    &mut cfg.helix_radius_factor,
-                    " × D",
-                    0.05,
-                );
-                dv(
-                    ui,
-                    p(OperationType::Adaptive3d, "helix_pitch", "Helix Pitch:"),
-                    &mut cfg.helix_pitch,
-                    " mm",
-                    0.1,
-                );
-                dv(
-                    ui,
-                    p(
-                        OperationType::Adaptive3d,
-                        "entry_clearance_mm",
-                        "Entry Clearance:",
-                    ),
-                    &mut cfg.entry_clearance_mm,
-                    " mm",
-                    0.1,
-                );
-            }
-        }
-        ui.label("Strategy:");
-        // G-D (§3): the Suggest advice is a ⚡ chip in the combo's cell, not
-        // a row. It goes when the draft already holds the recommendation.
-        let suggestion = strategy_suggestion.filter(|s| *s != cfg.clearing_strategy);
-        ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("a3d_strat")
-                .truncate()
-                .selected_text(strategy_label(cfg.clearing_strategy))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut cfg.clearing_strategy,
-                        ClearingStrategy::ContourParallel,
-                        "Contour Parallel",
-                    );
-                    ui.selectable_value(
-                        &mut cfg.clearing_strategy,
-                        ClearingStrategy::GeodesicAdaptive,
-                        "Geodesic Adaptive",
-                    )
-                    .on_hover_text(
-                        "Geodesic-wavefront roughing per slice: spiral wraps that hold \
-                         the pass load, with each tight turn fed down to that load. It \
-                         clears the body only; follow it with a Contour Parallel rest \
-                         op for the edges. New, not yet machine-tested.",
-                    );
-                });
-            if let Some(recommended) = suggestion {
-                let chip = SuggestButton::field(ProvKind::RepoRule).hover(format!(
-                    "Suggest: {} for this terrain (mixed-terrain classifier). Click to switch.",
-                    strategy_label(recommended)
-                ));
-                if ui.add(chip).clicked() {
-                    cfg.clearing_strategy = recommended;
-                }
-            }
-        });
-        ui.end_row();
-        // C4 (operator ruling D69): one visible row, shown where it acts: a
-        // rest rough (remaining stock) with a machining boundary, any rough
-        // in By Area order (C4b: the walls of each region at each level),
-        // or while it is on (the Pocket "Cut past open sides" rule). The
-        // hover is the registry help (UI-04: keyed on the parameter name).
-        if contour_each_level_offered
-            || cfg.contour_each_level
-            || cfg.region_ordering == RegionOrdering::ByArea
-        {
-            let help = super::super::help_for(OperationType::Adaptive3d, "contour_each_level")
-                .unwrap_or_default();
-            ui.label("Contour each level:").on_hover_text(help);
-            ui.checkbox(&mut cfg.contour_each_level, "")
-                .on_hover_text(help);
-            ui.end_row();
-        }
-    });
+    }
     advanced(ui, "a3d_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Adaptive3d, "tolerance", "Tolerance:"),
+            p(OperationType::Adaptive3d, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
         dv(
             ui,
             p(
                 OperationType::Adaptive3d,
                 "min_cutting_radius",
-                "Min Cut Radius:",
+                "Min cut radius",
             ),
             &mut cfg.min_cutting_radius,
             " mm",
             0.1,
+            fields,
         );
-        ui.label("Detect Flat:");
-        ui.checkbox(&mut cfg.detect_flat_areas, "");
-        ui.end_row();
-        ui.label("Ordering:");
-        egui::ComboBox::from_id_salt("a3d_ord")
-            .truncate()
-            .selected_text(match cfg.region_ordering {
+        check_in_row(
+            ui,
+            plain_row("Detect flat", Some("Detect the flat areas of the model.")),
+            &mut cfg.detect_flat_areas,
+        );
+        combo_in_row(
+            ui,
+            plain_row(
+                "Ordering",
+                Some(
+                    "Global cuts every region at one level before the next level. By Area cuts each region before the next.",
+                ),
+            ),
+            "a3d_ord",
+            match cfg.region_ordering {
                 RegionOrdering::Global => "Global",
                 RegionOrdering::ByArea => "By Area",
-            })
-            .show_ui(ui, |ui| {
+            },
+            |ui| {
                 ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::Global, "Global");
                 ui.selectable_value(&mut cfg.region_ordering, RegionOrdering::ByArea, "By Area");
-            });
-        ui.end_row();
+            },
+        );
     });
 }
 
@@ -263,33 +306,36 @@ pub(in crate::ui::properties) fn draw_waterline_params(
     ui: &mut egui::Ui,
     cfg: &mut WaterlineConfig,
     _pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     // Waterline: z_step is the axial pass spacing, but Step 3 LUT mapping
     // (axial_depth_mm) is calibrated for clearing DOC, not contour Z-step.
     // Leave Z Step alone; feed/plunge live on the Feeds tab (W3.2).
-    ui.param_grid("wl_p", |ui| {
-        dv(
-            ui,
-            p(OperationType::Waterline, "z_step", "Z Step:"),
-            &mut cfg.z_step,
-            " mm",
-            0.1,
-        );
-        // W1b: the field is `helical`; the label names it, and the hover is
-        // its registry help (UI-04: keyed on the parameter name).
-        let help = super::super::help_for(OperationType::Waterline, "helical").unwrap_or_default();
-        ui.label("Helical:").on_hover_text(help);
-        ui.checkbox(&mut cfg.helical, "").on_hover_text(help);
-        ui.end_row();
-        // Z range now comes from the Heights tab (top_z / bottom_z)
-    });
+    dv(
+        ui,
+        p(OperationType::Waterline, "z_step", "Z step"),
+        &mut cfg.z_step,
+        " mm",
+        0.1,
+        fields,
+    );
+    // W1b: the field is `helical`; the label names it, and the hover is
+    // its registry help (UI-04: keyed on the parameter name).
+    check_param(
+        ui,
+        p(OperationType::Waterline, "helical", "Helical"),
+        &mut cfg.helical,
+        fields,
+    );
+    // Z range now comes from the Heights tab (top_z / bottom_z)
     advanced(ui, "wl_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Waterline, "sampling", "Sampling:"),
+            p(OperationType::Waterline, "sampling", "Sampling"),
             &mut cfg.sampling,
             " mm",
             0.1,
+            fields,
         );
     });
 }
@@ -303,6 +349,7 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     // writes `stock_source` for every operation. Pencil reads it to decide
     // whether its analytic reference is still a choice.
     stock_source: StockSource,
+    fields: Fields<'_>,
 ) {
     // Pencil's offset_stepover is a parallel-pass spacing, not the same
     // shape as a clearing radial WOC; leave it alone. Feed/plunge live on
@@ -312,210 +359,217 @@ pub(in crate::ui::properties) fn draw_pencil_params(
     // never honoured.
     let curvature = cfg.detector == PencilDetector::Curvature;
     let rest_depth = cfg.detector == PencilDetector::RestDepth;
-    ui.param_grid("pen_p", |ui| {
-        // Valley-detection front-end. Rest depth = dual-tool rest field (the
-        // aligned detector — the reference tool decides where pencil runs);
-        // Dihedral = mesh-crease detection (clean CAD-style corners);
-        // Curvature = curvature crest lines (dialled by Valley Saliency).
-        ui.label("Detector:");
-        let selected = if rest_depth {
-            "Rest depth (recommended)"
-        } else if curvature {
-            "Curvature (crest)"
-        } else {
-            "Dihedral (crease)"
-        };
-        egui::ComboBox::from_id_salt("pen_detector")
-            .truncate()
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(rest_depth, "Rest depth (recommended)")
-                    .clicked()
-                {
-                    cfg.detector = PencilDetector::RestDepth;
-                }
-                if ui
-                    .selectable_label(!curvature && !rest_depth, "Dihedral (crease)")
-                    .clicked()
-                {
-                    cfg.detector = PencilDetector::Dihedral;
-                }
-                if ui
-                    .selectable_label(curvature, "Curvature (crest)")
-                    .clicked()
-                {
-                    cfg.detector = PencilDetector::Curvature;
-                }
-            });
-        ui.end_row();
-        if rest_depth {
-            // Rest-depth dial. Rest Cell is the XY grid resolution of the
-            // rest field. FIN-04 deleted the retired "Route Width x"
-            // widget with the field it wrote.
-            dv(
-                ui,
-                p(OperationType::Pencil, "rest_cell_mm", "Rest Cell:"),
-                &mut cfg.rest_cell_mm,
-                " mm",
-                0.05,
-            );
-            ui.end_row();
-        } else if curvature {
-            // Curvature-detector dials. Valley Saliency is the significance
-            // knob: min concave curvature |κ₂| (1/mm) a valley must reach —
-            // low traces every seam, high keeps only deep sharp valleys.
-            dv(
-                ui,
-                p(OperationType::Pencil, "valley_saliency", "Valley Saliency:"),
-                &mut cfg.valley_saliency,
-                " 1/mm",
-                0.01,
-            );
-            // UI-10: an integer field. `ValueRow` edits an `f64`, and a
-            // temporary f64 would change what a partial edit commits.
-            ui.label("Curv. Smoothing:");
-            let mut s = cfg.curvature_smoothing as i32;
+    // Valley-detection front-end. Rest depth = dual-tool rest field (the
+    // aligned detector — the reference tool decides where pencil runs);
+    // Dihedral = mesh-crease detection (clean CAD-style corners);
+    // Curvature = curvature crest lines (dialled by Valley Saliency).
+    let selected = if rest_depth {
+        "Rest depth (recommended)"
+    } else if curvature {
+        "Curvature (crest)"
+    } else {
+        "Dihedral (crease)"
+    };
+    combo_in_row(
+        ui,
+        plain_row(
+            "Detector",
+            Some(
+                "How pencil finds its valleys: the rest depth, the mesh creases or the curvature crests.",
+            ),
+        ),
+        "pen_detector",
+        selected,
+        |ui| {
             if ui
-                .add(
-                    egui::DragValue::new(&mut s)
-                        .range(schema_range(OperationType::Pencil, "curvature_smoothing")),
-                )
-                .changed()
+                .selectable_label(rest_depth, "Rest depth (recommended)")
+                .clicked()
             {
-                cfg.curvature_smoothing = s.max(0) as usize;
+                cfg.detector = PencilDetector::RestDepth;
             }
-            ui.end_row();
-        } else {
-            dv(
-                ui,
-                p(
-                    OperationType::Pencil,
-                    "bitangency_angle",
-                    "Bitangency Angle:",
-                ),
-                &mut cfg.bitangency_angle,
-                " deg",
-                1.0,
-            );
-        }
-        // UI-10: an integer field. `ValueRow` edits an `f64`, and a
-        // temporary f64 would change what a partial edit commits.
-        ui.label("Offset Passes:");
-        let mut n = cfg.num_offset_passes as i32;
-        if ui
-            .add(
-                egui::DragValue::new(&mut n)
-                    .range(schema_range(OperationType::Pencil, "num_offset_passes")),
-            )
-            .changed()
-        {
-            cfg.num_offset_passes = n.max(0) as usize;
-        }
-        ui.end_row();
+            if ui
+                .selectable_label(!curvature && !rest_depth, "Dihedral (crease)")
+                .clicked()
+            {
+                cfg.detector = PencilDetector::Dihedral;
+            }
+            if ui
+                .selectable_label(curvature, "Curvature (crest)")
+                .clicked()
+            {
+                cfg.detector = PencilDetector::Curvature;
+            }
+        },
+    );
+    if rest_depth {
+        // Rest-depth dial. Rest Cell is the XY grid resolution of the
+        // rest field. FIN-04 deleted the retired "Route Width x"
+        // widget with the field it wrote.
         dv(
             ui,
-            p(OperationType::Pencil, "offset_stepover", "Offset Stepover:"),
-            &mut cfg.offset_stepover,
+            p(OperationType::Pencil, "rest_cell_mm", "Rest cell"),
+            &mut cfg.rest_cell_mm,
             " mm",
-            0.1,
+            0.05,
+            fields,
         );
-        // Reference-tool rest gate: keep only valleys the pencil tool (the
-        // op's own tool) reaches more than this deeper than the bigger
-        // reference finish tool. 0 = off (trace every detected valley); raise
-        // to skip shallow/already-reachable seams.
+    } else if curvature {
+        // Curvature-detector dials. Valley Saliency is the significance
+        // knob: min concave curvature |κ₂| (1/mm) a valley must reach —
+        // low traces every seam, high keeps only deep sharp valleys.
+        dv(
+            ui,
+            p(OperationType::Pencil, "valley_saliency", "Valley saliency"),
+            &mut cfg.valley_saliency,
+            " 1/mm",
+            0.01,
+            fields,
+        );
+        count_in_row(
+            ui,
+            plain_row(
+                "Curvature smoothing",
+                Some("The smoothing of the curvature field before the crest lines are found."),
+            ),
+            &mut cfg.curvature_smoothing,
+            0.1,
+            (OperationType::Pencil, "curvature_smoothing"),
+        );
+    } else {
         dv(
             ui,
             p(
                 OperationType::Pencil,
-                "min_valley_depth",
-                "Min Valley Depth:",
+                "bitangency_angle",
+                "Bitangency angle",
             ),
-            &mut cfg.min_valley_depth,
-            " mm",
-            0.05,
+            &mut cfg.bitangency_angle,
+            " deg",
+            1.0,
+            fields,
         );
-        // The analytic reference: what "rest" is measured against when the
-        // generator does NOT read a machined stock. Only `rest_depth_arm`
-        // reads `initial_stock`; `dihedral_arm` and `curvature_arm` always
-        // call `resolve_reference_cutter`, so their picker stays live under
-        // either "Start from" option. Hiding it on those two would hide a
-        // control that decides where pencil runs.
-        let reference_is_live =
-            cfg.detector != PencilDetector::RestDepth || stock_source == StockSource::Fresh;
-        if reference_is_live {
-            // "Nominal Ø" = a synthetic ball at Reference Tool Ø; or pick a
-            // real library tool whose TRUE geometry (flat/vbit/tapered)
-            // defines the rest — a flat leaves a different rest shape than a
-            // ball of the same diameter.
-            ui.label("Reference:");
-            let ref_label = cfg
-                .reference_tool_id
-                .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
-                .map(|(_, s, _)| s.as_str())
-                .unwrap_or("Nominal Ø");
-            egui::ComboBox::from_id_salt("pen_reference_tool")
-                .truncate()
-                .selected_text(ref_label)
-                .show_ui(ui, |ui| {
-                    if ui
-                        .selectable_label(cfg.reference_tool_id.is_none(), "Nominal Ø")
-                        .clicked()
-                    {
-                        cfg.reference_tool_id = None;
-                    }
-                    for (id, name, _) in tools {
-                        let selected = cfg.reference_tool_id == Some(*id);
-                        if ui.selectable_label(selected, name.as_str()).clicked() {
-                            cfg.reference_tool_id = Some(*id);
-                        }
-                    }
-                });
-            ui.end_row();
-            // The nominal diameter only applies when no real tool is chosen.
-            if cfg.reference_tool_id.is_none() {
-                dv(
-                    ui,
-                    p(
-                        OperationType::Pencil,
-                        "reference_tool_diameter",
-                        "Reference Tool Ø:",
-                    ),
-                    &mut cfg.reference_tool_diameter,
-                    " mm",
-                    0.5,
-                );
-            }
-        }
-        dv(
+    }
+    count_in_row(
+        ui,
+        plain_row(
+            "Offset passes",
+            Some("The number of offset passes beside each valley line."),
+        ),
+        &mut cfg.num_offset_passes,
+        0.1,
+        (OperationType::Pencil, "num_offset_passes"),
+    );
+    dv(
+        ui,
+        p(OperationType::Pencil, "offset_stepover", "Offset stepover"),
+        &mut cfg.offset_stepover,
+        " mm",
+        0.1,
+        fields,
+    );
+    // Reference-tool rest gate: keep only valleys the pencil tool (the
+    // op's own tool) reaches more than this deeper than the bigger
+    // reference finish tool. 0 = off (trace every detected valley); raise
+    // to skip shallow/already-reachable seams.
+    dv(
+        ui,
+        p(
+            OperationType::Pencil,
+            "min_valley_depth",
+            "Min valley depth",
+        ),
+        &mut cfg.min_valley_depth,
+        " mm",
+        0.05,
+        fields,
+    );
+    // The analytic reference: what "rest" is measured against when the
+    // generator does NOT read a machined stock. Only `rest_depth_arm`
+    // reads `initial_stock`; `dihedral_arm` and `curvature_arm` always
+    // call `resolve_reference_cutter`, so their picker stays live under
+    // either "Start from" option. Hiding it on those two would hide a
+    // control that decides where pencil runs.
+    let reference_is_live =
+        cfg.detector != PencilDetector::RestDepth || stock_source == StockSource::Fresh;
+    if reference_is_live {
+        // "Nominal Ø" = a synthetic ball at Reference Tool Ø; or pick a
+        // real library tool whose TRUE geometry (flat/vbit/tapered)
+        // defines the rest — a flat leaves a different rest shape than a
+        // ball of the same diameter.
+        let ref_label = cfg
+            .reference_tool_id
+            .and_then(|rid| tools.iter().find(|(id, _, _)| *id == rid))
+            .map(|(_, s, _)| s.as_str())
+            .unwrap_or("Nominal Ø");
+        combo_param(
             ui,
-            p(OperationType::Pencil, "stock_to_leave", "Stock to Leave:"),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
+            p(OperationType::Pencil, "reference_tool_id", "Reference"),
+            fields,
+            "pen_reference_tool",
+            ref_label,
+            |ui| {
+                if ui
+                    .selectable_label(cfg.reference_tool_id.is_none(), "Nominal Ø")
+                    .clicked()
+                {
+                    cfg.reference_tool_id = None;
+                }
+                for (id, name, _) in tools {
+                    let selected = cfg.reference_tool_id == Some(*id);
+                    if ui.selectable_label(selected, name.as_str()).clicked() {
+                        cfg.reference_tool_id = Some(*id);
+                    }
+                }
+            },
         );
-    });
+        // The nominal diameter only applies when no real tool is chosen.
+        if cfg.reference_tool_id.is_none() {
+            dv(
+                ui,
+                p(
+                    OperationType::Pencil,
+                    "reference_tool_diameter",
+                    "Reference tool Ø",
+                ),
+                &mut cfg.reference_tool_diameter,
+                " mm",
+                0.5,
+                fields,
+            );
+        }
+    }
+    dv(
+        ui,
+        p(OperationType::Pencil, "stock_to_leave", "Stock to leave"),
+        &mut cfg.stock_to_leave,
+        " mm",
+        0.05,
+        fields,
+    );
     advanced(ui, "pen_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Pencil, "min_cut_length", "Min Cut Length:"),
+            p(OperationType::Pencil, "min_cut_length", "Min cut length"),
             &mut cfg.min_cut_length,
             " mm",
             0.5,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::Pencil, "hookup_distance", "Hookup Distance:"),
+            p(OperationType::Pencil, "hookup_distance", "Hookup distance"),
             &mut cfg.hookup_distance,
             " mm",
             0.5,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::Pencil, "sampling", "Sampling:"),
+            p(OperationType::Pencil, "sampling", "Sampling"),
             &mut cfg.sampling,
             " mm",
             0.1,
+            fields,
         );
     });
 }
@@ -524,79 +578,97 @@ pub(in crate::ui::properties) fn draw_scallop_params(
     ui: &mut egui::Ui,
     cfg: &mut ScallopConfig,
     _pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     // Scallop's stepover is computed from scallop_height + tool radius, not
     // an editable field, so no stepover pill. Feed/plunge live on the Feeds
     // tab (W3.2).
-    ui.param_grid("sc_p", |ui| {
-        dv(
-            ui,
-            p(OperationType::Scallop, "scallop_height", "Scallop Height:"),
-            &mut cfg.scallop_height,
-            " mm",
-            0.01,
-        );
-        ui.label("Direction:");
-        egui::ComboBox::from_id_salt("sc_dir")
-            .truncate()
-            .selected_text(match cfg.direction {
-                ScallopDirection::OutsideIn => "Outside In",
-                ScallopDirection::InsideOut => "Inside Out",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut cfg.direction,
-                    ScallopDirection::OutsideIn,
-                    "Outside In",
-                );
-                ui.selectable_value(
-                    &mut cfg.direction,
-                    ScallopDirection::InsideOut,
-                    "Inside Out",
-                );
-            });
-        ui.end_row();
-        dv(
-            ui,
-            p(OperationType::Scallop, "stock_to_leave", "Stock to Leave:"),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
-        );
-    });
+    dv(
+        ui,
+        p(OperationType::Scallop, "scallop_height", "Scallop height"),
+        &mut cfg.scallop_height,
+        " mm",
+        0.01,
+        fields,
+    );
+    combo_in_row(
+        ui,
+        plain_row(
+            "Direction",
+            Some("Outside in starts at the boundary. Inside out starts at the centre."),
+        ),
+        "sc_dir",
+        match cfg.direction {
+            ScallopDirection::OutsideIn => "Outside in",
+            ScallopDirection::InsideOut => "Inside out",
+        },
+        |ui| {
+            ui.selectable_value(
+                &mut cfg.direction,
+                ScallopDirection::OutsideIn,
+                "Outside in",
+            );
+            ui.selectable_value(
+                &mut cfg.direction,
+                ScallopDirection::InsideOut,
+                "Inside out",
+            );
+        },
+    );
+    dv(
+        ui,
+        p(OperationType::Scallop, "stock_to_leave", "Stock to leave"),
+        &mut cfg.stock_to_leave,
+        " mm",
+        0.05,
+        fields,
+    );
     advanced(ui, "sc_adv", |ui| {
         dv(
             ui,
-            p(OperationType::Scallop, "tolerance", "Tolerance:"),
+            p(OperationType::Scallop, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
-        ui.label("Continuous:");
-        ui.checkbox(&mut cfg.continuous, "");
-        ui.end_row();
-        ui.label("Iso-Field Rings:").on_hover_text(
-            "Rings from the iso-scallop field instead of the offset \
-                 cascade: spacing varies point-by-point along each ring \
-                 (organic, terrain-following), uses the spec-correct cosine \
-                 slope law, and always runs to completion. Measured faster \
-                 than the band mix at better coverage on terrain work.",
+        check_in_row(
+            ui,
+            plain_row(
+                "Continuous",
+                Some("Join the rings into one continuous path."),
+            ),
+            &mut cfg.continuous,
         );
-        ui.checkbox(&mut cfg.iso_field, "");
-        ui.end_row();
+        check_in_row(
+            ui,
+            plain_row(
+                "Iso-field rings",
+                Some(
+                    "Rings from the iso-scallop field instead of the offset \
+                     cascade: spacing varies point-by-point along each ring \
+                     (organic, terrain-following), uses the spec-correct cosine \
+                     slope law, and always runs to completion. Measured faster \
+                     than the band mix at better coverage on terrain work.",
+                ),
+            ),
+            &mut cfg.iso_field,
+        );
         dv(
             ui,
-            p(OperationType::Scallop, "slope_from", "Slope From:"),
+            p(OperationType::Scallop, "slope_from", "Slope from"),
             &mut cfg.slope_from,
             " deg",
             1.0,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::Scallop, "slope_to", "Slope To:"),
+            p(OperationType::Scallop, "slope_to", "Slope to"),
             &mut cfg.slope_to,
             " deg",
             1.0,
+            fields,
         );
     });
 }
@@ -623,86 +695,102 @@ fn draw_unified_finish_claims(
     cfg: &mut UnifiedFinishConfig,
     resolved: Option<rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding>,
     stock_source: StockSource,
+    fields: Fields<'_>,
 ) {
     ui.add_space(6.0);
-    crate::ui::components::SectionHeader::new("Rest Claims").show(ui);
-    ui.param_grid("uf_claims", |ui| {
-        ui.label("Pencil Claims:");
-        ui.checkbox(&mut cfg.pencil_claims, "").on_hover_text(
-            "Run the crease/rest detector inside this operation and cut its \
-                     claimed valleys as an extra pass. Off by default: on a \
-                     single-tool op the analytic detector marks exactly what this \
-                     cutter cannot reach. Every dial below is INERT while this is off.",
-        );
-        ui.end_row();
-
-        ui.label("Rest Reference:");
-        egui::ComboBox::from_id_salt("uf_claims_ref")
-            .truncate()
-            .selected_text(match cfg.claims_reference {
-                ClaimsReference::Auto => "Auto (derive)",
-                ClaimsReference::SelfProbe => "Analytic self-probe",
-                ClaimsReference::MachinedStock => "Machined prior stock",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut cfg.claims_reference,
-                    ClaimsReference::Auto,
-                    "Auto (derive)",
-                )
-                .on_hover_text(
-                    "Use the machined prior stock when one is in scope, and the \
-                         analytic self-probe when none is. Pin the self-probe instead \
-                         if the previous pass was a ROUGHING pass — a stock-referenced \
-                         detector reads roughing terraces as phantom creases.",
-                );
-                ui.selectable_value(
-                    &mut cfg.claims_reference,
-                    ClaimsReference::SelfProbe,
-                    "Analytic self-probe",
-                )
-                .on_hover_text(
-                    "Derive rest from the design surface: where can this cutter \
-                         not reach the model. Right for a FIRST finish pass and for a \
-                         rough-referenced chain; wrong for a same-tool rest pass, \
-                         where it names precisely what the pass cannot fix (measured \
-                         −88.7% cutting once corrected).",
-                );
-                ui.selectable_value(
-                    &mut cfg.claims_reference,
-                    ClaimsReference::MachinedStock,
-                    "Machined prior stock",
-                )
-                .on_hover_text(
-                    "Measure rest against the material the previous pass actually \
-                         left. Needs this operation's stock source set to remaining \
-                         stock, and an upstream pass that has been generated AND \
-                         simulated.",
-                );
-            });
-        ui.end_row();
-
-        ui.label("Territory Clip:");
-        ui.checkbox(&mut cfg.territory_clip, "").on_hover_text(
-            "Confine generation to rest ISLANDS instead of the full surface. \
-                     Runs only under the machined-stock reference — under a self-probe \
-                     reference the 'rest islands' are geometric, not material, so the \
-                     clip is skipped and this becomes an all-over pass.",
-        );
-        ui.end_row();
-
-        dv(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "min_rest_depth_mm",
-                "Min Rest Depth:",
+    crate::ui::components::SectionHeader::new("Rest claims")
+        .rule(false)
+        .show(ui);
+    check_in_row(
+        ui,
+        plain_row(
+            "Pencil claims",
+            Some(
+                "Run the crease/rest detector inside this operation and cut its \
+                 claimed valleys as an extra pass. Off by default: on a \
+                 single-tool op the analytic detector marks exactly what this \
+                 cutter cannot reach. Every dial below is INERT while this is off.",
             ),
-            &mut cfg.min_rest_depth_mm,
-            " mm",
-            0.005,
-        );
-    });
+        ),
+        &mut cfg.pencil_claims,
+    );
+
+    combo_in_row(
+        ui,
+        plain_row(
+            "Rest reference",
+            Some("What the claims pipeline measures rest against."),
+        ),
+        "uf_claims_ref",
+        match cfg.claims_reference {
+            ClaimsReference::Auto => "Auto (derive)",
+            ClaimsReference::SelfProbe => "Analytic self-probe",
+            ClaimsReference::MachinedStock => "Machined prior stock",
+        },
+        |ui| {
+            ui.selectable_value(
+                &mut cfg.claims_reference,
+                ClaimsReference::Auto,
+                "Auto (derive)",
+            )
+            .on_hover_text(
+                "Use the machined prior stock when one is in scope, and the \
+                     analytic self-probe when none is. Pin the self-probe instead \
+                     if the previous pass was a ROUGHING pass — a stock-referenced \
+                     detector reads roughing terraces as phantom creases.",
+            );
+            ui.selectable_value(
+                &mut cfg.claims_reference,
+                ClaimsReference::SelfProbe,
+                "Analytic self-probe",
+            )
+            .on_hover_text(
+                "Derive rest from the design surface: where can this cutter \
+                     not reach the model. Right for a FIRST finish pass and for a \
+                     rough-referenced chain; wrong for a same-tool rest pass, \
+                     where it names precisely what the pass cannot fix (measured \
+                     −88.7% cutting once corrected).",
+            );
+            ui.selectable_value(
+                &mut cfg.claims_reference,
+                ClaimsReference::MachinedStock,
+                "Machined prior stock",
+            )
+            .on_hover_text(
+                "Measure rest against the material the previous pass actually \
+                     left. Needs this operation's stock source set to remaining \
+                     stock, and an upstream pass that has been generated AND \
+                     simulated.",
+            );
+        },
+    );
+
+    check_in_row(
+        ui,
+        plain_row(
+            "Territory clip",
+            Some(
+                "Confine generation to rest ISLANDS instead of the full surface. \
+                 Runs only under the machined-stock reference — under a self-probe \
+                 reference the 'rest islands' are geometric, not material, so the \
+                 clip is skipped and this becomes an all-over pass.",
+            ),
+        ),
+        &mut cfg.territory_clip,
+    );
+
+    dv(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "min_rest_depth_mm",
+            "Min rest depth",
+        ),
+        &mut cfg.min_rest_depth_mm,
+        " mm",
+        0.005,
+        fields,
+    );
 
     // The resolved reference: what the LAST generation used, not what the
     // dial says. `None` before the operation has generated, or when claims
@@ -778,106 +866,120 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
     _pills: Option<&PillSuggestions>,
     resolved_claims_reference: Option<rs_cam_core::compute::toolpath_stats::ClaimsReferenceFinding>,
     stock_source: StockSource,
+    fields: Fields<'_>,
 ) {
-    ui.param_grid("uf_p", |ui| {
-        dv(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "steep_threshold_deg",
-                "Steep Threshold:",
-            ),
-            &mut cfg.steep_threshold_deg,
-            " deg",
-            1.0,
-        );
-        dv_narrowed(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "waterline_threshold_deg",
-                "Waterline Threshold:",
-            ),
-            &mut cfg.waterline_threshold_deg,
-            " deg",
-            1.0,
-            // `.min(89.0)` keeps the range well-formed even when
-            // Steep Threshold sits near its own 85° ceiling (85 + 5 =
-            // 90 would otherwise invert against the 89° upper bound).
-            (cfg.steep_threshold_deg + 5.0).min(89.0)..=89.0,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "scallop_height",
-                "Scallop Height:",
-            ),
-            &mut cfg.scallop_height,
-            " mm",
-            0.01,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "raster_stepover",
-                "Raster Stepover:",
-            ),
-            &mut cfg.raster_stepover,
-            " mm",
-            0.1,
-        );
-        dv(
-            ui,
-            p(OperationType::UnifiedFinish, "z_step", "Z Step:"),
-            &mut cfg.z_step,
-            " mm",
-            0.1,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::UnifiedFinish,
-                "stock_to_leave",
-                "Stock to Leave:",
-            ),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
-        );
-    });
+    dv(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "steep_threshold_deg",
+            "Steep threshold",
+        ),
+        &mut cfg.steep_threshold_deg,
+        " deg",
+        1.0,
+        fields,
+    );
+    dv_narrowed(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "waterline_threshold_deg",
+            "Waterline threshold",
+        ),
+        &mut cfg.waterline_threshold_deg,
+        " deg",
+        1.0,
+        // `.min(89.0)` keeps the range well-formed even when
+        // Steep Threshold sits near its own 85° ceiling (85 + 5 =
+        // 90 would otherwise invert against the 89° upper bound).
+        (cfg.steep_threshold_deg + 5.0).min(89.0)..=89.0,
+        fields,
+    );
+    dv(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "scallop_height",
+            "Scallop height",
+        ),
+        &mut cfg.scallop_height,
+        " mm",
+        0.01,
+        fields,
+    );
+    dv(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "raster_stepover",
+            "Raster stepover",
+        ),
+        &mut cfg.raster_stepover,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::UnifiedFinish, "z_step", "Z step"),
+        &mut cfg.z_step,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv(
+        ui,
+        p(
+            OperationType::UnifiedFinish,
+            "stock_to_leave",
+            "Stock to leave",
+        ),
+        &mut cfg.stock_to_leave,
+        " mm",
+        0.05,
+        fields,
+    );
     advanced(ui, "uf_adv", |ui| {
         dv(
             ui,
-            p(OperationType::UnifiedFinish, "overlap_mm", "Overlap:"),
+            p(OperationType::UnifiedFinish, "overlap_mm", "Overlap"),
             &mut cfg.overlap_mm,
             " mm",
             0.1,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::UnifiedFinish, "tolerance", "Tolerance:"),
+            p(OperationType::UnifiedFinish, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::UnifiedFinish, "sampling", "Sampling:"),
+            p(OperationType::UnifiedFinish, "sampling", "Sampling"),
             &mut cfg.sampling,
             " mm",
             0.1,
+            fields,
         );
 
-        // `dv` ends its own grid row, so this one opens straight after.
         // C2 (`planning/thin_organic_2026-08-27/`). A path-STRUCTURE
         // dial, so it sits with the other shallow-band geometry dials
         // rather than in the Rest Claims block below.
-        ui.label("Monotone Cells:");
-        ui.checkbox(&mut cfg.monotone_cell_decomposition, "")
-            .on_hover_text(
-                "Split each SHALLOW region into monotone cells on that region's own \
+        check_in_row(
+            ui,
+            plain_row("Monotone cells", Some(MONOTONE_CELLS_HOVER)),
+            &mut cfg.monotone_cell_decomposition,
+        );
+    });
+    draw_unified_finish_claims(ui, cfg, resolved_claims_reference, stock_source, fields);
+}
+
+/// The hover of the Unified Finish "Monotone cells" row (C2).
+const MONOTONE_CELLS_HOVER: &str = "Split each SHALLOW region into monotone cells on that region's own \
                      raster lattice, rotating the lattice to the region's PCA-minor axis \
                      where its elongation clears 3.0. Every cell rasters on that one \
                      shared lattice, so the relinker sees cell-shaped fragments instead \
@@ -889,93 +991,100 @@ pub(in crate::ui::properties) fn draw_unified_finish_params(
                      ceiling: 1.155x across the reference relief's top three shallow \
                      regions, 1.215x on the elongated one — rig figures to approach, not \
                      promises. Cell seams change the cusp pattern, so look at the \
-                     rendered surface before trusting it on a finish pass.",
-            );
-        ui.end_row();
-    });
-    draw_unified_finish_claims(ui, cfg, resolved_claims_reference, stock_source);
-}
+                     rendered surface before trusting it on a finish pass.";
 
 pub(in crate::ui::properties) fn draw_steep_shallow_params(
     ui: &mut egui::Ui,
     cfg: &mut SteepShallowConfig,
     pills: Option<&PillSuggestions>,
+    fields: Fields<'_>,
 ) {
     let stepover_sugg = pills.map(PillSuggestions::stepover);
-    ui.param_grid("ss_p", |ui| {
-        dv(
-            ui,
-            p(
-                OperationType::SteepShallow,
-                "threshold_angle",
-                "Threshold Angle:",
-            ),
-            &mut cfg.threshold_angle,
-            " deg",
-            1.0,
-        );
-        dv_pill(
-            ui,
-            p(OperationType::SteepShallow, "stepover", "Stepover:"),
-            &mut cfg.stepover,
-            " mm",
-            0.1,
-            stepover_sugg,
-        );
-        dv(
-            ui,
-            p(OperationType::SteepShallow, "z_step", "Z Step:"),
-            &mut cfg.z_step,
-            " mm",
-            0.1,
-        );
-        dv(
-            ui,
-            p(
-                OperationType::SteepShallow,
-                "stock_to_leave",
-                "Stock to Leave:",
-            ),
-            &mut cfg.stock_to_leave,
-            " mm",
-            0.05,
-        );
-    });
+    dv(
+        ui,
+        p(
+            OperationType::SteepShallow,
+            "threshold_angle",
+            "Threshold angle",
+        ),
+        &mut cfg.threshold_angle,
+        " deg",
+        1.0,
+        fields,
+    );
+    dv_pill(
+        ui,
+        p(OperationType::SteepShallow, "stepover", "Stepover"),
+        &mut cfg.stepover,
+        " mm",
+        0.1,
+        stepover_sugg,
+        fields,
+    );
+    dv(
+        ui,
+        p(OperationType::SteepShallow, "z_step", "Z step"),
+        &mut cfg.z_step,
+        " mm",
+        0.1,
+        fields,
+    );
+    dv(
+        ui,
+        p(
+            OperationType::SteepShallow,
+            "stock_to_leave",
+            "Stock to leave",
+        ),
+        &mut cfg.stock_to_leave,
+        " mm",
+        0.05,
+        fields,
+    );
     advanced(ui, "ss_adv", |ui| {
         dv(
             ui,
-            p(OperationType::SteepShallow, "overlap_distance", "Overlap:"),
+            p(OperationType::SteepShallow, "overlap_distance", "Overlap"),
             &mut cfg.overlap_distance,
             " mm",
             0.1,
+            fields,
         );
         dv(
             ui,
             p(
                 OperationType::SteepShallow,
                 "wall_clearance",
-                "Wall Clearance:",
+                "Wall clearance",
             ),
             &mut cfg.wall_clearance,
             " mm",
             0.1,
+            fields,
         );
-        ui.label("Steep First:");
-        ui.checkbox(&mut cfg.steep_first, "");
-        ui.end_row();
+        check_in_row(
+            ui,
+            plain_row(
+                "Steep first",
+                Some("Cut the steep areas before the shallow areas."),
+            ),
+            &mut cfg.steep_first,
+        );
         dv(
             ui,
-            p(OperationType::SteepShallow, "sampling", "Sampling:"),
+            p(OperationType::SteepShallow, "sampling", "Sampling"),
             &mut cfg.sampling,
             " mm",
             0.1,
+            fields,
         );
         dv(
             ui,
-            p(OperationType::SteepShallow, "tolerance", "Tolerance:"),
+            p(OperationType::SteepShallow, "tolerance", "Tolerance"),
             &mut cfg.tolerance,
             " mm",
             0.01,
+            fields,
         );
     });
 }

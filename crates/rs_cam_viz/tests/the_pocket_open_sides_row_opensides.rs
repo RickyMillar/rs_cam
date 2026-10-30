@@ -4,7 +4,7 @@
 //! # The claims
 //!
 //! 1. A Pocket on `stepped_block.step` (its Z rings are model faces) shows
-//!    the row "Cut past open sides:" beside the "Open paths:" row, and the
+//!    the row "Cut past open sides" beside the "Open paths" row, and the
 //!    row fits the 240-point rail with no wrap.
 //! 2. A drawing Pocket (no face) does not show the row.
 //! 3. A drawing Pocket with the setting on shows the row, so the operator
@@ -37,7 +37,7 @@ use rs_cam_core::geo::P2;
 use rs_cam_core::polygon::Polygon2;
 use rs_cam_core::selection::ItemSet;
 
-const ROW: &str = "Cut past open sides:";
+const ROW: &str = "Cut past open sides";
 
 fn stock() -> StockConfig {
     StockConfig {
@@ -100,7 +100,7 @@ fn a_face_pocket_shows_the_row_opensides() {
         painted.iter().map(|p| &p.text).collect::<Vec<_>>()
     );
     assert!(
-        !h::find(&painted, "Open paths:").is_empty(),
+        !h::find(&painted, "Open paths").is_empty(),
         "beside the Open paths row"
     );
     let wrapped = h::wrapped(&painted);
@@ -129,7 +129,7 @@ fn a_face_pocket_shows_the_row_opensides() {
 fn a_drawing_pocket_shows_no_row_opensides() {
     let painted = painted_on_cut_tab(square(), false);
     assert!(
-        !h::find(&painted, "Open paths:").is_empty(),
+        !h::find(&painted, "Open paths").is_empty(),
         "non-vacuity: the Passes tab is drawn"
     );
     assert!(h::find(&painted, ROW).is_empty(), "no face, no row");

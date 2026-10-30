@@ -650,6 +650,17 @@ impl DressupPolicy {
             entry: EntryStylePolicy::AnyEntry,
         }
     }
+
+    /// True when generation reads the dressup entry style of this op.
+    ///
+    /// False when `DressupConfig::normalize_for_op` sets the style to
+    /// `None`: the op strips every dressup (`strip_all_reason`), or the op
+    /// plans its own entries (`EntryStylePolicy::ForceNone`). A panel then
+    /// draws no dressup Entry style control (W3e, F5).
+    #[must_use]
+    pub const fn entry_style_applies(self) -> bool {
+        self.strip_all_reason.is_none() && !matches!(self.entry, EntryStylePolicy::ForceNone)
+    }
 }
 
 /// One row of the Phase 1 operation registry. Data only — no behavior

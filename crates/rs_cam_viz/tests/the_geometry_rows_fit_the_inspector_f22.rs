@@ -16,14 +16,15 @@
 //!
 //! 1. a STEP Drill (`block_with_blind_hole.step`) on its default rule
 //!    (R-B: one hole row), and the same Drill with a pick of the floor
-//!    circle: the refusal, painted ONCE at full length (F27);
+//!    circle: the refusal (F27; W3a: the Danger state of the Cuts row,
+//!    the text on its hover);
 //! 2. the same Drill with a pick of the rim circle at Z 20: a row with
 //!    "Rule…" and "×";
 //! 3. a DXF Drill with circles of three sizes, a point and open paths on
 //!    six layers, on its default rule and with picks;
 //! 4. a STEP Pocket (`stepped_block.step`) on two faces with one face as
-//!    the floor: the floor face slot (F23 names it "Face Z…"), and the
-//!    Floor line on "Each picked face" with a Z range (F25).
+//!    the floor: the Floor face row (F23 names it "Face Z…"), and the
+//!    Floor row on "Each picked face" with a Z range (F25).
 //!
 //! 5. a STEP Pocket whose result the model gouge guard blocked (F20,
 //!    FR-2 screenshot 04): the header row, the act buttons and the Safety
@@ -470,55 +471,61 @@ fn the_geometry_rows_fit_the_inspector_f22() {
     );
 }
 
-/// F23: the floor face slot names the face as the list rows do: "Face Z"
-/// and its plane Z, not the anchor and the size.
+/// F23: the Floor face row names the face as the list rows do: "Face Z"
+/// and its plane Z, not the anchor and the size. W3a: the row is a
+/// `PropRow`, so the label and the value are two painted texts.
 #[test]
 fn the_floor_face_slot_names_the_face_z_f23() {
     let mut state = state_of(stepped_pocket(true));
     let f = settle(&mut state);
-    let slot: Vec<&String> = f
+    let at: Vec<usize> = f
         .texts
         .iter()
-        .map(|(t, _)| t)
-        .filter(|t| t.starts_with("Floor face"))
+        .enumerate()
+        .filter(|(_, (t, _))| t == "Floor face")
+        .map(|(i, _)| i)
         .collect();
-    assert_eq!(slot.len(), 1, "one floor face slot: {:?}", f.texts);
+    assert_eq!(at.len(), 1, "one Floor face row: {:?}", f.texts);
+    let value = &f.texts[at[0] + 1].0;
     assert!(
-        slot[0].starts_with("Floor face  Face Z"),
-        "the slot names the face Z: {}",
-        slot[0]
+        value.starts_with("Face Z"),
+        "the row names the face Z: {value}"
     );
-    assert!(
-        !slot[0].contains(" at ("),
-        "no anchor on the face: {}",
-        slot[0]
-    );
+    assert!(!value.contains(" at ("), "no anchor on the face: {value}");
 }
 
-/// F25: under "Each picked face" the Floor line gives the Z range of the
-/// face floors ("Z a to b"), not one Z.
+/// F25: under "Each picked face" the Floor row gives the Z range of the
+/// face floors ("Z a to b"), not one Z. W3a: a read-only `PropRow`: the
+/// label "Floor", the value "Each picked face", the range as the unit.
 #[test]
 fn each_picked_face_shows_the_floor_range_f25() {
     let mut state = state_of(stepped_pocket(false));
     let f = settle(&mut state);
-    let line: Vec<&String> = f
+    let at: Vec<usize> = f
         .texts
         .iter()
-        .map(|(t, _)| t)
-        .filter(|t| t.starts_with("Floor  "))
+        .enumerate()
+        .filter(|(_, (t, _))| t == "Floor")
+        .map(|(i, _)| i)
         .collect();
-    assert_eq!(line.len(), 1, "one Floor line: {:?}", f.texts);
+    assert_eq!(at.len(), 1, "one Floor row: {:?}", f.texts);
+    let row: Vec<&String> = f.texts[at[0]..].iter().take(3).map(|(t, _)| t).collect();
     assert!(
-        line[0].starts_with("Floor  Each picked face") && line[0].contains(" to "),
-        "the Floor line gives a Z range: {}",
-        line[0]
+        row.iter().any(|t| *t == "Each picked face"),
+        "the Floor row names its reference: {row:?}"
+    );
+    assert!(
+        row.iter()
+            .any(|t| t.starts_with("Z ") && t.contains(" to ")),
+        "the Floor row gives a Z range: {row:?}"
     );
 }
 
-/// F27 (IC1), W2b: a refusal of the selection paints its full text once
-/// (the Selection section of the Geometry tab). The status line reads
-/// "Not ready", and the issue stack shows the short face of the core
-/// finding, with the text on hover.
+/// F27 (IC1), W2b, W3a: a refusal of the selection is the Danger state of
+/// the Cuts row (field key `selection`, drawn for a Pocket: `placement::drawn_fields`); its text is
+/// the row hover and paints nowhere. The status line reads "Not ready",
+/// and the issue stack holds no row for it: the placement gives the core
+/// finding to the Cuts row.
 #[test]
 fn a_refusal_paints_once_f27() {
     let session = refused_hole_drill();
@@ -532,7 +539,6 @@ fn a_refusal_paints_once_f27() {
         .to_string();
     let mut state = state_of(session);
     let f = settle(&mut state);
-    // A wrapped text is one galley, so the full text is one painted text.
     let head: String = refusal.chars().take(40).collect();
     let full: Vec<&String> = f
         .texts
@@ -540,7 +546,12 @@ fn a_refusal_paints_once_f27() {
         .map(|(t, _)| t)
         .filter(|t| t.contains(&head))
         .collect();
-    assert_eq!(full.len(), 1, "the refusal paints once: {full:#?}");
+    assert!(full.is_empty(), "the refusal is the row hover: {full:#?}");
+    assert!(
+        f.texts.iter().any(|(t, _)| t == "Cuts"),
+        "the Cuts row paints: {:?}",
+        f.texts
+    );
     assert!(
         f.texts.iter().any(|(t, _)| t == "Not ready"),
         "the status line reads one word: {:?}",
@@ -560,7 +571,17 @@ fn a_refusal_paints_once_f27() {
         .map(|(t, _)| t)
         .filter(|t| faces.iter().any(|face| face == *t))
         .collect();
-    assert_eq!(issue.len(), 1, "one issue row: {:?}", f.texts);
+    assert!(issue.is_empty(), "no issue row: {:?}", f.texts);
+    // Non-vacuity: the placement gives the selection finding to the field
+    // row, not to nothing.
+    let id = state.session().toolpath_configs()[0].id;
+    let placed =
+        rs_cam_viz::ui::properties::placed_findings(id, &state).expect("the toolpath is placed");
+    assert!(
+        placed.by_field.iter().any(|d| faces.contains(&d.face)),
+        "the selection finding sits on the Cuts row: {:?}",
+        placed.by_field
+    );
 }
 
 /// F32, F28: on the default rule of a DXF Drill, the six open paths (a

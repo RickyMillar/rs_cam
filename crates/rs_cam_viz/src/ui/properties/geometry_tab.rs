@@ -3,21 +3,22 @@
 //! (operator ruling 2026-10-22).
 //!
 //! R2 (2026-10-30): `toolpath_panel::draw_geometry_tab`
-//! (`toolpath_panel/tabs/geometry.rs`) draws the Input row above these rows, and the Machining Boundary section and the Reach row
-//! between and below them. Those rows write the draft entry; this file
-//! does not.
+//! (`toolpath_panel/tabs/geometry.rs`) draws the Input row above these
+//! rows, and the Boundary rows and the Reach row below them. Those rows
+//! write the draft entry; this file does not.
 //!
-//! From top to bottom (design revision 2, R2.5):
+//! From top to bottom (design revision 2, R2.5; W3a: every row is a
+//! `PropRow`):
 //!
-//! 1. The op selection block (`selection_section.rs`): the summary, Pick
-//!    and Reset, the filter box, the selected list and the notes. An op
-//!    with no op selection (every 3D op) gets the "Pick faces" row of its
-//!    boundary selection instead.
-//! 2. On an op that holds a floor: the Floor line and, under the floor
-//!    "A picked face" (UX-8), the floor face slot with "Clear" (L-R5).
-//! 3. "Boundary" (operator ruling GT-Q7, [`draw_boundary_selection`]): the
-//!    boundary selection block, with the same rows, while the boundary
-//!    source is a selection. It follows the Machining Boundary section.
+//! 1. The op selection block (`selection_section.rs`): the Cuts row with
+//!    Pick, the Selected row with Reset, the filter box, the selected list
+//!    and the notes. An op with no op selection (every 3D op) gets the
+//!    Surface row of its boundary selection instead, with Pick.
+//! 2. On an op that holds a floor: the Floor row and, under the floor
+//!    "A picked face" (UX-8), the Floor face row with "Clear" (L-R5).
+//! 3. Operator ruling GT-Q7, [`draw_boundary_selection`]: the boundary
+//!    selection block, with the same rows, while the boundary source is a
+//!    selection. It sits directly under the Boundary row.
 //!
 //! The file writes through events only (L-1): `EditToolpathSelection`,
 //! `UseAsFloor`, `ClearFloorFace`. It never writes the draft entry.
@@ -27,18 +28,21 @@ use rs_cam_core::compute::floor::Floor;
 use rs_cam_core::session::{BOUNDARY_ITEM_USE, SelectionTarget};
 
 use super::ToolpathPanelInputs;
-use super::selection_section::{SelectionSectionInputs, draw_selection_section, line_with_actions};
+use super::selection_section::{SelectionSectionInputs, draw_selection_section};
 use crate::ui::AppEvent;
-use crate::ui::components::SectionHeader;
-use crate::ui::tokens;
+use crate::ui::components::{PropRow, Role};
 
-/// The label of the 3D op face-pick button (geometry selection P4.D).
-pub(super) const PICK_FACES_LABEL: &str = "Pick faces";
+/// The quiet action of the Surface row of a 3D op (geometry selection
+/// P4.D): it turns the face pick on. W3a: "Pick", as on the Cuts row; at
+/// the 240-point rail "Pick faces" left the value no room ("Whole model"
+/// painted past its clip, IC1). The row label and the hover name the faces.
+pub(super) const PICK_FACES_LABEL: &str = super::selection_section::PICK;
 
-/// The hover of [`PICK_FACES_LABEL`].
-const PICK_FACES_HOVER: &str = "Click flat faces in the viewport to bound this operation. \
-    When the boundary source is not Selection, the first face sets the source to Selection \
-    with that face. Undo restores the source.";
+/// The hover of the Surface row and its [`PICK_FACES_LABEL`] action.
+const PICK_FACES_HOVER: &str = "The surface that this operation finishes: the whole model, or \
+    the faces of the boundary selection. Pick turns on the viewport face pick: when the \
+    boundary source is not Selection, the first face sets the source to Selection with that \
+    face. Undo restores the source.";
 
 /// The name of the floor face slot (L-R5).
 pub(crate) const FLOOR_FACE: &str = "Floor face";
@@ -50,6 +54,7 @@ pub(super) fn draw_geometry_tab(
     entry: &crate::state::toolpath::ToolpathEntry,
     inputs: &ToolpathPanelInputs,
     selection_ui: &mut crate::state::pick::SelectionUi,
+    selection_findings: &[&rs_cam_core::diagnostics::Diagnostic],
     events: &mut Vec<AppEvent>,
 ) {
     ui.add_space(4.0);
@@ -86,12 +91,13 @@ pub(super) fn draw_geometry_tab(
                 note_items: &inputs.selection_note_items,
                 model_kinds: &inputs.toolpath_model_kinds,
                 tool_diameter,
+                findings: selection_findings,
             },
             selection_ui,
             events,
         );
     } else {
-        draw_boundary_pick_row(ui, entry, selection_ui);
+        draw_surface_row(ui, entry, inputs, selection_ui);
     }
 
     // ── 2. The floor and the floor face slot ───────────────────────
@@ -100,8 +106,9 @@ pub(super) fn draw_geometry_tab(
     }
 }
 
-/// The boundary selection block of the Geometry tab (GT-Q7), under the
-/// Machining Boundary section, while the boundary source is a selection.
+/// The boundary selection block of the Geometry tab (GT-Q7), directly
+/// under the Boundary row, while the boundary source is a selection. W3a:
+/// no header of its own; the Boundary row above names it.
 pub(super) fn draw_boundary_selection(
     ui: &mut egui::Ui,
     entry: &crate::state::toolpath::ToolpathEntry,
@@ -112,13 +119,6 @@ pub(super) fn draw_boundary_selection(
     if entry.boundary.enabled
         && let BoundarySource::Selection { selection, .. } = &entry.boundary.source
     {
-        ui.add_space(6.0);
-        SectionHeader::new("Boundary")
-            .hover(
-                "The items that bound where the tool may go. The source, the containment \
-                 and the offset are in the Machining Boundary section above.",
-            )
-            .show(ui);
         draw_selection_section(
             ui,
             &SelectionSectionInputs {
@@ -136,6 +136,7 @@ pub(super) fn draw_boundary_selection(
                 note_items: &inputs.boundary_note_items,
                 model_kinds: &inputs.toolpath_model_kinds,
                 tool_diameter: None,
+                findings: &[],
             },
             selection_ui,
             events,
@@ -196,26 +197,20 @@ fn draw_floor_lines(
         }
         (Some(only), Some(_), _) => format!("Z {:.2}", only.z),
         (_, _, Some(Ok(z))) => format!("Z {z:.2}"),
-        (_, _, Some(Err(refusal))) => format!("no Z: {refusal}"),
-        (_, _, None) => "Z \u{2014}".to_owned(),
+        (_, _, Some(Err(_))) | (_, _, None) => "Z \u{2014}".to_owned(),
     };
-    let color = match floor_z {
-        Some(Err(_)) => tokens::DANGER,
-        Some(Ok(_)) | None => tokens::TEXT_BODY,
+    // W3a: one read-only row. A floor with no Z is the Danger state, the
+    // refusal on the hover.
+    let refusal = match &floor_z {
+        Some(Err(refusal)) => Some(format!("No floor Z: {refusal}")),
+        Some(Ok(_)) | None => None,
     };
-    let text = format!("{} \u{00B7} {z_text}", floor.reference_label());
-    line_with_actions(
-        ui,
-        "Floor",
-        &text,
-        color,
-        &format!(
-            "Floor {text}. The floor of the op. Set the reference and the depth in the Bottom \
-             height row of the Heights tab; \"Use as floor\" on a picked face sets the floor \
-             to that face."
-        ),
-        &[],
-    );
+    let _ = PropRow::new("Floor")
+        .unit(&z_text)
+        .state(refusal.as_ref().map(|_| Role::Danger))
+        .hover(Some(FLOOR_HOVER))
+        .detail(refusal.as_deref())
+        .show_read_only(ui, floor.reference_label());
     if let Some(key) = floor.face_key() {
         // FR-2 F23: the slot names the face as the list rows do.
         let face_z = answer.and_then(|answer| answer.floor_references(&entry.heights).floor_face_z);
@@ -224,18 +219,15 @@ fn draw_floor_lines(
             super::selection_section::face_label,
         );
         let full = super::selection_section::row_full_label(key, face_z);
-        if line_with_actions(
-            ui,
-            FLOOR_FACE,
-            &label,
-            tokens::TEXT_BODY,
-            &format!("{full}. The face that sets the floor. The op does not cut this face."),
-            &[(
-                "Clear",
-                "Set the floor to Each picked face when faces remain, else to the op default.",
-            )],
-        )
-        .is_some()
+        let hover = format!(
+            "{full}. The face that sets the floor. The op does not cut this face. Clear sets \
+             the floor to Each picked face when faces remain, else to the op default."
+        );
+        if PropRow::new(FLOOR_FACE)
+            .hover(Some(&hover))
+            .action("Clear")
+            .show_read_only(ui, label)
+            .action_clicked
         {
             events.push(AppEvent::ClearFloorFace {
                 toolpath_id: entry.id,
@@ -244,15 +236,22 @@ fn draw_floor_lines(
     }
 }
 
-/// The "Pick faces" row of an op that holds no selection (every 3D op):
-/// the button turns Pick on for the boundary selection, for ANY boundary
-/// source (geometry selection P4.D, ruling L-8 revised). The first face
-/// click then sets the source to `Selection` with that face
-/// (`ProjectSession::face_click_edit`). An op that no boundary moves (D3)
-/// draws no row.
-fn draw_boundary_pick_row(
+/// The explanation of the Floor row.
+const FLOOR_HOVER: &str = "The floor of the op. Set the reference and the depth in the Bottom \
+    height row of the Heights tab; \"Use as floor\" on a picked face sets the floor to that \
+    face.";
+
+/// The Surface row of an op that holds no selection (every 3D op, W3a):
+/// a read-only `PropRow`, "Whole model" or the count of the boundary
+/// selection, with the quiet action [`PICK_FACES_LABEL`]. The action turns Pick on
+/// for the boundary selection, for ANY boundary source (geometry selection
+/// P4.D, ruling L-8 revised). The first face click then sets the source to
+/// `Selection` with that face (`ProjectSession::face_click_edit`). An op
+/// that no boundary moves (D3) draws no row.
+fn draw_surface_row(
     ui: &mut egui::Ui,
     entry: &crate::state::toolpath::ToolpathEntry,
+    inputs: &ToolpathPanelInputs,
     selection_ui: &mut crate::state::pick::SelectionUi,
 ) {
     if !entry
@@ -263,13 +262,27 @@ fn draw_boundary_pick_row(
     {
         return;
     }
-    let on = selection_ui.pick_is_on(entry.id, SelectionTarget::Boundary);
-    let button = if on {
-        crate::ui::components::Button::primary(PICK_FACES_LABEL)
-    } else {
-        crate::ui::components::Button::new(PICK_FACES_LABEL)
+    let value = match (&entry.boundary.source, entry.boundary.enabled) {
+        (BoundarySource::Selection { .. }, true) => inputs
+            .boundary_report
+            .as_ref()
+            .and_then(|read| read.as_ref().ok())
+            .and_then(|report| super::selection_section::counts_text(report))
+            .unwrap_or_else(|| "no face".to_owned()),
+        _ => "Whole model".to_owned(),
     };
-    if ui.add(button).on_hover_text(PICK_FACES_HOVER).clicked() {
+    let on = selection_ui.pick_is_on(entry.id, SelectionTarget::Boundary);
+    let action = if on {
+        super::selection_section::PICK_DONE
+    } else {
+        PICK_FACES_LABEL
+    };
+    if PropRow::new("Surface")
+        .hover(Some(PICK_FACES_HOVER))
+        .action(action)
+        .show_read_only(ui, value)
+        .action_clicked
+    {
         selection_ui.set_pick(if on {
             None
         } else {
