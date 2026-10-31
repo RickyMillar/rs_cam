@@ -510,3 +510,22 @@ skim takes only the overfill. The V60 day-strip slit is not in the job (a 3D rou
 1 mm slit). All 10 generate; the project simulation (0.25 mm) gives 10 h 41 min, 1 rapid
 collision on the front 3D rough (z 23.086, run move 250349), the scallop plunge finding, and
 2 of 10 operations over a load gate.
+
+### Revision 2026-10-31 (evening): hollow under the relief, 13 toolpaths
+
+Operator: rough the relief from behind (the earlier rivmap350 method), drill the light holes,
+cut the day-strip slit from the back before the same pour.
+
+- "Back hollow under the relief 6 mm": adaptive3d on the front-surface triangles of
+  `terrain_back.stl` (a sheet; the drop cutter meets the relief, not the flat back), inside the
+  cavity, from the cavity floor down, leave = `web_min` 4.0. The V then cuts at most
+  4.0 + 2.27 = 6.27 of its usable cone 8.50, so no rough slots; the rest (2.2) caps the depth per
+  pass. A 4.8 stepover (feeds_oak) gave 957 m of feed and 4.6 km of rapids (40.6 h total);
+  the adaptive stepover 1.5 gave 595 m and 233 m (16.7 h total, 0 collisions, 2 rapid flags).
+- Light holes: one Drill op, the operator's 6 mm twist drill, all 42 holes to the deepest layer
+  (block z 17) with the full diameter; size_tolerance 0.2 takes 6.0 against the drawn 5.81.
+- ANTENNA_D5.00 (4 mm wide) is a 3 mm 2D pocket; every other mech pocket fits the 6 mm.
+- Day-strip slit: V60 trace in setup 1; a second outline fill of the pour fills it to the slit
+  slot floor. CAUTION: the slit is open under the stock (tip 0.366 into the spoilboard).
+- Open: rapid flag on the front 3D rough (z 23.086); the scallop plunge (736 > 300);
+  Project Curve has no open-path offset and no depth per pass (core work, not started).

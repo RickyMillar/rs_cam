@@ -11,9 +11,11 @@ script reads the block-stage output (read only) and writes:
 
 Method (operator, 2026-10-31: "use 3d ops for most of this ... 5-10 paths total"):
 the back is a 3D rough of the finished oak block (mech oak_block_full.stl: the cavity,
-the slots, the holes, the mech pockets and the through holes) with the 6 mm tool, then
-a 3 mm rest rough; the V lines are one Project Curve op; the epoxy is a stock change;
-the front is a 3D rough and a scallop finish of the terrain. 10 toolpaths.
+the mech pockets and the through holes) with the 6 mm tool, then a 3D rough of the
+relief from behind (the operator's earlier method) that leaves block.json web_min of
+oak under the front surface, so the V lines need no rough slots. The light holes are
+drilled; the V lines and the day-strip slit are cut from the back before the pour; the
+epoxy is a stock change; the front is a 3D rough and a scallop finish of the terrain.
 The frame, T1, the raw top, the pin depth and the tools come from block.json `cam`.
 The stock and the pins are the operator's (the brief, "The user's stock and pins").
 The writers are the ones of derive.py (no time stamp: a second run writes the same bytes).
@@ -141,6 +143,24 @@ def main() -> None:
     write_dxf("block_outline.dxf", bc, ["BLOCK_OUTLINE"])
     write_dxf("cavity_d9.00.dxf", bc, ["CAVITY_SKIM_D9.00"])
     write_dxf("vgroove_v20.dxf", bc, ["VGROOVE_V20_RIVER", "VGROOVE_V20_LAKE"])
+    holes_layers = sorted(l for l in {e.dxf.layer for e in bc.modelspace()} if l.startswith("HOLE_"))
+    d = Dxf()
+    for l in holes_layers:
+        for e in layer_entities(bc, l):
+            d.circle(l, e.dxf.center.x, e.dxf.center.y, e.dxf.radius)
+    write_if_changed(OUT / "light_holes.dxf", d.text().encode())
+    files["light_holes.dxf"] = OUT / "light_holes.dxf"
+    mech = ezdxf.readfile(BUILD / "mech/nz-wanaka-21/block_back.dxf")
+    write_dxf("antenna_d5.00.dxf", mech, ["ANTENNA_D5.00"])
+    write_dxf("slit_slot_f6_d20.67.dxf", mech, ["SLIT_SLOT_F6_D20.67"])
+    v60_layer = next(l for l in {e.dxf.layer for e in mech.modelspace()} if l.startswith("VGROOVE_V60_D"))
+    d = Dxf()
+    for e in layer_entities(mech, v60_layer):
+        # Trace skips a ring under 3 points: the line gets its mid point.
+        a, b = (e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)
+        d.polyline(v60_layer, [a, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), b], False)
+    write_if_changed(OUT / "slit_v60.dxf", d.text().encode())
+    files["slit_v60.dxf"] = OUT / "slit_v60.dxf"
     eb = ezdxf.readfile(BUILD / "terrain/nz-wanaka-21/machinable_edge_band.dxf")
     write_dxf("edge_outer.dxf", eb, ["EDGE_OUTER"], conv=lambda x, y: (bx1 - x, y - by0))
 
@@ -156,15 +176,29 @@ def main() -> None:
     write_stl(OUT / "oak_block_s1.stl", s1, "rivmap nz-wanaka-21 oak block, rs_cam setup-1 frame")
     files["oak_block_s1.stl"] = OUT / "oak_block_s1.stl"
     files["terrain_back.stl"] = BLOCK / "terrain_back.stl"
+    # The relief seen from behind: the front-surface triangles of terrain_back.stl only (they
+    # face down in the setup-1 frame). A drop cutter from above meets the sheet, not the flat back.
+    tb = read_stl(BLOCK / "terrain_back.stl")
+    nz = np.cross(tb[:, 1] - tb[:, 0], tb[:, 2] - tb[:, 0])[:, 2]
+    sheet = tb[nz < 0.0]
+    write_stl(OUT / "relief_sheet_s1.stl", sheet, "rivmap nz-wanaka-21 front relief sheet, setup-1 frame")
+    files["relief_sheet_s1.stl"] = OUT / "relief_sheet_s1.stl"
 
     # ── tools
     mt = {t["id"]: t for t in mapt["tools"]}
     ct = cam["tools"]
     contract = tomllib.loads((MONO / "design/rivmap.toml").read_text())["cutters"]
-    order_tools = ["flat_6", "flat_3", "v20", "flat_6.35", "tbn_r1"]
-    dia = {k: float(contract[mt[k]["cutter"]]) if "cutter" in mt[k] else ct[k]["diameter"] for k in order_tools}
-    assert all(abs(dia[k] - ct[k]["diameter"]) < 1e-9 for k in order_tools), dia
+    cam_tools = ["flat_6", "flat_3", "v20", "v60", "flat_6.35", "tbn_r1"]
+    order_tools = cam_tools + ["drill_6"]
+    dia = {k: float(contract[mt[k]["cutter"]]) if "cutter" in mt[k] else ct[k]["diameter"] for k in cam_tools}
+    assert all(abs(dia[k] - ct[k]["diameter"]) < 1e-9 for k in cam_tools), dia
     tid = {k: i for i, k in enumerate(order_tools)}
+    # The operator's drill (testpiece.toml, GUI edit 2026-10-09).
+    drill_tool = next(t for t in tomllib.loads((HERE / "testpiece.toml").read_text())["tools"]
+                      if t["name"].startswith("6 mm twist drill"))
+    drill_op = next(tp["operation"]["params"] for s in tomllib.loads((HERE / "testpiece.toml").read_text())["setups"]
+                    for tp in s["toolpaths"] if tp["operation"]["kind"] == "drill")
+    dia["drill_6"] = drill_tool["diameter"]
 
     P = Project("nz_wanaka_21", "\n".join([
         "# rs_cam two-sided job: RivMap oak block nz-wanaka-21 (21 x 21 LEDs, block 358 x 443 x 25).",
@@ -203,7 +237,7 @@ def main() -> None:
     P.add(machine_text())
     P.add(table("job.simulation", {"resolution_mm": mapt["paths"]["grid"]}, comment="map.toml [paths].grid"))
 
-    for k in order_tools:
+    for k in cam_tools:
         t, c = mt[k], ct[k]
         if c["kind"] == "flat":
             P.add(tool_table(tid[k], tid[k] + 1, t["name"], "end_mill", dia[k], c["reach"], t["shank"],
@@ -217,9 +251,14 @@ def main() -> None:
             P.add(tool_table(tid[k], tid[k] + 1, t["name"], "tapered_ball_nose", dia[k], t["flute_length"],
                              t["shank"], c["reach"], t["flutes"], taper_half_angle=t["taper_half_angle"],
                              comment=f"map.toml {k} (endmill.com.au TBN-R1.0-3.175-15)"))
+    P.add(tool_table(tid["drill_6"], tid["drill_6"] + 1, drill_tool["name"], "v_bit", drill_tool["diameter"],
+                     drill_tool["cutting_length"], drill_tool["shank_diameter"], drill_tool["stickout"],
+                     drill_tool["flute_count"], included_angle=drill_tool["included_angle"],
+                     comment="The operator's drill (testpiece.toml)."))
 
-    model_order = ["oak_block_s1.stl", "terrain_back.stl", "block_outline.dxf", "edge_outer.dxf",
-                   "cavity_d9.00.dxf", "vgroove_v20.dxf"]
+    model_order = ["oak_block_s1.stl", "terrain_back.stl", "relief_sheet_s1.stl", "block_outline.dxf",
+                   "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
+                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
     assert sorted(model_order) == sorted(files)
     mids = {f: i for i, f in enumerate(model_order)}
     for f in model_order:
@@ -241,7 +280,8 @@ def main() -> None:
             heights=heights, dressups=ramp)
 
     def rough3d(name: str, tool: str, model: str, f: dict, why: str, boundary: dict, leave: float,
-                stock_source: str = "fresh", geometry: dict | None = None) -> None:
+                stock_source: str = "fresh", geometry: dict | None = None,
+                heights: dict | None = None) -> None:
         # Adaptive geometry from the machine rigidity (adaptive_doc_factor x D, adaptive_woc_factor x D)
         # unless the caller gives it. Run Suggest to tune it.
         g = geometry or {"stepover": round(rig["adaptive_woc_factor"] * dia[tool], 4),
@@ -257,9 +297,11 @@ def main() -> None:
             "z_blend": False, "spindle_rpm": int(f["rpm"]),
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
             "stay_down_clearance_mm": trough["stay_down_clearance_mm"]},
-            why=why, boundary=boundary, dressups={"segment_merge": True}, stock_source=stock_source)
+            why=why, boundary=boundary, dressups={"segment_merge": True}, stock_source=stock_source,
+            heights=heights)
 
     in_block = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["block_outline.dxf"]}
+    in_cavity = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["cavity_d9.00.dxf"]}
     in_relief = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["edge_outer.dxf"]}
 
     # ── Setup 1: Back
@@ -274,18 +316,61 @@ def main() -> None:
             "The finished oak block: the cavity, the slots, the holes, the mech pockets, the through holes.\n"
             "Boundary: the block outline, tool inside (the margin with the pins stays).",
             in_block, 0.0)
-    rough3d("Back 3D rest 3 mm", "flat_3", "oak_block_s1.stl", f3,
-            "What the 6 mm tool cannot reach: the 4 mm slots, the light holes, the narrow mech pockets.\n"
-            "Remaining stock: generate_all simulates the setup first.",
-            in_block, 0.0, stock_source="from_remaining_stock")
+    # The hollow: the relief from behind, leaving web_min of oak (axial). The V tip goes the overcut
+    # past the front, so the V cuts web_min + overcut; the usable cone minus that is the room the
+    # step-down terraces may take, so it is the depth per pass.
+    v_offset = (blk["line_width"] / 2.0) / math.tan(math.radians(blk["vgroove_angle"] / 2.0))
+    cone = (dia["v20"] / 2.0) / math.tan(math.radians(ct["v20"]["angle"] / 2.0))
+    usable = cone - mapt["vgroove"]["body_margin"]
+    web = blk["web_min"]
+    step = math.floor((usable - web - v_offset) * 10.0) / 10.0
+    assert step > 0.0, step
+    rough3d("Back hollow under the relief 6 mm", "flat_6", "relief_sheet_s1.stl", f6,
+            (f"The front relief from behind, inside the cavity, from the cavity floor {cav_floor} down.\n"
+             f"Leave = block.json web_min {web}: the V then cuts at most {web + v_offset:.2f} of its usable cone\n"
+             f"{usable:.2f}; the rest, {step}, caps the depth per pass (a terrace cannot take the V past its cone).\n"
+             "Stepover: the machine adaptive_woc_factor x D (the feeds_oak woc 4.8 made 4.6 km of rapids)."),
+            in_cavity, web, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
+                                      "depth_per_pass": step},
+            heights={"top_z": cav_floor})
+    P.toolpath("ANTENNA_D5.00 pocket 3 mm", "pocket", tid["flat_3"], mids["antenna_d5.00.dxf"], {
+        "stepover": f3["woc_rough"], "floor": floor(5.0), "depth_per_pass": f3["doc_rough"],
+        "feed_rate": f3["feed_safe"] / 2.0, "plunge_rate": f3["plunge"],
+        "ramp_feed_rate": round(f3["feed_safe"] / 6.0, 3), "climb": True, "pattern": "contour", "angle": 0.0,
+        "finishing_passes": 0, "spindle_rpm": int(f3["rpm"])},
+        why="cam_ops.json ANTENNA_D5.00: 4 mm wide, the 6 mm tool does not fit. Slot feed: half feed_safe.",
+        dressups=ramp)
+    hole_top = max(float(l.split("_Z")[1]) for l in holes_layers)
+    drill_cone = (drill_tool["diameter"] / 2.0) / math.tan(math.radians(drill_tool["included_angle"] / 2.0))
+    P.toolpath("Drill light holes 6 mm", "drill", tid["drill_6"], mids["light_holes.dxf"], {
+        "floor": {"from": "z", "z": round(T1 - hole_top - drill_cone, 4)}, "cycle": drill_op["cycle"],
+        "peck_depth": drill_op["peck_depth"], "dwell_time": drill_op["dwell_time"],
+        "retract_amount": drill_op["retract_amount"], "feed_rate": drill_op["feed_rate"],
+        "retract_z": drill_op["retract_z"], "spindle_rpm": drill_op["spindle_rpm"],
+        "size_tolerance": round(max(abs(drill_tool["diameter"] - h) for h in blk["holes"]["diameters"]) + 0.01, 3)},
+        why=(f"All {blk['holes']['count']} holes ({', '.join(holes_layers)}): the full diameter to block z {hole_top}\n"
+             f"(the deepest layer; the front cut opens the same disc), so the tip goes the point cone\n"
+             f"{drill_cone:.3f} further. Drill Ø{drill_tool['diameter']} for the drawn Ø{blk['holes']['diameters']}:\n"
+             "size_tolerance takes the difference. Cycle and feeds: the operator's drill op (testpiece.toml)."),
+        heights={"top_z": cav_floor})
     P.toolpath("V rivers and lakes", "project_curve", tid["v20"], mids["vgroove_v20.dxf"], {
-        "projection": "point", "depth": round(-(blk["line_width"] / 2.0) / math.tan(math.radians(blk["vgroove_angle"] / 2.0)), 9),
+        "projection": "point", "depth": round(-v_offset, 9),
         "point_spacing": tol, "feed_rate": fv["feed_safe"], "plunge_rate": fv["plunge"],
         "surface_model_id": mids["terrain_back.stl"], "direction": "from_below", "side": "center",
         "spindle_rpm": int(fv["rpm"]), "chain_distance_mm": 0.0},
         why=("Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2).\n"
-             "One pass (no pre-pass). Retract inside the convex cavity."),
+             "One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity."),
         heights={"top_z": cav_floor, "retract_z": v_retract})
+    fv60 = feeds["v60"]
+    slit_z0 = float(next(l for l in {e.dxf.layer for e in mech.modelspace()} if l.startswith("SLIT_SLOT")).split("_D")[1])
+    slit_z1 = float(v60_layer.split("_D")[1])
+    P.toolpath("Day strip slit V60", "trace", tid["v60"], mids["slit_v60.dxf"], {
+        "depth": round(slit_z1 - slit_z0, 6), "depth_per_pass": round((slit_z1 - slit_z0) / 2.0, 6),
+        "feed_rate": fv60["feed_safe"], "plunge_rate": fv60["plunge"], "compensation": "none",
+        "spindle_rpm": int(fv60["rpm"])},
+        why=(f"{v60_layer}: the V tip from the slit slot floor (block z {slit_z0}) to {slit_z1}\n"
+             f"({slit_z1 - T1:.3f} into the spoilboard; the slit is open underneath: seal it before the pour). Two passes."),
+        heights={"top_z": T1 - slit_z0})
 
     # ── Setup 2: the pour, then the skim
     P.setup(1, "2 Back skim", "top", "Back up, on the pins, after the cure. Same zero as setup 1.")
@@ -297,6 +382,14 @@ def main() -> None:
               "[[[setups.stock_changes]]]", "[[setups.stock_changes]]")
           + table("setups.stock_changes.geometry", {"kind": "outline_fill",
                                                      "model_ids": [mids["cavity_d9.00.dxf"]], "level_z": level})
+          + table("setups.stock_changes.material.Custom", {"name": "Epoxy", "feed_scale_factor": 1.0})
+          + "\n# The same pour fills the day-strip slit up to the slit slot floor.\n"
+          + table("[setups.stock_changes]", {"id": 1, "name": "epoxy slit", "enabled": True, "op": "add",
+                                              "cut_as": "stock_material"}).replace(
+              "[[[setups.stock_changes]]]", "[[setups.stock_changes]]")
+          + table("setups.stock_changes.geometry", {"kind": "outline_fill",
+                                                     "model_ids": [mids["slit_slot_f6_d20.67.dxf"]],
+                                                     "level_z": T1 - slit_z0})
           + table("setups.stock_changes.material.Custom", {"name": "Epoxy", "feed_scale_factor": 1.0}))
     P.toolpath("Skim epoxy to the cavity floor", "pocket", tid["flat_6"], mids["cavity_d9.00.dxf"], {
         "stepover": f6["woc_rough"], "floor": floor(overfill), "depth_per_pass": overfill,

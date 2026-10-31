@@ -220,9 +220,32 @@ vendor = ""
 product_id = ""
 
 
-# map.toml flat_6.35; block.json cam.tools
+# map.toml v60; size and angle from block.json cam.tools; cone 5.4993
 [[tools]]
 id = 3
+name = "1/4 in 60 deg V-bit (the day strip slit), 30 mm stick-out (set and measure)"
+type = "v_bit"
+diameter = 6.35
+cutting_length = 5.499261314
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 60.0
+taper_half_angle = 30.0
+shaft_diameter = 6.35
+shank_diameter = 6.35
+stickout = 30.0
+flute_count = 2
+tool_number = 4
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+
+# map.toml flat_6.35; block.json cam.tools
+[[tools]]
+id = 4
 name = "1/4 in flat end mill, 2 flute (the front rough)"
 type = "end_mill"
 diameter = 6.35
@@ -236,7 +259,7 @@ shaft_diameter = 6.35
 shank_diameter = 6.35
 stickout = 25.0
 flute_count = 2
-tool_number = 4
+tool_number = 5
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
@@ -245,7 +268,7 @@ product_id = ""
 
 # map.toml tbn_r1 (endmill.com.au TBN-R1.0-3.175-15)
 [[tools]]
-id = 4
+id = 5
 name = "R1.0 x 3.175 x 15 mm 2 flute tapered ball end mill (the front finish), 30 mm stick-out"
 type = "tapered_ball_nose"
 diameter = 2.0
@@ -259,7 +282,30 @@ shaft_diameter = 3.175
 shank_diameter = 3.175
 stickout = 30.0
 flute_count = 2
-tool_number = 5
+tool_number = 6
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+
+# The operator's drill (testpiece.toml).
+[[tools]]
+id = 6
+name = "6 mm twist drill, 118 deg point"
+type = "v_bit"
+diameter = 6.0
+cutting_length = 40.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 118.0
+taper_half_angle = 0.0
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 45.0
+flute_count = 2
+tool_number = 7
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
@@ -288,6 +334,16 @@ kind = "millimeters"
 
 [[models]]
 id = 2
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/relief_sheet_s1.stl"
+name = "relief_sheet_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+
+[[models]]
+id = 3
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/block_outline.dxf"
 name = "block_outline.dxf"
 kind = "dxf"
@@ -297,7 +353,7 @@ kind = "millimeters"
 
 
 [[models]]
-id = 3
+id = 4
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/edge_outer.dxf"
 name = "edge_outer.dxf"
 kind = "dxf"
@@ -307,7 +363,7 @@ kind = "millimeters"
 
 
 [[models]]
-id = 4
+id = 5
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/cavity_d9.00.dxf"
 name = "cavity_d9.00.dxf"
 kind = "dxf"
@@ -317,9 +373,49 @@ kind = "millimeters"
 
 
 [[models]]
-id = 5
+id = 6
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/vgroove_v20.dxf"
 name = "vgroove_v20.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+
+[[models]]
+id = 7
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/light_holes.dxf"
+name = "light_holes.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+
+[[models]]
+id = 8
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/antenna_d5.00.dxf"
+name = "antenna_d5.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+
+[[models]]
+id = 9
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_slot_f6_d20.67.dxf"
+name = "slit_slot_f6_d20.67.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+
+[[models]]
+id = 10
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_v60.dxf"
+name = "slit_v60.dxf"
 kind = "dxf"
 
 [models.units]
@@ -343,7 +439,7 @@ id = 0
 name = "Face back to T1"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -406,7 +502,7 @@ id = 1
 name = "Pin drill, flip pins"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -541,32 +637,34 @@ containment = "inside"
 offset = 0.0
 
 [setups.toolpaths.boundary.source.selection]
-selection = { rules = [{ source = { model = 2 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
+selection = { rules = [{ source = { model = 3 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
 holes = false
 
 
-# What the 6 mm tool cannot reach: the 4 mm slots, the light holes, the narrow mech pockets.
-# Remaining stock: generate_all simulates the setup first.
+# The front relief from behind, inside the cavity, from the cavity floor 16.5 down.
+# Leave = block.json web_min 4.0: the V then cuts at most 6.27 of its usable cone
+# 8.50; the rest, 2.2, caps the depth per pass (a terrace cannot take the V past its cone).
+# Stepover: the machine adaptive_woc_factor x D (the feeds_oak woc 4.8 made 4.6 km of rapids).
 [[setups.toolpaths]]
 id = 3
-name = "Back 3D rest 3 mm"
+name = "Back hollow under the relief 6 mm"
 enabled = true
-tool_id = 1
-model_id = 0
+tool_id = 0
+model_id = 2
 boundary_inherit = true
-stock_source = "from_remaining_stock"
+stock_source = "fresh"
 coolant = "off"
 
 [setups.toolpaths.operation]
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 0.75
-depth_per_pass = 6.0
-stock_to_leave_axial = 0.0
-feed_rate = 1083
+stepover = 1.5
+depth_per_pass = 2.2
+stock_to_leave_axial = 4.0
+feed_rate = 826
 plunge_rate = 736
-ramp_feed_rate = 361.0
+ramp_feed_rate = 275.333
 tolerance = 0.1
 min_cutting_radius = 0.0
 entry_style = "ramp"
@@ -580,7 +678,7 @@ clearing_strategy = "contour_parallel"
 trochoid_cap_mult = 1.6
 engagement_measure = "DiskArea"
 z_blend = false
-spindle_rpm = 21221
+spindle_rpm = 10610
 min_region_cut_length_mm = 15.0
 stay_down_clearance_mm = 0.5
 
@@ -615,7 +713,8 @@ mode = "auto"
 mode = "auto"
 
 [setups.toolpaths.heights.top_z]
-mode = "auto"
+mode = "manual"
+value = 16.5
 
 [setups.toolpaths.heights.bottom_z]
 mode = "auto"
@@ -626,18 +725,148 @@ containment = "inside"
 offset = 0.0
 
 [setups.toolpaths.boundary.source.selection]
-selection = { rules = [{ source = { model = 2 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
+selection = { rules = [{ source = { model = 5 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
 holes = false
 
 
-# Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2).
-# One pass (no pre-pass). Retract inside the convex cavity.
+# cam_ops.json ANTENNA_D5.00: 4 mm wide, the 6 mm tool does not fit. Slot feed: half feed_safe.
 [[setups.toolpaths]]
 id = 4
+name = "ANTENNA_D5.00 pocket 3 mm"
+enabled = true
+tool_id = 1
+model_id = 8
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.4
+floor = { from = "top", depth = 5.0 }
+depth_per_pass = 0.75
+feed_rate = 541.5
+plunge_rate = 736
+ramp_feed_rate = 180.5
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 21221
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+
+# All 42 holes (HOLE_FLAT_3_HELIX_Z15.00, HOLE_FLAT_3_HELIX_Z16.00, HOLE_FLAT_3_HELIX_Z17.00): the full diameter to block z 17.0
+# (the deepest layer; the front cut opens the same disc), so the tip goes the point cone
+# 1.803 further. Drill Ø6.0 for the drawn Ø[5.81]:
+# size_tolerance takes the difference. Cycle and feeds: the operator's drill op (testpiece.toml).
+[[setups.toolpaths]]
+id = 5
+name = "Drill light holes 6 mm"
+enabled = true
+tool_id = 6
+model_id = 7
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drill"
+
+[setups.toolpaths.operation.params]
+floor = { from = "z", z = 6.6974 }
+cycle = "peck"
+peck_depth = 6.0
+dwell_time = 0.5
+retract_amount = 0.5
+feed_rate = 600.0
+retract_z = 2.0
+spindle_rpm = 6000
+size_tolerance = 0.2
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+
+# Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2).
+# One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity.
+[[setups.toolpaths]]
+id = 6
 name = "V rivers and lakes"
 enabled = true
 tool_id = 2
-model_id = 5
+model_id = 6
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -696,6 +925,67 @@ value = 16.5
 mode = "auto"
 
 
+# VGROOVE_V60_D25.866: the V tip from the slit slot floor (block z 20.67) to 25.866
+# (0.366 into the spoilboard; the slit is open underneath: seal it before the pour). Two passes.
+[[setups.toolpaths]]
+id = 7
+name = "Day strip slit V60"
+enabled = true
+tool_id = 3
+model_id = 10
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "trace"
+
+[setups.toolpaths.operation.params]
+depth = 5.196
+depth_per_pass = 2.598
+feed_rate = 808
+plunge_rate = 736
+compensation = "none"
+spindle_rpm = 10026
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 4.83
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+
 [[setups]]
 id = 1
 name = "2 Back skim"
@@ -715,8 +1005,23 @@ op = "add"
 cut_as = "stock_material"
 [setups.stock_changes.geometry]
 kind = "outline_fill"
-model_ids = [4]
+model_ids = [5]
 level_z = 17.5
+[setups.stock_changes.material.Custom]
+name = "Epoxy"
+feed_scale_factor = 1.0
+
+# The same pour fills the day-strip slit up to the slit slot floor.
+[[setups.stock_changes]]
+id = 1
+name = "epoxy slit"
+enabled = true
+op = "add"
+cut_as = "stock_material"
+[setups.stock_changes.geometry]
+kind = "outline_fill"
+model_ids = [9]
+level_z = 4.83
 [setups.stock_changes.material.Custom]
 name = "Epoxy"
 feed_scale_factor = 1.0
@@ -724,11 +1029,11 @@ feed_scale_factor = 1.0
 
 # One pass: the overfill 17.5 down to the cavity floor 16.5 (block z 9.0).
 [[setups.toolpaths]]
-id = 5
+id = 8
 name = "Skim epoxy to the cavity floor"
 enabled = true
 tool_id = 0
-model_id = 4
+model_id = 5
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -800,11 +1105,11 @@ datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. C
 # Face the front from T1 25.5 to T 25.0 (block.json cam.face_front).
 # stock_offset = the tool diameter, so the last row reaches the far stock edge.
 [[setups.toolpaths]]
-id = 6
+id = 9
 name = "Face front to T"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -862,10 +1167,10 @@ mode = "auto"
 
 # rivmap350 '3D Rough 8' geometry; stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER.
 [[setups.toolpaths]]
-id = 7
+id = 10
 name = "Front 3D rough"
 enabled = true
-tool_id = 3
+tool_id = 4
 model_id = 1
 boundary_inherit = true
 stock_source = "fresh"
@@ -940,16 +1245,16 @@ containment = "inside"
 offset = 0.0
 
 [setups.toolpaths.boundary.source.selection]
-selection = { rules = [{ source = { model = 3 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
+selection = { rules = [{ source = { model = 4 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
 holes = false
 
 
 # rivmap350 'Scallop Finish' strategy; feeds_oak tbn_r1. Boundary: EDGE_OUTER.
 [[setups.toolpaths]]
-id = 8
+id = 11
 name = "Front scallop finish"
 enabled = true
-tool_id = 4
+tool_id = 5
 model_id = 1
 boundary_inherit = true
 stock_source = "fresh"
@@ -1014,17 +1319,17 @@ containment = "inside"
 offset = 0.0
 
 [setups.toolpaths.boundary.source.selection]
-selection = { rules = [{ source = { model = 3 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
+selection = { rules = [{ source = { model = 4 }, filter = { kinds = { only = ["loop", "circle"] } } }] }
 holes = false
 
 
 # BLOCK_OUTLINE: 25.0 to the spoilboard, outside, 8 tabs (rs_cam default width and height).
 [[setups.toolpaths]]
-id = 9
+id = 12
 name = "Outline profile with tabs"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
