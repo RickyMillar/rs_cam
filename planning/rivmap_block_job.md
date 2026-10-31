@@ -535,3 +535,18 @@ cut the day-strip slit from the back before the same pour.
   and one relief sheet serves the hollow, the V projection and the front ops: 0.66 M in total.
   The V point spacing is map.toml `[vgroove].max_seg` 0.25 (was tip_tol 0.05): 21.9 k moves
   (was 106 k). Total 732 k moves, of which the scallop finish is 562 k. 16.5 h, 0 collisions.
+
+### Revision 2026-10-31 (night): one back rough, lakes, deeper rivers, geodesic, Suggest speeds
+
+- One back rough (flat_6, geodesic) on `back_target_s1.stl`: the mech block back without its
+  triangles inside the cavity, plus the relief sheet moved web_min toward the back (the hollow),
+  plus the sheet moved `exposure_margin` (contract, 1.0) past the front inside the 9 closed lake
+  outlines (the lakes open at the front; the 2 open lake paths stay V-only). ANTENNA_D5 stays a
+  3 mm pocket (4 mm wide).
+- The V tip goes overcut + exposure_margin = 3.27 past the front (line about 1.15 mm, was 0.8);
+  the depth per pass of the back rough is the rest of the usable cone, 1.2.
+- Suggest (scope speeds) on 11 of 12 ops in the GUI, then the GUI saved the file. Suggest refuses
+  the drill (a twist drill is modelled as a V-bit: no G6 basis); it keeps the operator's
+  600 mm/min, 6000 rpm. CAUTION: a derive_wanaka21.py run writes the feeds_oak speeds again.
+- Simulation 0.25 mm: 10.47 h, 0 collisions, 0 rapid collisions. Back rough 270 k moves,
+  1186 m of feed; one depth-of-cut caution 13.3 mm (over the 2 x D rule) on it.

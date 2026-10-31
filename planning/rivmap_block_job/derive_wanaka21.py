@@ -175,8 +175,6 @@ def main() -> None:
     s1[..., 0] = bx1 - tris[..., 0]
     s1[..., 1] = tris[..., 1] - by0
     s1[..., 2] = T1 - (tris[..., 2] - zb)
-    write_stl(OUT / "block_back_s1.stl", s1, "rivmap nz-wanaka-21 mech block back, rs_cam setup-1 frame")
-    files["block_back_s1.stl"] = OUT / "block_back_s1.stl"
     # The relief: the front-surface triangles of terrain_back.stl only (they face down in the
     # setup-1 frame). One mesh for the hollow (a drop cutter from above meets the sheet, not the
     # flat back), the V projection (from below) and the front ops (setup 3 turns it face up).
@@ -185,6 +183,35 @@ def main() -> None:
     sheet = tb[nz < 0.0]
     write_stl(OUT / "relief_sheet_s1.stl", sheet, "rivmap nz-wanaka-21 front relief sheet, setup-1 frame")
     files["relief_sheet_s1.stl"] = OUT / "relief_sheet_s1.stl"
+
+    # ── The back target: ONE surface for the one back rough (operator: "back hollow, antenna and
+    # back 3d rough could all just be one path"). A drop cutter meets the highest triangle, so:
+    # - the mech block back without its triangles inside the cavity (the cavity walls stay);
+    # - inside the cavity: the relief sheet moved web_min toward the back (the hollow), and
+    #   inside the closed lake outlines the sheet moved exposure_margin past the front (the
+    #   lakes open at the front; operator: "mill out the lakes from the back too").
+    from shapely import contains_xy
+    from shapely.geometry import Polygon as ShPolygon
+    from shapely.ops import unary_union
+    web = blk["web_min"]
+    margin = float(tomllib.loads((MONO / "design/rivmap.toml").read_text())["paths"]["exposure_margin"])
+    cavity_poly = unary_union([ShPolygon(entity_points(e)[0]) for e in layer_entities(bc, "CAVITY_SKIM_D9.00")])
+    lake_rings = [entity_points(e) for e in layer_entities(bc, "VGROOVE_V20_LAKE")]
+    lakes_poly = unary_union([ShPolygon(pts).buffer(0) for pts, _, closed, _ in lake_rings if closed])
+    n_open_lakes = sum(1 for _, _, closed, _ in lake_rings if not closed)
+    inner = cavity_poly.buffer(-1e-3)
+    c_bb = s1.mean(axis=1)
+    keep_bb = s1[~contains_xy(inner, c_bb[:, 0], c_bb[:, 1])]
+    c_sh = sheet.mean(axis=1)
+    in_cav = contains_xy(inner, c_sh[:, 0], c_sh[:, 1])
+    in_lake = contains_xy(lakes_poly, c_sh[:, 0], c_sh[:, 1])
+    hollow = sheet[in_cav & ~in_lake].copy()
+    hollow[..., 2] += web
+    lakes = sheet[in_cav & in_lake].copy()
+    lakes[..., 2] -= margin
+    target = np.concatenate([keep_bb, hollow, lakes])
+    write_stl(OUT / "back_target_s1.stl", target, "rivmap nz-wanaka-21 back rough target, setup-1 frame")
+    files["back_target_s1.stl"] = OUT / "back_target_s1.stl"
 
     # ── tools
     mt = {t["id"]: t for t in mapt["tools"]}
@@ -258,7 +285,7 @@ def main() -> None:
                      drill_tool["flute_count"], included_angle=drill_tool["included_angle"],
                      comment="The operator's drill (testpiece.toml)."))
 
-    model_order = ["block_back_s1.stl", "relief_sheet_s1.stl", "block_outline.dxf",
+    model_order = ["back_target_s1.stl", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
                    "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
     assert sorted(model_order) == sorted(files)
@@ -294,7 +321,7 @@ def main() -> None:
             "min_cutting_radius": 0.0, "entry_style": "ramp", "ramp_angle_deg": 3.0,
             "helix_radius_factor": trough["helix_radius_factor"], "helix_pitch": trough["helix_pitch"],
             "entry_clearance_mm": trough["entry_clearance_mm"], "detect_flat_areas": True,
-            "region_ordering": trough["region_ordering"], "clearing_strategy": trough["clearing_strategy"],
+            "region_ordering": trough["region_ordering"], "clearing_strategy": "geodesic_adaptive",
             "trochoid_cap_mult": trough["trochoid_cap_mult"], "engagement_measure": trough["engagement_measure"],
             "z_blend": False, "spindle_rpm": int(f["rpm"]),
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
@@ -314,27 +341,22 @@ def main() -> None:
         "diameter": pin_d, "spoilboard_penetration": round(cam["pin_depth"] - T1, 6), "cycle": "peck",
         "peck_depth": dia["flat_6"], "feed_rate": f6["plunge"], "retract_z": 2.0, "spindle_rpm": int(f6["rpm"])},
         why=f"Three pins (axis + mirror pair). Depth = block.json cam.pin_depth {cam['pin_depth']} = the flat_6 reach.")
-    rough3d("Back 3D rough 6 mm", "flat_6", "block_back_s1.stl", f6,
-            "The mech block back: the cavity, the mech pockets, the through holes.\n"
-            "Boundary: the block outline, tool inside (the margin with the pins stays).",
-            in_block, 0.0)
-    # The hollow: the relief from behind, leaving web_min of oak (axial). The V tip goes the overcut
-    # past the front, so the V cuts web_min + overcut; the usable cone minus that is the room the
-    # step-down terraces may take, so it is the depth per pass.
-    v_offset = (blk["line_width"] / 2.0) / math.tan(math.radians(blk["vgroove_angle"] / 2.0))
+    # The V tip goes the overcut for the line width plus exposure_margin past the front (operator:
+    # "punch the rivers through more"). The V then cuts web_min + that of its usable cone; the
+    # rest caps the depth per pass of the back rough (a terrace cannot take the V past its cone).
+    v_offset = (blk["line_width"] / 2.0) / math.tan(math.radians(blk["vgroove_angle"] / 2.0)) + margin
     cone = (dia["v20"] / 2.0) / math.tan(math.radians(ct["v20"]["angle"] / 2.0))
     usable = cone - mapt["vgroove"]["body_margin"]
-    web = blk["web_min"]
     step = math.floor((usable - web - v_offset) * 10.0) / 10.0
     assert step > 0.0, step
-    rough3d("Back hollow under the relief 6 mm", "flat_6", "relief_sheet_s1.stl", f6,
-            (f"The front relief from behind, inside the cavity, from the cavity floor {cav_floor} down.\n"
-             f"Leave = block.json web_min {web}: the V then cuts at most {web + v_offset:.2f} of its usable cone\n"
-             f"{usable:.2f}; the rest, {step}, caps the depth per pass (a terrace cannot take the V past its cone).\n"
-             "Stepover: the machine adaptive_woc_factor x D (the feeds_oak woc 4.8 made 4.6 km of rapids)."),
-            in_cavity, web, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
-                                      "depth_per_pass": step},
-            heights={"top_z": cav_floor})
+    rough3d("Back rough 6 mm (cavity, hollow, lakes, pockets)", "flat_6", "back_target_s1.stl", f6,
+            (f"One surface: the mech block back (pockets, through holes), the hollow under the relief inside\n"
+             f"the cavity (web_min {web} of oak left), and the {len(getattr(lakes_poly, 'geoms', [lakes_poly]))} closed lakes opened {margin} past the front\n"
+             f"({n_open_lakes} open lake paths at the edge band are V-cut only). The V cuts at most {web + v_offset:.2f} of its\n"
+             f"usable cone {usable:.2f}; the rest, {step}, is the depth per pass. Geodesic clearing.\n"
+             "Stepover: the machine adaptive_woc_factor x D. Boundary: the block outline, tool inside."),
+            in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
+                                     "depth_per_pass": step})
     P.toolpath("ANTENNA_D5.00 pocket 3 mm", "pocket", tid["flat_3"], mids["antenna_d5.00.dxf"], {
         "stepover": f3["woc_rough"], "floor": floor(5.0), "depth_per_pass": f3["doc_rough"],
         "feed_rate": f3["feed_safe"] / 2.0, "plunge_rate": f3["plunge"],
@@ -360,7 +382,8 @@ def main() -> None:
         "point_spacing": mapt["vgroove"]["max_seg"], "feed_rate": fv["feed_safe"], "plunge_rate": fv["plunge"],
         "surface_model_id": mids["relief_sheet_s1.stl"], "direction": "from_below", "side": "center",
         "spindle_rpm": int(fv["rpm"]), "chain_distance_mm": 0.0},
-        why=("Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2).\n"
+        why=(f"Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2)\n"
+             f"- exposure_margin {margin} = {-v_offset:.4f}; the line at the front is about {2 * v_offset * math.tan(math.radians(blk['vgroove_angle'] / 2.0)):.2f} wide.\n"
              "One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity.\n"
              "point_spacing = map.toml [vgroove].max_seg: the vertex spacing that the block stage checks the tip at."),
         heights={"top_z": cav_floor, "retract_z": v_retract})
