@@ -291,6 +291,24 @@ kind = "millimeters"
 
 [[models]]
 id = 1
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lakes_s1.stl"
+name = "lakes_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 2
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lakes_closed.dxf"
+name = "lakes_closed.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 3
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/relief_sheet_s1.stl"
 name = "relief_sheet_s1.stl"
 kind = "stl"
@@ -299,7 +317,7 @@ kind = "stl"
 kind = "millimeters"
 
 [[models]]
-id = 2
+id = 4
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/block_outline.dxf"
 name = "block_outline.dxf"
 kind = "dxf"
@@ -308,7 +326,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 3
+id = 5
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/edge_outer.dxf"
 name = "edge_outer.dxf"
 kind = "dxf"
@@ -317,7 +335,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 4
+id = 6
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/cavity_d9.00.dxf"
 name = "cavity_d9.00.dxf"
 kind = "dxf"
@@ -326,7 +344,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 5
+id = 7
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/vgroove_v20.dxf"
 name = "vgroove_v20.dxf"
 kind = "dxf"
@@ -335,7 +353,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 6
+id = 8
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/light_holes.dxf"
 name = "light_holes.dxf"
 kind = "dxf"
@@ -344,7 +362,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 7
+id = 9
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/antenna_d5.00.dxf"
 name = "antenna_d5.00.dxf"
 kind = "dxf"
@@ -353,7 +371,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 8
+id = 10
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_slot_f6_d20.67.dxf"
 name = "slit_slot_f6_d20.67.dxf"
 kind = "dxf"
@@ -362,7 +380,7 @@ kind = "dxf"
 kind = "millimeters"
 
 [[models]]
-id = 9
+id = 11
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_v60.dxf"
 name = "slit_v60.dxf"
 kind = "dxf"
@@ -384,7 +402,7 @@ id = 0
 name = "Face back to T1"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 4
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -469,7 +487,7 @@ id = 1
 name = "Pin drill, flip pins"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 4
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -624,7 +642,7 @@ holes = false
 [[setups.toolpaths.boundary.source.selection.selection.rules]]
 
 [setups.toolpaths.boundary.source.selection.selection.rules.source]
-model = 2
+model = 4
 
 [setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
 only = [
@@ -653,10 +671,120 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [[setups.toolpaths]]
 id = 3
+name = "Lakes 3 mm"
+enabled = true
+tool_id = 1
+model_id = 1
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 0.75
+depth_per_pass = 6.0
+stock_to_leave_axial = 0.0
+feed_rate = 2832.0
+plunge_rate = 1416.0
+ramp_feed_rate = 2832.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = true
+region_ordering = "global"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 18000
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 2
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 4
 name = "ANTENNA_D5.00 pocket 3 mm"
 enabled = true
 tool_id = 1
-model_id = 7
+model_id = 9
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -743,11 +871,11 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
 
 [[setups.toolpaths]]
-id = 4
+id = 5
 name = "Drill light holes 6 mm"
 enabled = true
 tool_id = 6
-model_id = 6
+model_id = 8
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -815,11 +943,11 @@ offset = 0.0
 enabled = false
 
 [[setups.toolpaths]]
-id = 5
+id = 6
 name = "V rivers and lakes"
 enabled = true
 tool_id = 2
-model_id = 5
+model_id = 7
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -832,7 +960,7 @@ depth = -3.268512728
 point_spacing = 0.25
 feed_rate = 2286.0
 plunge_rate = 381.0
-surface_model_id = 1
+surface_model_id = 3
 direction = "from_below"
 side = "center"
 projection = "point"
@@ -902,11 +1030,11 @@ source = "repo_rule"
 reference = "material_plunge_base"
 
 [[setups.toolpaths]]
-id = 6
+id = 7
 name = "Day strip slit V60"
 enabled = true
 tool_id = 3
-model_id = 9
+model_id = 11
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -1002,7 +1130,7 @@ cut_as = "stock_material"
 
 [setups.stock_changes.geometry]
 kind = "outline_fill"
-model_ids = [4]
+model_ids = [6]
 level_z = 17.5
 
 [setups.stock_changes.material.Custom]
@@ -1018,7 +1146,7 @@ cut_as = "stock_material"
 
 [setups.stock_changes.geometry]
 kind = "outline_fill"
-model_ids = [8]
+model_ids = [10]
 level_z = 4.83
 
 [setups.stock_changes.material.Custom]
@@ -1026,11 +1154,11 @@ name = "Epoxy"
 feed_scale_factor = 1.0
 
 [[setups.toolpaths]]
-id = 7
+id = 8
 name = "Skim epoxy to the cavity floor"
 enabled = true
 tool_id = 0
-model_id = 4
+model_id = 6
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -1127,11 +1255,11 @@ z_datum = "table"
 datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below 25.0 (the face pass crosses them)."
 
 [[setups.toolpaths]]
-id = 8
+id = 9
 name = "Face front to T"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 4
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -1211,11 +1339,11 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [[setups.toolpaths]]
-id = 9
+id = 10
 name = "Front 3D rough"
 enabled = true
 tool_id = 4
-model_id = 1
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -1292,7 +1420,7 @@ holes = false
 [[setups.toolpaths.boundary.source.selection.selection.rules]]
 
 [setups.toolpaths.boundary.source.selection.selection.rules.source]
-model = 3
+model = 5
 
 [setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
 only = [
@@ -1320,11 +1448,11 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-6350-2f-spektra"
 
 [[setups.toolpaths]]
-id = 10
+id = 11
 name = "Front scallop finish"
 enabled = true
 tool_id = 5
-model_id = 1
+model_id = 3
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"
@@ -1392,7 +1520,7 @@ holes = false
 [[setups.toolpaths.boundary.source.selection.selection.rules]]
 
 [setups.toolpaths.boundary.source.selection.selection.rules.source]
-model = 3
+model = 5
 
 [setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
 only = [
@@ -1420,11 +1548,11 @@ source = "repo_rule"
 reference = "material_plunge_base"
 
 [[setups.toolpaths]]
-id = 11
+id = 12
 name = "Outline profile with tabs"
 enabled = true
 tool_id = 0
-model_id = 2
+model_id = 4
 boundary_inherit = true
 stock_source = "fresh"
 coolant = "off"

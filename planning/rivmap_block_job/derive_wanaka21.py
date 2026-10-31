@@ -212,6 +212,10 @@ def main() -> None:
     target = np.concatenate([keep_bb, hollow, lakes])
     write_stl(OUT / "back_target_s1.stl", target, "rivmap nz-wanaka-21 back rough target, setup-1 frame")
     files["back_target_s1.stl"] = OUT / "back_target_s1.stl"
+    # The lakes alone, for the 3 mm lake pass (the 6 mm reaches a lake only where its disc fits).
+    write_stl(OUT / "lakes_s1.stl", lakes, "rivmap nz-wanaka-21 lakes past the front, setup-1 frame")
+    files["lakes_s1.stl"] = OUT / "lakes_s1.stl"
+    write_dxf("lakes_closed.dxf", bc, ["VGROOVE_V20_LAKE"])
 
     # ── tools
     mt = {t["id"]: t for t in mapt["tools"]}
@@ -285,7 +289,7 @@ def main() -> None:
                      drill_tool["flute_count"], included_angle=drill_tool["included_angle"],
                      comment="The operator's drill (testpiece.toml)."))
 
-    model_order = ["back_target_s1.stl", "relief_sheet_s1.stl", "block_outline.dxf",
+    model_order = ["back_target_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
                    "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
     assert sorted(model_order) == sorted(files)
@@ -310,7 +314,7 @@ def main() -> None:
 
     def rough3d(name: str, tool: str, model: str, f: dict, why: str, boundary: dict, leave: float,
                 stock_source: str = "fresh", geometry: dict | None = None,
-                heights: dict | None = None) -> None:
+                heights: dict | None = None, strategy: str = "geodesic_adaptive") -> None:
         # Adaptive geometry from the machine rigidity (adaptive_doc_factor x D, adaptive_woc_factor x D)
         # unless the caller gives it. Run Suggest to tune it.
         g = geometry or {"stepover": round(rig["adaptive_woc_factor"] * dia[tool], 4),
@@ -321,7 +325,7 @@ def main() -> None:
             "min_cutting_radius": 0.0, "entry_style": "ramp", "ramp_angle_deg": 3.0,
             "helix_radius_factor": trough["helix_radius_factor"], "helix_pitch": trough["helix_pitch"],
             "entry_clearance_mm": trough["entry_clearance_mm"], "detect_flat_areas": True,
-            "region_ordering": trough["region_ordering"], "clearing_strategy": "geodesic_adaptive",
+            "region_ordering": trough["region_ordering"], "clearing_strategy": strategy,
             "trochoid_cap_mult": trough["trochoid_cap_mult"], "engagement_measure": trough["engagement_measure"],
             "z_blend": False, "spindle_rpm": int(f["rpm"]),
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
@@ -357,6 +361,12 @@ def main() -> None:
              "Stepover: the machine adaptive_woc_factor x D. Boundary: the block outline, tool inside."),
             in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
                                      "depth_per_pass": step})
+    in_lakes = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["lakes_closed.dxf"]}
+    rough3d("Lakes 3 mm", "flat_3", "lakes_s1.stl", f3,
+            (f"The closed lakes, {margin} past the front, where the 6 mm disc does not fit (narrow lakes,\n"
+             "arms, the parts near the shore). From the cavity floor down; boundary: the lake outlines, tool\n"
+             "inside. Contour parallel: geodesic leaves pieces where its field does not apply."),
+            in_lakes, 0.0, heights={"top_z": cav_floor}, strategy="contour_parallel")
     P.toolpath("ANTENNA_D5.00 pocket 3 mm", "pocket", tid["flat_3"], mids["antenna_d5.00.dxf"], {
         "stepover": f3["woc_rough"], "floor": floor(5.0), "depth_per_pass": f3["doc_rough"],
         "feed_rate": f3["feed_safe"] / 2.0, "plunge_rate": f3["plunge"],

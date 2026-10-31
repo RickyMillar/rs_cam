@@ -550,3 +550,9 @@ cut the day-strip slit from the back before the same pour.
   600 mm/min, 6000 rpm. CAUTION: a derive_wanaka21.py run writes the feeds_oak speeds again.
 - Simulation 0.25 mm: 10.47 h, 0 collisions, 0 rapid collisions. Back rough 270 k moves,
   1186 m of feed; one depth-of-cut caution 13.3 mm (over the 2 x D rule) on it.
+- Lakes 3 mm (operator: "the lakes still have some un milled areas"): the 6 mm reaches a lake
+  only where its disc fits (the target inside a lake is about 5 mm below the hollow around it).
+  A flat_3 adaptive3d (contour parallel) on the lake surface alone, inside the closed lake
+  outlines, from the cavity floor: 27 k moves, 74 m. The sim (checkpoint after the op) shows the
+  lakes cleared to their floor, arms included; the lake island stays. Total 12.27 h, 0
+  collisions, 0 rapid collisions. Suggest speeds applied again (the drill keeps its own).
