@@ -529,3 +529,9 @@ cut the day-strip slit from the back before the same pour.
   slot floor. CAUTION: the slit is open under the stock (tip 0.366 into the spoilboard).
 - Open: rapid flag on the front 3D rough (z 23.086); the scallop plunge (736 > 300);
   Project Curve has no open-path offset and no depth per pass (core work, not started).
+- Performance (operator: "definitely struggling"): the models were 2.7 M triangles (oak_block_full
+  1.4 M for the back rough, terrain_back and the relief sheet 0.65 M each). The back rough now
+  reads mech `block_back.stl` (8 k triangles; same features: 162.8 m against 166.3 m of feed),
+  and one relief sheet serves the hollow, the V projection and the front ops: 0.66 M in total.
+  The V point spacing is map.toml `[vgroove].max_seg` 0.25 (was tip_tol 0.05): 21.9 k moves
+  (was 106 k). Total 732 k moves, of which the scallop finish is 562 k. 16.5 h, 0 collisions.

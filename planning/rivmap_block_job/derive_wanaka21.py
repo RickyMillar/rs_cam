@@ -10,7 +10,7 @@ script reads the block-stage output (read only) and writes:
 - the project planning/rivmap_block_job/nz_wanaka_21.toml.
 
 Method (operator, 2026-10-31: "use 3d ops for most of this ... 5-10 paths total"):
-the back is a 3D rough of the finished oak block (mech oak_block_full.stl: the cavity,
+the back is a 3D rough of the mech block back (block_back.stl: the cavity,
 the mech pockets and the through holes) with the 6 mm tool, then a 3D rough of the
 relief from behind (the operator's earlier method) that leaves block.json web_min of
 oak under the front surface, so the V lines need no rough slots. The light holes are
@@ -164,20 +164,22 @@ def main() -> None:
     eb = ezdxf.readfile(BUILD / "terrain/nz-wanaka-21/machinable_edge_band.dxf")
     write_dxf("edge_outer.dxf", eb, ["EDGE_OUTER"], conv=lambda x, y: (bx1 - x, y - by0))
 
-    # The finished oak block (stack.json world frame: block XY, Z = block Z + levels.z_block)
-    # in the setup-1 frame: x = bx1 - X, y = Y - by0, z = T1 - (Z - z_block). A rotation (det +1).
+    # The mech block back (stack.json world frame: block XY, Z = block Z + levels.z_block): the
+    # cavity, the mech pockets and the through holes, 8k triangles (oak_block_full.stl adds the
+    # relief and the channels: 1.4M triangles the back rough does not need).
+    # Setup-1 frame: x = bx1 - X, y = Y - by0, z = T1 - (Z - z_block). A rotation (det +1).
     zb = stack["levels"]["z_block"]
-    tris = read_stl(BUILD / "mech/nz-wanaka-21/oak_block_full.stl")
+    tris = read_stl(BUILD / "mech/nz-wanaka-21/block_back.stl")
     assert abs(tris[..., 2].min() - zb) < 1e-3 and abs(tris[..., 2].max() - (zb + T)) < 1e-3
     s1 = np.empty_like(tris)
     s1[..., 0] = bx1 - tris[..., 0]
     s1[..., 1] = tris[..., 1] - by0
     s1[..., 2] = T1 - (tris[..., 2] - zb)
-    write_stl(OUT / "oak_block_s1.stl", s1, "rivmap nz-wanaka-21 oak block, rs_cam setup-1 frame")
-    files["oak_block_s1.stl"] = OUT / "oak_block_s1.stl"
-    files["terrain_back.stl"] = BLOCK / "terrain_back.stl"
-    # The relief seen from behind: the front-surface triangles of terrain_back.stl only (they
-    # face down in the setup-1 frame). A drop cutter from above meets the sheet, not the flat back.
+    write_stl(OUT / "block_back_s1.stl", s1, "rivmap nz-wanaka-21 mech block back, rs_cam setup-1 frame")
+    files["block_back_s1.stl"] = OUT / "block_back_s1.stl"
+    # The relief: the front-surface triangles of terrain_back.stl only (they face down in the
+    # setup-1 frame). One mesh for the hollow (a drop cutter from above meets the sheet, not the
+    # flat back), the V projection (from below) and the front ops (setup 3 turns it face up).
     tb = read_stl(BLOCK / "terrain_back.stl")
     nz = np.cross(tb[:, 1] - tb[:, 0], tb[:, 2] - tb[:, 0])[:, 2]
     sheet = tb[nz < 0.0]
@@ -256,7 +258,7 @@ def main() -> None:
                      drill_tool["flute_count"], included_angle=drill_tool["included_angle"],
                      comment="The operator's drill (testpiece.toml)."))
 
-    model_order = ["oak_block_s1.stl", "terrain_back.stl", "relief_sheet_s1.stl", "block_outline.dxf",
+    model_order = ["block_back_s1.stl", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
                    "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
     assert sorted(model_order) == sorted(files)
@@ -312,8 +314,8 @@ def main() -> None:
         "diameter": pin_d, "spoilboard_penetration": round(cam["pin_depth"] - T1, 6), "cycle": "peck",
         "peck_depth": dia["flat_6"], "feed_rate": f6["plunge"], "retract_z": 2.0, "spindle_rpm": int(f6["rpm"])},
         why=f"Three pins (axis + mirror pair). Depth = block.json cam.pin_depth {cam['pin_depth']} = the flat_6 reach.")
-    rough3d("Back 3D rough 6 mm", "flat_6", "oak_block_s1.stl", f6,
-            "The finished oak block: the cavity, the slots, the holes, the mech pockets, the through holes.\n"
+    rough3d("Back 3D rough 6 mm", "flat_6", "block_back_s1.stl", f6,
+            "The mech block back: the cavity, the mech pockets, the through holes.\n"
             "Boundary: the block outline, tool inside (the margin with the pins stays).",
             in_block, 0.0)
     # The hollow: the relief from behind, leaving web_min of oak (axial). The V tip goes the overcut
@@ -355,11 +357,12 @@ def main() -> None:
         heights={"top_z": cav_floor})
     P.toolpath("V rivers and lakes", "project_curve", tid["v20"], mids["vgroove_v20.dxf"], {
         "projection": "point", "depth": round(-v_offset, 9),
-        "point_spacing": tol, "feed_rate": fv["feed_safe"], "plunge_rate": fv["plunge"],
-        "surface_model_id": mids["terrain_back.stl"], "direction": "from_below", "side": "center",
+        "point_spacing": mapt["vgroove"]["max_seg"], "feed_rate": fv["feed_safe"], "plunge_rate": fv["plunge"],
+        "surface_model_id": mids["relief_sheet_s1.stl"], "direction": "from_below", "side": "center",
         "spindle_rpm": int(fv["rpm"]), "chain_distance_mm": 0.0},
         why=("Project Curve on the front surface from below, point projection: tip = surface - (w/2)/tan(a/2).\n"
-             "One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity."),
+             "One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity.\n"
+             "point_spacing = map.toml [vgroove].max_seg: the vertex spacing that the block stage checks the tip at."),
         heights={"top_z": cav_floor, "retract_z": v_retract})
     fv60 = feeds["v60"]
     slit_z0 = float(next(l for l in {e.dxf.layer for e in mech.modelspace()} if l.startswith("SLIT_SLOT")).split("_D")[1])
@@ -403,12 +406,12 @@ def main() -> None:
             f"Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below "
             f"{cam['pin_top_max']} (the face pass crosses them).")
     face("Face front to T", cam["face_front"], f"Face the front from T1 {T1} to T {T} (block.json cam.face_front).")
-    rough3d("Front 3D rough", "flat_6.35", "terrain_back.stl", f635,
+    rough3d("Front 3D rough", "flat_6.35", "relief_sheet_s1.stl", f635,
             "rivmap350 '3D Rough 8' geometry; stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER.",
             in_relief, tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
             geometry={"stepover": trough["stepover"], "depth_per_pass": trough["depth_per_pass"]})
     tfin = tpl_ops["Scallop Finish"]["operation"]["params"]
-    P.toolpath("Front scallop finish", "scallop", tid["tbn_r1"], mids["terrain_back.stl"], {
+    P.toolpath("Front scallop finish", "scallop", tid["tbn_r1"], mids["relief_sheet_s1.stl"], {
         "scallop_height": tfin["scallop_height"], "tolerance": tfin["tolerance"], "direction": tfin["direction"],
         "continuous": tfin["continuous"], "slope_from": 0.0, "slope_to": 90.0, "feed_rate": ftb["feed_safe"],
         "plunge_rate": ftb["plunge"], "stock_to_leave": 0.0, "spindle_rpm": int(ftb["rpm"]),
