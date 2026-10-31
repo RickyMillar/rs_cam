@@ -556,3 +556,25 @@ cut the day-strip slit from the back before the same pour.
   outlines, from the cavity floor: 27 k moves, 74 m. The sim (checkpoint after the op) shows the
   lakes cleared to their floor, arms included; the lake island stays. Total 12.27 h, 0
   collisions, 0 rapid collisions. Suggest speeds applied again (the drill keeps its own).
+
+### Revision 2026-11-01: roughing time, measured
+
+The back (setup 1) was 9.38 h of the 12.27 h (measured on setup 1 alone); the front is 2.71 h.
+The finish was never 6 h (an earlier reading of the GUI timeline bar was wrong).
+
+| Variant (whole job, 0.25 mm sim) | Back paths, m of feed | Total |
+|---|---|---|
+| 6 mm back rough alone (1.2 x 1.5 mm) | 1186 | 12.27 h |
+| 18 mm bulk 2 x 10.5 mm, then 6 mm rest (remaining stock) | 49 + 230 | 6.89 h |
+| 18 mm bulk 3.0 mm steps, then 6 mm rest | 127 + 226 | 7.42 h |
+| 18 mm 3.0 mm, R3 ball scallop over the hollow, 6 mm rest | 127 + 49 + 110 | 7.66 h |
+| Tiered finish R3/R2/R1 instead of the R1 scallop (front only) | 468 + 519 rapid | front 15.2 h against 2.71 h |
+
+- The project takes the 6.89 h row. Bulk levels: top to the deepest hollow point in the fewest even
+  passes inside the 20 mm flute, no flat-area levels (they added five 0.1-0.7 mm passes).
+- The 6 mm rest walks 17 levels of 1.2 mm (63 % air): the next lever.
+- The operator's bits are in `~/.config/rs_cam/tools/my_roughing.toml` (stick-outs: measure).
+- The skim is removed (operator); setup 2 holds only the pour. The front 3D rough and scallop keep
+  the operator's GUI values.
+- Defects found: the GUI memory budget reads half of RAM and ignores the proxy's 16 GB cap (an
+  OOM kill); the tier planner has no "inside a boundary" mode; a lake-pass rapid flag at Z 8.0.

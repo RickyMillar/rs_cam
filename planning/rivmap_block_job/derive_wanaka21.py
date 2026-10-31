@@ -50,6 +50,17 @@ STOCK_X, STOCK_Y = 395.0, 460.0      # the 460 mm length is along the grain = bl
 # The pair of the pin pattern is this far from the flip axis. A free choice: the
 # operator moves it to clear the flaws near the long edges.
 PIN_PAIR_ACROSS = 100.0
+# The operator's GUI edits of 2026-11-01 (front ops; the skim removed: "dont need it").
+FRONT_ROUGH_6MM = {"stepover": 1.382, "depth_per_pass": 5.532, "feed_rate": 3900.0, "plunge_rate": 2360.0,
+                   "ramp_feed_rate": 4720.0, "spindle_rpm": 20102}
+FRONT_SCALLOP_FEED = {"feed_rate": 4700.0, "spindle_rpm": 20611, "plunge_rate": 240.0}  # plunge: Suggest (cap 300)
+# The operator's bulk roughing bit (library catalog my_roughing, 2026-11-01).
+ROUGH_LIB = Path.home() / ".config/rs_cam/tools/my_roughing.toml"
+ROUGH_BIT = "18 mm 2F"
+BALL_BIT = "6 mm ball (R3)"
+# The R3 ball hollow pass (operator idea 2026-11-01), measured slower (whole job 7.66 h against 6.89 h:
+# the ball runs at Suggest's 1174 mm/min and the 6 mm rest still had 110 m). Off; kept for the next test.
+BALL_PASS = False
 
 # ── rs_cam source constants (asserted below) ─────────────────────────────────
 PIN_WALL_MM = 2.0                    # compute/alignment_pins/mod.rs
@@ -210,6 +221,10 @@ def main() -> None:
     lakes = sheet[in_cav & in_lake].copy()
     lakes[..., 2] -= margin
     target = np.concatenate([keep_bb, hollow, lakes])
+    hollow_floor = float(min(hollow[..., 2].min(), lakes[..., 2].min()))  # the deepest hollow or lake point
+    # The hollow and the lakes alone: the surface the R3 ball follows over the cavity.
+    write_stl(OUT / "hollow_s1.stl", np.concatenate([hollow, lakes]), "rivmap nz-wanaka-21 hollow + lakes, setup-1 frame")
+    files["hollow_s1.stl"] = OUT / "hollow_s1.stl"
     write_stl(OUT / "back_target_s1.stl", target, "rivmap nz-wanaka-21 back rough target, setup-1 frame")
     files["back_target_s1.stl"] = OUT / "back_target_s1.stl"
     # The lakes alone, for the 3 mm lake pass (the 6 mm reaches a lake only where its disc fits).
@@ -222,7 +237,7 @@ def main() -> None:
     ct = cam["tools"]
     contract = tomllib.loads((MONO / "design/rivmap.toml").read_text())["cutters"]
     cam_tools = ["flat_6", "flat_3", "v20", "v60", "flat_6.35", "tbn_r1"]
-    order_tools = cam_tools + ["drill_6"]
+    order_tools = cam_tools + ["drill_6", "rough_18", "ball_r3"]
     dia = {k: float(contract[mt[k]["cutter"]]) if "cutter" in mt[k] else ct[k]["diameter"] for k in cam_tools}
     assert all(abs(dia[k] - ct[k]["diameter"]) < 1e-9 for k in cam_tools), dia
     tid = {k: i for i, k in enumerate(order_tools)}
@@ -232,6 +247,10 @@ def main() -> None:
     drill_op = next(tp["operation"]["params"] for s in tomllib.loads((HERE / "testpiece.toml").read_text())["setups"]
                     for tp in s["toolpaths"] if tp["operation"]["kind"] == "drill")
     dia["drill_6"] = drill_tool["diameter"]
+    big = next(t for t in tomllib.loads(ROUGH_LIB.read_text())["tools"] if t["name"].startswith(ROUGH_BIT))
+    dia["rough_18"] = big["diameter"]
+    ball = next(t for t in tomllib.loads(ROUGH_LIB.read_text())["tools"] if t["name"].startswith(BALL_BIT))
+    dia["ball_r3"] = ball["diameter"]
 
     P = Project("nz_wanaka_21", "\n".join([
         "# rs_cam two-sided job: RivMap oak block nz-wanaka-21 (21 x 21 LEDs, block 358 x 443 x 25).",
@@ -288,8 +307,14 @@ def main() -> None:
                      drill_tool["cutting_length"], drill_tool["shank_diameter"], drill_tool["stickout"],
                      drill_tool["flute_count"], included_angle=drill_tool["included_angle"],
                      comment="The operator's drill (testpiece.toml)."))
+    P.add(tool_table(tid["rough_18"], big["tool_number"], big["name"], "end_mill", big["diameter"],
+                     big["cutting_length"], big["shank_diameter"], big["stickout"], big["flute_count"],
+                     comment=f"The operator's bulk roughing bit ({ROUGH_LIB.name}). Stick-out: measure."))
+    P.add(tool_table(tid["ball_r3"], ball["tool_number"], ball["name"], "ball_nose", ball["diameter"],
+                     ball["cutting_length"], ball["shank_diameter"], ball["stickout"], ball["flute_count"],
+                     comment=f"The operator's R3 ball ({ROUGH_LIB.name}). Flute and stick-out: measure."))
 
-    model_order = ["back_target_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
+    model_order = ["back_target_s1.stl", "hollow_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
                    "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
     assert sorted(model_order) == sorted(files)
@@ -314,20 +339,23 @@ def main() -> None:
 
     def rough3d(name: str, tool: str, model: str, f: dict, why: str, boundary: dict, leave: float,
                 stock_source: str = "fresh", geometry: dict | None = None,
-                heights: dict | None = None, strategy: str = "geodesic_adaptive") -> None:
+                heights: dict | None = None, strategy: str = "geodesic_adaptive",
+                detect_flat: bool = True) -> None:
         # Adaptive geometry from the machine rigidity (adaptive_doc_factor x D, adaptive_woc_factor x D)
         # unless the caller gives it. Run Suggest to tune it.
         g = geometry or {"stepover": round(rig["adaptive_woc_factor"] * dia[tool], 4),
                          "depth_per_pass": round(rig["adaptive_doc_factor"] * dia[tool], 4)}
         P.toolpath(name, "adaptive3d", tid[tool], mids[model], {
-            **g, "stock_to_leave_axial": leave, "feed_rate": f["feed_safe"], "plunge_rate": f["plunge"],
-            "ramp_feed_rate": round(f["feed_safe"] / 3.0, 3), "tolerance": trough["tolerance"],
+            **g, "stock_to_leave_axial": leave,
+            **({"feed_rate": f["feed_safe"], "plunge_rate": f["plunge"], "ramp_feed_rate": round(f["feed_safe"] / 3.0, 3),
+                "spindle_rpm": int(f["rpm"])} if f else {}),
+            "tolerance": trough["tolerance"],
             "min_cutting_radius": 0.0, "entry_style": "ramp", "ramp_angle_deg": 3.0,
             "helix_radius_factor": trough["helix_radius_factor"], "helix_pitch": trough["helix_pitch"],
-            "entry_clearance_mm": trough["entry_clearance_mm"], "detect_flat_areas": True,
+            "entry_clearance_mm": trough["entry_clearance_mm"], "detect_flat_areas": detect_flat,
             "region_ordering": trough["region_ordering"], "clearing_strategy": strategy,
             "trochoid_cap_mult": trough["trochoid_cap_mult"], "engagement_measure": trough["engagement_measure"],
-            "z_blend": False, "spindle_rpm": int(f["rpm"]),
+            "z_blend": False,
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
             "stay_down_clearance_mm": trough["stay_down_clearance_mm"]},
             why=why, boundary=boundary, dressups={"segment_merge": True}, stock_source=stock_source,
@@ -353,14 +381,37 @@ def main() -> None:
     usable = cone - mapt["vgroove"]["body_margin"]
     step = math.floor((usable - web - v_offset) * 10.0) / 10.0
     assert step > 0.0, step
-    rough3d("Back rough 6 mm (cavity, hollow, lakes, pockets)", "flat_6", "back_target_s1.stl", f6,
-            (f"One surface: the mech block back (pockets, through holes), the hollow under the relief inside\n"
-             f"the cavity (web_min {web} of oak left), and the {len(getattr(lakes_poly, 'geoms', [lakes_poly]))} closed lakes opened {margin} past the front\n"
-             f"({n_open_lakes} open lake paths at the edge band are V-cut only). The V cuts at most {web + v_offset:.2f} of its\n"
-             f"usable cone {usable:.2f}; the rest, {step}, is the depth per pass. Geodesic clearing.\n"
-             "Stepover: the machine adaptive_woc_factor x D. Boundary: the block outline, tool inside."),
+    span = T1 - hollow_floor
+    # Levels: with the ball pass, the step is at most the ball radius (the ball takes the terraces in one
+    # surface pass); without it, the fewest even passes inside the bit's flute (measured best, 6.89 h).
+    n_big = math.ceil(span / (dia["ball_r3"] / 2.0 if BALL_PASS else big["cutting_length"]))
+    rough3d(f"Back bulk rough {big['diameter']:g} mm", "rough_18", "back_target_s1.stl", None,
+            (f"The bulk of the back target with the {big['diameter']:g} mm bit (operator 2026-11-01: 'use those to\n"
+             f"rough out the bulk'; measured back 9.38 h -> 4.31 h). Levels: the top {T1} to the deepest hollow\n"
+             f"or lake point {hollow_floor:.2f} in {n_big} even passes.\n"
+             "No flat-area levels: they added five 0.1-0.7 mm passes; the 6 mm rest cuts the floors.\n"
+             "Feeds: run Suggest (no feeds row for this bit)."),
+            in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * big["diameter"], 4),
+                                     "depth_per_pass": round(span / n_big, 4)},
+            heights={"bottom_z": round(hollow_floor, 4)}, detect_flat=False)
+    if BALL_PASS:
+      P.toolpath("Back hollow R3 ball scallop", "scallop", tid["ball_r3"], mids["hollow_s1.stl"], {
+          "scallop_height": step, "tolerance": trough["tolerance"], "direction": "outside_in", "continuous": False,
+          "slope_from": 0.0, "slope_to": 90.0, "stock_to_leave": 0.0, "intra_pass_hookup_mm": 3.0, "iso_field": True},
+          why=(f"One surface pass over the hollow and the lakes (operator idea 2026-11-01: 'a rough scallop with a r3 bit').\n"
+               f"It takes the bulk bit's terraces (<= {span / n_big:.2f}) off down to the target. Scallop height = {step}: the V\n"
+               "budget left after web_min and the overcut, so the cusps never take the V past its cone.\n"
+               "Feeds: run Suggest."),
+          boundary=in_cavity, stock_source="from_remaining_stock")
+    rough3d("Back rest 6 mm (cavity, hollow, lakes, pockets)", "flat_6", "back_target_s1.stl", f6,
+            (f"The rest after the bulk bit: corners, terraces, narrow parts, the pockets and the through holes.\n"
+             f"One surface: the mech block back, the hollow under the relief inside the cavity (web_min {web}\n"
+             f"of oak left), and the {len(getattr(lakes_poly, 'geoms', [lakes_poly]))} closed lakes opened {margin} past the front ({n_open_lakes} open lake\n"
+             f"paths are V-cut only). The V cuts at most {web + v_offset:.2f} of its usable cone {usable:.2f}; the rest,\n"
+             f"{step}, is the depth per pass. Remaining stock: generate_all simulates the bulk pass first."),
             in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
-                                     "depth_per_pass": step})
+                                     "depth_per_pass": step},
+            stock_source="from_remaining_stock")
     in_lakes = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["lakes_closed.dxf"]}
     rough3d("Lakes 3 mm", "flat_3", "lakes_s1.stl", f3,
             (f"The closed lakes, {margin} past the front, where the 6 mm disc does not fit (narrow lakes,\n"
@@ -409,7 +460,7 @@ def main() -> None:
         heights={"top_z": T1 - slit_z0})
 
     # ── Setup 2: the pour, then the skim
-    P.setup(1, "2 Back skim", "top", "Back up, on the pins, after the cure. Same zero as setup 1.")
+    P.setup(1, "2 Epoxy pour", "top", "The pour and the cure (no cut: the operator removed the skim, 2026-11-01).")
     overfill = mapt["paths"]["overfill"]
     level = cav_floor + overfill
     P.add("\n# The pour: fill the cavity to its floor + map.toml [paths].overfill.\n"
@@ -427,29 +478,27 @@ def main() -> None:
                                                      "model_ids": [mids["slit_slot_f6_d20.67.dxf"]],
                                                      "level_z": T1 - slit_z0})
           + table("setups.stock_changes.material.Custom", {"name": "Epoxy", "feed_scale_factor": 1.0}))
-    P.toolpath("Skim epoxy to the cavity floor", "pocket", tid["flat_6"], mids["cavity_d9.00.dxf"], {
-        "stepover": f6["woc_rough"], "floor": floor(overfill), "depth_per_pass": overfill,
-        "feed_rate": f6["feed_safe"], "plunge_rate": f6["plunge"], "ramp_feed_rate": round(f6["feed_safe"] / 3.0, 3),
-        "climb": True, "pattern": "zigzag", "angle": 0.0, "finishing_passes": 0, "spindle_rpm": int(f6["rpm"])},
-        why=f"One pass: the overfill {level} down to the cavity floor {cav_floor} (block z {blk['cavity_depth']}).",
-        heights={"top_z": level}, dressups=ramp)
 
     # ── Setup 3: Front (flipped about the X axis on the pins)
     P.setup(2, "3 Front", "bottom",
             f"Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below "
             f"{cam['pin_top_max']} (the face pass crosses them).")
     face("Face front to T", cam["face_front"], f"Face the front from T1 {T1} to T {T} (block.json cam.face_front).")
-    rough3d("Front 3D rough", "flat_6.35", "relief_sheet_s1.stl", f635,
-            "rivmap350 '3D Rough 8' geometry; stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER.",
+    fr6 = FRONT_ROUGH_6MM
+    rough3d("Front 3D rough", "flat_6", "relief_sheet_s1.stl",
+            {"feed_safe": fr6["feed_rate"], "plunge": fr6["plunge_rate"], "rpm": fr6["spindle_rpm"]},
+            "The operator's GUI edit (2026-11-01): the 6 mm end mill and its geometry and feeds.\n"
+            "Stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER.",
             in_relief, tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
-            geometry={"stepover": trough["stepover"], "depth_per_pass": trough["depth_per_pass"]})
+            geometry={"stepover": fr6["stepover"], "depth_per_pass": fr6["depth_per_pass"]})
     tfin = tpl_ops["Scallop Finish"]["operation"]["params"]
     P.toolpath("Front scallop finish", "scallop", tid["tbn_r1"], mids["relief_sheet_s1.stl"], {
         "scallop_height": tfin["scallop_height"], "tolerance": tfin["tolerance"], "direction": tfin["direction"],
-        "continuous": tfin["continuous"], "slope_from": 0.0, "slope_to": 90.0, "feed_rate": ftb["feed_safe"],
-        "plunge_rate": ftb["plunge"], "stock_to_leave": 0.0, "spindle_rpm": int(ftb["rpm"]),
+        "continuous": tfin["continuous"], "slope_from": 0.0, "slope_to": 90.0,
+        "feed_rate": FRONT_SCALLOP_FEED["feed_rate"], "plunge_rate": FRONT_SCALLOP_FEED["plunge_rate"], "stock_to_leave": 0.0,
+        "spindle_rpm": FRONT_SCALLOP_FEED["spindle_rpm"],
         "intra_pass_hookup_mm": tfin["intra_pass_hookup_mm"], "iso_field": tfin["iso_field"]},
-        why="rivmap350 'Scallop Finish' strategy; feeds_oak tbn_r1. Boundary: EDGE_OUTER.",
+        why="rivmap350 'Scallop Finish' strategy; feed and rpm: the operator's GUI edit (2026-11-01). Boundary: EDGE_OUTER.",
         boundary=in_relief, dressups={"lead_in_out": True})
     P.toolpath("Outline profile with tabs", "profile", tid["flat_6"], mids["block_outline.dxf"], {
         "side": "outside", "floor": floor(T), "depth_per_pass": f6["doc_rough"],
