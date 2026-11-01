@@ -625,3 +625,13 @@ bulk pass (932fd7538) has it; the per-op run states were not read until now.
 - rs_cam defects: `generate_all` reported `not_ready: []` while two ops were blocked; the
   project verdicts do not carry per-op blocking or critical findings (only `list_toolpaths` /
   per-op diagnostics show them).
+
+### 2026-11-02: the gouge is fixed (56f3381e7, G-DRAPEGAP)
+
+Cause: the 3D Rough planner draped each cut at one tool radius and assumed no peak hides between
+two samples; a point beside the path does. Fix in `adaptive3d` (the chord lift, with the guard's
+reduced tool). The job regenerated on the fixed build: both back roughs are no longer blocked; 6.72 h
+(+20 s), 0 collisions, 0 rapid collisions. Still open (unchanged): the entry-load criticals of both
+6 mm rests (back 14.5 mm at (211.7, 41.7); front 4.57 mm), the scallop crossing (peak 6.09 mm), the
+slit (peak 5.27 mm). A synthetic or cropped integration fixture did not reproduce the dip (the planner
+places passes differently); the sentry is the lib test plus this job.
