@@ -635,3 +635,45 @@ reduced tool). The job regenerated on the fixed build: both back roughs are no l
 6 mm rests (back 14.5 mm at (211.7, 41.7); front 4.57 mm), the scallop crossing (peak 6.09 mm), the
 slit (peak 5.27 mm). A synthetic or cropped integration fixture did not reproduce the dip (the planner
 places passes differently); the sentry is the lib test plus this job.
+
+### 2026-11-02: operator tools, the 2 mm lake rest, the engraving
+
+Changes (operator 2026-11-02):
+
+- Tools: the DMM DSP1f-D2.0-L08 (2 mm, 1 flute, 8 mm flute; shank 3.175 assumed: measure) replaces
+  the 3 mm on the lakes and the ANTENNA_D5 pocket (one tool change less). The V20 is the
+  3.175-20deg-0.3: rs_cam models a sharp tip, so the generator puts the 0.3 mm flat tip into the
+  depth (tip = (line - 0.3) / (2 tan 10 deg) past the surface) and the cone ((3.175 - 0.3) / 2 / tan 10
+  deg = 8.15). The finish ball is the R1 x 6 x 20 mm 2F; its taper half angle 5.711 deg is from that
+  size (atan(2 / 20)), not a printed value: measure. The 6 mm flat has a 25 mm cutting length.
+- "Lakes 2 mm (rest)": remaining stock, after the 6 mm rest, so it cuts only what the 6 mm left.
+- "Engrave day labels V60": cam_ops.json ENGRAVE_V60_D24.40 (rebuilt 2026-11-01), trace, block z
+  25.0 -> 24.4 in one pass, after the front face, before the outline profile. 41 of the 49 strokes
+  have 2 points; the generator adds the mid point (Trace skips a path under 3 points).
+- Front 3D rough: the EDGE_OUTER boundary with the tool centre on it (was tool inside).
+
+Result (whole job, 0.2 mm sim: the 2 mm tool needs a cell of tip radius / 5): 7.21 h (was 6.72 h),
+0 collisions, 0 rapid collisions, no op blocked.
+
+| Op | Time | Note |
+|---|---|---|
+| Lakes 2 mm (rest) | 2.21 h | cutting 333 s, entries 3607 s, rapids 3793 s (172 m) |
+| Back rest 6 mm | 1.76 h | |
+| Front scallop finish | 1.60 h | |
+| Front 3D rough | 0.50 h | |
+
+Findings:
+
+- The lake pass is now the largest single op, and it is almost all entries and rapids: remaining
+  stock breaks the lakes into thousands of small leftovers, each with its own ramp entry at the 2 mm
+  plunge feed. Critical `project.entry_load`: peak 4.67 mm at (124.8, 208.5, Z 7.74).
+- The front scallop still crosses standing material (13.7 % of samples over 1.08 mm, peak 5.39
+  mm; was 12.4 % / 6.09 mm). The centre boundary did not remove it. The relief has narrow valleys
+  that a 6 mm flat cannot reach to the leave; the R1 ball takes that material. A rest pass with a
+  smaller ball before the finish would carry it.
+- Back rest entry load: still 14.5 mm at (211.7, 41.6, Z 11.0). The back target there is a
+  pocket floor at Z 11.0 beside a wall up to Z 25.5. The bulk levels (Z 15.0, 4.5) do not reach
+  the floor. Not resolved.
+- Front 3D rough entry load: 4.62 mm at (168.9, 338.9, Z 20.38). Not resolved.
+- Note: `board_pocket_d14.50.dxf` and other DXF files in the job folder are from an older job;
+  the current back target does not match their outlines.

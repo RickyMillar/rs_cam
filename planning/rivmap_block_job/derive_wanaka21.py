@@ -57,6 +57,18 @@ FRONT_SCALLOP_FEED = {"feed_rate": 4700.0, "spindle_rpm": 20611, "plunge_rate": 
 # The operator's bulk roughing bit (library catalog my_roughing, 2026-11-01).
 ROUGH_LIB = Path.home() / ".config/rs_cam/tools/my_roughing.toml"
 ROUGH_BIT = "18 mm 2F"
+# The operator's tools (2026-11-02). The detail tool replaces the 3 mm on the lakes and the antenna;
+# its shank is not stated (3.175 assumed: measure). The V-bit has a 0.3 mm flat tip, which rs_cam's
+# tool table cannot hold (it models a sharp tip): the depth and the cone below use the tip.
+DETAIL_TOOL = {"name": "DMM DSP1f-D2.0-L08, 2 mm 1F, 8 mm flute (shank 3.175 assumed: measure)",
+               "diameter": 2.0, "cutting_length": 8.0, "shank": 3.175, "flutes": 1, "stickout": 20.0}
+V20_TIP_MM = 0.3
+V20_NAME = "3.175-20deg-0.3 V-bit (0.3 mm flat tip; rs_cam models a sharp tip), 25 mm stick-out (measure)"
+# The front finish ball: R1 x 6 x 20 mm, 2F. The taper half angle is from those three numbers
+# (atan((6/2 - 1) / 20)), not a printed value: measure.
+FINISH_BALL = {"name": "R1 x 6 x 20 mm 2F tapered ball (taper from the size: measure)", "tip_diameter": 2.0,
+               "shank": 6.0, "flute_length": 20.0, "flutes": 2}
+FLAT_6_CUTTING_LENGTH = 25.0
 BALL_BIT = "6 mm ball (R3)"
 # The R3 ball hollow pass (operator idea 2026-11-01), measured slower (whole job 7.66 h against 6.89 h:
 # the ball runs at Suggest's 1174 mm/min and the 6 mm rest still had 110 m). Off; kept for the next test.
@@ -120,6 +132,7 @@ def main() -> None:
     cam = blk["cam"]
     mapt = tomllib.loads((MONO / "block/map.toml").read_text())
     feeds = tomllib.loads((MONO / "block/feeds_oak.toml").read_text())["tools"]
+    rows = json.loads((BLOCK / "cam_ops.json").read_text())
     stack = json.loads((BUILD / "mech/nz-wanaka-21/stack.json").read_text())
     tpl = tomllib.loads(TEMPLATE.read_text())
     tpl_ops = {tp["name"]: tp for s in tpl["setups"] for tp in s["toolpaths"]}
@@ -172,6 +185,19 @@ def main() -> None:
         d.polyline(v60_layer, [a, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), b], False)
     write_if_changed(OUT / "slit_v60.dxf", d.text().encode())
     files["slit_v60.dxf"] = OUT / "slit_v60.dxf"
+    # The day labels (cam_ops.json setup 3, rebuilt 2026-11-01): open single strokes. Trace skips a path
+    # under 3 points, so a 2-point stroke gets its mid point.
+    eng_row = next(r for r in rows if r["setup"] == 3 and r["op"] == "trace")
+    d = Dxf()
+    for e in layer_entities(mech, eng_row["layer"]):
+        pts, bul, closed, _ = entity_points(e)
+        assert not closed and not any(bul), eng_row["layer"]
+        if len(pts) == 2:
+            a, b = pts
+            pts = [a, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), b]
+        d.polyline(eng_row["layer"], pts, False)
+    write_if_changed(OUT / "engrave.dxf", d.text().encode())
+    files["engrave.dxf"] = OUT / "engrave.dxf"
     eb = ezdxf.readfile(BUILD / "terrain/nz-wanaka-21/machinable_edge_band.dxf")
     write_dxf("edge_outer.dxf", eb, ["EDGE_OUTER"], conv=lambda x, y: (bx1 - x, y - by0))
 
@@ -236,8 +262,8 @@ def main() -> None:
     mt = {t["id"]: t for t in mapt["tools"]}
     ct = cam["tools"]
     contract = tomllib.loads((MONO / "design/rivmap.toml").read_text())["cutters"]
-    cam_tools = ["flat_6", "flat_3", "v20", "v60", "flat_6.35", "tbn_r1"]
-    order_tools = cam_tools + ["rough_18", "ball_r3"]
+    cam_tools = ["flat_6", "v20", "v60", "flat_6.35", "tbn_r1"]
+    order_tools = cam_tools + ["dsp_2", "rough_18", "ball_r3"]
     dia = {k: float(contract[mt[k]["cutter"]]) if "cutter" in mt[k] else ct[k]["diameter"] for k in cam_tools}
     assert all(abs(dia[k] - ct[k]["diameter"]) < 1e-9 for k in cam_tools), dia
     tid = {k: i for i, k in enumerate(order_tools)}
@@ -246,6 +272,7 @@ def main() -> None:
                     for tp in s["toolpaths"] if tp["operation"]["kind"] == "drill")
     big = next(t for t in tomllib.loads(ROUGH_LIB.read_text())["tools"] if t["name"].startswith(ROUGH_BIT))
     dia["rough_18"] = big["diameter"]
+    dia["dsp_2"] = DETAIL_TOOL["diameter"]
     ball = next(t for t in tomllib.loads(ROUGH_LIB.read_text())["tools"] if t["name"].startswith(BALL_BIT))
     dia["ball_r3"] = ball["diameter"]
 
@@ -289,17 +316,25 @@ def main() -> None:
     for k in cam_tools:
         t, c = mt[k], ct[k]
         if c["kind"] == "flat":
-            P.add(tool_table(tid[k], tid[k] + 1, t["name"], "end_mill", dia[k], c["reach"], t["shank"],
-                             c["reach"], t["flutes"], comment=f"map.toml {k}; block.json cam.tools"))
+            cut = FLAT_6_CUTTING_LENGTH if k == "flat_6" else c["reach"]
+            P.add(tool_table(tid[k], tid[k] + 1, t["name"], "end_mill", dia[k], cut, t["shank"],
+                             c["reach"], t["flutes"], comment=f"map.toml {k}; block.json cam.tools; cutting length {cut}"))
         elif c["kind"] == "vbit":
-            cone = (dia[k] / 2.0) / math.tan(math.radians(c["angle"] / 2.0))
-            P.add(tool_table(tid[k], tid[k] + 1, t["name"], "v_bit", dia[k], cone, t["shank"], c["reach"],
-                             t["flutes"], included_angle=c["angle"], taper_half_angle=c["angle"] / 2.0,
-                             comment=f"map.toml {k}; size and angle from block.json cam.tools; cone {cone:.4f}"))
+            tip = V20_TIP_MM if k == "v20" else 0.0
+            cone = ((dia[k] - tip) / 2.0) / math.tan(math.radians(c["angle"] / 2.0))
+            P.add(tool_table(tid[k], tid[k] + 1, V20_NAME if k == "v20" else t["name"], "v_bit", dia[k], cone,
+                             t["shank"], c["reach"], t["flutes"], included_angle=c["angle"],
+                             taper_half_angle=c["angle"] / 2.0,
+                             comment=f"map.toml {k}; size and angle from block.json cam.tools; cone {cone:.4f} (tip {tip})"))
         else:
-            P.add(tool_table(tid[k], tid[k] + 1, t["name"], "tapered_ball_nose", dia[k], t["flute_length"],
-                             t["shank"], c["reach"], t["flutes"], taper_half_angle=t["taper_half_angle"],
-                             comment=f"map.toml {k} (endmill.com.au TBN-R1.0-3.175-15)"))
+            fb = FINISH_BALL
+            taper = math.degrees(math.atan((fb["shank"] / 2.0 - fb["tip_diameter"] / 2.0) / fb["flute_length"]))
+            P.add(tool_table(tid[k], tid[k] + 1, fb["name"], "tapered_ball_nose", fb["tip_diameter"],
+                             fb["flute_length"], fb["shank"], c["reach"], fb["flutes"], taper_half_angle=round(taper, 4),
+                             comment=f"The operator's finish ball (2026-11-02); taper {taper:.3f} deg from its size"))
+    dt = DETAIL_TOOL
+    P.add(tool_table(tid["dsp_2"], tid["dsp_2"] + 1, dt["name"], "end_mill", dt["diameter"], dt["cutting_length"],
+                     dt["shank"], dt["stickout"], dt["flutes"], comment="The operator's detail tool (2026-11-02)."))
     P.add(tool_table(tid["rough_18"], big["tool_number"], big["name"], "end_mill", big["diameter"],
                      big["cutting_length"], big["shank_diameter"], big["stickout"], big["flute_count"],
                      comment=f"The operator's bulk roughing bit ({ROUGH_LIB.name}). Stick-out: measure."))
@@ -309,7 +344,7 @@ def main() -> None:
 
     model_order = ["back_target_s1.stl", "hollow_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
-                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf"]
+                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf", "engrave.dxf"]
     assert sorted(model_order) == sorted(files)
     mids = {f: i for i, f in enumerate(model_order)}
     for f in model_order:
@@ -317,7 +352,7 @@ def main() -> None:
 
     tol = mapt["vgroove"]["tip_tol"]
     ramp = {"entry_style": "ramp", "segment_merge": True, "segment_merge_tolerance": tol}
-    f6, f3, fv, f635, ftb = (feeds[k] for k in ("flat_6", "flat_3", "v20", "flat_6.35", "tbn_r1"))
+    f6, fv, f635, ftb = (feeds[k] for k in ("flat_6", "v20", "flat_6.35", "tbn_r1"))
     rig = machine["rigidity"]
     trough = tpl_ops["3D Rough 8"]["operation"]["params"]
 
@@ -368,8 +403,13 @@ def main() -> None:
     # The V tip goes the overcut for the line width plus exposure_margin past the front (operator:
     # "punch the rivers through more"). The V then cuts web_min + that of its usable cone; the
     # rest caps the depth per pass of the back rough (a terrace cannot take the V past its cone).
-    v_offset = (blk["line_width"] / 2.0) / math.tan(math.radians(blk["vgroove_angle"] / 2.0)) + margin
-    cone = (dia["v20"] / 2.0) / math.tan(math.radians(ct["v20"]["angle"] / 2.0))
+    # The line at the front: line_width + 2 margin tan(a/2) (the exposure margin, 2026-10-31). With the
+    # 0.3 mm flat tip the tip goes (w - tip) / (2 tan(a/2)) past the surface for that width, and the
+    # cone reaches the body (D - tip) / (2 tan(a/2)) above the tip.
+    t_half = math.tan(math.radians(blk["vgroove_angle"] / 2.0))
+    v_line = blk["line_width"] + 2.0 * margin * t_half
+    v_offset = (v_line - V20_TIP_MM) / (2.0 * t_half)
+    cone = ((dia["v20"] - V20_TIP_MM) / 2.0) / math.tan(math.radians(ct["v20"]["angle"] / 2.0))
     usable = cone - mapt["vgroove"]["body_margin"]
     step = math.floor((usable - web - v_offset) * 10.0) / 10.0
     assert step > 0.0, step
@@ -420,17 +460,19 @@ def main() -> None:
              "Cycle: the operator's drill op (testpiece.toml); feeds: run Suggest (G6 flat end mill drill rule)."),
         heights={"top_z": cav_floor})
     in_lakes = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["lakes_closed.dxf"]}
-    rough3d("Lakes 3 mm", "flat_3", "lakes_s1.stl", f3,
-            (f"The closed lakes, {margin} past the front, where the 6 mm disc does not fit (narrow lakes,\n"
-             "arms, the parts near the shore). From the cavity floor down; boundary: the lake outlines, tool\n"
-             "inside. Contour parallel: geodesic leaves pieces where its field does not apply."),
-            in_lakes, 0.0, heights={"top_z": cav_floor}, strategy="contour_parallel")
-    P.toolpath("ANTENNA_D5.00 pocket 3 mm", "pocket", tid["flat_3"], mids["antenna_d5.00.dxf"], {
-        "stepover": f3["woc_rough"], "floor": floor(5.0), "depth_per_pass": f3["doc_rough"],
-        "feed_rate": f3["feed_safe"] / 2.0, "plunge_rate": f3["plunge"],
-        "ramp_feed_rate": round(f3["feed_safe"] / 6.0, 3), "climb": True, "pattern": "contour", "angle": 0.0,
-        "finishing_passes": 0, "spindle_rpm": int(f3["rpm"])},
-        why="cam_ops.json ANTENNA_D5.00: 4 mm wide, the 6 mm tool does not fit. Slot feed: half feed_safe.",
+    rough3d("Lakes 2 mm (rest)", "dsp_2", "lakes_s1.stl", None,
+            (f"The closed lakes, {margin} past the front, where the 6 mm rest did not reach (narrow lakes,\n"
+             "arms, the shore), with the operator's 2 mm detail tool. Remaining stock: only what is left.\n"
+             "Boundary: the lake outlines, tool inside. Contour parallel: geodesic leaves pieces.\n"
+             "Feeds: run Suggest."),
+            in_lakes, 0.0, heights={"top_z": cav_floor}, strategy="contour_parallel",
+            stock_source="from_remaining_stock")
+    P.toolpath("ANTENNA_D5.00 pocket 2 mm", "pocket", tid["dsp_2"], mids["antenna_d5.00.dxf"], {
+        "stepover": round(rig["woc_roughing_factor"] * DETAIL_TOOL["diameter"], 4), "floor": floor(5.0),
+        "depth_per_pass": round(rig["doc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
+        "climb": True, "pattern": "contour", "angle": 0.0, "finishing_passes": 0},
+        why=("cam_ops.json ANTENNA_D5.00: 4 mm wide; the 2 mm detail tool (no tool change after the lakes).\n"
+             "Stepover and depth: the machine woc/doc roughing factors x D. Feeds: run Suggest."),
         dressups=ramp)
     P.toolpath("V rivers and lakes", "project_curve", tid["v20"], mids["vgroove_v20.dxf"], {
         "projection": "point", "depth": round(-v_offset, 9),
@@ -478,6 +520,15 @@ def main() -> None:
             f"Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below "
             f"{cam['pin_top_max']} (the face pass crosses them).")
     face("Face front to T", cam["face_front"], f"Face the front from T1 {T1} to T {T} (block.json cam.face_front).")
+    eng = eng_row
+    P.toolpath("Engrave day labels V60", "trace", tid[eng["tool"]], mids["engrave.dxf"], {
+        "depth": round(eng["z_start"] - eng["z_end"], 6), "depth_per_pass": round(eng["z_start"] - eng["z_end"], 6),
+        "feed_rate": fv60["feed_safe"], "plunge_rate": fv60["plunge"], "compensation": "none",
+        "spindle_rpm": int(fv60["rpm"])},
+        why=(f"cam_ops.json {eng['layer']} (rebuilt 2026-11-01): the day labels, single-stroke text in the chin\n"
+             f"under the slit, block z {eng['z_start']} -> {eng['z_end']} (local Z in this setup). After the face,\n"
+             "before the outline profile. Open strokes: Trace cuts each from its first point to its last."),
+        heights={"top_z": eng["z_start"]})
     front_leave = tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"]
     # The flip maps setup-1 z to T1 - z, so the deepest relief point in setup 3 is T1 - (the highest sheet z),
     # and the relief is the highest sheet z deep below the stock top.
@@ -495,8 +546,9 @@ def main() -> None:
             {"feed_safe": fr6["feed_rate"], "plunge": fr6["plunge_rate"], "rpm": fr6["spindle_rpm"]},
             "The operator's GUI edit (2026-11-01): the 6 mm end mill and its geometry and feeds; now the rest\n"
             "after the 18 mm bulk pass (remaining stock).\n"
-            "Stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER.",
-            in_relief, tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
+            "Stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER, tool CENTRE on it, so the\n"
+            "6 mm reaches the edge band the finish ball would otherwise meet at full height (2026-11-02).",
+            dict(in_relief, containment="center"), tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
             geometry={"stepover": fr6["stepover"], "depth_per_pass": fr6["depth_per_pass"]},
             stock_source="from_remaining_stock")
     tfin = tpl_ops["Scallop Finish"]["operation"]["params"]

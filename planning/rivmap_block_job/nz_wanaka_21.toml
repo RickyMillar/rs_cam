@@ -131,14 +131,14 @@ height_mm = 0.0
 kind = "hard"
 
 [job.simulation]
-resolution_mm = 0.25
+resolution_mm = 0.2
 
 [[tools]]
 id = 0
 name = "6 mm flat end mill (the cavity, the mech pockets), 30 mm stick-out"
 type = "end_mill"
 diameter = 6.0
-cutting_length = 30.0
+cutting_length = 25.0
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
@@ -156,31 +156,10 @@ product_id = ""
 
 [[tools]]
 id = 1
-name = "3 mm flat end mill, 2 flute, 3 mm shank, 30 mm stick-out"
-type = "end_mill"
-diameter = 3.0
-cutting_length = 30.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 0.0
-taper_half_angle = 0.0
-shaft_diameter = 3.0
-shank_diameter = 3.0
-stickout = 30.0
-flute_count = 2
-tool_number = 2
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 2
-name = "20 deg V-bit, 3.175 mm body and shank (measure), 25 mm stick-out (measure)"
+name = "3.175-20deg-0.3 V-bit (0.3 mm flat tip; rs_cam models a sharp tip), 25 mm stick-out (measure)"
 type = "v_bit"
 diameter = 3.175
-cutting_length = 9.003159889
+cutting_length = 8.152467616
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
@@ -190,14 +169,14 @@ shaft_diameter = 3.175
 shank_diameter = 3.175
 stickout = 25.0
 flute_count = 1
-tool_number = 3
+tool_number = 2
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
 
 [[tools]]
-id = 3
+id = 2
 name = "1/4 in 60 deg V-bit (the day strip slit), 30 mm stick-out (set and measure)"
 type = "v_bit"
 diameter = 6.35
@@ -211,14 +190,14 @@ shaft_diameter = 6.35
 shank_diameter = 6.35
 stickout = 30.0
 flute_count = 2
-tool_number = 4
+tool_number = 3
 tool_material = "carbide"
 cut_direction = "up_cut"
 vendor = ""
 product_id = ""
 
 [[tools]]
-id = 4
+id = 3
 name = "1/4 in flat end mill, 2 flute (the front rough)"
 type = "end_mill"
 diameter = 6.35
@@ -232,6 +211,27 @@ shaft_diameter = 6.35
 shank_diameter = 6.35
 stickout = 25.0
 flute_count = 2
+tool_number = 4
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 4
+name = "R1 x 6 x 20 mm 2F tapered ball (taper from the size: measure)"
+type = "tapered_ball_nose"
+diameter = 2.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 5.7106
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 30.0
+flute_count = 2
 tool_number = 5
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -240,19 +240,19 @@ product_id = ""
 
 [[tools]]
 id = 5
-name = "R1.0 x 3.175 x 15 mm 2 flute tapered ball end mill (the front finish), 30 mm stick-out"
-type = "tapered_ball_nose"
+name = "DMM DSP1f-D2.0-L08, 2 mm 1F, 8 mm flute (shank 3.175 assumed: measure)"
+type = "end_mill"
 diameter = 2.0
-cutting_length = 15.0
+cutting_length = 8.0
 helix_deg = 30.0
 corner_radius_mm = 0.0
 corner_radius = 0.0
 included_angle = 0.0
-taper_half_angle = 2.2
+taper_half_angle = 0.0
 shaft_diameter = 3.175
 shank_diameter = 3.175
-stickout = 30.0
-flute_count = 2
+stickout = 20.0
+flute_count = 1
 tool_number = 6
 tool_material = "carbide"
 cut_direction = "up_cut"
@@ -413,6 +413,15 @@ kind = "millimeters"
 id = 12
 path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_v60.dxf"
 name = "slit_v60.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 13
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/engrave.dxf"
+name = "engrave.dxf"
 kind = "dxf"
 
 [models.units]
@@ -749,9 +758,9 @@ diameter = 6.0
 spoilboard_penetration = 4.5
 cycle = "peck"
 peck_depth = 6.0
-feed_rate = 1835.0
+feed_rate = 736.0
 retract_z = 2.0
-spindle_rpm = 14000
+spindle_rpm = 10610
 
 [setups.toolpaths.dressups]
 entry_style = "none"
@@ -796,18 +805,6 @@ offset = 0.0
 
 [setups.toolpaths.debug_options]
 enabled = false
-
-[setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
-
-[setups.toolpaths.feeds_provenance.plunge_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
-
-[setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [[setups.toolpaths]]
 id = 4
@@ -895,24 +892,24 @@ reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [[setups.toolpaths]]
 id = 5
-name = "Lakes 3 mm"
+name = "Lakes 2 mm (rest)"
 enabled = true
-tool_id = 1
+tool_id = 5
 model_id = 2
 boundary_inherit = true
-stock_source = "fresh"
+stock_source = "from_remaining_stock"
 coolant = "off"
 
 [setups.toolpaths.operation]
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 0.75
-depth_per_pass = 6.0
+stepover = 0.5
+depth_per_pass = 4.0
 stock_to_leave_axial = 0.0
-feed_rate = 2832.0
-plunge_rate = 1416.0
-ramp_feed_rate = 2832.0
+feed_rate = 944.0
+plunge_rate = 240.0
+ramp_feed_rate = 944.0
 tolerance = 0.1
 min_cutting_radius = 0.0
 entry_style = "ramp"
@@ -989,25 +986,25 @@ enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
+source = "repo_rule"
+reference = "material_plunge_base"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [[setups.toolpaths]]
 id = 6
-name = "ANTENNA_D5.00 pocket 3 mm"
+name = "ANTENNA_D5.00 pocket 2 mm"
 enabled = true
-tool_id = 1
+tool_id = 5
 model_id = 10
 boundary_inherit = true
 stock_source = "fresh"
@@ -1017,11 +1014,11 @@ coolant = "off"
 kind = "pocket"
 
 [setups.toolpaths.operation.params]
-stepover = 2.4
-depth_per_pass = 0.75
-feed_rate = 3776.0
-plunge_rate = 1888.0
-ramp_feed_rate = 3776.0
+stepover = 1.6
+depth_per_pass = 0.5
+feed_rate = 1258.0
+plunge_rate = 240.0
+ramp_feed_rate = 1258.0
 climb = true
 pattern = "contour"
 angle = 0.0
@@ -1080,25 +1077,25 @@ enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
+source = "repo_rule"
+reference = "material_plunge_base"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
 
 [[setups.toolpaths]]
 id = 7
 name = "V rivers and lakes"
 enabled = true
-tool_id = 2
+tool_id = 1
 model_id = 8
 boundary_inherit = true
 stock_source = "fresh"
@@ -1108,7 +1105,7 @@ coolant = "off"
 kind = "project_curve"
 
 [setups.toolpaths.operation.params]
-depth = -3.268512728
+depth = -2.417820455
 point_spacing = 0.25
 feed_rate = 2286.0
 plunge_rate = 381.0
@@ -1185,7 +1182,7 @@ reference = "material_plunge_base"
 id = 8
 name = "Day strip slit V60"
 enabled = true
-tool_id = 3
+tool_id = 2
 model_id = 12
 boundary_inherit = true
 stock_source = "fresh"
@@ -1197,10 +1194,10 @@ kind = "trace"
 [setups.toolpaths.operation.params]
 depth = 5.196
 depth_per_pass = 2.598
-feed_rate = 2743.0
-plunge_rate = 914.0
+feed_rate = 808.0
+plunge_rate = 736.0
 compensation = "none"
-spindle_rpm = 18000
+spindle_rpm = 10026
 region_ordering = "by_area"
 
 [setups.toolpaths.dressups]
@@ -1247,22 +1244,6 @@ offset = 0.0
 
 [setups.toolpaths.debug_options]
 enabled = false
-
-[setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-vgroove-hardwood-trace-60deg-2f"
-
-[setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_vbit60"
-
-[setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-vgroove-hardwood-trace-60deg-2f"
-
-[setups.toolpaths.feeds_provenance.ramp_feed_rate]
-source = "published_rule"
-reference = "g10_plunge_vbit60"
 
 [[setups]]
 id = 1
@@ -1401,6 +1382,73 @@ reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [[setups.toolpaths]]
 id = 10
+name = "Engrave day labels V60"
+enabled = true
+tool_id = 2
+model_id = 13
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "trace"
+
+[setups.toolpaths.operation.params]
+depth = 0.6
+depth_per_pass = 0.6
+feed_rate = 808.0
+plunge_rate = 736.0
+compensation = "none"
+spindle_rpm = 10026
+region_ordering = "by_area"
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 25.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 11
 name = "Front bulk rough 18 mm"
 enabled = true
 tool_id = 6
@@ -1509,7 +1557,7 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [[setups.toolpaths]]
-id = 11
+id = 12
 name = "Front 3D rough"
 enabled = true
 tool_id = 0
@@ -1581,7 +1629,7 @@ mode = "auto"
 
 [setups.toolpaths.boundary]
 enabled = true
-containment = "inside"
+containment = "center"
 offset = 0.0
 
 [setups.toolpaths.boundary.source.selection]
@@ -1602,10 +1650,10 @@ only = [
 enabled = false
 
 [[setups.toolpaths]]
-id = 12
+id = 13
 name = "Front scallop finish"
 enabled = true
-tool_id = 5
+tool_id = 4
 model_id = 4
 boundary_inherit = true
 stock_source = "fresh"
@@ -1686,7 +1734,7 @@ only = [
 enabled = false
 
 [[setups.toolpaths]]
-id = 13
+id = 14
 name = "Outline profile with tabs"
 enabled = true
 tool_id = 0
@@ -1701,16 +1749,16 @@ kind = "profile"
 [setups.toolpaths.operation.params]
 side = "outside"
 depth_per_pass = 1.5
-feed_rate = 5999.0
-plunge_rate = 2999.0
-ramp_feed_rate = 5999.0
+feed_rate = 826.0
+plunge_rate = 736.0
+ramp_feed_rate = 275.333
 climb = true
 tab_count = 8
 tab_width = 6.0
 tab_height = 2.0
 finishing_passes = 0
 compensation = "in_computer"
-spindle_rpm = 7843
+spindle_rpm = 10610
 region_ordering = "by_area"
 
 [setups.toolpaths.operation.params.floor]
@@ -1761,18 +1809,3 @@ offset = 0.0
 
 [setups.toolpaths.debug_options]
 enabled = false
-
-[setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "onsrud-hardwood-60-100mw-1_4-finish"
-
-[setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
-
-[setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "formula"
-
-[setups.toolpaths.feeds_provenance.ramp_feed_rate]
-source = "vendor_lut"
-reference = "onsrud-hardwood-60-100mw-1_4-finish"
