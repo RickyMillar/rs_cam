@@ -21,9 +21,8 @@ target directory fills the disk; a shared target with another commit breaks the 
   and a restart would load a half-done build. Before the release build, tell the operator.
 - Do not run a full nz-wanaka-21 simulation while the operator says the other session simulates
   (two GUIs at 0.2 mm do not fit in memory together).
-- For the nz-wanaka-21 check, copy the project to your scratchpad (relative model paths: keep the
-  absolute model paths of the copy pointing at `/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/`)
-  and never save over `planning/rivmap_block_job/nz_wanaka_21.toml`.
+- For the nz-wanaka-21 check, copy the project to your scratchpad (its model paths are absolute,
+  so the copy loads as it is) and never save over `planning/rivmap_block_job/nz_wanaka_21.toml`.
 
 ## The problem
 
