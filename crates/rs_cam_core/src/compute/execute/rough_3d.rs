@@ -43,9 +43,27 @@ pub(crate) fn generate_adaptive3d(
     op: &OperationConfig,
 ) -> Result<GeneratedToolpath, OperationError> {
     let cfg = config_guard!(op, Adaptive3d, "generate_adaptive3d");
+    // G-DRAPEGAP: the model gouge guard's reduced tool, built as the guard
+    // builds it (the op's allowance, `allowance_probe_radial_tolerance_mm`,
+    // `reduced_tool_config`), so the planner's chord lift holds the guard's
+    // own limit. A tool that cannot shrink gives `None`: the cutter.
+    let gouge_probe =
+        op.model_gouge_allowance(ctx.segment_merge_tolerance)
+            .and_then(|allowance| {
+                let radial = crate::compute::model_gouge::allowance_probe_radial_tolerance_mm(
+                    allowance,
+                    ctx.tool_def.radius(),
+                );
+                crate::compute::cutter::build_cutter(
+                    &crate::compute::model_gouge::reduced_tool_config(ctx.tool_cfg, radial),
+                )
+                .ok()
+            })
+            .map(|t| std::sync::Arc::new(t) as std::sync::Arc<dyn MillingCutter>);
     let rough = Adaptive3dRough {
         cfg,
         tool: ctx.tool_def,
+        gouge_probe,
         feed_rate: op.cut_feeds()?.feed_rate,
         plunge_rate: op.cut_feeds()?.plunge_rate,
         entry_feed_rate: op.entry_feed_rate(),
@@ -58,6 +76,8 @@ pub(crate) fn generate_adaptive3d(
 pub(crate) struct Adaptive3dRough<'a> {
     cfg: &'a Adaptive3dConfig,
     tool: &'a ToolDefinition,
+    /// G-DRAPEGAP: the guard's reduced tool (`Adaptive3dGeometry::gouge_probe`).
+    gouge_probe: Option<std::sync::Arc<dyn MillingCutter>>,
     feed_rate: f64,
     plunge_rate: f64,
     entry_feed_rate: Option<f64>,
@@ -117,6 +137,7 @@ impl Adaptive3dRough<'_> {
                     .centre
                     .map(<[crate::polygon::Polygon2]>::to_vec)
                     .unwrap_or_default(),
+                gouge_probe: self.gouge_probe.clone(),
             },
             depth: crate::adaptive3d::Adaptive3dDepth {
                 depth_per_pass: cfg.depth_per_pass,

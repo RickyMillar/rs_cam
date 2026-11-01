@@ -182,6 +182,15 @@ pub struct Adaptive3dGeometry {
     /// as its rapid floor (rivmap350 "3D Rough 8", rapids up to 11 mm into
     /// stock).
     pub centre_boundary: Vec<crate::polygon::Polygon2>,
+    /// G-DRAPEGAP (2026-11-02): the model gouge guard's reduced tool (the
+    /// cutter less the op's chord tolerance on its radius,
+    /// `compute::model_gouge::allowance_probe_radial_tolerance_mm`). The
+    /// chord lift (`path::lift_chords_to_leave`) reads the rest height with
+    /// it, so a tool tangent to a wall is not lifted over the wall and the
+    /// path holds the guard's own limit. `None`: no chord lift (the path the
+    /// planner shipped before G-DRAPEGAP); the session always sets it for a
+    /// tool that can shrink (`compute::execute::rough_3d`).
+    pub gouge_probe: Option<std::sync::Arc<dyn crate::tool::MillingCutter>>,
 }
 
 impl Adaptive3dGeometry {

@@ -589,6 +589,7 @@ fn test_adaptive3d_rapids_lift_before_xy_traverse() {
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary: Vec::new(),
+            gouge_probe: None,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 3.0,

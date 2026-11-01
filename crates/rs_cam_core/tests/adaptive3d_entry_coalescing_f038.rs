@@ -154,6 +154,7 @@ fn make_params(tool_radius: f64, min_region_cut_length_mm: f64) -> Adaptive3dPar
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary: Vec::new(),
+            gouge_probe: None,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 2.0,

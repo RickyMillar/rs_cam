@@ -126,6 +126,7 @@ fn default_params() -> Adaptive3dParams {
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary: Vec::new(),
+            gouge_probe: None,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 3.0,
@@ -2797,4 +2798,106 @@ fn a_capped_draped_step_descends_no_faster_than_the_plunge_d65() {
     // A climbing step has no descent term.
     let f = capped_step_factor(ceiling, load, b, a, feed, plunge, None);
     assert!((f - ceiling / load).abs() < 1e-12, "climb: {f}");
+}
+
+/// G-DRAPEGAP (2026-11-02): a raised patch beside a straight cut, within one
+/// tool radius of the tool between two drape samples and farther than a
+/// radius from both samples. The drape (samples at the tool radius) misses
+/// it and the chord cuts 1 mm into the model; the shipped path
+/// (`emitted_cut_path`, ending in `lift_chords_to_leave`) holds the leave to
+/// within the chord tolerance at every point along it. Red proof: the first
+/// assertion, on the pipeline before the chord lift.
+#[test]
+fn a_chord_beside_a_peak_holds_the_leave_g_drapegap() {
+    use super::path::{drape_path_to_leave, emitted_cut_path};
+    use crate::surface::dropcutter::point_drop_cutter;
+    // A flat floor at z 0 and a 0.2 x 0.2 mm patch at z 1, at x 4.5, y 2.8.
+    let floor = crate::mesh::make_test_flat(50.0);
+    let mut vertices = floor.vertices.clone();
+    let mut triangles = floor.triangles;
+    let base = vertices.len() as u32;
+    for (x, y) in [(4.4, 2.7), (4.6, 2.7), (4.6, 2.9), (4.4, 2.9)] {
+        vertices.push(P3::new(x, y, 1.0));
+    }
+    triangles.push([base, base + 1, base + 2]);
+    triangles.push([base, base + 2, base + 3]);
+    let mesh = TriangleMesh::from_raw(vertices, triangles);
+    let index = SpatialIndex::build(&mesh, 10.0);
+    let cutter = FlatEndmill::new(6.0, 25.0);
+    let r = cutter.radius();
+    let (leave, tol) = (0.0, 0.1);
+    let path = [P3::new(0.0, 0.0, 0.0), P3::new(12.0, 0.0, 0.0)];
+    // The patch is more than one radius from every drape sample (x = 0, 3, 6,
+    // 9, 12) and inside one radius of the tool at x 4.5.
+    assert!(((4.5_f64 - 3.0).powi(2) + 2.7_f64.powi(2)).sqrt() > r);
+    let rest = |x: f64, y: f64| {
+        let cl = point_drop_cutter(x, y, &mesh, &index, &cutter);
+        if cl.contacted {
+            cl.z + leave
+        } else {
+            f64::NEG_INFINITY
+        }
+    };
+    assert!(
+        (rest(4.5, 0.0) - 1.0).abs() < 1e-9,
+        "fixture: the tool at x 4.5 rests on the patch"
+    );
+    // The deepest dip of a polyline under the rest height, sampled every 0.02 mm.
+    let deepest_dip = |poly: &[P3]| -> f64 {
+        let mut worst = f64::NEG_INFINITY;
+        for w in poly.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+            let n = ((len / 0.02).ceil() as usize).max(1);
+            for i in 0..=n {
+                let t = i as f64 / n as f64;
+                let (x, y, z) = (
+                    a.x + t * (b.x - a.x),
+                    a.y + t * (b.y - a.y),
+                    a.z + t * (b.z - a.z),
+                );
+                worst = worst.max(rest(x, y) - z);
+            }
+        }
+        worst
+    };
+    // Red proof: the drape alone leaves the chord on the floor under the patch.
+    let draped = drape_path_to_leave(&path, &mesh, &index, &cutter, leave, r);
+    assert!(
+        deepest_dip(&draped) > 0.9,
+        "the drape misses the patch beside the path"
+    );
+    // The shipped path passes the model gouge guard's own measure
+    // (`compute::model_gouge`, `Allowance`): a probe a chord tolerance smaller
+    // in radius, the limit its rest height + leave - tolerance, and the guard's
+    // Z tolerance. A full-tool measure would demand a vertical move at the
+    // edge of the patch, which no straight chord makes.
+    let probe = FlatEndmill::new(2.0 * (r - tol), 25.0);
+    let shipped = emitted_cut_path(&path, &mesh, &index, &cutter, Some(&probe), leave, tol, 0.0);
+    let mut worst = f64::NEG_INFINITY;
+    for w in shipped.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let len = ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt();
+        let n = ((len / 0.02).ceil() as usize).max(1);
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let (x, y, z) = (
+                a.x + t * (b.x - a.x),
+                a.y + t * (b.y - a.y),
+                a.z + t * (b.z - a.z),
+            );
+            let cl = point_drop_cutter(x, y, &mesh, &index, &probe);
+            if cl.contacted {
+                worst = worst.max(cl.z + leave - tol - z);
+            }
+        }
+    }
+    assert!(
+        worst <= crate::compute::model_gouge::MODEL_GOUGE_Z_TOL_MM,
+        "the shipped chord is {worst:.4} mm under the guard's limit"
+    );
+    // It only raises the path: no point below its own rest height.
+    for p in &shipped {
+        assert!(p.z >= rest(p.x, p.y) - 1e-9);
+    }
 }

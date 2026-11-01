@@ -143,6 +143,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary: Vec::new(),
+            gouge_probe: None,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: dpp,

@@ -1239,6 +1239,7 @@ pub(super) fn adaptive_3d_segments(
         mesh,
         index,
         cutter,
+        probe: params.geometry.gouge_probe.as_deref(),
         lut: &lut,
         debug: debug_ctx.cloned(),
         tool_radius,
@@ -1790,12 +1791,12 @@ pub(super) fn descent_start_z(rapid_floor_z: Option<f64>, safe_z: f64, entry_z: 
 /// (`point_drop_cutter`, the true footprint maximum) plus `stock_to_leave`.
 /// It only ever RAISES Z (`max` with the planned cut Z), so a legitimately
 /// deep cut into a genuinely deep, tool-reachable region is preserved while a
-/// dip into adjacent higher material is lifted back to the leave. With
-/// `max_step <= tool_radius`, no surface peak can hide between samples: any
-/// point between two samples is within a tool radius of one of them, whose
-/// drop-cutter footprint already accounts for it, so both lifted endpoints sit
-/// at/above that peak + leave and the straight segment between them cannot dip
-/// under it.
+/// dip into adjacent higher material is lifted back to the leave. Sampling at
+/// `max_step <= tool_radius` does NOT stop a straight segment between two
+/// samples from dipping under the surface: a point beside the path can be
+/// within a tool radius of the tool between the samples and farther than a
+/// radius from both (G-DRAPEGAP). [`lift_chords_to_leave`] closes that gap on
+/// the path that ships (`emitted_cut_path`, `emitted_link_path`).
 /// Single-point counterpart of [`drape_path_to_leave`]: lift one point to at
 /// least the radius-aware rest height + `stock_to_leave`. Used to protect
 /// entry destinations (peck-plunge / helix / ramp descend to this Z) so an
@@ -1854,6 +1855,192 @@ pub(super) fn drape_path_to_leave(
     out
 }
 
+/// G-DRAPEGAP (2026-11-02): lift every chord of an emitted path so that its
+/// interior holds the leave against the radius-aware surface, to within half
+/// the chord tolerance.
+///
+/// [`drape_path_to_leave`] samples at the tool radius and argues that no peak
+/// can hide between two samples. The argument is false for a point beside the
+/// path: the tool between two samples reaches one radius sideways, and a point
+/// at that distance from the midpoint is `sqrt(R^2 + (s/2)^2) > R` from both
+/// samples. The model gouge guard (`compute::model_gouge`, `Allowance`)
+/// samples every emitted move at a quarter of the diameter and finds the dip
+/// (measured: 0.026 to 0.049 mm past its limit on a 358 x 443 relief, an 18 mm
+/// and a 6 mm adaptive rough). This pass samples each chord at a quarter of
+/// the radius with the full tool, and where the chord is more than half the
+/// chord tolerance under the rest height plus the leave it inserts a point at
+/// that rest height and tests the two halves again. It only ever raises the
+/// path. Every point is first lifted to the rest height (a corner blend can
+/// move a point off its draped position). `probe` is the guard's reduced tool
+/// (`Adaptive3dGeometry::gouge_probe`): with the full tool a cut tangent to a
+/// wall reads the wall top and would be lifted over the wall.
+pub(super) fn lift_chords_to_leave(
+    path: &[P3],
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    probe: &dyn crate::tool::MillingCutter,
+    stock_to_leave: f64,
+    tolerance: f64,
+) -> Vec<P3> {
+    /// The deepest bisection of one chord. Each level halves the chord, so
+    /// 16 levels reach far below the sample step on any path the planner makes.
+    const MAX_DEPTH: u32 = 16;
+    if path.len() < 2 {
+        return path.to_vec();
+    }
+    let step = (probe.radius() / 4.0).max(0.05);
+    let margin = 0.5 * tolerance.max(0.0);
+    let rest = |x: f64, y: f64| -> Option<f64> {
+        let cl = crate::surface::dropcutter::point_drop_cutter(x, y, mesh, index, probe);
+        (cl.contacted && cl.z.is_finite()).then_some(cl.z + stock_to_leave)
+    };
+    let lift = |p: &P3| -> P3 { rest(p.x, p.y).map_or(*p, |r| P3::new(p.x, p.y, p.z.max(r))) };
+    // Bisect one chord: insert the worst sample at its rest height until no
+    // sample is more than `margin` under it. An explicit stack keeps the
+    // order (a before b) without recursion.
+    let mut out: Vec<P3> = Vec::with_capacity(path.len() * 2);
+    let lifted: Vec<P3> = path.iter().map(lift).collect();
+    if let Some(first) = lifted.first() {
+        out.push(*first);
+    }
+    // The rest height between two samples can jump (a wall, the edge of a
+    // shelf). Where two neighbours differ by more than the margin, sample in
+    // between until they are closer than half the chord tolerance: the guard's
+    // probe is a chord tolerance smaller in radius, so a lift placed that close
+    // to the jump holds its limit.
+    let min_gap = (0.5 * tolerance).max(0.01);
+    let samples_of = |p: &P3, q: &P3| -> Vec<(P3, Option<f64>)> {
+        let (dx, dy, dz) = (q.x - p.x, q.y - p.y, q.z - p.z);
+        let len = (dx * dx + dy * dy).sqrt();
+        let at = |t: f64| P3::new(p.x + t * dx, p.y + t * dy, p.z + t * dz);
+        // At least the midpoint: a chord shorter than the step can still
+        // cross a rise of the rest height.
+        let n = (len / step).ceil().max(2.0) as usize;
+        let mut coarse: Vec<(f64, Option<f64>)> = (0..=n)
+            .map(|i| {
+                let t = i as f64 / n as f64;
+                let c = at(t);
+                (t, rest(c.x, c.y))
+            })
+            .collect();
+        let jumps = |a: Option<f64>, b: Option<f64>| match (a, b) {
+            (Some(a), Some(b)) => (a - b).abs() > margin,
+            (None, None) => false,
+            _ => true,
+        };
+        let mut fine: Vec<(f64, Option<f64>)> = Vec::with_capacity(coarse.len());
+        for w in coarse.windows(2) {
+            let [(t0, r0), (t1, r1)] = w else { continue };
+            fine.push((*t0, *r0));
+            let mut stack = vec![(*t0, *r0, *t1, *r1)];
+            let mut found: Vec<(f64, Option<f64>)> = Vec::new();
+            while let Some((ta, ra, tb, rb)) = stack.pop() {
+                if !jumps(ra, rb) || (tb - ta) * len <= min_gap {
+                    continue;
+                }
+                let tm = 0.5 * (ta + tb);
+                let cm = at(tm);
+                let rm = rest(cm.x, cm.y);
+                found.push((tm, rm));
+                stack.push((tm, rm, tb, rb));
+                stack.push((ta, ra, tm, rm));
+            }
+            found.sort_by(|a, b| a.0.total_cmp(&b.0));
+            fine.extend(found);
+        }
+        if let Some(last) = coarse.pop() {
+            fine.push(last);
+        }
+        fine.into_iter().map(|(t, r)| (at(t), r)).collect()
+    };
+    for w in lifted.windows(2) {
+        let [a, b] = w else { continue };
+        let mut stack: Vec<(P3, P3, u32)> = vec![(*a, *b, 0)];
+        while let Some((p, q, depth)) = stack.pop() {
+            let mut worst: Option<(f64, P3)> = None;
+            for (c, r) in samples_of(&p, &q) {
+                if let Some(r) = r {
+                    let deficit = r - margin - c.z;
+                    if deficit > 0.0 && worst.is_none_or(|(d, _)| deficit > d) {
+                        worst = Some((deficit, P3::new(c.x, c.y, r)));
+                    }
+                }
+            }
+            match worst {
+                Some((_, m)) if depth < MAX_DEPTH => {
+                    // q is pushed first so p..m is taken first.
+                    stack.push((m, q, depth + 1));
+                    stack.push((p, m, depth + 1));
+                }
+                _ => out.push(q),
+            }
+        }
+    }
+    out
+}
+
+/// The cut path the emitter ships and the planner stamps for a cut `path`:
+/// [`drape_path_to_leave`], then `simplify_path_3d` at `tolerance`, then
+/// `blend_corners_3d` at `min_cutting_radius`, then [`lift_chords_to_leave`]
+/// with `probe` (`None`: no lift).
+/// ONE function: `segments_to_toolpath` and `clearing::shipped_cut_path` both
+/// call it, so the stamp and the emission cannot drift (G-PHANTOMSTAMP).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+pub(super) fn emitted_cut_path(
+    path: &[P3],
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    probe: Option<&dyn crate::tool::MillingCutter>,
+    stock_to_leave: f64,
+    tolerance: f64,
+    min_cutting_radius: f64,
+) -> Vec<P3> {
+    let draped = drape_path_to_leave(path, mesh, index, cutter, stock_to_leave, cutter.radius());
+    let simplified = simplify_path_3d(&draped, tolerance);
+    let blended = blend_corners_3d(&simplified, min_cutting_radius);
+    match probe {
+        Some(probe) => {
+            lift_chords_to_leave(&blended, mesh, index, probe, stock_to_leave, tolerance)
+        }
+        None => blended,
+    }
+}
+
+/// The link path the emitter ships and the planner stamps from `from` to
+/// `target`: [`drape_path_to_leave`], then [`lift_chords_to_leave`]. ONE
+/// function, as [`emitted_cut_path`].
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each parameter is a separate input that the callers supply"
+)]
+pub(super) fn emitted_link_path(
+    from: P3,
+    target: P3,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+    probe: Option<&dyn crate::tool::MillingCutter>,
+    stock_to_leave: f64,
+    tolerance: f64,
+) -> Vec<P3> {
+    let draped = drape_path_to_leave(
+        &[from, target],
+        mesh,
+        index,
+        cutter,
+        stock_to_leave,
+        cutter.radius(),
+    );
+    match probe {
+        Some(probe) => lift_chords_to_leave(&draped, mesh, index, probe, stock_to_leave, tolerance),
+        None => draped,
+    }
+}
+
 pub(super) fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
@@ -1861,6 +2048,8 @@ pub(super) fn segments_to_toolpath(
     index: &crate::mesh::SpatialIndex,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
+    // G-DRAPEGAP: the chord-lift probe, the one the planner's stamp reads.
+    let probe = params.geometry.gouge_probe.as_deref();
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
     // D4 — running pass index for `PassEntry` annotations. Increments
@@ -2095,13 +2284,15 @@ pub(super) fn segments_to_toolpath(
                 // `clearing.rs::stamp_emitted_segment` drapes it the same way,
                 // from the same tool position (G-PHANTOMSTAMP).
                 let from = tp.moves.last().map_or(*target, |m| m.target);
-                let draped = drape_path_to_leave(
-                    &[from, *target],
+                let draped = emitted_link_path(
+                    from,
+                    *target,
                     mesh,
                     index,
                     cutter,
+                    probe,
                     params.depth.stock_to_leave,
-                    cutter.radius(),
+                    params.emission_chord_tolerance(),
                 );
                 for pt in draped.iter().skip(1) {
                     tp.feed_to_with_intent(
@@ -2125,19 +2316,20 @@ pub(super) fn segments_to_toolpath(
                 // at <= tool radius so no peak hides between points. Drape
                 // first (densify + lift), then RDP-simplify away the points the
                 // drape didn't need to move.
-                let draped = drape_path_to_leave(
+                // G-PLANSIMGAP: the same tolerance the planner stamp reads
+                // (`emission_chord_tolerance`), so the segment merge happens
+                // here, before the stamp, and not after it. G-DRAPEGAP: the
+                // ONE pipeline (`emitted_cut_path`) ends with the chord lift.
+                let blended = emitted_cut_path(
                     path,
                     mesh,
                     index,
                     cutter,
+                    probe,
                     params.depth.stock_to_leave,
-                    cutter.radius(),
+                    params.emission_chord_tolerance(),
+                    params.geometry.min_cutting_radius,
                 );
-                // G-PLANSIMGAP: the same tolerance the planner stamp reads
-                // (`emission_chord_tolerance`), so the segment merge happens
-                // here, before the stamp, and not after it.
-                let simplified = simplify_path_3d(&draped, params.emission_chord_tolerance());
-                let blended = blend_corners_3d(&simplified, params.geometry.min_cutting_radius);
                 // G-PHANTOMSTAMP: the first feed runs from where the tool
                 // stands to `blended[1]`; the planner mirror stamps the same
                 // polyline from its `PlannerCursor::tool_pos`.
@@ -2262,6 +2454,7 @@ mod tests {
                 boundary: None,
                 world_stock_xy_bbox: None,
                 centre_boundary: Vec::new(),
+                gouge_probe: None,
             },
             depth: crate::adaptive3d::Adaptive3dDepth {
                 depth_per_pass: 3.0,

@@ -122,6 +122,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             boundary: None,
             world_stock_xy_bbox: None,
             centre_boundary: Vec::new(),
+            gouge_probe: None,
         },
         depth: Adaptive3dDepth {
             depth_per_pass: 3.0,

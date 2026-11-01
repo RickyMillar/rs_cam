@@ -19,15 +19,13 @@ use tracing::debug;
 
 use super::centre_clip::{CentreClip, clip_segment};
 use super::path::{
-    Adaptive3dSegment, RAPID_DESCENT_BUFFER_MM, StayDownProof, descent_start_z,
-    drape_path_to_leave, drape_point,
+    Adaptive3dSegment, RAPID_DESCENT_BUFFER_MM, StayDownProof, descent_start_z, drape_point,
 };
-use super::search::{blend_corners_3d, is_clear_path_3d};
+use super::search::is_clear_path_3d;
 use super::{
     Adaptive3dRuntimeEvent, ClearingStrategy3d, ZLevelPlanMetrics, stock_has_material_above,
     stock_top_z_at,
 };
-use crate::toolpath::simplify_path_3d;
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -339,6 +337,9 @@ pub(super) struct ClearZLevelContext<'a> {
     pub(super) mesh: &'a TriangleMesh,
     pub(super) index: &'a SpatialIndex,
     pub(super) cutter: &'a dyn MillingCutter,
+    /// The chord-lift probe (`Adaptive3dGeometry::gouge_probe`), G-DRAPEGAP.
+    /// `None`: no chord lift.
+    pub(super) probe: Option<&'a dyn MillingCutter>,
     pub(super) lut: &'a RadialProfileLUT,
     pub(super) debug: Option<ToolpathDebugContext>,
     pub(super) tool_radius: f64,
@@ -532,6 +533,8 @@ pub(super) struct StampDrape<'a> {
     pub(super) mesh: &'a TriangleMesh,
     pub(super) index: &'a SpatialIndex,
     pub(super) cutter: &'a dyn MillingCutter,
+    /// The chord-lift probe, as the emitter's (G-DRAPEGAP).
+    pub(super) probe: Option<&'a dyn MillingCutter>,
     pub(super) stock_to_leave: f64,
     /// The disc radius of the entry rapid floor read (`plan_entry`).
     pub(super) entry_floor_radius: f64,
@@ -554,6 +557,7 @@ impl<'a> ClearZLevelContext<'a> {
             mesh: self.mesh,
             index: self.index,
             cutter: self.cutter,
+            probe: self.probe,
             stock_to_leave: self.stock_to_leave,
             entry_floor_radius: self.entry_floor_radius,
             stay_down_mm: self.stay_down_mm,
@@ -604,16 +608,16 @@ pub(super) struct PlannerCursor {
 /// 2. `simplify_path_3d` (RDP at `tolerance`, which callers pass as
 ///    `Adaptive3dGeometry::cut_simplify_tolerance`: the segment merge
 ///    happens here, not after the planner — G-PLANSIMGAP);
-/// 3. `blend_corners_3d` (at `min_cutting_radius`).
+/// 3. `blend_corners_3d` (at `min_cutting_radius`);
+/// 4. `lift_chords_to_leave` — G-DRAPEGAP (2026-11-02): the chord interiors
+///    hold the leave to within half the chord tolerance.
 ///
-/// If a fourth is ever added to the emitter it must be added here in the
-/// same commit. `fad3a56` added (1) to the emitter and not here, and the
-/// planner spent seven weeks believing it had removed material its own
-/// emitted toolpath leaves standing — see
+/// Since G-DRAPEGAP the emitter and this function call ONE pipeline,
+/// `path::emitted_cut_path` (links: `path::emitted_link_path`), so a new
+/// step goes there and reaches both. `fad3a56` once added (1) to the
+/// emitter and not here, and the planner spent seven weeks believing it had
+/// removed material its own emitted toolpath leaves standing — see
 /// `planning/review_2026-08-04/ADAPTIVE3D_RED_BASELINE.md` §3.
-/// The path the emitter ships for a cut `path`: `drape_path_to_leave`,
-/// then `simplify_path_3d` at `tolerance`, then `blend_corners_3d` at
-/// `min_cutting_radius` (the order of [`stamp_emitted_segment`]'s list).
 /// C4's band state is lowered along it, as the stamp is.
 pub(super) fn shipped_cut_path(
     path: &[P3],
@@ -621,16 +625,16 @@ pub(super) fn shipped_cut_path(
     min_cutting_radius: f64,
     drape: &StampDrape<'_>,
 ) -> Vec<P3> {
-    let draped = drape_path_to_leave(
+    super::path::emitted_cut_path(
         path,
         drape.mesh,
         drape.index,
         drape.cutter,
+        drape.probe,
         drape.stock_to_leave,
-        drape.cutter.radius(),
-    );
-    let simplified = simplify_path_3d(&draped, tolerance);
-    blend_corners_3d(&simplified, min_cutting_radius)
+        tolerance,
+        min_cutting_radius,
+    )
 }
 
 #[expect(
@@ -656,12 +660,10 @@ fn stamp_emitted_segment(
             if path.len() < 2 {
                 return None;
             }
-            // Mirror segments_to_toolpath's path transformation —
-            // drape_path_to_leave, then simplify_path_3d (RDP), then
-            // blend_corners_3d — so the planner's swept stamps cover
+            // The emitter's ONE pipeline (`path::emitted_cut_path`: drape,
+            // RDP, blend, chord lift), so the planner's swept stamps cover
             // the SAME tubes the simulator will stamp from the emitted
-            // feeds. Order matters: the emitter drapes BEFORE
-            // simplifying, so the RDP sees the densified, lifted path.
+            // feeds.
             let blended = shipped_cut_path(path, tolerance, min_cutting_radius, drape);
             // G-PHANTOMSTAMP: the emitter feeds `blended.iter().skip(1)`
             // from where the tool stands, not from `blended[0]`. Stamp the
@@ -740,13 +742,15 @@ fn stamp_emitted_segment(
             // emitter's `from` is its tool position (`tp.moves.last()`),
             // falling back to the target itself when nothing was emitted.
             let from = tool_pos.unwrap_or(*target);
-            let draped = drape_path_to_leave(
-                &[from, *target],
+            let draped = super::path::emitted_link_path(
+                from,
+                *target,
                 drape.mesh,
                 drape.index,
                 drape.cutter,
+                drape.probe,
                 drape.stock_to_leave,
-                drape.cutter.radius(),
+                tolerance,
             );
             stamp_along_path(material_stock, lut, tool_radius, &draped);
             draped.last().copied()
@@ -1742,6 +1746,7 @@ pub(super) fn waterline_cleanup(
         mesh,
         index,
         cutter,
+        probe: ctx.probe,
         stock_to_leave,
         // The operation's entry style enters a waterline contour. A helix
         // sweeps the tool radius plus the helix radius from the entry XY,

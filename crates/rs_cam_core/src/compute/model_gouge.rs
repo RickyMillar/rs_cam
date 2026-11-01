@@ -154,15 +154,30 @@ pub fn probe_radial_tolerance_mm(
     tool_radius: f64,
 ) -> f64 {
     match rule {
-        ModelGougeRule::Allowance { .. } => allowance
-            .tolerance_mm
-            .min(tool_radius - MODEL_GOUGE_TOL_MM)
-            .max(MODEL_GOUGE_TOL_MM),
+        ModelGougeRule::Allowance { .. } => {
+            allowance_probe_radial_tolerance_mm(allowance, tool_radius)
+        }
         ModelGougeRule::Surface { .. }
         | ModelGougeRule::Hole { .. }
         | ModelGougeRule::Bevel { .. }
         | ModelGougeRule::Exempt => MODEL_GOUGE_TOL_MM,
     }
+}
+
+/// The radial tolerance (mm) of the probe under [`ModelGougeRule::Allowance`]:
+/// the chord tolerance of the op, kept between [`MODEL_GOUGE_TOL_MM`] and
+/// `tool_radius - MODEL_GOUGE_TOL_MM`. ONE formula: the guard reads it
+/// through [`probe_radial_tolerance_mm`], and the 3D Rough planner builds its
+/// chord-lift probe with it (`Adaptive3dGeometry::gouge_probe`, G-DRAPEGAP).
+#[must_use]
+pub fn allowance_probe_radial_tolerance_mm(
+    allowance: ModelGougeAllowance,
+    tool_radius: f64,
+) -> f64 {
+    allowance
+        .tolerance_mm
+        .min(tool_radius - MODEL_GOUGE_TOL_MM)
+        .max(MODEL_GOUGE_TOL_MM)
 }
 
 /// The reduced tool of the guard: `tool` less `radial_tol_mm` on its
