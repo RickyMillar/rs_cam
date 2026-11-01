@@ -707,3 +707,27 @@ The generator now writes 2.5D pockets with the 2 mm tool:
   y 135-171 and 289-325. Add them as obstacles in setups 1 and 3, and a "Face clamp pads" op after
   the pin drill (pins in, top clamps off), so the flipped back sits flat. Waiting for the measured
   positions and the clamp height.
+
+### 2026-11-02 (evening): queue and operator inputs
+
+Operator inputs: stock thickness 26 mm; top clamps 4 mm tall, 20 mm wide, keep-out 40 mm along y,
+placed at y 153 and 307 on both x sides; spindle 1.5 kW.
+
+Findings (test export to the scratchpad with overrides, not for cutting):
+- The 18 mm bulk bit does not cut at the centre (core about 8 mm, blades about 1 mm proud). The back
+  bulk emits 89 straight G1 plunges of more than 3 mm into wood (for example Z 26 -> 6.31 at (212.7,
+  59.0)); the front bulk has 175 descents over 1 mm steeper than atan(1/8) = 7.13 deg. Do NOT run the
+  18 mm ops until rs_cam models the tool: prompt in `planning/centre_cutting_tool_prompt_2026-11-02.md`
+  (G-CENTRECUT, sent to another agent).
+- Back bulk exceeds spindle power (1.18 kW peak, 1.01 kW available at 16 219 rpm on the power curve).
+- The in-cavity retract (Z 21.5) of the V op and the lake pockets: 637 G-code validator errors.
+- The project stock is 25.5 thick (= T1): the back face cuts only air in the sim.
+- The deep 6 mm wall bites: 3D Rough skips regions shorter than `min_region_cut_length_mm` (15 mm);
+  the corner slivers the 18 mm leaves are shorter at every upper level, so the rest takes them in one
+  bite at the floor.
+
+Queue: stock 26 mm; clamp obstacles + "Face clamp pads"; min_region_cut_length below the 9.4 mm
+corner arc on the 6 mm rests; R1 tapered rest before the scallop (leave 0.5); bulk feed for the power
+cap; retract at clearance; the back hollow only as deep as the rivers need (operator: from the back
+the front valleys are high and the mountains deep; a hollow under the mountains does no work — rough
+less and trace the rivers with the 6 mm first, as in the earlier jobs).
