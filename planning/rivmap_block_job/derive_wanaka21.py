@@ -258,6 +258,54 @@ def main() -> None:
     files["lakes_s1.stl"] = OUT / "lakes_s1.stl"
     write_dxf("lakes_closed.dxf", bc, ["VGROOVE_V20_LAKE"])
 
+    # ── The lake pockets (operator 2026-11-02): a lake is water, so its surface is flat (the range
+    # inside one outline is at most 0.57 mm). A 2.5D pocket with vertical walls gives the outline at
+    # the front at any depth, and the deeper pour keeps dust and bubbles off the visible edge
+    # (operator: "letting the pour go deeper could be better"). Floor of a lake = its lowest sheet
+    # point - 2 x exposure_margin (the target is one margin past the front; the pour gets one more).
+    # A group of lakes shares the floor of its deepest lake while each wall stays inside the 2 mm
+    # flute less map.toml [vgroove].body_margin (the same Z margin the V-bits keep).
+    # Lakes narrower than the tool stay V-only. The wall top uses the sheet triangles near the
+    # outline (1 mm): the shore. A small lake with no triangle centre inside takes its floor from them.
+    lake_tool_r = DETAIL_TOOL["diameter"] / 2.0
+    wall_cap = DETAIL_TOOL["cutting_length"] - mapt["vgroove"]["body_margin"]
+    lake_list = []
+    for pts, _, closed, _ in lake_rings:
+        if not closed:
+            continue
+        poly = ShPolygon(pts).buffer(0)
+        near = contains_xy(poly.buffer(1.0), c_sh[:, 0], c_sh[:, 1])
+        inside = contains_xy(poly, c_sh[:, 0], c_sh[:, 1])
+        assert near.any(), poly.bounds
+        if poly.buffer(-lake_tool_r).is_empty:
+            continue
+        # The floor from the triangles inside the outline: the band can hold the river that leaves
+        # the lake, which runs lower than the lake.
+        z_lo = float(sheet[inside if inside.any() else near][..., 2].min())
+        lake_list.append({"pts": pts, "floor": z_lo - 2.0 * margin, "wall_top": float(sheet[near][..., 2].max()) + web})
+    lake_list.sort(key=lambda l: -l["floor"])
+    lake_groups: list[list[dict]] = []
+    for lk in lake_list:
+        for g in lake_groups:
+            f = min(lk["floor"], min(m["floor"] for m in g))
+            if all(m["wall_top"] - f <= wall_cap for m in g + [lk]):
+                g.append(lk)
+                break
+        else:
+            assert lk["wall_top"] - lk["floor"] <= wall_cap, (lk["floor"], lk["wall_top"], wall_cap, len(lk["pts"]))
+            lake_groups.append([lk])
+    lake_pockets = []
+    for gi, g in enumerate(lake_groups):
+        d = Dxf()
+        for lk in g:
+            d.polyline("LAKE_POCKET", lk["pts"], True)
+        fname = f"lake_pocket_{gi}.dxf"
+        write_if_changed(OUT / fname, d.text().encode())
+        files[fname] = OUT / fname
+        lake_pockets.append({"file": fname, "n": len(g), "floor": min(m["floor"] for m in g),
+                             "wall_top": max(m["wall_top"] for m in g)})
+    n_lakes_closed = sum(1 for _, _, c, _ in lake_rings if c)
+
     # ── tools
     mt = {t["id"]: t for t in mapt["tools"]}
     ct = cam["tools"]
@@ -344,7 +392,7 @@ def main() -> None:
 
     model_order = ["back_target_s1.stl", "hollow_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
-                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf", "engrave.dxf"]
+                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf", "engrave.dxf"] + [lp["file"] for lp in lake_pockets]
     assert sorted(model_order) == sorted(files)
     mids = {f: i for i, f in enumerate(model_order)}
     for f in model_order:
@@ -459,14 +507,28 @@ def main() -> None:
              f"disc). Ø{dia['flat_6']:g} for the drawn Ø{blk['holes']['diameters']}: size_tolerance takes the difference.\n"
              "Cycle: the operator's drill op (testpiece.toml); feeds: run Suggest (G6 flat end mill drill rule)."),
         heights={"top_z": cav_floor})
-    in_lakes = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["lakes_closed.dxf"]}
-    rough3d("Lakes 2 mm (rest)", "dsp_2", "lakes_s1.stl", None,
-            (f"The closed lakes, {margin} past the front, where the 6 mm rest did not reach (narrow lakes,\n"
-             "arms, the shore), with the operator's 2 mm detail tool. Remaining stock: only what is left.\n"
-             "Boundary: the lake outlines, tool inside. Contour parallel: geodesic leaves pieces.\n"
-             "Feeds: run Suggest."),
-            in_lakes, 0.0, heights={"top_z": cav_floor}, strategy="contour_parallel",
-            stock_source="from_remaining_stock")
+    n_closed_lakes = n_lakes_closed
+    n_cut = sum(lp["n"] for lp in lake_pockets)
+    for gi, lp in enumerate(lake_pockets):
+        # Top: the highest hollow at the shore + one rest step (the 6 mm rest leaves terraces of at
+        # most its depth per pass above the hollow); above it is air.
+        top = math.ceil((lp["wall_top"] + step) * 100.0) / 100.0
+        P.toolpath(f"Lake pocket 2 mm, {lp['n']} lake{'s' if lp['n'] > 1 else ''} to Z {lp['floor']:.2f}", "pocket",
+                   tid["dsp_2"], mids[lp["file"]], {
+            "stepover": round(rig["woc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
+            "floor": {"from": "z", "z": round(lp["floor"], 4)},
+            "depth_per_pass": round(rig["doc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
+            "climb": True, "pattern": "contour", "angle": 0.0, "finishing_passes": 1,
+            "region_ordering": "global"},
+            why=(f"{lp['n']} of the {n_closed_lakes} closed lakes ({n_cut} cut; {n_closed_lakes - n_cut} are narrower than the 2 mm tool: V only).\n"
+                 f"Flat floor = the deepest lake of the group - 2 x exposure_margin ({2 * margin}); the walls are vertical, so\n"
+                 f"the front shows the outline at any depth. Wall {top - lp['floor']:.2f} from top Z {top} (the shore hollow\n"
+                 f"{lp['wall_top']:.2f} + one rest step {step}); flute less body_margin = {wall_cap}. One finishing contour\n"
+                 "for a clean wall. Retract: the cavity floor + clearance (the hollow between lakes stands above\n"
+                 "the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring\n"
+                 "starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest."),
+            heights={"top_z": top, "retract_z": v_retract},
+            dressups={"segment_merge": True, "segment_merge_tolerance": tol})
     P.toolpath("ANTENNA_D5.00 pocket 2 mm", "pocket", tid["dsp_2"], mids["antenna_d5.00.dxf"], {
         "stepover": round(rig["woc_roughing_factor"] * DETAIL_TOOL["diameter"], 4), "floor": floor(5.0),
         "depth_per_pass": round(rig["doc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),

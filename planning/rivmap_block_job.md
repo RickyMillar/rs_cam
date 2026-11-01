@@ -677,3 +677,33 @@ Findings:
 - Front 3D rough entry load: 4.62 mm at (168.9, 338.9, Z 20.38). Not resolved.
 - Note: `board_pocket_d14.50.dxf` and other DXF files in the job folder are from an older job;
   the current back target does not match their outlines.
+
+### 2026-11-02 (later): the lakes as flat-floor 2.5D pockets
+
+The remaining-stock lake pass was 2.21 h, almost all entries and rapids. A lake is water, so its
+surface is flat: inside one outline the sheet varies at most 0.57 mm (15 closed lakes measured).
+The generator now writes 2.5D pockets with the 2 mm tool:
+
+- Floor of a lake = its lowest sheet point (triangles inside the outline; the band around it holds
+  the river that leaves the lake, which runs lower) - 2 x exposure_margin. The target is one margin
+  past the front; the second margin lets the pour go deeper, so dust or bubbles at the pour boundary
+  stay out of the visible edge (operator 2026-11-02). All of it is front waste.
+- The walls are vertical: the front shows the outline at any depth. One finishing contour.
+- Lakes share a pocket at the floor of their deepest member while every wall (shore hollow - floor)
+  stays within the 8 mm flute less map.toml body_margin (7.5). Result: 8 lakes to Z 5.91, 1 lake to
+  Z 3.99. Lakes narrower than the tool (6 of 15) stay V-only.
+- Top = the shore hollow + one rest step (the 6 mm rest leaves at most that above the hollow).
+- Result (0.2 mm sim): whole job 5.81 h (was 7.21 h with the remaining-stock lake pass), 0
+  collisions, 0 rapid collisions, no op blocked. The lake entry-load critical is gone.
+- rs_cam defect (G-POCKETRAMP): a Pocket with the ramp entry dressup made 21 rapid collisions in the
+  large lakes: at two ring starts each level's rapid descent ends on the floor of the level before,
+  and wood stood there. The feed plane did not change it (the Pocket ignores `feed_z`), the region
+  order did not change it; a plain plunge entry removes all 21. The lake pockets use the plunge entry.
+- Still open: the entry-load criticals of the back rest (14.5 mm, (211.7, 41.6)) and the front 6 mm
+  rough (4.62 mm); the front scallop crossing (13.7 %, peak 5.39 mm: narrow valleys a 6 mm flat
+  cannot reach); the slit (49.5 % over 2.6 mm).
+- Next (operator 2026-11-02): top clamps at y 153 and 307 on both x sides (the thirds; symmetric
+  for the flip; 10 mm clear of the right pins at 130 / 330). Keep-out about x 0-10 from the edge,
+  y 135-171 and 289-325. Add them as obstacles in setups 1 and 3, and a "Face clamp pads" op after
+  the pin drill (pins in, top clamps off), so the flipped back sits flat. Waiting for the measured
+  positions and the clamp height.
