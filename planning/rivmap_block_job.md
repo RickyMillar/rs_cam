@@ -578,3 +578,10 @@ The finish was never 6 h (an earlier reading of the GUI timeline bar was wrong).
   the operator's GUI values.
 - Defects found: the GUI memory budget reads half of RAM and ignores the proxy's 16 GB cap (an
   OOM kill); the tier planner has no "inside a boundary" mode; a lake-pass rapid flag at Z 8.0.
+- Tool order and the front (operator 2026-11-01): the 18 mm bit faces both sides (stepover 0.8 x D
+  = 14.4) and roughs the front bulk (3 even levels over the 12.5 mm relief, leave 0.5); the 6 mm
+  front rough is now its rest. The pins and the light holes follow the 6 mm back rest (one tool;
+  the holes are a Drill op with the 6 mm end mill, flat bottom, G6 feeds; the twist drill is gone).
+  Back tool changes 6 -> 4. Whole job 6.89 h -> 6.64 h, 0 collisions, 0 rapid collisions.
+  Left: the 6 mm back rest (230 m, 62 % air), the scallop finish (accel-bound), the 3 mm lake
+  pass (146 m of rapids).

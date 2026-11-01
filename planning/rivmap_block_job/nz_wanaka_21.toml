@@ -261,27 +261,6 @@ product_id = ""
 
 [[tools]]
 id = 6
-name = "6 mm twist drill, 118 deg point"
-type = "v_bit"
-diameter = 6.0
-cutting_length = 40.0
-helix_deg = 30.0
-corner_radius_mm = 0.0
-corner_radius = 0.0
-included_angle = 118.0
-taper_half_angle = 0.0
-shaft_diameter = 6.0
-shank_diameter = 6.0
-stickout = 45.0
-flute_count = 2
-tool_number = 7
-tool_material = "carbide"
-cut_direction = "up_cut"
-vendor = ""
-product_id = ""
-
-[[tools]]
-id = 7
 name = "18 mm 2F, 20 mm flute, 6 mm shank (measure stick-out)"
 type = "end_mill"
 diameter = 18.0
@@ -302,7 +281,7 @@ vendor = ""
 product_id = ""
 
 [[tools]]
-id = 8
+id = 7
 name = "6 mm ball (R3), 6 mm shank (measure flute and stick-out)"
 type = "ball_nose"
 diameter = 6.0
@@ -452,7 +431,7 @@ datum_notes = "Back up. Z0 = spoilboard. XY0 = stock corner (pin 1 is at (6.25, 
 id = 0
 name = "Face back to T1"
 enabled = true
-tool_id = 0
+tool_id = 6
 model_id = 5
 boundary_inherit = true
 stock_source = "fresh"
@@ -462,15 +441,15 @@ coolant = "off"
 kind = "face"
 
 [setups.toolpaths.operation.params]
-stepover = 4.8
+stepover = 14.4
 depth = 1.5
 depth_per_pass = 1.5
-feed_rate = 4720.0
-plunge_rate = 2360.0
-ramp_feed_rate = 4720.0
-stock_offset = 6.0
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+stock_offset = 18.0
 direction = "zigzag"
-spindle_rpm = 18000
+spindle_rpm = 16219
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -519,103 +498,25 @@ enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
+source = "repo_rule"
+reference = "material_plunge_base"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [[setups.toolpaths]]
 id = 1
-name = "Pin drill, flip pins"
-enabled = true
-tool_id = 0
-model_id = 5
-boundary_inherit = true
-stock_source = "fresh"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "alignment_pin_drill"
-
-[setups.toolpaths.operation.params]
-diameter = 6.0
-spoilboard_penetration = 4.5
-cycle = "peck"
-peck_depth = 6.0
-feed_rate = 1835.0
-retract_z = 2.0
-spindle_rpm = 14000
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_pitch = 1.0
-entry_clearance_mm = 0.5
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_feed_rate = 500.0
-arc_fitting = false
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "auto"
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = false
-source = "stock"
-containment = "center"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = false
-
-[setups.toolpaths.feeds_provenance.feed_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
-
-[setups.toolpaths.feeds_provenance.plunge_rate]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
-
-[setups.toolpaths.feeds_provenance.spindle_rpm]
-source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
-
-[[setups.toolpaths]]
-id = 2
 name = "Back bulk rough 18 mm"
 enabled = true
-tool_id = 7
+tool_id = 6
 model_id = 0
 boundary_inherit = true
 stock_source = "fresh"
@@ -722,7 +623,7 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [[setups.toolpaths]]
-id = 3
+id = 2
 name = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
 enabled = true
 tool_id = 0
@@ -831,7 +732,169 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
 
 [[setups.toolpaths]]
+id = 3
+name = "Pin drill, flip pins"
+enabled = true
+tool_id = 0
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "alignment_pin_drill"
+
+[setups.toolpaths.operation.params]
+diameter = 6.0
+spoilboard_penetration = 4.5
+cycle = "peck"
+peck_depth = 6.0
+feed_rate = 1835.0
+retract_z = 2.0
+spindle_rpm = 14000
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths]]
 id = 4
+name = "Drill light holes 6 mm end mill"
+enabled = true
+tool_id = 0
+model_id = 9
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drill"
+
+[setups.toolpaths.operation.params]
+cycle = "peck"
+peck_depth = 6.0
+dwell_time = 0.5
+retract_amount = 0.5
+feed_rate = 1835.0
+retract_z = 2.0
+spindle_rpm = 14000
+size_tolerance = 0.2
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 8.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 5
 name = "Lakes 3 mm"
 enabled = true
 tool_id = 1
@@ -941,7 +1004,7 @@ source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
 
 [[setups.toolpaths]]
-id = 5
+id = 6
 name = "ANTENNA_D5.00 pocket 3 mm"
 enabled = true
 tool_id = 1
@@ -1030,78 +1093,6 @@ reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
 reference = "amana-flat-hardwood-pocket-3000-2f-spektra"
-
-[[setups.toolpaths]]
-id = 6
-name = "Drill light holes 6 mm"
-enabled = true
-tool_id = 6
-model_id = 9
-boundary_inherit = true
-stock_source = "fresh"
-coolant = "off"
-
-[setups.toolpaths.operation]
-kind = "drill"
-
-[setups.toolpaths.operation.params]
-cycle = "peck"
-peck_depth = 6.0
-dwell_time = 0.5
-retract_amount = 0.5
-feed_rate = 600.0
-retract_z = 2.0
-spindle_rpm = 6000
-size_tolerance = 0.2
-
-[setups.toolpaths.operation.params.floor]
-from = "z"
-z = 6.6974
-
-[setups.toolpaths.dressups]
-entry_style = "none"
-ramp_angle = 3.0
-helix_pitch = 1.0
-entry_clearance_mm = 0.5
-dogbone = false
-dogbone_angle = 90.0
-lead_in_out = false
-lead_radius = 2.0
-link_moves = false
-link_feed_rate = 500.0
-arc_fitting = false
-arc_tolerance = 0.05
-segment_merge = false
-segment_merge_tolerance = 0.3
-feed_optimization = false
-feed_max_rate = 3000.0
-feed_ramp_rate = 200.0
-optimize_rapid_order = true
-
-[setups.toolpaths.heights.clearance_z]
-mode = "auto"
-
-[setups.toolpaths.heights.retract_z]
-mode = "auto"
-
-[setups.toolpaths.heights.feed_z]
-mode = "auto"
-
-[setups.toolpaths.heights.top_z]
-mode = "manual"
-value = 16.5
-
-[setups.toolpaths.heights.bottom_z]
-mode = "auto"
-
-[setups.toolpaths.boundary]
-enabled = false
-source = "stock"
-containment = "center"
-offset = 0.0
-
-[setups.toolpaths.debug_options]
-enabled = false
 
 [[setups.toolpaths]]
 id = 7
@@ -1328,7 +1319,7 @@ datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. C
 id = 9
 name = "Face front to T"
 enabled = true
-tool_id = 0
+tool_id = 6
 model_id = 5
 boundary_inherit = true
 stock_source = "fresh"
@@ -1338,15 +1329,15 @@ coolant = "off"
 kind = "face"
 
 [setups.toolpaths.operation.params]
-stepover = 4.8
+stepover = 14.4
 depth = 0.5
-depth_per_pass = 1.5
-feed_rate = 4720.0
-plunge_rate = 2360.0
-ramp_feed_rate = 4720.0
-stock_offset = 6.0
+depth_per_pass = 0.5
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+stock_offset = 18.0
 direction = "zigzag"
-spindle_rpm = 18000
+spindle_rpm = 16219
 
 [setups.toolpaths.dressups]
 entry_style = "ramp"
@@ -1394,28 +1385,137 @@ enabled = false
 
 [setups.toolpaths.feeds_provenance.feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.plunge_rate]
-source = "published_rule"
-reference = "g10_plunge_flat"
+source = "repo_rule"
+reference = "material_plunge_base"
 
 [setups.toolpaths.feeds_provenance.spindle_rpm]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [setups.toolpaths.feeds_provenance.ramp_feed_rate]
 source = "vendor_lut"
-reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
 
 [[setups.toolpaths]]
 id = 10
+name = "Front bulk rough 18 mm"
+enabled = true
+tool_id = 6
+model_id = 4
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 4.5
+depth_per_pass = 4.1667
+stock_to_leave_axial = 0.5
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "geodesic_adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 16219
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 6
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[[setups.toolpaths]]
+id = 11
 name = "Front 3D rough"
 enabled = true
 tool_id = 0
 model_id = 4
 boundary_inherit = true
-stock_source = "fresh"
+stock_source = "from_remaining_stock"
 coolant = "off"
 
 [setups.toolpaths.operation]
@@ -1502,7 +1602,7 @@ only = [
 enabled = false
 
 [[setups.toolpaths]]
-id = 11
+id = 12
 name = "Front scallop finish"
 enabled = true
 tool_id = 5
@@ -1586,7 +1686,7 @@ only = [
 enabled = false
 
 [[setups.toolpaths]]
-id = 12
+id = 13
 name = "Outline profile with tabs"
 enabled = true
 tool_id = 0
