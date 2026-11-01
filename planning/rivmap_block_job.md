@@ -596,3 +596,32 @@ The finish was never 6 h (an earlier reading of the GUI timeline bar was wrong).
 | SAFETY: the 3D roughs merged at the default 0.3, which can cut 0.3 below the target and thin web_min | merge tolerance = tip_tol 0.05 on every rough: 6.71 h | yes |
 
 The committed project is the last row: 6.71 h, 0 collisions, 0 rapid collisions.
+
+### Overnight 2026-11-02: STATUS — simulates clean, does NOT export
+
+CAUTION: the committed project (e84dd837e) simulates with 0 collisions and 0 rapid collisions, but
+`list_toolpaths` shows "Back bulk rough 18 mm" and "Back rest 6 mm" blocked by
+`safety.cuts_into_model`: export refuses while it stands. Most likely every version since the 18 mm
+bulk pass (932fd7538) has it; the per-op run states were not read until now.
+
+- The gouge: 2-4 of 30 k-340 k sampled cutting positions go 0.026-0.049 mm past the limit
+  (target surface + leave - op tolerance), so about 0.09-0.13 mm below the target, between the Z
+  levels (bulk: (287.9, 187.7, Z 11.57); rest: (232.4, 337.6, Z 15.22)). In the hollow that is a
+  local web of about 3.9 mm (web_min 4.0). Tried: segment merge off -> no change (merge was not the
+  cause; the e84dd837e merge note is wrong on the cause); op tolerance 0.1 -> 0.05 -> overshoot
+  0.026 -> 0.044 (the limit rises with it). The finding names it a planner defect. Operator
+  choices: report and fix the adaptive planner (core), or accept it (a larger op tolerance passes
+  the gate and keeps the ~0.1 mm dip).
+- Entry load, critical, on both 6 mm rests: the back rest's entries cut up to 14.5 mm of standing
+  wood at (211.7, 41.7, Z 11.0) (board pocket; the 18 mm levels at Z 15 / 4.5 leave it), and links
+  cross up to 13.05 mm (2.7 % of samples over the 1.2 commanded); the front 6 mm rough's entries
+  up to 4.57 mm at (289.4, 338.7, Z 20.36). Candidates: helix entry; a bulk level at the pocket
+  floors.
+- Front scallop: crosses material the rough left, 12.4 % of samples over 1.26 mm, peak 6.09 mm
+  (R1 tapered ball). A rest pass before the finish would carry that load.
+- Day strip slit: 49.5 % of samples bite more than the commanded 2.6 mm, peak 5.27 mm. Open
+  question: is the 7 mm slit slot floor (Z 4.83) cut by the 6 mm rest before the V60? Check the
+  sim checkpoint after the rest at the slit.
+- rs_cam defects: `generate_all` reported `not_ready: []` while two ops were blocked; the
+  project verdicts do not carry per-op blocking or critical findings (only `list_toolpaths` /
+  per-op diagnostics show them).
