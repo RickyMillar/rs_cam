@@ -585,3 +585,14 @@ The finish was never 6 h (an earlier reading of the GUI timeline bar was wrong).
   Back tool changes 6 -> 4. Whole job 6.89 h -> 6.64 h, 0 collisions, 0 rapid collisions.
   Left: the 6 mm back rest (230 m, 62 % air), the scallop finish (accel-bound), the 3 mm lake
   pass (146 m of rapids).
+
+### Overnight 2026-11-01/02: iterations (whole job, 0.25 mm sim)
+
+| Experiment | Result | Kept |
+|---|---|---|
+| E1: 18 mm 3 mm levels, R3 ball over the hollow, 6 mm rest at Suggest depth 4.69 | 7.02 h (ball 49 m at 1174 mm/min; bulk 127 m) | no |
+| E2: 6 mm rest contour-parallel instead of geodesic | 10.30 h (434 m feed, 846 m rapids) | no |
+| E3: segment merge 0.02 on the front scallop (under its 0.05 tolerance) | 6.53 h (562 k -> 466 k moves) | yes |
+| SAFETY: the 3D roughs merged at the default 0.3, which can cut 0.3 below the target and thin web_min | merge tolerance = tip_tol 0.05 on every rough: 6.71 h | yes |
+
+The committed project is the last row: 6.71 h, 0 collisions, 0 rapid collisions.

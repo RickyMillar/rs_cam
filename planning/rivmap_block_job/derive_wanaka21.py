@@ -351,7 +351,10 @@ def main() -> None:
             "z_blend": False,
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
             "stay_down_clearance_mm": trough["stay_down_clearance_mm"]},
-            why=why, boundary=boundary, dressups={"segment_merge": True}, stock_source=stock_source,
+            # Merge tolerance = tip_tol: a merged chord may cut below the target by its tolerance, and the
+            # default 0.3 would thin the web_min of the hollow.
+            why=why, boundary=boundary, dressups={"segment_merge": True, "segment_merge_tolerance": tol},
+            stock_source=stock_source,
             heights=heights)
 
     in_block = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["block_outline.dxf"]}
@@ -398,8 +401,8 @@ def main() -> None:
              f"of oak left), and the {len(getattr(lakes_poly, 'geoms', [lakes_poly]))} closed lakes opened {margin} past the front ({n_open_lakes} open lake\n"
              f"paths are V-cut only). The V cuts at most {web + v_offset:.2f} of its usable cone {usable:.2f}; the rest,\n"
              f"{step}, is the depth per pass. Remaining stock: generate_all simulates the bulk pass first."),
-            in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
-                                     "depth_per_pass": step},
+            in_block, 0.0, geometry=None if BALL_PASS else {"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
+                                                            "depth_per_pass": step},
             stock_source="from_remaining_stock")
     P.toolpath("Pin drill, flip pins", "alignment_pin_drill", tid["flat_6"], mids["block_outline.dxf"], {
         "diameter": pin_d, "spoilboard_penetration": round(cam["pin_depth"] - T1, 6), "cycle": "peck",
@@ -503,8 +506,9 @@ def main() -> None:
         "feed_rate": FRONT_SCALLOP_FEED["feed_rate"], "plunge_rate": FRONT_SCALLOP_FEED["plunge_rate"], "stock_to_leave": 0.0,
         "spindle_rpm": FRONT_SCALLOP_FEED["spindle_rpm"],
         "intra_pass_hookup_mm": tfin["intra_pass_hookup_mm"], "iso_field": tfin["iso_field"]},
-        why="rivmap350 'Scallop Finish' strategy; feed and rpm: the operator's GUI edit (2026-11-01). Boundary: EDGE_OUTER.",
-        boundary=in_relief, dressups={"lead_in_out": True})
+        why=("rivmap350 'Scallop Finish' strategy; feed and rpm: the operator's GUI edit (2026-11-01). Boundary: EDGE_OUTER.\n"
+             "Segment merge at 0.02 (under the 0.05 scallop tolerance): 562 k -> 466 k moves, job 6.64 -> 6.53 h."),
+        boundary=in_relief, dressups={"lead_in_out": True, "segment_merge": True, "segment_merge_tolerance": 0.02})
     P.toolpath("Outline profile with tabs", "profile", tid["flat_6"], mids["block_outline.dxf"], {
         "side": "outside", "floor": floor(T), "depth_per_pass": f6["doc_rough"],
         "feed_rate": f6["feed_safe"], "plunge_rate": f6["plunge"], "ramp_feed_rate": round(f6["feed_safe"] / 3.0, 3),
