@@ -321,6 +321,10 @@ cut_direction = "up_cut"
 vendor = ""
 product_id = ""
 
+[tools.non_centre_cutting]
+centre_core_diameter_mm = 8.0
+blade_protrusion_mm = 1.0
+
 
 # The operator's R3 ball (my_roughing.toml). Flute and stick-out: measure.
 [[tools]]
@@ -627,7 +631,7 @@ mode = "auto"
 
 # The bulk of the back target with the 18 mm bit. Levels: with the channel hollow, the
 # cavity floor 16.5 then the board-pocket floor 11.0; else the top to the deepest hollow or
-# lake point 4.50 in 2 even passes (measured best). No flat-area levels.
+# lake point 4.99 in 2 even passes (measured best). No flat-area levels.
 # Feeds: run Suggest (no feeds row for this bit).
 [[setups.toolpaths]]
 id = 1
@@ -644,7 +648,7 @@ kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
 stepover = 4.5
-depth_per_pass = 10.5
+depth_per_pass = 9.0
 stock_to_leave_axial = 0.0
 tolerance = 0.1
 min_cutting_radius = 0.0
@@ -697,7 +701,7 @@ mode = "auto"
 
 [setups.toolpaths.heights.bottom_z]
 mode = "manual"
-value = 4.5
+value = 11.0
 
 [setups.toolpaths.boundary]
 enabled = true
@@ -921,6 +925,73 @@ value = 16.5
 mode = "auto"
 
 
+# The channel the V needs: tip = the highest sheet point under the 6 mm disc + web_min 4.0 + 0 x 10.024652481079102
+# (the machine doc_roughing_factor x D; full-width slot). Deepest channel 10.02 below the cavity floor -> 1 passes. Feeds: feeds_oak flat_6 (doc_rough = the step);
+# Suggest does not know that this Project Curve is a full-width slot.
+[[setups.toolpaths]]
+id = 5
+name = "River channel 6 mm, pass 1 of 1"
+enabled = true
+tool_id = 0
+model_id = 8
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+projection = "cutter"
+depth = -4.0
+point_spacing = 0.25
+surface_model_id = 4
+direction = "from_above"
+side = "center"
+chain_distance_mm = 0.0
+feed_rate = 826
+plunge_rate = 736
+spindle_rpm = 10610
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_max_distance = 10.0
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+
 # 8 of the 13 closed lakes (9 cut; 4 are narrower than the 2 mm tool: V only).
 # Flat floor = the deepest lake of the group - 2 x exposure_margin (2.0); the walls are vertical, so
 # the front shows the outline at any depth. Wall 8.55 from top Z 14.46 (the shore hollow
@@ -929,7 +1000,7 @@ mode = "auto"
 # the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring
 # starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest.
 [[setups.toolpaths]]
-id = 5
+id = 6
 name = "Lake pocket 2 mm, 8 lakes to Z 5.91"
 enabled = true
 tool_id = 5
@@ -998,7 +1069,7 @@ mode = "auto"
 # the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring
 # starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest.
 [[setups.toolpaths]]
-id = 6
+id = 7
 name = "Lake pocket 2 mm, 1 lake to Z 3.99"
 enabled = true
 tool_id = 5
@@ -1062,7 +1133,7 @@ mode = "auto"
 # cam_ops.json ANTENNA_D5.00: 4 mm wide; the 2 mm detail tool (no tool change after the lakes).
 # Stepover and depth: the machine woc/doc roughing factors x D. Feeds: run Suggest.
 [[setups.toolpaths]]
-id = 7
+id = 8
 name = "ANTENNA_D5.00 pocket 2 mm"
 enabled = true
 tool_id = 5
@@ -1125,7 +1196,7 @@ mode = "auto"
 # One pass: the hollow leaves web_min of oak, so the V cuts the web and the overcut. Retract in the cavity.
 # point_spacing = map.toml [vgroove].max_seg: the vertex spacing that the block stage checks the tip at.
 [[setups.toolpaths]]
-id = 8
+id = 9
 name = "V rivers and lakes"
 enabled = true
 tool_id = 1
@@ -1191,7 +1262,7 @@ mode = "auto"
 # VGROOVE_V60_D25.866: the V tip from the slit slot floor (block z 20.67) to 25.866
 # (0.366 into the spoilboard; the slit is open underneath: seal it before the pour). Two passes.
 [[setups.toolpaths]]
-id = 9
+id = 10
 name = "Day strip slit V60"
 enabled = true
 tool_id = 2
@@ -1262,7 +1333,7 @@ datum_notes = "Pins in, top clamps OFF (the side pushers hold). Face the pads th
 # The four pads under the top clamps: the keep-out + its clearance + the 18 mm face radius, from the
 # measured raw top 26.0 to T1 25.5 in one pass. Feeds: run Suggest.
 [[setups.toolpaths]]
-id = 10
+id = 11
 name = "Face clamp pads 6 mm"
 enabled = true
 tool_id = 0
@@ -1417,7 +1488,7 @@ max = [396.5, 318.1667, 29.5]
 # Face the front from T1 25.5 to T 25.0 (block.json cam.face_front).
 # The 18 mm bulk bit; stock_offset = the tool diameter, so the last row reaches the far edge.
 [[setups.toolpaths]]
-id = 11
+id = 12
 name = "Face front to T"
 enabled = true
 tool_id = 6
@@ -1477,7 +1548,7 @@ mode = "auto"
 # under the slit, block z 25.0 -> 24.4 (local Z in this setup). After the face,
 # before the outline profile. Open strokes: Trace cuts each from its first point to its last.
 [[setups.toolpaths]]
-id = 12
+id = 13
 name = "Engrave day labels V60"
 enabled = true
 tool_id = 2
@@ -1539,7 +1610,7 @@ mode = "auto"
 # relief depth (a level cuts only where the surface is below it, so the bit needs several),
 # leave 0.5. No flat-area levels. Feeds: run Suggest.
 [[setups.toolpaths]]
-id = 13
+id = 14
 name = "Front bulk rough 18 mm"
 enabled = true
 tool_id = 6
@@ -1622,7 +1693,7 @@ holes = false
 # Stock to leave = testpiece.toml [front].rough_stock. Boundary: EDGE_OUTER, tool CENTRE on it, so the
 # 6 mm reaches the edge band the finish ball would otherwise meet at full height (2026-11-02).
 [[setups.toolpaths]]
-id = 14
+id = 15
 name = "Front 3D rough"
 enabled = true
 tool_id = 0
@@ -1707,7 +1778,7 @@ holes = false
 # rivmap350 'Scallop Finish' strategy; feed and rpm: the operator's GUI edit (2026-11-01). Boundary: EDGE_OUTER.
 # Segment merge at 0.02 (under the 0.05 scallop tolerance): 562 k -> 466 k moves, job 6.64 -> 6.53 h.
 [[setups.toolpaths]]
-id = 15
+id = 16
 name = "Front scallop finish"
 enabled = true
 tool_id = 4
@@ -1781,7 +1852,7 @@ holes = false
 
 # BLOCK_OUTLINE: 25.0 to the spoilboard, outside, 8 tabs (rs_cam default width and height).
 [[setups.toolpaths]]
-id = 16
+id = 17
 name = "Outline profile with tabs"
 enabled = true
 tool_id = 0

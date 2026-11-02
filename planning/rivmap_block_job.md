@@ -754,3 +754,22 @@ entry at (211.8, 42.0, Z 11) stays even with a bulk level at Z 11). The channel 
 `HOLLOW_CHANNEL_ONLY = False`: it pays only with a 6 mm trace along the rivers (channel 0-2.5 mm below
 the cavity floor in the valleys, 4.5-5.5 near the lakes), which needs Project Curve depth per pass.
 The GUI ran OOM at the 16 GB cap; the proxy cap is now 28 GB.
+
+### 2026-11-02 (late): new rs_cam features in the job
+
+- rs_cam c0f5d2567: G-CENTRECUT part 2 (entries limited, export refuses a descent into stock past
+  the limit) and the 3D Rough rest region filter. The 18 mm bit now states core 8 / protrusion 1
+  (operator, "around": measure). GUI rebuilt from that commit.
+- Hollow mode "trace" (default): the back target keeps a hollow band only around the lakes; the
+  river channels are ONE 6 mm Project Curve pass along the V20 lines, cutter projection from above,
+  tip = the highest sheet point under the disc + web_min, at the feeds_oak flat_6 row (826 mm/min,
+  10 610 rpm). Suggest does not know that this Project Curve is a full-width slot.
+- R1 valleys rest with `rest_max_region_width_mm = 6`: 301 m cut, 676 m rapids (was 4266 / 3248
+  without the filter). Removed: the deep scallop bites are the 6 mm rough's terraces on every slope
+  (front depth per pass 5.53, the operator's value), and those slivers are narrow too. Next lever: a
+  smaller front 6 mm depth per pass.
+- Not yet measured as a whole: one run stopped early (the back rest stayed Pending while the
+  operator edited in the GUI), so its 7.3 h (no scallop, no back rest) is not a result.
+- Open in rs_cam: every_op_keeps_its_toolpath_g_opgolden (8 move hashes; golden from 10-28) and
+  every_op_conforms_w4 check6; the front 3D rough planned for about 10 min on the new build (about
+  2 min before): check for a slowdown.

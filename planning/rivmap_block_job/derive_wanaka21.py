@@ -59,10 +59,18 @@ PIN_RIGHT_OFFSETS = (-120.0, 120.0)
 # planning bound). The model stock stays T1 thick: setup 3 zeroes on the faced back, so the 0.5 mm skin
 # is not modelled (the back face and the clamp-pad pockets cut air in the simulation).
 RAW_TOP_MM = 26.0
-# The back hollow only as a channel along the V lines (operator idea 2026-11-02). Measured: the 6 mm
-# adaptive rest then cuts 284 m (was 232) with 144 m of rapids (was 63); the whole job is about 1.2 h
-# slower. Off until a 6 mm trace along the rivers replaces the adaptive in the channels.
-HOLLOW_CHANNEL_ONLY = False
+# The 18 mm bulk bit does not cut at its centre (operator 2026-11-02, "around": measure): an uncut
+# core of about 8 mm, the blades about 1 mm below it. rs_cam (G-CENTRECUT) limits its plunges and
+# descents from these two values.
+ROUGH_18_CORE_MM = 8.0
+ROUGH_18_PROTRUSION_MM = 1.0
+# The back hollow (operator 2026-11-02: a hollow under the mountains does no work):
+# - "full": the relief sheet + web_min over the whole cavity (measured 5.81 h);
+# - "channels": a band along the V lines and the lakes, cut by the 6 mm adaptive rest (measured
+#   about 1.2 h slower: the rest jumps between narrow pieces);
+# - "trace": a band only around the lakes (the 2 mm pocket walls must stay in its flute); the river
+#   channels are 6 mm Project Curve passes along the V lines, as in the earlier jobs.
+HOLLOW_MODE = "trace"
 # Top clamps (operator 2026-11-02): 2 on each long side at the thirds of the 460 mm length, 20 mm wide,
 # 4 mm tall, about 2 mm onto the stock. Keep-out: 40 mm along the edge, 10 mm onto the stock.
 CLAMP_Y_STOCK = (STOCK_Y / 3.0, 2.0 * STOCK_Y / 3.0)
@@ -293,17 +301,22 @@ def main() -> None:
     from shapely.geometry import LineString as ShLine
     band_half = 3.0 + (web + v_offset) * t_half
     v_lines = [entity_points(e)[0] for lyr in ("VGROOVE_V20_RIVER", "VGROOVE_V20_LAKE") for e in layer_entities(bc, lyr)]
-    band_poly = unary_union([ShLine(pts).buffer(band_half) for pts in v_lines if len(pts) > 1]
-                            + [lakes_poly.buffer(band_half)])
+    band_poly = unary_union(([ShLine(pts).buffer(band_half) for pts in v_lines if len(pts) > 1]
+                             if HOLLOW_MODE == "channels" else []) + [lakes_poly.buffer(band_half)])
     in_band = contains_xy(band_poly, c_sh[:, 0], c_sh[:, 1])
     hollow = sheet[in_cav & ~in_lake].copy()
     hollow[..., 2] += web
-    if HOLLOW_CHANNEL_ONLY:
+    if HOLLOW_MODE in ("channels", "trace"):
         out_band = ~in_band[in_cav & ~in_lake]
         hollow[out_band, :, 2] = cav_floor
         hollow[..., 2] = np.minimum(hollow[..., 2], cav_floor)
     lakes = sheet[in_cav & in_lake].copy()
     lakes[..., 2] -= margin
+    # The trace channels: the deepest point a 6 mm disc on a V line reaches below the cavity floor
+    # (conservative: the lowest sheet point within one tool radius of any V line, + web).
+    v_near = unary_union([ShLine(pts).buffer(3.0) for pts in v_lines if len(pts) > 1])
+    near_v = contains_xy(v_near, c_sh[:, 0], c_sh[:, 1]) & in_cav
+    channel_depth = max(0.0, cav_floor - (float(sheet[near_v][..., 2].min()) + web))
     target = np.concatenate([keep_bb, hollow, lakes])
     hollow_floor = float(min(hollow[..., 2].min(), lakes[..., 2].min()))  # the deepest hollow or lake point
     # The hollow and the lakes alone: the surface the R3 ball follows over the cavity.
@@ -447,7 +460,9 @@ def main() -> None:
                      dt["shank"], dt["stickout"], dt["flutes"], comment="The operator's detail tool (2026-11-02)."))
     P.add(tool_table(tid["rough_18"], big["tool_number"], big["name"], "end_mill", big["diameter"],
                      big["cutting_length"], big["shank_diameter"], big["stickout"], big["flute_count"],
-                     comment=f"The operator's bulk roughing bit ({ROUGH_LIB.name}). Stick-out: measure."))
+                     comment=f"The operator's bulk roughing bit ({ROUGH_LIB.name}). Stick-out: measure.")
+          + "\n[tools.non_centre_cutting]\n"
+          + f"centre_core_diameter_mm = {ROUGH_18_CORE_MM}\nblade_protrusion_mm = {ROUGH_18_PROTRUSION_MM}\n")
     P.add(tool_table(tid["ball_r3"], ball["tool_number"], ball["name"], "ball_nose", ball["diameter"],
                      ball["cutting_length"], ball["shank_diameter"], ball["stickout"], ball["flute_count"],
                      comment=f"The operator's R3 ball ({ROUGH_LIB.name}). Flute and stick-out: measure."))
@@ -487,7 +502,7 @@ def main() -> None:
     def rough3d(name: str, tool: str, model: str, f: dict, why: str, boundary: dict, leave: float,
                 stock_source: str = "fresh", geometry: dict | None = None,
                 heights: dict | None = None, strategy: str = "geodesic_adaptive",
-                detect_flat: bool = True, min_region: float | None = None) -> None:
+                detect_flat: bool = True, min_region: float | None = None, extra: dict | None = None) -> None:
         # Adaptive geometry from the machine rigidity (adaptive_doc_factor x D, adaptive_woc_factor x D)
         # unless the caller gives it. Run Suggest to tune it.
         g = geometry or {"stepover": round(rig["adaptive_woc_factor"] * dia[tool], 4),
@@ -504,7 +519,7 @@ def main() -> None:
             "trochoid_cap_mult": trough["trochoid_cap_mult"], "engagement_measure": trough["engagement_measure"],
             "z_blend": False,
             "min_region_cut_length_mm": trough["min_region_cut_length_mm"] if min_region is None else min_region,
-            "stay_down_clearance_mm": trough["stay_down_clearance_mm"]},
+            "stay_down_clearance_mm": trough["stay_down_clearance_mm"], **(extra or {})},
             # Merge tolerance = tip_tol: a merged chord may cut below the target by its tolerance, and the
             # default 0.3 would thin the web_min of the hollow.
             why=why, boundary=boundary, dressups={"segment_merge": True, "segment_merge_tolerance": tol},
@@ -538,7 +553,7 @@ def main() -> None:
     assert T1 - cav_floor <= big["cutting_length"] and cav_floor - board_floor <= big["cutting_length"]
     span = T1 - hollow_floor
     n_big = math.ceil(span / big["cutting_length"])
-    bulk_geo = ({"depth_per_pass": round(T1 - cav_floor, 4)}, round(board_floor, 4)) if HOLLOW_CHANNEL_ONLY else \
+    bulk_geo = ({"depth_per_pass": round(T1 - cav_floor, 4)}, round(board_floor, 4)) if HOLLOW_MODE in ("channels", "trace") else \
         ({"depth_per_pass": round(span / n_big, 4)}, round(hollow_floor, 4))
     rough3d(f"Back bulk rough {big['diameter']:g} mm", "rough_18", "back_target_s1.stl", None,
             (f"The bulk of the back target with the {big['diameter']:g} mm bit. Levels: with the channel hollow, the\n"
@@ -581,6 +596,27 @@ def main() -> None:
              "Cycle: the operator's drill op (testpiece.toml); feeds: run Suggest (G6 flat end mill drill rule)."),
         heights={"top_z": cav_floor})
     n_closed_lakes = n_lakes_closed
+    if HOLLOW_MODE == "trace":
+        # The river channels: the 6 mm on every V20 line, from above with the cutter projection, so the
+        # whole disc keeps web_min over the relief sheet. Project Curve has no depth per pass: one op per
+        # level, deepest last; where a level is above the cavity floor it cuts air.
+        # One full-depth pass (operator 2026-11-02: "we can stick a 6mm bit in super deep if we control
+        # the f/s"): most of the channel is 0-2.5 mm below the cavity floor, the deepest under 2 x D; the
+        # chart feed is a light 0.04 mm/tooth and the simulation gates check depth and deflection.
+        ch_step = channel_depth
+        n_ch = 1
+        for k in range(n_ch - 1, -1, -1):
+            P.toolpath(f"River channel 6 mm, pass {n_ch - k} of {n_ch}", "project_curve", tid["flat_6"],
+                       mids["vgroove_v20.dxf"], {
+                "projection": "cutter", "depth": round(-(web + k * ch_step), 4),
+                "point_spacing": mapt["vgroove"]["max_seg"], "surface_model_id": mids["relief_sheet_s1.stl"],
+                "direction": "from_above", "side": "center", "chain_distance_mm": 0.0,
+                "feed_rate": f6["feed_safe"], "plunge_rate": f6["plunge"], "spindle_rpm": int(f6["rpm"])},
+                why=(f"The channel the V needs: tip = the highest sheet point under the 6 mm disc + web_min {web}"
+                     f" + {k} x {ch_step}\n(the machine doc_roughing_factor x D; full-width slot). Deepest channel"
+                     f" {channel_depth:.2f} below the cavity floor -> {n_ch} passes. Feeds: feeds_oak flat_6 (doc_rough = the step);\n"
+                     "Suggest does not know that this Project Curve is a full-width slot."),
+                heights={"top_z": cav_floor, "retract_z": v_retract})
     n_cut = sum(lp["n"] for lp in lake_pockets)
     for gi, lp in enumerate(lake_pockets):
         # Top: the highest hollow at the shore + one rest step (the 6 mm rest leaves terraces of at
@@ -700,8 +736,9 @@ def main() -> None:
             dict(in_relief, containment="center"), tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
             geometry={"stepover": fr6["stepover"], "depth_per_pass": fr6["depth_per_pass"]},
             stock_source="from_remaining_stock")
-    # A whole-relief R1 rest (remaining stock) was measured 2026-11-02: 4266 m of cut, 3248 m of rapids
-    # (the job went to 48 h). rs_cam has no "only where the 6 mm could not reach" region for a 3D Rough.
+    # No R1 rest: with the rest region filter (width <= 6 mm) it still cut 301 m with 676 m of rapids.
+    # The scallop's deep bites are the 6 mm rough's terraces on every slope (depth per pass 5.53, the
+    # operator's value), not only valleys: a smaller front depth per pass is the lever.
     tfin = tpl_ops["Scallop Finish"]["operation"]["params"]
     P.toolpath("Front scallop finish", "scallop", tid["tbn_r1"], mids["relief_sheet_s1.stl"], {
         "scallop_height": tfin["scallop_height"], "tolerance": tfin["tolerance"], "direction": tfin["direction"],
