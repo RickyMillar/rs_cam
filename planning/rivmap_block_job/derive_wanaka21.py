@@ -624,7 +624,7 @@ def main() -> None:
         top = math.ceil((lp["wall_top"] + step) * 100.0) / 100.0
         P.toolpath(f"Lake pocket 2 mm, {lp['n']} lake{'s' if lp['n'] > 1 else ''} to Z {lp['floor']:.2f}", "pocket",
                    tid["dsp_2"], mids[lp["file"]], {
-            "stepover": round(rig["woc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
+            "stepover": DETAIL_TOOL["diameter"] / 2.0,
             "floor": {"from": "z", "z": round(lp["floor"], 4)},
             "depth_per_pass": round(rig["doc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
             "climb": True, "pattern": "contour", "angle": 0.0, "finishing_passes": 1,
@@ -633,17 +633,18 @@ def main() -> None:
                  f"Flat floor = the deepest lake of the group - 2 x exposure_margin ({2 * margin}); the walls are vertical, so\n"
                  f"the front shows the outline at any depth. Wall {top - lp['floor']:.2f} from top Z {top} (the shore hollow\n"
                  f"{lp['wall_top']:.2f} + one rest step {step}); flute less body_margin = {wall_cap}. One finishing contour\n"
-                 "for a clean wall. Retract: the cavity floor + clearance (the hollow between lakes stands above\n"
+                 "for a clean wall. Stepover = the tool radius: a contour pocket with a larger step can leave a sliver\n"
+                 "at the centre (seen on the 0.8 x D step, 2026-11-02). Retract: the cavity floor + clearance (the hollow between lakes stands above\n"
                  "the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring\n"
                  "starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest."),
             heights={"top_z": top, "retract_z": v_retract},
             dressups={"segment_merge": True, "segment_merge_tolerance": tol})
     P.toolpath("ANTENNA_D5.00 pocket 2 mm", "pocket", tid["dsp_2"], mids["antenna_d5.00.dxf"], {
-        "stepover": round(rig["woc_roughing_factor"] * DETAIL_TOOL["diameter"], 4), "floor": floor(5.0),
+        "stepover": DETAIL_TOOL["diameter"] / 2.0, "floor": floor(5.0),
         "depth_per_pass": round(rig["doc_roughing_factor"] * DETAIL_TOOL["diameter"], 4),
         "climb": True, "pattern": "contour", "angle": 0.0, "finishing_passes": 0},
         why=("cam_ops.json ANTENNA_D5.00: 4 mm wide; the 2 mm detail tool (no tool change after the lakes).\n"
-             "Stepover and depth: the machine woc/doc roughing factors x D. Feeds: run Suggest."),
+             "Stepover = the tool radius (full coverage); depth: the machine doc roughing factor x D. Feeds: run Suggest."),
         dressups=ramp)
     P.toolpath("V rivers and lakes", "project_curve", tid["v20"], mids["vgroove_v20.dxf"], {
         "projection": "point", "depth": round(-v_offset, 9),

@@ -996,7 +996,8 @@ mode = "auto"
 # Flat floor = the deepest lake of the group - 2 x exposure_margin (2.0); the walls are vertical, so
 # the front shows the outline at any depth. Wall 8.55 from top Z 14.46 (the shore hollow
 # 13.26 + one rest step 1.2); flute less body_margin = 7.5. One finishing contour
-# for a clean wall. Retract: the cavity floor + clearance (the hollow between lakes stands above
+# for a clean wall. Stepover = the tool radius: a contour pocket with a larger step can leave a sliver
+# at the centre (seen on the 0.8 x D step, 2026-11-02). Retract: the cavity floor + clearance (the hollow between lakes stands above
 # the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring
 # starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest.
 [[setups.toolpaths]]
@@ -1013,7 +1014,7 @@ coolant = "off"
 kind = "pocket"
 
 [setups.toolpaths.operation.params]
-stepover = 1.6
+stepover = 1.0
 floor = { from = "z", z = 5.9106 }
 depth_per_pass = 0.5
 climb = true
@@ -1065,7 +1066,8 @@ mode = "auto"
 # Flat floor = the deepest lake of the group - 2 x exposure_margin (2.0); the walls are vertical, so
 # the front shows the outline at any depth. Wall 7.39 from top Z 11.38 (the shore hollow
 # 10.18 + one rest step 1.2); flute less body_margin = 7.5. One finishing contour
-# for a clean wall. Retract: the cavity floor + clearance (the hollow between lakes stands above
+# for a clean wall. Stepover = the tool radius: a contour pocket with a larger step can leave a sliver
+# at the centre (seen on the 0.8 x D step, 2026-11-02). Retract: the cavity floor + clearance (the hollow between lakes stands above
 # the pocket top). Plunge entry: the ramp entry dressup on this pocket left wood at two ring
 # starts that the next level's rapid descent hit (21 rapid collisions, 2026-11-02). Feeds: run Suggest.
 [[setups.toolpaths]]
@@ -1082,7 +1084,7 @@ coolant = "off"
 kind = "pocket"
 
 [setups.toolpaths.operation.params]
-stepover = 1.6
+stepover = 1.0
 floor = { from = "z", z = 3.9942 }
 depth_per_pass = 0.5
 climb = true
@@ -1131,7 +1133,7 @@ mode = "auto"
 
 
 # cam_ops.json ANTENNA_D5.00: 4 mm wide; the 2 mm detail tool (no tool change after the lakes).
-# Stepover and depth: the machine woc/doc roughing factors x D. Feeds: run Suggest.
+# Stepover = the tool radius (full coverage); depth: the machine doc roughing factor x D. Feeds: run Suggest.
 [[setups.toolpaths]]
 id = 8
 name = "ANTENNA_D5.00 pocket 2 mm"
@@ -1146,7 +1148,7 @@ coolant = "off"
 kind = "pocket"
 
 [setups.toolpaths.operation.params]
-stepover = 1.6
+stepover = 1.0
 floor = { from = "top", depth = 5.0 }
 depth_per_pass = 0.5
 climb = true
