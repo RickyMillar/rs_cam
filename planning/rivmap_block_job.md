@@ -731,3 +731,26 @@ corner arc on the 6 mm rests; R1 tapered rest before the scallop (leave 0.5); bu
 cap; retract at clearance; the back hollow only as deep as the rivers need (operator: from the back
 the front valleys are high and the mountains deep; a hollow under the mountains does no work — rough
 less and trace the rivers with the 6 mm first, as in the earlier jobs).
+
+### 2026-11-02 (night): queue results
+
+Added: top clamps as obstacles in setups 1 and 3 (4 boxes, 40 mm along the edge, 10 mm onto the
+stock, top = raw top + 4, clearance 1); five pins, 3 left (y 190 / 230 / 270) and 2 right (y 110 /
+350), symmetric about the flip axis and asserted clear of the keep-outs; setup "1b Clamp pads" (pins
+in, top clamps off, 6 mm pockets the pads from the measured raw top 26 to T1); rapids of the V op and
+the lake pockets at the clearance plane. The model stock stays T1 thick (setup 3 zeroes on the faced
+back), so the raw 0.5 mm skin is not modelled.
+
+Measured (0.2 mm; the full sim needs 26.8 GiB, so the scallop was off for the measuring runs):
+
+| Variant | Without the scallop | Note |
+|---|---|---|
+| Channel hollow + R1 whole-relief rest + min_region 0 | 47.9 h | R1 rest 4266 m cut / 3248 m rapids; back rest 537 m |
+| Channel hollow, no R1 rest, min_region 15 | 5.39 h (about 7.0 h with the scallop) | back rest 284 m / 144 m rapids (was 232 / 63) |
+
+0 collisions and 0 rapid collisions in both. Kept out of the generator: the R1 rest (no "only where
+the 6 mm could not reach" region for a 3D Rough) and min_region 0 (more regions, no fix: the 14.5 mm
+entry at (211.8, 42.0, Z 11) stays even with a bulk level at Z 11). The channel hollow is behind
+`HOLLOW_CHANNEL_ONLY = False`: it pays only with a 6 mm trace along the rivers (channel 0-2.5 mm below
+the cavity floor in the valleys, 4.5-5.5 near the lakes), which needs Project Curve depth per pass.
+The GUI ran OOM at the 16 GB cap; the proxy cap is now 28 GB.

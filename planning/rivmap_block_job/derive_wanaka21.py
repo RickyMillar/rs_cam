@@ -49,7 +49,27 @@ MACHINE_FROM = HERE / "testpiece_mini.toml"   # the operator's Scylla grblHAL ma
 STOCK_X, STOCK_Y = 395.0, 460.0      # the 460 mm length is along the grain = block Y
 # The pair of the pin pattern is this far from the flip axis. A free choice: the
 # operator moves it to clear the flaws near the long edges.
-PIN_PAIR_ACROSS = 100.0
+# Pins (operator 2026-11-02: "a few more, it is a big part"; keep them out of the clamp keep-outs).
+# Five pins, mirror-symmetric about the flip axis (y = STOCK_Y / 2) so the flipped holes land on the
+# same pins, and keyed: the left side holds three, the right side two. Offsets from the axis are a free
+# choice inside the gaps the clamps leave (asserted below).
+PIN_LEFT_OFFSETS = (0.0, -40.0, 40.0)
+PIN_RIGHT_OFFSETS = (-120.0, 120.0)
+# The operator's measured stock (2026-11-02): 26 mm thick (block.json cam.raw_top_max is the 27 mm
+# planning bound). The model stock stays T1 thick: setup 3 zeroes on the faced back, so the 0.5 mm skin
+# is not modelled (the back face and the clamp-pad pockets cut air in the simulation).
+RAW_TOP_MM = 26.0
+# The back hollow only as a channel along the V lines (operator idea 2026-11-02). Measured: the 6 mm
+# adaptive rest then cuts 284 m (was 232) with 144 m of rapids (was 63); the whole job is about 1.2 h
+# slower. Off until a 6 mm trace along the rivers replaces the adaptive in the channels.
+HOLLOW_CHANNEL_ONLY = False
+# Top clamps (operator 2026-11-02): 2 on each long side at the thirds of the 460 mm length, 20 mm wide,
+# 4 mm tall, about 2 mm onto the stock. Keep-out: 40 mm along the edge, 10 mm onto the stock.
+CLAMP_Y_STOCK = (STOCK_Y / 3.0, 2.0 * STOCK_Y / 3.0)
+CLAMP_SPACE_ALONG = 40.0
+CLAMP_SPACE_ONTO = 10.0
+CLAMP_HEIGHT = 4.0
+CLAMP_CLEARANCE = 1.0
 # The operator's GUI edits of 2026-11-01 (front ops; the skim removed: "dont need it").
 FRONT_ROUGH_6MM = {"stepover": 1.382, "depth_per_pass": 5.532, "feed_rate": 3900.0, "plunge_rate": 2360.0,
                    "ramp_feed_rate": 4720.0, "spindle_rpm": 20102}
@@ -145,7 +165,10 @@ def main() -> None:
     assert cam["frame"].startswith("back view") and f"x = {bx1} - X, y = Y + {-by0}" in cam["frame"]
     mx, my = (STOCK_X - BW) / 2.0, (STOCK_Y - BD) / 2.0  # the block is centred: 18.5, 8.5
     cav_floor = T1 - blk["cavity_depth"]                # setup-1 Z of the finished cavity floor
-    v_retract = cav_floor + SAFE_Z_CLEARANCE_MM         # rapids stay inside the convex cavity
+    # Rapids at the clearance plane above the measured raw top: an in-cavity retract was safe in the
+    # simulation, but the G-code validator flags any XY rapid below clearance (637 errors, 2026-11-02),
+    # and the top clamps stand on the stock.
+    v_retract = RAW_TOP_MM + SAFE_Z_CLEARANCE_MM
 
     files: dict[str, Path] = {}
 
@@ -198,6 +221,21 @@ def main() -> None:
         d.polyline(eng_row["layer"], pts, False)
     write_if_changed(OUT / "engrave.dxf", d.text().encode())
     files["engrave.dxf"] = OUT / "engrave.dxf"
+    # The clamp keep-outs in the setup-1 frame (stock-local - the stock origin offset). The four boxes
+    # are symmetric about the stock centre in X and in Y, so the flipped setup 3 uses the same numbers.
+    clamp_boxes = []
+    for yc in CLAMP_Y_STOCK:
+        for x0, x1 in ((-20.0, CLAMP_SPACE_ONTO), (STOCK_X - CLAMP_SPACE_ONTO, STOCK_X + 20.0)):
+            clamp_boxes.append((x0 - mx, yc - CLAMP_SPACE_ALONG / 2.0 - my, x1 - mx, yc + CLAMP_SPACE_ALONG / 2.0 - my))
+    # The pads the back face leaves under the clamps: a keep-out grows by its clearance, and the 18 mm
+    # face leaves its own radius beside it.
+    pad_grow = CLAMP_CLEARANCE + 9.0
+    d = Dxf()
+    for x0, y0, x1, y1 in clamp_boxes:
+        d.polyline("CLAMP_PAD", [(x0 - pad_grow, y0 - pad_grow), (x1 + pad_grow, y0 - pad_grow),
+                                 (x1 + pad_grow, y1 + pad_grow), (x0 - pad_grow, y1 + pad_grow)], True)
+    write_if_changed(OUT / "clamp_pads.dxf", d.text().encode())
+    files["clamp_pads.dxf"] = OUT / "clamp_pads.dxf"
     eb = ezdxf.readfile(BUILD / "terrain/nz-wanaka-21/machinable_edge_band.dxf")
     write_dxf("edge_outer.dxf", eb, ["EDGE_OUTER"], conv=lambda x, y: (bx1 - x, y - by0))
 
@@ -232,6 +270,11 @@ def main() -> None:
     from shapely.ops import unary_union
     web = blk["web_min"]
     margin = float(tomllib.loads((MONO / "design/rivmap.toml").read_text())["paths"]["exposure_margin"])
+    # The V at the front: line_width + 2 margin tan(a/2) (the exposure margin, 2026-10-31). With the
+    # 0.3 mm flat tip the tip goes (w - tip) / (2 tan(a/2)) past the surface for that width.
+    t_half = math.tan(math.radians(blk["vgroove_angle"] / 2.0))
+    v_line = blk["line_width"] + 2.0 * margin * t_half
+    v_offset = (v_line - V20_TIP_MM) / (2.0 * t_half)
     cavity_poly = unary_union([ShPolygon(entity_points(e)[0]) for e in layer_entities(bc, "CAVITY_SKIM_D9.00")])
     lake_rings = [entity_points(e) for e in layer_entities(bc, "VGROOVE_V20_LAKE")]
     lakes_poly = unary_union([ShPolygon(pts).buffer(0) for pts, _, closed, _ in lake_rings if closed])
@@ -242,8 +285,23 @@ def main() -> None:
     c_sh = sheet.mean(axis=1)
     in_cav = contains_xy(inner, c_sh[:, 0], c_sh[:, 1])
     in_lake = contains_xy(lakes_poly, c_sh[:, 0], c_sh[:, 1])
+    # The hollow only where a V needs it (operator 2026-11-02: from the back the front valleys are high
+    # and the mountains deep; a hollow under the mountains does no work). A channel along every V20 line
+    # and around every closed lake, half-width = the 6 mm tool radius + the V half-width at the hollow
+    # ((web + v_offset) tan(a/2)), so the 6 mm reaches the hollow over the whole V. Elsewhere the target
+    # is the flat cavity floor.
+    from shapely.geometry import LineString as ShLine
+    band_half = 3.0 + (web + v_offset) * t_half
+    v_lines = [entity_points(e)[0] for lyr in ("VGROOVE_V20_RIVER", "VGROOVE_V20_LAKE") for e in layer_entities(bc, lyr)]
+    band_poly = unary_union([ShLine(pts).buffer(band_half) for pts in v_lines if len(pts) > 1]
+                            + [lakes_poly.buffer(band_half)])
+    in_band = contains_xy(band_poly, c_sh[:, 0], c_sh[:, 1])
     hollow = sheet[in_cav & ~in_lake].copy()
     hollow[..., 2] += web
+    if HOLLOW_CHANNEL_ONLY:
+        out_band = ~in_band[in_cav & ~in_lake]
+        hollow[out_band, :, 2] = cav_floor
+        hollow[..., 2] = np.minimum(hollow[..., 2], cav_floor)
     lakes = sheet[in_cav & in_lake].copy()
     lakes[..., 2] -= margin
     target = np.concatenate([keep_bb, hollow, lakes])
@@ -340,7 +398,7 @@ def main() -> None:
                  f"(the back face pass starts at raw_top_max {cam['raw_top_max']}). The block is centred.")))
     P.add(table("job.stock.material.SolidWood", {"species": "WhiteOak"}))
 
-    # Pins: rs_cam preset "axis plus mirror pair", in the long-edge margins. A pin keeps
+    # Pins: in the long-edge margins (layout above). A pin keeps
     # PIN_WALL to the stock edge and to the outline cut (the outer flat_6 width of the margin).
     pin_d = cam["pins"][0]["d"]
     band_lo = PIN_WALL_MM + pin_d / 2.0
@@ -348,8 +406,12 @@ def main() -> None:
     assert band_hi >= band_lo, (band_lo, band_hi)
     edge_off = (band_lo + band_hi) / 2.0
     axis_y = STOCK_Y / 2.0
-    pins = [(edge_off, axis_y), (STOCK_X - edge_off, axis_y - PIN_PAIR_ACROSS),
-            (STOCK_X - edge_off, axis_y + PIN_PAIR_ACROSS)]
+    pins = ([(edge_off, axis_y + d) for d in PIN_LEFT_OFFSETS]
+            + [(STOCK_X - edge_off, axis_y + d) for d in PIN_RIGHT_OFFSETS])
+    for _, py in pins:
+        for yc in CLAMP_Y_STOCK:
+            gap = abs(py - yc) - CLAMP_SPACE_ALONG / 2.0 - CLAMP_CLEARANCE - pin_d / 2.0 - PIN_WALL_MM
+            assert gap >= 0.0, (py, yc, gap)
     for x, y in pins:
         P.add(table("[job.stock.alignment_pins]", {"x": x, "y": y, "diameter": pin_d}).replace(
             "[[[job.stock.alignment_pins]]]", "[[job.stock.alignment_pins]]"))
@@ -392,7 +454,7 @@ def main() -> None:
 
     model_order = ["back_target_s1.stl", "hollow_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
-                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf", "engrave.dxf"] + [lp["file"] for lp in lake_pockets]
+                   "antenna_d5.00.dxf", "slit_slot_f6_d20.67.dxf", "slit_v60.dxf", "engrave.dxf", "clamp_pads.dxf"] + [lp["file"] for lp in lake_pockets]
     assert sorted(model_order) == sorted(files)
     mids = {f: i for i, f in enumerate(model_order)}
     for f in model_order:
@@ -413,10 +475,19 @@ def main() -> None:
             why=why + "\nThe 18 mm bulk bit; stock_offset = the tool diameter, so the last row reaches the far edge.",
             heights=heights, dressups=ramp)
 
+    def clamps(top_z: float) -> None:
+        for i, (x0, y0, x1, y1) in enumerate(clamp_boxes):
+            side = "X min" if x0 < 0 else "X max"
+            P.add(table("[setups.obstacles]", {"id": i, "name": f"Clamp {side} {i // 2 + 1}", "enabled": True,
+                                               "clearance": CLAMP_CLEARANCE}).replace(
+                      "[[[setups.obstacles]]]", "[[setups.obstacles]]")
+                  + table("setups.obstacles.geometry", {"kind": "box", "min": [round(x0, 4), round(y0, 4), 0.0],
+                                                        "max": [round(x1, 4), round(y1, 4), round(top_z, 4)]}))
+
     def rough3d(name: str, tool: str, model: str, f: dict, why: str, boundary: dict, leave: float,
                 stock_source: str = "fresh", geometry: dict | None = None,
                 heights: dict | None = None, strategy: str = "geodesic_adaptive",
-                detect_flat: bool = True) -> None:
+                detect_flat: bool = True, min_region: float | None = None) -> None:
         # Adaptive geometry from the machine rigidity (adaptive_doc_factor x D, adaptive_woc_factor x D)
         # unless the caller gives it. Run Suggest to tune it.
         g = geometry or {"stepover": round(rig["adaptive_woc_factor"] * dia[tool], 4),
@@ -432,7 +503,7 @@ def main() -> None:
             "region_ordering": trough["region_ordering"], "clearing_strategy": strategy,
             "trochoid_cap_mult": trough["trochoid_cap_mult"], "engagement_measure": trough["engagement_measure"],
             "z_blend": False,
-            "min_region_cut_length_mm": trough["min_region_cut_length_mm"],
+            "min_region_cut_length_mm": trough["min_region_cut_length_mm"] if min_region is None else min_region,
             "stay_down_clearance_mm": trough["stay_down_clearance_mm"]},
             # Merge tolerance = tip_tol: a merged chord may cut below the target by its tolerance, and the
             # default 0.3 would thin the web_min of the hollow.
@@ -445,35 +516,37 @@ def main() -> None:
     in_relief = {"enabled": True, "containment": "inside", "offset": 0.0, "model_outline": mids["edge_outer.dxf"]}
 
     # ── Setup 1: Back
-    P.setup(0, "1 Back", "top", f"Back up. Z0 = spoilboard. XY0 = stock corner (pin 1 is at {pins[0]}).")
-    face("Face back to T1", cam["raw_top_max"] - T1,
-         f"Face from raw_top_max {cam['raw_top_max']} to T1 {T1}.", heights={"top_z": cam["raw_top_max"]})
+    P.setup(0, "1 Back", "top", f"Back up. Z0 = spoilboard. XY0 = stock corner (pin 1 is at {pins[0]}). "
+            f"Top clamps at y {CLAMP_Y_STOCK[0]:.0f} and {CLAMP_Y_STOCK[1]:.0f} on both long sides.")
+    clamps(RAW_TOP_MM + CLAMP_HEIGHT)
+    face("Face back to T1", RAW_TOP_MM - T1,
+         f"Face from the measured raw top {RAW_TOP_MM} to T1 {T1} (keeps out of the clamps).", heights={"top_z": RAW_TOP_MM})
     # The V tip goes the overcut for the line width plus exposure_margin past the front (operator:
     # "punch the rivers through more"). The V then cuts web_min + that of its usable cone; the
     # rest caps the depth per pass of the back rough (a terrace cannot take the V past its cone).
     # The line at the front: line_width + 2 margin tan(a/2) (the exposure margin, 2026-10-31). With the
     # 0.3 mm flat tip the tip goes (w - tip) / (2 tan(a/2)) past the surface for that width, and the
     # cone reaches the body (D - tip) / (2 tan(a/2)) above the tip.
-    t_half = math.tan(math.radians(blk["vgroove_angle"] / 2.0))
-    v_line = blk["line_width"] + 2.0 * margin * t_half
-    v_offset = (v_line - V20_TIP_MM) / (2.0 * t_half)
     cone = ((dia["v20"] - V20_TIP_MM) / 2.0) / math.tan(math.radians(ct["v20"]["angle"] / 2.0))
     usable = cone - mapt["vgroove"]["body_margin"]
     step = math.floor((usable - web - v_offset) * 10.0) / 10.0
     assert step > 0.0, step
+    # Levels: the cavity floor (the hollow channels are narrower than the bit), then the board-pocket
+    # floor (block_back.dxf BOARD_POCKET_D<depth>), so the 6 mm rest does not meet a full-height pocket.
+    board_floor = T1 - float(next(l for l in {e.dxf.layer for e in mech.modelspace()}
+                                  if l.startswith("BOARD_POCKET_D")).split("_D")[1])
+    assert T1 - cav_floor <= big["cutting_length"] and cav_floor - board_floor <= big["cutting_length"]
     span = T1 - hollow_floor
-    # Levels: with the ball pass, the step is at most the ball radius (the ball takes the terraces in one
-    # surface pass); without it, the fewest even passes inside the bit's flute (measured best, 6.89 h).
-    n_big = math.ceil(span / (dia["ball_r3"] / 2.0 if BALL_PASS else big["cutting_length"]))
+    n_big = math.ceil(span / big["cutting_length"])
+    bulk_geo = ({"depth_per_pass": round(T1 - cav_floor, 4)}, round(board_floor, 4)) if HOLLOW_CHANNEL_ONLY else \
+        ({"depth_per_pass": round(span / n_big, 4)}, round(hollow_floor, 4))
     rough3d(f"Back bulk rough {big['diameter']:g} mm", "rough_18", "back_target_s1.stl", None,
-            (f"The bulk of the back target with the {big['diameter']:g} mm bit (operator 2026-11-01: 'use those to\n"
-             f"rough out the bulk'; measured back 9.38 h -> 4.31 h). Levels: the top {T1} to the deepest hollow\n"
-             f"or lake point {hollow_floor:.2f} in {n_big} even passes.\n"
-             "No flat-area levels: they added five 0.1-0.7 mm passes; the 6 mm rest cuts the floors.\n"
+            (f"The bulk of the back target with the {big['diameter']:g} mm bit. Levels: with the channel hollow, the\n"
+             f"cavity floor {cav_floor} then the board-pocket floor {board_floor}; else the top to the deepest hollow or\n"
+             f"lake point {hollow_floor:.2f} in {n_big} even passes (measured best). No flat-area levels.\n"
              "Feeds: run Suggest (no feeds row for this bit)."),
-            in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * big["diameter"], 4),
-                                     "depth_per_pass": round(span / n_big, 4)},
-            heights={"bottom_z": round(hollow_floor, 4)}, detect_flat=False)
+            in_block, 0.0, geometry={"stepover": round(rig["adaptive_woc_factor"] * big["diameter"], 4), **bulk_geo[0]},
+            heights={"bottom_z": bulk_geo[1]}, detect_flat=False)
     if BALL_PASS:
       P.toolpath("Back hollow R3 ball scallop", "scallop", tid["ball_r3"], mids["hollow_s1.stl"], {
           "scallop_height": step, "tolerance": trough["tolerance"], "direction": "outside_in", "continuous": False,
@@ -495,7 +568,7 @@ def main() -> None:
     P.toolpath("Pin drill, flip pins", "alignment_pin_drill", tid["flat_6"], mids["block_outline.dxf"], {
         "diameter": pin_d, "spoilboard_penetration": round(cam["pin_depth"] - T1, 6), "cycle": "peck",
         "peck_depth": dia["flat_6"], "feed_rate": f6["plunge"], "retract_z": 2.0, "spindle_rpm": int(f6["rpm"])},
-        why=f"Three pins (axis + mirror pair). Depth = block.json cam.pin_depth {cam['pin_depth']} = the flat_6 reach.")
+        why=f"{len(pins)} pins (3 left, 2 right, symmetric about the flip axis). Depth = block.json cam.pin_depth {cam['pin_depth']} = the flat_6 reach.")
     hole_top = max(float(l.split("_Z")[1]) for l in holes_layers)
     P.toolpath("Drill light holes 6 mm end mill", "drill", tid["flat_6"], mids["light_holes.dxf"], {
         "floor": {"from": "z", "z": round(T1 - hole_top, 4)}, "cycle": drill_op["cycle"],
@@ -557,6 +630,19 @@ def main() -> None:
              f"({slit_z1 - T1:.3f} into the spoilboard; the slit is open underneath: seal it before the pour). Two passes."),
         heights={"top_z": T1 - slit_z0})
 
+    # ── Setup 1b: the clamp pads (pins in, top clamps off; the side pushers hold)
+    P.setup(3, "1b Clamp pads", "top",
+            "Pins in, top clamps OFF (the side pushers hold). Face the pads the back face left under the clamps, "
+            "so the flipped back sits flat. Same zero.")
+    pad_depth = RAW_TOP_MM - T1
+    P.toolpath("Face clamp pads 6 mm", "pocket", tid["flat_6"], mids["clamp_pads.dxf"], {
+        "stepover": round(rig["woc_roughing_factor"] * dia["flat_6"], 4), "floor": {"from": "z", "z": T1},
+        "depth_per_pass": round(pad_depth, 4), "climb": True, "pattern": "contour", "angle": 0.0,
+        "finishing_passes": 0, "region_ordering": "by_area"},
+        why=(f"The four pads under the top clamps: the keep-out + its clearance + the 18 mm face radius, from the\n"
+             f"measured raw top {RAW_TOP_MM} to T1 {T1} in one pass. Feeds: run Suggest."),
+        heights={"top_z": RAW_TOP_MM, "retract_z": v_retract}, dressups={"entry_style": "none"})
+
     # ── Setup 2: the pour, then the skim
     P.setup(1, "2 Epoxy pour", "top", "The pour and the cure (no cut: the operator removed the skim, 2026-11-01).")
     overfill = mapt["paths"]["overfill"]
@@ -580,7 +666,8 @@ def main() -> None:
     # ── Setup 3: Front (flipped about the X axis on the pins)
     P.setup(2, "3 Front", "bottom",
             f"Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below "
-            f"{cam['pin_top_max']} (the face pass crosses them).")
+            f"{cam['pin_top_max']} (the face pass crosses them). Top clamps as in setup 1.")
+    clamps(T1 + CLAMP_HEIGHT)
     face("Face front to T", cam["face_front"], f"Face the front from T1 {T1} to T {T} (block.json cam.face_front).")
     eng = eng_row
     P.toolpath("Engrave day labels V60", "trace", tid[eng["tool"]], mids["engrave.dxf"], {
@@ -613,6 +700,8 @@ def main() -> None:
             dict(in_relief, containment="center"), tomllib.loads((MONO / "block/testpiece.toml").read_text())["front"]["rough_stock"],
             geometry={"stepover": fr6["stepover"], "depth_per_pass": fr6["depth_per_pass"]},
             stock_source="from_remaining_stock")
+    # A whole-relief R1 rest (remaining stock) was measured 2026-11-02: 4266 m of cut, 3248 m of rapids
+    # (the job went to 48 h). rs_cam has no "only where the 6 mm could not reach" region for a 3D Rough.
     tfin = tpl_ops["Scallop Finish"]["operation"]["params"]
     P.toolpath("Front scallop finish", "scallop", tid["tbn_r1"], mids["relief_sheet_s1.stl"], {
         "scallop_height": tfin["scallop_height"], "tolerance": tfin["tolerance"], "direction": tfin["direction"],
