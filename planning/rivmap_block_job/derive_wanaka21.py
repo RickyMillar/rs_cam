@@ -43,6 +43,7 @@ HERE = Path(__file__).resolve().parent
 RS_CAM = HERE.parents[1]
 OUT = Path("/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21")
 TEMPLATE = Path("/home/ricky/Downloads/big/rivmap_export_350_500/rivmap350.toml")
+MACHINE_LIB = Path.home() / ".config/rs_cam/machines/shapeoko_pro_xxl_scylla.toml"
 MACHINE_FROM = HERE / "testpiece_mini.toml"   # the operator's Scylla grblHAL machine (GUI save)
 
 # ── The operator's stock and pins (the brief, 2026-10-31) ────────────────────
@@ -151,7 +152,12 @@ def machine_text() -> str:
     text = MACHINE_FROM.read_text()
     a = text.index("[job.machine]")
     b = text.index("[job.simulation]")
-    return "\n# The machine: copied from testpiece_mini.toml (the operator's Scylla grblHAL $$ import).\n" + text[a:b]
+    block = text[a:b]
+    import re
+    for key, value in tomllib.loads(MACHINE_LIB.read_text())["rigidity"].items():
+        block = re.sub(rf"(?m)^{key} = .*$", f"{key} = {value}", block)
+    return ("\n# The machine: copied from testpiece_mini.toml (the operator's Scylla grblHAL $$ import); the\n"
+            "# rigidity factors from the machine library.\n" + block)
 
 
 def main() -> None:
@@ -165,6 +171,10 @@ def main() -> None:
     tpl = tomllib.loads(TEMPLATE.read_text())
     tpl_ops = {tp["name"]: tp for s in tpl["setups"] for tp in s["toolpaths"]}
     machine = tomllib.loads(MACHINE_FROM.read_text())["job"]["machine"]
+    # The rigidity factors come from the operator's machine library (the profile's source); the rest of
+    # the machine block from MACHINE_FROM.
+    lib_rig = tomllib.loads(MACHINE_LIB.read_text())["rigidity"]
+    machine["rigidity"] = {**machine["rigidity"], **lib_rig}
 
     T1 = cam["T1"]
     T = blk["thickness"]

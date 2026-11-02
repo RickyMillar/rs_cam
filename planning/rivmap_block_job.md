@@ -773,3 +773,12 @@ The GUI ran OOM at the 16 GB cap; the proxy cap is now 28 GB.
 - Open in rs_cam: every_op_keeps_its_toolpath_g_opgolden (8 move hashes; golden from 10-28) and
   every_op_conforms_w4 check6; the front 3D rough planned for about 10 min on the new build (about
   2 min before): check for a slowdown.
+- Machine rigidity (operator 2026-11-02, "industry standard, a bit softer"): in the machine library
+  `~/.config/rs_cam/machines/shapeoko_pro_xxl_scylla.toml` woc_roughing_factor 0.8 -> 0.4 (the soft
+  end of rs_cam's own pocket guidance, 40-60 % of D) and adaptive_woc_factor 0.25 -> 0.2. The
+  generator now reads the rigidity factors from that file. Lake and antenna pockets step at the tool
+  radius (a 1.6 mm step on the 2 mm tool left a centre sliver).
+- rs_cam defect candidate (G-R1HANG): the operator's R1 rest variant planned for 4 h without an end
+  (cancelled): 3D Rough, R1 x 6 x 20 tapered ball, remaining stock, geodesic_adaptive, region_ordering
+  by_area, detect_flat_areas true, rest_max_region_width_mm 20, stepover 0.66, depth_per_pass 2.0,
+  leave 0.5, bottom_z 13.0, boundary EDGE_OUTER centre.

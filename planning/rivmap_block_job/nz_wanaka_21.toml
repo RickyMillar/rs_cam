@@ -61,7 +61,8 @@ spindle_strategy = "match_chart"
 controller_waits_for_spindle = true
 
 
-# The machine: copied from testpiece_mini.toml (the operator's Scylla grblHAL $$ import).
+# The machine: copied from testpiece_mini.toml (the operator's Scylla grblHAL $$ import); the
+# rigidity factors from the machine library.
 [job.machine]
 name = "Shapeoko Pro XXL (Scylla grblHAL, H100 1.5 kW VFD, $$ 2026-10-15)"
 max_feed_mm_min = 15000.0
@@ -84,11 +85,11 @@ q = 1.26
 [job.machine.rigidity]
 doc_roughing_factor = 0.25
 doc_finishing_factor = 0.1
-woc_roughing_factor = 0.8
+woc_roughing_factor = 0.4
 woc_roughing_max_mm = 6.35
 woc_finishing_mm = 0.635
 adaptive_doc_factor = 2.0
-adaptive_woc_factor = 0.25
+adaptive_woc_factor = 0.2
 
 [job.machine.kinematics]
 acceleration_mm_s2 = 983.3333333333334
@@ -585,7 +586,7 @@ coolant = "off"
 kind = "face"
 
 [setups.toolpaths.operation.params]
-stepover = 14.4
+stepover = 7.2
 depth = 0.5
 depth_per_pass = 0.5
 stock_offset = 18.0
@@ -647,7 +648,7 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 4.5
+stepover = 3.6
 depth_per_pass = 9.0
 stock_to_leave_axial = 0.0
 tolerance = 0.1
@@ -732,7 +733,7 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 1.5
+stepover = 1.2
 depth_per_pass = 1.2
 stock_to_leave_axial = 0.0
 feed_rate = 826
@@ -1348,7 +1349,7 @@ coolant = "off"
 kind = "pocket"
 
 [setups.toolpaths.operation.params]
-stepover = 4.8
+stepover = 2.4
 floor = { from = "z", z = 25.5 }
 depth_per_pass = 0.5
 climb = true
@@ -1503,7 +1504,7 @@ coolant = "off"
 kind = "face"
 
 [setups.toolpaths.operation.params]
-stepover = 14.4
+stepover = 7.2
 depth = 0.5
 depth_per_pass = 0.5
 stock_offset = 18.0
@@ -1625,7 +1626,7 @@ coolant = "off"
 kind = "adaptive3d"
 
 [setups.toolpaths.operation.params]
-stepover = 4.5
+stepover = 3.6
 depth_per_pass = 4.1667
 stock_to_leave_axial = 0.5
 tolerance = 0.1
