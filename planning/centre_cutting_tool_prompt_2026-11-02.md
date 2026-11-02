@@ -89,3 +89,49 @@ Project: `planning/rivmap_block_job/nz_wanaka_21.toml` (models in
 - The folder sentries, `cargo test -p rs_cam_viz --lib`, `cargo test -p rs_cam_mcp`, and the full
   clippy line are green.
 - Update `FEATURE_CATALOG.md` and the folder `CLAUDE.md` files you change.
+
+---
+
+## Status 2026-11-02 (night) and the next prompt
+
+Part 1 is committed (aa048853c): `ToolConfig.non_centre_cutting` (`NonCentreCuttingGeometry`, the
+one formula `NonCentreCuttingGeometry::limits`) through the TOML library, the project file, MCP, the
+CLI and the GUI tool panel. Nothing reads the limits yet. A first part-2 attempt stopped before it
+changed code.
+
+Paste this for part 2:
+
+> Continue G-CENTRECUT in `/home/ricky/personal_repos/rs_cam` (read
+> `planning/centre_cutting_tool_prompt_2026-11-02.md` first, then the folder `CLAUDE.md` files you
+> touch). Part 1 (the tool model) is committed in aa048853c. Build part 2: enforcement.
+>
+> Operator rule: the TOOL owns the limit and every toolpath accepts it from the tool. No op, planner
+> or dressup gets its own formula or its own copy of the check. Use the existing shared patterns:
+> the entry builders (`dressup/`, G10 `helix_radius_for` / `entry_feed_rate`, `feeds/ramp.rs`), the
+> one session stage after generation (`JobPhases::run_stages`, beside `clip_and_split_entries`), and
+> the shared simulation decisions in `compute/simulate.rs` (put a new one there, not in one builder).
+>
+> 1. Generation: every entry that a shared builder makes (ramp, helix, the 3D Rough stock-aware
+>    entries) reads `ToolConfig::non_centre_cutting_limits()` and keeps the descent into stock at or
+>    under the limit angle and a straight plunge into stock at or under the protrusion. A planner
+>    that cannot meet it refuses with a named `OperationError`; it does not cut silently.
+> 2. One gate: a simulation finding (blocking: export refuses) for any sample where a
+>    non-centre-cutting tool goes down into stock steeper than its limit or plunges deeper than the
+>    protrusion. Absolute limits, not relative to the median bite (the `project.entry_load` gate
+>    misses a deep bulk pass for that reason). Descents in air are allowed.
+> 3. Sentries: a 3D Rough on a synthetic pocket that today emits a straight plunge into stock with
+>    such a tool (red before the fix; inject the defect once), and a gate test.
+>
+> Done when the nz-wanaka-21 18 mm bulk ops (set the 18 mm bit to core 8, protrusion 1 in a COPY of
+> `planning/rivmap_block_job/nz_wanaka_21.toml`) emit no plunge into stock deeper than 1 mm and no
+> descent into stock steeper than 7.13 deg, with 0 collisions; folder sentries, `rs_cam_viz --lib`,
+> `rs_cam_mcp` and the full clippy line green. Do not build the release GUI until the end (another
+> session runs it). Commit by path; agents do not commit if the lead says so.
+
+Two more generic features for later (operator, 2026-11-02):
+
+- Rest region filter on 3D Rough (remaining stock): cut only regions up to a given area, or only
+  where the remaining material is up to a given thickness. Then a small finish ball can rest only
+  the valleys a larger rough could not reach (a whole-relief rest measured 4266 m on nz-wanaka-21).
+- Project Curve depth per pass (and the open-path offset): needed for a 6 mm trace along the rivers
+  that replaces the adaptive in the back hollow channels.
