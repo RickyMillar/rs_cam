@@ -157,6 +157,7 @@ fn six_mm_flat() -> ToolConfig {
         vendor: String::new(),
         product_id: String::new(),
         size_units: None,
+        non_centre_cutting: None,
     }
 }
 

@@ -181,6 +181,7 @@ impl ProjectSession {
                 vendor: t.vendor.clone(),
                 product_id: t.product_id.clone(),
                 size_units: t.size_units,
+                non_centre_cutting: t.non_centre_cutting,
             })
             .collect();
 

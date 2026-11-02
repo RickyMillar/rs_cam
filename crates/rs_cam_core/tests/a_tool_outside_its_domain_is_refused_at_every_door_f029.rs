@@ -17,7 +17,7 @@
 )]
 
 use rs_cam_core::compute::build_cutter;
-use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolType};
+use rs_cam_core::compute::tool_config::{NonCentreCuttingGeometry, ToolConfig, ToolId, ToolType};
 use rs_cam_core::io::tool_library::{self, ToolCatalog, ToolLibraryError};
 use rs_cam_core::session::{
     AddToolArgs, Command, ProjectSession, ProjectSessionBuilder, ReplaceToolArgs, ReplaceToolsArgs,
@@ -86,6 +86,49 @@ fn set_tool_param_refuses_and_keeps_the_stored_tool() {
         }))
         .unwrap();
     assert_eq!(session.tools()[0].included_angle, 90.0);
+}
+
+#[test]
+fn invalid_non_centre_cutting_param_rolls_back() {
+    let mut session = ProjectSessionBuilder::new()
+        .tool(ToolConfig::new_default(
+            ToolId::from_raw(0),
+            ToolType::EndMill,
+        ))
+        .build();
+    let valid = serde_json::json!({
+        "centre_core_diameter_mm": 3.0,
+        "blade_protrusion_mm": 1.0,
+    });
+    let _ = session
+        .apply(Command::SetToolParam(SetToolParamArgs {
+            index: 0,
+            param: "non_centre_cutting".to_owned(),
+            value: valid,
+        }))
+        .unwrap();
+    let before = session.tools()[0].non_centre_cutting;
+    let invalid = serde_json::json!({
+        "centre_core_diameter_mm": 7.0,
+        "blade_protrusion_mm": 1.0,
+    });
+    assert!(
+        session
+            .apply(Command::SetToolParam(SetToolParamArgs {
+                index: 0,
+                param: "non_centre_cutting".to_owned(),
+                value: invalid,
+            }))
+            .is_err()
+    );
+    assert_eq!(session.tools()[0].non_centre_cutting, before);
+    assert_eq!(
+        before,
+        Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 3.0,
+            blade_protrusion_mm: 1.0,
+        })
+    );
 }
 
 #[test]

@@ -95,6 +95,7 @@ fn endmill(stickout: f64) -> ToolConfig {
         vendor: String::new(),
         product_id: String::new(),
         size_units: None,
+        non_centre_cutting: None,
     }
 }
 

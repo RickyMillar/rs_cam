@@ -193,13 +193,14 @@ pub enum ToolParamKey {
     ToolMaterial,
     CutDirection,
     SizeUnits,
+    NonCentreCutting,
 }
 
 impl ToolParamKey {
     pub const ALL: &[ToolParamKey] = &crate::all_variants!(ToolParamKey:
         Diameter, CuttingLength, HelixDeg, CornerRadiusMm, CornerRadius,
         IncludedAngle, TaperHalfAngle, ShaftDiameter, ShankDiameter, Stickout,
-        FluteCount, ToolMaterial, CutDirection, SizeUnits,
+        FluteCount, ToolMaterial, CutDirection, SizeUnits, NonCentreCutting,
     );
 
     /// The snake_case token: the serde form and the [`ToolConfig`] field
@@ -221,6 +222,7 @@ impl ToolParamKey {
             Self::ToolMaterial => "tool_material",
             Self::CutDirection => "cut_direction",
             Self::SizeUnits => "size_units",
+            Self::NonCentreCutting => "non_centre_cutting",
         }
     }
 
@@ -300,6 +302,41 @@ impl ToolParamKey {
                 })?);
                 Ok(())
             }
+            Self::NonCentreCutting => {
+                tool.non_centre_cutting = serde_json::from_value(value.clone()).map_err(|e| {
+                    format!(
+                        "non_centre_cutting must be an object with centre_core_diameter_mm and \
+                         blade_protrusion_mm, or null (got {value}: {e})"
+                    )
+                })?;
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Measurements of a tool that does not cut at its centre.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct NonCentreCuttingGeometry {
+    pub centre_core_diameter_mm: f64,
+    pub blade_protrusion_mm: f64,
+}
+
+/// The safe descent limits derived from [`NonCentreCuttingGeometry`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NonCentreCuttingLimits {
+    pub max_plunge_depth_mm: f64,
+    pub max_descent_angle_deg: f64,
+}
+
+impl NonCentreCuttingGeometry {
+    /// Derive the limits from the measured centre core and blade protrusion.
+    pub fn limits(self) -> NonCentreCuttingLimits {
+        NonCentreCuttingLimits {
+            max_plunge_depth_mm: self.blade_protrusion_mm,
+            max_descent_angle_deg: (self.blade_protrusion_mm / self.centre_core_diameter_mm)
+                .atan()
+                .to_degrees(),
         }
     }
 }
@@ -340,6 +377,9 @@ pub struct ToolConfig {
     /// display and entry convention only: every length above is in mm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_units: Option<SizeUnits>,
+    /// Measured centre core and blade protrusion. `None` means centre cutting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub non_centre_cutting: Option<NonCentreCuttingGeometry>,
 }
 
 fn default_helix_deg() -> f64 {
@@ -376,6 +416,7 @@ impl ToolConfig {
             vendor: String::new(),
             product_id: String::new(),
             size_units: None,
+            non_centre_cutting: None,
         };
         // The block above is the canonical geometry of each type, but
         // it was written type-AGNOSTICALLY: every tool got corner
@@ -409,6 +450,10 @@ impl ToolConfig {
         ToolDimension::FluteCount.check(f64::from(self.flute_count), d)?;
         ToolDimension::ShankDiameter.check(self.shank_diameter, d)?;
         ToolDimension::Stickout.check(self.stickout, d)?;
+        if let Some(geometry) = self.non_centre_cutting {
+            ToolDimension::CentreCoreDiameterMm.check(geometry.centre_core_diameter_mm, d)?;
+            ToolDimension::BladeProtrusionMm.check(geometry.blade_protrusion_mm, d)?;
+        }
         match self.tool_type {
             ToolType::EndMill => ToolDimension::CornerRadiusMm.check(self.corner_radius_mm, d),
             ToolType::BallNose => Ok(()),
@@ -419,6 +464,12 @@ impl ToolConfig {
                 ToolDimension::ShaftDiameter.check(self.shaft_diameter, d)
             }
         }
+    }
+
+    /// Limits for this non-centre-cutting tool, if it has measured geometry.
+    pub fn non_centre_cutting_limits(&self) -> Option<NonCentreCuttingLimits> {
+        self.non_centre_cutting
+            .map(NonCentreCuttingGeometry::limits)
     }
 
     /// The feeds geometry hint of this tool, read from the record with no
@@ -2228,6 +2279,43 @@ product_id = ""
         assert_eq!(back.size_units, Some(SizeUnits::Imperial));
     }
 
+    #[test]
+    fn non_centre_cutting_serde_and_limits() {
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 8.0,
+            blade_protrusion_mm: 1.0,
+        });
+        let limits = tool.non_centre_cutting_limits().unwrap();
+        assert_eq!(limits.max_plunge_depth_mm, 1.0);
+        assert!((limits.max_descent_angle_deg - 7.125_016_349).abs() < 1e-9);
+        let json = serde_json::to_value(&tool).unwrap();
+        assert_eq!(json["non_centre_cutting"]["centre_core_diameter_mm"], 8.0);
+        let back: ToolConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(back.non_centre_cutting, tool.non_centre_cutting);
+    }
+
+    #[test]
+    fn non_centre_cutting_domain_refuses_invalid_measurements() {
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: tool.diameter,
+            blade_protrusion_mm: 0.0,
+        });
+        assert_eq!(
+            tool.validate().unwrap_err().dimension,
+            ToolDimension::CentreCoreDiameterMm
+        );
+        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 3.0,
+            blade_protrusion_mm: -0.1,
+        });
+        assert_eq!(
+            tool.validate().unwrap_err().dimension,
+            ToolDimension::BladeProtrusionMm
+        );
+    }
+
     /// F118: the token of each key is its serde form, and `parse` reads
     /// only that token.
     #[test]
@@ -2277,5 +2365,18 @@ product_id = ""
         );
         assert!(!ToolParamKey::SizeUnits.changes_the_cut());
         assert!(ToolParamKey::HelixDeg.changes_the_cut());
+    }
+
+    #[test]
+    fn non_centre_cutting_param_is_atomic() {
+        let mut tool = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        tool.non_centre_cutting = Some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 3.0,
+            blade_protrusion_mm: 1.0,
+        });
+        ToolParamKey::NonCentreCutting
+            .write(&mut tool, &serde_json::Value::Null)
+            .unwrap();
+        assert_eq!(tool.non_centre_cutting, None);
     }
 }

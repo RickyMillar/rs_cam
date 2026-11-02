@@ -52,7 +52,10 @@ pub use config::{
     ReferenceOffset, ResolvedHeights, StockSource, ToolpathId,
 };
 
-pub use tool_config::{BitCutDirection, ToolConfig, ToolId, ToolMaterial, ToolType};
+pub use tool_config::{
+    BitCutDirection, NonCentreCuttingGeometry, NonCentreCuttingLimits, ToolConfig, ToolId,
+    ToolMaterial, ToolType,
+};
 
 pub use stock_config::{ModelKind, ModelUnits, StockConfig};
 

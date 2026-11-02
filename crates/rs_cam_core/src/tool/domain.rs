@@ -47,6 +47,10 @@ pub enum ToolDimension {
     ShankDiameter,
     /// Stickout from the holder face, mm.
     Stickout,
+    /// Diameter of the uncut centre core, mm.
+    CentreCoreDiameterMm,
+    /// Blade protrusion below the centre core, mm.
+    BladeProtrusionMm,
 }
 
 /// One end of a [`ToolDomain`].
@@ -132,6 +136,8 @@ impl ToolDimension {
             ToolDimension::ShaftDiameter => "shaft_diameter",
             ToolDimension::ShankDiameter => "shank_diameter",
             ToolDimension::Stickout => "stickout",
+            ToolDimension::CentreCoreDiameterMm => "centre_core_diameter_mm",
+            ToolDimension::BladeProtrusionMm => "blade_protrusion_mm",
         }
     }
 
@@ -151,9 +157,10 @@ impl ToolDimension {
             ToolDimension::IncludedAngle => ToolDomain::new(Open(0.0), Open(180.0)),
             ToolDimension::TaperHalfAngle => ToolDomain::new(Open(0.0), Open(90.0)),
             ToolDimension::ShaftDiameter => ToolDomain::new(Closed(diameter_mm), Unbounded),
-            ToolDimension::ShankDiameter | ToolDimension::Stickout => {
-                ToolDomain::new(Closed(0.0), Unbounded)
-            }
+            ToolDimension::ShankDiameter
+            | ToolDimension::Stickout
+            | ToolDimension::BladeProtrusionMm => ToolDomain::new(Closed(0.0), Unbounded),
+            ToolDimension::CentreCoreDiameterMm => ToolDomain::new(Open(0.0), Open(diameter_mm)),
         }
     }
 
@@ -177,6 +184,8 @@ impl ToolDimension {
             ToolDimension::ShaftDiameter => diameter_mm..=100.0,
             ToolDimension::ShankDiameter => 0.0..=100.0,
             ToolDimension::Stickout => 0.0..=300.0,
+            ToolDimension::CentreCoreDiameterMm => 0.01..=diameter_mm,
+            ToolDimension::BladeProtrusionMm => 0.0..=diameter_mm,
         }
     }
 

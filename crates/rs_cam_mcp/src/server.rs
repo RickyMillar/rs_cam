@@ -15,8 +15,8 @@ use rs_cam_core::compute::catalog::OperationType;
 use rs_cam_core::compute::config::{BoundaryContainment, StockSource};
 use rs_cam_core::compute::tool_config::{ToolConfig, ToolId, ToolParamKey, ToolType};
 use rs_cam_core::compute::transform::{FaceUp, ZRotation};
-use rs_cam_core::feeds::suggest::ApplyScope;
 use rs_cam_core::feeds::SpindleStrategy;
+use rs_cam_core::feeds::suggest::ApplyScope;
 use rs_cam_core::material::Material;
 use rs_cam_core::session::TierStrategy;
 use rs_cam_core::trace::toolpath_spans::SpanKind;
@@ -1411,6 +1411,8 @@ pub enum ToolParamKeyParam {
     /// The display unit: "metric" or "imperial". It changes no stored
     /// length and invalidates nothing.
     SizeUnits,
+    /// Measured non-centre-cutting geometry, or `null` for a centre-cutting tool.
+    NonCentreCutting,
 }
 
 impl From<ToolParamKeyParam> for ToolParamKey {
@@ -1430,6 +1432,7 @@ impl From<ToolParamKeyParam> for ToolParamKey {
             ToolParamKeyParam::ToolMaterial => Self::ToolMaterial,
             ToolParamKeyParam::CutDirection => Self::CutDirection,
             ToolParamKeyParam::SizeUnits => Self::SizeUnits,
+            ToolParamKeyParam::NonCentreCutting => Self::NonCentreCutting,
         }
     }
 }
@@ -1458,6 +1461,7 @@ impl From<ToolParamKey> for ToolParamKeyParam {
             ToolParamKey::ToolMaterial => Self::ToolMaterial,
             ToolParamKey::CutDirection => Self::CutDirection,
             ToolParamKey::SizeUnits => Self::SizeUnits,
+            ToolParamKey::NonCentreCutting => Self::NonCentreCutting,
         }
     }
 }
@@ -1704,6 +1708,27 @@ pub struct AddToolParam {
     /// to infer it from the name (an inch token such as `1/4"` or `0.25in`
     /// selects imperial). Display only: every length here is still mm.
     pub size_units: Option<SizeUnitsParam>,
+    /// Measured centre core and blade protrusion. Omit for a centre-cutting tool.
+    pub non_centre_cutting: Option<NonCentreCuttingGeometryParam>,
+}
+
+/// Measured geometry of a non-centre-cutting tool.
+#[derive(Deserialize, schemars::JsonSchema, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NonCentreCuttingGeometryParam {
+    /// Diameter of the uncut centre core, mm.
+    pub centre_core_diameter_mm: f64,
+    /// Blade protrusion below the centre core, mm.
+    pub blade_protrusion_mm: f64,
+}
+
+impl From<NonCentreCuttingGeometryParam> for rs_cam_core::compute::NonCentreCuttingGeometry {
+    fn from(value: NonCentreCuttingGeometryParam) -> Self {
+        Self {
+            centre_core_diameter_mm: value.centre_core_diameter_mm,
+            blade_protrusion_mm: value.blade_protrusion_mm,
+        }
+    }
 }
 
 /// The unit a tool size is shown in. Inline for the same reason as
@@ -3636,6 +3661,7 @@ pub fn build_tool_config(spec: &AddToolParam) -> Result<BuiltTool, String> {
     // Display only, so never reported as defaulted: `None` infers the
     // unit from the name.
     config.size_units = spec.size_units.map(Into::into);
+    config.non_centre_cutting = spec.non_centre_cutting.clone().map(Into::into);
 
     config
         .validate()
@@ -4791,6 +4817,25 @@ mod tests {
         assert_eq!(parsed.size_units, Some(SizeUnitsParam::Imperial));
     }
 
+    #[test]
+    fn non_centre_cutting_reaches_the_tool_builder() {
+        let spec = AddToolParam {
+            non_centre_cutting: Some(NonCentreCuttingGeometryParam {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: 1.0,
+            }),
+            ..add_tool_spec("end_mill", 6.0)
+        };
+        let built = build_tool_config(&spec).unwrap();
+        assert_eq!(
+            built.config.non_centre_cutting,
+            Some(rs_cam_core::compute::NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: 1.0,
+            })
+        );
+    }
+
     /// Defaults that remain are NAMED, so "25 mm of cutting length" can
     /// never again read as a measurement of the caller's tool.
     #[test]
@@ -4826,11 +4871,13 @@ mod tests {
                 "`{field}` was supplied — it must not be reported as defaulted"
             );
         }
-        assert!(build_tool_config(&AddToolParam {
-            flute_count: Some(0),
-            ..add_tool_spec("end_mill", 6.0)
-        })
-        .is_err());
+        assert!(
+            build_tool_config(&AddToolParam {
+                flute_count: Some(0),
+                ..add_tool_spec("end_mill", 6.0)
+            })
+            .is_err()
+        );
     }
 
     /// `add_tool` is all-optional beyond name/type/diameter, and the

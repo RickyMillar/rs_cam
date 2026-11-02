@@ -125,6 +125,7 @@ fn tool_fields() -> Vec<&'static str> {
         vendor: _,
         product_id: _,
         size_units: _,
+        non_centre_cutting: _,
     } = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     vec![
         "id",
@@ -147,6 +148,7 @@ fn tool_fields() -> Vec<&'static str> {
         "vendor",
         "product_id",
         "size_units",
+        "non_centre_cutting",
     ]
 }
 
@@ -200,6 +202,10 @@ fn every_tool_field_is_a_param_key_or_has_its_own_door() {
     let tool_names = tool_fields();
     let mut probe = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
     probe.size_units = Some(rs_cam_core::compute::tool_config::SizeUnits::Metric);
+    probe.non_centre_cutting = Some(rs_cam_core::compute::NonCentreCuttingGeometry {
+        centre_core_diameter_mm: 3.0,
+        blade_protrusion_mm: 1.0,
+    });
     assert_names_are_serde_keys(
         &tool_names,
         &serde_json::to_value(&probe).expect("serialise the tool"),

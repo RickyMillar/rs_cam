@@ -29,7 +29,7 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
 - One vocabulary per concept across `job` TOML, `run` and MCP. A tool
   type is `ToolType`'s own serde token (`end_mill`, `ball_nose`,
   `bull_nose`, `v_bit`, `tapered_ball_nose`) on every surface; do not
-  add a CLI-only spelling.
+  add a CLI-only spelling. A job tool's optional `non_centre_cutting` object uses the core measurement shape; `run --tool-set non_centre_cutting=<JSON>` uses the generic setter.
 - A named machine profile comes from `io::machine_library`, the library
   the GUI and MCP share. Do not add a hardcoded preset to a subcommand.
   The one exception is `nc-time` with no `--machine`: it keeps the

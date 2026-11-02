@@ -365,11 +365,22 @@ fn dedupe_key(t: &ToolConfig) -> String {
         vendor: _,
         product_id: _,
         size_units: _,
+        non_centre_cutting,
     } = t;
+    let non_centre_cutting = non_centre_cutting.map_or_else(
+        || "centre_cutting".to_owned(),
+        |geometry| {
+            format!(
+                "non_centre:{:.3}:{:.3}",
+                geometry.centre_core_diameter_mm, geometry.blade_protrusion_mm
+            )
+        },
+    );
     format!(
         "{tool_type:?}|{diameter:.3}|{flute_count}|{cutting_length:.3}|{taper_half_angle:.2}|\
          {included_angle:.2}|{corner_radius:.3}|{corner_radius_mm:.3}|{shaft_diameter:.3}|\
-         {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}",
+         {shank_diameter:.3}|{helix_deg:.2}|{tool_material:?}|{cut_direction:?}|\
+         {non_centre_cutting}",
     )
 }
 

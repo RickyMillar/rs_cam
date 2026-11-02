@@ -9,6 +9,7 @@ run the server; the live server, GUI dispatch and session ownership are in
   a client discovers the legal values from the schema. Mark such an enum
   `#[schemars(inline)]` — the published tool schema carries no `$defs`,
   so a `$ref` does not resolve for a client.
+- The optional non-centre-cutting tool geometry is one measured object or null; do not split it into partial setters.
 - A wire enum that mirrors a core enum converts with an exhaustive
   `match` in BOTH directions (`server.rs`, F166), so a variant that core
   gains does not compile until the wire carries it (S11: `FloorParam::Unset`

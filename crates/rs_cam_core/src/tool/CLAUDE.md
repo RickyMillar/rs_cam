@@ -10,7 +10,7 @@ One module per cutter family. The trait and the shared radius queries live in
 - `flat.rs` (`FlatEndmill`), `ball.rs` (`BallEndmill`), `bullnose.rs` (`BullNoseEndmill`, toroidal), `tapered_ball.rs` (`TaperedBallEndmill`), `vbit.rs` (`VBitEndmill`).
 - `size_units.rs` — `SizeUnits` (mm or inch), inch fractions and the
   length entry parser. Display and entry only: every length stays in mm.
-- `domain.rs` — `ToolDimension::domain` (math bounds), `ui_range` (GUI drag only), `ToolGeometryError`.
+- `domain.rs` — `ToolDimension::domain` (math bounds), `ui_range` (GUI drag only), `ToolGeometryError`; centre-core and blade-protrusion measurement bounds.
 
 ## Invariants
 

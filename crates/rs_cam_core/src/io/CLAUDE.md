@@ -11,7 +11,7 @@ Every door that reads a file. The entry point is `io::load_model_file`.
   nearest `<g>`; subpaths join; `SVG_DEFAULT_UNITS`, `svg_declared_size`.
 - `step_input.rs` — STEP import through the `truck` crate. A closed shell that winds inward is reversed once (`orient_shell_outward`).
   Face loops walk in a fixed order, the largest first (the outer ring), so a re-import gives the same keys (UX-7).
-- `tool_library.rs`, `machine_library.rs` — the TOML catalogues (`crate::settings::paths`); `named_toml_library.rs` — their directory code.
+- `tool_library.rs`, `machine_library.rs` — the TOML catalogues (`crate::settings::paths`); tool catalogues preserve the optional non-centre-cutting measurement; `named_toml_library.rs` — their directory code.
 
 ## Invariants
 - An import states its units and its `ImportOptions`. A reload, rescale and relink pass both.

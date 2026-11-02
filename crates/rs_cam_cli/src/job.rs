@@ -192,6 +192,9 @@ pub struct ToolDef {
     /// the job's simulation cutter both take (F116 step 1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stickout: Option<f64>,
+    /// Measured centre core and blade protrusion. Omit for a centre-cutting tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub non_centre_cutting: Option<rs_cam_core::compute::NonCentreCuttingGeometry>,
 }
 
 /// One `[[operation]]` table.
@@ -1155,6 +1158,7 @@ fn tool_config_from_def(def: &ToolDef, name: &str) -> Result<ToolConfig> {
     if let Some(stickout) = def.stickout {
         tc.stickout = stickout;
     }
+    tc.non_centre_cutting = def.non_centre_cutting;
     Ok(tc)
 }
 
@@ -1837,6 +1841,7 @@ mod tests {
             shaft_diameter: None,
             shank_diameter: None,
             stickout: None,
+            non_centre_cutting: None,
         }
     }
 
@@ -1866,6 +1871,21 @@ mod tests {
         let cutter = cutter_of(&end_mill_def()).unwrap();
         assert_eq!(cutter.stickout.to_bits(), tool.stickout.to_bits());
         assert_eq!(cutter.flute_count, tool.flute_count);
+    }
+
+    #[test]
+    fn non_centre_cutting_job_geometry_reaches_tool_config() {
+        let def = ToolDef {
+            non_centre_cutting: Some(rs_cam_core::compute::NonCentreCuttingGeometry {
+                centre_core_diameter_mm: 3.0,
+                blade_protrusion_mm: 1.0,
+            }),
+            ..end_mill_def()
+        };
+        assert_eq!(
+            tool_config_from_def(&def, "t").unwrap().non_centre_cutting,
+            def.non_centre_cutting
+        );
     }
 
     /// A job tool must state the geometry that defines its type.
@@ -1926,6 +1946,7 @@ mod tests {
             shaft_diameter: None,
             shank_diameter: None,
             stickout: None,
+            non_centre_cutting: None,
         };
         let cutter = cutter_of(&flat_def).unwrap();
         assert!((cutter.radius() - 3.0).abs() < 1e-10);
@@ -1941,6 +1962,7 @@ mod tests {
             shaft_diameter: None,
             shank_diameter: None,
             stickout: None,
+            non_centre_cutting: None,
         };
         let ball_cutter = cutter_of(&ball_def).unwrap();
         assert!((ball_cutter.radius() - 5.0).abs() < 1e-10);
@@ -1959,6 +1981,7 @@ mod tests {
             shaft_diameter: Some(12.0),
             shank_diameter: None,
             stickout: None,
+            non_centre_cutting: None,
         };
         let tapered_cutter = cutter_of(&tapered_def).unwrap();
         // radius() should return shaft_diameter / 2.0 = 6.0

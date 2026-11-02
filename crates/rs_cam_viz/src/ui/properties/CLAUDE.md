@@ -13,7 +13,7 @@
   `post.rs`, `pills.rs`, `head.rs` (H2: the Machine panel's Head section), `shoe_row.rs` (H2: the dust shoe row).
 
 ## Invariants
-- Every edit writes through the core command path. Helix r: None = rule. The stock refit (`panel_apply.rs`) reads core `session::auto_stock_bbox` (F31, every model). The inspector nests ONCE.
+- Every edit writes through the core command path. The tool editor keeps optional non-centre-cutting measurements in its draft; it never invents a measurement. Helix r: None = rule. The stock refit (`panel_apply.rs`) reads core `session::auto_stock_bbox` (F31, every model). The inspector nests ONCE.
 - R2/6.F4: the header Tool row greys each tool of `ToolpathPanelInputs::tool_refusals` (core `tool_fit`); `no_tool_state` is its hover (lib `the_tool_picker_greys_refused_tools_r2`). R3: the panel never writes `show_reach_map`; the Reach row asks, `draw_toolpath_selection` calls `registry::set_overlay`. The toolpath panel takes `ToolpathPanelSnapshot` and `ToolpathPanelInputs`. Add a field there, not a
   parameter. Width: not from tab or content (F22); "Done · BLOCKED" never truncates (figures drop).
   W2b/W3f: `placement::place(list, op)` reads `Diagnostic.anchor`: Tool → Tool row; Field → its `PropRow` when `field_tab(key, op)` names a tab (that tab gets the dot), else the issue stack (no dot); Operation → issue stack; Note/Info/Hint → `NotesCounter`; Project/View/not current → nothing. `field_tab` mirrors the tab predicates (peck only Peck/Chip-break, no scallop row on Drop Cutter, 3D Rough Entry style on Passes); lib `drawn_field_rows_match_the_painted_rows_w3f` draws every tab headless (`record_drawn`) and holds it for each core `anchor_field_names` key.

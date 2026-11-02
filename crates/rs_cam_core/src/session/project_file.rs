@@ -876,6 +876,8 @@ pub struct ProjectToolSection {
     /// "infer from the name". Display only: every length above is mm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_units: Option<crate::compute::tool_config::SizeUnits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub non_centre_cutting: Option<crate::compute::NonCentreCuttingGeometry>,
 }
 
 fn default_tool_name() -> String {
@@ -1207,6 +1209,7 @@ pub(crate) fn tool_from_project_section(
         vendor: ts.vendor.clone(),
         product_id: ts.product_id.clone(),
         size_units: ts.size_units,
+        non_centre_cutting: ts.non_centre_cutting,
     }
 }
 

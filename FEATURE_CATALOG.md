@@ -44,6 +44,8 @@ For source attribution and upstream lineage, see [`CREDITS.md`](CREDITS.md).
 
 ## Tooling and setup
 
+- **Non-centre-cutting tool model** — Tools can store measured `centre_core_diameter_mm` and `blade_protrusion_mm`. The model is optional; no value means centre cutting. The GUI tool editor, project and tool-library TOML, CLI job TOML, CLI `--tool-set`, and MCP `add_tool` / `set_tool_param` carry it. The core validates finite measurements, `0 < core < diameter`, and `protrusion >= 0`. It derives the maximum plunge depth and descent angle for later planning and simulation gates. A zero protrusion permits lateral cutting only.
+
 ### Tool families
 
 - Flat end mill

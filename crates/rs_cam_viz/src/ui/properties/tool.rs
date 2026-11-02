@@ -2,7 +2,7 @@ use crate::state::job::{BitCutDirection, ToolConfig, ToolMaterial, ToolType};
 use crate::ui::components::UiExt as _;
 use crate::ui::components::ValueRow;
 use crate::ui::theme;
-use rs_cam_core::compute::tool_config::{SizeUnits, ToolDimension};
+use rs_cam_core::compute::tool_config::{NonCentreCuttingGeometry, SizeUnits, ToolDimension};
 
 /// The "Size in" choices, in the order the selector shows them.
 const SIZE_UNIT_CHOICES: &[(SizeUnits, &str)] = &[
@@ -367,6 +367,40 @@ pub(crate) fn draw_tool_fields(
                 " mm",
                 0.1,
                 ToolDimension::ShaftDiameter.ui_range(tool.diameter),
+            )
+            .keep_existing()
+            .show(ui);
+        });
+    }
+
+    ui.add_space(12.0);
+    let mut non_centre_cutting = tool.non_centre_cutting.is_some();
+    if ui
+        .checkbox(&mut non_centre_cutting, "Does not cut at centre")
+        .changed()
+    {
+        tool.non_centre_cutting = non_centre_cutting.then_some(NonCentreCuttingGeometry {
+            centre_core_diameter_mm: 0.0,
+            blade_protrusion_mm: 0.0,
+        });
+    }
+    if let Some(geometry) = &mut tool.non_centre_cutting {
+        ui.param_grid("non_centre_cutting", |ui| {
+            ValueRow::new(
+                "Centre core Ø:",
+                &mut geometry.centre_core_diameter_mm,
+                " mm",
+                0.1,
+                0.0..=tool.diameter,
+            )
+            .keep_existing()
+            .show(ui);
+            ValueRow::new(
+                "Blade protrusion:",
+                &mut geometry.blade_protrusion_mm,
+                " mm",
+                0.1,
+                0.0..=tool.diameter,
             )
             .keep_existing()
             .show(ui);

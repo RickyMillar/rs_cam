@@ -3000,6 +3000,7 @@ mod tests {
                 vendor: String::new(),
                 product_id: String::new(),
                 size_units: None,
+                non_centre_cutting: None,
             }],
             models: Vec::new(),
             setups: vec![ProjectSetupSection {

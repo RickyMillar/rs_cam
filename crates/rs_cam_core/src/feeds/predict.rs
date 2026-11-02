@@ -872,6 +872,7 @@ mod tests {
             cut_direction: BitCutDirection::UpCut,
             vendor: String::new(),
             product_id: String::new(),
+            non_centre_cutting: None,
         }
     }
 
