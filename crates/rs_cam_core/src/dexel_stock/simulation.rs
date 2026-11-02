@@ -643,6 +643,32 @@ impl TriDexelStock {
                     );
                 }
                 MoveType::Linear { feed_rate } => {
+                    // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                    // judged against the stock as it stands HERE, before its own stamp. The
+                    // flush is paid only on a candidate, as the rapid arm does.
+                    if rapid_check
+                        .as_deref()
+                        .is_some_and(|check| check.core_descent_candidate(start, end))
+                    {
+                        self.flush_pending_stamps(
+                            lut,
+                            radius,
+                            direction,
+                            capture_arc_engagement,
+                            &mut air_mip,
+                            &mut dispatch,
+                            &mut swept,
+                            samples.slice_mut(),
+                            cutter,
+                            flute_length,
+                            cancel,
+                        )?;
+                        if let Some(check) = rapid_check.as_deref_mut()
+                            && let Some(strike) = check.core_strike(self, start, end)
+                        {
+                            check.record_core(move_index, start, end, strike);
+                        }
+                    }
                     let first = samples.len();
                     self.capture_cutting_segment(
                         lut,
@@ -688,6 +714,32 @@ impl TriDexelStock {
                     linearize_arc_into(&mut arc_buf, start, end, i, j, true, self.z_grid.cell_size);
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
+                        // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                        // judged against the stock as it stands HERE, before its own stamp. The
+                        // flush is paid only on a candidate, as the rapid arm does.
+                        if rapid_check
+                            .as_deref()
+                            .is_some_and(|check| check.core_descent_candidate(window[0], window[1]))
+                        {
+                            self.flush_pending_stamps(
+                                lut,
+                                radius,
+                                direction,
+                                capture_arc_engagement,
+                                &mut air_mip,
+                                &mut dispatch,
+                                &mut swept,
+                                samples.slice_mut(),
+                                cutter,
+                                flute_length,
+                                cancel,
+                            )?;
+                            if let Some(check) = rapid_check.as_deref_mut()
+                                && let Some(strike) = check.core_strike(self, window[0], window[1])
+                            {
+                                check.record_core(move_index, window[0], window[1], strike);
+                            }
+                        }
                         let first = samples.len();
                         self.capture_cutting_segment(
                             lut,
@@ -742,6 +794,32 @@ impl TriDexelStock {
                     );
                     for window in arc_buf.windows(2) {
                         check_cancel(cancel)?;
+                        // G-CENTRECUT: a steep fed descent of a non-centre-cutting tool is
+                        // judged against the stock as it stands HERE, before its own stamp. The
+                        // flush is paid only on a candidate, as the rapid arm does.
+                        if rapid_check
+                            .as_deref()
+                            .is_some_and(|check| check.core_descent_candidate(window[0], window[1]))
+                        {
+                            self.flush_pending_stamps(
+                                lut,
+                                radius,
+                                direction,
+                                capture_arc_engagement,
+                                &mut air_mip,
+                                &mut dispatch,
+                                &mut swept,
+                                samples.slice_mut(),
+                                cutter,
+                                flute_length,
+                                cancel,
+                            )?;
+                            if let Some(check) = rapid_check.as_deref_mut()
+                                && let Some(strike) = check.core_strike(self, window[0], window[1])
+                            {
+                                check.record_core(move_index, window[0], window[1], strike);
+                            }
+                        }
                         let first = samples.len();
                         self.capture_cutting_segment(
                             lut,

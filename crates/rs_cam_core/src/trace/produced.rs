@@ -81,6 +81,12 @@ pub struct Produced {
     /// put each lead arc on the air side. Empty for every op with no closed
     /// pass of a stated side.
     pub closed_passes: Vec<ClosedPassSide>,
+    /// G-CENTRECUT: the first entry where a shared entry builder could not
+    /// keep a non-centre-cutting tool inside its limits (a straight plunge
+    /// into stock deeper than the blade protrusion). The session stage
+    /// after generation (`JobPhases::run_stages`) refuses on it. `None` for
+    /// every other toolpath.
+    pub non_centre_cutting_refusal: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
 }
 
 impl Produced {
@@ -102,6 +108,7 @@ impl Produced {
     ///   `shift.z`. The labels are cell-indexed and do not change.
     /// - `closed_passes`: each plunge target shifts; the stated side does
     ///   not (a shift keeps the travel direction).
+    /// - `non_centre_cutting_refusal`: the plunge target shifts.
     #[must_use]
     pub fn translated(&self, shift: P3) -> Self {
         let Self {
@@ -111,6 +118,7 @@ impl Produced {
             rest_regions_top_z,
             area_regions,
             closed_passes,
+            non_centre_cutting_refusal,
         } = self;
 
         let planner_engagement = planner_engagement
@@ -166,6 +174,16 @@ impl Produced {
             })
             .collect();
 
+        // G-CENTRECUT: the plunge target shifts; the depths do not.
+        let non_centre_cutting_refusal = non_centre_cutting_refusal.map(|mut refusal| {
+            refusal.at = P3::new(
+                refusal.at.x + shift.x,
+                refusal.at.y + shift.y,
+                refusal.at.z + shift.z,
+            );
+            refusal
+        });
+
         Self {
             planner_engagement,
             rest_grid,
@@ -173,6 +191,7 @@ impl Produced {
             rest_regions_top_z,
             area_regions,
             closed_passes,
+            non_centre_cutting_refusal,
         }
     }
 }

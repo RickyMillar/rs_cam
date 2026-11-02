@@ -140,6 +140,7 @@ fn base_params(strategy: ClearingStrategy3d) -> Adaptive3dParams {
             step_split: None,
             keep_down_route: None,
             level_contour: None,
+            rest_region_filter: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,

@@ -707,6 +707,8 @@ pub(crate) struct PrefixState {
     pub(crate) column_deviations: Option<Vec<ColumnDeviation>>,
     pub(crate) rapid_collisions: Vec<RapidCollision>,
     pub(crate) rapid_collision_move_indices: Vec<usize>,
+    /// G-CENTRECUT: the core strikes of the entries replayed so far.
+    pub(crate) non_centre_cutting_descents: Vec<crate::compute::simulate::ToolpathCoreDescent>,
     /// Restricted to the ids of the entries actually replayed — phantom
     /// entries are re-derived from the live request, never restored.
     pub(crate) prior_stocks: HashMap<ToolpathId, Arc<TriDexelStock>>,
@@ -1016,6 +1018,7 @@ mod tests {
             column_deviations: None,
             rapid_collisions: Vec::new(),
             rapid_collision_move_indices: Vec::new(),
+            non_centre_cutting_descents: Vec::new(),
             prior_stocks: HashMap::new(),
             global_drill_ops: Vec::new(),
             group_stock: Some(stock.clone()),

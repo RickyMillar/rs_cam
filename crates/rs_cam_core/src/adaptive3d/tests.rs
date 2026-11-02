@@ -147,6 +147,7 @@ fn default_params() -> Adaptive3dParams {
             step_split: None,
             keep_down_route: None,
             level_contour: None,
+            rest_region_filter: None,
         },
         trochoid_cap_mult: 1.6,
         feed_rate: 1000.0,
@@ -2900,4 +2901,80 @@ fn a_chord_beside_a_peak_holds_the_leave_g_drapegap() {
     for p in &shipped {
         assert!(p.z >= rest(p.x, p.y) - 1e-9);
     }
+}
+
+// ── Rest region filter ──────────────────────────────────────────
+
+/// A rest stock on the flat mesh: material from the floor to Z 6 in two
+/// leftovers, and cut below the leave everywhere else. The broad leftover
+/// is 28 x 30 mm at X -24..4; the narrow leftover is 6 x 30 mm at X 14..20.
+/// The 10 mm gap is wider than the tool, so a cut of one leftover does not
+/// reach the other. The cut points west of X 9 cut the broad leftover.
+fn rest_two_leftovers() -> TriDexelStock {
+    let cell_size = 0.5;
+    let mut stock = TriDexelStock::from_stock(-25.0, -25.0, 25.0, 25.0, -1.0, 6.0, cell_size);
+    let grid = &mut stock.z_grid;
+    for row in 0..grid.rows {
+        for col in 0..grid.cols {
+            let (x, y) = grid.cell_to_world(row, col);
+            let in_y = (-15.0..=15.0).contains(&y);
+            let broad = in_y && (-24.0..=4.0).contains(&x);
+            let narrow = in_y && (14.0..=20.0).contains(&x);
+            if !broad && !narrow {
+                ray_subtract_above(grid.ray_mut(row, col), 0.3);
+            }
+        }
+    }
+    stock
+}
+
+/// The cut points of a rest rough with `filter`: (west of X 9, east of X 9).
+fn rest_cut_points(filter: Option<RestRegionFilter>) -> (usize, usize) {
+    let (mesh, si) = make_flat_mesh();
+    let cutter = flat_cutter();
+    let mut p = default_params();
+    p.initial_stock = Some(rest_two_leftovers());
+    p.depth.stock_top_z = 6.0;
+    p.linking.rest_region_filter = filter;
+    let never_cancel = || false;
+    let result = adaptive_3d_segments(&mesh, &si, &cutter, &p, None, &never_cancel)
+        .expect("planner should succeed");
+    let mut west = 0;
+    let mut east = 0;
+    for seg in &result.segments {
+        if let Adaptive3dSegment::Cut(path) = seg {
+            for pt in path {
+                if pt.x < 9.0 {
+                    west += 1;
+                } else {
+                    east += 1;
+                }
+            }
+        }
+    }
+    (west, east)
+}
+
+#[test]
+fn a_rest_filter_cuts_only_the_small_leftover_rest_filter() {
+    // Control: with no filter, both leftovers are cut.
+    let (west, east) = rest_cut_points(None);
+    assert!(west > 0 && east > 0, "no filter: west {west}, east {east}");
+
+    // Width bound 12 mm: the 6 mm strip passes, the 28 mm block fails.
+    let (west, east) = rest_cut_points(Some(RestRegionFilter {
+        max_area_mm2: None,
+        max_width_mm: Some(12.0),
+    }));
+    assert_eq!(west, 0, "width filter: the broad leftover is cut");
+    assert!(east > 0, "width filter: the narrow leftover is not cut");
+
+    // Area bound 400 mm²: the strip (180 mm²) passes, the block (840 mm²)
+    // fails.
+    let (west, east) = rest_cut_points(Some(RestRegionFilter {
+        max_area_mm2: Some(400.0),
+        max_width_mm: None,
+    }));
+    assert_eq!(west, 0, "area filter: the broad leftover is cut");
+    assert!(east > 0, "area filter: the small leftover is not cut");
 }

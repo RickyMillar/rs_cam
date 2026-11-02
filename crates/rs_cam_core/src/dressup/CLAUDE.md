@@ -26,7 +26,7 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
   the full depth at `ramp_feed_rate`; air is straight (rulings 09-24/25). A
   `helix_floor_lap` helix (2D Adaptive) ends on a flat lap and shrinks to
   fit `entry_containment`, arc fit inside it; under entry None a
-  `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD).
+  `stock_aware_plunge` op rapids through air first (G-ADAPTPASSLOAD). G-CENTRECUT: `EntrySafety::centre_limits` comes from the tool (`MillingCutter::non_centre_cutting`). With it the emitters clamp the ramp angle and the helix pitch to the limit, ignore `contact_top` (the conservative top only), and return a `NonCentreCuttingRefusal` for a fallback plunge deeper than the protrusion; `apply_entry` puts it in `Produced`. Entry None becomes the ramp for such a tool unless the planner made its own entries. No emitter keeps its own formula.
 - The modulator skips a plunge by geometry; the descent pass splits no entry retract (G-PECKSPLIT). C38 §15: `Move::feed_cap` binds last in every feed stage (modulator, feedopt) and only lowers; arc fit and segment merge join only moves with equal caps.
 - `tsp.rs`: a reordered group's fed first move is never fed from elsewhere
   (G-TIERBURIAL); rapid travel never grows: a group keeps its order and
@@ -36,5 +36,5 @@ it: `apply_tabs`, in `ProfilePass::emit_level` of `compute/execute/clearing_2d.r
 
 - `cargo test -p rs_cam_core -q --features test-support --test capability_link_moves_safety --test dressup_span_invariants --test tabs_sit_on_straight_sides_p5 --test tabs_bridge_width_and_height_p5b --test the_tab_layout_is_the_cut_layout_p4_6`
 - `... --test constrained_max_modulation_f039 --test entry_moves_stock_aware_g_rampterrain --test finishing_defaults_have_no_ramp_entry_r10 --test adaptive3d_entry_stock_aware`
-- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test a_feed_cap_binds_every_feed_stage_c38 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc)
+- `cargo test -p rs_cam_core -q --test lead_in_out_feed_rates_f040 --test plunge_guard_p3 --test a_feed_cap_binds_every_feed_stage_c38 --test an_entry_ramp_follows_the_arc_g_rampchord` (a ramp laps on the arc); `--lib a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut`
 - `... --test a_peck_ladder_is_never_split_into_a_rapid_into_stock_g_pecksplit --test fed_chords_ride_the_surface_g_tierburial --test a_finished_edge_keeps_its_corner_p6_0b --test a_lead_curls_away_from_the_part_p6_0c`

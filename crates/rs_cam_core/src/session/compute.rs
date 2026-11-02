@@ -732,6 +732,14 @@ impl JobPhases<'_, '_> {
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
         let annotated = self.apply_dressups(annotated, &mut channels);
         let annotated = self.clip_and_split_entries(annotated, &mut channels)?;
+        // G-CENTRECUT (SAFETY): the ONE refusal check of the shared entry
+        // builders. An entry that had to plunge a non-centre-cutting tool
+        // straight into stock deeper than its protrusion stops the job.
+        if let Some(refusal) = annotated.produced.non_centre_cutting_refusal {
+            return Err(SessionError::Operation(
+                crate::compute::execute::OperationError::NonCentreCutting(refusal),
+            ));
+        }
         Ok((annotated, findings))
     }
 

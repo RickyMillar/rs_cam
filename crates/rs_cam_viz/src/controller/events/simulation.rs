@@ -841,6 +841,7 @@ mod release_for_new_run_m1 {
             group_starts: Vec::new(),
             stock_change_volumes: Vec::new(),
             obstacle_collisions: Vec::new(),
+            non_centre_cutting_descents: Vec::new(),
         };
         let epoch = controller.state.session().simulation_epoch();
         let _ = controller

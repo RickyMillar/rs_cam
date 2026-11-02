@@ -359,6 +359,7 @@ editor!(ed_adaptive3d, Adaptive3d, |ui, cfg, cx| {
         cx.pills,
         cx.strategy_suggestion,
         cx.stock_source == StockSource::FromRemainingStock && cx.boundary_enabled,
+        cx.stock_source == StockSource::FromRemainingStock,
         cx.fields,
     );
 });

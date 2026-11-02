@@ -902,7 +902,8 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
             OperationError::MissingGeometry(_)
             | OperationError::InvalidTool(_)
             | OperationError::InvalidParam(_)
-            | OperationError::BuriedFace(_) => Ok("named-refusal"),
+            | OperationError::BuriedFace(_)
+            | OperationError::NonCentreCutting(_) => Ok("named-refusal"),
             other => Err(format!("an unnamed error: {other}")),
         },
         Outcome::Refused(SessionError::OperationFailed(text)) => {

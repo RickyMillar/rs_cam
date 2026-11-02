@@ -144,6 +144,15 @@ pub enum ExportRefusal {
         /// One line per refusing toolpath: its name and the finding.
         rows: Vec<String>,
     },
+    /// G-CENTRECUT (SAFETY): the simulation shows a tool that does not cut
+    /// at its centre going down into stock steeper than its limit angle or
+    /// plunging deeper than its blade protrusion
+    /// (`compute::simulate::non_centre_cutting_refusal_rows`). No override:
+    /// regenerate with an entry the tool can take.
+    NonCentreCuttingDescent {
+        /// One line per refusing toolpath: its name and the worst strike.
+        rows: Vec<String>,
+    },
 }
 
 impl ExportRefusal {
@@ -156,7 +165,8 @@ impl ExportRefusal {
             | Self::BadFeed { .. }
             | Self::ControllerCompensation { .. }
             | Self::HeightOrder { .. }
-            | Self::CutsIntoModel { .. } => None,
+            | Self::CutsIntoModel { .. }
+            | Self::NonCentreCuttingDescent { .. } => None,
             Self::LoadExceeded { .. } => Some(LoadOverride::AcceptExceeded),
             Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
                 Some(LoadOverride::AcceptUnmodeled)
@@ -236,6 +246,16 @@ impl ExportRefusal {
                 }
                 msg.trim_end().to_owned()
             }
+            Self::NonCentreCuttingDescent { rows } => {
+                let mut msg = String::from(
+                    "G-code export refused: a tool that does not cut at its centre goes \
+                     down into wood too steeply:\n",
+                );
+                for line in rows {
+                    let _ = writeln!(msg, "{line}");
+                }
+                msg.trim_end().to_owned()
+            }
         }
     }
 }
@@ -248,7 +268,8 @@ impl Display for ExportRefusal {
             | Self::BadFeed { .. }
             | Self::ControllerCompensation { .. }
             | Self::HeightOrder { .. }
-            | Self::CutsIntoModel { .. } => Ok(()),
+            | Self::CutsIntoModel { .. }
+            | Self::NonCentreCuttingDescent { .. } => Ok(()),
             Self::LoadExceeded { .. } => write!(
                 f,
                 "\nTo override (a known-dangerous override): {}.",

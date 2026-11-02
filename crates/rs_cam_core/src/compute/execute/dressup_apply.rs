@@ -657,8 +657,26 @@ impl PipelineRun<'_> {
                  ramping it would cut an oval slot instead of a round hole"
             );
         }
+        // G-CENTRECUT: a tool that does not cut at its centre takes no
+        // straight plunge. With no entry style its entries go through the
+        // shared ramp, which clamps the angle to the tool's limit. A planner
+        // that made its own entries (a 3D Rough: ramp or helix moves) already
+        // took the same shared emitters with the tool's limits.
+        let planner_made_entries = current.toolpath.moves.iter().any(|m| {
+            matches!(
+                m.intent,
+                crate::toolpath::MoveIntent::EntryRamp | crate::toolpath::MoveIntent::EntryHelix
+            )
+        });
+        let non_centre_cutting = !planner_made_entries
+            && self
+                .ctx
+                .cutter
+                .is_some_and(|cutter| cutter.non_centre_cutting().is_some());
         let style = if is_drill_cycle {
             DressupEntryStyle::None
+        } else if non_centre_cutting && cfg.entry_style == DressupEntryStyle::None {
+            DressupEntryStyle::Ramp
         } else {
             cfg.entry_style
         };
@@ -679,6 +697,8 @@ impl PipelineRun<'_> {
             stock_top_measured: false,
             contact_clearance: ctx.cfg.entry_clearance_mm,
             contact_top: None,
+            // G-CENTRECUT: the tool owns its limits.
+            centre_limits: ctx.cutter.and_then(|cutter| cutter.non_centre_cutting()),
             // Operator ruling 2026-09-24: a helix or ramp takes the full material
             // depth, so it reads the op's own replayed stock for its start.
             own_stock: ctx.cutter.map(|cutter| crate::dressup::EntryStockReplay {

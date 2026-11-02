@@ -30,10 +30,13 @@ mod level_contour;
 mod outer_band;
 mod path;
 mod region_map;
+mod rest_region_filter;
 mod rest_regions;
 mod search;
 pub use intended_floor::{FloorGrid, intended_floor_grid};
-use path::{adaptive_3d_segments, segments_to_toolpath};
+use path::adaptive_3d_segments;
+#[cfg(test)]
+use path::segments_to_toolpath;
 pub use region_map::{AreaRegion, AreaRegionMap, AreaRegionRun};
 
 // F-029 probe: re-export the planner-state probe for the harnesses that
@@ -288,6 +291,27 @@ pub struct Adaptive3dLinking {
     /// level along the machining boundary where stock in reach stands
     /// (G-RESTDOC). `None`: off, and the plan is today's.
     pub level_contour: Option<LevelContour>,
+    /// The rest region filter (`Adaptive3dConfig::rest_max_region_area_mm2`,
+    /// `rest_max_region_width_mm`). `None`: every region is cut. The
+    /// session sets it only on remaining stock (a rest rough).
+    pub rest_region_filter: Option<RestRegionFilter>,
+}
+
+/// The rest region filter ([`Adaptive3dLinking::rest_region_filter`]).
+///
+/// At each Z level, a region of material that the level would clear is cut
+/// only when it passes every bound that is set. A region that fails is
+/// skipped at that level, not clipped. This is the opposite of the
+/// micro-region filter (`clearing.rs`, it drops regions that are too
+/// small): this filter drops regions that are too large, so a small tool
+/// cuts only the parts that a larger tool could not reach.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RestRegionFilter {
+    /// The largest area (mm²) of a region that is cut. `None`: no bound.
+    pub max_area_mm2: Option<f64>,
+    /// The largest width (mm) of a region that is cut: the diameter of the
+    /// largest circle inside the region. `None`: no bound.
+    pub max_width_mm: Option<f64>,
 }
 
 /// C4: the settings of the contour on each level
@@ -686,7 +710,8 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
     });
     // F-038b: pass mesh + spatial index + cutter so segments_to_toolpath
     // can query the heightfield along each candidate stay-down link.
-    let (tp, annotations) = segments_to_toolpath(&segments, params, mesh, index, cutter);
+    let (tp, annotations, non_centre_cutting_refusal) =
+        path::segments_to_toolpath_checked(&segments, params, mesh, index, cutter);
     if let Some(debug_ctx) = debug {
         for annotation in &annotations {
             debug_ctx.add_annotation(annotation.move_index, annotation.event.label());
@@ -708,6 +733,7 @@ pub fn adaptive_3d_toolpath_output_with_cancel(
             area_regions: result.area_regions.map(std::sync::Arc::new),
             rest_regions,
             rest_regions_top_z,
+            non_centre_cutting_refusal,
             ..crate::trace::produced::Produced::default()
         },
     })

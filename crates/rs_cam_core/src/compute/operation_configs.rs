@@ -1734,7 +1734,32 @@ pub struct Adaptive3dConfig {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[param(help = HELP_CONTOUR_EACH_LEVEL)]
     pub contour_each_level: bool,
+    /// Rest region filter, area bound (mm²). On remaining stock, at each
+    /// Z level a region of material is cut only when its area is at most
+    /// this value; a larger region is skipped at that level. `None`: off.
+    /// Bound: an area is positive (math), so the value is above 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = HELP_REST_MAX_REGION_AREA, gt = 0.0)]
+    pub rest_max_region_area_mm2: Option<f64>,
+    /// Rest region filter, width bound (mm). On remaining stock, at each
+    /// Z level a region of material is cut only when its width (the
+    /// diameter of the largest circle inside it) is at most this value; a
+    /// broader region is skipped at that level. `None`: off. Bound: a
+    /// width is positive (math), so the value is above 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[param(help = HELP_REST_MAX_REGION_WIDTH, gt = 0.0)]
+    pub rest_max_region_width_mm: Option<f64>,
 }
+
+/// The help of [`Adaptive3dConfig::rest_max_region_area_mm2`].
+const HELP_REST_MAX_REGION_AREA: &str = "Rest only: at each level, cut a region of remaining \
+    material only when its area (mm²) is at most this value. A larger region is skipped at that \
+    level, not clipped. Empty: off.";
+
+/// The help of [`Adaptive3dConfig::rest_max_region_width_mm`].
+const HELP_REST_MAX_REGION_WIDTH: &str = "Rest only: at each level, cut a region of remaining \
+    material only when its width (the diameter of the largest circle inside it) is at most this \
+    value. Narrow valleys and corners are cut; broad areas are skipped at that level. Empty: off.";
 
 /// The help of [`Adaptive3dConfig::contour_each_level`].
 const HELP_CONTOUR_EACH_LEVEL: &str = "After each level, contour the edge of the machining \
@@ -1791,6 +1816,8 @@ impl Default for Adaptive3dConfig {
             max_stay_down_distance_mm: None,
             stay_down_clearance_mm: default_stay_down_clearance_mm(),
             contour_each_level: false,
+            rest_max_region_area_mm2: None,
+            rest_max_region_width_mm: None,
         }
     }
 }
@@ -1833,6 +1860,17 @@ fn default_adaptive3d_helix_pitch() -> f64 {
 }
 
 impl Adaptive3dConfig {
+    /// The rest region filter of this config: `None` when no bound is set.
+    /// The adapter applies it only on remaining stock (`rough_3d.rs`).
+    #[must_use]
+    pub fn rest_region_filter(&self) -> Option<crate::adaptive3d::RestRegionFilter> {
+        (self.rest_max_region_area_mm2.is_some() || self.rest_max_region_width_mm.is_some())
+            .then_some(crate::adaptive3d::RestRegionFilter {
+                max_area_mm2: self.rest_max_region_area_mm2,
+                max_width_mm: self.rest_max_region_width_mm,
+            })
+    }
+
     /// The helix radius this config emits on `cutter`: D x
     /// `helix_radius_factor`, capped at the flat bottom (G10 Q6). The
     /// request is the rule when the factor is

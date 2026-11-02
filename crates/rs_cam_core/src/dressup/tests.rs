@@ -1132,6 +1132,7 @@ fn no_probe(stock_top: f64) -> EntrySafety<'static> {
         contact_top: None,
         helix_floor_lap: false,
         helix_containment: None,
+        centre_limits: None,
     }
 }
 
@@ -1414,6 +1415,7 @@ fn a_rough_keeps_folding_over_a_short_run_r10() {
         contact_top: None,
         helix_floor_lap: false,
         helix_containment: None,
+        centre_limits: None,
     };
     let result = without_provenance(apply_entry(
         AnnotatedToolpath::new(plunge_then_run(2.0)),
@@ -2169,10 +2171,11 @@ fn helix_and_ramp_descend_at_the_ramp_feed_when_set() {
         };
         let mut helix = Toolpath::new();
         helix.rapid_to(start);
-        super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, PLUNGE, &safety);
+        let _ =
+            super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, PLUNGE, &safety);
         let mut ramp = Toolpath::new();
         ramp.rapid_to(start);
-        super::entry_descent::emit_ramp(
+        let _ = super::entry_descent::emit_ramp(
             &mut ramp,
             &start,
             &end,
@@ -2212,10 +2215,11 @@ fn helix_and_ramp_start_at_the_entry_clearance() {
         };
         let mut helix = Toolpath::new();
         helix.rapid_to(start);
-        super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, 300.0, &safety);
+        let _ =
+            super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 1.0, 300.0, &safety);
         let mut ramp = Toolpath::new();
         ramp.rapid_to(start);
-        super::entry_descent::emit_ramp(
+        let _ = super::entry_descent::emit_ramp(
             &mut ramp,
             &start,
             &end,
@@ -2247,4 +2251,66 @@ fn helix_and_ramp_start_at_the_entry_clearance() {
             }
         }
     }
+}
+
+/// G-CENTRECUT: under the limits of a non-centre-cutting tool (core 8 mm,
+/// protrusion 1 mm: 7.125 deg) the ramp and the helix descend no steeper
+/// than the limit angle, and a plunge fallback deeper than the protrusion
+/// returns a refusal.
+#[test]
+fn a_non_centre_cutting_tool_ramps_at_its_limit_g_centrecut() {
+    let limits = crate::compute::tool_config::NonCentreCuttingGeometry {
+        centre_core_diameter_mm: 8.0,
+        blade_protrusion_mm: 1.0,
+    }
+    .limits();
+    let slope = limits.max_descent_slope();
+    let start = P3::new(10.0, 10.0, 20.0);
+    let end = P3::new(10.0, 10.0, 0.0);
+    let safety = EntrySafety {
+        centre_limits: Some(limits),
+        ..no_probe(8.0)
+    };
+    let mut helix = Toolpath::new();
+    helix.rapid_to(start);
+    let helix_refusal =
+        super::entry_descent::emit_helix(&mut helix, &start, &end, 2.0, 3.0, 300.0, &safety);
+    let mut ramp = Toolpath::new();
+    ramp.rapid_to(start);
+    let ramp_refusal = super::entry_descent::emit_ramp(
+        &mut ramp,
+        &start,
+        &end,
+        (1.0, 0.0),
+        20.0,
+        300.0,
+        &safety,
+        None,
+    );
+    assert!(helix_refusal.is_none() && ramp_refusal.is_none());
+    for (name, tp) in [("helix", &helix), ("ramp", &ramp)] {
+        let mut entry_moves = 0;
+        for pair in tp.moves.windows(2) {
+            let (a, b) = (pair[0].target, pair[1].target);
+            if matches!(
+                pair[1].intent,
+                MoveIntent::EntryHelix | MoveIntent::EntryRamp
+            ) {
+                entry_moves += 1;
+                let dxy = (b.x - a.x).hypot(b.y - a.y);
+                assert!(
+                    a.z - b.z <= dxy * slope * (1.0 + 1e-6) + 1e-9,
+                    "{name}: a move from {a:?} to {b:?} is steeper than the limit"
+                );
+            }
+        }
+        assert!(entry_moves > 0, "{name}: no entry moves");
+    }
+    // A zero-radius helix can only plunge: 8.5 mm into stock, refused.
+    let mut plunge = Toolpath::new();
+    plunge.rapid_to(start);
+    let refusal =
+        super::entry_descent::emit_helix(&mut plunge, &start, &end, 0.0, 1.0, 300.0, &safety)
+            .expect("a plunge deeper than the protrusion is refused");
+    assert!(refusal.depth_mm > 8.0, "{refusal:?}");
 }

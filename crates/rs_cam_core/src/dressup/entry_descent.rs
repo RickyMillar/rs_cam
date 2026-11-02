@@ -4,6 +4,7 @@
 //! Split out of `dressup/mod.rs` (P4). The section's public entry points
 //! (`apply_entry`, `optimize_entry_descents*`) stay in the parent.
 
+use crate::compute::tool_config::NonCentreCuttingRefusal;
 use crate::geo::P3;
 use crate::toolpath::{Move, MoveType, Toolpath};
 
@@ -440,7 +441,14 @@ fn rapid_to_entry_top(
     let material_top = safety.stock_top;
     let measured = safety.stock_top_measured;
     let contact_clearance = safety.contact_clearance;
-    let contact_top = safety.contact_top;
+    // G-CENTRECUT: a non-centre-cutting tool trusts only the conservative
+    // (sliver-safe) material top. The closer cell-centre read can call a
+    // column open where wood stands under the core.
+    let contact_top = if safety.centre_limits.is_some() {
+        None
+    } else {
+        safety.contact_top
+    };
     let air = contact_top.unwrap_or(material_top) <= end.z + 1e-6;
     let top = material_top.max(end.z);
     let contact = if air {
@@ -474,23 +482,41 @@ fn rapid_to_entry_top(
 /// through air by rapid ([`rapid_to_entry_top`], the shared first half of
 /// a helix or ramp entry), then feeds the rest straight down at
 /// `feed_rate` (G-ADAPTPASSLOAD round 4).
+///
+/// G-CENTRECUT: returns the refusal when the tool does not cut at its
+/// centre and the plunge goes deeper into stock than the protrusion.
+#[must_use]
 pub(crate) fn emit_stock_aware_plunge(
     tp: &mut Toolpath,
     start: &P3,
     end: &P3,
     feed_rate: f64,
     safety: &EntrySafety<'_>,
-) {
+) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
-    if rapid_to_entry_top(tp, start, end, safety, feed_rate).is_some() {
-        tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-    }
+    let top = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
+    tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+    plunge_refusal(safety, top, end)
+}
+
+/// G-CENTRECUT: the refusal of a straight plunge from `material_top_z` to
+/// `end` under the tool's limits (`NonCentreCuttingLimits::plunge_refusal`),
+/// or `None` for a centre-cutting tool.
+fn plunge_refusal(
+    safety: &EntrySafety<'_>,
+    material_top_z: f64,
+    end: &P3,
+) -> Option<NonCentreCuttingRefusal> {
+    safety
+        .centre_limits
+        .and_then(|limits| limits.plunge_refusal(material_top_z, *end))
 }
 
 #[expect(
     clippy::too_many_arguments,
     reason = "eight parameters, one over clippy's threshold. The eighth is `fold`, and grouping the rest into a struct would move the emitter's existing contract for one added argument."
 )]
+#[must_use]
 pub(crate) fn emit_ramp(
     tp: &mut Toolpath,
     start: &P3,
@@ -500,15 +526,20 @@ pub(crate) fn emit_ramp(
     feed_rate: f64,
     safety: &EntrySafety<'_>,
     fold: Option<&RampFold<'_>>,
-) {
+) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
+    // G-CENTRECUT: the tool's limit angle caps the ramp.
+    let max_angle_deg = safety.centre_limits.map_or(max_angle_deg, |limits| {
+        limits.clamp_descent_angle_deg(max_angle_deg)
+    });
     // The operation's ramp feed rides the ramp moves through material; a
     // straight feed through air and the plunge fallback keep `feed_rate`.
     let ramp_feed = safety.ramp_feed.unwrap_or(feed_rate);
     if max_angle_deg <= 0.0 || max_angle_deg >= 90.0 {
-        // Invalid angle — fall back to straight plunge
+        // Invalid angle — fall back to straight plunge (never under
+        // G-CENTRECUT: the clamp above gives a valid angle).
         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-        return;
+        return None;
     }
 
     // G-ISOCLIPENTRY: on a REST-DRIVEN pass the two-leg zigzag below is not
@@ -586,9 +617,13 @@ pub(crate) fn emit_ramp(
                     tp.rapid_to_with_intent(P3::new(start.x, start.y, air_z), MoveIntent::Linking);
                 }
                 tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+                let top = stock
+                    .max_conservative_top_z_in_disc(end.x, end.y, contact)
+                    .unwrap_or(start.z);
+                return plunge_refusal(safety, top, end);
             }
         }
-        return;
+        return None;
     }
 
     // Full-depth rule (operator ruling 2026-09-24): the ramp takes ALL the
@@ -597,9 +632,7 @@ pub(crate) fn emit_ramp(
     // `max_angle_deg` down to the target. A straight feed goes only through
     // air. (Before the ruling the ramp took the last `ENTRY_CLEARANCE` only
     // and fed a straight plunge through the material above it.)
-    let Some(ramp_start_z) = rapid_to_entry_top(tp, start, end, safety, feed_rate) else {
-        return;
-    };
+    let ramp_start_z = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
 
     let ramp_dz = (ramp_start_z - end.z).max(0.1);
     let tan = max_angle_deg.to_radians().tan();
@@ -644,6 +677,7 @@ pub(crate) fn emit_ramp(
             }
             None => {
                 tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+                return plunge_refusal(safety, ramp_start_z, end);
             }
         }
     } else if let Some(fold) = fold {
@@ -672,6 +706,7 @@ pub(crate) fn emit_ramp(
         };
         if folded.is_empty() {
             tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
+            return plunge_refusal(safety, ramp_start_z, end);
         } else {
             for p in folded {
                 tp.feed_to_with_intent(p, ramp_feed, MoveIntent::EntryRamp);
@@ -685,6 +720,7 @@ pub(crate) fn emit_ramp(
             tp.feed_to_with_intent(*p, ramp_feed, MoveIntent::EntryRamp);
         }
     }
+    None
 }
 
 /// Sample spacing (mm) for the entry-leg clip against the probe floor.
@@ -776,6 +812,12 @@ fn emit_floor_lap(
     }
 }
 
+///
+/// G-CENTRECUT: under the tool's limits the pitch is clamped so that each
+/// 10-degree chord descends no steeper than the limit angle. Returns the
+/// refusal when the helix must fall back to a plunge deeper than the
+/// protrusion.
+#[must_use]
 pub(crate) fn emit_helix(
     tp: &mut Toolpath,
     start: &P3,
@@ -784,7 +826,7 @@ pub(crate) fn emit_helix(
     pitch: f64,
     feed_rate: f64,
     safety: &EntrySafety<'_>,
-) {
+) -> Option<NonCentreCuttingRefusal> {
     use crate::toolpath::MoveIntent;
     // The operation's ramp feed rides the helix turns; a straight feed
     // through air and the plunge fallback keep `feed_rate`.
@@ -794,8 +836,13 @@ pub(crate) fn emit_helix(
     // material top (`safety.stock_top`) down to the target. A straight feed
     // goes only through air. (Before the ruling the helix took the last
     // `ENTRY_CLEARANCE` only and fed a straight plunge above it.)
-    let Some(helix_top) = rapid_to_entry_top(tp, start, end, safety, feed_rate) else {
-        return;
+    let helix_top = rapid_to_entry_top(tp, start, end, safety, feed_rate)?;
+    let pitch = match safety.centre_limits {
+        Some(limits) if radius > 0.0 => {
+            let chord = 2.0 * radius * (std::f64::consts::PI / HELIX_STEPS_PER_REV as f64).sin();
+            pitch.min(limits.max_descent_slope() * chord * HELIX_STEPS_PER_REV as f64)
+        }
+        _ => pitch,
     };
 
     let dz = helix_top - end.z;
@@ -807,7 +854,7 @@ pub(crate) fn emit_helix(
         if safety.helix_floor_lap && radius > 0.0 {
             emit_floor_lap(tp, end, radius, ramp_feed, 0.0, true);
         }
-        return;
+        return plunge_refusal(safety, helix_top, end);
     }
 
     // One step is 10 degrees of turn and descends at most `pitch / 36`.
@@ -815,7 +862,7 @@ pub(crate) fn emit_helix(
     // descent after a lift starts from the LIFTED height, so the helix never
     // falls faster than its pitch; it takes more turns instead. On a lost
     // surface contact, fall back to the straight plunge.
-    const STEPS_PER_REV: usize = 36;
+    const STEPS_PER_REV: usize = HELIX_STEPS_PER_REV;
     let step_angle = std::f64::consts::TAU / STEPS_PER_REV as f64;
     let step_dz = pitch / STEPS_PER_REV as f64;
     // A floor that never lets the helix reach the target (a pit narrower
@@ -840,7 +887,7 @@ pub(crate) fn emit_helix(
                 None => {
                     if probe.off_mesh == OffMeshEntry::PlungeFallback {
                         tp.feed_to_with_intent(*end, feed_rate, MoveIntent::EntryPlunge);
-                        return;
+                        return plunge_refusal(safety, helix_top, end);
                     }
                 }
             }
@@ -915,4 +962,8 @@ pub(crate) fn emit_helix(
 
     // Return to center at final Z
     tp.feed_to_with_intent(*end, ramp_feed, MoveIntent::EntryHelix);
+    None
 }
+
+/// The turn steps of one helix revolution: one step is 10 degrees.
+const HELIX_STEPS_PER_REV: usize = 36;

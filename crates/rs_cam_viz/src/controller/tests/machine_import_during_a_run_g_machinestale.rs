@@ -94,6 +94,7 @@ fn inject_a_run_with_a_trace(controller: &mut AppController<ScriptedBackend>) {
                 group_starts: Vec::new(),
                 stock_change_volumes: Vec::new(),
                 obstacle_collisions: Vec::new(),
+                non_centre_cutting_descents: Vec::new(),
             },
             playback_data: Vec::new(),
             cut_trace_path: None,

@@ -1464,6 +1464,7 @@ fn diagnostics_ranks_verdicts_by_severity() {
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
+        non_centre_cutting_descents: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -1546,6 +1547,7 @@ fn diagnostics_rapid_collision_verdict_carries_evidence() {
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
+        non_centre_cutting_descents: Vec::new(),
     });
 
     let diag = s.diagnostics();
@@ -2068,6 +2070,8 @@ fn terrain_adaptive3d_session(strategy: ClearingStrategy) -> ProjectSession {
         max_stay_down_distance_mm: Some(0.0),
         stay_down_clearance_mm: 0.5,
         contour_each_level: false,
+        rest_max_region_area_mm2: None,
+        rest_max_region_width_mm: None,
     };
     let tc = ToolpathConfig {
         shoe: Default::default(),

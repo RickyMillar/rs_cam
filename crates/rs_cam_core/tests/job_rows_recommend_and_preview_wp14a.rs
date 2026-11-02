@@ -109,6 +109,8 @@ fn adaptive3d_op() -> OperationConfig {
         max_stay_down_distance_mm: Some(0.0),
         stay_down_clearance_mm: 0.5,
         contour_each_level: false,
+        rest_max_region_area_mm2: None,
+        rest_max_region_width_mm: None,
     })
 }
 

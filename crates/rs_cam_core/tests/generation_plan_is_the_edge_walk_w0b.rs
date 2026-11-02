@@ -260,6 +260,7 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                 group_starts: Vec::new(),
                 stock_change_volumes: Vec::new(),
                 obstacle_collisions: Vec::new(),
+                non_centre_cutting_descents: Vec::new(),
             }),
             epoch: session.simulation_epoch(),
             modulation: None,

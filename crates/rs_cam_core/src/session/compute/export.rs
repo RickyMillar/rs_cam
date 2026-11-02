@@ -56,6 +56,10 @@ impl ProjectSession {
     /// model refuses ([`crate::gcode::ExportRefusal::CutsIntoModel`],
     /// [`Self::model_gouge_refusal`]).
     ///
+    /// G-CENTRECUT: next, an emitted toolpath whose simulation shows a tool
+    /// that does not cut at its centre pushing its centre into wood refuses
+    /// ([`crate::gcode::ExportRefusal::NonCentreCuttingDescent`]).
+    ///
     /// [`validate_machine_safety`]: crate::export::gcode_validator::validate_machine_safety
     /// [`emission_frame_clearance_z`]: crate::export::gcode_validator::emission_frame_clearance_z
     pub fn export_program(
@@ -95,6 +99,26 @@ impl ProjectSession {
             .collect();
         if !gouge_rows.is_empty() {
             return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
+        }
+        // G-CENTRECUT (SAFETY): an emitted toolpath whose simulation shows a
+        // non-centre-cutting tool pushing its centre into wood refuses the
+        // whole export. No override.
+        if let Some(simulation) = self.simulation.as_ref() {
+            let ids: Vec<crate::ids::ToolpathId> = emitted
+                .iter()
+                .filter_map(|idx| self.toolpath_configs.get(*idx))
+                .map(|tc| tc.id)
+                .collect();
+            let rows =
+                crate::compute::simulate::non_centre_cutting_refusal_rows(simulation, &ids, |id| {
+                    self.toolpath_configs
+                        .iter()
+                        .find(|tc| tc.id == id)
+                        .map(|tc| tc.name.as_str())
+                });
+            if !rows.is_empty() {
+                return Err(crate::gcode::ExportRefusal::NonCentreCuttingDescent { rows });
+            }
         }
         // D47 (G-RESTSTALE): the load gate judges the toolpaths the program
         // emits. An enabled toolpath outside `emitted` (a CLI `--skip`, a

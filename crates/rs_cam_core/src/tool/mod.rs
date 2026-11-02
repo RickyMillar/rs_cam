@@ -286,6 +286,14 @@ pub(crate) fn flat_chip_geometry_for_radius(
 /// `height_at_radius` (ADR, `TOOL_SCALE_SEMANTICS.md` §9).
 pub trait MillingCutter: Send + Sync {
     fn diameter(&self) -> f64;
+    /// G-CENTRECUT: the descent limits of a tool that does not cut at its
+    /// centre, or `None` for a centre-cutting tool. The tool owns them;
+    /// every entry builder and the simulation gate read them here. Only
+    /// [`ToolDefinition`] carries a value; a bare cutter shape is centre
+    /// cutting.
+    fn non_centre_cutting(&self) -> Option<crate::compute::tool_config::NonCentreCuttingLimits> {
+        None
+    }
     fn radius(&self) -> f64 {
         self.diameter() / 2.0
     }
@@ -648,6 +656,9 @@ pub struct ToolDefinition {
     /// (`feeds::series::ToolSeries::for_cut_direction`, ruling 2026-10-31).
     /// [`Self::new`] sets `UpCut`, a generic tool.
     pub cut_direction: BitCutDirection,
+    /// G-CENTRECUT: the limits of a tool that does not cut at its centre
+    /// (`ToolConfig::non_centre_cutting_limits`). [`Self::new`] sets `None`.
+    pub non_centre_cutting: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
 }
 
 impl ToolDefinition {
@@ -665,7 +676,18 @@ impl ToolDefinition {
             flute_count,
             tool_material,
             cut_direction: BitCutDirection::UpCut,
+            non_centre_cutting: None,
         }
+    }
+
+    /// The same tool with the non-centre-cutting limits `limits`.
+    #[must_use]
+    pub fn with_non_centre_cutting(
+        mut self,
+        limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+    ) -> Self {
+        self.non_centre_cutting = limits;
+        self
     }
 
     /// The same tool with the flute direction `cut_direction`.
@@ -826,6 +848,9 @@ impl ToolDefinition {
 impl MillingCutter for ToolDefinition {
     fn diameter(&self) -> f64 {
         self.cutter.diameter()
+    }
+    fn non_centre_cutting(&self) -> Option<crate::compute::tool_config::NonCentreCuttingLimits> {
+        self.non_centre_cutting
     }
     // EXPLICIT delegation for every tool-scale accessor, including the ones
     // that used to work only by inherited default over delegated primitives

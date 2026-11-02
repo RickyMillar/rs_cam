@@ -286,6 +286,7 @@ fn the_ramp_transform_itself_is_alive() {
             contact_top: None,
             helix_floor_lap: false,
             helix_containment: None,
+            centre_limits: None,
         },
         // G-RAMPCONTAIN: the tool radius, which sets the floor under which a
         // fold degrades to a plunge. This fixture's following cut is 40 mm,

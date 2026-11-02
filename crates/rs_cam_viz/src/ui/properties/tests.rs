@@ -1710,6 +1710,7 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
                     None,
                     suggestion,
                     false,
+                    false,
                     Default::default(),
                 );
             });
@@ -2244,6 +2245,7 @@ fn contour_each_level_shows_where_it_acts_c4() {
                 None,
                 None,
                 offered,
+                false,
                 Default::default(),
             );
         });

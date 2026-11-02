@@ -11,7 +11,7 @@ use super::super::linking_dressup::{
     Fields, check_in_row, check_param, combo_control, combo_in_row, combo_param, count_in_row,
     keyed_row, plain_row,
 };
-use super::super::{advanced, dv, dv_narrowed, dv_pill, p};
+use super::super::{advanced, dv, dv_narrowed, dv_opt, dv_pill, p};
 use crate::ui::components::{DataRow, DataTable, ProvKind, Role, SuggestButton};
 use rs_cam_core::compute::catalog::OperationType;
 
@@ -65,6 +65,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     pills: Option<&PillSuggestions>,
     strategy_suggestion: Option<ClearingStrategy>,
     contour_each_level_offered: bool,
+    remaining_stock: bool,
     fields: Fields<'_>,
 ) {
     // Spec: pill stepover + depth_per_pass. Removal step R2: the
@@ -244,6 +245,40 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
                 "Contour each level",
             ),
             &mut cfg.contour_each_level,
+            fields,
+        );
+    }
+    // The rest region filter: two rows, shown on a rest rough (remaining
+    // stock) or while a bound is set. Empty is off. The hover is the
+    // registry help.
+    if remaining_stock
+        || cfg.rest_max_region_area_mm2.is_some()
+        || cfg.rest_max_region_width_mm.is_some()
+    {
+        dv_opt(
+            ui,
+            p(
+                OperationType::Adaptive3d,
+                "rest_max_region_width_mm",
+                "Max region width",
+            ),
+            &mut cfg.rest_max_region_width_mm,
+            " mm",
+            0.5,
+            Some("off"),
+            fields,
+        );
+        dv_opt(
+            ui,
+            p(
+                OperationType::Adaptive3d,
+                "rest_max_region_area_mm2",
+                "Max region area",
+            ),
+            &mut cfg.rest_max_region_area_mm2,
+            " mm²",
+            10.0,
+            Some("off"),
             fields,
         );
     }

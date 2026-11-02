@@ -17,7 +17,7 @@ One module per cutter family. The trait and the shared radius queries live in
 - The cusp radius is what the tool FORMS. The valley radius is what the tool
   FITS INTO. The two coincide on a taper and diverge on a bull nose. Pick the
   one the caller's question asks for.
-- A holder and shank envelope is part of the tool, not of the operation; collision reads it.
+- A holder and shank envelope is part of the tool, not of the operation; collision reads it. G-CENTRECUT: `MillingCutter::non_centre_cutting` gives the tool's limits; only `ToolDefinition` holds a value (`with_non_centre_cutting`). Every reader asks the tool; nothing copies the limits.
 - An edge drop is the highest point of `z - height(rho)` over the edge
   (`mod.rs::edge_drop_by_profile`); a `facet_drop` reports `found` only for
   a tangency, or `drop_cutter` skips the edges (G-TIERBURIAL).

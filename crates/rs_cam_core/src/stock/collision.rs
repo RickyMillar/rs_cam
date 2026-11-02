@@ -710,6 +710,33 @@ pub struct RapidClearanceCheck<'a> {
     /// stamps wrote.
     lut: RadialProfileLUT,
     hits: Vec<RapidCollision>,
+    /// G-CENTRECUT: the limits of a tool that does not cut at its centre
+    /// (`MillingCutter::non_centre_cutting`), or `None`. `Some` makes the
+    /// walk check each steep fed descent against the live stock
+    /// ([`Self::core_descent_candidate`], [`Self::core_strike`]).
+    core_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
+    core_hits: Vec<NonCentreCuttingDescent>,
+}
+
+/// G-CENTRECUT (SAFETY): a fed move where a tool that does not cut at its
+/// centre goes down into stock steeper than its limit angle, or plunges
+/// deeper than its blade protrusion. The core of the tool meets wood that
+/// no blade has cut. One per move (the first striking sample).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NonCentreCuttingDescent {
+    /// Index of the move in its toolpath.
+    pub move_index: usize,
+    /// The tool tip position at the striking sample (setup frame).
+    pub position: P3,
+    /// How high the wood under the centre core stands above the tool tip
+    /// at that sample (mm). It is more than the blade protrusion.
+    pub material_over_tip_mm: f64,
+    /// The blade protrusion of the tool (mm).
+    pub max_plunge_depth_mm: f64,
+    /// The descent angle of the move (degrees; 90 for a plunge).
+    pub descent_angle_deg: f64,
+    /// The limit angle of the tool (degrees).
+    pub max_descent_angle_deg: f64,
 }
 
 /// Float slack of the low channel at a clearance of `low` mm.
@@ -730,7 +757,98 @@ impl<'a> RapidClearanceCheck<'a> {
             cutter,
             lut: RadialProfileLUT::from_cutter(cutter, LUT_SAMPLES),
             hits: Vec::new(),
+            core_limits: cutter.non_centre_cutting(),
+            core_hits: Vec::new(),
         }
+    }
+
+    /// G-CENTRECUT: is this fed move a candidate for a core strike? Only
+    /// a move that goes down steeper than the limit angle of a
+    /// non-centre-cutting tool can push the core into wood. A move at or
+    /// under the limit lets the blades clear the core
+    /// (`atan(protrusion / core)`).
+    pub fn core_descent_candidate(&self, start: P3, end: P3) -> bool {
+        self.core_limits
+            .is_some_and(|limits| limits.is_steeper_than_limit(start, end))
+    }
+
+    /// G-CENTRECUT: the height of the wood over the tool tip under the
+    /// centre core and the tip position, where the wood stands higher than
+    /// the blade protrusion, for
+    /// a candidate move ([`Self::core_descent_candidate`]) against `stock`
+    /// as it stands before the move. `None`: the core meets no wood.
+    ///
+    /// The model: the blades cut a point down to the tip Z while the point
+    /// is outside the core. A point that has stood inside the core since
+    /// the tool was `h` back along the move keeps the lower of its stock
+    /// top and the tip Z of that moment. With `h = protrusion / slope`
+    /// that tip Z is one protrusion above the present tip, so the core
+    /// meets wood exactly when the stock top of such a point stands higher
+    /// than the tip plus the protrusion. Those points fill the lens of the
+    /// two core discs, at the tool now and `h` back; the read is the disc
+    /// inside that lens. A plunge has `h = 0`: the whole core.
+    pub fn core_strike(
+        &self,
+        stock: &crate::dexel_stock::TriDexelStock,
+        start: P3,
+        end: P3,
+    ) -> Option<(f64, P3)> {
+        let limits = self.core_limits?;
+        let core_r = limits.centre_core_diameter_mm / 2.0;
+        let protrusion = limits.max_plunge_depth_mm;
+        let tol = crate::compute::tool_config::NON_CENTRE_CUTTING_TOL_MM;
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let dxy = dx.hypot(dy);
+        let dz = start.z - end.z;
+        let back_xy = if dxy > 1e-9 {
+            protrusion * dxy / dz
+        } else {
+            0.0
+        };
+        let cell = stock.z_grid.cell_size;
+        let step = (core_r / 2.0).min(1.0).max(cell);
+        let n = crate::util::steps::steps(dxy, step).unwrap_or(0).max(1);
+        let at = |t: f64| P3::new(start.x + dx * t, start.y + dy * t, start.z - dz * t);
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let tip = at(t);
+            let back = if dxy > 1e-9 {
+                at(((t * dxy - back_xy) / dxy).max(0.0))
+            } else {
+                tip
+            };
+            let d = (tip.x - back.x).hypot(tip.y - back.y);
+            let lens_r = core_r - d / 2.0;
+            if lens_r < cell / 2.0 {
+                continue;
+            }
+            let top =
+                stock.max_top_z_in_disc((tip.x + back.x) / 2.0, (tip.y + back.y) / 2.0, lens_r);
+            if let Some(top) = top
+                && top - tip.z > protrusion + tol
+            {
+                return Some((top - tip.z, tip));
+            }
+        }
+        None
+    }
+
+    /// G-CENTRECUT: record a core strike of move `move_index`.
+    pub fn record_core(&mut self, move_index: usize, start: P3, end: P3, strike: (f64, P3)) {
+        let (material_over_tip_mm, position) = strike;
+        let Some(limits) = self.core_limits else {
+            return;
+        };
+        let dxy = (end.x - start.x).hypot(end.y - start.y);
+        self.core_hits.push(NonCentreCuttingDescent {
+            move_index,
+            position,
+            material_over_tip_mm,
+            max_plunge_depth_mm: limits.max_plunge_depth_mm,
+            descent_angle_deg: (start.z - end.z).atan2(dxy).to_degrees(),
+            max_descent_angle_deg: limits.max_descent_angle_deg,
+        });
     }
 
     /// Does this rapid enter material standing in `stock` right now?
@@ -805,6 +923,12 @@ impl<'a> RapidClearanceCheck<'a> {
     /// Consume the check and take its findings.
     pub fn into_hits(self) -> Vec<RapidCollision> {
         self.hits
+    }
+
+    /// Consume the check and take both findings: the struck rapids and
+    /// the G-CENTRECUT core strikes.
+    pub fn into_parts(self) -> (Vec<RapidCollision>, Vec<NonCentreCuttingDescent>) {
+        (self.hits, self.core_hits)
     }
 }
 

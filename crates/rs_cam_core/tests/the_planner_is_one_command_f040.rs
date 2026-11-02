@@ -109,6 +109,7 @@ fn adopt_an_empty_simulation(session: &mut ProjectSession) {
         group_starts: Vec::new(),
         stock_change_volumes: Vec::new(),
         obstacle_collisions: Vec::new(),
+        non_centre_cutting_descents: Vec::new(),
     };
     let epoch = session.simulation_epoch();
     let _ = session

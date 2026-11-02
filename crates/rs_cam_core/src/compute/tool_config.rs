@@ -323,10 +323,18 @@ pub struct NonCentreCuttingGeometry {
 }
 
 /// The safe descent limits derived from [`NonCentreCuttingGeometry`].
+///
+/// G-CENTRECUT part 2: the tool owns these limits. Every entry builder and
+/// the simulation gate read them from the tool through
+/// [`crate::tool::MillingCutter::non_centre_cutting`]. The methods below
+/// are the one check; no op, planner or dressup keeps a copy.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NonCentreCuttingLimits {
     pub max_plunge_depth_mm: f64,
     pub max_descent_angle_deg: f64,
+    /// The diameter (mm) of the centre core that does not cut. The
+    /// simulation gate reads the material inside this core.
+    pub centre_core_diameter_mm: f64,
 }
 
 impl NonCentreCuttingGeometry {
@@ -337,9 +345,99 @@ impl NonCentreCuttingGeometry {
             max_descent_angle_deg: (self.blade_protrusion_mm / self.centre_core_diameter_mm)
                 .atan()
                 .to_degrees(),
+            centre_core_diameter_mm: self.centre_core_diameter_mm,
         }
     }
 }
+
+impl NonCentreCuttingLimits {
+    /// The steepest descent slope (dz / dxy) into stock.
+    #[must_use]
+    pub fn max_descent_slope(&self) -> f64 {
+        self.max_descent_angle_deg.to_radians().tan()
+    }
+
+    /// The ramp angle (degrees) an entry may use: the requested angle, but
+    /// never steeper than the limit. A request that is not a valid angle
+    /// gets the limit angle.
+    #[must_use]
+    pub fn clamp_descent_angle_deg(&self, requested_deg: f64) -> f64 {
+        if requested_deg > 0.0 && requested_deg < 90.0 {
+            requested_deg.min(self.max_descent_angle_deg)
+        } else {
+            self.max_descent_angle_deg
+        }
+    }
+
+    /// True when a straight plunge of `depth_mm` into stock is allowed.
+    #[must_use]
+    pub fn allows_plunge(&self, depth_mm: f64) -> bool {
+        depth_mm <= self.max_plunge_depth_mm + NON_CENTRE_CUTTING_TOL_MM
+    }
+
+    /// True when a fed move from `start` to `end` goes down steeper than
+    /// the limit angle. A vertical descent is steeper. A level move or a
+    /// move up is not.
+    #[must_use]
+    pub fn is_steeper_than_limit(&self, start: crate::geo::P3, end: crate::geo::P3) -> bool {
+        let dz = start.z - end.z;
+        if dz <= NON_CENTRE_CUTTING_TOL_MM {
+            return false;
+        }
+        let dxy = (end.x - start.x).hypot(end.y - start.y);
+        dz > dxy * self.max_descent_slope() * (1.0 + 1e-6) + NON_CENTRE_CUTTING_TOL_MM
+    }
+}
+
+impl NonCentreCuttingLimits {
+    /// The refusal of a straight plunge from the material top
+    /// `material_top_z` down to `end`, or `None` when the plunge is not
+    /// deeper than the blade protrusion. The one plunge check of every
+    /// entry builder.
+    #[must_use]
+    pub fn plunge_refusal(
+        &self,
+        material_top_z: f64,
+        end: crate::geo::P3,
+    ) -> Option<NonCentreCuttingRefusal> {
+        let depth_mm = material_top_z - end.z;
+        (!self.allows_plunge(depth_mm)).then_some(NonCentreCuttingRefusal {
+            at: end,
+            depth_mm,
+            max_plunge_depth_mm: self.max_plunge_depth_mm,
+        })
+    }
+}
+
+/// G-CENTRECUT: an entry builder could not keep a non-centre-cutting tool
+/// inside its limits. It had to plunge straight into stock deeper than the
+/// blade protrusion. Generation refuses with this value
+/// (`OperationError::NonCentreCutting`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NonCentreCuttingRefusal {
+    /// The plunge target, in the emission frame.
+    pub at: crate::geo::P3,
+    /// How far the plunge goes into stock (mm).
+    pub depth_mm: f64,
+    /// The blade protrusion of the tool (mm).
+    pub max_plunge_depth_mm: f64,
+}
+
+impl std::fmt::Display for NonCentreCuttingRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the tool does not cut at its centre, and an entry at X{:.3} Y{:.3} Z{:.3} \
+             must plunge {:.2} mm straight into stock (the blades stand {:.2} mm below \
+             the centre). Use a ramp or helix entry that has room, or a centre-cutting tool",
+            self.at.x, self.at.y, self.at.z, self.depth_mm, self.max_plunge_depth_mm
+        )
+    }
+}
+
+/// The tolerance (mm) of the non-centre-cutting checks: float noise on a
+/// planned depth and on a dexel height read.
+pub const NON_CENTRE_CUTTING_TOL_MM: f64 = 0.02;
 
 /// Complete tool configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

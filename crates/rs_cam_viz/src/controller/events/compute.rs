@@ -2725,5 +2725,7 @@ fn core_simulation_from_lane(
         group_starts: core.group_starts.clone(),
         stock_change_volumes: core.stock_change_volumes.clone(),
         obstacle_collisions: core.obstacle_collisions.clone(),
+        // G-CENTRECUT: the export door refuses on these.
+        non_centre_cutting_descents: core.non_centre_cutting_descents.clone(),
     }
 }

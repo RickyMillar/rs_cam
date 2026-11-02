@@ -161,6 +161,7 @@ fn params(style: EntryStyle3d, stay_down: Option<f64>, dpp: f64) -> Adaptive3dPa
             step_split: None,
             keep_down_route: None,
             level_contour: None,
+            rest_region_filter: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,

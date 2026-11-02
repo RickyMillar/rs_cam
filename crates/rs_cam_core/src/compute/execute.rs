@@ -74,6 +74,11 @@ pub enum OperationError {
     /// data). The op stays in the project; it refuses until the operator
     /// sets the value.
     NotSet(crate::compute::not_set::NotSet),
+    /// G-CENTRECUT (SAFETY): the tool does not cut at its centre, and a
+    /// shared entry builder could not keep it inside its limits: it must
+    /// plunge straight into stock deeper than the blade protrusion. The
+    /// session stage after generation (`JobPhases::run_stages`) refuses.
+    NonCentreCutting(crate::compute::tool_config::NonCentreCuttingRefusal),
 }
 
 impl From<crate::compute::not_set::NotSet> for OperationError {
@@ -323,6 +328,7 @@ impl std::fmt::Display for OperationError {
             Self::Selection(refusal) => write!(f, "{refusal}"),
             Self::BuriedFace(refusal) => write!(f, "{refusal}"),
             Self::NotSet(not_set) => write!(f, "{not_set}"),
+            Self::NonCentreCutting(refusal) => write!(f, "Entry refused: {refusal}"),
             Self::InvalidParam(s) | Self::Internal(s) => write!(f, "{s}"),
         }
     }

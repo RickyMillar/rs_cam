@@ -819,6 +819,63 @@ pub struct SimulationResult {
     /// the setup frame. Each is a collision: the diagnostics add them to
     /// `collision_count`.
     pub obstacle_collisions: Vec<crate::compute::obstacle::ObstacleCollision>,
+    /// G-CENTRECUT (SAFETY): every fed move where a tool that does not cut
+    /// at its centre goes down into stock steeper than its limit angle or
+    /// plunges deeper than its blade protrusion, at most one per move, in
+    /// run order. Absolute limits from the tool; a descent in air is not a
+    /// finding. Export refuses on any of them
+    /// ([`non_centre_cutting_refusal_rows`]).
+    pub non_centre_cutting_descents: Vec<ToolpathCoreDescent>,
+}
+
+/// G-CENTRECUT: one core strike ([`crate::stock::collision::NonCentreCuttingDescent`])
+/// and the toolpath it belongs to. `descent.move_index` is the toolpath's
+/// own move index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolpathCoreDescent {
+    pub toolpath_id: ToolpathId,
+    pub descent: crate::stock::collision::NonCentreCuttingDescent,
+}
+
+/// G-CENTRECUT, the eighth shared decision: the export refusal rows of a
+/// simulation for the toolpaths `emitted`. One row per toolpath that holds
+/// a core strike: its name (from `name_of`), the strike count and the
+/// worst strike. Empty: export may go on. The checked export door reads
+/// it on every surface.
+pub fn non_centre_cutting_refusal_rows<'n>(
+    result: &SimulationResult,
+    emitted: &[ToolpathId],
+    name_of: impl Fn(ToolpathId) -> Option<&'n str>,
+) -> Vec<String> {
+    emitted
+        .iter()
+        .filter_map(|id| {
+            let hits: Vec<_> = result
+                .non_centre_cutting_descents
+                .iter()
+                .filter(|hit| hit.toolpath_id == *id)
+                .map(|hit| &hit.descent)
+                .collect();
+            let worst = hits
+                .iter()
+                .max_by(|a, b| a.material_over_tip_mm.total_cmp(&b.material_over_tip_mm))?;
+            Some(format!(
+                "Toolpath '{}': the tool does not cut at its centre, and {} move(s) push the \
+                 centre into wood (worst: move {} at X{:.3} Y{:.3} Z{:.3}, {:.2} mm of wood over \
+                 the tip, descent {:.1} deg; the limits are a {:.2} mm plunge and {:.2} deg)",
+                name_of(*id).unwrap_or("?"),
+                hits.len(),
+                worst.move_index,
+                worst.position.x,
+                worst.position.y,
+                worst.position.z,
+                worst.material_over_tip_mm,
+                worst.descent_angle_deg,
+                worst.max_plunge_depth_mm,
+                worst.max_descent_angle_deg,
+            ))
+        })
+        .collect()
 }
 
 impl SimulationResult {
@@ -1278,12 +1335,11 @@ pub fn transform_stock_mesh_to_global(
 /// published index stays global — the same arithmetic the drill pre-pass above
 /// uses, kept in one place because two call sites now need it.
 fn collect_rapid_hits(
-    check: RapidClearanceCheck<'_>,
+    hits: Vec<RapidCollision>,
     total_moves: usize,
     collisions: &mut Vec<RapidCollision>,
     move_indices: &mut Vec<usize>,
 ) {
-    let hits = check.into_hits();
     for rc in &hits {
         move_indices.push(total_moves + rc.move_index);
     }
@@ -1364,6 +1420,7 @@ fn cold_prefix_state(request: &SimulationRequest, global_bbox: &BoundingBox3) ->
         column_deviations: request.model_mesh.as_ref().map(|_| Vec::new()),
         rapid_collisions: Vec::new(),
         rapid_collision_move_indices: Vec::new(),
+        non_centre_cutting_descents: Vec::new(),
         prior_stocks: std::collections::HashMap::new(),
         global_drill_ops: Vec::new(),
         group_stock: None,
@@ -1792,12 +1849,18 @@ fn carve_entry(
             )
             .map_err(|_cancelled| SimulationError::Cancelled)?;
         append_samples(&mut run.cut_samples, samples);
+        let (rapid_hits, core_hits) = rapid_check.into_parts();
         collect_rapid_hits(
-            rapid_check,
+            rapid_hits,
             run.total_moves,
             &mut run.rapid_collisions,
             &mut run.rapid_collision_move_indices,
         );
+        run.non_centre_cutting_descents
+            .extend(core_hits.into_iter().map(|descent| ToolpathCoreDescent {
+                toolpath_id: entry.id,
+                descent,
+            }));
     }
     Ok(())
 }
@@ -2290,6 +2353,7 @@ where
         column_deviations,
         rapid_collisions,
         rapid_collision_move_indices,
+        non_centre_cutting_descents,
         prior_stocks,
         global_drill_ops,
         group_stock: _,
@@ -2368,6 +2432,7 @@ where
         group_starts,
         stock_change_volumes,
         obstacle_collisions,
+        non_centre_cutting_descents,
     })
 }
 

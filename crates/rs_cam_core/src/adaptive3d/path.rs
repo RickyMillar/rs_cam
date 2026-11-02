@@ -1258,6 +1258,7 @@ pub(super) fn adaptive_3d_segments(
         safe_z: params.safe_z,
         min_cutting_radius: params.geometry.min_cutting_radius,
         min_region_cut_length_mm: params.linking.min_region_cut_length_mm,
+        rest_region_filter: params.linking.rest_region_filter,
         entry_floor_radius: entry_floor_radius(params, cutter.radius()),
         stay_down_mm: resolved_stay_down_mm(params, cutter.radius()),
         centre_clip: centre_clip.as_ref(),
@@ -2041,6 +2042,7 @@ pub(super) fn emitted_link_path(
     }
 }
 
+#[cfg(test)]
 pub(super) fn segments_to_toolpath(
     segments: &[Adaptive3dSegment],
     params: &Adaptive3dParams,
@@ -2048,8 +2050,48 @@ pub(super) fn segments_to_toolpath(
     index: &crate::mesh::SpatialIndex,
     cutter: &dyn crate::tool::MillingCutter,
 ) -> (Toolpath, Vec<Adaptive3dRuntimeAnnotation>) {
+    let (tp, annotations, _refusal) =
+        segments_to_toolpath_checked(segments, params, mesh, index, cutter);
+    (tp, annotations)
+}
+
+/// The entry style the emitter uses with `cutter`. G-CENTRECUT: a tool that
+/// does not cut at its centre takes no peck plunge; its entries go through
+/// the shared limited ramp at the tool's limit angle (`emit_ramp` clamps a
+/// ramp or a helix to the limit itself).
+pub(super) fn effective_entry_style(
+    style: EntryStyle3d,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> EntryStyle3d {
+    match (style, cutter.non_centre_cutting()) {
+        (EntryStyle3d::Plunge, Some(limits)) => EntryStyle3d::Ramp {
+            max_angle_deg: limits.max_descent_angle_deg,
+        },
+        (style, _) => style,
+    }
+}
+
+/// [`segments_to_toolpath`], with the first G-CENTRECUT refusal of a shared
+/// entry emitter (a non-centre-cutting tool that had to plunge straight
+/// into stock deeper than its protrusion). The run puts it in
+/// `Produced::non_centre_cutting_refusal`; the session refuses on it.
+pub(super) fn segments_to_toolpath_checked(
+    segments: &[Adaptive3dSegment],
+    params: &Adaptive3dParams,
+    mesh: &crate::mesh::TriangleMesh,
+    index: &crate::mesh::SpatialIndex,
+    cutter: &dyn crate::tool::MillingCutter,
+) -> (
+    Toolpath,
+    Vec<Adaptive3dRuntimeAnnotation>,
+    Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+) {
     // G-DRAPEGAP: the chord-lift probe, the one the planner's stamp reads.
     let probe = params.geometry.gouge_probe.as_deref();
+    // G-CENTRECUT: the tool's limits and the entry style they allow.
+    let centre_limits = cutter.non_centre_cutting();
+    let entry_style = effective_entry_style(params.entry_style, cutter);
+    let mut refusal = None;
     let mut tp = Toolpath::new();
     let mut annotations = Vec::new();
     // D4 — running pass index for `PassEntry` annotations. Increments
@@ -2089,7 +2131,7 @@ pub(super) fn segments_to_toolpath(
     // both as the `style_label` field on the emitted `PassEntry`
     // annotation and downstream in `compute::spans` / `compute::annotate`
     // to label the resulting `SpanKind::Entry` / semantic `Entry`.
-    let entry_style_label: &'static str = match params.entry_style {
+    let entry_style_label: &'static str = match entry_style {
         EntryStyle3d::Plunge => "plunge entry",
         EntryStyle3d::Helix { .. } => "helix entry",
         EntryStyle3d::Ramp { .. } => "ramp entry",
@@ -2125,6 +2167,7 @@ pub(super) fn segments_to_toolpath(
             // Byte parity: the adaptive3d helix keeps its historical end.
             helix_floor_lap: false,
             helix_containment: None,
+            centre_limits,
         }
     };
 
@@ -2225,21 +2268,20 @@ pub(super) fn segments_to_toolpath(
                 let material_top = rapid_floor_z.unwrap_or(params.depth.stock_top_z);
                 if descent_floor > entry.z + 1e-6 {
                     let start = P3::new(entry.x, entry.y, descent_floor);
-                    match params.entry_style {
+                    let refused = match entry_style {
                         EntryStyle3d::Plunge => {
                             emit_peck_plunge(&mut tp, entry, descent_floor, contact_z, params);
+                            None
                         }
-                        EntryStyle3d::Helix { radius, pitch } => {
-                            crate::dressup::emit_helix(
-                                &mut tp,
-                                &start,
-                                entry,
-                                radius,
-                                pitch,
-                                params.plunge_rate,
-                                &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
-                            );
-                        }
+                        EntryStyle3d::Helix { radius, pitch } => crate::dressup::emit_helix(
+                            &mut tp,
+                            &start,
+                            entry,
+                            radius,
+                            pitch,
+                            params.plunge_rate,
+                            &entry_safety(material_top, rapid_floor_z.is_some(), contact_z),
+                        ),
                         EntryStyle3d::Ramp { max_angle_deg } => {
                             crate::dressup::emit_ramp(
                                 &mut tp,
@@ -2254,9 +2296,10 @@ pub(super) fn segments_to_toolpath(
                                 // mesh footprint cuts stock this operation is
                                 // allowed to cut (R0.2 section 2.2).
                                 None,
-                            );
+                            )
                         }
-                    }
+                    };
+                    refusal = refusal.or(refused);
                 }
                 let entry_end = tp.moves.len();
                 if entry_end > entry_start {
@@ -2354,7 +2397,7 @@ pub(super) fn segments_to_toolpath(
         );
     }
 
-    (tp, annotations)
+    (tp, annotations, refusal)
 }
 
 impl crate::compute::spans::RuntimeLabel for Adaptive3dRuntimeAnnotation {
@@ -2475,6 +2518,7 @@ mod tests {
                 step_split: None,
                 keep_down_route: None,
                 level_contour: None,
+                rest_region_filter: None,
             },
             trochoid_cap_mult: 1.6,
             feed_rate: 1500.0,

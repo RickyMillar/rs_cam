@@ -221,6 +221,12 @@ pub struct EntrySafety<'a> {
     /// tool radius), or `None` for no containment. 2D Adaptive only
     /// (G-ADAPTPASSLOAD round 3): its planner stamps the same fitted hole.
     pub helix_containment: Option<&'a [crate::polygon::Polygon2]>,
+    /// G-CENTRECUT: the limits of a tool that does not cut at its centre,
+    /// read from the tool (`MillingCutter::non_centre_cutting`). `Some`
+    /// clamps the ramp angle and the helix pitch to the limit angle, starts
+    /// the descent at the conservative material top, and makes an emitter
+    /// return a refusal when it must plunge deeper than the protrusion.
+    pub centre_limits: Option<crate::compute::tool_config::NonCentreCuttingLimits>,
 }
 
 /// A contained helix whose fitted radius is at most this is a ramp (mm):
@@ -417,6 +423,9 @@ pub fn apply_entry(
     // descends into: reading it would helix down through the cleared column.
     let entry_reach = tool_radius_mm;
 
+    // G-CENTRECUT: the first entry that had to plunge deeper than the
+    // protrusion of a non-centre-cutting tool. The session refuses on it.
+    let mut refusal = None;
     let mut i = 0;
     while i < toolpath.moves.len() {
         let m = &toolpath.moves[i];
@@ -483,7 +492,7 @@ pub fn apply_entry(
                         min_run_mm: tool_radius_mm.max(1.0),
                         lap_cap: safety.fold_lap_cap,
                     };
-                    emit_ramp(
+                    let refused = emit_ramp(
                         &mut result,
                         &toolpath.moves[i - 1].target,
                         &m.target,
@@ -493,18 +502,20 @@ pub fn apply_entry(
                         &safety,
                         Some(&fold),
                     );
+                    refusal = refusal.or(refused);
                 }
                 EntryStyle::Plunge => {
-                    emit_stock_aware_plunge(
+                    let refused = emit_stock_aware_plunge(
                         &mut result,
                         &toolpath.moves[i - 1].target,
                         &m.target,
                         feed_rate.min(plunge_rate),
                         &safety,
                     );
+                    refusal = refusal.or(refused);
                 }
                 EntryStyle::Helix { radius, pitch } => {
-                    emit_helix(
+                    let refused = emit_helix(
                         &mut result,
                         &toolpath.moves[i - 1].target,
                         &m.target,
@@ -513,6 +524,7 @@ pub fn apply_entry(
                         feed_rate.min(plunge_rate),
                         &safety,
                     );
+                    refusal = refusal.or(refused);
                 }
             }
             let entry_end = result.moves.len();
@@ -533,6 +545,8 @@ pub fn apply_entry(
         i += 1;
     }
 
+    let mut produced = produced;
+    produced.non_centre_cutting_refusal = produced.non_centre_cutting_refusal.or(refusal);
     let new_n_moves = result.moves.len();
     let remap = MoveRemap { old_to_new };
     let new_spans = if spans_valid {

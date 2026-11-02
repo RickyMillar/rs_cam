@@ -411,6 +411,10 @@ pub(super) struct ClearZLevelContext<'a> {
     /// contour on each level. `None`: the option is off, or the rough has
     /// no band.
     pub(super) band_edge: std::cell::RefCell<Option<super::level_contour::BandEdge>>,
+    /// The rest region filter (`Adaptive3dLinking::rest_region_filter`).
+    /// `build_material_bool_grid` applies it to each grid it builds.
+    /// `None`: every region is cut.
+    pub(super) rest_region_filter: Option<super::RestRegionFilter>,
 }
 
 // ── Contour-parallel clearing ─────────────────────────────────────────
@@ -433,6 +437,7 @@ fn build_material_bool_grid(
     z_level: f64,
     stock_to_leave: f64,
     mask: Option<&AreaMask>,
+    rest_filter: Option<&super::RestRegionFilter>,
 ) -> (Vec<bool>, usize, usize, f64, f64, f64) {
     let grid = &material_stock.z_grid;
     let rows = grid.rows;
@@ -467,6 +472,25 @@ fn build_material_bool_grid(
                 // +1 offset for the border padding
                 padded_grid[(row + 1) * padded_cols + (col + 1)] = true;
             }
+        }
+    }
+
+    // The rest region filter: ONE place for every strategy and the
+    // Contour Parallel cleanup. A region that is too large is skipped at
+    // this level, whole.
+    if let Some(filter) = rest_filter {
+        let skipped = super::rest_region_filter::skip_large_regions(
+            &mut padded_grid,
+            padded_rows,
+            padded_cols,
+            cell_size,
+            filter,
+        );
+        if skipped > 0 {
+            debug!(
+                z = z_level,
+                skipped, "Rest region filter: skipped the regions over the bound"
+            );
         }
     }
 
@@ -1380,6 +1404,7 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         area_mask,
+        ctx.rest_region_filter.as_ref(),
     );
 
     let mat_count = material_grid.iter().filter(|&&b| b).count();
@@ -1545,6 +1570,7 @@ pub(super) fn clear_z_level_contour_parallel(
         z_level,
         ctx.stock_to_leave,
         area_mask,
+        ctx.rest_region_filter.as_ref(),
     );
     let cleanup_count = cleanup_grid.iter().filter(|&&b| b).count();
     if cleanup_count > 0 {
@@ -2084,6 +2110,7 @@ fn detect_and_order_regions(
         z_level,
         ctx.stock_to_leave,
         area_mask,
+        ctx.rest_region_filter.as_ref(),
     );
     // Geodesic Adaptive (research C38 §11, G-CLIPAIR): regions stay inside the boundary,
     // and include the centres whose disc meets the reachable band.

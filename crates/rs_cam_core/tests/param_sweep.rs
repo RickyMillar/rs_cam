@@ -1549,6 +1549,7 @@ fn default_adaptive3d_params() -> Adaptive3dParams {
             step_split: None,
             keep_down_route: None,
             level_contour: None,
+            rest_region_filter: None,
         },
         trochoid_cap_mult: 1.6,
         engagement_measure: rs_cam_core::adaptive::EngagementMeasure::DiskArea,
