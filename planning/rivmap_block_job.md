@@ -782,3 +782,5 @@ The GUI ran OOM at the 16 GB cap; the proxy cap is now 28 GB.
   (cancelled): 3D Rough, R1 x 6 x 20 tapered ball, remaining stock, geodesic_adaptive, region_ordering
   by_area, detect_flat_areas true, rest_max_region_width_mm 20, stepover 0.66, depth_per_pass 2.0,
   leave 0.5, bottom_z 13.0, boundary EDGE_OUTER centre.
+  Second defect: cancel did not stop it (lane "cancelling" for about 50 min after the cancel at
+  14 466 s): that 3D Rough loop does not poll the cancel flag. The GUI was restarted (SIGTERM).
