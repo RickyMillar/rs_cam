@@ -72,7 +72,7 @@ and the nomogram follows it; a click writes nothing until Apply. The Feeds tab
 is merged into Passes (4 tabs). Every toolpath result carries a `Lineage`
 (cut, pick, speed stamps, tool facts, entry, findings); a result without it
 does not compile. MCP: `get_toolpath_lineage`. No FM1 cell or G-OPGOLDEN row
-moved. Next: P6 (`ToolFact`), in a fresh session.
+moved. Next: P5c (operator plot review fixes), then P6 (`ToolFact`).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

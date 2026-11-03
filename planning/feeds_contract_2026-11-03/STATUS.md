@@ -34,7 +34,8 @@ code by the symbol when the line has moved.
 | 3 K4 entry contract | `phases/P3.md` | DONE 2026-11-03 (25 rows state `entry`; `EntryApproach`; `EntryRecord`; G-OPGOLDEN has `gcode_hash`, no byte moved) | see `git log` | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | DONE 2026-11-04 (Suggest writes geometry only on a pick; `SafeEnvelope`; Q3; FM1 re-blessed). Heavy FM1 subset and `wanaka_suggest_integration`: approved, run after the commit | see `git log` | |
-| 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | Next: P6, in a fresh session |
+| 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | Next: P5c, then P6, in a fresh session |
+| 5c Plot review fixes | `phases/P5c.md` | NOT STARTED (operator review of P5b, 2026-11-04; do before P6) | | |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
@@ -67,6 +68,14 @@ code by the symbol when the line has moved.
   - Idea (operator, 2026-11-04): show each envelope limit as a fill fraction
     at the pick (sorted bars beside the plot, live on drag). The operator
     has not ruled; a radar chart was considered and does not show the trade.
+- Research (operator, 2026-11-04): stepover does not move the feeds and
+  speeds, and a raised stepover does not lower the proposed depth. The operator
+  expects a higher depth and a lower stepover to trade ("kind of cancel").
+  Today the trade exists only as the Power and Deflection edges (`ap(ae)`
+  curves), and radial chip thinning is observed, not applied
+  (G-CHIPTHIN-HALFFIX: the vendor tables print no radial reference
+  condition). Question: which printed sources in the repo, or new ones, give
+  the depth-stepover-chipload relation with a reference condition? Link: P9.
 - Backlog idea (operator, 2026-11-03): a geometry field may hold an expression
   of the tool, such as `0.2*D`, and fill itself from the tool, as in Fusion.
   Not in a phase; consider it after P10.
