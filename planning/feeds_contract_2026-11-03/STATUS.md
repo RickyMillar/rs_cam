@@ -28,9 +28,9 @@ code by the symbol when the line has moved.
 |---|---|---|---|---|
 | 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
 | 1 Wildcard lint | `phases/P1.md` | DONE 2026-11-03 (563 hits: 256 exhaustive, 307 `#[expect]`; no value moved) | see `git log` | |
-| 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED | | |
+| 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED (GUI mock agreed 2026-11-03; runs after P4: both edit core feeds and export paths) | | |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
-| 4 K1 `CutSpec` | `phases/P4.md` | NOT STARTED | | |
+| 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | NOT STARTED (needs P4) | | |
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (D2, needs P5) | | |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
@@ -42,7 +42,8 @@ code by the symbol when the line has moved.
 
 - The `suggest` CLI command landed with Phase 0.
 - G-OPGOLDEN prints 46 rows at clean HEAD (recorded by 98344a12f). A phase
-  gate passes when it prints the same 46 rows and no other row.
+  gate passes when it prints the same 46 rows and no other row. The rows are in
+  `opgolden_known_46_rows.txt`: compare with `diff`.
 - Known red at HEAD 218ba2858, not caused by a phase:
   `rs_cam_viz --test an_unbacked_cell_still_adds_its_operation_fm5` (3 tests:
   `commands.rs` has no `FeedsError::Unbacked` arm; the add stops at "import

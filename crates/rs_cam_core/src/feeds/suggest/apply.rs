@@ -1213,17 +1213,15 @@ pub fn apply_stock_defaults(operation: &mut OperationConfig, ctx: &StockContext)
 /// Extract operation-specific hints for the feeds calculator.
 /// Returns `(axial_depth_hint, radial_width_hint, scallop_hint)`.
 ///
-/// Thin tuple adapter over the registry-layer
-/// [`Capabilities::feeds_hints`](crate::compute::catalog::Capabilities::feeds_hints) accessor (Phase 1, architectural
-/// refactor T3) — the per-op decision table lives there as an exhaustive
-/// match; the old `_ => (None, None, None)` wildcard is gone.
+/// Thin tuple adapter over CONTRACT K1 (feeds contract P4): the op builds
+/// its [`CutSpec`](crate::compute::catalog::CutSpec) with
+/// `OperationConfig::cut_spec`, and the row's
+/// [`CutRule::calc_reads`](crate::compute::catalog::CutRule::calc_reads)
+/// selects today's calculator inputs from it (`CutSpec::todays_hints`).
+/// Both matches name every variant; no wildcard arm is left.
 pub fn operation_feeds_hints(
     operation: &OperationConfig,
 ) -> (Option<f64>, Option<f64>, Option<f64>) {
-    let hints = operation.capabilities().feeds_hints;
-    (
-        hints.axial_depth_mm,
-        hints.radial_width_mm,
-        hints.target_scallop_mm,
-    )
+    let reads = operation.capabilities().cut_rule.calc_reads;
+    operation.cut_spec().todays_hints(reads)
 }

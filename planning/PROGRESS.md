@@ -37,7 +37,11 @@ Phase 1 landed 2026-11-03: the workspace denies
 their variants (the feed, cut and drill decisions among them), 307 take an
 `#[expect]` with a reason (projection, pass-through, dispatch, foreign enum,
 or a test arm that panics: D1). No value, golden or G-code byte moved.
-Next: Phase 4 (`CutSpec`).
+
+Phase 4 landed 2026-11-03 (K1): `OperationConfig::cut_spec()` (25 arms, no
+wildcard) builds a `CutSpec`; each registry row states its `cut_rule`;
+`FeedsHints` is gone. Suggest reads today's three inputs through
+`CutSpec::todays_hints`, so FM1 did not move. Next: Phase 2 (K6, no refusals).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

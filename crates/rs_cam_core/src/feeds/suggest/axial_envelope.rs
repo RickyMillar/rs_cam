@@ -181,7 +181,7 @@ pub(crate) fn axial_envelope_for_operation(
             // model (triangular groove averages ½ width). The commanded
             // depth is the op's imposed axial depth (VCarve: `max_depth`).
             let geometry = tool_def.to_geometry_hint();
-            let depth = operation.capabilities().feeds_hints.axial_depth_mm;
+            let depth = super::operation_feeds_hints(operation).0;
             let radial_woc = match (geometry, depth) {
                 (
                     ToolGeometryHint::VBit {

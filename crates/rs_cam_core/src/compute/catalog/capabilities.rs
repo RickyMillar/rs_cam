@@ -25,8 +25,7 @@
 //! explain payload).
 
 use super::{
-    DepthOrder, FeedsHints, GlobalReorder, LinkMoves, OperationTransformCapabilities,
-    PathContinuity,
+    CutRule, DepthOrder, GlobalReorder, LinkMoves, OperationTransformCapabilities, PathContinuity,
 };
 use crate::compute::execute::LinkCeilingNeed;
 use crate::selection::HoleFitRule;
@@ -69,10 +68,11 @@ pub struct Capabilities<P = EntryProbe> {
     pub entry_probe: P,
     /// When the op's links need a link ceiling (ruling R1).
     pub link_ceiling: LinkCeilingNeed,
-    /// The hints the feeds calculator must respect. The row holds
-    /// [`FeedsHints::NONE`]; the hint values are config values, so
-    /// `OperationConfig::capabilities` fills them.
-    pub feeds_hints: FeedsHints,
+    /// CONTRACT K1 (row half): the rule of the op's cut. The row holds a
+    /// rule, never a number; `OperationConfig::cut_spec` builds the
+    /// [`CutSpec`](super::CutSpec) from the config by this rule. `CutRule`
+    /// has no `Default`, so a new row does not compile without it.
+    pub cut_rule: CutRule,
     /// How Suggest's move-count predictor models this op.
     pub move_count: MoveCountModel,
     /// What the narration compares an axial-DOC sample against when the
@@ -314,7 +314,7 @@ impl<P> Capabilities<P> {
             floor_owner: self.floor_owner,
             entry_probe,
             link_ceiling: self.link_ceiling,
-            feeds_hints: self.feeds_hints,
+            cut_rule: self.cut_rule,
             move_count: self.move_count,
             doc_basis: self.doc_basis,
             air_cut_hint: self.air_cut_hint,

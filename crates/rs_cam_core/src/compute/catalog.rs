@@ -12,6 +12,7 @@ use super::operation_configs::{
 };
 
 mod capabilities;
+mod cut_spec;
 mod registry;
 mod schema;
 
@@ -20,6 +21,11 @@ pub use capabilities::{
     AirCutHint, AxialEnvelope, Capabilities, DocBasis, EntryProbe, EntryProbeRule, FaceFeedback,
     FaceTopRule, FloorOwner, ItemUse, LutRoute, ModelGougeRule, MoveCountModel, OutlineUse,
     RestUse, RowCapabilities, TRANSFORM_DISCRETE_SCALLOP, TerritoryXy,
+};
+
+pub use cut_spec::{
+    Axial, AxialRule, CutRule, CutSpec, FirstPass, Mm, PresentBasis, Radial, RadialRule, Stated,
+    TotalDepth,
 };
 
 pub use schema::{
@@ -1048,55 +1054,6 @@ impl OperationConfig {
                 } else {
                     TRANSFORM_DISCRETE_SCALLOP
                 },
-                feeds_hints: FeedsHints {
-                    target_scallop_mm: Some(c.scallop_height),
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            OperationConfig::UnifiedFinish(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    target_scallop_mm: Some(c.scallop_height),
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            // DropCutter (the "3D Finish" raster) can derive its stepover
-            // from a scallop target the way Scallop does. `None` keeps the
-            // `ae_factor x diameter` stepover.
-            OperationConfig::DropCutter(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    target_scallop_mm: c.scallop_height,
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            OperationConfig::Waterline(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    axial_depth_mm: Some(c.z_step),
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            OperationConfig::SteepShallow(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    axial_depth_mm: Some(c.z_step),
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            OperationConfig::VCarve(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    axial_depth_mm: c.max_depth,
-                    ..FeedsHints::NONE
-                },
-                ..row
-            },
-            OperationConfig::RampFinish(c) => Capabilities {
-                feeds_hints: FeedsHints {
-                    axial_depth_mm: Some(c.max_stepdown),
-                    ..FeedsHints::NONE
-                },
                 ..row
             },
             // P6.3: side On cuts on the line, so it reads the lines of the
@@ -1144,9 +1101,208 @@ impl OperationConfig {
             | OperationConfig::Chamfer(_)
             | OperationConfig::ProjectCurve(_)
             | OperationConfig::AlignmentPinDrill(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::RampFinish(_)
             // Removal step R2: no 3D Rough strategy left holds a uniform
             // planner engagement (ContourSpiral did), so the row stands.
             | OperationConfig::Adaptive3d(_) => row,
+        }
+    }
+
+    /// CONTRACT K1: the cut of this op, from its own config fields
+    /// (feeds contract P4). The match names every variant and has no
+    /// wildcard arm, so a new operation does not compile until it states
+    /// its cut. Each arm follows the row's [`CutRule`]
+    /// (`Capabilities::cut_rule`); the sentry
+    /// `every_op_states_its_cut_k1` holds the two equal.
+    ///
+    /// The values are the config `f64` values, bit for bit. No stage
+    /// refuses a job on a value here (ruling Q6).
+    #[must_use]
+    pub fn cut_spec(&self) -> CutSpec {
+        const SURFACE_DEPTH: &str = "the model sets the depth";
+        let mm = |value: f64| Stated::new(Mm::new(value));
+        let known_or_unset = |depth: Option<f64>| match depth {
+            Some(depth) => TotalDepth::Known(mm(depth)),
+            None => TotalDepth::Unset,
+        };
+        match self {
+            OperationConfig::Face(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::Known(mm(c.depth)),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Pocket(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::Slot,
+            },
+            // P4 decision D3: with no prior clearing, the first pass of
+            // every side has material on both sides.
+            OperationConfig::Profile(c) => CutSpec {
+                radial: Radial::Slot,
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::Slot,
+            },
+            OperationConfig::Adaptive(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::FromHeights,
+                first_pass: if c.slot_clearing {
+                    FirstPass::Slot
+                } else {
+                    FirstPass::NotSlot
+                },
+            },
+            OperationConfig::VCarve(c) => CutSpec {
+                radial: Radial::Groove,
+                axial: Axial::Surface {
+                    max: c.max_depth.map(mm),
+                },
+                total: TotalDepth::None("the V depth follows the outline"),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Inlay(c) => CutSpec {
+                radial: Radial::Groove,
+                axial: Axial::OnePass(c.pocket_depth.map(mm)),
+                total: known_or_unset(c.pocket_depth),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::InlayPlug(c) => CutSpec {
+                radial: Radial::Groove,
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: known_or_unset(c.total_cut_depth()),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Zigzag(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::Slot,
+            },
+            // D3: every compensation is a slot on the first pass.
+            OperationConfig::Trace(c) => CutSpec {
+                radial: Radial::Slot,
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: known_or_unset(c.depth),
+                first_pass: FirstPass::Slot,
+            },
+            OperationConfig::Drill(c) => CutSpec {
+                radial: Radial::Axial,
+                axial: Axial::Peck(mm(c.peck_depth)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::NotSlot,
+            },
+            // D3: the helix has material on both sides of the tool.
+            OperationConfig::Bore(c) => CutSpec {
+                radial: Radial::Slot,
+                axial: Axial::HelixPitch(mm(c.pitch)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::Slot,
+            },
+            OperationConfig::Chamfer(c) => CutSpec {
+                radial: Radial::Groove,
+                axial: Axial::ChamferWidth(mm(c.chamfer_width)),
+                total: TotalDepth::None("from chamfer_width and the tool angle"),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::DropCutter(c) => CutSpec {
+                radial: match c.scallop_height {
+                    Some(scallop) => Radial::Scallop(mm(scallop)),
+                    None => Radial::Width(mm(c.stepover)),
+                },
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Adaptive3d(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::PerPass(mm(c.depth_per_pass)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Waterline(c) => CutSpec {
+                radial: Radial::SurfaceFollow,
+                axial: Axial::ZStep(mm(c.z_step)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::NotSlot,
+            },
+            // The offset stepover exists only when the pass count asks for
+            // offsets (the `stepover()` gate of `PencilConfig`).
+            OperationConfig::Pencil(c) => CutSpec {
+                radial: if c.num_offset_passes > 1 {
+                    Radial::Width(mm(c.offset_stepover))
+                } else {
+                    Radial::SurfaceFollow
+                },
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::Scallop(c) => CutSpec {
+                radial: Radial::Scallop(mm(c.scallop_height)),
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::UnifiedFinish(c) => CutSpec {
+                radial: Radial::Scallop(mm(c.scallop_height)),
+                axial: Axial::ZStep(mm(c.z_step)),
+                total: TotalDepth::FromHeights,
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::SteepShallow(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::ZStep(mm(c.z_step)),
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::RampFinish(c) => CutSpec {
+                radial: Radial::SurfaceFollow,
+                axial: Axial::Surface {
+                    max: Some(mm(c.max_stepdown)),
+                },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::SpiralFinish(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::RadialFinish(c) => CutSpec {
+                radial: Radial::AngularStep(Stated::new(c.angular_step)),
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            OperationConfig::HorizontalFinish(c) => CutSpec {
+                radial: Radial::Width(mm(c.stepover)),
+                axial: Axial::Surface { max: None },
+                total: TotalDepth::None(SURFACE_DEPTH),
+                first_pass: FirstPass::NotSlot,
+            },
+            // D3: every side is a slot on the first pass.
+            OperationConfig::ProjectCurve(c) => CutSpec {
+                radial: Radial::Slot,
+                axial: Axial::OnePass(c.depth.map(mm)),
+                total: known_or_unset(c.depth),
+                first_pass: FirstPass::Slot,
+            },
+            OperationConfig::AlignmentPinDrill(c) => CutSpec {
+                radial: Radial::Axial,
+                axial: Axial::Peck(mm(c.peck_depth)),
+                total: TotalDepth::None("stock thickness plus spoilboard_penetration"),
+                first_pass: FirstPass::NotSlot,
+            },
         }
     }
 
@@ -1937,33 +2093,6 @@ fn param_defs_for_type(op_type: OperationType) -> &'static [ParamDef] {
 
 fn tool_constraints_for_type(op_type: OperationType) -> ToolConstraints {
     op_type.registry_entry().tool_constraints.to_schema()
-}
-
-/// Operation-specific hints handed to the feeds calculator. Hints are
-/// config values (z-step, scallop target, …), so the registry row holds
-/// [`FeedsHints::NONE`] and [`OperationConfig::capabilities`] fills
-/// [`Capabilities::feeds_hints`] from the config (W2.4).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct FeedsHints {
-    /// Operation-imposed axial depth (mm) the calculator must respect
-    /// (e.g. a waterline z-step) instead of choosing its own DOC.
-    pub axial_depth_mm: Option<f64>,
-    /// Operation-imposed radial width (mm); none of the current ops set
-    /// this, but the slot is part of the calculator contract.
-    pub radial_width_mm: Option<f64>,
-    /// Scallop-height target (mm) for stepover-from-chord-geometry ops.
-    pub target_scallop_mm: Option<f64>,
-}
-
-impl FeedsHints {
-    /// Named "no hints" policy — the calculator falls back to LUT /
-    /// diameter-factor defaults. Referenced explicitly per op so the
-    /// no-hint set is a recorded decision, not a wildcard fallback.
-    pub const NONE: Self = Self {
-        axial_depth_mm: None,
-        radial_width_mm: None,
-        target_scallop_mm: None,
-    };
 }
 
 impl OperationConfig {

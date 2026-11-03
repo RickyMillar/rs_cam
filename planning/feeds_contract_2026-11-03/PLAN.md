@@ -81,21 +81,24 @@ pub struct CutSpec {
 }
 pub enum Radial {
     Width(Stated<Mm>),              // Pocket/Face/Zigzag/Adaptive stepover
-    Slot,                           // Profile On, Trace None, Project Curve Center: ae = D
-    Groove { tool_angle: Deg },     // V ops: width follows depth
+    Slot,                           // Profile, Trace, Project Curve (every side), Bore: ae = D
+    Groove,                         // V ops: width follows depth (no tool angle: config only)
     Scallop(Stated<Mm>),            // finishing: width from the scallop target
-    SurfaceFollow,                  // Drop Cutter, Waterline contours
+    AngularStep(Stated<f64>),       // Radial Finish, degrees
+    SurfaceFollow,                  // Waterline, Ramp Finish, single-pass Pencil
     Axial,                          // Drill, Pin Drill: no radial cut
 }
 pub enum Axial {
     PerPass(Stated<Mm>),            // depth_per_pass the operator set
     ZStep(Stated<Mm>),
-    OnePass(Stated<Mm>),            // Project Curve depth, Inlay pocket depth
+    OnePass(Option<Stated<Mm>>),    // Project Curve depth, Inlay pocket depth; None = S11 unset
     Peck(Stated<Mm>),
-    Surface { max: Option<Mm> },
+    HelixPitch(Stated<Mm>),         // Bore
+    ChamferWidth(Stated<Mm>),       // Chamfer
+    Surface { max: Option<Stated<Mm>> },
 }
-pub enum TotalDepth { Known(Mm), FromHeights, None(&'static str) } // None needs a reason
-pub enum FirstPass { FreshStock, RestStock, Slot } // Pocket/Zigzag first ring = Slot
+pub enum TotalDepth { Known(Stated<Mm>), FromHeights, Unset, None(&'static str) } // None needs a reason
+pub enum FirstPass { Slot, NotSlot } // P4: from the config; FreshStock/RestStock wait for the stock source
 ```
 
 - `Stated<T>` holds the operator's value and marks it "operator". Only the op's own config can
@@ -103,9 +106,15 @@ pub enum FirstPass { FreshStock, RestStock, Slot } // Pocket/Zigzag first ring =
 - **Refused by the compiler:** a new `OperationConfig` variant without a `cut_spec` arm; an arm
   that returns a default (no `Default` on `CutSpec`, `Radial`, `Axial`); `TotalDepth::None` with no
   reason string.
-- **Derive hook:** `#[derive(OpParams)]` emits a const assertion that the config type implements
-  `HasCutSpec`, so the per-op struct cannot be added without it (A 4: the derive can force a
-  hand-written trait impl).
+- **Row rule:** each registry row states `cut_rule: CutRule` (`RadialRule`, `AxialRule`,
+  `calc_reads`); `CutRule` has no `Default`, so a new `REG_*` literal does not compile without
+  it. The derive hook (`#[derive(OpParams)]` emits a `HasCutSpec` bound) is dropped (P4 decision
+  D4): the exhaustive `cut_spec` match and the full row literal hold the rule.
+- **P4 corrections (lead decisions D1-D3, 2026-11-03):** `FirstPass` is `Slot | NotSlot` until
+  Suggest receives the stock source; `Radial::AngularStep`, `Axial::HelixPitch`,
+  `Axial::ChamferWidth`, `TotalDepth::Unset` and `Axial::OnePass(Option<..>)` were added so that
+  each operator field reaches the spec; `Radial::Groove` holds no tool angle; Profile, Trace and
+  Project Curve on every side, and Bore, are `Slot`.
 - **Sentry:** walk `OperationType::ALL`; for each op, a config with a known stepover and depth
   must give a `CutSpec` that carries those numbers (not a frozen table of answers: the test
   checks that the op's own field reaches the spec). This replaces

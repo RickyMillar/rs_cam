@@ -19,7 +19,7 @@
 //! ```text
 //! ae the calculator used        0.09000   (operation_default_profile
 //!                                          Parallel/Finish ae_factor 0.03 × Ø3 —
-//!                                          NO operation sets FeedsHints::radial_width_mm)
+//!                                          NO operation sent a radial width hint)
 //! ae the operation runs at      0.30375   (backoff_stepover_for_runtime)
 //! radial chip thinning @ 0.09   2.2942    ← baked into the feed
 //! radial chip thinning @ 0.304  1.3350    ← what the op actually needs

@@ -539,7 +539,7 @@ pub enum SuggestWarning {
     /// Measured motivating case (wanaka200 tp 8, `drop_cutter`, R1.5 tapered
     /// ball in White Oak): the calculator sized the feed at `ae = 0.09` — the
     /// `operation_default_profile(Parallel, Finish).ae_factor` fallback,
-    /// because no op populates `FeedsHints::radial_width_mm` — while
+    /// because no op sends a radial width hint (`CutSpec::todays_hints`) — while
     /// `backoff_stepover_for_runtime` then wrote `ae = 0.30375`. The stale
     /// radial-chip-thinning lift left the commanded advance at
     /// 0.033154 mm/tooth against a band maximum of 0.020553, i.e. **1.613×**,

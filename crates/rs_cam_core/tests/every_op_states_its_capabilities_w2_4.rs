@@ -125,6 +125,7 @@ use rs_cam_core::compute::catalog::{
     OperationConfig, OperationType, RestUse, RowCapabilities, TerritoryXy,
 };
 use rs_cam_core::compute::execute::LinkCeilingNeed;
+use rs_cam_core::feeds::suggest::operation_feeds_hints;
 use rs_cam_core::ops::trace_path::TraceCompensation;
 use rs_cam_core::selection::HoleFitRule;
 
@@ -415,16 +416,16 @@ fn the_feeds_hints_read_the_ops_own_fields() {
         let mut value = serde_json::to_value(OperationConfig::new_default(op)).unwrap();
         value["params"][field] = serde_json::json!(0.437);
         let cfg: OperationConfig = serde_json::from_value(value).unwrap();
-        cfg.capabilities().feeds_hints
+        operation_feeds_hints(&cfg)
     };
     for (op, field) in [
         (OperationType::Scallop, "scallop_height"),
         (OperationType::UnifiedFinish, "scallop_height"),
         (OperationType::DropCutter, "scallop_height"),
     ] {
-        let h = set(op, field);
-        assert_eq!(h.target_scallop_mm, Some(0.437), "{op:?}");
-        assert_eq!(h.axial_depth_mm, None, "{op:?}");
+        let (axial, _, scallop) = set(op, field);
+        assert_eq!(scallop, Some(0.437), "{op:?}");
+        assert_eq!(axial, None, "{op:?}");
     }
     for (op, field) in [
         (OperationType::Waterline, "z_step"),
@@ -432,9 +433,9 @@ fn the_feeds_hints_read_the_ops_own_fields() {
         (OperationType::VCarve, "max_depth"),
         (OperationType::RampFinish, "max_stepdown"),
     ] {
-        let h = set(op, field);
-        assert_eq!(h.axial_depth_mm, Some(0.437), "{op:?}");
-        assert_eq!(h.target_scallop_mm, None, "{op:?}");
+        let (axial, _, scallop) = set(op, field);
+        assert_eq!(axial, Some(0.437), "{op:?}");
+        assert_eq!(scallop, None, "{op:?}");
     }
     let hinted = [
         OperationType::Scallop,
@@ -449,10 +450,10 @@ fn the_feeds_hints_read_the_ops_own_fields() {
         if hinted.contains(&op) {
             continue;
         }
-        let h = OperationConfig::new_default(op).capabilities().feeds_hints;
-        assert_eq!(h.axial_depth_mm, None, "{op:?}");
-        assert_eq!(h.radial_width_mm, None, "{op:?}");
-        assert_eq!(h.target_scallop_mm, None, "{op:?}");
+        let (axial, radial, scallop) = operation_feeds_hints(&OperationConfig::new_default(op));
+        assert_eq!(axial, None, "{op:?}");
+        assert_eq!(radial, None, "{op:?}");
+        assert_eq!(scallop, None, "{op:?}");
     }
 }
 
@@ -961,27 +962,27 @@ fn every_field_has_a_frozen_column() {
         floor_owner: _,                // frozen()
         entry_probe: _,                // frozen(), a_surface_probe_reads_the_ops_own_leave
         link_ceiling: _,               // frozen()
-        feeds_hints: _,                // the_feeds_hints_read_the_ops_own_fields
-        move_count: _,                 // frozen()
-        doc_basis: _,                  // frozen()
-        air_cut_hint: _,               // frozen()
-        relink_dial: _,                // frozen()
-        axial_envelope: _,             // frozen()
-        rest_use: _,                   // frozen()
-        territory_xy: _,               // frozen()
-        plans_bands: _,                // frozen_c2()
-        ramp_descent: _,               // frozen_c2()
-        adaptive_woc: _,               // frozen_c2()
-        flat_floor_clearing: _,        // frozen_c2()
-        clearing_strategy_dial: _,     // frozen_c2()
+        cut_rule: _, // every_op_states_its_cut_k1, the_feeds_hints_read_the_ops_own_fields
+        move_count: _, // frozen()
+        doc_basis: _, // frozen()
+        air_cut_hint: _, // frozen()
+        relink_dial: _, // frozen()
+        axial_envelope: _, // frozen()
+        rest_use: _, // frozen()
+        territory_xy: _, // frozen()
+        plans_bands: _, // frozen_c2()
+        ramp_descent: _, // frozen_c2()
+        adaptive_woc: _, // frozen_c2()
+        flat_floor_clearing: _, // frozen_c2()
+        clearing_strategy_dial: _, // frozen_c2()
         planner_uniform_engagement: _, // frozen_c2()
-        top_on_stock_box: _,           // frozen_c2()
-        floor_inside_stock: _,         // frozen_c2()
-        lut_route: _,                  // frozen_d2()
-        item_use: _,                   // frozen_p1()
-        ladder_includes_top: _,        // frozen_f033b()
-        face_top: _,                   // frozen_ux1b()
-        model_gouge: _,                // frozen_ux7b()
+        top_on_stock_box: _, // frozen_c2()
+        floor_inside_stock: _, // frozen_c2()
+        lut_route: _, // frozen_d2()
+        item_use: _, // frozen_p1()
+        ladder_includes_top: _, // frozen_f033b()
+        face_top: _, // frozen_ux1b()
+        model_gouge: _, // frozen_ux7b()
     } = OperationType::Pocket.capabilities();
 }
 
