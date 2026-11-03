@@ -125,6 +125,7 @@ fn stub_result() -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 

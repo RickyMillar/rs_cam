@@ -1,9 +1,10 @@
-# `ui/feeds/` — the Feeds tab chart and card, and the vendor data window
+# `ui/feeds/` — the envelope plot, the chart and the card of the Passes tab, and the vendor data window
 
 ## Files
 
-- `mod.rs` — the facade and the map. No feeds window holds the chart (W3i deleted Explore).
-- `explore.rs` — the nomogram, inline on the Feeds tab (`draw_inline`, `draw_chart_c`); W3k: no navigation (every egui_plot zoom/drag/reset flag off, bounds set each frame), labels on the chart (`layout_labels`: along each line, never across a drawn line, ≤ `MAX_LABELS`; a moved mark label takes a leader), no past-cap axis marks, Min RPM = an amber wall, hover = one line; `explore_tests.rs` the label fit test; the plot starts `AXIS_LABEL_GAP` of the title height in (up4 reads the rotated edge).
+- `mod.rs` — the facade and the map. No feeds window holds the chart (W3i deleted Explore). P5b: the Feeds tab merged into Passes.
+- `envelope.rs` (K2b, P5b) — `draw_envelope`: header `SAFE CUT` + ⚡ chip, the (ae, ap) plot (`EnvelopeScene`: a line per limit edge, the binding edge solid, the others faint, no fill; dot = operator, ACCENT ring = proposal or candidate; outside = CAUTION ring and label) or a one-row bar (`SAFE DEPTH`/`SAFE WIDTH`); a click or drag sets the candidate (`state.panels.envelope_candidates`, no write); ⚡ sends `AppEvent::ApplyFeedsPick`; Esc drops it; hover = `readout` (a `SpeedsMap` lookup; outside, the limit and no speeds).
+- `explore.rs` — the nomogram, inline on the Passes tab (`draw_inline`, `draw_chart_c`; P5b: it draws the `candidate_speeds` of the candidate ring); the label kit (`place_labels`, `paint_labels`, `axis_title_overhang`) is shared through `shared.rs`; W3k: no navigation (every egui_plot zoom/drag/reset flag off, bounds set each frame), labels on the chart (`layout_labels`: along each line, never across a drawn line, ≤ `MAX_LABELS`; a moved mark label takes a leader), no past-cap axis marks, Min RPM = an amber wall, hover = one line; `explore_tests.rs` the label fit test; the plot starts `AXIS_LABEL_GAP` of the title height in (up4 reads the rotated edge).
 - `compare.rs` — the recommendation (`draw_recommendation`): problem rows, ONE `Details` "Recommended" with `⚡ Apply all` / `⚡ Speeds only` at its top (W3k); `why.rs` — the lines behind each number.
 - `vendor.rs` — the vendor cutting data window (`Vendor data…`, MCP `set_ui_view modal: vendor_data`).
 - `shared.rs` — what more than one feeds job needs; `OpFeeds` is the tab's inputs.
@@ -20,7 +21,7 @@
 - Every stage that moves a number is ONE row with its source (ruling R4, in
   `Details`): `why::suggest_rows`, `why::row_basis_rows`. A problem is one
   status row on the face (`why::Placement`).
-- A nomogram readout outside the axes abstains; the hover opens only on the plot. Recommended = ACCENT ring; Now = neutral dot (R23).
+- A nomogram readout outside the axes abstains; the hover opens only on the plot. Recommended = ACCENT ring; Now = neutral dot (R23). The memo builds the envelope (`FeedsMemo::envelope`); a frame only reads it (F216).
 - A chart draws one line at the suggested value, and band lines only where the
   row publishes both limits; no shading.
 - Power and the verdict read the cut Apply writes; power through
@@ -33,8 +34,7 @@ Run each with `cargo test -p rs_cam_viz -q --test <name>`:
 `the_feeds_modal_holds_one_scope_dc5a`, `the_corridor_bounds_the_band_g_corridor`,
 `the_recommendation_explains_each_row_g_whyrow`, `the_nomogram_readout_abstains_g_hoverbound`,
 `the_speeds_apply_holds_the_cut_g_speedsonly`, `the_chipload_verdict_is_one_row_g_chipverdict`,
-`feeds_charts_draw_lines_not_shading_g_chartlines`,
-`every_stage_that_moves_a_number_is_on_the_card_g_visible`,
+`feeds_charts_draw_lines_not_shading_g_chartlines`, `every_stage_that_moves_a_number_is_on_the_card_g_visible`,
 `the_recommended_column_is_what_apply_writes_g_recomapplied`,
-`a_claimed_row_states_its_claim_on_the_card_g_claimcard`, `the_card_names_every_entry_rule_g10`;
+`a_claimed_row_states_its_claim_on_the_card_g_claimcard`, `the_card_names_every_entry_rule_g10`; P5b: `the_envelope_plot_marks_the_operator_and_the_proposal_k2b`, `the_envelope_hover_abstains_outside_k2b`, `a_plot_click_writes_nothing_until_apply_k2b`, `a_one_axis_op_draws_a_bar_k2b`;
 `--lib _w3i _w3k` (lock × edit, label fit), `the_feeds_memo_fills_on_every_tab_w3i`, `the_feeds_lock_holds_one_field_w3k`. Trap: an input can lose focus mid-typing.

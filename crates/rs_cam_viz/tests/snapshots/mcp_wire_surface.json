@@ -4093,6 +4093,26 @@
       "title": "IndexParam",
       "type": "object"
     },
+    "name": "get_toolpath_lineage"
+  },
+  {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "description": "Toolpath index (0-based)",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "title": "IndexParam",
+      "type": "object"
+    },
     "name": "get_toolpath_params"
   },
   {

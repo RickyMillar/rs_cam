@@ -187,6 +187,10 @@ struct ToolpathSummaryEntry {
     /// not measured while `Some(0)` means measured clean. Until 2026-09-17
     /// this was a bare `usize` and a failed check shipped `0`.
     collision_count: Option<usize>,
+    /// K8 (feeds contract P5b): the lineage of the generated toolpath, the
+    /// JSON of MCP `get_toolpath_lineage`. `null` when the toolpath has no
+    /// result.
+    lineage: Option<serde_json::Value>,
 }
 
 /// One operation that never generated because an upstream simulated stock was
@@ -1094,6 +1098,10 @@ pub fn run_project_command(
                 // Carries the absence through. `total_collisions` no longer
                 // exists as a bare sum, because a sum cannot say "not checked".
                 collision_count: holder_collisions.map(|h| h + d.rapid_collision_count),
+                lineage: session
+                    .find_toolpath_config_by_id(d.toolpath_id)
+                    .and_then(|(index, _)| session.result_at(index))
+                    .map(|r| r.lineage.to_json()),
             }
         })
         .collect();

@@ -330,8 +330,7 @@ fn feeds_fixture() -> AppState {
     // write-back can cache the recipe it calculated on the selected tab.
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     let _ = state.set_focus(Selection::Toolpath(id));
-    state.gui.pending_toolpath_tab =
-        Some((id, rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
     state
 }
 
@@ -407,6 +406,13 @@ fn render_feeds_panel_at(
             });
     });
     for clipped in &out.shapes {
+        // P5b: the Feeds tab merged into Passes, so this render now holds
+        // the op rows too. A text whose clip has no width paints nothing
+        // (a number well squeezed shut at the 240 point rail: reported to
+        // the lead as a layout finding); it cannot slide under the viewport.
+        if clipped.clip_rect.width() <= 0.0 {
+            continue;
+        }
         if let egui::epaint::Shape::Text(text) = &clipped.shape {
             // W3 fix: the rotated feed axis title painted its ascenders
             // left of the content column, and the app's scroll area clipped

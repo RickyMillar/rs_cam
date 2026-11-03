@@ -271,6 +271,7 @@ pub fn core_result(path: Toolpath) -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 
@@ -282,6 +283,7 @@ pub fn viz_result(path: Toolpath) -> ToolpathResult {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 

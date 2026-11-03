@@ -400,6 +400,7 @@ fn block(state: &mut AppState) {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     };
     state
         .gui

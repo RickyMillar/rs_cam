@@ -716,7 +716,8 @@ fn no_field_text_truncates_at_340_w3g() {
         "W3g: {screens} screens; at {PANEL_WIDTH} points {allowed} allowed truncations; at \
          {RAIL_WIDTH} points {rail_truncated} texts truncate"
     );
-    assert!(screens > 100, "non-vacuity: {screens} screens");
+    // P5b: four tabs per state (the Feeds tab merged into Passes): 92.
+    assert!(screens > 80, "non-vacuity: {screens} screens");
     // Non-vacuity of the measure: the narrow rail truncates texts, so the
     // test sees a truncation where one paints.
     assert!(

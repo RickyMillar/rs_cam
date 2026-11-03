@@ -66,6 +66,14 @@ A score tie takes the lower printed chip (Q3). MCP: `get_safe_envelope`,
 `apply_feeds` takes `pick`. Open: D8 (P10 tool-derived defaults), D9 (the
 dial changes no number). Next: P6 (`ToolFact`), P5b (GUI envelope).
 
+Phase 5b landed 2026-11-04 (K2b view, K8): the Passes tab draws the safe
+envelope (operator point, proposal, binding limit); a drag moves a candidate
+and the nomogram follows it; a click writes nothing until Apply. The Feeds tab
+is merged into Passes (4 tabs). Every toolpath result carries a `Lineage`
+(cut, pick, speed stamps, tool facts, entry, findings); a result without it
+does not compile. MCP: `get_toolpath_lineage`. No FM1 cell or G-OPGOLDEN row
+moved. Next: P6 (`ToolFact`), in a fresh session.
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

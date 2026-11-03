@@ -104,6 +104,7 @@ fn seed_generated_result(
                 debug_trace: None,
                 semantic_trace: None,
                 provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             }),
         }))
         .expect("seed the core result");
@@ -115,6 +116,7 @@ fn seed_generated_result(
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     gui.toolpath_rt.insert(tp_id, rt);
 }

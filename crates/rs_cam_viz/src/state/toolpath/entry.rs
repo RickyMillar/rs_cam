@@ -203,6 +203,10 @@ pub struct ToolpathResult {
     /// [`SimToolpathEntry::drill_op`](rs_cam_core::compute::simulate::SimToolpathEntry::drill_op)
     /// by the controller's simulation request builder.
     pub drill_op: Option<Arc<rs_cam_core::ops::drill_op::DrillOp>>,
+    /// K8 (feeds contract P5b): the lineage that core generation built.
+    /// The adopt hands it to the session result; the inspector reads it
+    /// there.
+    pub lineage: Arc<rs_cam_core::trace::lineage::Lineage>,
 }
 
 impl ToolpathResult {
@@ -342,6 +346,7 @@ mod tests {
             semantic_trace: None,
             debug_trace_path: None,
             drill_op: None,
+            lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
         });
 
         let duplicate = source.duplicate_as(ToolpathId::from_raw(9), "Adaptive 3D Copy".to_owned());
@@ -375,6 +380,7 @@ mod tests {
             semantic_trace: None,
             debug_trace_path: None,
             drill_op: None,
+            lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
         });
         let recorder =
             rs_cam_core::trace::debug_trace::ToolpathDebugRecorder::new("Loaded", "DropCutter");

@@ -35,6 +35,13 @@ use rs_cam_core::feeds::{
 use crate::state::AppState;
 use crate::ui::tokens;
 
+/// The chart label kit of the nomogram, shared with the envelope plot (P5b):
+/// the label layout (along each line, never across a drawn line, at most
+/// `MAX_LABELS`), the paint, and the axis title indent.
+pub(crate) use super::explore::{
+    ChartLabel, DrawnLine, LabelAnchor, axis_title_overhang, paint_labels, place_labels,
+};
+
 /// The chart palette, named by what each series IS.
 ///
 /// These charts draw RANGES and ORDERED VALUES, never verdicts, so every one

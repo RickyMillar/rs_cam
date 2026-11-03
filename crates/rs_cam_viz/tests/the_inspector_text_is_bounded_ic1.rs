@@ -400,10 +400,16 @@ fn surfaces(state: &AppState) -> Vec<Surface> {
     // ONE block, but this counter reads painted text, so the plot's axis
     // ticks and axis names count as lines here (the feed ticks stack, one
     // line each). Each cap is the measure, with the chart's text in it.
-    let caps: [(&str, [usize; 5]); 3] = [
-        ("Pocket", [10, 15, 22, 17, 22]),
-        ("3D Rough", [7, 13, 21, 15, 15]),
-        ("3D Finish", [9, 10, 23, 16, 14]),
+    // P5b (operator ruling 2026-11-03): the Feeds tab merged into Passes,
+    // which now holds the envelope plot (its header, axis names and edge
+    // labels), the nomogram, the op rows, the speed rows and the card.
+    // Measured Passes: Pocket 36, 3D Rough 34, 3D Finish 28 (each under the
+    // old Passes + Feeds sum: 37, 34, 33). Geometry, Heights and Linking
+    // keep their measure. Each cap is the measure, with no margin.
+    let caps: [(&str, [usize; 4]); 3] = [
+        ("Pocket", [10, 36, 17, 22]),
+        ("3D Rough", [7, 34, 15, 15]),
+        ("3D Finish", [9, 28, 16, 14]),
     ];
     for (name, tab_caps) in caps {
         let id = configs
@@ -594,7 +600,8 @@ fn no_painted_text_is_over_the_face_limit_w6() {
         }
     }
     eprintln!("W6: {screens} screens, longest painted text {longest} characters");
-    assert!(screens > 100, "non-vacuity: {screens} screens");
+    // P5b: four tabs per state (the Feeds tab merged into Passes): 92.
+    assert!(screens > 80, "non-vacuity: {screens} screens");
     assert!(
         short_faces > 0,
         "non-vacuity: no state painted the short face of a long refusal"

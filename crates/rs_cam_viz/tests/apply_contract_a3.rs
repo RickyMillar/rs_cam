@@ -188,8 +188,10 @@ const COMPARE_SRC: &str = include_str!("../src/ui/components/compare.rs");
 /// one is NEGATIVE — no feeds surface may push a per-field apply — so the
 /// scan must cover every file that surface now spans. A constant naming one
 /// of them would turn the split into a hole in this contract.
-const FEEDS_MODAL_SRCS: [&str; 8] = [
+const FEEDS_MODAL_SRCS: [&str; 9] = [
     include_str!("../src/ui/feeds/mod.rs"),
+    // P5b (K2b): the envelope plot writes through `ApplyFeedsPick`.
+    include_str!("../src/ui/feeds/envelope.rs"),
     // W3k: the chart label tests sit beside the chart.
     include_str!("../src/ui/feeds/explore_tests.rs"),
     include_str!("../src/ui/feeds/vendor.rs"),

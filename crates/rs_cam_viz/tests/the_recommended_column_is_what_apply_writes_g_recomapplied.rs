@@ -182,7 +182,7 @@ fn ctx() -> egui::Context {
 fn painted_text(controller: &mut AppController<SilentBackend>) -> Vec<String> {
     let id = controller.state.session().toolpath_configs()[0].id;
     controller.state.gui.pending_toolpath_tab =
-        Some((id, rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds));
+        Some((id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
     open_explore(&mut controller.state);
     let ctx = ctx();
     let mut texts = Vec::new();

@@ -283,6 +283,12 @@ pub struct GenContext {
     /// is the PROCESSED set — keep-outs subtracted and the user offset
     /// applied. The clip processes the raw set itself.
     post_clip_regions: Option<Arc<Vec<crate::polygon::Polygon2>>>,
+    /// K8: `ToolpathConfig::id`. The lineage names the generation
+    /// findings of this toolpath.
+    toolpath_id: crate::ids::ToolpathId,
+    /// K8: `ToolpathConfig::feeds_provenance`, the persisted stamps that
+    /// the lineage reads (no Suggest run, ruling Q5).
+    feeds_provenance: crate::feeds::FeedsProvenance,
 }
 
 impl GenContext {
@@ -1345,6 +1351,23 @@ impl JobPhases<'_, '_> {
             self.gen_initial_stock,
             self.context.material.clone(),
         );
+        // K8 (ruling Q7): the lineage reads the stored stamps, the entry
+        // records and the generation findings. It runs no calculator.
+        let lineage = crate::trace::lineage::Lineage::of(crate::trace::lineage::LineageInputs {
+            operation: &self.inputs.operation,
+            tool: &self.inputs.tool,
+            feeds_provenance: &self.context.feeds_provenance,
+            entry_contract: self.context.entry_contract,
+            entries: &annotated.produced.entries,
+            finding_ids:
+                crate::diagnostics::adapters::from_generation::diagnostics_from_generation(
+                    self.context.toolpath_id,
+                    &stats,
+                )
+                .into_iter()
+                .map(|d| d.id.0)
+                .collect(),
+        });
         let annotated_arc = Arc::new(annotated);
         let op_data = match drill_op {
             Some(d) => crate::ops::drill_op::OpData::DrillOp(Arc::new(d), annotated_arc),
@@ -1357,6 +1380,7 @@ impl JobPhases<'_, '_> {
             debug_trace: Some(debug_trace),
             semantic_trace: Some(Arc::new(semantic_trace)),
             provenance: super::ResultProvenance::Dressed,
+            lineage: Arc::new(lineage),
         })
     }
 }
@@ -2688,6 +2712,8 @@ impl ProjectSession {
             link_kinematics,
             material: self.stock.material.clone(),
             post_clip_regions,
+            toolpath_id: tc.id,
+            feeds_provenance: tc.feeds_provenance.clone(),
         };
 
         Ok(GenerateToolpathHandle {

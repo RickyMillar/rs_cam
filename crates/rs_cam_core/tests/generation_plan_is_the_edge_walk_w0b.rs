@@ -220,6 +220,9 @@ fn adopt_simulation(session: &mut ProjectSession, covered: &[usize]) {
                             debug_trace: None,
                             semantic_trace: None,
                             provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                            lineage: std::sync::Arc::new(
+                                rs_cam_core::trace::lineage::Lineage::unrecorded(),
+                            ),
                         }),
                     },
                 ))

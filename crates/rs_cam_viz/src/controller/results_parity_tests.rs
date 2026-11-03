@@ -170,6 +170,7 @@ fn worker_result_with_findings() -> ToolpathResult {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 

@@ -88,6 +88,7 @@ fn core_result() -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 
@@ -99,6 +100,7 @@ fn viz_result() -> ToolpathResult {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 

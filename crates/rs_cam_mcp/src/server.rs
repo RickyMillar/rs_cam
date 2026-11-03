@@ -3950,6 +3950,11 @@ pub fn build_info() -> serde_json::Value {
             // `scope` is deleted (break). The reply carries
             // `unsourced_rows` and `outside_envelope`.
             "apply_feeds_pick",
+            // Feeds contract P5b (K8): `get_toolpath_lineage` returns the
+            // lineage of a generated toolpath (the cut, the pick, the
+            // stored speeds with their stamps, the tool facts, the entry
+            // contract and entries, the findings with their consequence).
+            "toolpath_lineage",
         ],
     })
 }

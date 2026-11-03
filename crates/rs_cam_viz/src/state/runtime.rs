@@ -395,6 +395,28 @@ impl FeedsInputs<'_> {
         Ok((result, previews))
     }
 
+    /// K2b (feeds contract P5b): the safe envelope of the same inputs, which
+    /// the envelope plot of the Passes tab reads. `None` on a refused
+    /// pairing. A frame never builds one: the memo builds it once per input
+    /// change (F216).
+    fn envelope(&self) -> Option<rs_cam_core::feeds::envelope::SafeEnvelope> {
+        rs_cam_core::feeds::envelope::SafeEnvelope::for_cut(
+            rs_cam_core::feeds::envelope::EnvelopeInput {
+                operation: self.operation,
+                tool: self.tool,
+                machine: self.machine,
+                material: self.material,
+                lut: rs_cam_core::feeds::embedded_vendor_lut(),
+                spindle_strategy: self.spindle_strategy,
+                context: rs_cam_core::feeds::suggest::SuggestContext {
+                    model_bbox: self.model_bbox,
+                    ..rs_cam_core::feeds::suggest::SuggestContext::default()
+                },
+            },
+        )
+        .ok()
+    }
+
     /// The explanation payload the Feeds tab chart reads (W3i). It is
     /// infallible: a refused pairing still has its explanation.
     fn preview(&self) -> rs_cam_core::feeds::suggest::FeedsPreview {
@@ -441,6 +463,10 @@ pub struct FeedsMemo {
     /// its own key; see [`Self::card`].
     card_key: Option<String>,
     card: Option<Arc<FeedsCard>>,
+    /// K2b (feeds contract P5b): the safe envelope of the stored inputs.
+    /// `None` on a refused pairing. Shared, because the panel copies the
+    /// memo in and back on each frame.
+    envelope: Option<Arc<rs_cam_core::feeds::envelope::SafeEnvelope>>,
     /// The count of builds: the instrument of the F216 sentry.
     builds: u64,
 }
@@ -463,6 +489,7 @@ impl FeedsMemo {
         };
         self.builds += 1;
         self.preview = Some(Arc::new(inputs.preview()));
+        self.envelope = inputs.envelope().map(Arc::new);
         match inputs.build(dry_run) {
             Ok((answer, previews)) => {
                 *result = Some(answer);
@@ -503,6 +530,18 @@ impl FeedsMemo {
             self.card_key = Some(key);
         }
         Arc::clone(self.card.get_or_insert_with(|| Arc::new(build())))
+    }
+
+    /// K2b (feeds contract P5b): the safe envelope of the stored inputs,
+    /// which the envelope plot reads. `None` on a refused pairing.
+    pub fn envelope(&self) -> Option<&rs_cam_core::feeds::envelope::SafeEnvelope> {
+        self.envelope.as_deref()
+    }
+
+    /// The shared envelope, for a caller that also writes the entry in the
+    /// same frame (the Passes tab).
+    pub fn envelope_shared(&self) -> Option<Arc<rs_cam_core::feeds::envelope::SafeEnvelope>> {
+        self.envelope.clone()
     }
 
     /// Why the calculator refused, when it did.

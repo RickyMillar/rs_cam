@@ -227,14 +227,16 @@ pub(crate) fn field_tab(key: FieldKey, config: &OperationConfig) -> Option<Toolp
             let _ = config.selection()?;
             ToolpathTab::Geometry
         }
-        "feed_rate" | "spindle_rpm" => ToolpathTab::FeedsSpeeds,
+        // P5b: the speed rows are on the Passes tab (the Feeds tab merged
+        // into it).
+        "feed_rate" | "spindle_rpm" => ToolpathTab::Passes,
         "plunge_rate" => {
             if op.is_drill_kinematics() {
                 return None;
             }
-            ToolpathTab::FeedsSpeeds
+            ToolpathTab::Passes
         }
-        "ramp_feed_rate" => ToolpathTab::FeedsSpeeds,
+        "ramp_feed_rate" => ToolpathTab::Passes,
         "entry_style" if op == OperationType::Adaptive3d => ToolpathTab::Passes,
         "entry_style" => {
             if !op.registry_entry().entry_style_applies() {
@@ -516,7 +518,7 @@ mod tests {
         };
         assert_eq!(
             tab(OperationType::Pocket, "feed_rate"),
-            Some(ToolpathTab::FeedsSpeeds)
+            Some(ToolpathTab::Passes)
         );
         assert_eq!(
             tab(OperationType::Pocket, "retract_z"),

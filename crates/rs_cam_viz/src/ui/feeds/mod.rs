@@ -1,16 +1,18 @@
-//! The feeds and speeds domain: the Feeds tab's chart and recommendation
-//! card (W3i), the vendor data window, and the helpers they read.
+//! The feeds and speeds domain: the safe envelope plot, the chart and the
+//! recommendation card of the Passes tab (P5b merged the Feeds tab into
+//! Passes; W3i), the vendor data window, and the helpers they read.
 //!
 //! The directory is named after the domain, not after one surface. W3i
 //! (2026-10-30) deleted the Explore window: the chart and the card are
-//! drawn inline on the Feeds tab of the inspector.
+//! drawn inline in the inspector.
 //!
 //! # The map
 //!
 //! | File | Holds | Who draws it |
 //! |---|---|---|
 //! | [`vendor`] | the vendor cutting data window | `app.rs`, through [`draw`] |
-//! | [`explore`] | the nomogram and the inline block (`draw_inline`) | the Feeds tab |
+//! | [`envelope`] | the safe envelope plot or bar (`draw_envelope`, K2b) | the Passes tab |
+//! | [`explore`] | the nomogram (`draw_inline`) | the Passes tab |
 //! | [`compare`] | the recommendation: Apply, problems, one `Details` | [`explore`] (W3i) |
 //! | [`why`] | the per-row sentences behind the recommendation | [`compare`] |
 //! | [`shared`] | what more than one surface needs | the inspector and `ui/readiness_panel.rs` |
@@ -46,6 +48,7 @@
 //! its chart and card are on the Feeds tab.
 
 pub(crate) mod compare;
+pub mod envelope;
 pub(crate) mod explore;
 pub(crate) mod shared;
 pub(crate) mod vendor;

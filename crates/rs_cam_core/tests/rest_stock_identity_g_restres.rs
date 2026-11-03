@@ -187,6 +187,7 @@ fn adopt_other_output(session: &mut ProjectSession, index: usize) {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     };
     let revision = session.toolpath_revision_at(index);
     let _ = session

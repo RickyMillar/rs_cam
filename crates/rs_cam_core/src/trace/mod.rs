@@ -5,6 +5,7 @@
 //! The follow-path OPERATION is `ops::trace_path`, not this folder.
 
 pub mod debug_trace;
+pub mod lineage;
 pub mod narrate;
 pub mod produced;
 pub mod semantic_trace;

@@ -291,6 +291,10 @@ impl super::RsCamApp {
                 let resp = self.mcp_get_safe_envelope(index);
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });
             }
+            McpRequestKind::GetToolpathLineage { index } => {
+                let resp = self.mcp_get_toolpath_lineage(index);
+                let _ = response_tx.send(McpResponse { result: Ok(resp) });
+            }
             McpRequestKind::InspectModel => {
                 let resp = self.mcp_inspect_model();
                 let _ = response_tx.send(McpResponse { result: Ok(resp) });

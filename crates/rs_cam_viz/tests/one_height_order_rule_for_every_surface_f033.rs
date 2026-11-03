@@ -307,6 +307,7 @@ fn the_export_door_names_an_inverted_stack_f033() {
                 debug_trace: None,
                 semantic_trace: None,
                 provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             }),
         }))
         .expect("adopt the hand-built result");

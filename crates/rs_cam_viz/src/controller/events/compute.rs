@@ -581,6 +581,7 @@ impl<B: ComputeBackend> AppController<B> {
                     debug_trace: None,
                     semantic_trace: None,
                     provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                    lineage: Arc::clone(&computed.lineage),
                 };
                 // WP11b: the revision rides the REPLY,
                 // stamped from the handle `start`

@@ -75,7 +75,10 @@ use rs_cam_viz::state::AppState;
 use rs_cam_viz::ui::{properties, tokens};
 
 /// Room for the whole window, so the plot is drawn unclipped.
-const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 1000.0);
+// P5b: the merged Passes tab is taller than 1000 points, so a wheel there
+// scrolled the panel and moved the chart off the pointer. A tall screen has
+// nothing to scroll: the wheel arm then tests the chart alone.
+const SCREEN: egui::Vec2 = egui::Vec2::new(1400.0, 2400.0);
 
 /// The inspector width the chart draws in.
 const PANEL_WIDTH: f32 = 340.0;
@@ -199,10 +202,8 @@ fn fixture() -> AppState {
     let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(
         toolpath_id,
     ));
-    state.gui.pending_toolpath_tab = Some((
-        toolpath_id,
-        rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds,
-    ));
+    state.gui.pending_toolpath_tab =
+        Some((toolpath_id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
     state
 }
 

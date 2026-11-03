@@ -234,25 +234,30 @@ fn add_selected(state: &mut AppState, with_grid: bool, generated: bool) -> Toolp
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     state.gui.toolpath_rt.insert(id, rt);
     if generated {
         let revision = state.session().toolpath_revision_at(index);
-        let _effects = state
-            .apply(Command::AdoptResult(AdoptResultArgs {
-                index,
-                revision,
-                result: Box::new(rs_cam_core::session::ToolpathComputeResult {
-                    op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(annotated(
-                        with_grid,
-                    ))),
-                    stats: Default::default(),
-                    debug_trace: None,
-                    semantic_trace: None,
-                    provenance: rs_cam_core::session::ResultProvenance::Dressed,
-                }),
-            }))
-            .expect("the index is in range");
+        let _effects =
+            state
+                .apply(Command::AdoptResult(AdoptResultArgs {
+                    index,
+                    revision,
+                    result: Box::new(rs_cam_core::session::ToolpathComputeResult {
+                        op_data: rs_cam_core::ops::drill_op::OpData::Toolpath(Arc::new(annotated(
+                            with_grid,
+                        ))),
+                        stats: Default::default(),
+                        debug_trace: None,
+                        semantic_trace: None,
+                        provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                        lineage: std::sync::Arc::new(
+                            rs_cam_core::trace::lineage::Lineage::unrecorded(),
+                        ),
+                    }),
+                }))
+                .expect("the index is in range");
     }
     let _ = state.set_focus(Selection::Toolpath(id));
     id
@@ -727,6 +732,7 @@ fn the_capped_move_entry_shows_only_with_a_cap_g_b2() {
                 semantic_trace: None,
                 debug_trace_path: None,
                 drill_op: None,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             });
         }
         assert!(

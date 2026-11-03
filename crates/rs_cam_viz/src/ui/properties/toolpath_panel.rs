@@ -16,7 +16,6 @@ pub(super) mod tabs;
 pub(super) use header::{HeaderRow, draw_generate_row};
 pub(super) use issues::panel_diagnostics;
 use issues::{draw_issue_stack, gate_refusals};
-use tabs::feeds::draw_feeds_tab;
 pub(super) use tabs::geometry::{ReachView, draw_geometry_tab};
 use tabs::heights::draw_heights_tab;
 use tabs::linking::draw_linking_tab;
@@ -60,6 +59,9 @@ pub(super) fn draw_toolpath_panel(
     // G-C (D-2): the `⟲` badge of an auto-set containment (`state.panels`),
     // threaded in as `heights_refusal` is.
     containment_autocorrect: &mut crate::state::panels::ContainmentAutoCorrect,
+    // P5b (K2b): the candidate rings of the envelope plot (`state.panels`),
+    // threaded in as `heights_refusal` is.
+    envelope_candidates: &mut crate::state::panels::EnvelopeCandidates,
     events: &mut Vec<AppEvent>,
 ) -> ToolpathTab {
     // Disjoint borrows of the snapshot's fields. The body edits the entry
@@ -180,6 +182,16 @@ pub(super) fn draw_toolpath_panel(
         events,
     );
 
+    // K8 (feeds contract P5b, ruling Q7): the lineage of the stored result,
+    // ONE closed `Details` under the issue stack. No result, no lineage.
+    if let Some(lineage) = entry
+        .run
+        .result()
+        .map(|r| std::sync::Arc::clone(&r.lineage))
+    {
+        super::lineage::draw_lineage(ui, entry.id, &lineage);
+    }
+
     // ── Tab bar ─────────────────────────────────────────────────────
 
     ui.add_space(8.0);
@@ -230,12 +242,10 @@ pub(super) fn draw_toolpath_panel(
                 strategy_suggestion(suggest_warnings),
                 selection_ui,
                 super::linking_dressup::Fields::new(&placement.by_field),
+                model_bbox,
+                envelope_candidates,
                 events,
             );
-        }
-
-        ToolpathTab::FeedsSpeeds => {
-            draw_feeds_tab(ui, entry, inputs, model_bbox, &placement, events);
         }
 
         // How moves connect: entry/exit, move optimization, retract

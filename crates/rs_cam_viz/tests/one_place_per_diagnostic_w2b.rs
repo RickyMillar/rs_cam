@@ -106,7 +106,7 @@ fn each_diagnostic_paints_at_most_once_w2b() {
             // W6: the first render fills the feeds memo, and its findings
             // (the feeds notes) join the list. Before W6 this test placed
             // the list before any render, so it never saw them.
-            let _ = screen(&mut state, id, ToolpathTab::FeedsSpeeds);
+            let _ = screen(&mut state, id, ToolpathTab::Passes);
             let placed = properties::placed_findings(id, &state).expect("the toolpath exists");
             let all = every_finding(&placed);
             let by_id = faces_by_id(&all);
@@ -198,7 +198,8 @@ fn each_diagnostic_paints_at_most_once_w2b() {
             marked_states += usize::from(state_marked);
         }
     }
-    assert!(screens > 100, "non-vacuity: only {screens} screens");
+    // P5b: four tabs per state (the Feeds tab merged into Passes): 92.
+    assert!(screens > 80, "non-vacuity: only {screens} screens");
     assert!(
         field_rows_marked > 0 && tool_rows_marked > 0 && marked_states >= MIN_MARKED_STATES,
         "non-vacuity: {issue_faces_painted} issue rows, {field_rows_marked} field rows and \

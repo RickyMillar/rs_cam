@@ -125,6 +125,7 @@ fn gui_with_traces() -> GuiState {
         semantic_trace: Some(semantic_trace),
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     gui.toolpath_rt.insert(toolpath_id, rt);
     gui
@@ -686,6 +687,7 @@ fn plunging_result(feed: f64) -> rs_cam_core::session::ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 

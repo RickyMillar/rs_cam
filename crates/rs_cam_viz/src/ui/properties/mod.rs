@@ -2,6 +2,7 @@ mod feeds_speeds;
 mod geometry_tab;
 mod getting_started;
 pub mod head;
+pub mod lineage;
 mod linking_dressup;
 mod machine_panel;
 mod model_sim_panels;
@@ -276,18 +277,19 @@ pub fn draw(ui: &mut egui::Ui, state: &mut AppState, events: &mut Vec<AppEvent>)
 }
 
 // ── Toolpath property tab system ─────────────────────────────────────────
-// The per-toolpath properties panel has five concern tabs (operator ruling
-// R2, 2026-10-30). Geometry (what the op cuts: the input model, the
-// selected items, the floor face, the machining boundary and the reach
-// row) comes first. Passes holds the start stock and the op parameters
-// (the "Cut" tab before R2). Then Feeds, Heights (Z planes) and Linking
-// (how moves connect, arc fitting and dogbone; the Dressup tab before R2).
+// The per-toolpath properties panel has four concern tabs (operator ruling
+// R2, 2026-10-30; P5b, 2026-11-03: the Feeds tab merged into Passes).
+// Geometry (what the op cuts: the input model, the selected items, the
+// floor face, the machining boundary and the reach row) comes first.
+// Passes holds the envelope plot, the nomogram, the start stock, the op
+// parameters, the speeds and the Suggest card (the "Cut" and "Feeds" tabs
+// before). Then Heights (Z planes) and Linking (how moves connect, arc
+// fitting and dogbone; the Dressup tab before R2).
 // The tool is not on a tab: it is the Tool row of the inspector header.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolpathTab {
     Geometry,
     Passes,
-    FeedsSpeeds,
     Heights,
     Linking,
 }
@@ -297,7 +299,6 @@ impl ToolpathTab {
     pub const ALL: &[ToolpathTab] = &[
         ToolpathTab::Geometry,
         ToolpathTab::Passes,
-        ToolpathTab::FeedsSpeeds,
         ToolpathTab::Heights,
         ToolpathTab::Linking,
     ];
@@ -306,7 +307,6 @@ impl ToolpathTab {
         match self {
             ToolpathTab::Geometry => "Geometry",
             ToolpathTab::Passes => "Passes",
-            ToolpathTab::FeedsSpeeds => "Feeds",
             ToolpathTab::Heights => "Heights",
             ToolpathTab::Linking => "Linking",
         }
@@ -320,7 +320,6 @@ impl ToolpathTab {
         match self {
             ToolpathTab::Geometry => "geometry",
             ToolpathTab::Passes => "passes",
-            ToolpathTab::FeedsSpeeds => "feeds",
             ToolpathTab::Heights => "heights",
             ToolpathTab::Linking => "linking",
         }
@@ -328,14 +327,14 @@ impl ToolpathTab {
 
     /// Parse the agent-facing tab key used by the MCP `set_ui_view` tool.
     ///
-    /// Every [`Self::key`] parses back to its own variant. `feeds_speeds` is
-    /// an extra spelling the tool has always accepted for the Feeds tab.
+    /// Every [`Self::key`] parses back to its own variant. P5b: the Feeds tab
+    /// merged into Passes, so `feeds` and `feeds_speeds` open Passes (a
+    /// link to the feeds rows opens the tab that holds them).
     /// W2b: the old keys `cut` and `dressup` are gone (no-legacy ruling).
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "geometry" => Some(ToolpathTab::Geometry),
-            "passes" => Some(ToolpathTab::Passes),
-            "feeds" | "feeds_speeds" => Some(ToolpathTab::FeedsSpeeds),
+            "passes" | "feeds" | "feeds_speeds" => Some(ToolpathTab::Passes),
             "heights" => Some(ToolpathTab::Heights),
             "linking" => Some(ToolpathTab::Linking),
             _ => None,
@@ -348,8 +347,8 @@ impl ToolpathTab {
     /// - Geometry: every op reads an input model (the Input row).
     /// - Passes: every op has a registry editor
     ///   (`operations::registry::OP_UI_ROWS`, held against
-    ///   `OperationType::ALL` by `operations_registry`).
-    /// - Feeds and Heights: every op has a feed and a Z plane set.
+    ///   `OperationType::ALL` by `operations_registry`) and a feed.
+    /// - Heights: every op has a Z plane set.
     /// - Linking: arc fitting applies to every op.
     ///
     /// No shipped op hides a tab today; the predicate is the one place that
@@ -359,7 +358,6 @@ impl ToolpathTab {
         match self {
             ToolpathTab::Geometry
             | ToolpathTab::Passes
-            | ToolpathTab::FeedsSpeeds
             | ToolpathTab::Heights
             | ToolpathTab::Linking => true,
         }
@@ -1877,6 +1875,7 @@ fn draw_toolpath_selection(
         let mut selection_ui = std::mem::take(&mut state.gui.selection_ui);
         let mut heights_refusal = std::mem::take(&mut state.panels.heights_refusal);
         let mut containment_autocorrect = std::mem::take(&mut state.panels.containment_autocorrect);
+        let mut envelope_candidates = std::mem::take(&mut state.panels.envelope_candidates);
         let active_tab = draw_toolpath_panel(
             ui,
             &mut snapshot,
@@ -1885,6 +1884,7 @@ fn draw_toolpath_selection(
             &mut selection_ui,
             &mut heights_refusal,
             &mut containment_autocorrect,
+            &mut envelope_candidates,
             events,
         );
 
@@ -1897,6 +1897,7 @@ fn draw_toolpath_selection(
         state.gui.selection_ui = selection_ui;
         state.panels.heights_refusal = heights_refusal;
         state.panels.containment_autocorrect = containment_autocorrect;
+        state.panels.envelope_candidates = envelope_candidates;
 
         // ORDER IS LOAD-BEARING. The runtime write-back runs
         // FIRST, because it copies `entry.stale_since` — the

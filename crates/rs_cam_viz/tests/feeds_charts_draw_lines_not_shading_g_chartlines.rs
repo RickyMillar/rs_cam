@@ -51,8 +51,10 @@ use rs_cam_core::machine::MachineProfile;
 use rs_cam_core::material::{Material, WoodSpecies};
 
 /// The feeds chart files, relative to this crate's manifest.
-const CHART_FILES: [&str; 5] = [
+const CHART_FILES: [&str; 6] = [
     "src/ui/feeds/explore.rs",
+    // P5b (K2b): the safe envelope plot (decision D2: lines only).
+    "src/ui/feeds/envelope.rs",
     "src/ui/feeds/shared.rs",
     "src/ui/feeds/compare.rs",
     "src/ui/feeds/why.rs",
@@ -114,6 +116,13 @@ fn the_feeds_charts_construct_no_shading_g_chartlines() {
     assert!(
         explore.contains("plot_ui.line("),
         "`draw_chart_c` draws no line, so the scan below has nothing to check"
+    );
+    // Non-vacuity of the envelope plot (P5b, D2): it draws its edges as
+    // lines.
+    let envelope = code_of("src/ui/feeds/envelope.rs");
+    assert!(
+        envelope.contains("fn draw_plane(") && envelope.contains("plot_ui.line("),
+        "the envelope plot moved or draws no line"
     );
 
     let mut hits = Vec::new();

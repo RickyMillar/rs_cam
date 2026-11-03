@@ -207,6 +207,7 @@ pub(super) fn run_compute_with_phase_tracker(
                 debug_trace,
                 semantic_trace,
                 provenance: _,
+                lineage,
             } = computed;
             let debug_trace = debug_trace.map(Arc::new);
             // CMP-23: core already hands this back as an `Arc` so the S5
@@ -229,6 +230,7 @@ pub(super) fn run_compute_with_phase_tracker(
                 semantic_trace: semantic_trace.clone(),
                 debug_trace_path: debug_trace_path.clone(),
                 drill_op,
+                lineage,
             };
             ComputeExecutionOutcome {
                 result: Ok(result),

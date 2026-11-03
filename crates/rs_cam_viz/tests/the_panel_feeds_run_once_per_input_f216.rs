@@ -205,7 +205,7 @@ fn the_panel_runs_the_calculator_once_per_input_f216() {
 
     // The Feeds tab reads the same memo: no second calculator run.
     let id = state.session().toolpath_configs()[0].id;
-    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((id, ToolpathTab::Passes));
     assert_eq!(
         builds_after(&ctx, &mut state, 100),
         0,

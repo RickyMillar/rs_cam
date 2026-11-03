@@ -22,11 +22,12 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
     ));
     assert!(matches!(
         ToolpathTab::parse("feeds"),
-        Some(ToolpathTab::FeedsSpeeds)
+        Some(ToolpathTab::Passes)
     ));
+    // P5b: the Feeds tab merged into Passes; its keys open Passes.
     assert!(matches!(
         ToolpathTab::parse("feeds_speeds"),
-        Some(ToolpathTab::FeedsSpeeds)
+        Some(ToolpathTab::Passes)
     ));
     assert!(matches!(
         ToolpathTab::parse("linking"),
@@ -48,7 +49,8 @@ fn toolpath_tab_parse_covers_all_documented_keys() {
     // to sit here was a third copy of the list, beside the parser and the
     // MCP refusal message. Every canonical key must name its own variant.
     assert!(
-        ToolpathTab::ALL.len() >= 5,
+        // P5b: four tabs (the Feeds tab merged into Passes).
+        ToolpathTab::ALL.len() >= 4,
         "the tab list shrank; this loop would pass for the wrong reason"
     );
     for &tab in ToolpathTab::ALL {
@@ -232,7 +234,8 @@ fn the_panel_inputs_carry_the_session_lists_ui01() {
 /// Cut, Heights, Feeds, Linking, Dressup.
 #[test]
 fn the_tab_strip_is_the_r2_tab_set_d7() {
-    const WANT: [&str; 5] = ["Geometry", "Passes", "Feeds", "Heights", "Linking"];
+    // P5b (operator ruling 2026-11-03): the Feeds tab merged into Passes.
+    const WANT: [&str; 4] = ["Geometry", "Passes", "Heights", "Linking"];
     let ctx = egui::Context::default();
     crate::ui::tokens::apply(&ctx);
     crate::ui::tokens::apply_fonts(&ctx);
@@ -472,6 +475,8 @@ fn tab_texts(
             None,
             &mut crate::state::pick::SelectionUi::default(),
             super::linking_dressup::Fields::default(),
+            None,
+            &mut crate::state::panels::EnvelopeCandidates::default(),
             &mut events,
         ),
         // R2: the whole Geometry tab: the Input row, the selection, the
@@ -486,7 +491,7 @@ fn tab_texts(
             &[],
             &mut events,
         ),
-        ToolpathTab::Geometry | ToolpathTab::FeedsSpeeds | ToolpathTab::Heights => {
+        ToolpathTab::Geometry | ToolpathTab::Heights => {
             super::geometry_tab::draw_geometry_tab(
                 ui,
                 &entry,
@@ -1130,14 +1135,10 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
         Some(crate::ui::tokens::DANGER)
     );
     assert_eq!(
-        badges.for_tab(ToolpathTab::FeedsSpeeds),
+        badges.for_tab(ToolpathTab::Passes),
         Some(crate::ui::tokens::CAUTION)
     );
-    for tab in [
-        ToolpathTab::Passes,
-        ToolpathTab::Linking,
-        ToolpathTab::Heights,
-    ] {
+    for tab in [ToolpathTab::Linking, ToolpathTab::Heights] {
         assert_eq!(badges.for_tab(tab), None, "{tab:?} gets no dot");
     }
 }
@@ -1283,6 +1284,7 @@ fn the_figures_hover_names_the_feed_caps_g_b() {
             semantic_trace: None,
             debug_trace_path: None,
             drill_op: None,
+            lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
         })
     };
     let mut rt = crate::state::runtime::ToolpathRuntime::new(false);
@@ -1633,6 +1635,8 @@ fn the_tool_picker_greys_refused_tools_r2() {
                     None,
                     &mut crate::state::pick::SelectionUi::default(),
                     super::linking_dressup::Fields::default(),
+                    None,
+                    &mut crate::state::panels::EnvelopeCandidates::default(),
                     &mut events,
                 );
             } else {
@@ -2531,6 +2535,7 @@ fn painted_fields(
                     &mut crate::state::pick::SelectionUi::default(),
                     &mut crate::state::panels::HeightsRefusal::default(),
                     &mut crate::state::panels::ContainmentAutoCorrect::default(),
+                    &mut crate::state::panels::EnvelopeCandidates::default(),
                     &mut events,
                 );
             });

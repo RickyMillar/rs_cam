@@ -76,7 +76,8 @@ fn opening_heights_tab_does_not_pin_heights_or_mark_stale_g_heightstab() {
     };
 
     assert!(
-        ToolpathTab::ALL.len() >= 5,
+        // P5b: four tabs (the Feeds tab merged into Passes).
+        ToolpathTab::ALL.len() >= 4,
         "the tab list shrank; this loop would pass for the wrong reason"
     );
     let mut defects: Vec<String> = Vec::new();
@@ -217,6 +218,7 @@ fn controller_save_open_and_export_smoke() {
                 debug_trace: None,
                 semantic_trace: None,
                 provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             }),
         }))
         .expect("seed the core result");
@@ -235,6 +237,7 @@ fn controller_save_open_and_export_smoke() {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
 
     // K6 (ruling Q6): this smoke test never simulates, so every load row

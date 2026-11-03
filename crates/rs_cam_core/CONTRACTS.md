@@ -43,6 +43,18 @@ touches names it in its invariants.
   Sentries: `--test apply_writes_speeds_unless_a_pick_k2b`,
   `--test the_envelope_keeps_each_limit_k2b`,
   `--test a_pick_outside_the_envelope_warns_k2b`, `--doc envelope_refusals`.
+- K8: every generated toolpath carries its lineage (ruling Q7). `trace/lineage.rs`:
+  `Lineage { cut, pick, speeds, tool_facts, entry, findings, rules }` (no `Default`)
+  is a required field of `ToolpathComputeResult` (`lineage: Arc<Lineage>`; lead
+  decision D3: not on `Produced`). `JobPhases::finish` builds it with
+  `Lineage::of` from the stored `FeedsProvenance` stamps (a "picked" stamp is the
+  `PickRecord`), the tool, the entry contract, `Produced::entries` and the
+  generation findings with their K6 consequence; it runs no calculator (Q5). A
+  tool fact is `FactState::NotRecorded` until P6; `rules` is empty until P7.
+  `Lineage::unrecorded` is the test door of a hand-built result. Surfaces: the
+  inspector Lineage `Details`, MCP `get_toolpath_lineage`, CLI `summary.json`
+  `lineage`. Sentries: `--test every_generated_toolpath_has_a_lineage_k8`,
+  `--doc lineage` (`compile_fail`: a result without `lineage`).
 - K4: every op states how it enters material. Each `REG_*` row states its
   `entry: EntryContract` (`Dressup`, `Planner`, `DescentIsCut`,
   `StraightPlunge { reason, feed }`; no `Default`; `EntrySet` is not empty),

@@ -72,7 +72,6 @@ const FOLDERS: &[(&str, &[(&str, &str)])] = &[
             ("toolpath_panel/tabs/mod.rs", "fn op_report"),
             ("toolpath_panel/tabs/geometry.rs", "fn draw_geometry_tab"),
             ("toolpath_panel/tabs/passes.rs", "fn draw_passes_tab"),
-            ("toolpath_panel/tabs/feeds.rs", "fn draw_feeds_tab"),
             ("toolpath_panel/tabs/heights.rs", "fn draw_heights_tab"),
             ("toolpath_panel/tabs/linking.rs", "fn draw_linking_tab"),
         ],

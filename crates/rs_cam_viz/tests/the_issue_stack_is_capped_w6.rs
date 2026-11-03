@@ -115,7 +115,7 @@ fn a_note_paints_only_in_the_notes_counter_w6() {
             let (mut state, id) = fixture(family, bad);
             // The first render fills the feeds memo, whose findings (the
             // feeds notes) join the list; place after it.
-            let _ = screen(&mut state, id, ToolpathTab::FeedsSpeeds);
+            let _ = screen(&mut state, id, ToolpathTab::Passes);
             let placed = properties::placed_findings(id, &state).expect("the toolpath exists");
             states_with_notes += usize::from(!placed.notes.is_empty());
             let note_faces: Vec<&str> = placed.notes.iter().map(|d| d.face.as_str()).collect();
@@ -163,7 +163,8 @@ fn a_note_paints_only_in_the_notes_counter_w6() {
             }
         }
     }
-    assert!(screens > 100, "non-vacuity: {screens} screens");
+    // P5b: four tabs per state (the Feeds tab merged into Passes): 92.
+    assert!(screens > 80, "non-vacuity: {screens} screens");
     assert!(
         states_with_notes > 0 && counters > 0,
         "non-vacuity: {states_with_notes} states with notes, {counters} screens paint the \

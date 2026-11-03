@@ -325,6 +325,16 @@ pub enum AppEvent {
     /// invariant-resolved ones — identical to the properties panel's two
     /// buttons applied together (Checkpoint I-1).
     ApplyFeedsAll(ToolpathId),
+    /// K2b (feeds contract P5b): apply one pick of the safe envelope: the
+    /// ⚡ of the envelope plot (the candidate ring, or the proposal when no
+    /// candidate exists) and a geometry ⚡ pill (the proposal). The handler
+    /// sends `Command::ApplyFeeds` with `pick`, then drops the candidate
+    /// ring of the toolpath. A point outside the envelope is written and
+    /// warns (ruling Q6); nothing refuses it.
+    ApplyFeedsPick {
+        toolpath_id: ToolpathId,
+        pick: rs_cam_core::feeds::envelope::PickRequest,
+    },
     /// Apply the recommended SPEEDS only (RPM, feed, plunge) to a toolpath,
     /// holding DOC and WOC exactly as authored. The `Match vendor chipload`
     /// button on the comparison card routes here.

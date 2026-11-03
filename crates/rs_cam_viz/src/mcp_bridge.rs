@@ -549,6 +549,11 @@ pub enum McpRequestKind {
     GetSafeEnvelope {
         index: usize,
     },
+    /// Feeds contract P5b (K8): the lineage of the generated toolpath at
+    /// `index` as JSON.
+    GetToolpathLineage {
+        index: usize,
+    },
 
     InspectModel,
     InspectStock,

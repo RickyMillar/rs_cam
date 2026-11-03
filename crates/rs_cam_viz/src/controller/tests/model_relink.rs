@@ -59,6 +59,7 @@ fn missing_model_relink_g_modelrelink() {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     assert_eq!(state_of(&controller, 0), FreshnessState::Current);
 

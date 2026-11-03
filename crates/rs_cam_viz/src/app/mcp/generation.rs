@@ -996,6 +996,32 @@ impl RsCamApp {
         )
     }
 
+    /// Feeds contract P5b (K8, ruling Q7): the lineage of the generated
+    /// toolpath at `index` as JSON: the cut, the pick, the stored speeds
+    /// with their stamps, the tool facts, the entry contract and entries,
+    /// the findings and the rule outcomes. Read-only. A toolpath with no
+    /// result has no lineage, and the reply says so.
+    pub(super) fn mcp_get_toolpath_lineage(&self, index: usize) -> String {
+        let state = self.controller.state();
+        let Some(tc) = state.session().toolpath_config_at(index) else {
+            return json_str(serde_json::json!({
+                "error": format!("Toolpath index {index} not found")
+            }));
+        };
+        match state.session().result_at(index) {
+            None => json_str(serde_json::json!({
+                "toolpath_id": tc.id,
+                "toolpath_name": tc.name,
+                "error": "The toolpath has no result. Generate it first.",
+            })),
+            Some(result) => json_str(serde_json::json!({
+                "toolpath_id": tc.id,
+                "toolpath_name": tc.name,
+                "lineage": result.lineage.to_json(),
+            })),
+        }
+    }
+
     /// Feeds contract P5 (K2b): the safe envelope of the toolpath at
     /// `index` as JSON. Read-only. The speeds grid is capped at
     /// `response::MAX_SAFE_ENVELOPE_GRID_POINTS`, and a cut grid says so.

@@ -8,7 +8,6 @@
 // order and no egui id changed. Each function re-binds the `inputs` fields
 // it needs under the names its body already used.
 
-pub(super) mod feeds;
 pub(in crate::ui::properties) mod geometry;
 pub(super) mod heights;
 pub(super) mod linking;

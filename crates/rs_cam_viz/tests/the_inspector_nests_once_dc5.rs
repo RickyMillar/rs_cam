@@ -154,7 +154,8 @@ fn no_name_is_both_a_tab_and_a_disclosure_dc5() {
     let src = inspector_src();
     let labels = tab_labels(&src);
     assert!(
-        labels.len() >= 5,
+        // P5b: four tabs (the Feeds tab merged into Passes).
+        labels.len() >= 4,
         "read only {} tab labels out of the inspector's `label()` match. The \
          scan below is driven by this list, so an empty one would pass for \
          the wrong reason.",

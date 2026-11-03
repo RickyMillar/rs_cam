@@ -1,6 +1,6 @@
 # P5b: the envelope plot in the GUI and the toolpath lineage
 
-Status: NOT STARTED (sketch to agree) | Contracts: K2b (view), K8 | Rulings: Q4, Q6, Q7, no-refusal (2026-11-03) | Numbers move: no
+Status: DONE 2026-11-04 | Contracts: K2b (view), K8 | Rulings: Q4, Q6, Q7, no-refusal (2026-11-03) | Numbers move: no
 
 ## Goal
 

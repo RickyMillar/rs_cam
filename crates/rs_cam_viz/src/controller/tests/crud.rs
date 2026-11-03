@@ -205,6 +205,7 @@ fn remove_setup_cleans_runtime_and_ignores_a_queued_late_completion() {
                     semantic_trace: None,
                     debug_trace_path: None,
                     drill_op: None,
+                    lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
                 }),
                 debug_trace: None,
                 semantic_trace: None,

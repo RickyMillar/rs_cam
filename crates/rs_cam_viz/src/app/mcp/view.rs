@@ -571,7 +571,8 @@ impl RsCamApp {
             let parsed = match tab {
                 PropertiesTabParam::Geometry => ToolpathTab::Geometry,
                 PropertiesTabParam::Passes => ToolpathTab::Passes,
-                PropertiesTabParam::Feeds => ToolpathTab::FeedsSpeeds,
+                // P5b: the Feeds tab merged into Passes.
+                PropertiesTabParam::Feeds => ToolpathTab::Passes,
                 PropertiesTabParam::Heights => ToolpathTab::Heights,
                 PropertiesTabParam::Linking => ToolpathTab::Linking,
             };

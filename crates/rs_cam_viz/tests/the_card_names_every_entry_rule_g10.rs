@@ -156,7 +156,7 @@ fn state_for(
     let id = state.session().toolpath_configs()[0].id;
     state.gui.toolpath_rt.insert(id, ToolpathRuntime::new(true));
     let _ = state.set_focus(Selection::Toolpath(id));
-    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Passes));
     state
 }
 

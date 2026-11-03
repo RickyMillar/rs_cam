@@ -79,6 +79,7 @@ fn done_run() -> crate::state::runtime::ToolpathRun {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     })
 }
 
@@ -284,6 +285,7 @@ fn sample_project_into<B: ComputeBackend>(controller: &mut AppController<B>) {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     controller.state.gui.toolpath_rt.insert(tp_id, rt);
 
@@ -482,6 +484,7 @@ fn push_toolpath_completion(
                     semantic_trace: None,
                     debug_trace_path: None,
                     drill_op: None,
+                    lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
                 }),
                 debug_trace: None,
                 semantic_trace: None,
@@ -687,6 +690,7 @@ impl ComputeBackend for RestChainBackend {
                 semantic_trace: None,
                 debug_trace_path: None,
                 drill_op: None,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             })
         };
         self.drained.push(ComputeMessage::Toolpath(Box::new(
@@ -936,6 +940,7 @@ impl LaneModelBackend {
                 semantic_trace: None,
                 debug_trace_path: None,
                 drill_op: None,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             })
         };
         self.active_cancelled = false;
@@ -1113,6 +1118,7 @@ fn core_result() -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: rs_cam_core::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     }
 }
 
@@ -1150,6 +1156,7 @@ fn generate_all_for_test<B: ComputeBackend>(controller: &mut AppController<B>) {
                 semantic_trace: None,
                 debug_trace_path: None,
                 drill_op: None,
+                lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
             });
         }
     }

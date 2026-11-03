@@ -206,6 +206,49 @@ pub struct PanelDrafts {
     /// G-C (D-2): the `⟲` badge of a containment the `Rest Regions` pick
     /// set to `Inside`, scoped to its toolpath.
     pub containment_autocorrect: ContainmentAutoCorrect,
+    /// K2b (feeds contract P5b): the candidate ring of the envelope plot of
+    /// each toolpath, a point that nothing has written yet. The Passes tab
+    /// writes it on a click or a drag; Esc and an apply drop it.
+    pub envelope_candidates: EnvelopeCandidates,
+}
+
+/// K2b (feeds contract P5b, live link): the candidate point of the safe
+/// envelope plot, per toolpath. A candidate writes nothing: the session
+/// changes only on the ⚡ apply (`AppEvent::ApplyFeedsPick`). The
+/// nomogram draws the speeds of the candidate while it exists.
+///
+/// It is GUI state here, not egui memory (UI-09), so a memo refresh or a
+/// redraw does not reset it.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct EnvelopeCandidates {
+    points:
+        std::collections::BTreeMap<rs_cam_core::ToolpathId, rs_cam_core::feeds::envelope::CutPoint>,
+}
+
+impl EnvelopeCandidates {
+    /// The candidate of toolpath `id`, if one exists.
+    #[must_use]
+    pub fn get(
+        &self,
+        id: rs_cam_core::ToolpathId,
+    ) -> Option<rs_cam_core::feeds::envelope::CutPoint> {
+        self.points.get(&id).copied()
+    }
+
+    /// Move the candidate of toolpath `id` to `point`.
+    pub fn set(
+        &mut self,
+        id: rs_cam_core::ToolpathId,
+        point: rs_cam_core::feeds::envelope::CutPoint,
+    ) {
+        let _ = self.points.insert(id, point);
+    }
+
+    /// Drop the candidate of toolpath `id` (Esc, or an apply). True when
+    /// one existed.
+    pub fn clear(&mut self, id: rs_cam_core::ToolpathId) -> bool {
+        self.points.remove(&id).is_some()
+    }
 }
 
 /// The last heights edit that broke the plane order (F033), which the

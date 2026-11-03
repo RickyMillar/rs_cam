@@ -728,6 +728,9 @@ impl<B: ComputeBackend> AppController<B> {
             AppEvent::ApplyFeedsAll(toolpath_id) => {
                 self.apply_feeds_all(toolpath_id);
             }
+            AppEvent::ApplyFeedsPick { toolpath_id, pick } => {
+                self.apply_feeds_pick(toolpath_id, pick);
+            }
             AppEvent::ApplyFeedsSpeeds(toolpath_id) => {
                 self.apply_feeds_speeds(toolpath_id);
             }
@@ -1138,6 +1141,24 @@ impl<B: ComputeBackend> AppController<B> {
             Some(rs_cam_core::feeds::envelope::PickRequest::Proposal),
             None,
         ) {
+            self.push_notification(
+                format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
+                crate::controller::Severity::Warning,
+            );
+        }
+    }
+
+    /// K2b (feeds contract P5b): apply one envelope pick, the ⚡ of the
+    /// envelope plot or of a geometry pill. The funnel writes the picked
+    /// depth and width, then the speeds at them. The candidate ring of the
+    /// toolpath goes: the plot then shows the new stored cut.
+    fn apply_feeds_pick(
+        &mut self,
+        toolpath_id: crate::state::toolpath::ToolpathId,
+        pick: rs_cam_core::feeds::envelope::PickRequest,
+    ) {
+        let _ = self.state.panels.envelope_candidates.clear(toolpath_id);
+        if let Err(why) = self.apply_feeds_through_funnel(toolpath_id, Some(pick), None) {
             self.push_notification(
                 format!("Feeds not applied to toolpath {}: {why}", toolpath_id.raw()),
                 crate::controller::Severity::Warning,

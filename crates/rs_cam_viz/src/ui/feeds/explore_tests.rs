@@ -118,7 +118,7 @@ fn fixture(diameter: f64, stickout: f64) -> AppState {
         crate::state::runtime::ToolpathRuntime::new(true),
     );
     let _ = state.set_focus(crate::state::selection::Selection::Toolpath(toolpath_id));
-    state.gui.pending_toolpath_tab = Some((toolpath_id, properties::ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((toolpath_id, properties::ToolpathTab::Passes));
     state
 }
 

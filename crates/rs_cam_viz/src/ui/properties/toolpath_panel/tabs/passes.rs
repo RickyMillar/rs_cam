@@ -1,19 +1,35 @@
-//! The Passes tab (R2) of the toolpath inspector.
+//! The Passes tab (R2) of the toolpath inspector. P5b (operator ruling
+//! 2026-11-03): the Feeds tab merged into it, so each adjustment shows
+//! beside its cut. Top to bottom (a diagram comes before its rows):
+//!
+//! 1. the safe envelope plot or bar (`SAFE CUT`, the ⚡ chip);
+//! 2. the feed x rpm nomogram, which follows the candidate ring;
+//! 3. the start stock and the op editor (the depth and stepover rows);
+//! 4. the feed, rpm and plunge rows, then the Suggest card and `Vendor data…`;
+//! 5. the rest analysis disclosure, when a demand names it.
 
 use super::geometry::regions_phrase;
 use super::op_report;
 use crate::state::toolpath::{OperationConfig, StockSource};
 use crate::ui::AppEvent;
 use crate::ui::components::{OneLine, UiExt as _};
+use crate::ui::properties::feeds_speeds::{
+    FeedsBlock, draw_feeds_chart, draw_feeds_recommendation, draw_speed_controls,
+};
 use crate::ui::properties::linking_dressup::{Fields, combo_in_row, num_in_row, plain_row};
 use crate::ui::properties::pills::PillSuggestions;
 use crate::ui::properties::tab_badges::{draw_start_from, rest_region_pathology_line};
 use crate::ui::properties::{ToolpathPanelInputs, operations, rest_grid_footprint_area};
 
-/// The Passes tab (R2; the Cut tab before it): the start stock, the op
-/// parameters and the rest analysis. The tool is the header Tool row; the
-/// input model and the machining boundary are on the Geometry tab.
-/// `properties::tests` renders it (D3).
+/// The Passes tab (R2; the Cut tab before it; P5b: with the feeds): the
+/// envelope plot, the nomogram, the start stock, the op parameters, the
+/// speed rows, the Suggest card and the rest analysis. The tool is the
+/// header Tool row; the input model and the machining boundary are on the
+/// Geometry tab. `properties::tests` renders it (D3).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the inputs and the GUI state slots the tab edits in place (`state.panels`), each threaded in alone, as the panel host threads them"
+)]
 pub(in crate::ui::properties) fn draw_passes_tab(
     ui: &mut egui::Ui,
     entry: &mut crate::state::toolpath::ToolpathEntry,
@@ -21,6 +37,8 @@ pub(in crate::ui::properties) fn draw_passes_tab(
     strategy_suggestion: Option<crate::state::toolpath::ClearingStrategy>,
     selection_ui: &mut crate::state::pick::SelectionUi,
     fields: Fields<'_>,
+    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    candidates: &mut crate::state::panels::EnvelopeCandidates,
     events: &mut Vec<AppEvent>,
 ) {
     let tools = inputs.tools.as_slice();
@@ -38,8 +56,46 @@ pub(in crate::ui::properties) fn draw_passes_tab(
 
     ui.add_space(4.0);
 
-    // The stock source opens this tab. R2: the Tool row is in the header
-    // and the Input row is on the Geometry tab.
+    // P5b: the feeds inputs of the bound tool. With no tool there is no
+    // envelope, no chart and no card.
+    let tool = inputs
+        .tool_configs
+        .iter()
+        .find(|(id, _)| Some(*id) == entry.tool_id)
+        .map(|(_, t)| t);
+    let block = tool.map(|tool| FeedsBlock {
+        tool,
+        material: &inputs.material,
+        machine: &inputs.machine,
+        spindle_strategy: inputs.spindle_strategy,
+        load_verdict: inputs.load_verdict(),
+        model_bbox,
+    });
+
+    if let Some(block) = &block {
+        // 1. K2b: the safe envelope (the memo built it, F216).
+        let envelope = entry.feeds_memo.envelope_shared();
+        let refusal = entry.feeds_memo.refusal().map(ToString::to_string);
+        let _ = crate::ui::feeds::envelope::draw_envelope(
+            ui,
+            entry.id,
+            &entry.operation,
+            envelope.as_deref(),
+            refusal.as_deref(),
+            candidates,
+            events,
+        );
+        // 2. The nomogram: it draws the speeds of the candidate while one
+        //    exists (live link), a lookup in the envelope's speeds grid.
+        let candidate = envelope.as_deref().and_then(|env| {
+            crate::ui::feeds::envelope::candidate_speeds(env, candidates.get(entry.id))
+        });
+        draw_feeds_chart(ui, entry, block, candidate);
+        ui.add_space(4.0);
+    }
+
+    // The stock source opens the op rows. R2: the Tool row is in the
+    // header and the Input row is on the Geometry tab.
     draw_start_from(ui, entry, inputs, events);
     ui.separator();
     ui.add_space(4.0);
@@ -127,6 +183,39 @@ pub(in crate::ui::properties) fn draw_passes_tab(
             .feeds_provenance
             .set(field, preview.provenance.clone());
         entry.pill_stamped_fields.push(field);
+        // P5b (K2b, Checkpoint I-1): a geometry pill is no per-field apply.
+        // It applies the envelope proposal through the one funnel.
+        events.push(AppEvent::ApplyFeedsPick {
+            toolpath_id: entry.id,
+            pick: rs_cam_core::feeds::envelope::PickRequest::Proposal,
+        });
+    }
+
+    // 4. The speed rows (R1: a suggested value shows ⚡) and the Chipload
+    //    row, then the recommendation card and the measured operating
+    //    point, then `Vendor data…` (the Feeds tab before P5b).
+    draw_speed_controls(
+        ui,
+        entry,
+        tool.map(|t| t.flute_count),
+        &inputs.machine,
+        fields,
+    );
+    if let Some(block) = &block {
+        draw_feeds_recommendation(ui, entry, block, events);
+        ui.add_space(crate::ui::tokens::SPACE_2);
+        // The vendor cutting data of the bound tool's family, in its own
+        // window (W3i). With no tool there is no family, so no button.
+        if ui
+            .add(crate::ui::components::Button::quiet("Vendor data\u{2026}"))
+            .on_hover_text(
+                "Open the vendor cutting data table for this tool's family. The rows at \
+                 this tool's diameter are in green.",
+            )
+            .clicked()
+        {
+            events.push(AppEvent::OpenVendorData(entry.id));
+        }
     }
 
     // ── Rest analysis: a demand-titled disclosure ───────────────

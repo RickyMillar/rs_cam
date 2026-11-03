@@ -21,7 +21,7 @@ code by the symbol when the line has moved.
 | D6 | P6 D3 tool library. **Ruled 2026-11-03: yes, the script migrates `~/.config/rs_cam/tools/` and keeps a `.bak` of each file.** | P6 | RULED |
 | D7 | Missing input. **Ruled 2026-11-03: a missing input stops generation or emission with a reason; only findings warn.** | P2, P5 | RULED |
 | D5 | P0 D3 Amana tapered 1/16" 2F rows. **Ruled 2026-11-03: the chip band from the printed IPM** (reverses the 2026-09-24 decision). | P0 item 5 | RULED |
-| D8 | Registry defaults after P5. **Ruled 2026-11-03 (operator): (b) tool-derived. An op has no geometry default without a tool; each geometry default is a fraction of the tool (example: stepover = k x D). Each k is a `FormulaConstant` with a printed source or marked Unsourced (no number from memory).** Until it lands, (a) holds: the built-in default warns and the operator picks the proposal. New phase P10. | P10 | RULED |
+| D8 | Registry defaults after P5. **Ruled 2026-11-03 (operator): (b) tool-derived. An op has no geometry default without a tool; each geometry default is a fraction of the tool (example: stepover = k x D). Each k is a `FormulaConstant` with a printed source or marked Unsourced (no number from memory).** Until it lands, (a) holds: the built-in default warns and the operator picks the proposal. New phase P10. Evidence after P5 (a5ec62f44): 16 FM1 sim cells (Pocket, Profile, Ø6) exceed the depth rigidity cap at the fixed default depth per pass; 15 Face cells have stepover > D. | P10 | RULED |
 | D9 | The machine "aggressiveness" dial changes no number after P5 (pass 6b deleted; the slider, MCP and the explain payload only show it). Options: (a) remove the dial; (b) make it pick the proposal point inside the envelope (for example, how close to the binding edge); (c) keep it as a display. Lead recommends (b) in P5b or (a). | P5b | ASK THE OPERATOR |
 
 ## Phases
@@ -34,7 +34,7 @@ code by the symbol when the line has moved.
 | 3 K4 entry contract | `phases/P3.md` | DONE 2026-11-03 (25 rows state `entry`; `EntryApproach`; `EntryRecord`; G-OPGOLDEN has `gcode_hash`, no byte moved) | see `git log` | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | DONE 2026-11-04 (Suggest writes geometry only on a pick; `SafeEnvelope`; Q3; FM1 re-blessed). Heavy FM1 subset and `wanaka_suggest_integration`: approved, run after the commit | see `git log` | |
-| 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (sketch agreed; live link; Feeds tab merges into Passes; needs P5, P2, P3) | | |
+| 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | Next: P6, in a fresh session |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
@@ -48,6 +48,25 @@ code by the symbol when the line has moved.
   production; a pick sizes its speeds at the unsnapped depth while the snapped
   depth ships (safe side). The P8 and P9 card gates name the deleted tests t15
   and fm7: fix the cards before those phases.
+- P5 follow-up (lead, P5b review 2026-11-04): the `SpeedsMap` grid (8 x 8)
+  spans ap from 0.05 mm to the flute (step 3.6 mm on a 25 mm flute), while the
+  P5b plot view is about 1.3 x the lowest ceiling. The grid is coarse where the
+  operator drags. Span the grid over the plot view, or refine it there.
+- P5b follow-ups (lead, 2026-11-04):
+  - At the 240 pt Simulation rail, a number well in the Profile fixture's
+    Passes rows ("2.0") is clipped to zero width. The up4 rail arm now skips
+    a text whose clip has zero width
+    (`inspector_width_is_tab_independent_up4.rs`): remove that skip when the
+    row is fixed.
+  - The tab merge changed test limits (each measured): `ToolpathTab::ALL`
+    anchors 5 -> 4; screen non-vacuity 100 -> 80 (92 screens, 23 states x 4
+    tabs) in w2b, w0, w6 and ic1; SCREEN height 1000 -> 2400 in w3k and
+    g_hoverbound (the merged tab scrolls); ic1 caps realigned to 4 tabs,
+    Passes = 36 / 34 / 28 (Pocket / 3D Rough / 3D Finish). ic1 now fails only
+    on "Tool: 18 visible text rows, cap 17".
+  - Idea (operator, 2026-11-04): show each envelope limit as a fill fraction
+    at the pick (sorted bars beside the plot, live on drag). The operator
+    has not ruled; a radar chart was considered and does not show the trade.
 - Backlog idea (operator, 2026-11-03): a geometry field may hold an expression
   of the tool, such as `0.2*D`, and fill itself from the tool, as in Fusion.
   Not in a phase; consider it after P10.

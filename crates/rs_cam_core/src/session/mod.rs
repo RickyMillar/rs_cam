@@ -1523,6 +1523,11 @@ pub struct ToolpathComputeResult {
     /// `Dressed`; the modulation pass sets `Modulated` when it rewrites the
     /// feeds. A pass that changes no feed keeps the tag the slot had.
     pub provenance: ResultProvenance,
+    /// CONTRACT K8 (feeds contract P5b, ruling Q7): the facts this
+    /// toolpath used and how each is known. A required field with no
+    /// `Default` (lead decision D3: not on `Produced`, the kernel side
+    /// channel). Generation builds it in `JobPhases::finish`.
+    pub lineage: Arc<crate::trace::lineage::Lineage>,
 }
 
 impl ToolpathComputeResult {
@@ -3199,6 +3204,7 @@ mod tests {
                 debug_trace: None,
                 semantic_trace: None,
                 provenance: crate::session::ResultProvenance::Dressed,
+                lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
             },
         );
         assert!(

@@ -264,10 +264,8 @@ fn fixture(cutter: &Cutter) -> AppState {
     let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(
         toolpath_id,
     ));
-    state.gui.pending_toolpath_tab = Some((
-        toolpath_id,
-        rs_cam_viz::ui::properties::ToolpathTab::FeedsSpeeds,
-    ));
+    state.gui.pending_toolpath_tab =
+        Some((toolpath_id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
     state
 }
 
@@ -299,7 +297,7 @@ fn painted_rays(state: &mut AppState, colour: egui::Color32) -> Vec<Ray> {
     let mut rays = Vec::new();
     // The tab override is one-shot: each draw asks for the Feeds tab again.
     let id = state.session().toolpath_configs()[0].id;
-    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Passes));
     for pass in 0..12 {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),

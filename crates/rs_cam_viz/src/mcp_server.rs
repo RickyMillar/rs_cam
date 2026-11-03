@@ -586,6 +586,20 @@ impl EmbeddedCamServer {
     }
 
     #[tool(
+        name = "get_toolpath_lineage",
+        description = "Feeds contract K8: the lineage of the generated toolpath at `index`: which facts the toolpath used and how each is known. Returns `cut` (the op's CutSpec: radial and axial kind and value, total depth, first pass), `pick` (the envelope pick {ap_mm, ae_mm} when a stored depth or width has the \"picked\" stamp, else null), `speeds` (depth_per_pass, stepover, spindle_rpm, feed_rate, plunge_rate, ramp_feed_rate: each {value, basis {source, reference}}), `tool_facts` (fact, bare value, state: not_recorded until tool facts are recorded), `entry` (the entry contract and the count of the entries made per kind), `findings` (each generation finding id with its consequence: warn_machine, warn_tool, warn_part or info) and `rules` (empty for now). A toolpath with no result returns an error. Does not mutate the project."
+    )]
+    async fn get_toolpath_lineage(
+        &self,
+        Parameters(IndexParam { index }): Parameters<IndexParam>,
+    ) -> String {
+        Self::format_result(
+            self.send_request(McpRequestKind::GetToolpathLineage { index })
+                .await,
+        )
+    }
+
+    #[tool(
         name = "get_cut_trace",
         description = "Get simulation cut trace data: semantic summaries, structural span summaries, hotspots, issues, and (for drill toolpaths) drill_summaries. Run simulation first. Filter to a single toolpath via toolpath_id — that is the project-level ID from list_toolpaths, NOT the index; an id matching no toolpath is refused with the valid ids. Or filter to a structural span via span_kind (e.g. \"depth_pass\"), span_id (from inspect_spans), or pass_index (DepthPass payload, 0-based). Set include_drill_samples=true to also include the per-peck DrillSample stream. capped_move_count and capped_min_feed_mm_min count the moves with a feed cap (a load rule lowered the feed); capped_moves lists them (default 50), omitted when there are none. EVERY array is bounded: span_summaries and semantic_summaries default to 200, drill_samples to 500, and the whole response to 8 MiB. Each array reports <name>_total_matching / _returned / _truncated / _cap, so a shortened array always says so; a section dropped by the byte backstop is omitted, named in sections_not_computed, and sets complete=false — never rendered as an empty array. Narrow with the filters rather than raising the caps."
     )]

@@ -289,20 +289,24 @@ fn the_gui_builder_reads_every_drill_signal_cmp19() {
             None => rs_cam_core::ops::drill_op::OpData::Toolpath(annotated),
         };
         let revision = controller.state.session().toolpath_revision_at(0);
-        let _ = controller
-            .state
-            .apply(Command::AdoptResult(AdoptResultArgs {
-                index: 0,
-                revision,
-                result: Box::new(rs_cam_core::session::ToolpathComputeResult {
-                    op_data,
-                    stats: Default::default(),
-                    debug_trace: None,
-                    semantic_trace: None,
-                    provenance: rs_cam_core::session::ResultProvenance::Dressed,
-                }),
-            }))
-            .expect("the fixture revision is current");
+        let _ =
+            controller
+                .state
+                .apply(Command::AdoptResult(AdoptResultArgs {
+                    index: 0,
+                    revision,
+                    result: Box::new(rs_cam_core::session::ToolpathComputeResult {
+                        op_data,
+                        stats: Default::default(),
+                        debug_trace: None,
+                        semantic_trace: None,
+                        provenance: rs_cam_core::session::ResultProvenance::Dressed,
+                        lineage: std::sync::Arc::new(
+                            rs_cam_core::trace::lineage::Lineage::unrecorded(),
+                        ),
+                    }),
+                }))
+                .expect("the fixture revision is current");
     };
     let flag = |controller: &AppController<ScriptedBackend>| {
         let (groups, _, _) = controller
@@ -399,6 +403,7 @@ fn toolpath_results_persist_debug_trace_metadata() {
                     semantic_trace: Some(Arc::clone(&semantic_trace)),
                     debug_trace_path: Some(debug_path.clone()),
                     drill_op: None,
+                    lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
                 }),
                 debug_trace: Some(Arc::clone(&trace)),
                 semantic_trace: Some(Arc::clone(&semantic_trace)),

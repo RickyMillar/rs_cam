@@ -97,12 +97,13 @@ pub(super) fn compute_tab_badges(
         badges.raise(ToolpathTab::Heights, color);
     }
 
-    // Feeds: the warnings of the feeds result.
+    // The feeds rows (P5b: on the Passes tab): the warnings of the feeds
+    // result.
     if let Some(r) = entry.feeds_result.as_ref()
         && !r.warnings.is_empty()
     {
         badges.raise(
-            ToolpathTab::FeedsSpeeds,
+            ToolpathTab::Passes,
             if r.power_limited {
                 crate::ui::tokens::CAUTION
             } else {

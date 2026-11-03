@@ -213,6 +213,7 @@ fn gui_for(session: &ProjectSession) -> GuiState {
         semantic_trace: None,
         debug_trace_path: None,
         drill_op: None,
+        lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
     });
     gui.toolpath_rt.insert(session.toolpath_configs()[0].id, rt);
     gui

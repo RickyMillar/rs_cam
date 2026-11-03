@@ -149,7 +149,7 @@ fn painted(state: &mut AppState, open: bool) -> Vec<String> {
         ctx.memory_mut(|memory| memory.set_everything_is_visible(true));
     }
     let id = state.session().toolpath_configs()[0].id;
-    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::FeedsSpeeds));
+    state.gui.pending_toolpath_tab = Some((id, properties::ToolpathTab::Passes));
     let mut texts = Vec::new();
     for pass in 0..2 {
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {

@@ -694,6 +694,7 @@ fn set_toolpath_param_invalidates_result() {
             debug_trace: None,
             semantic_trace: None,
             provenance: crate::session::ResultProvenance::Dressed,
+            lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
         },
     );
     let _ = s.set_toolpath_param(0, "feed_rate", json!(1000.0)).unwrap();
@@ -863,6 +864,7 @@ fn set_tool_param_invalidates_toolpath_results() {
             debug_trace: None,
             semantic_trace: None,
             provenance: crate::session::ResultProvenance::Dressed,
+            lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
         },
     );
 
@@ -1105,6 +1107,7 @@ fn empty_result() -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: crate::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
     }
 }
 
@@ -2452,6 +2455,7 @@ fn fake_result_with_regions(
         debug_trace: None,
         semantic_trace: None,
         provenance: crate::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
     }
 }
 

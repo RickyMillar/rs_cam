@@ -80,6 +80,7 @@ fn fake_result() -> ToolpathComputeResult {
         debug_trace: None,
         semantic_trace: None,
         provenance: crate::session::ResultProvenance::Dressed,
+        lineage: std::sync::Arc::new(crate::trace::lineage::Lineage::unrecorded()),
     }
 }
 

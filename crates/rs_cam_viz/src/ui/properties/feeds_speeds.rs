@@ -1,5 +1,6 @@
-//! The Feeds tab: the speed rows and the Chipload row, the inline chart and
-//! the recommendation (`ui/feeds/explore.rs`, `ui/feeds/compare.rs`, W3i),
+//! The feeds half of the Passes tab (P5b merged the Feeds tab into Passes):
+//! the speed rows and the Chipload row, the inline chart and the
+//! recommendation (`ui/feeds/explore.rs`, `ui/feeds/compare.rs`, W3i),
 //! the measured operating point and the entry-style preview diagram. The
 //! vendor cutting data is a window (`ui/feeds/vendor.rs`).
 
@@ -58,10 +59,91 @@ pub(super) fn refresh_feeds_memo(
 /// W6: the face of a feeds refusal; the refusal text is the hover.
 pub(super) const FEEDS_UNAVAILABLE: &str = "Feeds unavailable";
 
-/// Run the LUT calculator (read-only) through the entry's `FeedsMemo`
-/// (F216), and draw the derived block of the tab: the inline chart and the
+/// What the Passes tab feeds block reads, besides the entry (P5b: the Feeds
+/// tab merged into Passes). The panel host builds it once per frame.
+pub(super) struct FeedsBlock<'a> {
+    pub tool: &'a crate::state::job::ToolConfig,
+    pub material: &'a rs_cam_core::material::Material,
+    pub machine: &'a rs_cam_core::machine::MachineProfile,
+    pub spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
+    pub load_verdict: Option<&'a rs_cam_core::tool_load::ToolpathLoadVerdict>,
+    /// Q1: the bbox of the model this toolpath machines, from
+    /// `ToolpathPanelSnapshot`. The memo key reads it.
+    pub model_bbox: Option<&'a rs_cam_core::geo::BoundingBox3>,
+}
+
+/// The card's funnel answers, once per input change (W3i), and the
+/// explanation payload. The key is the `Debug` text of every input of the
+/// build (the `FeedsKey` idiom), the dressups included. `None` before the
+/// memo has a preview.
+fn feeds_card(
+    entry: &mut ToolpathEntry,
+    block: &FeedsBlock<'_>,
+) -> Option<(
+    std::sync::Arc<rs_cam_core::feeds::suggest::FeedsPreview>,
+    std::sync::Arc<crate::state::runtime::FeedsCard>,
+)> {
+    let preview = entry.feeds_memo.preview_shared()?;
+    let FeedsBlock {
+        tool,
+        material,
+        machine,
+        spindle_strategy,
+        model_bbox,
+        ..
+    } = *block;
+    let key = format!(
+        "{:?}|{tool:?}|{material:?}|{machine:?}|{spindle_strategy:?}|{model_bbox:?}|{:?}",
+        entry.operation, entry.dressups
+    );
+    let card = entry.feeds_memo.card(key, || {
+        crate::ui::feeds::compare::build_card(
+            &entry.operation,
+            &entry.dressups,
+            tool,
+            material,
+            machine,
+            spindle_strategy,
+            model_bbox,
+            &preview,
+        )
+    });
+    Some((preview, card))
+}
+
+/// The nomogram of the Passes tab (W3i; P5b: under the envelope plot,
+/// above the op rows). `candidate`: the speeds of the envelope candidate
+/// ring (live link); the nomogram draws that cut while it exists. A
+/// refused pairing draws no chart: the recommendation block names the
+/// refusal.
+pub(super) fn draw_feeds_chart(
+    ui: &mut egui::Ui,
+    entry: &mut ToolpathEntry,
+    block: &FeedsBlock<'_>,
+    candidate: Option<rs_cam_core::feeds::envelope::SpeedsSample>,
+) {
+    if entry.feeds_memo.refusal().is_some() {
+        return;
+    }
+    let Some((preview, card)) = feeds_card(entry, block) else {
+        return;
+    };
+    let op = crate::ui::feeds::shared::OpFeeds {
+        toolpath_id: entry.id,
+        operation: &entry.operation,
+        tool: block.tool,
+        material: block.material,
+        machine: block.machine,
+        preview: &preview,
+        card: &card,
+    };
+    crate::ui::feeds::explore::draw_inline(ui, &op, candidate);
+}
+
+/// The derived block of the Passes tab under the speed rows: the
 /// recommendation (W3i), then the measured operating point. With no basis,
-/// one line gives the refusal.
+/// one line gives the refusal. The memo was filled by the panel host
+/// (`refresh_feeds_memo`, F216); this block only reads it.
 ///
 /// R1 (operator ruling 2026-10-30) replaces F.5 ("the calculator never
 /// writes"): core seeds each EMPTY feed field with the Suggest value on op
@@ -69,26 +151,13 @@ pub(super) const FEEDS_UNAVAILABLE: &str = "Feeds unavailable";
 /// (`ProjectSession::seed_feeds`). This draw writes nothing itself; the
 /// two apply buttons and the spindle policy push events. W3g: the cut half
 /// of the recommendation is the "⚡" action of the Depth/pass and Stepover
-/// rows on the Passes tab.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each parameter is a separate input that the callers supply"
-)]
-pub(super) fn calculate_and_apply_feeds(
+/// rows, and the ⚡ of the envelope plot (P5b).
+pub(super) fn draw_feeds_recommendation(
     ui: &mut egui::Ui,
     entry: &mut ToolpathEntry,
-    tool: &crate::state::job::ToolConfig,
-    material: &rs_cam_core::material::Material,
-    machine: &rs_cam_core::machine::MachineProfile,
-    spindle_strategy: rs_cam_core::feeds::SpindleStrategy,
-    load_verdict: Option<&rs_cam_core::tool_load::ToolpathLoadVerdict>,
-    // Q1: the bbox of the model this toolpath machines, from
-    // `ToolpathPanelSnapshot`. The memo key reads it.
-    model_bbox: Option<&rs_cam_core::geo::BoundingBox3>,
+    block: &FeedsBlock<'_>,
     events: &mut Vec<crate::ui::AppEvent>,
 ) {
-    // F216: the panel host filled the memo before any tab drew
-    // (`refresh_feeds_memo`); this tab only reads it.
     if let Some(e) = entry.feeds_memo.refusal().map(ToString::to_string) {
         ui.add_space(8.0);
         // G-E (4), W6: one short face; the refusal is the hover. A tool
@@ -100,44 +169,26 @@ pub(super) fn calculate_and_apply_feeds(
         );
         return;
     }
-    if let Some(preview) = entry.feeds_memo.preview_shared() {
-        // W3i: the card's funnel answers, once per input change. The key is
-        // the `Debug` text of every input of the build (the `FeedsKey`
-        // idiom), the dressups included.
-        let key = format!(
-            "{:?}|{tool:?}|{material:?}|{machine:?}|{spindle_strategy:?}|{model_bbox:?}|{:?}",
-            entry.operation, entry.dressups
-        );
-        let card = entry.feeds_memo.card(key, || {
-            crate::ui::feeds::compare::build_card(
-                &entry.operation,
-                &entry.dressups,
-                tool,
-                material,
-                machine,
-                spindle_strategy,
-                model_bbox,
-                &preview,
-            )
-        });
+    if let Some((preview, card)) = feeds_card(entry, block) {
         ui.add_space(crate::ui::tokens::SPACE_2);
         let op = crate::ui::feeds::shared::OpFeeds {
             toolpath_id: entry.id,
             operation: &entry.operation,
-            tool,
-            material,
-            machine,
+            tool: block.tool,
+            material: block.material,
+            machine: block.machine,
             preview: &preview,
             card: &card,
         };
-        crate::ui::feeds::explore::draw_inline(
+        let (spindle_strategy, machine) = (block.spindle_strategy, block.machine);
+        crate::ui::feeds::explore::draw_recommendation_inline(
             ui,
             &op,
             |ui, events| draw_spindle_policy_row(ui, spindle_strategy, machine, events),
             events,
         );
     }
-    draw_feeds_card(ui, load_verdict);
+    draw_feeds_card(ui, block.load_verdict);
 }
 
 /// W1 — the operator sets the feed, the plunge and the RPM here.

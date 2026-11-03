@@ -112,15 +112,17 @@ const FEED_AXIS_TITLE: &str = "Feed (mm/min)";
 /// private). The rotated y title paints this far left of the plot.
 const AXIS_LABEL_GAP: f32 = 0.25;
 
-/// The Feeds tab's chart block: the nomogram of this operation, then the
-/// recommendation (the apply buttons, the problem rows and one `Details`).
+/// The nomogram of this operation, inline on the Passes tab (P5b: the
+/// Feeds tab merged into Passes). The recommendation card draws under the
+/// speed rows ([`draw_recommendation_inline`]).
 ///
-/// `policy` draws the spindle policy row at the top of the `Details`.
+/// `candidate` (P5b live link): the speeds of the candidate ring of the
+/// envelope plot, a lookup in the `SpeedsMap`. While it is `Some`, the
+/// recommended ring and the suggested chip line are the candidate's.
 pub(crate) fn draw_inline(
     ui: &mut egui::Ui,
     op: &OpFeeds<'_>,
-    policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
-    events: &mut Vec<AppEvent>,
+    candidate: Option<rs_cam_core::feeds::envelope::SpeedsSample>,
 ) {
     let current = super::compare::current_values_for_operation(op.operation, op.tool);
     let efficiency = rs_cam_core::feeds::efficiency::cut_efficiency(
@@ -130,7 +132,19 @@ pub(crate) fn draw_inline(
         op.machine,
         op.preview.recommended(),
     );
-    draw_chart_c(ui, &current, op.preview, efficiency.as_ref());
+    draw_chart_c(ui, &current, op.preview, efficiency.as_ref(), candidate);
+}
+
+/// The recommendation of this operation: the apply buttons, the problem
+/// rows and one `Details` (W3i). `policy` draws the spindle policy row at
+/// the top of the `Details`.
+pub(crate) fn draw_recommendation_inline(
+    ui: &mut egui::Ui,
+    op: &OpFeeds<'_>,
+    policy: impl FnOnce(&mut egui::Ui, &mut Vec<AppEvent>),
+    events: &mut Vec<AppEvent>,
+) {
+    let current = super::compare::current_values_for_operation(op.operation, op.tool);
     super::compare::draw_recommendation(ui, op, &current, policy, events);
 }
 
@@ -258,6 +272,7 @@ pub(crate) fn draw_chart_c(
     current: &CurrentValues,
     preview: &FeedsPreview,
     efficiency: Option<&CutEfficiency>,
+    candidate: Option<rs_cam_core::feeds::envelope::SpeedsSample>,
 ) {
     let explain = preview.explain();
     let flutes = explain.flute_count.max(1) as f64;
@@ -280,13 +295,21 @@ pub(crate) fn draw_chart_c(
     let band = vendor_band(explain);
     // The suggested advance per tooth: the ray through the recommended
     // ring. `None` when the recommendation has no RPM to divide by.
-    let suggested = suggested_advance_mm(explain);
+    // P5b live link: a candidate of the envelope plot moves the ring and
+    // the chip line to the speeds of that cut.
+    let suggested = match candidate {
+        Some(c) => candidate_advance_mm(c, flutes),
+        None => suggested_advance_mm(explain),
+    };
 
     // The marks, in plot coordinates: the label layout keeps clear of each.
-    let recommended = [
-        explain.recommended.rpm,
-        explain.recommended.feed_rate_mm_min,
-    ];
+    let recommended = match candidate {
+        Some(c) => [c.rpm, c.feed_mm_min],
+        None => [
+            explain.recommended.rpm,
+            explain.recommended.feed_rate_mm_min,
+        ],
+    };
     let now = match (current.spindle_rpm, current.feed_rate_mm_min) {
         (Some(rpm), Some(feed)) => Some([f64::from(rpm), feed]),
         _ => None,
@@ -297,7 +320,10 @@ pub(crate) fn draw_chart_c(
             explain.recommended.rpm,
             target_chipload * explain.recommended.rpm * flutes,
         ])
-        .filter(|t| (t[1] - explain.recommended.feed_rate_mm_min).abs() > 1.0);
+        .filter(|t| (t[1] - explain.recommended.feed_rate_mm_min).abs() > 1.0)
+        // The pre-derate target belongs to the stored cut, not to a
+        // candidate.
+        .filter(|_| candidate.is_none());
 
     let mut hover_readout: Option<String> = None;
     // egui_plot 0.37 (`axis.rs`, `AXIS_LABEL_GAP` = 0.25) paints the
@@ -306,16 +332,7 @@ pub(crate) fn draw_chart_c(
     // tops of its glyphs ("ieea"). The plot starts that far in, so the
     // title paints whole. The indent adds no text row (IC1). The galley is
     // the one egui_plot lays out: the Body style, no wrap.
-    let title_height = egui::WidgetText::from(FEED_AXIS_TITLE)
-        .into_galley(
-            ui,
-            Some(egui::TextWrapMode::Extend),
-            f32::INFINITY,
-            egui::TextStyle::Body,
-        )
-        .size()
-        .y;
-    let title_overhang = (AXIS_LABEL_GAP * title_height).ceil();
+    let title_overhang = axis_title_overhang(ui, FEED_AXIS_TITLE);
     // The screen room that a wall label needs above the feed wall: the
     // label box, its gap to the line, the wall's half width and the one
     // point the layout keeps inside the frame.
@@ -722,6 +739,47 @@ pub(crate) fn draw_chart_c(
             },
         });
     }
+    let placed = place_labels(ui, frame, &keep_clear, &lines, specs);
+    paint_labels(ui, frame, &placed);
+    #[cfg(test)]
+    tests::record(frame, &placed, tokens::SIZE_CAPTION);
+
+    // W3k: the hover is one line at the pointer, only on the axes.
+    if let Some(text) = hover_readout {
+        let _ = plot_response.response.on_hover_ui_at_pointer(|ui| {
+            ui.add(
+                egui::Label::new(egui::RichText::new(text).small().color(tokens::TEXT_STRONG))
+                    .extend(),
+            );
+        });
+    }
+}
+
+/// The screen room (points) that egui_plot paints a rotated axis `title`
+/// outside the plot (`AXIS_LABEL_GAP`). A plot at the inspector edge starts
+/// this far in, so the title paints whole. Shared with the envelope plot.
+pub(crate) fn axis_title_overhang(ui: &egui::Ui, title: &str) -> f32 {
+    let title_height = egui::WidgetText::from(title)
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Body,
+        )
+        .size()
+        .y;
+    (AXIS_LABEL_GAP * title_height).ceil()
+}
+
+/// Size each label and place them with [`layout_labels`]; at most
+/// `MAX_LABELS` stay. Shared with the envelope plot.
+pub(crate) fn place_labels(
+    ui: &egui::Ui,
+    frame: egui::Rect,
+    keep_clear: &[egui::Rect],
+    lines: &[DrawnLine],
+    specs: Vec<ChartLabel>,
+) -> Vec<PlacedLabel> {
     let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
     let sized: Vec<(ChartLabel, egui::Vec2)> = specs
         .into_iter()
@@ -733,10 +791,17 @@ pub(crate) fn draw_chart_c(
             (spec, size + 2.0 * LABEL_PADDING)
         })
         .collect();
-    let mut placed = layout_labels(frame, &keep_clear, &lines, &sized);
+    let mut placed = layout_labels(frame, keep_clear, lines, &sized);
     placed.truncate(MAX_LABELS);
+    placed
+}
+
+/// Paint the placed labels: a background chip, the text at its angle, and
+/// a leader to a mark that the layout moved. Shared with the envelope plot.
+pub(crate) fn paint_labels(ui: &egui::Ui, frame: egui::Rect, placed: &[PlacedLabel]) {
+    let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
     let painter = ui.painter_at(frame);
-    for label in &placed {
+    for label in placed {
         // A mark label that the layout had to move off its mark takes a
         // thin leader line to the mark, so the reader sees what it names.
         if let Some((center, radius)) = label.mark {
@@ -762,18 +827,6 @@ pub(crate) fn draw_chart_c(
             egui::epaint::TextShape::new(pos, galley, label.color)
                 .with_angle_and_anchor(label.quad.angle, egui::Align2::CENTER_CENTER),
         );
-    }
-    #[cfg(test)]
-    tests::record(frame, &placed, font.size);
-
-    // W3k: the hover is one line at the pointer, only on the axes.
-    if let Some(text) = hover_readout {
-        let _ = plot_response.response.on_hover_ui_at_pointer(|ui| {
-            ui.add(
-                egui::Label::new(egui::RichText::new(text).small().color(tokens::TEXT_STRONG))
-                    .extend(),
-            );
-        });
     }
 }
 
@@ -927,14 +980,14 @@ pub(crate) const LABEL_NOW: &str = "Now";
 pub(crate) const LABEL_BEFORE_DERATE: &str = "Before derate";
 
 /// One label to place: its text, its colour and what it names.
-struct ChartLabel {
-    text: &'static str,
-    color: egui::Color32,
-    anchor: LabelAnchor,
+pub(crate) struct ChartLabel {
+    pub(crate) text: &'static str,
+    pub(crate) color: egui::Color32,
+    pub(crate) anchor: LabelAnchor,
 }
 
 /// What a label names, in screen space.
-enum LabelAnchor {
+pub(crate) enum LabelAnchor {
     /// A line: the label sits beside a point of it, off the line by its
     /// gap, on the side that is clear.
     Line(Vec<egui::Pos2>),
@@ -1352,6 +1405,17 @@ fn suggested_advance_mm(explain: &FeedsExplain) -> Option<f64> {
         return None;
     }
     let cl = r.feed_rate_mm_min / (r.rpm * flutes);
+    (cl.is_finite() && cl > 0.0).then_some(cl)
+}
+
+/// The advance per tooth (mm/tooth) of a candidate of the envelope plot
+/// (P5b live link): its feed over its RPM and the flute count. `None` when
+/// there is no ray to draw.
+fn candidate_advance_mm(c: rs_cam_core::feeds::envelope::SpeedsSample, flutes: f64) -> Option<f64> {
+    if c.rpm <= 0.0 || flutes <= 0.0 {
+        return None;
+    }
+    let cl = c.feed_mm_min / (c.rpm * flutes);
     (cl.is_finite() && cl > 0.0).then_some(cl)
 }
 

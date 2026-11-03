@@ -40,6 +40,7 @@ fn drain_compute_results_marks_derived_rest_dependents_stale() {
                     semantic_trace: None,
                     debug_trace_path: None,
                     drill_op: None,
+                    lineage: std::sync::Arc::new(rs_cam_core::trace::lineage::Lineage::unrecorded()),
                 }),
                 debug_trace: None,
                 semantic_trace: None,
