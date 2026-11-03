@@ -27,9 +27,9 @@ code by the symbol when the line has moved.
 | Phase | Card | State | Commit | Next action |
 |---|---|---|---|---|
 | 0 Local fixes | `phases/P0.md` | NOT STARTED | | |
-| 1 Wildcard lint | `phases/P1.md` | NOT STARTED | | |
+| 1 Wildcard lint | `phases/P1.md` | NOT STARTED (perf session committed 98344a12f; re-run the hit probe at the new HEAD) | | |
 | 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED | | |
-| 3 K4 entry contract | `phases/P3.md` | BLOCKED: the perf session must commit `ops/project_curve.rs` | | |
+| 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
 | 4 K1 `CutSpec` | `phases/P4.md` | NOT STARTED | | |
 | 5 K2 / K2b envelope | `phases/P5.md` | NOT STARTED (needs P4) | | |
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (D2, needs P5) | | |
