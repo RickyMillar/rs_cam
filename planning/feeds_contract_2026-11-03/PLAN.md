@@ -15,6 +15,7 @@ UX sketch in K2b). Owner: the operator. Lead: this session.
 | Q6 | **The program never refuses an operator; every finding is a warning** (confirmed 2026-11-03: "people might want to generate shit g-code just for aircut tests or similar to test the machine"). This includes the refusals that exist today: height order, cuts into the model, G-CENTRECUT, load exceeded. | K6 `Consequence` has no blocking variant. Generation and export always produce output and carry the warnings with it. The compiler still refuses *code* (that is the plan's purpose); it never refuses a *job*. |
 | Q7 | Do not stress the display of estimated facts. The **lineage** of a toolpath must show clearly which facts it used and how each is known. | K3 keeps `ToolFact`; K5 outcomes for Estimated facts warn; new K8 `Lineage`. |
 | Q8 | A straight plunge for Project Curve now; a ramp that follows the projection later if it is cheap. | K4 `StraightPlunge` now, `Planner` on-curve ramp later. |
+| Q10 | A missing input (unset depth or floor, no chip data, no tool, inch units, a zero feed) stops generation or emission with a reason. Only findings warn. | K6 `EmitError` and NotReady reasons stay outside the `Consequence` column. |
 | Q9 | Bare numbers in old project files: fail to load. Fast iteration; this is not a production build. | K3 loader refuses; the planning fixtures are migrated by a script in the same commit. |
 
 Evidence: `planning/feeds_blind_review_2026-11-03/` (the review, `rootcause/INDEX.md` and six

@@ -16,17 +16,17 @@ code by the symbol when the line has moved.
 |---|---|---|---|
 | D1 | Q6: do the refusals that exist today stay? **Ruled 2026-11-03: no. The program never refuses; every finding warns.** | P2 | RULED |
 | D2 | K2b envelope plot sketch (`phases/P5b.md`). | P5b | not asked |
-| D3 | P0 D1: the nz-wanaka-21 pin hole (26.0 mm min) is longer than the 6 mm flute (25.0 mm). Pick a longer-flute pin tool, or accept the hole past the flute with a warning. | P0 item 3 | asked 2026-11-03 |
-| D4 | P0 D2: `dwell_time` works only in G82; every tracked drill op uses peck. Delete the field (recommended), or emit G4 at each peck bottom. | P0 item 4 | asked 2026-11-03 |
-| D6 | P6 D3: may the K3 migration script rewrite your tool library `~/.config/rs_cam/tools/*.toml` (6 files, outside the repo; it keeps a `.bak`)? After P6 they fail to load until migrated. | P6 | asked 2026-11-03 |
-| D7 | A missing input (unset depth or floor, no chip data, no tool, inch units, a zero feed) still stops generation or emission with a reason; only findings warn. Confirm. | P2, P5 | asked 2026-11-03 |
-| D5 | P0 D3: the Amana tapered 1/16" 2F rows (3 rows) print a chip band that disagrees with their own printed IPM. Use the IPM band (recommended), or refuse the cell. | P0 item 5 | asked 2026-11-03 |
+| D3 | P0 D1 pin tool. **Ruled 2026-11-03: a longer-flute pin tool, the one the GUI pin template picks (`session/pins.rs`).** | P0 item 3 | RULED |
+| D4 | P0 D2 drill dwell. **Ruled 2026-11-03: delete `dwell_time`, add a retired-key row, migrate the 52 files by script; G82 keeps its fixed dwell.** | P0 item 4 | RULED |
+| D6 | P6 D3 tool library. **Ruled 2026-11-03: yes, the script migrates `~/.config/rs_cam/tools/` and keeps a `.bak` of each file.** | P6 | RULED |
+| D7 | Missing input. **Ruled 2026-11-03: a missing input stops generation or emission with a reason; only findings warn.** | P2, P5 | RULED |
+| D5 | P0 D3 Amana tapered 1/16" 2F rows. **Ruled 2026-11-03: the chip band from the printed IPM** (reverses the 2026-09-24 decision). | P0 item 5 | RULED |
 
 ## Phases
 
 | Phase | Card | State | Commit | Next action |
 |---|---|---|---|---|
-| 0 Local fixes | `phases/P0.md` | NOT STARTED | | |
+| 0 Local fixes | `phases/P0.md` | NOT STARTED (all decisions ruled) | | |
 | 1 Wildcard lint | `phases/P1.md` | NOT STARTED (perf session committed 98344a12f; re-run the hit probe at the new HEAD) | | |
 | 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED | | |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
