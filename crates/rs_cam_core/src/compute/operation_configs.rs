@@ -149,6 +149,14 @@ pub enum ClearingStrategy {
     GeodesicAdaptive,
 }
 
+/// The dwell at the hole bottom of the Dwell cycle (G82), in seconds. The
+/// one fixed dwell of the Drill and the Pin Drill. The value is the dwell
+/// that both ops shipped before (`DrillConfig::dwell_time` default and the
+/// Pin Drill fixed dwell). Decision D2 (feeds contract P0, 2026-11-03)
+/// deleted the Drill field: the Peck and Chip-break cycles never read it,
+/// and no tracked project used the Dwell cycle.
+pub const DRILL_DWELL_S: f64 = 0.5;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ParamEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum DrillCycleType {
@@ -213,7 +221,7 @@ impl DrillCycleType {
         );
         match self {
             Self::Simple => DrillCycle::Simple,
-            Self::Dwell => DrillCycle::Dwell(cfg.dwell_time),
+            Self::Dwell => DrillCycle::Dwell(DRILL_DWELL_S),
             Self::Peck => DrillCycle::Peck(peck_depth),
             Self::ChipBreak => DrillCycle::ChipBreak(peck_depth, cfg.retract_amount),
         }
@@ -379,8 +387,6 @@ pub struct DrillConfig {
     pub cycle: DrillCycleType,
     #[param(help = HELP_PECK_DEPTH, min = 0.5, max = 50.0)]
     pub peck_depth: f64,
-    #[param(range = 0.1..=10.0)]
-    pub dwell_time: f64,
     #[param(range = 0.1..=5.0)]
     pub retract_amount: f64,
     /// S11: `None` until Suggest or the operator sets it. Generation
@@ -432,7 +438,6 @@ impl Default for DrillConfig {
             floor: Floor::Unset,
             cycle: DrillCycleType::Peck,
             peck_depth: 3.0,
-            dwell_time: 0.5,
             retract_amount: 0.5,
             feed_rate: None,
             retract_z: 2.0,
@@ -657,7 +662,7 @@ pub struct AlignmentPinDrillConfig {
 
 impl AlignmentPinDrillConfig {
     /// Convert to the core [`crate::ops::drill::DrillCycle`]. Pin drilling
-    /// fixes dwell to 0.5 s and chip-break retract to 0.5 mm — the
+    /// fixes dwell to [`DRILL_DWELL_S`] and chip-break retract to 0.5 mm — the
     /// config carries no knobs for them (alignment pins are a fixture
     /// cycle, not a tunable drill op). T11 dedup: this conversion was
     /// previously inlined at both consumer sites in `execute.rs`
@@ -674,7 +679,7 @@ impl AlignmentPinDrillConfig {
         let peck_depth = clamp_peck_depth(self.peck_depth, depth);
         match self.cycle {
             DrillCycleType::Simple => DrillCycle::Simple,
-            DrillCycleType::Dwell => DrillCycle::Dwell(0.5),
+            DrillCycleType::Dwell => DrillCycle::Dwell(DRILL_DWELL_S),
             DrillCycleType::Peck => DrillCycle::Peck(peck_depth),
             DrillCycleType::ChipBreak => DrillCycle::ChipBreak(peck_depth, 0.5),
         }
@@ -4112,7 +4117,6 @@ mod tests {
             "floor": { "from": "top", "depth": 10.0 },
             "cycle": "peck",
             "peck_depth": 3.0,
-            "dwell_time": 0.5,
             "retract_amount": 0.5,
             "feed_rate": 300.0,
             "retract_z": 2.0

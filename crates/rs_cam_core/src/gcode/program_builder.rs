@@ -1743,4 +1743,55 @@ mod tests {
             });
         assert_eq!(retract_z, Some(36.5), "{:?}", prog.statements);
     }
+
+    /// FC0 item 4: a peck cycle writes no dwell at a peck bottom or at the
+    /// hole bottom (report 04: no test pinned it). The Dwell cycle (G82) of
+    /// the same holes writes one dwell per hole: the control.
+    #[test]
+    fn a_peck_cycle_writes_no_dwell_fc0() {
+        use crate::compute::operation_configs::{DrillConfig, DrillCycleType};
+        use crate::ops::drill::{DrillParams, drill_toolpath};
+        let holes = [[10.0, 10.0], [30.0, 10.0]];
+        let dwells = |cycle: DrillCycleType| {
+            let cfg = DrillConfig {
+                cycle,
+                feed_rate: Some(250.0),
+                ..DrillConfig::default()
+            };
+            let core = cycle.to_core(&cfg);
+            let tp = drill_toolpath(
+                &holes,
+                &DrillParams {
+                    depth: 9.0,
+                    top_z: 0.0,
+                    cycle: core,
+                    feed_rate: 250.0,
+                    safe_z: 5.0,
+                    retract_z: 2.0,
+                },
+            );
+            let mut phase = phase_for(&tp, 1);
+            phase.drill = Some(crate::gcode::PhaseDrill { cycle: core });
+            let with_drill = build_phased(&[phase]);
+            let without = build_phased(&[phase_for(&tp, 1)]);
+            let count = |prog: &Program| {
+                prog.statements
+                    .iter()
+                    .filter(|st| matches!(st, Statement::Dwell { .. }))
+                    .count()
+            };
+            count(&with_drill) - count(&without)
+        };
+        assert_eq!(dwells(DrillCycleType::Peck), 0, "a peck cycle dwells");
+        assert_eq!(
+            dwells(DrillCycleType::ChipBreak),
+            0,
+            "a chip-break cycle dwells"
+        );
+        assert_eq!(
+            dwells(DrillCycleType::Dwell),
+            holes.len(),
+            "G82: one dwell per hole"
+        );
+    }
 }

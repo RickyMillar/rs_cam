@@ -25,6 +25,13 @@ which the compiler holds. It also records the operator rulings Q1-Q9.
 hand-off card in `phases/`. Next: Phase 0 (local fixes) and Phase 1 (the
 wildcard lint). Phase 3 waits for the perf session to commit `ops/project_curve.rs`.
 
+Phase 0 landed 2026-11-03: `rough-score` names an entry run by its strongest
+intent; `rs_cam_cli suggest` prints the peck and the power point source; the
+Drill `dwell_time` key is retired (50 tracked files migrated); the Amana 1/16"
+2F rows hold the printed-IPM chip band (FM1: 13 cells moved); unknown tool
+material and cut direction warn; a stick-out shorter than the flute warns
+(`tool.stickout_shorter_than_flute`). Next: Phase 1 and Phase 4.
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

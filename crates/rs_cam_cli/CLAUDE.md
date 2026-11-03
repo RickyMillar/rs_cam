@@ -51,6 +51,14 @@ parameter-sweep entry points. Read root `CLAUDE.md` first and
   a boundary that is not a selection refuses with the MCP text);
   the job key `floor` (P3.3) has the project-file shape and goes through `SetToolpathFloor`.
 
+- `rough-score` labels an entry run by its strongest intent (`EntryHelix` >
+  `EntryRamp` > `LeadIn` > `EntryPlunge`); `entry_runs_led_by_plunge` counts
+  the ramp and helix runs that start with a plunge (FC0).
+- `suggest` prints `peck_depth` for a Drill and a Pin Drill. `shipped_power`
+  reads the calculator point where the operation has no stepover, depth or
+  rpm, as the GUI does; `point_source` names the source of each value. That
+  figure is a default cut, not the cut of the operation (FC0).
+
 ## Verification and sweeps
 
 - Dev test: `cargo test -p rs_cam_cli -q`.

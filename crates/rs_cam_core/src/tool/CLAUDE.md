@@ -21,8 +21,8 @@ One module per cutter family. The trait and the shared radius queries live in
 - An edge drop is the highest point of `z - height(rho)` over the edge
   (`mod.rs::edge_drop_by_profile`); a `facet_drop` reports `found` only for
   a tangency, or `drop_cutter` skips the edges (G-TIERBURIAL).
-- F029: a cutter constructor returns `Result`, never asserts; every tool door
-  calls `ToolConfig::validate` (`domain`); `ui_range` refuses nothing (F210).
+- F029: a cutter constructor returns `Result`, never asserts; every tool door calls `ToolConfig::validate` (`domain`); `ui_range` refuses nothing (F210).
+  FC0 (D4, ruling Q6): a stick-out shorter than the flute is valid; the load and `tool.stickout_shorter_than_flute` warn.
 - A person reads a tool size through `ToolConfig::size_label`
   (`compute/tool_config.rs`): `Ø` is a diameter, `R` a radius, in the
   tool's `effective_size_units`. G-code comments are the exception: their

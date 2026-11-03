@@ -430,7 +430,6 @@ kind = "drill"
 [setups.toolpaths.operation.params]
 cycle = "peck"
 peck_depth = 3.0
-dwell_time = 0.5
 retract_amount = 0.5
 feed_rate = 2400.0
 retract_z = 2.0

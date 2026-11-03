@@ -1032,7 +1032,7 @@ def derive_testpiece(cfg: Path = MONO / "block/testpiece.toml", src: Path = MONO
             heights={"top_z": top}, dressups=ramp)
     if operator_edits:
         P.toolpath("Dowel holes, 6 mm drill, peck", "drill", T_DRILL6, mids["dowel_through.dxf"], {
-            "depth": T1 + DRILL_PAST_T1, "cycle": "peck", "peck_depth": 6.0, "dwell_time": 0.5,
+            "depth": T1 + DRILL_PAST_T1, "cycle": "peck", "peck_depth": 6.0,
             "retract_amount": 0.5, "feed_rate": 600.0, "retract_z": 2.0, "spindle_rpm": 6000},
             why=f"The operator's drill op (GUI edit 2026-10-09): T1 + {DRILL_PAST_T1} into the spoilboard.")
     # Setup 2 (TESTPIECE setup 3)

@@ -93,8 +93,14 @@ pub(crate) struct MoveCounts {
     /// command counts runs: a move with an entry intent after a move
     /// without one starts a run.
     pub entry_runs: usize,
-    /// `entry_runs` split by the intent of the first move of the run.
+    /// `entry_runs` split by the strongest intent in the run. The rank is
+    /// `entry_helix` > `entry_ramp` > `lead_in` > `entry_plunge`. The ramp
+    /// dressup starts each ramp with a short fed `EntryPlunge`, so a run
+    /// that holds a ramp move counts as a ramp, not as a plunge.
     pub entry_runs_by_kind: BTreeMap<String, usize>,
+    /// Runs whose first move is an `EntryPlunge` and that hold a ramp or a
+    /// helix move. `entry_runs_by_kind` counts these runs as ramp or helix.
+    pub entry_runs_led_by_plunge: usize,
     /// Runs of `MoveIntent::Retract` moves, at feed or rapid. The
     /// integrator puts a rapid retract in `runtime_by_intent.rapid_s`, so
     /// `runtime_by_intent.retract_s` holds only the feed retracts.
@@ -441,9 +447,10 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
         top_z_mm: top_z,
         ..MoveCounts::default()
     };
-    let mut prev_entry = false;
     let mut prev_retract = false;
     let mut prev_z: Option<f64> = None;
+    // The open entry run: its first intent and its strongest intent.
+    let mut run: Option<(MoveIntent, MoveIntent)> = None;
     for m in &toolpath.moves {
         if m.move_type == MoveType::Rapid {
             counts.rapid_moves += 1;
@@ -453,13 +460,21 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
         let entry = m.move_type != MoveType::Rapid && is_entry(m.intent);
         if entry {
             counts.entry_moves += 1;
-            if !prev_entry {
-                counts.entry_runs += 1;
-                *counts
-                    .entry_runs_by_kind
-                    .entry(intent_token(m.intent))
-                    .or_insert(0) += 1;
-            }
+            run = Some(match run {
+                None => {
+                    counts.entry_runs += 1;
+                    (m.intent, m.intent)
+                }
+                Some((first, strongest)) => {
+                    if entry_rank(m.intent) > entry_rank(strongest) {
+                        (first, m.intent)
+                    } else {
+                        (first, strongest)
+                    }
+                }
+            });
+        } else if let Some((first, strongest)) = run.take() {
+            close_entry_run(&mut counts, first, strongest);
         }
         let retract = m.intent == MoveIntent::Retract;
         if retract && !prev_retract {
@@ -471,11 +486,42 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
         {
             counts.rises_to_top_z += 1;
         }
-        prev_entry = entry;
         prev_retract = retract;
         prev_z = Some(m.target.z);
     }
+    if let Some((first, strongest)) = run {
+        close_entry_run(&mut counts, first, strongest);
+    }
     counts
+}
+
+/// The rank of an entry intent for the run label: `EntryHelix` >
+/// `EntryRamp` > `LeadIn` > `EntryPlunge`. Other intents rank 0.
+fn entry_rank(intent: MoveIntent) -> u8 {
+    if intent == MoveIntent::EntryHelix {
+        4
+    } else if intent == MoveIntent::EntryRamp {
+        3
+    } else if intent == MoveIntent::LeadIn {
+        2
+    } else if intent == MoveIntent::EntryPlunge {
+        1
+    } else {
+        0
+    }
+}
+
+/// Label a closed entry run by its strongest intent.
+fn close_entry_run(counts: &mut MoveCounts, first: MoveIntent, strongest: MoveIntent) {
+    *counts
+        .entry_runs_by_kind
+        .entry(intent_token(strongest))
+        .or_insert(0) += 1;
+    if first == MoveIntent::EntryPlunge
+        && (strongest == MoveIntent::EntryRamp || strongest == MoveIntent::EntryHelix)
+    {
+        counts.entry_runs_led_by_plunge += 1;
+    }
 }
 
 impl MoveCounts {
@@ -486,6 +532,7 @@ impl MoveCounts {
         for (kind, n) in &other.entry_runs_by_kind {
             *self.entry_runs_by_kind.entry(kind.clone()).or_insert(0) += n;
         }
+        self.entry_runs_led_by_plunge += other.entry_runs_led_by_plunge;
         self.retract_runs += other.retract_runs;
         self.rises_to_top_z += other.rises_to_top_z;
         self.top_z_mm = match (self.top_z_mm, other.top_z_mm) {
@@ -577,6 +624,38 @@ mod tests {
             },
         )
         .expect("score the pocket")
+    }
+
+    /// FC0 item 1: the ramp dressup starts each ramp with a short fed
+    /// `EntryPlunge`. The run is one ramp, not one plunge.
+    #[test]
+    fn a_ramp_led_by_a_plunge_is_one_ramp_fc0() {
+        use rs_cam_core::geo::P3;
+        let mut tp = Toolpath::new();
+        tp.rapid_to_with_intent(P3::new(0.0, 0.0, 5.0), MoveIntent::Unknown);
+        tp.feed_to_with_intent(P3::new(0.0, 0.0, 4.0), 300.0, MoveIntent::EntryPlunge);
+        tp.feed_to_with_intent(P3::new(1.0, 0.0, 3.0), 300.0, MoveIntent::EntryRamp);
+        tp.feed_to_with_intent(P3::new(2.0, 0.0, 2.0), 300.0, MoveIntent::EntryRamp);
+        tp.feed_to_with_intent(P3::new(3.0, 0.0, 1.0), 300.0, MoveIntent::EntryRamp);
+        tp.feed_to_with_intent(P3::new(9.0, 0.0, 1.0), 600.0, MoveIntent::ClearingCut);
+        tp.feed_to_with_intent(P3::new(9.0, 0.0, 5.0), 600.0, MoveIntent::Retract);
+        tp.feed_to_with_intent(P3::new(9.0, 0.0, 1.0), 300.0, MoveIntent::EntryPlunge);
+        let counts = count_moves(&tp);
+        let expected: BTreeMap<String, usize> = [
+            (intent_token(MoveIntent::EntryPlunge), 1),
+            (intent_token(MoveIntent::EntryRamp), 1),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(counts.entry_runs, 2, "two entry runs");
+        assert_eq!(
+            counts.entry_runs_by_kind, expected,
+            "label by strongest intent"
+        );
+        assert_eq!(
+            counts.entry_runs_led_by_plunge, 1,
+            "one ramp starts with a plunge"
+        );
     }
 
     fn same_f64(name: &str, gui: f64, cli: f64) {

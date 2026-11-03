@@ -16,6 +16,7 @@ mod project;
 mod rough_score;
 mod run;
 mod smoke;
+mod suggest;
 mod sweep;
 
 use anyhow::{Context, Result};
@@ -505,6 +506,17 @@ enum Commands {
     /// one JSON object per toolpath and one total object on stdout. Each
     /// record carries the core `ToolpathDiagnostic` and cut-trace summary
     /// under their own field names. The log goes to stderr.
+    /// Print Suggest and its rationale for every enabled toolpath of a
+    /// project, without generation. The project file stays unchanged. The
+    /// numbers are the profile that MCP `get_suggest_rationale` reads.
+    Suggest {
+        /// Path to the project .toml file (GUI format, format_version=3)
+        input: PathBuf,
+
+        /// Print one JSON object per toolpath instead of the table.
+        #[arg(long)]
+        json: bool,
+    },
     RoughScore {
         /// Path to the project .toml file (GUI format, format_version=3)
         input: PathBuf,
@@ -547,7 +559,10 @@ fn main() -> Result<()> {
 
     // `rough-score` prints JSON records on stdout, so its log goes to
     // stderr. The other commands keep the stdout log they always had.
-    let log_to_stderr = matches!(cli.command, Commands::RoughScore { .. });
+    let log_to_stderr = matches!(
+        cli.command,
+        Commands::RoughScore { .. } | Commands::Suggest { .. }
+    );
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -719,6 +734,9 @@ fn main() -> Result<()> {
             rapid_feed,
         } => {
             nc_replay::run_nc_time(&inputs, machine.as_deref(), max_feed, rapid_feed)?;
+        }
+        Commands::Suggest { input, json } => {
+            suggest::run_suggest(&input, json)?;
         }
         Commands::RoughScore {
             input,

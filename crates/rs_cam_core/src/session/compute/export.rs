@@ -777,6 +777,7 @@ impl ProjectSession {
         let diag = self.diagnostics();
         let mut out = crate::diagnostics::diagnose_project_diagnostics(&diag);
         out.extend(self.tool_name_diagnostics());
+        out.extend(self.tool_stickout_diagnostics());
         out
     }
 
@@ -790,6 +791,18 @@ impl ProjectSession {
             .collect()
     }
 
+    /// The tool-scoped finding of FC0 item 7: one
+    /// `tool.stickout_shorter_than_flute` for each tool whose stick-out is
+    /// shorter than its flute. It reads no simulation, so it is cheap.
+    pub fn tool_stickout_diagnostics(&self) -> Vec<crate::diagnostics::Diagnostic> {
+        self.tools()
+            .iter()
+            .flat_map(
+                crate::diagnostics::adapters::from_static_checks::diagnostics_from_tool_stickout,
+            )
+            .collect()
+    }
+
     /// Same as [`Self::diagnose_project`] but takes a borrow view
     /// over sim evidence. Used by the GUI MCP handler.
     pub fn diagnose_project_with_evidence(
@@ -799,6 +812,7 @@ impl ProjectSession {
         let diag = self.diagnostics_with_evidence(evidence);
         let mut out = crate::diagnostics::diagnose_project_diagnostics(&diag);
         out.extend(self.tool_name_diagnostics());
+        out.extend(self.tool_stickout_diagnostics());
         out
     }
 }

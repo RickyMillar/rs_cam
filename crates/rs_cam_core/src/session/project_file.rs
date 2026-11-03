@@ -420,6 +420,18 @@ const RETIRED_OP_ENTRIES: &[RetiredOpEntry] = &[
                       pinned Bottom Z never reached the cut of a Drill. Set bottom_z to { mode = \
                       \"auto\" } and set the floor",
     },
+    // Feeds contract P0, decision D2 (2026-11-03): the Drill dwell field.
+    // The Peck and Chip-break cycles never read it; the Dwell cycle (G82)
+    // reads the one fixed dwell `DRILL_DWELL_S`, as the Pin Drill does.
+    RetiredOpEntry {
+        kinds: &["drill"],
+        table: &["operation", "params"],
+        key: "dwell_time",
+        when: None,
+        replacement: "Removed (feeds contract P0, decision D2): the Drill has no dwell field. \
+                      The Peck and Chip-break cycles never dwelled; the Dwell cycle (G82) \
+                      dwells the fixed 0.5 s of the Pin Drill (DRILL_DWELL_S). Delete the key",
+    },
 ];
 
 /// Push the path of every table under `steps` for which `hit` holds onto
@@ -579,6 +591,16 @@ pub enum ProjectLoadWarning {
     /// A tool section carried a tool-type token the vocabulary does not
     /// hold. The loader substitutes an end mill.
     UnknownToolType { tool: String, token: String },
+    /// A tool section carried a `tool_material` token the vocabulary does
+    /// not hold. The loader substitutes carbide (FC0 item 6).
+    UnknownToolMaterial { tool: String, token: String },
+    /// A tool section carried a `cut_direction` token the vocabulary does
+    /// not hold. The loader substitutes up-cut (FC0 item 6). The cut
+    /// direction picks the vendor series of the feeds rows.
+    UnknownCutDirection { tool: String, token: String },
+    /// FC0 item 7 (decision D4 = warn): a tool section with a stick-out
+    /// shorter than its flute. The loader keeps both values.
+    StickoutShorterThanFlute { tool: String, text: String },
     /// A setup section carried a `face_up` token the vocabulary does not
     /// hold. The loader substitutes Top.
     ///
@@ -648,6 +670,16 @@ impl ProjectLoadWarning {
             Self::UnknownToolType { tool, token } => {
                 format!("Tool '{tool}' has unknown tool type '{token}' — defaulted to End Mill.")
             }
+            Self::UnknownToolMaterial { tool, token } => format!(
+                "Tool '{tool}' has unknown tool material '{token}' — defaulted to carbide. \
+                 Valid values are carbide and hss."
+            ),
+            Self::StickoutShorterThanFlute { tool, text } => format!("Tool '{tool}': {text}"),
+            Self::UnknownCutDirection { tool, token } => format!(
+                "Tool '{tool}' has unknown cut direction '{token}' — defaulted to up-cut. The cut \
+                 direction picks the vendor series of the feeds rows. Valid values are up_cut, \
+                 down_cut and compression."
+            ),
             Self::UnknownFaceUp { setup, token } => format!(
                 "Setup '{setup}' has unknown face up '{token}' — defaulted to Top. The cut \
                  direction, the local stock box and the emission frame all follow this value."
@@ -1188,7 +1220,7 @@ pub(crate) fn tool_from_project_section(
     // A section with no id takes its position: the loader is the allocator.
     let tool_id = ts.id.unwrap_or(ToolId::mint(idx));
     let tool_number = ts.tool_number.unwrap_or(tool_id.raw() + 1) as u32;
-    ToolConfig {
+    let tool = ToolConfig {
         id: tool_id,
         name: ts.name.clone(),
         tool_number,
@@ -1204,30 +1236,81 @@ pub(crate) fn tool_from_project_section(
         shank_diameter: ts.shank_diameter,
         stickout: ts.stickout,
         flute_count: ts.flute_count,
-        tool_material: parse_tool_material(&ts.tool_material),
-        cut_direction: parse_cut_direction(&ts.cut_direction),
+        tool_material: parse_tool_material(&ts.tool_material, &ts.name, warnings),
+        cut_direction: parse_cut_direction(&ts.cut_direction, &ts.name, warnings),
         vendor: ts.vendor.clone(),
         product_id: ts.product_id.clone(),
         size_units: ts.size_units,
         non_centre_cutting: ts.non_centre_cutting,
+    };
+    // FC0 item 7 (decision D4 = warn, ruling Q6): no refusal.
+    if tool.stickout_shorter_than_flute() {
+        warnings.push(ProjectLoadWarning::StickoutShorterThanFlute {
+            tool: tool.name.clone(),
+            text: tool.stickout_shorter_than_flute_text(),
+        });
     }
+    tool
 }
 
-fn parse_tool_material(s: &str) -> crate::compute::tool_config::ToolMaterial {
+/// Read a tool's `tool_material` key. The known tokens are the `save.rs`
+/// spellings (`carbide`, `hss`), in any case. An unknown token warns and
+/// takes carbide (FC0 item 6, the policy of [`parse_tool_type`]).
+fn parse_tool_material(
+    s: &str,
+    tool_name: &str,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> crate::compute::tool_config::ToolMaterial {
     use crate::compute::tool_config::ToolMaterial;
-    match s.to_ascii_lowercase().as_str() {
-        "hss" => ToolMaterial::Hss,
-        _ => ToolMaterial::Carbide,
+    let token = s.to_ascii_lowercase();
+    if token == "carbide" {
+        return ToolMaterial::Carbide;
     }
+    if token == "hss" {
+        return ToolMaterial::Hss;
+    }
+    tracing::warn!(
+        tool_material = s,
+        tool = tool_name,
+        "unknown tool material in project file — defaulting to carbide"
+    );
+    warnings.push(ProjectLoadWarning::UnknownToolMaterial {
+        tool: tool_name.to_owned(),
+        token: s.to_owned(),
+    });
+    ToolMaterial::Carbide
 }
 
-fn parse_cut_direction(s: &str) -> crate::compute::tool_config::BitCutDirection {
+/// Read a tool's `cut_direction` key. The known tokens are the `save.rs`
+/// spellings (`up_cut`, `down_cut`, `compression`) and the alias
+/// `downcut`, in any case. An unknown token warns and takes up-cut (FC0
+/// item 6, the policy of [`parse_tool_type`]).
+fn parse_cut_direction(
+    s: &str,
+    tool_name: &str,
+    warnings: &mut Vec<ProjectLoadWarning>,
+) -> crate::compute::tool_config::BitCutDirection {
     use crate::compute::tool_config::BitCutDirection;
-    match s.to_ascii_lowercase().as_str() {
-        "down_cut" | "downcut" => BitCutDirection::DownCut,
-        "compression" => BitCutDirection::Compression,
-        _ => BitCutDirection::UpCut,
+    let token = s.to_ascii_lowercase();
+    if token == "up_cut" {
+        return BitCutDirection::UpCut;
     }
+    if token == "down_cut" || token == "downcut" {
+        return BitCutDirection::DownCut;
+    }
+    if token == "compression" {
+        return BitCutDirection::Compression;
+    }
+    tracing::warn!(
+        cut_direction = s,
+        tool = tool_name,
+        "unknown cut direction in project file — defaulting to up_cut"
+    );
+    warnings.push(ProjectLoadWarning::UnknownCutDirection {
+        tool: tool_name.to_owned(),
+        token: s.to_owned(),
+    });
+    BitCutDirection::UpCut
 }
 
 /// Resolve a stored model path against the project file's own directory.
@@ -1886,6 +1969,35 @@ mod tests {
         assert!(
             !out.contains("tool_type"),
             "field name `tool_type` must not leak into TOML:\n{out}"
+        );
+    }
+
+    /// FC0 item 4 (decision D2): `dwell_time` left the Drill. The loader
+    /// names the key; it does not load with no word (op tables are not
+    /// `deny_unknown_fields`, F034). The same key on another op kind is not
+    /// this row.
+    #[test]
+    fn a_drill_dwell_time_is_a_retired_key_fc0() {
+        let text = r#"
+            [[setups]]
+            [[setups.toolpaths]]
+            [setups.toolpaths.operation]
+            kind = "drill"
+            [setups.toolpaths.operation.params]
+            cycle = "peck"
+            dwell_time = 0.5
+        "#;
+        let raw: toml::Value = toml::from_str(text).expect("parse");
+        let found = retired_op_entries(&raw);
+        let paths: Vec<&str> = found.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["setups[0].toolpaths[0].operation.params.dwell_time"],
+            "the retired Drill dwell_time is named"
+        );
+        assert!(
+            matches!(check_retired_keys(&raw), Err(SessionError::RetiredKeys(_))),
+            "the loader refuses the key"
         );
     }
 }

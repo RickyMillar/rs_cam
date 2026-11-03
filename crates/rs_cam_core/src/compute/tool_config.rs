@@ -564,6 +564,26 @@ impl ToolConfig {
         }
     }
 
+    /// FC0 item 7 (decision D4, ruling Q6): the stick-out is shorter than
+    /// the flute, so part of the flute sits inside the collet. A real
+    /// set-up, so [`Self::validate`] accepts it; the project load and the
+    /// project diagnostics warn (`tool.stickout_shorter_than_flute`). A
+    /// stick-out of 0 is "not stated" (the deflection gate abstains on it)
+    /// and gives `false`.
+    pub fn stickout_shorter_than_flute(&self) -> bool {
+        self.stickout > 0.0 && self.stickout < self.cutting_length
+    }
+
+    /// The sentence of [`Self::stickout_shorter_than_flute`]. It names
+    /// both fields.
+    pub fn stickout_shorter_than_flute_text(&self) -> String {
+        format!(
+            "The stick-out (stickout = {} mm) is shorter than the flute (cutting_length = {} mm): \
+             part of the flute is inside the collet. Check both values.",
+            self.stickout, self.cutting_length
+        )
+    }
+
     /// Limits for this non-centre-cutting tool, if it has measured geometry.
     pub fn non_centre_cutting_limits(&self) -> Option<NonCentreCuttingLimits> {
         self.non_centre_cutting
@@ -1728,6 +1748,63 @@ mod tests {
             flat.validate().map_err(|e| e.dimension),
             Err(ToolDimension::FluteCount)
         );
+    }
+
+    /// FC0 item 7 (decision D4 = warn, ruling Q6): a stick-out shorter
+    /// than the flute is a real set-up (part of the flute in the collet),
+    /// so `validate` accepts it. The project load warns, and the project
+    /// diagnostics carry one Caution per tool that names both fields. A
+    /// stick-out of 0 is "not stated" (the deflection gate abstains on it):
+    /// it gets no refusal and no warning, as before.
+    #[test]
+    fn a_stickout_shorter_than_the_flute_warns_fc0() {
+        const ID: &str = "tool.stickout_shorter_than_flute";
+        let mut short = ToolConfig::new_default(ToolId::from_raw(0), ToolType::EndMill);
+        short.cutting_length = 25.0;
+        short.stickout = 20.0;
+        assert!(short.validate().is_ok(), "D4: the program never refuses it");
+
+        // The load warning.
+        let text = "name = \"Short\"\ndiameter = 6.0\ncutting_length = 25.0\nstickout = 20.0\n";
+        let section: crate::session::ProjectToolSection =
+            toml::from_str(text).expect("parse tool section");
+        let mut warnings = Vec::new();
+        let _ = crate::session::project_file::tool_from_project_section(&section, 0, &mut warnings);
+        assert_eq!(warnings.len(), 1, "one load warning: {warnings:?}");
+        let message = warnings[0].message();
+        assert!(
+            message.contains("stickout") && message.contains("cutting_length"),
+            "the warning names both fields: {message}"
+        );
+
+        // The project finding.
+        let findings = |tool: ToolConfig| {
+            let mut builder = crate::session::ProjectSessionBuilder::new();
+            let _ = builder.add_tool(tool);
+            builder
+                .build()
+                .diagnose_project()
+                .into_iter()
+                .filter(|d| d.id.as_str() == ID)
+                .collect::<Vec<_>>()
+        };
+        let found = findings(short.clone());
+        assert_eq!(found.len(), 1, "one finding per short tool");
+        assert_eq!(found[0].severity, crate::diagnostics::Severity::Caution);
+        assert!(
+            found[0].message.contains("stickout") && found[0].message.contains("cutting_length"),
+            "{}",
+            found[0].message
+        );
+
+        // Equal lengths and a zero stick-out: no finding, no refusal.
+        let mut equal = short.clone();
+        equal.stickout = 25.0;
+        assert!(findings(equal).is_empty(), "stick-out = flute is not short");
+        let mut zero = short;
+        zero.stickout = 0.0;
+        assert!(zero.validate().is_ok(), "a zero stick-out loads as before");
+        assert!(findings(zero).is_empty(), "a zero stick-out is not stated");
     }
 
     /// Parity freeze (architectural refactor §7.2): the snake_case serde

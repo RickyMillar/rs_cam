@@ -197,6 +197,36 @@ pub fn diagnostics_from_tool_name(tool: &ToolConfig) -> Vec<Diagnostic> {
     }]
 }
 
+/// The tool-scoped check of FC0 item 7 (decision D4 = warn): the
+/// stick-out is shorter than the flute. The verdict is
+/// [`ToolConfig::stickout_shorter_than_flute`]; this adapter only converts
+/// it. One finding per tool, raised from `ProjectSession::diagnose_project`.
+pub fn diagnostics_from_tool_stickout(tool: &ToolConfig) -> Vec<Diagnostic> {
+    if !tool.stickout_shorter_than_flute() {
+        return Vec::new();
+    }
+    vec![Diagnostic {
+        id: DiagnosticId::from(ids::TOOL_STICKOUT_SHORTER_THAN_FLUTE),
+        scope: Scope::Tool { id: tool.id },
+        category: Category::Geometry,
+        severity: Severity::Caution,
+        confidence: Confidence::Static,
+        state: DiagnosticState::Current,
+        source: Source::StaticValidation,
+        face: crate::diagnostics::presentation::face(ids::TOOL_STICKOUT_SHORTER_THAN_FLUTE),
+        anchor: crate::diagnostics::presentation::anchor(ids::TOOL_STICKOUT_SHORTER_THAN_FLUTE),
+        message: format!(
+            "Tool \"{}\": {}",
+            tool.name,
+            tool.stickout_shorter_than_flute_text()
+        ),
+        evidence: None,
+        fix: None,
+        supersedes: vec![],
+        suppressed_diagnostics: vec![],
+    }]
+}
+
 // ── tool/operation compatibility ────────────────────────────────────
 
 fn tool_op_compat_checks(

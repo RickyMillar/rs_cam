@@ -883,7 +883,6 @@ kind = "drill"
 floor = { from = "z", z = 8.5 }
 cycle = "peck"
 peck_depth = 6.0
-dwell_time = 0.5
 retract_amount = 0.5
 retract_z = 2.0
 size_tolerance = 0.2

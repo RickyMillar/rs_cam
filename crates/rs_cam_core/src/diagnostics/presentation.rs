@@ -584,6 +584,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         "Tool name and size differ",
     ),
     (
+        ids::TOOL_STICKOUT_SHORTER_THAN_FLUTE,
+        TOOL,
+        "Stick-out shorter than the flute",
+    ),
+    (
         ids::QUALITY_STEPOVER_OVER_80_PCT,
         NOTE,
         "Wide stepover can leave ridges",

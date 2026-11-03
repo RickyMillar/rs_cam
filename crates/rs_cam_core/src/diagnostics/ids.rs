@@ -405,6 +405,11 @@ diag_ids! {
     /// `diameter = 1.0`. Info tier and advisory: names are free text, so no
     /// surface refuses on it. One finding per tool, `Scope::Tool`.
     pub const TOOL_NAME_SIZE_MISMATCH: &str = "tool.name_size_mismatch";
+    /// FC0 item 7 (decision D4 = warn, ruling Q6): the stick-out is shorter
+    /// than the flute (`ToolConfig::stickout_shorter_than_flute`). A real
+    /// set-up, so no door refuses it. Caution tier, one finding per tool,
+    /// `Scope::Tool`.
+    pub const TOOL_STICKOUT_SHORTER_THAN_FLUTE: &str = "tool.stickout_shorter_than_flute";
 
     // ── Surface quality / cycle-time hints ───────────────────────────────
     pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter";

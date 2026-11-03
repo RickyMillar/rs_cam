@@ -2974,6 +2974,46 @@ mod tests {
         );
     }
 
+    /// FC0 item 6: an unknown tool material or cut direction warns, as an
+    /// unknown tool type does. The known tokens are the `save.rs`
+    /// spellings and the alias `downcut`; they give no warning.
+    #[test]
+    fn unknown_tool_material_and_cut_direction_warn_fc0() {
+        let load = |key: &str, token: &str| {
+            let text = format!(
+                "name = \"T\"\ndiameter = 6.0\ncutting_length = 20.0\n{key} = \"{token}\"\n"
+            );
+            let section: ProjectToolSection = toml::from_str(&text).expect("parse tool section");
+            let mut warnings = Vec::new();
+            let _ = super::project_file::tool_from_project_section(&section, 0, &mut warnings);
+            warnings
+        };
+        for token in ["carbide", "hss"] {
+            assert!(load("tool_material", token).is_empty(), "{token} warned");
+        }
+        for token in ["up_cut", "down_cut", "downcut", "compression"] {
+            assert!(load("cut_direction", token).is_empty(), "{token} warned");
+        }
+        let material = load("tool_material", "titanium");
+        assert_eq!(material.len(), 1, "one warning for an unknown material");
+        let text = material[0].message();
+        assert!(
+            text.contains("'T'") && text.contains("'titanium'"),
+            "{text}"
+        );
+        let direction = load("cut_direction", "sideways");
+        assert_eq!(
+            direction.len(),
+            1,
+            "one warning for an unknown cut direction"
+        );
+        let text = direction[0].message();
+        assert!(
+            text.contains("'T'") && text.contains("'sideways'") && text.contains("vendor series"),
+            "{text}"
+        );
+    }
+
     /// Create a session with one tool and one Pocket toolpath for mutation tests.
     fn session_with_toolpath() -> ProjectSession {
         let project = ProjectFile {

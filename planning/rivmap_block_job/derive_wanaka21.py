@@ -392,7 +392,7 @@ def main() -> None:
     ct = cam["tools"]
     contract = tomllib.loads((MONO / "design/rivmap.toml").read_text())["cutters"]
     cam_tools = ["flat_6", "v20", "v60", "flat_6.35", "tbn_r1"]
-    order_tools = cam_tools + ["dsp_2", "rough_18", "ball_r3"]
+    order_tools = cam_tools + ["dsp_2", "rough_18", "ball_r3", "pin_6"]
     dia = {k: float(contract[mt[k]["cutter"]]) if "cutter" in mt[k] else ct[k]["diameter"] for k in cam_tools}
     assert all(abs(dia[k] - ct[k]["diameter"]) < 1e-9 for k in cam_tools), dia
     tid = {k: i for i, k in enumerate(order_tools)}
@@ -476,6 +476,20 @@ def main() -> None:
     P.add(tool_table(tid["ball_r3"], ball["tool_number"], ball["name"], "ball_nose", ball["diameter"],
                      ball["cutting_length"], ball["shank_diameter"], ball["stickout"], ball["flute_count"],
                      comment=f"The operator's R3 ball ({ROUGH_LIB.name}). Flute and stick-out: measure."))
+    # The pin drill (decision D1 (a), operator ruling 2026-11-03): the rule of the GUI pin template
+    # (`ProjectSession::pin_drill_tool_template`, session/pins.rs). The source is the tool of the drill
+    # op (flat_6). The diameter, the shaft and the shank are the pin diameter. The flute reaches the
+    # hole bottom: flute = max(flute, stock height + penetration). The stick-out is never shorter than
+    # the flute. The tool number is one more than the largest in the project.
+    pin_penetration = cam["pin_depth"] - T1         # the hole depth that block.json asks for, below T1
+    pin_cut = max(FLAT_6_CUTTING_LENGTH, T1 + pin_penetration)
+    pin_stickout = max(ct["flat_6"]["reach"], pin_cut)
+    pin_number = max([tid[k] + 1 for k in cam_tools] + [tid["dsp_2"] + 1, big["tool_number"],
+                                                        ball["tool_number"]]) + 1
+    P.add(tool_table(tid["pin_6"], pin_number, f"{pin_d:g} mm pin drill (flute {pin_cut:g}: measure)",
+                     "end_mill", pin_d, pin_cut, pin_d, pin_stickout, mt["flat_6"]["flutes"],
+                     comment=(f"Decision D1 (a): the GUI pin template rule. Flute = max({FLAT_6_CUTTING_LENGTH}, "
+                              f"T1 {T1} + penetration {pin_penetration:g}) = {pin_cut:g}; stick-out {pin_stickout:g}.")))
 
     model_order = ["back_target_s1.stl", "hollow_s1.stl", "lakes_s1.stl", "lakes_closed.dxf", "relief_sheet_s1.stl", "block_outline.dxf",
                    "edge_outer.dxf", "cavity_d9.00.dxf", "vgroove_v20.dxf", "light_holes.dxf",
@@ -590,14 +604,20 @@ def main() -> None:
             in_block, 0.0, geometry=None if BALL_PASS else {"stepover": round(rig["adaptive_woc_factor"] * dia["flat_6"], 4),
                                                             "depth_per_pass": step},
             stock_source="from_remaining_stock")
-    P.toolpath("Pin drill, flip pins", "alignment_pin_drill", tid["flat_6"], mids["block_outline.dxf"], {
-        "diameter": pin_d, "spoilboard_penetration": round(cam["pin_depth"] - T1, 6), "cycle": "peck",
+    # The pin depth reads the pin tool's flute, not the stick-out (feeds contract P0 item 3, D1 (a)).
+    pin_depth = pin_cut
+    pin_pen = round(pin_depth - T1, 6)
+    assert T1 + pin_pen <= pin_cut + 1e-9, (
+        f"D1: the pin hole T1 {T1} + penetration {pin_pen} passes the pin tool flute {pin_cut} mm")
+    P.toolpath("Pin drill, flip pins", "alignment_pin_drill", tid["pin_6"], mids["block_outline.dxf"], {
+        "diameter": pin_d, "spoilboard_penetration": pin_pen, "cycle": "peck",
         "peck_depth": dia["flat_6"], "feed_rate": f6["plunge"], "retract_z": 2.0, "spindle_rpm": int(f6["rpm"])},
-        why=f"{len(pins)} pins (3 left, 2 right, symmetric about the flip axis). Depth = block.json cam.pin_depth {cam['pin_depth']} = the flat_6 reach.")
+        why=(f"{len(pins)} pins (3 left, 2 right, symmetric about the flip axis). Depth = T1 {T1} + penetration "
+             f"{pin_depth - T1:g} = {pin_depth:g} = the pin tool flute (decision D1 (a), the GUI pin template rule)."))
     hole_top = max(float(l.split("_Z")[1]) for l in holes_layers)
     P.toolpath("Drill light holes 6 mm end mill", "drill", tid["flat_6"], mids["light_holes.dxf"], {
         "floor": {"from": "z", "z": round(T1 - hole_top, 4)}, "cycle": drill_op["cycle"],
-        "peck_depth": drill_op["peck_depth"], "dwell_time": drill_op["dwell_time"],
+        "peck_depth": drill_op["peck_depth"],
         "retract_amount": drill_op["retract_amount"], "retract_z": drill_op["retract_z"],
         "size_tolerance": round(max(abs(dia["flat_6"] - h) for h in blk["holes"]["diameters"]) + 0.01, 3)},
         why=(f"All {blk['holes']['count']} holes ({', '.join(holes_layers)}) with the 6 mm end mill (operator 2026-11-01: the\n"

@@ -109,11 +109,12 @@ pub(in crate::ui::properties) fn cycle_draws_peck(cycle: DrillCycleType) -> bool
     matches!(cycle, DrillCycleType::Peck | DrillCycleType::ChipBreak)
 }
 
-/// The rows a cycle adds: peck depth, dwell time and chip-break retract.
+/// The rows a cycle adds: peck depth and chip-break retract.
 ///
-/// `dwell_time` and `retract_amount` are `None` for the alignment-pin
-/// editor, whose config carries no knobs for them — pin drilling fixes dwell
-/// at 0.5 s and chip-break retract at 0.5 mm
+/// The Dwell cycle has no row: the Drill and the Pin Drill dwell the one
+/// fixed `DRILL_DWELL_S` (feeds contract P0, decision D2).
+/// `retract_amount` is `None` for the alignment-pin editor, whose config
+/// carries no knob for it — pin drilling fixes chip-break retract at 0.5 mm
 /// (`AlignmentPinDrillConfig::drill_cycle`). That is the ONLY difference
 /// between the two editors' conditional rows.
 fn draw_drill_cycle_rows(
@@ -121,7 +122,6 @@ fn draw_drill_cycle_rows(
     op: OperationType,
     cycle: DrillCycleType,
     peck_depth: &mut f64,
-    dwell_time: Option<&mut f64>,
     retract_amount: Option<&mut f64>,
     fields: Fields<'_>,
 ) {
@@ -132,18 +132,6 @@ fn draw_drill_cycle_rows(
             peck_depth,
             " mm",
             0.5,
-            fields,
-        );
-    }
-    if let Some(dwell_time) = dwell_time
-        && cycle == DrillCycleType::Dwell
-    {
-        dv(
-            ui,
-            p(op, "dwell_time", "Dwell time"),
-            dwell_time,
-            " s",
-            0.1,
             fields,
         );
     }
@@ -197,7 +185,6 @@ pub(in crate::ui::properties) fn draw_drill_params(
         OperationType::Drill,
         cfg.cycle,
         &mut cfg.peck_depth,
-        Some(&mut cfg.dwell_time),
         Some(&mut cfg.retract_amount),
         fields,
     );
@@ -268,7 +255,6 @@ pub(in crate::ui::properties) fn draw_alignment_pin_drill_params(
         OperationType::AlignmentPinDrill,
         cfg.cycle,
         &mut cfg.peck_depth,
-        None,
         None,
         fields,
     );

@@ -1,0 +1,329 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "CLI surface: the JSON records and the table go to stdout"
+)]
+
+//! `suggest`: print Suggest and its rationale for every enabled toolpath,
+//! without generation and without a change to the project.
+//!
+//! The command reads `ProjectSession::cutter_op_profile`, the one profile
+//! that MCP `get_suggest_rationale` and the GUI Suggest card read. It
+//! computes no feed of its own. The `basis` text is the core `card_text`
+//! of each basis, the strings that the MCP `basis` object carries.
+//!
+//! `current` is the operation in the project file. `suggested` is
+//! `CutterOpProfile::suggested_operation`, the operation that `ApplyFeeds`
+//! writes. `shipped_power` is `feeds::power_at_operating_point` on the
+//! suggested operation; `calculator` is the `FeedsResult` at the
+//! calculator's geometry (see the `FeedsResult::power_kw` note). Where the
+//! operation holds no stepover, depth or rpm, `shipped_power` reads the
+//! calculator point, as the GUI does, and `point_source` names the source
+//! of `ae`, `ap` and the rpm. A Drill and a Pin Drill print `peck_depth`.
+
+use anyhow::{Context, Result};
+use serde_json::{Value, json};
+use std::path::Path;
+
+use rs_cam_core::compute::catalog::OperationConfig;
+use rs_cam_core::feeds::profile::CutterOpProfile;
+use rs_cam_core::feeds::rationale::SuggestRationale;
+use rs_cam_core::session::ProjectSession;
+
+/// The peck depth of a Drill or a Pin Drill. Other operations have none.
+fn peck_depth(op: &OperationConfig) -> Option<f64> {
+    if let OperationConfig::Drill(cfg) = op {
+        return Some(cfg.peck_depth);
+    }
+    if let OperationConfig::AlignmentPinDrill(cfg) = op {
+        return Some(cfg.peck_depth);
+    }
+    None
+}
+
+fn op_values(op: &OperationConfig) -> Value {
+    json!({
+        "feed_rate": op.feed_rate(),
+        "plunge_rate": op.plunge_rate(),
+        "stepover": op.stepover(),
+        "depth_per_pass": op.depth_per_pass(),
+        "spindle_rpm": op.spindle_rpm(),
+        "peck_depth": peck_depth(op),
+    })
+}
+
+/// Where the power point reads `ae`, `ap` and the rpm: `"operation"` when
+/// the operation holds a usable value (finite and above 0, the rule of
+/// `power_at_operating_point`), `"calculator"` when the fallback gives it.
+/// The calculator point is a default cut, not the cut the operation makes.
+fn point_source(op: &OperationConfig) -> Value {
+    let source = |v: Option<f64>| {
+        if v.is_some_and(|x| x.is_finite() && x > 0.0) {
+            "operation"
+        } else {
+            "calculator"
+        }
+    };
+    json!({
+        "ae": source(op.stepover()),
+        "ap": source(op.depth_per_pass()),
+        "rpm": source(op.spindle_rpm().map(f64::from)),
+    })
+}
+
+fn profile_json(profile: &CutterOpProfile<'_>) -> Value {
+    let rationale = SuggestRationale::from_warnings(&profile.warnings);
+    let Some(feeds) = profile.feeds.as_ref() else {
+        return json!({ "rationale": rationale });
+    };
+    let (support_headline, support_detail) = feeds.support.card_text();
+    let (plunge_headline, plunge_detail) = feeds.plunge.card_text();
+    let (ramp_headline, ramp_detail) = feeds.ramp.card_text();
+    let shipped = profile
+        .suggested_operation
+        .as_ref()
+        .unwrap_or(profile.operation);
+    // The fallback is the calculator point, as the GUI builds it
+    // (`compare.rs` `PowerReading::at_shipped_point`).
+    let fallback = Some(rs_cam_core::feeds::suggest::CalculatorOperatingPoint {
+        radial_width_mm: feeds.radial_width_mm,
+        axial_depth_mm: feeds.axial_depth_mm,
+        feed_rate_mm_min: feeds.feed_rate_mm_min,
+        rpm: feeds.rpm,
+    });
+    let shipped_power = match rs_cam_core::feeds::power_at_operating_point(
+        shipped,
+        profile.tool_cfg,
+        profile.material,
+        profile.machine,
+        fallback,
+    ) {
+        Ok(p) => json!({
+            "required_kw": p.required_kw,
+            "available_kw": p.available_kw,
+            "ap_mm": p.ap_mm,
+            "ae_mm": p.ae_mm,
+            "rpm": p.rpm,
+            "feed_mm_min": p.feed_mm_min,
+        }),
+        Err(e) => json!({ "unmodeled": format!("{e:?}") }),
+    };
+    json!({
+        "calculator": {
+            "rpm": feeds.rpm,
+            "chip_load_mm": feeds.chip_load_mm,
+            "feed_rate_mm_min": feeds.feed_rate_mm_min,
+            "plunge_rate_mm_min": feeds.plunge_rate_mm_min,
+            "axial_depth_mm": feeds.axial_depth_mm,
+            "radial_width_mm": feeds.radial_width_mm,
+            "power_kw": feeds.power_kw,
+            "available_power_kw": feeds.available_power_kw,
+            "power_limited": feeds.power_limited,
+            "mrr_mm3_min": feeds.mrr_mm3_min,
+            "vendor_source": feeds.vendor_source,
+            "chipload_source": format!("{:?}", feeds.chipload_source),
+            "chipload_bounds_mm": feeds
+                .chipload_bounds
+                .as_ref()
+                .map(|b| [b.min_mm_per_tooth, b.max_mm_per_tooth]),
+            "chipload_point_mm": feeds.chipload_point_mm,
+            "warnings": feeds.warnings.iter().map(|w| format!("{w:?}")).collect::<Vec<_>>(),
+        },
+        "shipped_power": shipped_power,
+        "point_source": point_source(shipped),
+        "basis": {
+            "support": { "headline": support_headline, "detail": support_detail },
+            "plunge": { "headline": plunge_headline, "detail": plunge_detail },
+            "ramp": { "headline": ramp_headline, "detail": ramp_detail },
+        },
+        "rationale": rationale,
+    })
+}
+
+/// The JSON record of one toolpath: the current operation, the tool, the
+/// suggested operation and the profile.
+fn record_json(
+    session: &ProjectSession,
+    index: usize,
+    tc: &rs_cam_core::session::ToolpathConfig,
+) -> Value {
+    let profile = session.cutter_op_profile(tc);
+    let mut record = serde_json::Map::new();
+    record.insert("index".into(), json!(index));
+    record.insert("toolpath_id".into(), json!(tc.id));
+    record.insert("toolpath_name".into(), json!(tc.name));
+    record.insert("current".into(), op_values(&tc.operation));
+    match profile.as_ref() {
+        None => {
+            record.insert(
+                "error".into(),
+                json!("no tool, or the tool is outside its domain"),
+            );
+        }
+        Some(p) => {
+            record.insert(
+                "tool".into(),
+                json!({
+                    "name": p.tool_cfg.name,
+                    "tool_type": p.tool_cfg.tool_type,
+                    "diameter": p.tool_cfg.diameter,
+                    "flute_count": p.tool_cfg.flute_count,
+                }),
+            );
+            match &p.feasibility {
+                Err(e) => {
+                    record.insert("error".into(), json!(format!("Suggest refused: {e}")));
+                }
+                Ok(()) => {
+                    record.insert(
+                        "suggested".into(),
+                        p.suggested_operation
+                            .as_ref()
+                            .map_or(Value::Null, op_values),
+                    );
+                    record.insert("profile".into(), profile_json(p));
+                }
+            }
+        }
+    }
+    Value::Object(record)
+}
+
+/// Print one record per enabled toolpath. `json` prints one JSON object
+/// per line; otherwise a table of current and suggested values.
+pub fn run_suggest(input: &Path, json_out: bool) -> Result<()> {
+    let path = input
+        .canonicalize()
+        .context(format!("Project file not found: {}", input.display()))?;
+    let session = ProjectSession::load(&path).context("Failed to load project session")?;
+
+    if !json_out {
+        println!(
+            "{:<3} {:<30} {:>13} {:>11} {:>11} {:>11} {:>13} {:>11}",
+            "idx", "name", "feed", "plunge", "stepover", "dpp", "rpm", "peck"
+        );
+    }
+    for (index, tc) in session.toolpath_configs().iter().enumerate() {
+        if !tc.enabled {
+            continue;
+        }
+        if json_out {
+            println!("{}", record_json(&session, index, tc));
+        } else {
+            let profile = session.cutter_op_profile(tc);
+            let sug = profile
+                .as_ref()
+                .and_then(|p| p.suggested_operation.as_ref());
+            let cell = |a: Option<f64>, b: Option<f64>| {
+                let f = |v: Option<f64>| v.map_or_else(|| "-".to_owned(), |x| format!("{x:.2}"));
+                format!("{}→{}", f(a), f(b))
+            };
+            let cur = &tc.operation;
+            println!(
+                "{:<3} {:<30} {:>13} {:>11} {:>11} {:>11} {:>13} {:>11}",
+                index,
+                tc.name.chars().take(30).collect::<String>(),
+                cell(cur.feed_rate(), sug.and_then(OperationConfig::feed_rate)),
+                cell(
+                    cur.plunge_rate(),
+                    sug.and_then(OperationConfig::plunge_rate)
+                ),
+                cell(cur.stepover(), sug.and_then(OperationConfig::stepover)),
+                cell(
+                    cur.depth_per_pass(),
+                    sug.and_then(OperationConfig::depth_per_pass)
+                ),
+                cell(
+                    cur.spindle_rpm().map(f64::from),
+                    sug.and_then(OperationConfig::spindle_rpm).map(f64::from)
+                ),
+                cell(peck_depth(cur), sug.and_then(peck_depth)),
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod tests {
+    use super::*;
+    use crate::command::apply_command;
+    use rs_cam_core::ToolpathId;
+    use rs_cam_core::compute::catalog::OperationType;
+    use rs_cam_core::session::{AddToolpathArgs, Command, ToolpathConfig};
+
+    /// The 2D pocket fixture with one toolpath of `op` added through the
+    /// session door (the `pocket_session` pattern of `rough_score.rs`).
+    fn session_with(op: OperationType) -> ProjectSession {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_data/ux_2d_pocket.toml");
+        let mut session = ProjectSession::load(&path).expect("load ux_2d_pocket.toml");
+        let tool_id = session.tools()[0].id.raw();
+        let model_id = session.models()[0].id;
+        let _ = apply_command(
+            &mut session,
+            Command::AddToolpath(AddToolpathArgs {
+                setup_index: 0,
+                config: Box::new(ToolpathConfig {
+                    shoe: Default::default(),
+                    feeds_lock: Default::default(),
+                    id: ToolpathId::from_raw(0),
+                    name: "suggest test".to_owned(),
+                    enabled: true,
+                    operation: rs_cam_core::compute::fixture_values::fixture_op(op),
+                    dressups: rs_cam_core::compute::config::DressupConfig::default(),
+                    heights: rs_cam_core::compute::config::HeightsConfig::default(),
+                    tool_id: Some(rs_cam_core::ids::ToolId::from_raw(tool_id)),
+                    model_id,
+                    pre_gcode: None,
+                    post_gcode: None,
+                    boundary: rs_cam_core::compute::config::BoundaryConfig::default(),
+                    boundary_inherit: true,
+                    rest_analysis: rs_cam_core::compute::config::RestAnalysisConfig::default(),
+                    stock_source: rs_cam_core::compute::config::StockSource::default(),
+                    coolant: rs_cam_core::gcode::CoolantMode::Off,
+                    debug_options: rs_cam_core::trace::debug_trace::ToolpathDebugOptions::default(),
+                    feeds_provenance: rs_cam_core::feeds::FeedsProvenance::default(),
+                    planner_origin: None,
+                }),
+            }),
+        )
+        .expect("add the toolpath");
+        session
+    }
+
+    fn last_record(session: &ProjectSession) -> Value {
+        let configs = session.toolpath_configs();
+        let index = configs.len() - 1;
+        record_json(session, index, &configs[index])
+    }
+
+    /// FC0 item 2: a Drill record prints its peck depth.
+    #[test]
+    fn a_drill_record_prints_its_peck_fc0() {
+        let session = session_with(OperationType::Drill);
+        let record = last_record(&session);
+        let peck = record["current"]["peck_depth"].as_f64();
+        assert!(peck.is_some_and(|p| p > 0.0), "no peck_depth in {record}");
+    }
+
+    /// FC0 item 2: a Profile has no stepover, so the shipped power reads
+    /// the calculator point, as the GUI does, and says so.
+    #[test]
+    fn a_profile_power_reads_the_calculator_point_fc0() {
+        let session = session_with(OperationType::Profile);
+        let record = last_record(&session);
+        let power = &record["profile"]["shipped_power"];
+        assert!(
+            power["required_kw"].as_f64().is_some(),
+            "no figure: {record}"
+        );
+        assert_eq!(
+            record["profile"]["point_source"]["ae"], "calculator",
+            "{record}"
+        );
+    }
+}

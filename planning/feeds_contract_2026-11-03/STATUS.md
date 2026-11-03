@@ -26,7 +26,7 @@ code by the symbol when the line has moved.
 
 | Phase | Card | State | Commit | Next action |
 |---|---|---|---|---|
-| 0 Local fixes | `phases/P0.md` | NOT STARTED (all decisions ruled) | | |
+| 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
 | 1 Wildcard lint | `phases/P1.md` | NOT STARTED (perf session committed 98344a12f; re-run the hit probe at the new HEAD) | | |
 | 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED | | |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
@@ -40,8 +40,14 @@ code by the symbol when the line has moved.
 
 ## Not in a phase
 
-- `crates/rs_cam_cli/src/suggest.rs` and the `Suggest` command in
-  `crates/rs_cam_cli/src/main.rs`: written 2026-11-03 for the blind review;
-  uncommitted until `/verify` passes.
+- The `suggest` CLI command landed with Phase 0.
+- G-OPGOLDEN prints 46 rows at clean HEAD (recorded by 98344a12f). A phase
+  gate passes when it prints the same 46 rows and no other row.
+- Known red at HEAD 218ba2858, not caused by a phase:
+  `rs_cam_viz --test an_unbacked_cell_still_adds_its_operation_fm5` (3 tests:
+  `commands.rs` has no `FeedsError::Unbacked` arm; the add stops at "import
+  geometry first"). `cargo fmt --check` fails in `rs_cam_mcp/src/server.rs`,
+  viz `ui/components/mod.rs` and `ui/properties/tests.rs` (files no phase
+  touched).
 - The op 2 rest planner (14.5 mm entry, 13 mm links) needs a simulation; it
   is separate work (`PLAN.md` section 6).
