@@ -238,6 +238,10 @@ fn cancel_changes_nothing() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: the arm filters events; a new AppEvent is not the subject of this test"
+)]
 fn two_steps_and_apply_sends_the_draft_once() {
     let ctx = ctx();
     let mut state = state();

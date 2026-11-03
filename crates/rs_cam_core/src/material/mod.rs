@@ -1909,6 +1909,10 @@ impl Material {
 
         // 1. Curated catalog first — first-class species win on ties.
         for (label, mat) in Self::catalog() {
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "projection: only the named variant(s) carry this (named: Material::SolidWood)"
+            )]
             let sort_key = match &mat {
                 Material::SolidWood { species } => Some(species.janka_lbf()),
                 _ => None,

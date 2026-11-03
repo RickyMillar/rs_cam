@@ -76,6 +76,10 @@ fn cache_lock() -> MutexGuard<'static, ()> {
 }
 
 /// The plane Z, the hole count and the area of each face item.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn faces_of(set: &rs_cam_core::selection::ItemSet) -> Vec<(f64, usize, f64)> {
     set.iter()
         .map(|item| match item.shape() {

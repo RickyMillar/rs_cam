@@ -1017,7 +1017,12 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
                 I::Linking => Some(SpanKind::LinkBridge),
                 I::EntryPlunge | I::EntryHelix | I::EntryRamp | I::LeadIn => Some(SpanKind::Entry),
                 I::LeadOut => Some(SpanKind::LeadOut),
-                _ => None,
+                I::Drilling
+                | I::ClearingCut
+                | I::FinishingCut
+                | I::Retract
+                | I::ObstacleClearance
+                | I::Unknown => None,
             };
             if let Some(kind) = expected_kind {
                 assert!(
@@ -1060,7 +1065,28 @@ fn quick_config(op_type: OperationType) -> OperationConfig {
             cfg.z_step = 2.0;
             cfg.sampling = 1.0;
         }
-        _ => {}
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Drill(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => {}
     })
 }
 

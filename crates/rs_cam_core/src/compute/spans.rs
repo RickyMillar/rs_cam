@@ -536,6 +536,10 @@ pub fn spans_from_adaptive3d_annotations(
 ///   `n_moves`).
 /// - `RegionStart` events delimit `Region` spans (start at the event's
 ///   `move_index`, end at the next `RegionStart` or `n_moves`).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: E::RegionStart)"
+)]
 fn push_adaptive3d_spans(
     spans: &mut Vec<Span>,
     events: &[crate::adaptive3d::Adaptive3dRuntimeAnnotation],

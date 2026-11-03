@@ -3471,6 +3471,10 @@ pub fn any_json_value_schema(_: &mut schemars::SchemaGenerator) -> schemars::Sch
 /// but does not parse is returned unchanged so the caller still sees
 /// the original text in the error.
 pub fn coerce_json_container_string(value: serde_json::Value) -> serde_json::Value {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "foreign enum: the reader takes only the named shapes (named: Value::String)"
+    )]
     let parsed = match &value {
         serde_json::Value::String(s) => {
             let trimmed = s.trim();
@@ -4252,6 +4256,10 @@ mod tests {
             let wire: SelectionEditParam = serde_json::from_value(json.clone())
                 .unwrap_or_else(|e| panic!("{name} does not parse: {e}"));
             let edit = SelectionEdit::from(wire);
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "test: an unexpected variant panics"
+            )]
             let keys = match &edit {
                 SelectionEdit::AddPicks(keys) | SelectionEdit::RemovePicks(keys) => keys.clone(),
                 other => panic!("{name} gave {other:?}"),

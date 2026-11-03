@@ -272,7 +272,11 @@ fn submit_state(controller: &AppController<RecordingBackend>, tp_id: ToolpathId)
         None => "no runtime entry".to_owned(),
         Some(rt) => match &rt.run.status() {
             ComputeStatus::Error(message) => format!("Error: {message}"),
-            other => other.label().to_owned(),
+            other @ ComputeStatus::Pending
+            | other @ ComputeStatus::Computing
+            | other @ ComputeStatus::Done
+            | other @ ComputeStatus::AwaitingPriorStock(_)
+            | other @ ComputeStatus::Disabled => other.label().to_owned(),
         },
     }
 }

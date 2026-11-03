@@ -199,7 +199,7 @@ fn summarise(tp: &Toolpath, reports: &[BuriedChord]) -> Burial {
         b.max_all = b.max_all.max(depth);
         match tp.moves[r.move_index].move_type {
             MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => b.max_arc = b.max_arc.max(depth),
-            _ => b.max_linear = b.max_linear.max(depth),
+            MoveType::Rapid | MoveType::Linear { .. } => b.max_linear = b.max_linear.max(depth),
         }
         b.over_0_005 += usize::from(depth > 0.005);
         b.over_0_015 += usize::from(depth > 0.015);

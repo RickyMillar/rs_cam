@@ -262,6 +262,10 @@ struct Painted {
 
 /// Draw the production inspector once, with `events`. Returns the text
 /// runs it painted.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> Vec<Painted> {
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(

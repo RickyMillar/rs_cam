@@ -76,7 +76,7 @@ pub fn draw(
         DistributionOutcome::Measured(distribution) if card.metric == metric => {
             Some((card, distribution))
         }
-        _ => None,
+        DistributionOutcome::Measured(_) | DistributionOutcome::NotMeasured(_) => None,
     });
     let Some((card, distribution)) = measured else {
         sim.open_trace = None;

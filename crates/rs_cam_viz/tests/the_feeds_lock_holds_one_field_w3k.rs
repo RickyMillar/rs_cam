@@ -126,6 +126,10 @@ fn fixture() -> AppState {
 }
 
 /// The text runs of one frame and their rects.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn texts(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
     out.shapes
         .iter()

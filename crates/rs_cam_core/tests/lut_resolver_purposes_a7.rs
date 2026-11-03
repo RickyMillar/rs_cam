@@ -226,7 +226,18 @@ fn sweep(lut: &VendorLut) -> Sweep {
                             FeedsWarning::VendorRowPublishesNoChipload {
                                 observation_id, ..
                             } => Some(observation_id.clone()),
-                            _ => None,
+                            FeedsWarning::FeedRateClamped { .. }
+                            | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+                            | FeedsWarning::PowerLimited { .. }
+                            | FeedsWarning::PowerLadderReducedCut { .. }
+                            | FeedsWarning::ShankTooLarge { .. }
+                            | FeedsWarning::DocExceedsFlute { .. }
+                            | FeedsWarning::SlottingDetected { .. }
+                            | FeedsWarning::ScallopInvalid { .. }
+                            | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+                            | FeedsWarning::LongToolDerate { .. }
+                            | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                            | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
                         });
                         let case = format!(
                             "{label} d={diameter} f={flutes} {species:?} {pass_role:?} \

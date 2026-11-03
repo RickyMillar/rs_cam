@@ -158,6 +158,10 @@ impl StampDispatch {
     /// returned unchanged, which is what keeps `RS_CAM_STAMP_DISPATCH=whole_path`
     /// a usable A/B arm against the shipped default.
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: Self::Auto)"
+    )]
     pub fn resolved(self) -> Self {
         match self {
             Self::Auto => Self::Swept,

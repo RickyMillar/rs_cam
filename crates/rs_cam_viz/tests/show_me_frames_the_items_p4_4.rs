@@ -201,6 +201,10 @@ fn click(ctx: &egui::Context, state: &mut AppState, label: &str) -> Vec<AppEvent
 }
 
 /// The one frame request among `events`, and no selection edit.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: the arm filters events; a new AppEvent is not the subject of this test"
+)]
 fn one_frame_request(events: &[AppEvent]) -> Vec<MatchKey> {
     assert!(
         !events

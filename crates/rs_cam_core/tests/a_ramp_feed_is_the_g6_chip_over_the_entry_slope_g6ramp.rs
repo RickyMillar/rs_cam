@@ -195,7 +195,31 @@ fn records(warnings: &[SuggestWarning]) -> Vec<(Option<f64>, &RampFeed)> {
                 record,
                 ..
             } => Some((*from_mm_min, record)),
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::StepoverRaisedForRuntime { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .collect()
 }

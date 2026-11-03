@@ -302,6 +302,10 @@ mod tests {
     /// border) across the width, and a row paints a separator under it.
     /// W3h: the placeholder row paints no separator.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn a_list_box_has_its_own_surface_w3g() {
         let ctx = egui::Context::default();
         tokens::apply(&ctx);
@@ -357,6 +361,10 @@ mod tests {
     /// menu, then the button), and the state mark of a header paints its
     /// role glyph in the role colour.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn a_row_puts_the_menu_before_the_button_and_the_header_marks_its_state_w3h() {
         let ctx = egui::Context::default();
         tokens::apply(&ctx);

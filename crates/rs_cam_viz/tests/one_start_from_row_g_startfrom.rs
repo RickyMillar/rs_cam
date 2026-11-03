@@ -304,6 +304,10 @@ fn a_crease_detector_keeps_its_reference_g_startfrom() {
 /// it turns `Fresh` into `FromRemainingStock` and reports `changed`, and a
 /// second click turns it back.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_rest_machining_row_is_one_checkbox_g_startfrom() {
     let ctx = ctx();
     let mut value = StockSource::Fresh;

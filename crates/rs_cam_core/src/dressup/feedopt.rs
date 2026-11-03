@@ -527,7 +527,7 @@ mod tests {
             .map(|mv| {
                 let arc_ij = match mv.move_type {
                     MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => Some((i, j)),
-                    _ => None,
+                    MoveType::Rapid | MoveType::Linear { .. } => None,
                 };
                 (
                     mv.target,
@@ -552,7 +552,7 @@ mod tests {
             );
             let actual_arc_ij = match mv.move_type {
                 MoveType::ArcCW { i, j, .. } | MoveType::ArcCCW { i, j, .. } => Some((i, j)),
-                _ => None,
+                MoveType::Rapid | MoveType::Linear { .. } => None,
             };
             assert_eq!(actual_arc_ij, *arc_ij, "arc i/j offsets must be unchanged");
         }

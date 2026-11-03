@@ -444,7 +444,10 @@ fn draw_containment_row(
 ) {
     let draft_source = match entry.boundary.source {
         BoundarySource::DerivedRestRegions { source_toolpath_id } => Some(source_toolpath_id),
-        _ => None,
+        BoundarySource::Stock
+        | BoundarySource::ModelSilhouette
+        | BoundarySource::Selection { .. }
+        | BoundarySource::PlannedTierRegions { .. } => None,
     };
     let refused = inputs
         .rest_containment

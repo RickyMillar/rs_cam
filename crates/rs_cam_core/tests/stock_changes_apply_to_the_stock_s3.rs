@@ -563,6 +563,10 @@ fn a_box_mesh_with_a_hole_adds_two_intervals_per_column_through_the_hole() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_mesh_that_is_not_closed_is_refused_by_name() {
     let (vertices, mut triangles) =
         box_triangles(P3::new(RX0, RY0, 21.0), P3::new(RX1, RY1, 24.0), 0, false);

@@ -580,6 +580,10 @@ pub fn load_svg_data(
 /// One flattened subpath with the layer of its group.
 type RawRing = (Option<Arc<str>>, Polygon2);
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "foreign enum: the reader takes only the named shapes (named: Node::Path, Node::Group)"
+)]
 fn visit_group(
     group: &usvg::Group,
     layer: Option<&Arc<str>>,
@@ -1118,7 +1122,7 @@ mod tests {
             .iter()
             .filter_map(|i| match i.shape() {
                 Shape::Circle { centre, .. } => Some(*centre),
-                _ => None,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
             })
             .collect();
         assert_eq!(centres.len(), 1, "one circle, one item: {centres:?}");

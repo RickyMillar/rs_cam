@@ -30,7 +30,14 @@ intent; `rs_cam_cli suggest` prints the peck and the power point source; the
 Drill `dwell_time` key is retired (50 tracked files migrated); the Amana 1/16"
 2F rows hold the printed-IPM chip band (FM1: 13 cells moved); unknown tool
 material and cut direction warn; a stick-out shorter than the flute warns
-(`tool.stickout_shorter_than_flute`). Next: Phase 1 and Phase 4.
+(`tool.stickout_shorter_than_flute`). 
+
+Phase 1 landed 2026-11-03: the workspace denies
+`clippy::wildcard_enum_match_arm`. 563 hits over all targets: 256 arms name
+their variants (the feed, cut and drill decisions among them), 307 take an
+`#[expect]` with a reason (projection, pass-through, dispatch, foreign enum,
+or a test arm that panics: D1). No value, golden or G-code byte moved.
+Next: Phase 4 (`CutSpec`).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

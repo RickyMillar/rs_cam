@@ -112,6 +112,10 @@ impl PlaybackDispatch {
     /// mapping exists**, so no second site can disagree about what the default
     /// means.
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: Self::Auto)"
+    )]
     pub fn resolved(self) -> Self {
         match self {
             Self::Auto => Self::Banded,

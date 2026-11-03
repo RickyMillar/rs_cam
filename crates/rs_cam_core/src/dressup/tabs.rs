@@ -160,7 +160,8 @@ pub fn apply_tabs(toolpath: Toolpath, tabs: &[Tab], cut_depth: f64, floor_z: f64
 
             let feed_rate = match m.move_type {
                 MoveType::Linear { feed_rate } => feed_rate,
-                _ => 1000.0,
+                // K4 owns this value.
+                MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => 1000.0,
             };
 
             let seg_start_dist = cum_dist[cp - 1];

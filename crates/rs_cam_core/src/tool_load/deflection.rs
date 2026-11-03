@@ -600,6 +600,10 @@ mod tests {
     /// the unified model closes: before, the gate ignored the optimizer's
     /// feed-down (feed-blind) and kept reading Exceeds.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn gate_honors_optimizer_feed_down_into_within() {
         // L/D 12, uniform 3 mm beam. It was 45 mm (L/D 15) until T-17.
         // At 45 mm the corrected section makes this cut UNRESCUABLE by feed:
@@ -746,6 +750,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn wanaka_endmill_back_rough_deflection_is_within() {
         // A stubby roughing endmill (6 mm carbide flat, 45 mm stickout)
         // full-slotting hardwood at 2.5 mm DOC. Under the feed-aware
@@ -804,6 +812,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn wanaka_tapered_ball_finishing_is_within() {
         // Wanaka TP 5/6/11: 2 mm tip / 6 mm shank tapered ball at 35 mm
         // stickout, finishing pass — small DOC, small engagement, low
@@ -906,6 +918,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn slot_engagement_annotates_approximate_within() {
         // Light slot: high arc but small chip — should produce a Within
         // verdict whose confidence flags the slot annotation.
@@ -1011,6 +1027,10 @@ mod tests {
     /// it's dropped, entry_spike is `None`, steady-state peak is what
     /// the verdict reports.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn phantom_waterline_cleanup_does_not_surface_as_entry_spike() {
         use crate::trace::toolpath_spans::Span;
         use std::borrow::Cow;
@@ -1104,6 +1124,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn drill_op_routes_to_not_applicable() {
         let tool = carbide_flat(6.0, 45.0);
         let trace = trace_with(vec![cutting_sample(

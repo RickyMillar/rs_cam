@@ -404,6 +404,10 @@ impl ToolpathHeights {
 
 /// R-B: [`TopSource::AutoFaces`] reads [`TopSource::AutoHoleRims`] when
 /// the face top comes from hole rims.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value"
+)]
 const fn rim_source(source: TopSource, rims: bool) -> TopSource {
     match source {
         TopSource::AutoFaces if rims => TopSource::AutoHoleRims,
@@ -645,6 +649,7 @@ impl ProjectSession {
             };
             // UX-8: a face key is stored in the form of a pick of this
             // toolpath, so it follows the toolpath model as a pick does.
+            #[expect(clippy::wildcard_enum_match_arm, reason = "pass-through: every other variant keeps its own value (named: Floor::Face)")]
             let floor = match floor {
                 Floor::Face { key, depth } => Floor::Face {
                     key: key.for_toolpath_model(tc.model_id),

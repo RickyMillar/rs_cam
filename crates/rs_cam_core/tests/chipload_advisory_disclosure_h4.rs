@@ -246,6 +246,10 @@ fn a_genuine_within_still_reads_within_band() {
 /// `row_id` was hard-coded to `"vendor_lut"`, so the live citation named a
 /// calibrated row and flagged `extrapolated: true` at the same time.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_citation_names_the_source_the_bounds_came_from() {
     let diags = diagnostics_from_load_verdict(&live_op8_verdict());
     let chip = diags

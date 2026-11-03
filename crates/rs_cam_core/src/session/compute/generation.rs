@@ -458,7 +458,11 @@ impl ProjectSession {
                 crate::compute::config::BoundarySource::DerivedRestRegions {
                     source_toolpath_id,
                 } if boundary_config.enabled => self.derived_rest_top_z(*source_toolpath_id),
-                _ => None,
+                crate::compute::config::BoundarySource::Stock
+                | crate::compute::config::BoundarySource::ModelSilhouette
+                | crate::compute::config::BoundarySource::Selection { .. }
+                | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+                | crate::compute::config::BoundarySource::PlannedTierRegions { .. } => None,
             };
 
         // W2 (D69 §3): on an op that cuts the remaining stock, the smallest
@@ -1003,7 +1007,11 @@ impl ProjectSession {
                 self.resolve_boundary_selection_polys(index, selection, *holes)
                     .map(Some)
             }
-            _ => Ok(None),
+            crate::compute::config::BoundarySource::Stock
+            | crate::compute::config::BoundarySource::ModelSilhouette
+            | crate::compute::config::BoundarySource::Selection { .. }
+            | crate::compute::config::BoundarySource::DerivedRestRegions { .. }
+            | crate::compute::config::BoundarySource::PlannedTierRegions { .. } => Ok(None),
         }
     }
 

@@ -170,7 +170,9 @@ fn rings_for_side(
     let exterior = side.ring_material();
     let hole = match exterior {
         RingMaterial::Inside => RingMaterial::Outside,
-        _ => RingMaterial::Inside,
+        RingMaterial::Outside | RingMaterial::BothSides | RingMaterial::NotStated => {
+            RingMaterial::Inside
+        }
     };
     let rings = pieces
         .into_iter()
@@ -636,7 +638,7 @@ mod tests {
                         params.top_z - expected_depth
                     );
                 }
-                _ => {}
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {}
             }
         }
         assert!(saw_cut, "Expected at least one cutting move");

@@ -171,7 +171,7 @@ fn descents_into_the_block(tp: &Toolpath) -> Vec<(Move, Move)> {
 fn feed_of(m: &Move) -> Option<f64> {
     match m.move_type {
         MoveType::Linear { feed_rate } => Some(feed_rate),
-        _ => None,
+        MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
     }
 }
 

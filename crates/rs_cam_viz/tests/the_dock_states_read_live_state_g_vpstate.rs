@@ -283,6 +283,10 @@ fn land_collision_check(state: &mut AppState, collisions: usize) {
 // ── (a) the seven arms ───────────────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
     let mut seen: BTreeMap<&'static str, String> = BTreeMap::new();
     let mut record = |state: RowState, case: &str| {
@@ -412,6 +416,10 @@ fn every_row_state_arm_is_reachable_from_live_state_g_vpstate() {
 
 /// The rest row reads the one freshness answer of the selected toolpath.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_rest_row_reads_toolpath_freshness_g_vpstate() {
     let mut state = fresh_state();
     let id = add_selected(&mut state, true, true);
@@ -1059,6 +1067,10 @@ fn painted_frame(
         },
     );
     output.textures_delta.clear();
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
         match shape {
             egui::Shape::Text(text) => {

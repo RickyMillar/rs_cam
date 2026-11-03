@@ -36,7 +36,7 @@ use rs_cam_core::material::{Material, WoodSpecies};
 fn tool_of(kind: ToolType) -> ToolConfig {
     let diameter = match kind {
         ToolType::TaperedBallNose => 3.175,
-        _ => 6.35,
+        ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => 6.35,
     };
     let mut t = ToolConfig::new_default(ToolId::from_raw(1), kind);
     t.diameter = diameter;

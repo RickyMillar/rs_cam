@@ -586,7 +586,13 @@ fn write_path_svg(path: &Toolpath, label: &str, colour: &str, file: &PathBuf) {
                     | MoveIntent::LeadIn
                     | MoveIntent::LeadOut => &mut cut,
                     MoveIntent::Linking => &mut link,
-                    _ => &mut air,
+                    MoveIntent::Drilling
+                    | MoveIntent::EntryPlunge
+                    | MoveIntent::EntryHelix
+                    | MoveIntent::EntryRamp
+                    | MoveIntent::Retract
+                    | MoveIntent::ObstacleClearance
+                    | MoveIntent::Unknown => &mut air,
                 }
             };
             write!(

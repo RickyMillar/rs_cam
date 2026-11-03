@@ -323,6 +323,10 @@ pub fn note_item_keys(
 /// line or does not read open paths. Trace Left and Right (P6.2, O-1: the
 /// tool on that side of travel) and a Pocket with Extend to stock (P6.4)
 /// have a side. The side is in the DRAWING frame, as core reads it.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: OperationConfig::Trace, OperationConfig::Pocket)"
+)]
 pub fn open_path_side(
     operation: &rs_cam_core::compute::catalog::OperationConfig,
 ) -> Option<rs_cam_core::selection::PathSide> {

@@ -520,6 +520,10 @@ pub fn render(ctx: &egui::Context, state: &mut AppState, width: f32) -> Vec<Pain
 
 /// True for the well of a `PropRow` in a field state (W3f): the well fill
 /// with a Danger or Caution outline.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn is_state_outline(shape: &egui::epaint::Shape) -> bool {
     use rs_cam_viz::ui::components::Role;
     match shape {
@@ -533,6 +537,10 @@ fn is_state_outline(shape: &egui::epaint::Shape) -> bool {
 
 /// [`render`], and the number of field rows in a Danger or Caution state
 /// (W3f: a field finding is the state of its row, not a text).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 pub fn render_with_outlines(
     ctx: &egui::Context,
     state: &mut AppState,

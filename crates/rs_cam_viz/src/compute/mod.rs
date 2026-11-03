@@ -438,6 +438,10 @@ impl From<String> for ComputeError {
 pub use rs_cam_core::compute::OperationError;
 
 impl From<OperationError> for ComputeError {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: OperationError::Cancelled, OperationError::OverBudget)"
+    )]
     fn from(e: OperationError) -> Self {
         match e {
             OperationError::Cancelled => ComputeError::Cancelled,

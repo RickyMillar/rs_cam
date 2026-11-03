@@ -108,7 +108,31 @@ fn record(s: &SuggestedParams) -> (&RampFeed, &EntryNotes) {
         .iter()
         .filter_map(|w| match w {
             SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::StepoverRaisedForRuntime { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .collect();
     assert_eq!(all.len(), 1, "one RampFeed record per Suggest: {all:?}");
@@ -196,6 +220,10 @@ fn a_steep_ball_helix_ships_the_plunge_limit_g10() {
 /// A straight plunge (`EntryOff`) and an unknown entry (`EntryUnknown`)
 /// write `None`.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_plunge_or_unknown_entry_writes_none_g10() {
     let off = DressupConfig {
         entry_style: DressupEntryStyle::None,

@@ -534,7 +534,11 @@ fn clone_tool(src: &ToolDefinition) -> ToolDefinition {
         ToolGeometryHint::VBit { included_angle, .. } => {
             Box::new(VBitEndmill::new(src.diameter(), included_angle, src.length()).unwrap())
         }
-        _ => Box::new(FlatEndmill::new(src.diameter(), src.length())),
+        ToolGeometryHint::Flat
+        | ToolGeometryHint::Bull { .. }
+        | ToolGeometryHint::TaperedBall { .. } => {
+            Box::new(FlatEndmill::new(src.diameter(), src.length()))
+        }
     };
     ToolDefinition::new(
         cutter,

@@ -579,7 +579,8 @@ mod tests {
                 crate::toolpath::MoveType::Linear { .. } => {
                     current.push(m.target);
                 }
-                _ => {}
+                crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => {}
             }
         }
         if !current.is_empty() {

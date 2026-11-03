@@ -120,6 +120,10 @@ pub const SIMULATION_STALE_NOTE: &str = "from a simulation that is older than th
 pub const COLLISION_STALE_NOTE: &str = "from a check that is older than the last edit";
 
 /// The selected toolpath, if the selection is a toolpath.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+)]
 pub fn selected_toolpath(state: &AppState) -> Option<ToolpathId> {
     match *state.focus() {
         Selection::Toolpath(id) => Some(id),

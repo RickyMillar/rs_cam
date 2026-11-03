@@ -103,6 +103,10 @@ fn field_names_of_every_op() -> impl Iterator<Item = &'static str> {
 /// (`compute::not_set::NOT_SET_FIELDS`). A name that [`FieldKey::parse`]
 /// refuses is not in the set. A panel that draws field rows covers these
 /// names (the GUI `placement::drawn_fields`).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Anchor::Field)"
+)]
 pub fn anchor_field_names() -> std::collections::BTreeSet<&'static str> {
     let table = TABLE.iter().filter_map(|(_, anchor, _)| match anchor {
         Anchor::Field { key } => Some(key.as_str()),
@@ -119,6 +123,10 @@ pub fn anchor_field_names() -> std::collections::BTreeSet<&'static str> {
 /// so a panel never points at a field the op does not draw. Example: a
 /// Drill carries a plunge rate but publishes no `plunge_rate` row.
 #[must_use]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value"
+)]
 pub fn fit_anchor(anchor: Anchor, op: crate::compute::catalog::OperationType) -> Anchor {
     match anchor {
         Anchor::Field { key } if !op_has_field(op, key.as_str()) => Anchor::Operation,

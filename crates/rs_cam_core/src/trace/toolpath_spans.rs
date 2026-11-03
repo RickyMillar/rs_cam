@@ -729,6 +729,10 @@ impl AnnotatedToolpath {
     /// parent would change rule 2's answer. That is a pre-existing property
     /// of the span table, not of this function, and it is now at least
     /// *consistently* pre-existing across both renderers.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: SpanKind::Entry, SpanKind::LeadOut, SpanKind::LinkBridge, SpanKind::DressupArtifact and 1 more)"
+    )]
     pub fn classify_span_path(&self, path: &[SpanId]) -> SpanClass {
         if !self.spans_valid {
             return SpanClass::Cut { pass_index: None };
@@ -786,6 +790,10 @@ impl AnnotatedToolpath {
     ///
     /// Index `0` means "before the first move"; index `toolpath.moves.len()`
     /// means "after the last move".
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: SpanKind::RapidOrderBarrier, SpanKind::DepthPass)"
+    )]
     pub fn rapid_order_barriers(&self) -> Vec<usize> {
         let mut out: Vec<usize> = self
             .spans

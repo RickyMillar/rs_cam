@@ -243,7 +243,15 @@ fn family_key(material: &Material) -> String {
         Material::SheetGood {
             kind: SheetGoodKind::Mdf,
         } => "mdf".to_owned(),
-        other => format!("{other:?}"),
+        other @ Material::SolidWood { .. }
+        | other @ Material::SolidWoodByJanka { .. }
+        | other @ Material::Plywood { .. }
+        | other @ Material::SheetGood { .. }
+        | other @ Material::Plastic { .. }
+        | other @ Material::Aluminum { .. }
+        | other @ Material::Foam { .. }
+        | other @ Material::Fiberglass { .. }
+        | other @ Material::Custom { .. } => format!("{other:?}"),
     }
 }
 

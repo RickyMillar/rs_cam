@@ -58,7 +58,7 @@ fn worst_arc_deviation(source: &Toolpath, fitted: &Toolpath) -> (f64, usize) {
         let (i, j, cw) = match m.move_type {
             MoveType::ArcCW { i, j, .. } => (i, j, true),
             MoveType::ArcCCW { i, j, .. } => (i, j, false),
-            _ => continue,
+            MoveType::Rapid | MoveType::Linear { .. } => continue,
         };
         let a = fitted.moves[k - 1].target;
         let b = m.target;

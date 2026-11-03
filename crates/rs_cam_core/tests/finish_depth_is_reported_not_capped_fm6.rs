@@ -273,7 +273,31 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
             SuggestWarning::RoughingDepthClampedToRigidity { requested, capped } => {
                 Some((*requested, *capped))
             }
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::StepoverRaisedForRuntime { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("the roughing clamp must fire, got {:?}", s.warnings));
     assert!(
@@ -298,7 +322,31 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
         SuggestWarning::EngagementReducedForAggressiveness {
             dpp_from, dpp_to, ..
         } => Some((*dpp_from, *dpp_to)),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     });
     assert_eq!(
         dial_from,
@@ -315,6 +363,10 @@ fn a_roughing_depth_still_clamps_at_the_producer_s_cap_fm6() {
 /// `depth_cap_diameter_mm`, the engaged diameter at that depth. It is
 /// neither the tip nor the shank.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
     let m = machine();
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
@@ -324,7 +376,31 @@ fn suggest_and_the_gate_read_one_engaged_diameter_on_a_tapered_ball_fm6() {
         .iter()
         .find_map(|w| match w {
             SuggestWarning::RoughingDepthClampedToRigidity { capped, .. } => Some(*capped),
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::StepoverRaisedForRuntime { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("the roughing clamp must fire, got {:?}", s.warnings));
     let shipped = s.operation.depth_per_pass().expect("a pocket has a DPP");
@@ -374,6 +450,10 @@ fn the_feed_ladder_and_the_gate_read_the_cone_diameter_fm6() {
     let tool = tool_of(ToolType::TaperedBallNose, 3.175);
     let cutter = build_cutter(&tool).unwrap();
     let t = trace(&[DEPTH_MM]);
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let bound = match depth_gate(&cutter, OperationType::Adaptive, Some(&t)) {
         DepthVerdict::Within { bound, .. } | DepthVerdict::Exceeds { bound, .. } => bound,
         other => panic!("an adaptive pass carries a cap, got {other:?}"),

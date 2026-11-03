@@ -71,6 +71,10 @@ pub(super) fn push_obstacle_lines(
         resolved.extend(set.obstacles().iter().cloned());
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle)"
+    )]
     let focused = match *state.focus() {
         Selection::Setup(id) | Selection::Obstacle(id, _) => id == setup_id,
         _ => false,

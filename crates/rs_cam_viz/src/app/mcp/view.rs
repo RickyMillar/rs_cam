@@ -749,6 +749,10 @@ impl RsCamApp {
         // queue and land later this same frame, so echo the requested
         // targets plus the already-applied selection.
         let state = self.controller.state();
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+        )]
         let selected = match *state.focus() {
             Selection::Toolpath(id) => state
                 .session()

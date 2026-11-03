@@ -508,6 +508,10 @@ fn the_mdf_vcarve_rpm_stays_at_the_engaged_width_b4() {
 /// (f) The parallel finish cells still refuse with the `VBIT_PARALLEL`
 /// judgement: no V-bit row is filed under Parallel.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_vbit_parallel_finish_cells_refuse_b4() {
     let machine = open_machine();
     let materials = [

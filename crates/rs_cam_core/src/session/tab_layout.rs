@@ -99,7 +99,11 @@ impl ProjectSession {
             crate::compute::catalog::ItemUse::Curves => {
                 (items.curves().map(|c| c.as_slice()), None)
             }
-            _ => {
+            crate::compute::catalog::ItemUse::None
+            | crate::compute::catalog::ItemUse::Regions
+            | crate::compute::catalog::ItemUse::RegionsExtendOpen { .. }
+            | crate::compute::catalog::ItemUse::Edges
+            | crate::compute::catalog::ItemUse::Holes { .. } => {
                 let regions = items.regions();
                 (regions.map(|r| r.as_slice()), regions)
             }
@@ -177,6 +181,10 @@ impl ProjectSession {
 /// closed line `line` of a `Curves` view (P6.3): a loop, a circle ring or
 /// the outer ring of a face. The view can reverse a ring to its winding
 /// (`Polygon2::ensure_winding`), so a reversed ring matches too.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value (named: Shape::Face)"
+)]
 fn curve_item(
     items: &[crate::selection::ResolvedItem],
     line: &crate::polygon::Polygon2,

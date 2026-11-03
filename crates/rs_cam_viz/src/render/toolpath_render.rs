@@ -576,7 +576,10 @@ impl ToolpathLines {
                         });
                     }
                     // The filter hides this segment.
-                    _ => {}
+                    SpanClass::Entry
+                    | SpanClass::LeadOut
+                    | SpanClass::LinkBridge
+                    | SpanClass::Dressup => {}
                 }
             }
         })

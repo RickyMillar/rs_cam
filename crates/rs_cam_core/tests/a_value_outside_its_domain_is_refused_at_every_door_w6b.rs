@@ -124,6 +124,10 @@ fn assert_feed_refused(result: Result<(), SessionError>) {
     assert!(text.contains("outside the accepted range"), "{text}");
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn assert_inverted(result: Result<(), SessionError>, low: &str, high: &str) {
     match op_refusal(result) {
         OpDomainRefusal::InvertedPair {

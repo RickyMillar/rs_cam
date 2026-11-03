@@ -355,7 +355,9 @@ impl MultitoolPlannerState {
     pub fn ready_preview(&self) -> Option<&MultitoolPreview> {
         match &self.status {
             MultitoolPreviewStatus::Ready(preview) => Some(preview.as_ref()),
-            _ => None,
+            MultitoolPreviewStatus::Idle
+            | MultitoolPreviewStatus::Loading
+            | MultitoolPreviewStatus::Failed(_) => None,
         }
     }
 

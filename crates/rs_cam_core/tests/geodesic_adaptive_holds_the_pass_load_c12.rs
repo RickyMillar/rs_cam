@@ -402,7 +402,16 @@ fn departing_moves(tp: &Toolpath) -> Vec<bool> {
                     origin = None;
                 }
             }
-            _ => {
+            MoveIntent::Drilling
+            | MoveIntent::EntryPlunge
+            | MoveIntent::ClearingCut
+            | MoveIntent::FinishingCut
+            | MoveIntent::Linking
+            | MoveIntent::Retract
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut
+            | MoveIntent::ObstacleClearance
+            | MoveIntent::Unknown => {
                 if let (Some(p), Some((hx, hy)), true) = (prev, origin, travel) {
                     if (p.x - hx).hypot(p.y - hy) < TOOL_RADIUS - 1e-9 {
                         departing = true;
@@ -425,7 +434,7 @@ fn move_points(from: P3, mv: &Move, pitch: f64) -> Vec<(f64, f64)> {
     let arc = match mv.move_type {
         MoveType::ArcCW { i, j, .. } => Some((i, j, true)),
         MoveType::ArcCCW { i, j, .. } => Some((i, j, false)),
-        _ => None,
+        MoveType::Rapid | MoveType::Linear { .. } => None,
     };
     let len = (mv.target.x - from.x).hypot(mv.target.y - from.y) * 2.0;
     #[expect(
@@ -480,7 +489,7 @@ fn move_is_far(from: P3, mv: &Move, at: (f64, f64), reach: f64) -> bool {
             let (cx, cy) = (from.x + i, from.y + j);
             ((at.0 - cx).hypot(at.1 - cy) - i.hypot(j)).abs() > reach
         }
-        _ => segment_distance(at, from, mv.target) > reach,
+        MoveType::Rapid | MoveType::Linear { .. } => segment_distance(at, from, mv.target) > reach,
     }
 }
 
@@ -816,7 +825,7 @@ fn probe(tp: &Toolpath, m: usize, at: (f64, f64, f64)) -> String {
     let kind = |mv: &Move| match mv.move_type {
         MoveType::Rapid => "rapid".to_owned(),
         MoveType::Linear { feed_rate } => format!("feed {feed_rate:.0}"),
-        _ => "arc".to_owned(),
+        MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => "arc".to_owned(),
     };
     let mut out = format!(
         "probe move {m} at ({:.2}, {:.2}, {:.2}):\n",

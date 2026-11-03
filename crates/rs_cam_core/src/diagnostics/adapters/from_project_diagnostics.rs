@@ -120,6 +120,18 @@ fn id_and_category_for(kind: VerdictKind) -> (&'static str, Category) {
 fn state_for(kind: VerdictKind) -> DiagnosticState {
     match kind {
         VerdictKind::MeasurabilityAbstained => DiagnosticState::NotApplicable,
-        _ => DiagnosticState::Current,
+        VerdictKind::HolderCollision
+        | VerdictKind::HolderCheckFailed
+        | VerdictKind::RapidCollision
+        | VerdictKind::ObstacleCollision
+        | VerdictKind::PlungeStress
+        | VerdictKind::AirCut
+        | VerdictKind::GeneratedEmpty
+        | VerdictKind::AlignmentPinsUnkeyed
+        | VerdictKind::PinHolesDrilledTwice
+        | VerdictKind::DowelHolesDisagree
+        | VerdictKind::PinWallThin
+        | VerdictKind::PinToolMismatch
+        | VerdictKind::ShoeGapTooLow => DiagnosticState::Current,
     }
 }

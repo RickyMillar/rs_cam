@@ -597,6 +597,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// The failure of an interactive open of `path`. A load refusal
     /// (`VizError::ProjectLoad`) opens the modal with the structured error;
     /// every other error is a toast, as before.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: VizError::ProjectLoad)"
+    )]
     pub fn report_open_error(&mut self, path: &std::path::Path, error: VizError) {
         match error {
             VizError::ProjectLoad(error) => {

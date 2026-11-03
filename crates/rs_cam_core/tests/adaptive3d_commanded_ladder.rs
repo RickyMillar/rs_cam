@@ -185,6 +185,10 @@ fn adaptive3d_emitted_z_ladder_honours_commanded_depth_per_pass() {
         .generate_toolpath(0, &cancel)
         .expect("generate adaptive3d toolpath");
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let commanded_dpp = match &session.toolpath_configs()[0].operation {
         OperationConfig::Adaptive3d(cfg) => cfg.depth_per_pass,
         other => panic!("fixture drift: toolpath 0 is not adaptive3d, got {other:?}"),

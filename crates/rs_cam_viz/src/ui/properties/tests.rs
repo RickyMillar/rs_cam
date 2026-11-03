@@ -486,14 +486,16 @@ fn tab_texts(
             &[],
             &mut events,
         ),
-        _ => super::geometry_tab::draw_geometry_tab(
-            ui,
-            &entry,
-            &inputs,
-            &mut crate::state::pick::SelectionUi::default(),
-            &[],
-            &mut events,
-        ),
+        ToolpathTab::Geometry | ToolpathTab::FeedsSpeeds | ToolpathTab::Heights => {
+            super::geometry_tab::draw_geometry_tab(
+                ui,
+                &entry,
+                &inputs,
+                &mut crate::state::pick::SelectionUi::default(),
+                &[],
+                &mut events,
+            );
+        }
     });
     let mut texts = Vec::new();
     for clipped in &out.shapes {
@@ -1152,6 +1154,10 @@ fn a_field_finding_dots_the_tab_of_its_field_w2b() {
 /// Red proof: the F22 first version (the state word truncates in the
 /// width the figures leave): at 280 the word is elided.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_blocked_state_word_fits_its_slot_f22() {
     use rs_cam_core::compute::catalog::ModelGougeRule;
     use rs_cam_core::compute::model_gouge::ModelGougeFinding;
@@ -1746,6 +1752,10 @@ fn the_strategy_row_carries_the_suggest_chip_g_d() {
 /// Boundary row (W3a: the switch and the source in one combo) and no
 /// `Boundary: …` summary row above it; the summary is the row hover.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_boundary_summary_is_the_source_hover_d1() {
     use crate::state::toolpath::{BoundarySource, OperationType, ToolpathEntry};
     let (session, _mesh) = one_pocket_session();
@@ -1809,6 +1819,10 @@ fn the_boundary_summary_is_the_source_hover_d1() {
 /// Entry style row, so the inspector never shows a second Entry style
 /// control. A Pocket draws it. "Lead-in / out" draws for both (the anchor).
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_entry_style_row_hides_where_the_op_owns_the_entry_w3e() {
     use crate::state::toolpath::{OperationType, ToolpathEntry};
     let (session, _mesh) = one_pocket_session();
@@ -1866,6 +1880,10 @@ fn the_entry_style_row_hides_where_the_op_owns_the_entry_w3e() {
 /// tab's Advanced section draws it with "Feed rate optimization" off. The
 /// Ramp Rate row belongs to the optimiser and stays hidden.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_max_rate_row_shows_without_feed_optimization_g_feedmax() {
     use crate::state::toolpath::{OperationType, ToolpathEntry};
     let (session, _mesh) = one_pocket_session();
@@ -2192,6 +2210,10 @@ fn use_inside_sits_on_the_containment_row_g_c() {
 
 /// W1b follow-up: the Waterline row names its field, `helical`.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_waterline_row_reads_helical_w1b() {
     let mut cfg = crate::state::toolpath::WaterlineConfig::default();
     let ctx = egui::Context::default();
@@ -2557,7 +2579,29 @@ fn drawn_field_rows_match_the_painted_rows_w3f() {
             match &mut config {
                 OperationConfig::Drill(c) => c.cycle = cycle,
                 OperationConfig::AlignmentPinDrill(c) => c.cycle = cycle,
-                _ => {}
+                OperationConfig::Face(_)
+                | OperationConfig::Pocket(_)
+                | OperationConfig::Profile(_)
+                | OperationConfig::Adaptive(_)
+                | OperationConfig::VCarve(_)
+                | OperationConfig::Inlay(_)
+                | OperationConfig::InlayPlug(_)
+                | OperationConfig::Zigzag(_)
+                | OperationConfig::Trace(_)
+                | OperationConfig::Bore(_)
+                | OperationConfig::Chamfer(_)
+                | OperationConfig::DropCutter(_)
+                | OperationConfig::Adaptive3d(_)
+                | OperationConfig::Waterline(_)
+                | OperationConfig::Pencil(_)
+                | OperationConfig::Scallop(_)
+                | OperationConfig::UnifiedFinish(_)
+                | OperationConfig::SteepShallow(_)
+                | OperationConfig::RampFinish(_)
+                | OperationConfig::SpiralFinish(_)
+                | OperationConfig::RadialFinish(_)
+                | OperationConfig::HorizontalFinish(_)
+                | OperationConfig::ProjectCurve(_) => {}
             }
             cases.push((format!("{op:?} {cycle:?}"), config));
         }
@@ -2600,6 +2644,10 @@ fn drawn_field_rows_match_the_painted_rows_w3f() {
 /// Red proof: give `opt_row` the unit whatever the value: the unset arm
 /// paints "mm" beside "8 x D" and fails.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn a_tool_diameter_value_never_shows_mm_w3g() {
     let paint = |value: Option<f64>| -> Vec<String> {
         let ctx = egui::Context::default();

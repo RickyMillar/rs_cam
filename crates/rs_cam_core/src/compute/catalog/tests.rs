@@ -241,7 +241,22 @@ fn tool_constraints_are_an_explicit_per_op_decision() {
                 assert_eq!(schema.required_tool_type, ["end_mill", "bull_nose"]);
                 assert!(!tc.supports_v_bit);
             }
-            _ => {
+            OperationType::Face
+            | OperationType::Pocket
+            | OperationType::Profile
+            | OperationType::Adaptive
+            | OperationType::Zigzag
+            | OperationType::Trace
+            | OperationType::Drill
+            | OperationType::DropCutter
+            | OperationType::Adaptive3d
+            | OperationType::Waterline
+            | OperationType::SteepShallow
+            | OperationType::RampFinish
+            | OperationType::RadialFinish
+            | OperationType::HorizontalFinish
+            | OperationType::ProjectCurve
+            | OperationType::AlignmentPinDrill => {
                 // Pre-registry these fell through `_ => (Vec::new(), true)`;
                 // 19 until feeds matrix R1 moved Pencil and SpiralFinish.
                 assert!(

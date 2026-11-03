@@ -69,6 +69,10 @@ fn fresh_session(contour: bool) -> ProjectSession {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn contour_each_level_is_off_by_default_c4() {
     // The default is off.
     assert!(!Adaptive3dConfig::default().contour_each_level);

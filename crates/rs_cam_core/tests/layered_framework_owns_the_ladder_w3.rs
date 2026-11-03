@@ -330,6 +330,10 @@ fn level_first_cuts_each_level_everywhere_before_it_descends() {
 /// and Profile, a write of `global` reaches the config, and a token that is
 /// not an order is refused.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_region_ordering_dial_is_written_through_the_command_door() {
     let ops = [
         pocket(PocketPattern::Contour),

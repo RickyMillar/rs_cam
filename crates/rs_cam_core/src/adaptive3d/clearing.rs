@@ -1311,6 +1311,10 @@ fn stamp_and_advance(
 ) -> Adaptive3dSegment {
     // Every entry the planner emits passes this door, so every entry gets
     // its floor and its keep-down proof from the same stock read.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: Adaptive3dSegment::Rapid, Adaptive3dSegment::RapidWithFloor)"
+    )]
     let segment = match segment {
         Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
             plan_entry(material_stock, tool_radius, cursor.last_pos, entry, drape)
@@ -2373,7 +2377,9 @@ impl LevelSink<'_> {
             Adaptive3dSegment::Rapid(entry) | Adaptive3dSegment::RapidWithFloor { entry, .. } => {
                 *entry
             }
-            _ => return,
+            Adaptive3dSegment::Cut(_)
+            | Adaptive3dSegment::Link(_)
+            | Adaptive3dSegment::Marker(_) => return,
         };
         // An entry the routed keep-down travel can replace goes out as the
         // route, in the entry's place (only markers stand after a pending

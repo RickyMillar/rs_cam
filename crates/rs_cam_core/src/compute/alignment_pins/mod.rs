@@ -282,6 +282,10 @@ impl PinSetupMap {
 
     /// The setup as the operator reads it: `'Bottom'` or
     /// `'Bottom' turned 180 deg`.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: ZRotation::Deg0)"
+    )]
     fn label(&self) -> String {
         match self.transform.z_rotation {
             ZRotation::Deg0 => format!("'{}'", self.transform.face_up.label()),

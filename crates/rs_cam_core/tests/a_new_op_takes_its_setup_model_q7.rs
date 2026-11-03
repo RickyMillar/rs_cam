@@ -167,7 +167,11 @@ fn picks_at_add_become_the_selection_q7() {
         .iter()
         .find_map(|item| match item.shape() {
             Shape::Face(f) if (f.plane_z - 20.0).abs() < 1e-6 => f.brep,
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .expect("the stepped block has a face at Z 20");
     let draft = s

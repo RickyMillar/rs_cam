@@ -533,7 +533,7 @@ fn print_rapid_strike_cells() {
                             })
                             .collect()
                     }
-                    _ => vec![(p.x, p.y), (q.x, q.y)],
+                    MoveType::Rapid | MoveType::Linear { .. } => vec![(p.x, p.y), (q.x, q.y)],
                 };
                 let mut mask = 0u16;
                 for (vi, vo) in sub.iter().enumerate() {

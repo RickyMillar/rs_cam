@@ -444,7 +444,18 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
         FeedsWarning::VendorRowPublishesNoChipload {
             floor_band_from, ..
         } => floor_band_from.clone(),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+        | FeedsWarning::LongToolDerate { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     });
     // The recipe resolver may legitimately match a chipload-bearing row here,
     // in which case there is no warning and no fallback — that is the healthy
@@ -466,7 +477,18 @@ fn tapered_ball_floor_lands_below_the_global_constant() {
             source,
             ..
         } => Some((*commanded, *floor, *source)),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::LongToolDerate { .. }
+        | FeedsWarning::VendorRowPublishesNoChipload { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     });
     let (commanded, warned_floor, source) = warned.unwrap_or_else(|| {
         panic!(

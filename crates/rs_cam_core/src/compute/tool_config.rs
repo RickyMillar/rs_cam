@@ -627,7 +627,9 @@ impl ToolConfig {
     pub fn envelope_diameter(&self) -> f64 {
         match self.tool_type {
             ToolType::TaperedBallNose => self.shaft_diameter.max(self.diameter),
-            _ => self.diameter,
+            ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
+                self.diameter
+            }
         }
     }
 
@@ -642,7 +644,9 @@ impl ToolConfig {
                 self.tool_type.label(),
                 self.taper_half_angle
             ),
-            _ => format!("{} {size}", self.tool_type.label()),
+            ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
+                format!("{} {size}", self.tool_type.label())
+            }
         }
     }
 
@@ -801,7 +805,9 @@ impl ToolConfig {
     pub fn diameter_field_label(&self) -> &'static str {
         match self.tool_type {
             ToolType::TaperedBallNose => "Tip \u{00D8}:",
-            _ => "Diameter \u{00D8}:",
+            ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
+                "Diameter \u{00D8}:"
+            }
         }
     }
 
@@ -996,7 +1002,7 @@ impl ToolConfig {
             match self.tool_type {
                 ToolType::BullNose => candidates.push(self.corner_radius),
                 ToolType::EndMill => candidates.push(self.corner_radius_mm),
-                _ => {}
+                ToolType::BallNose | ToolType::VBit | ToolType::TaperedBallNose => {}
             }
             return Some(NameClaim {
                 quantity: NamedQuantity::TipRadius,
@@ -1076,7 +1082,7 @@ impl ToolConfig {
                 reported: self.taper_half_angle,
                 field: "taper_half_angle",
             }),
-            _ => None,
+            ToolType::EndMill | ToolType::BallNose | ToolType::BullNose => None,
         }
     }
 
@@ -1249,7 +1255,10 @@ impl NamedQuantity {
     pub const fn unit(self) -> &'static str {
         match self {
             NamedQuantity::ConeHalfAngle | NamedQuantity::IncludedAngle => "deg",
-            _ => "mm",
+            NamedQuantity::TipDiameter
+            | NamedQuantity::TipRadius
+            | NamedQuantity::ShankDiameter
+            | NamedQuantity::CuttingLength => "mm",
         }
     }
 
@@ -1317,6 +1326,10 @@ impl NameGeometryMismatch {
             ),
             _ => return None,
         };
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: NamedQuantity::TipRadius)"
+        )]
         let diameter = match self.quantity {
             NamedQuantity::TipRadius => self.config_value * 2.0,
             _ => self.config_value,

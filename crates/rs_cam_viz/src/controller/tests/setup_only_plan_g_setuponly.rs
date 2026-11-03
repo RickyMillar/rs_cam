@@ -172,7 +172,7 @@ fn a_setup_only_plan_generates_that_setup_g_setuponly() {
         .iter()
         .find_map(|step| match step {
             PlanStep::SimulatePrefix { setup, .. } => Some(*setup),
-            _ => None,
+            PlanStep::Generate(_) | PlanStep::SimulateAll => None,
         })
         .expect("the plan simulates before its rest operation");
     assert_eq!(

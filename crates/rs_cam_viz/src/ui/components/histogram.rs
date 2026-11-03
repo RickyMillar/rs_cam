@@ -136,6 +136,10 @@ impl<'a> DistributionChart<'a> {
     }
 
     /// Draw the chart in the full available width.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: BoundPlace::ToScale)"
+    )]
     pub fn show(self, ui: &mut egui::Ui) -> DistributionChartResponse {
         let font = egui::FontId::proportional(tokens::SIZE_CAPTION);
         let label_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
@@ -358,6 +362,10 @@ fn paint_bars(
             egui::pos2(left, bar_area.bottom() - height),
             egui::pos2((right - BAR_GAP).max(left + 1.0), bar_area.bottom()),
         );
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "pass-through: every other variant keeps its own value"
+        )]
         let colour = match bin_side(hist, bin) {
             BinSide::InBand if hovered_bin == Some(bin) => tokens::TEXT_MUTED,
             side => side_colour(side),

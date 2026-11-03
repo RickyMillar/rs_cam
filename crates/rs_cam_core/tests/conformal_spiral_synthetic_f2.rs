@@ -9645,7 +9645,14 @@ fn arm_band(
                              which can exhibit\n\
                              \x20    this. It should be revisited against this arm."
                         ),
-                        other => eprintln!(
+                        other @ SpiralRefusal::EmptyRegion
+                        | other @ SpiralRefusal::NonManifoldBoundary { .. }
+                        | other @ SpiralRefusal::NotADisk { .. }
+                        | other @ SpiralRefusal::DegenerateBoundaryLoop { .. }
+                        | other @ SpiralRefusal::FlattenDidNotConverge { .. }
+                        | other @ SpiralRefusal::NoSurfaceSamples
+                        | other @ SpiralRefusal::RingSearchStalled { .. }
+                        | other @ SpiralRefusal::RingLimitReached { .. } => eprintln!(
                             "\n     The refusal is {other:?}, NOT NotSimplyConnected. The \
                              prediction named\n\
                              \x20    NotSimplyConnected; this refutes it, and the measurement \

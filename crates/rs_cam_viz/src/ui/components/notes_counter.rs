@@ -66,6 +66,10 @@ mod tests {
 
     /// Draw a counter of `notes`; returns whether it drew, the painted
     /// text runs and the cursor movement.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn draw(notes: &[Notice]) -> (bool, Vec<String>, f32) {
         let ctx = egui::Context::default();
         tokens::apply(&ctx);

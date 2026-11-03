@@ -309,7 +309,13 @@ fn the_gate_list_blocks_as_the_full_list_w2b() {
             RunState::NotReady { blocking } => {
                 blocking.iter().map(|b| b.as_str().to_owned()).collect()
             }
-            _ => Vec::new(),
+            RunState::Disabled
+            | RunState::Ready
+            | RunState::Generating
+            | RunState::Done
+            | RunState::OutOfDate
+            | RunState::Failed { .. }
+            | RunState::Waiting { .. } => Vec::new(),
         };
         assert_eq!(
             gate, full,

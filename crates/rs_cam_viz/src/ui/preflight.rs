@@ -595,6 +595,10 @@ pub(crate) fn simulation_kept_no_trace(state: &AppState) -> bool {
 /// its own text: `trace_less` is [`simulation_kept_no_trace`]. Core reports
 /// `SimulationRequired` for any missing cut trace, and after a run with no
 /// trace "simulation has not been run" names the wrong cause (U3).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value"
+)]
 pub(crate) fn unmodeled_reason_label(
     reason: &rs_cam_core::tool_load::UnmodeledReason,
     trace_less: bool,

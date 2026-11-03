@@ -93,7 +93,29 @@ fn check(strategy: ClearingStrategy, order: RegionOrdering, contour: bool) -> (I
             ToolpathSemanticKind::Region => SpanKind::Region,
             ToolpathSemanticKind::DepthLevel => SpanKind::DepthPass,
             ToolpathSemanticKind::Cleanup => SpanKind::WaterlineCleanup,
-            _ => continue,
+            ToolpathSemanticKind::Operation
+            | ToolpathSemanticKind::Pass
+            | ToolpathSemanticKind::Entry
+            | ToolpathSemanticKind::SlotClearing
+            | ToolpathSemanticKind::ForcedClear
+            | ToolpathSemanticKind::Contour
+            | ToolpathSemanticKind::Raster
+            | ToolpathSemanticKind::Row
+            | ToolpathSemanticKind::Slice
+            | ToolpathSemanticKind::Hole
+            | ToolpathSemanticKind::Cycle
+            | ToolpathSemanticKind::Chain
+            | ToolpathSemanticKind::Band
+            | ToolpathSemanticKind::Ramp
+            | ToolpathSemanticKind::Ring
+            | ToolpathSemanticKind::Ray
+            | ToolpathSemanticKind::Curve
+            | ToolpathSemanticKind::Dressup
+            | ToolpathSemanticKind::FinishPass
+            | ToolpathSemanticKind::OffsetPass
+            | ToolpathSemanticKind::Centerline
+            | ToolpathSemanticKind::BoundaryClip
+            | ToolpathSemanticKind::Optimization => continue,
         };
         let (Some(start), Some(end)) = (item.move_start, item.move_end) else {
             panic!(

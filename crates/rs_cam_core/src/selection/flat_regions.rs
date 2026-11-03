@@ -259,7 +259,9 @@ mod tests {
             .iter()
             .map(|i| match i.shape() {
                 Shape::Face(f) => f.plane_z,
-                _ => f64::NAN,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+                    f64::NAN
+                }
             })
             .collect();
         // One group at Z 0 holds two disjoint triangles; Z 0.02 is its own.

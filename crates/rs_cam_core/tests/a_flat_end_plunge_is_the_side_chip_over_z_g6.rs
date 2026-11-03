@@ -410,7 +410,7 @@ fn every_other_cutter_refuses_and_a_bull_never_reads_spektra_g6() {
                 t.flute_count = 2;
                 t
             }
-            _ => tool_of(kind, 6.0, 2),
+            ToolType::EndMill | ToolType::BallNose | ToolType::BullNose => tool_of(kind, 6.0, 2),
         };
         for op in [OperationType::Drill, OperationType::AlignmentPinDrill] {
             let cell = format!("{op:?} {kind:?} {} mm hardwood", tool.diameter);

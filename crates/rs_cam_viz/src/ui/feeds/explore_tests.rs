@@ -131,6 +131,10 @@ struct Painted {
     paths: Vec<(Vec<egui::Pos2>, f32, egui::Color32)>,
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn paint_at(width: f32, mut state: AppState) -> (Recorded, Painted) {
     let ctx = egui::Context::default();
     tokens::apply(&ctx);

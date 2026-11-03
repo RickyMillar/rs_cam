@@ -904,7 +904,11 @@ fn classify(op: OperationType, rest: bool, outcome: &Outcome) -> Result<&'static
             | OperationError::InvalidParam(_)
             | OperationError::BuriedFace(_)
             | OperationError::NonCentreCutting(_) => Ok("named-refusal"),
-            other => Err(format!("an unnamed error: {other}")),
+            other @ OperationError::Cancelled
+            | other @ OperationError::OverBudget { .. }
+            | other @ OperationError::Selection(_)
+            | other @ OperationError::Internal(_)
+            | other @ OperationError::NotSet(_) => Err(format!("an unnamed error: {other}")),
         },
         Outcome::Refused(SessionError::OperationFailed(text)) => {
             Err(format!("an unnamed error: {text}"))
@@ -1480,7 +1484,7 @@ fn check8_no_op_puts_the_tool_inside_an_obstacle() {
             let (mut session, index, strip) = strip_session(op, frame);
             let tp = match generate(&mut session, index) {
                 Outcome::Done(at) => at.toolpath,
-                other => {
+                other @ Outcome::Refused(_) | other @ Outcome::Panicked(_) => {
                     defects.push(format!("{label}/obstacle: {}", other.describe()));
                     return (label, defects, false);
                 }

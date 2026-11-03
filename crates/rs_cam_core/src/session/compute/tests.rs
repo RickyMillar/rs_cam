@@ -70,6 +70,10 @@ fn make_tc(tool_id: usize) -> ToolpathConfig {
 // ── set_toolpath_param ───────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_feed_rate() {
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
@@ -84,6 +88,10 @@ fn set_toolpath_param_feed_rate() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_plunge_rate() {
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
@@ -99,6 +107,10 @@ fn set_toolpath_param_plunge_rate() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_stepover() {
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
@@ -110,6 +122,10 @@ fn set_toolpath_param_stepover() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_depth_per_pass() {
     let mut s = make_session();
     let _ = s.add_toolpath(0, make_tc(s.tools()[0].id.raw())).unwrap();
@@ -126,6 +142,10 @@ fn set_toolpath_param_depth_per_pass() {
 /// Z step stays; `z_step` is the one name. D2: RampFinish refuses the
 /// same name the same way; `max_stepdown` is its one name.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
     use crate::compute::catalog::OperationType;
     let mut s = make_session();
@@ -195,6 +215,10 @@ fn waterline_refuses_the_retired_depth_per_pass_alias_c1() {
 ///
 /// The operator ruling of 2026-10-15 moves the GUI floor of 0.5 mm into the schema.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_refuses_a_peck_depth_the_emitter_would_refuse() {
     let mut s = make_session();
     let mut tc = make_tc(s.tools()[0].id.raw());
@@ -290,6 +314,10 @@ fn a_positive_peck_still_has_no_descent_cap() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_coerces_integer_to_bool() {
     // MCP clients that can only produce JSON numbers should still be
     // able to set boolean params like `climb`, `detect_flat_areas`, etc.
@@ -331,6 +359,10 @@ fn make_drill_tc(tool_id: usize) -> ToolpathConfig {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
     let mut s = make_session();
     let _ = s
@@ -346,6 +378,10 @@ fn set_toolpath_param_drill_plunge_rate_updates_feed_rate() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_reference_tool_id_accepts_int() {
     let mut s = make_session();
     let _ = s
@@ -363,6 +399,10 @@ fn set_toolpath_param_reference_tool_id_accepts_int() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_reference_tool_id_accepts_string() {
     let mut s = make_session();
     let _ = s
@@ -380,6 +420,10 @@ fn set_toolpath_param_reference_tool_id_accepts_string() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_reference_tool_id_accepts_float_wire_number() {
     let mut s = make_session();
     let _ = s
@@ -397,6 +441,10 @@ fn set_toolpath_param_reference_tool_id_accepts_float_wire_number() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn set_toolpath_param_reference_tool_id_accepts_null_to_clear() {
     let mut s = make_session();
     let _ = s
@@ -654,6 +702,10 @@ fn set_toolpath_param_invalidates_result() {
 
 // ── set_tool_param ───────────────────────────────────────────
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn feed_vs_lut_high_recommended_value(s: &ProjectSession) -> f64 {
     let diagnostics = s.diagnose_toolpath(0).unwrap();
     let diag = diagnostics

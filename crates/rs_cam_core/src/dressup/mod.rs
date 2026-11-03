@@ -1360,7 +1360,8 @@ pub fn apply_lead_in_out(
 
                     let plunge_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
-                        _ => 500.0,
+                        // K4 owns this value.
+                        MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => 500.0,
                     };
                     // F-040: lead-in uses the dressup's override feed if set,
                     // otherwise falls back to the plunge feed (pre-F-040 default).
@@ -1510,7 +1511,10 @@ pub fn apply_lead_in_out(
 
                     let cut_feed_rate = match moves[i].move_type {
                         MoveType::Linear { feed_rate } => feed_rate,
-                        _ => 1000.0,
+                        // K4 owns this value.
+                        MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                            1000.0
+                        }
                     };
                     // F-040: lead-out uses the dressup's override feed if set,
                     // otherwise falls back to the cut-pass's feed rate.
@@ -1710,7 +1714,10 @@ pub fn apply_dogbones(
 
                             let feed_rate = match moves[i].move_type {
                                 MoveType::Linear { feed_rate } => feed_rate,
-                                _ => 1000.0,
+                                // K4 owns this value.
+                                MoveType::Rapid
+                                | MoveType::ArcCW { .. }
+                                | MoveType::ArcCCW { .. } => 1000.0,
                             };
 
                             let overcut_x = b.x + dx * tool_radius;
@@ -2066,7 +2073,7 @@ pub fn reference_engagement_of_cutting_moves(
                     sample(p, &mut deepest, &mut sampled);
                 }
             }
-            _ => {
+            MoveType::Rapid | MoveType::Linear { .. } => {
                 let (dx, dy, dz) = (
                     m.target.x - prev.x,
                     m.target.y - prev.y,
@@ -2300,7 +2307,7 @@ pub fn filter_air_cuts(
                     );
                     path.extend(arc_buf.iter().skip(1).copied());
                 }
-                _ => path.push(m.target),
+                MoveType::Rapid | MoveType::Linear { .. } => path.push(m.target),
             }
             prev = m.target;
         }

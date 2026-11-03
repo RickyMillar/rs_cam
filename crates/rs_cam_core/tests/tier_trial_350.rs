@@ -397,7 +397,28 @@ fn planner_dressups(session: &mut ProjectSession) -> String {
             OperationConfig::DropCutter(d) => d.scallop_height.unwrap_or(CUSP_MM),
             // The pencil has no cusp dial; it cleans to the arm's cusp.
             OperationConfig::Pencil(_) => CUSP_MM,
-            _ => CUSP_MM,
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => CUSP_MM,
         };
         let mut dressups = DressupConfig::for_op(tc.operation.op_type());
         dressups.arc_fitting = dressups
@@ -464,6 +485,10 @@ fn set_tool(session: &mut ProjectSession, index: usize, tool_id: usize) {
         .expect("set tool");
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn scallop_of(session: &ProjectSession, index: usize) -> (f64, bool) {
     match &session.toolpath_configs()[index].operation {
         OperationConfig::Scallop(s) => (s.scallop_height, s.iso_field),
@@ -601,7 +626,43 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
         provenance.apply_suggested(&feeds, &operation, rpm_written);
         let ramp = profile.warnings.iter().find_map(|w| match w {
             rs_cam_core::feeds::suggest::SuggestWarning::RampFeed { record, .. } => Some(record),
-            _ => None,
+            rs_cam_core::feeds::suggest::SuggestWarning::PlungeClampedToFeed { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::StepoverClampedToToolDiameter {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::RoughingDepthClampedToRigidity {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::DepthClampedToCuttingLength { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::DppCappedByDeflection { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::DeflectionBackoffFigureIsAFloor {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::StepoverRaisedForRuntime { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::FeedRaisedForChipload { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::ChiploadStillLowAfterRecalibration {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::StrategyRecommendedNotApplied {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::EngagementReducedForAggressiveness {
+                ..
+            }
+            | rs_cam_core::feeds::suggest::SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::AggressivenessNotApplied { .. }
+            | rs_cam_core::feeds::suggest::SuggestWarning::PlungeReDerived { .. } => None,
         });
         if let Some(record) = ramp {
             provenance.stamp_ramp(record);
@@ -663,6 +724,10 @@ fn apply_suggest(session: &mut ProjectSession) -> Result<Vec<Value>, String> {
 }
 
 /// Set the arm up. Returns notes for the JSON.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn configure_arm(
     session: &mut ProjectSession,
     arm: &Arm,
@@ -991,7 +1056,30 @@ fn pencil_summary(op: &OperationConfig) -> Value {
             "sampling": p.sampling,
             "stock_to_leave": p.stock_to_leave,
         }),
-        _ => Value::Null,
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Drill(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => Value::Null,
     }
 }
 
@@ -1555,7 +1643,28 @@ fn tier_trial_350() {
                 OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
                 OperationConfig::UnifiedFinish(u) => (Some(u.scallop_height), None),
                 OperationConfig::DropCutter(d) => (d.scallop_height, None),
-                _ => (None, None),
+                OperationConfig::Face(_)
+                | OperationConfig::Pocket(_)
+                | OperationConfig::Profile(_)
+                | OperationConfig::Adaptive(_)
+                | OperationConfig::VCarve(_)
+                | OperationConfig::Inlay(_)
+                | OperationConfig::InlayPlug(_)
+                | OperationConfig::Zigzag(_)
+                | OperationConfig::Trace(_)
+                | OperationConfig::Drill(_)
+                | OperationConfig::Bore(_)
+                | OperationConfig::Chamfer(_)
+                | OperationConfig::Adaptive3d(_)
+                | OperationConfig::Waterline(_)
+                | OperationConfig::Pencil(_)
+                | OperationConfig::SteepShallow(_)
+                | OperationConfig::RampFinish(_)
+                | OperationConfig::SpiralFinish(_)
+                | OperationConfig::RadialFinish(_)
+                | OperationConfig::HorizontalFinish(_)
+                | OperationConfig::ProjectCurve(_)
+                | OperationConfig::AlignmentPinDrill(_) => (None, None),
             };
             ops.push(json!({
                 "id": tc.id.raw(),
@@ -1897,7 +2006,30 @@ fn tier_trial_350_config_only() {
                 let tc = &session.toolpath_configs()[idx];
                 let (cusp, iso) = match &tc.operation {
                     OperationConfig::Scallop(s) => (Some(s.scallop_height), Some(s.iso_field)),
-                    _ => (None, None),
+                    OperationConfig::Face(_)
+                    | OperationConfig::Pocket(_)
+                    | OperationConfig::Profile(_)
+                    | OperationConfig::Adaptive(_)
+                    | OperationConfig::VCarve(_)
+                    | OperationConfig::Inlay(_)
+                    | OperationConfig::InlayPlug(_)
+                    | OperationConfig::Zigzag(_)
+                    | OperationConfig::Trace(_)
+                    | OperationConfig::Drill(_)
+                    | OperationConfig::Bore(_)
+                    | OperationConfig::Chamfer(_)
+                    | OperationConfig::DropCutter(_)
+                    | OperationConfig::Adaptive3d(_)
+                    | OperationConfig::Waterline(_)
+                    | OperationConfig::Pencil(_)
+                    | OperationConfig::UnifiedFinish(_)
+                    | OperationConfig::SteepShallow(_)
+                    | OperationConfig::RampFinish(_)
+                    | OperationConfig::SpiralFinish(_)
+                    | OperationConfig::RadialFinish(_)
+                    | OperationConfig::HorizontalFinish(_)
+                    | OperationConfig::ProjectCurve(_)
+                    | OperationConfig::AlignmentPinDrill(_) => (None, None),
                 };
                 eprintln!(
                     "   op {:>3} {:<5} {:<14} tool {:?} h {:?} iso {:?} feed {:?} rpm {:?} \

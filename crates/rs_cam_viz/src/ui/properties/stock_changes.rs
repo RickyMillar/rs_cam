@@ -585,6 +585,10 @@ pub(crate) fn draw_outline_pick(
 /// The material pick: the library picker, and a custom name.
 fn draw_material_pick(ui: &mut egui::Ui, material: &mut Material) {
     let _ = super::stock::draw_hierarchical_material_picker(ui, material);
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Material::Custom)"
+    )]
     let mut custom = match material {
         Material::Custom { name, .. } => name.clone(),
         _ => String::new(),
@@ -601,6 +605,7 @@ fn draw_material_pick(ui: &mut egui::Ui, material: &mut Material) {
         if response.changed() {
             let trimmed = custom.trim();
             if !trimmed.is_empty() {
+                #[expect(clippy::wildcard_enum_match_arm, reason = "projection: only the named variant(s) carry this (named: Material::Custom)")]
                 let feed_scale_factor = match material {
                     Material::Custom {
                         feed_scale_factor, ..

@@ -36,7 +36,9 @@ pub fn compute_stats_with_spans(tp: &Toolpath, spans: Option<&[Span]>) -> Toolpa
             ((to.x - from.x).powi(2) + (to.y - from.y).powi(2) + (to.z - from.z).powi(2)).sqrt();
         match tp.moves[i].move_type {
             MoveType::Rapid => rapid += distance,
-            _ => cutting += distance,
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                cutting += distance;
+            }
         }
     }
     ToolpathStats {

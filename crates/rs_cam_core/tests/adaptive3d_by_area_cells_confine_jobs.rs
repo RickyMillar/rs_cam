@@ -156,7 +156,13 @@ fn by_area_jobs_cut_only_their_own_cells() {
                         current = u16::try_from(region_index).unwrap();
                     }
                     Adaptive3dRuntimeEvent::WaterlineCleanup => current = 0,
-                    _ => {}
+                    Adaptive3dRuntimeEvent::RegionZLevel { .. }
+                    | Adaptive3dRuntimeEvent::GlobalZLevel { .. }
+                    | Adaptive3dRuntimeEvent::PassEntry { .. }
+                    | Adaptive3dRuntimeEvent::PassPreflightSkip { .. }
+                    | Adaptive3dRuntimeEvent::PassSummary { .. }
+                    | Adaptive3dRuntimeEvent::FeedCapStart { .. }
+                    | Adaptive3dRuntimeEvent::FeedCapEnd => {}
                 }
                 next += 1;
             }

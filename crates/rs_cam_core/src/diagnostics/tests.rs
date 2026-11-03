@@ -994,7 +994,11 @@ fn a_field_anchor_names_a_param_of_each_op_it_fires_on_w1() {
                     ));
                 }
                 Anchor::Field { .. } => {}
-                _ => fitted += 1,
+                Anchor::Tool
+                | Anchor::Operation
+                | Anchor::Note
+                | Anchor::Project
+                | Anchor::View => fitted += 1,
             }
         }
         for (id, anchor, _) in presentation::TABLE {

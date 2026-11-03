@@ -54,6 +54,10 @@ fn minimal_profile_toolpath(cut_feed: f64, plunge_feed: f64) -> AnnotatedToolpat
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn lead_in_geometry_is_pre_position_then_pure_z_plunge_then_arc() {
     // F-040a: classic lead-in shape. The first move in the lead-in is a
     // rapid that pre-positions the cutter above lead_start at safe Z. The
@@ -175,7 +179,7 @@ fn lead_in_feed_rate_applied_when_set() {
         .filter(|m| m.intent == MoveIntent::LeadIn)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
     assert!(
@@ -196,7 +200,7 @@ fn lead_in_feed_rate_applied_when_set() {
         .filter(|m| m.intent == MoveIntent::Unknown)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .filter(|&f| (f - cut_feed).abs() < 1.0)
         .collect();
@@ -236,7 +240,7 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
         .filter(|m| m.intent == MoveIntent::LeadIn)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
     assert!(
@@ -252,6 +256,10 @@ fn lead_in_falls_back_to_pre_f040_feed_when_none() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn lead_out_feed_rate_applied_when_set() {
     let cut_feed = 1500.0;
     let lo_feed = 4500.0;
@@ -317,7 +325,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         .filter(|m| m.intent == MoveIntent::LeadIn)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
     let pre_lead_out_feeds: Vec<f64> = tp
@@ -326,7 +334,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         .filter(|m| m.intent == MoveIntent::LeadOut)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
 
@@ -368,7 +376,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         .filter(|m| m.intent == MoveIntent::LeadIn)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
     let post_lead_out_feeds: Vec<f64> = tp
@@ -377,7 +385,7 @@ fn modulation_skips_lead_in_lead_out_moves() {
         .filter(|m| m.intent == MoveIntent::LeadOut)
         .filter_map(|m| match m.move_type {
             MoveType::Linear { feed_rate } => Some(feed_rate),
-            _ => None,
+            MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
         })
         .collect();
 

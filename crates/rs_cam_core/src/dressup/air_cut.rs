@@ -176,7 +176,7 @@ pub(super) fn swept_path_is_all_air(
             // the whole move.
             arc_buf.iter().all(air_at)
         }
-        _ => {
+        MoveType::Rapid | MoveType::Linear { .. } => {
             if !air_at(&prev) || !air_at(&m.target) {
                 return false;
             }

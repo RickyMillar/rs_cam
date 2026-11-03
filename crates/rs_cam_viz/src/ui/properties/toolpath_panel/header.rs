@@ -137,6 +137,10 @@ impl HeaderRow<'_> {
     /// The one button of the state, or `None` for no button. W2b: a state
     /// that asks for a tool or for a fix of the inputs shows a disabled
     /// Generate; the red Tool row and the issue rows are the call to action.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: RunState::Done)"
+    )]
     fn button(&self) -> Option<crate::ui::components::Button> {
         use crate::ui::components::Button;
         use rs_cam_core::session::{NextAction, RunState, next_action};

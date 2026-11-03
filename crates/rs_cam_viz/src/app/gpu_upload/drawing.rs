@@ -151,6 +151,10 @@ pub(super) fn upload(
         let planar_z =
             crate::state::display_frame::drawing_plane_z(state.session(), &toolpath, setup_ref)
                 as f32;
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: OperationConfig::ProjectCurve)"
+        )]
         let surface_mesh = match &toolpath.operation {
             rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => state
                 .session()
@@ -171,6 +175,10 @@ pub(super) fn upload(
                 }),
             _ => None,
         };
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: OperationConfig::ProjectCurve)"
+        )]
         let segment_spacing = match &toolpath.operation {
             rs_cam_core::compute::catalog::OperationConfig::ProjectCurve(cfg) => {
                 Some(cfg.point_spacing)

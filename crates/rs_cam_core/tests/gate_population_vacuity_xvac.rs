@@ -200,6 +200,10 @@ fn verdict_for(t: &SimulationCutTrace) -> ToolpathLoadVerdict {
 /// added a field, it did not move a verdict. This is the reason a
 /// verdict bar cannot test X-VAC.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_2026_08_05_shape_still_reproduces() {
     let t = vacuous_trace();
     let (power, deflection, _depth) = verdicts(&t);

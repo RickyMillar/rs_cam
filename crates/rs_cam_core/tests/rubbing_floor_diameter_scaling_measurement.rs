@@ -731,7 +731,17 @@ fn sweep() -> Vec<Row> {
                             FeedsWarning::VendorRowPublishesNoChipload { .. } => {
                                 rpm_only_row = true;
                             }
-                            _ => {}
+                            FeedsWarning::FeedRateClamped { .. }
+                            | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+                            | FeedsWarning::PowerLimited { .. }
+                            | FeedsWarning::PowerLadderReducedCut { .. }
+                            | FeedsWarning::ShankTooLarge { .. }
+                            | FeedsWarning::DocExceedsFlute { .. }
+                            | FeedsWarning::SlottingDetected { .. }
+                            | FeedsWarning::ScallopInvalid { .. }
+                            | FeedsWarning::LongToolDerate { .. }
+                            | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+                            | FeedsWarning::DrillFeedClampedToEnvelope { .. } => {}
                         }
                     }
 

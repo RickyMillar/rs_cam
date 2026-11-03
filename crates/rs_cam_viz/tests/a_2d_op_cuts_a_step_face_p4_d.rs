@@ -175,7 +175,11 @@ fn up_face(session: &ProjectSession, below_top: bool) -> (MatchKey, Polygon2) {
             {
                 Some((item, face))
             }
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .max_by(|a, b| a.1.rings.area().total_cmp(&b.1.rings.area()))
         .expect("the stepped block has a flat up face below and at the top");

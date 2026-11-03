@@ -177,6 +177,10 @@ pub fn run_sweep(
 /// The keys are the TOML keys of the job file, so the sweep reads a field by
 /// the same name it patches. `OperationDef` skips an unset option, so a field
 /// the job file does not set is absent from the map.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "foreign enum: the reader takes only the named shapes (named: Value::Object)"
+)]
 fn op_field_map(op: &job::OperationDef) -> Result<serde_json::Map<String, serde_json::Value>> {
     match serde_json::to_value(op).context("Serializing the swept operation")? {
         serde_json::Value::Object(map) => Ok(map),

@@ -111,12 +111,12 @@ impl ToolDomain {
         match self.lower {
             Bound::Closed(b) if value < b => return Some(Requirement::AtLeast(b)),
             Bound::Open(b) if value <= b => return Some(Requirement::GreaterThan(b)),
-            _ => {}
+            Bound::Unbounded | Bound::Closed(_) | Bound::Open(_) => {}
         }
         match self.upper {
             Bound::Closed(b) if value > b => Some(Requirement::AtMost(b)),
             Bound::Open(b) if value >= b => Some(Requirement::LessThan(b)),
-            _ => None,
+            Bound::Unbounded | Bound::Closed(_) | Bound::Open(_) => None,
         }
     }
 }

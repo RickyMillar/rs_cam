@@ -74,6 +74,10 @@ fn session(tool: ToolConfig, op: OperationConfig) -> ProjectSession {
 /// The wanaka case, in closed form. A `drop_cutter` on a spherical tip takes
 /// its own raster cusp as the bar, and names it.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_raster_finish_takes_the_cusp_of_its_own_stepover() {
     let session = session(
         tapered_ball_tool_config(2.0 * WANAKA_TIP_R_MM, 3.0, 6.0),

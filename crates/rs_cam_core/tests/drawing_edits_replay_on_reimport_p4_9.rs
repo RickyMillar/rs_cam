@@ -372,6 +372,10 @@ fn an_edit_that_cannot_replay_is_reported_by_name() {
     let path = write_dxf(&dir, true);
     let mut s = session(&path);
     join_and_close(&mut s);
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let u = match &s.models()[0].drawing.edits()[1] {
         DrawingEdit::CloseWithLine { path } => path.clone(),
         other => panic!("the second edit is the close: {other:?}"),
@@ -469,6 +473,10 @@ fn every_edit_stales_the_toolpaths_that_read_the_model() {
 // ── 8. A rescale keeps the edits ────────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_rescale_keeps_the_edits_and_the_pick() {
     let dir = scratch("rescale");
     let path = write_dxf(&dir, true);

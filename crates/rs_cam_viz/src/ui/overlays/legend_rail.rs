@@ -267,6 +267,10 @@ fn collision_count(state: &AppState) -> usize {
 }
 
 /// A status line for a flagged row that computes or failed.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: RowState::Computing, RowState::Failed)"
+)]
 fn live_status(state: &AppState, id: &str, name: String, instead: &str) -> Option<StatusLine> {
     match row_state(state, id)? {
         RowState::Computing { .. } => Some(StatusLine {
@@ -432,7 +436,7 @@ pub fn chip_text(state: &AppState, line: &RailLine) -> String {
             Some(_) => format!("{name} \u{00B7} not measured"),
             None => name,
         },
-        _ => name,
+        RailLine::Scale(_) | RailLine::Categories(_) | RailLine::Status(_) => name,
     }
 }
 
@@ -628,7 +632,7 @@ fn chip_swatch(state: &AppState, line: &RailLine) -> Swatch {
 fn chip_glyph(state: &AppState, line: &RailLine) -> Option<(&'static str, egui::Color32)> {
     match line {
         RailLine::Status(status) => Some((status.glyph, status_colour(status.tone))),
-        _ => caveat_lines(state, line)
+        RailLine::Scale(_) | RailLine::Categories(_) => caveat_lines(state, line)
             .iter()
             .any(|(_, colour)| *colour == tokens::CAUTION)
             .then_some((tokens::GLYPH_CAUTION, tokens::CAUTION)),
@@ -1560,6 +1564,10 @@ pub fn category_entries(state: &AppState, kind: Categories) -> Vec<LegendEntry> 
 
 /// The colour key of one categorical legend. The collisions draw their
 /// density ramp, with the two entries as its end labels.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Categories::Collisions)"
+)]
 fn categories_key(state: &AppState, kind: Categories) -> Key {
     let entries = category_entries(state, kind);
     match kind {

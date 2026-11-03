@@ -53,8 +53,11 @@ sentries and traps, which this file does not repeat.
 - The F-024..F-040 acceptance findings are protected by tests under `tests/`,
   including `_litmatrix_*.rs`. When a change touches one of those behaviours,
   find and run its sentry.
-- Test modules may expect only `unwrap_used`, `expect_used`, `panic` and
-  `indexing_slicing`; `println!` / `eprintln!` stay denied unless a test has
+- Test modules may expect only `unwrap_used`, `expect_used`, `panic`,
+  `indexing_slicing` and `wildcard_enum_match_arm`. The last is only for a
+  `_ => panic!(..)` arm, with the reason "test: an unexpected variant
+  panics"; every other test arm names its variants (feeds contract P1,
+  D1). `println!` / `eprintln!` stay denied unless a test has
   a specific `print_stderr` expectation. Write a lint exception as
   `#[expect(lint, reason = "..")]` on the smallest item; the workspace lints
   deny `allow` and a missing reason (F170). Keep `#![allow(.., reason)]`

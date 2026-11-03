@@ -114,7 +114,7 @@ impl ToolProfile {
     pub fn tip_protrusion_mm(self, radius_mm: f64) -> f64 {
         match self {
             ToolProfile::Flat => 0.0,
-            _ => {
+            ToolProfile::StandardTwist | ToolProfile::Spot { .. } => {
                 let half = self.cone_half_angle_rad();
                 if half <= 0.0 {
                     0.0

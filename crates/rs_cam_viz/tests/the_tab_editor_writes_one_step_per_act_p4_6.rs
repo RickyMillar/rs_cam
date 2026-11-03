@@ -199,6 +199,10 @@ fn id(c: &AppController<SilentBackend>) -> ToolpathId {
     c.state().session().toolpath_configs()[0].id
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn points(c: &AppController<SilentBackend>) -> Vec<[f64; 2]> {
     match &c.state().session().toolpath_configs()[0].operation {
         OperationConfig::Profile(cfg) => cfg.tab_points.clone(),
@@ -246,6 +250,10 @@ fn has(points: &[[f64; 2]], p: [f64; 2]) -> bool {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn an_auto_tab_drag_writes_every_tab_of_its_loop_in_one_step_p4_6() {
     let mut c = controller(Vec::new(), FaceUp::Top, ZRotation::Deg0);
     let before = layout(&mut c);
@@ -326,6 +334,10 @@ fn an_add_and_a_delete_are_one_step_each_p4_6() {
 /// act is its own undo step, and the act is the next one: the snapshot
 /// does not fold the two together.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_panel_edit_before_a_tab_act_keeps_its_own_step_p4_6() {
     let mut c = controller(
         vec![[30.0, 10.0], [50.0, 50.0]],

@@ -678,6 +678,10 @@ mod tests {
 
     /// Draw `rows` at `width`; returns each row's rects and the painted
     /// text runs with their rectangles.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn draw(
         width: f32,
         mut rows: impl FnMut(&mut egui::Ui) -> Vec<RowRects>,

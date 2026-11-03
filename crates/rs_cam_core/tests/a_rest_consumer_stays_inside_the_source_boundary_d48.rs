@@ -183,6 +183,10 @@ fn a_rest_consumer_stays_inside_the_source_boundary() {
         .expect("the silhouette outline");
     let centre = effective_boundary_reported(&silhouette, ToolContainment::Inside, r).0;
     assert!(!centre.is_empty(), "the silhouette has no inset");
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let tol = match &session.toolpath_configs()[0].operation {
         OperationConfig::Adaptive3d(c) => c.tolerance,
         _ => panic!("op 0 is not a 3D Rough"),

@@ -186,6 +186,10 @@ pub(super) fn enforce_invariants_at_fixed_geometry(
     )
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: SuggestWarning::FeedRescaledToFinalGeometry)"
+)]
 fn run_invariants(
     operation: &mut OperationConfig,
     tool: &ToolConfig,

@@ -259,6 +259,10 @@ fn assert_no_feed_raised(warnings: &[SuggestWarning], context: &str) {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn wanaka_suggest_baseline() {
     let path = wanaka_project_path();
     assert!(
@@ -341,7 +345,32 @@ fn wanaka_suggest_baseline() {
                     binding,
                     ..
                 } => Some((*commanded_mm, *clamped_mm, *binding)),
-                _ => None,
+                SuggestWarning::PlungeClampedToFeed { .. }
+                | SuggestWarning::StepoverClampedToToolDiameter { .. }
+                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+                | SuggestWarning::DepthClampedToCuttingLength { .. }
+                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+                | SuggestWarning::DppCappedByDeflection { .. }
+                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+                | SuggestWarning::StepoverRaisedForRuntime { .. }
+                | SuggestWarning::FeedRaisedForChipload { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                | SuggestWarning::StrategyRecommendedNotApplied { .. }
+                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+                | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::AxialDocBelowBurnFloor { .. }
+                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+                | SuggestWarning::FinishEnvelopeAdvisory { .. }
+                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+                | SuggestWarning::FeedClampedToChiploadFloor { .. }
+                | SuggestWarning::PowerRecheckedAfterRescale { .. }
+                | SuggestWarning::CutGeometryFieldNotHeld { .. }
+                | SuggestWarning::EngagementReducedForAggressiveness { .. }
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
                 panic!(
@@ -555,7 +584,31 @@ fn wanaka_suggest_baseline() {
                     *requested_mm_per_min,
                     *rescaled_mm_per_min,
                 )),
-                _ => None,
+                SuggestWarning::PlungeClampedToFeed { .. }
+                | SuggestWarning::StepoverClampedToToolDiameter { .. }
+                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+                | SuggestWarning::DepthClampedToCuttingLength { .. }
+                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+                | SuggestWarning::DppCappedByDeflection { .. }
+                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+                | SuggestWarning::StepoverRaisedForRuntime { .. }
+                | SuggestWarning::FeedRaisedForChipload { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                | SuggestWarning::StrategyRecommendedNotApplied { .. }
+                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+                | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::AxialDocBelowBurnFloor { .. }
+                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+                | SuggestWarning::FinishEnvelopeAdvisory { .. }
+                | SuggestWarning::FeedClampedToChiploadFloor { .. }
+                | SuggestWarning::PowerRecheckedAfterRescale { .. }
+                | SuggestWarning::CutGeometryFieldNotHeld { .. }
+                | SuggestWarning::EngagementReducedForAggressiveness { .. }
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
                 panic!(
@@ -647,7 +700,31 @@ fn wanaka_suggest_baseline() {
                     (*power_kw_before, *power_kw_after),
                     *target_met,
                 )),
-                _ => None,
+                SuggestWarning::PlungeClampedToFeed { .. }
+                | SuggestWarning::StepoverClampedToToolDiameter { .. }
+                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+                | SuggestWarning::DepthClampedToCuttingLength { .. }
+                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+                | SuggestWarning::DppCappedByDeflection { .. }
+                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+                | SuggestWarning::StepoverRaisedForRuntime { .. }
+                | SuggestWarning::FeedRaisedForChipload { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                | SuggestWarning::StrategyRecommendedNotApplied { .. }
+                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+                | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::AxialDocBelowBurnFloor { .. }
+                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+                | SuggestWarning::FinishEnvelopeAdvisory { .. }
+                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+                | SuggestWarning::FeedClampedToChiploadFloor { .. }
+                | SuggestWarning::PowerRecheckedAfterRescale { .. }
+                | SuggestWarning::CutGeometryFieldNotHeld { .. }
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| panic!("{ctx}: the dial record must fire on Back Rough"));
         let (k, ld, share, scale, dpp, so, force, power, met) = dial;
@@ -701,7 +778,32 @@ fn wanaka_suggest_baseline() {
                     clamped_mm,
                     ..
                 } => Some((*commanded_mm, *clamped_mm)),
-                _ => None,
+                SuggestWarning::PlungeClampedToFeed { .. }
+                | SuggestWarning::StepoverClampedToToolDiameter { .. }
+                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+                | SuggestWarning::DepthClampedToCuttingLength { .. }
+                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+                | SuggestWarning::DppCappedByDeflection { .. }
+                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+                | SuggestWarning::StepoverRaisedForRuntime { .. }
+                | SuggestWarning::FeedRaisedForChipload { .. }
+                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+                | SuggestWarning::StrategyRecommendedNotApplied { .. }
+                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+                | SuggestWarning::AxialDocClampedByEnvelope { .. }
+                | SuggestWarning::AxialDocBelowBurnFloor { .. }
+                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+                | SuggestWarning::FinishEnvelopeAdvisory { .. }
+                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+                | SuggestWarning::FeedClampedToChiploadFloor { .. }
+                | SuggestWarning::PowerRecheckedAfterRescale { .. }
+                | SuggestWarning::CutGeometryFieldNotHeld { .. }
+                | SuggestWarning::EngagementReducedForAggressiveness { .. }
+                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+                | SuggestWarning::AggressivenessNotApplied { .. }
+                | SuggestWarning::RampFeed { .. }
+                | SuggestWarning::PlungeReDerived { .. } => None,
             })
             .unwrap_or_else(|| {
                 panic!(

@@ -509,7 +509,7 @@ impl TriDexelStock {
                 let grid = self.ensure_grid(direction);
                 SweptDispatch::for_grid(grid, lateral)
             }
-            _ => None,
+            StampDispatch::Auto | StampDispatch::PerStamp | StampDispatch::WholeToolpath => None,
         };
         self.last_stamp_dispatch = super::StampDispatchStats::default();
         let from_high = direction.cuts_from_high_side();

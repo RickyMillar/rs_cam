@@ -1413,6 +1413,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn no_trace_returns_simulation_required() {
         let v = evaluate_args(
             0,
@@ -1500,6 +1504,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn chipload_far_above_max_is_exceeds_breakage() {
         // 0.5 mm/tooth on a 6.35mm 2-flute end mill is absurdly high.
         let t = trace(vec![sample(0, 0, 0.5, 0.5)]);
@@ -1548,6 +1556,10 @@ mod tests {
     /// ln 1.4 extrapolation flag (|ln 0.529| = 0.64). The claimed band is
     /// 0.0170-0.0271 mm/tooth, so 0.0001 is far below the minimum.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn weak_provenance_low_trip_demotes_to_burn_advisory() {
         use crate::tool::BallEndmill;
         let ball = ToolDefinition::new(
@@ -1596,6 +1608,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn chipload_far_below_min_is_exceeds_burn() {
         // 0.001 mm/tooth — rubbing, on the burn fixture (see
         // `burn_fixture_lut_min`).
@@ -1667,6 +1683,10 @@ mod tests {
     /// the plunge-feed chipload against the steady-state LUT range.
     /// Mirrors the wanaka TP 7 false-BurnRisk symptom.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn all_plunge_samples_returns_steady_state_not_present() {
         // commanded operation feed = 1000 mm/min; every sample at the
         // 300 mm/min plunge rate (= 0.30 × 1000, well below the 0.95
@@ -1978,6 +1998,10 @@ mod tests {
     /// reading the bounds the verdict carries. Lets the tolerance-band
     /// tests below scale their probe samples relative to the actual row,
     /// so future LUT changes don't break the test setup.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn pocket_rough_lut_max() -> f64 {
         let t = trace(vec![sample(0, 0, 0.04, 0.5)]);
         let v = evaluate_args(
@@ -2249,6 +2273,10 @@ mod tests {
     /// mechanically but misleading semantically (the sim wasn't
     /// failing — the metric just has no meaning here).
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn drill_like_no_arc_samples_route_to_unmodeled() {
         // engagement above the air-cut threshold (`>= 0.02`) so the
         // sample passes the steady-state filter and reaches the

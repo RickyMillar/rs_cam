@@ -326,6 +326,10 @@ pub struct ToolpathDrawFilter {
 
 impl ToolpathDrawFilter {
     /// Read the dials, each from the one place it lives.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+    )]
     pub fn from_state(state: &super::AppState) -> Self {
         Self {
             workspace: state.workspace,
@@ -377,6 +381,10 @@ pub fn vector_source_focus(
 }
 
 pub fn vector_source_toolpath(state: &super::AppState) -> Option<ToolpathId> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+    )]
     let selected = match *state.focus() {
         super::selection::Selection::Toolpath(id) => Some(id),
         _ => None,

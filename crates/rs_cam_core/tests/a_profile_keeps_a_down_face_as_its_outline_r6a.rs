@@ -179,7 +179,11 @@ fn brep_face_1_is_the_bottom_face_r6a() {
             Shape::Face(f) if f.brep.map(|b| b.0) == Some(BOTTOM_FACE) => {
                 Some((item.key().clone(), f.clone()))
             }
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .expect("the stepped block has BREP face 1");
     let (key, face) = face;

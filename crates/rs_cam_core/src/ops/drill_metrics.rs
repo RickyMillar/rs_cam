@@ -261,7 +261,7 @@ pub fn emit_drill_samples(toolpath_id: ToolpathId, drill_op: &DrillOp) -> Vec<Dr
     let chipload_mm_per_rev = feed / rpm;
     let dwell_each = match drill_op.cycle {
         DrillCycle::Dwell(s) => s.max(0.0),
-        _ => 0.0,
+        DrillCycle::Simple | DrillCycle::Peck(_) | DrillCycle::ChipBreak(..) => 0.0,
     };
 
     let mut samples = Vec::new();

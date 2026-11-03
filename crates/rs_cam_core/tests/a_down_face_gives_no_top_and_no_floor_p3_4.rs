@@ -452,7 +452,7 @@ fn every_step_face_points_out_of_the_solid() {
             .iter()
             .filter_map(|i| match i.shape() {
                 Shape::Face(face) => Some((face.plane_z, face.normal.z)),
-                _ => None,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
             })
             .collect();
         faces.sort_by(|a, b| a.0.total_cmp(&b.0));

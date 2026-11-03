@@ -176,6 +176,10 @@ fn close(a: Option<f64>, b: Option<f64>) -> bool {
 
 /// One claimed cell: Suggest, the envelope resolver and the modulator's
 /// door read one band, and the row carries the claim's scale.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn assert_one_claimed_band(
     op: OperationType,
     tool: &ToolConfig,

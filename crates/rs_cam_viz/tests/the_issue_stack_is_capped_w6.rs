@@ -41,6 +41,10 @@ use rs_cam_viz::ui::components::{Notice, NoticeStack, Role};
 use rs_cam_viz::ui::properties::{self, ToolpathTab};
 
 /// The faces the issue stack paints for `notices`, collapsed.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn painted_faces(notices: &[Notice]) -> Vec<String> {
     let ctx = egui::Context::default();
     rs_cam_viz::ui::tokens::apply(&ctx);

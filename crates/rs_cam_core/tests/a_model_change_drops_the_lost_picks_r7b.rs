@@ -140,7 +140,11 @@ fn session() -> ProjectSession {
             Shape::Face(f) if f.normal.z > 0.5 && (f.plane_z - 30.0).abs() < 1e-6 => {
                 f.brep.map(|id| id.0)
             }
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .expect("the up face at Z 30");
     common::session::pick_faces_in(&mut s, 0, SelectionTarget::Boundary, &[face]).unwrap();

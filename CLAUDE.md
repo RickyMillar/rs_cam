@@ -113,3 +113,8 @@ A lint exception is `#[expect(lint, reason = "..")]`; the workspace lints deny
 `#[allow]` and a missing reason, so the compiler holds this rule (W16). An inner
 `#![allow(.., reason = "..")]` stays only where the lint fires in some feature
 sets or test binaries; the test-module rules are in `crates/rs_cam_core/CLAUDE.md`.
+The workspace denies `clippy::wildcard_enum_match_arm` (feeds contract P1):
+name every variant in the arm, or put `#[expect(clippy::wildcard_enum_match_arm,
+reason = "..")]` on the `let` statement that holds the `match`, else on the
+smallest enclosing `fn`. An attribute on an assignment `x = match ..` does
+not compile (E0658).

@@ -1578,6 +1578,10 @@ pub(crate) struct OverlayUploadKey {
     display_mode: rs_cam_core::settings::DisplayMode,
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle); projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+)]
 pub(crate) fn overlay_upload_key(state: &crate::state::AppState) -> OverlayUploadKey {
     OverlayUploadKey {
         tool_profile: state.viewport.show_tool_profile_preview,

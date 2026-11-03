@@ -174,7 +174,10 @@ fn rest_containment_inputs(
             None,
             candidates.first().and_then(|candidate| check(candidate.0)),
         ),
-        _ => (None, None),
+        BoundarySource::Stock
+        | BoundarySource::ModelSilhouette
+        | BoundarySource::Selection { .. }
+        | BoundarySource::PlannedTierRegions { .. } => (None, None),
     }
 }
 
@@ -1654,6 +1657,10 @@ fn draw_obstacle_list(
                 })
         })
         .collect();
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this"
+    )]
     let selected = match *state.focus() {
         Selection::Obstacle(sid, oid) if sid == setup_id => Some(oid),
         _ => None,

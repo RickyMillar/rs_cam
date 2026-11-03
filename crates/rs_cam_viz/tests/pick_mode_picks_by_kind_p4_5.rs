@@ -335,6 +335,10 @@ fn screen(camera: &OrbitCamera, p: P3) -> [f32; 2] {
 }
 
 /// The pick of the pointer at `at` in pick mode, as the viewport runs it.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn pick_at(
     c: &AppController<SilentBackend>,
     camera: &OrbitCamera,
@@ -761,6 +765,10 @@ fn a_hidden_model_takes_no_pick_p4_d() {
 /// The pick-mode hit of the pointer at `at`, as the viewport click and
 /// hover run it (`pick_mode_item`, P4), with the pick mode stored in the
 /// controller: the key and the kind whose chip is off.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn pick_mode_at(
     c: &AppController<SilentBackend>,
     camera: &OrbitCamera,
@@ -812,6 +820,10 @@ fn click(
         .expect("pick mode on");
     let event = click_event(mode, item_use, &held, key, chip_off, button)
         .expect("a plain, shift or right click always sends an event");
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let name = match &event {
         AppEvent::TogglePick { .. } => "TogglePick",
         AppEvent::AddPick { .. } => "AddPick",
@@ -1111,6 +1123,10 @@ fn step_cycle_ends_on_a_move_and_on_a_mode_change_e_q6() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_tab_lists_every_candidate_under_the_pointer_e_q6() {
     let mut c = controller(
         OperationConfig::Pocket(Default::default()),

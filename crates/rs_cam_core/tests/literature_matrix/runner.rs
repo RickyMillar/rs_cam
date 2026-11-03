@@ -477,7 +477,7 @@ fn rubbing_floor_rule(detail: SubVerdictDetail, snap: &ShimSnapshot) -> SubVerdi
             "{} (near the floor is not a failure since ruling R4 WP2a)",
             detail.reason
         )),
-        _ => detail,
+        SubVerdict::Within | SubVerdict::NA => detail,
     }
 }
 

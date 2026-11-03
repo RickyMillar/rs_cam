@@ -572,6 +572,10 @@ pub(super) fn recheck_power_after_rescale(
 /// compatibility warning. Returns `None` for non-Adaptive ops, for
 /// Adaptive ops that don't expose an entry_style field (2D Adaptive),
 /// and for Adaptive ops whose entry_style is Helix/Ramp.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: OperationConfig::Adaptive3d)"
+)]
 fn adaptive_plunge_entry_label(operation: &OperationConfig) -> Option<&'static str> {
     use crate::compute::operation_configs::Adaptive3dEntryStyle;
     match operation {

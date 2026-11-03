@@ -559,6 +559,10 @@ pub(crate) fn tab_vertices(
 /// ring mark at each point, in `frame` (the active setup) on the displayed
 /// stock top plane (`drawing_display_z`), in `colors::DRAWING_NEUTRAL`. A
 /// face draws nothing here: the mesh shows it.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value (named: Shape::Point)"
+)]
 pub(crate) fn neutral_drawing_vertices(
     model: &rs_cam_core::session::LoadedModel,
     frame: Option<&SetupFrame>,
@@ -739,6 +743,10 @@ mod tests {
     use rs_cam_core::trace::toolpath_spans::AnnotatedToolpath;
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn translate_annotated_shifts_targets_and_preserves_arc_offsets() {
         let mut tp = Toolpath::new();
         tp.moves.push(Move {

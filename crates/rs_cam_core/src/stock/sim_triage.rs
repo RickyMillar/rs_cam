@@ -540,7 +540,7 @@ impl SimulationTriage {
             }
             let toolpath_id = match d.scope {
                 Scope::Toolpath { id } => Some(id),
-                _ => None,
+                Scope::Project | Scope::Setup { .. } | Scope::Tool { .. } => None,
             };
             found.push(Finding {
                 class: TriageClass::Action,

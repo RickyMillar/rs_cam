@@ -303,7 +303,9 @@ fn wanaka_back_rough_first_and_last_z_layers() {
             .sqrt();
             match m.move_type {
                 MoveType::Rapid => total_rapid += d,
-                _ => total_cut += d,
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                    total_cut += d;
+                }
             }
         }
         prev = Some(m.target);

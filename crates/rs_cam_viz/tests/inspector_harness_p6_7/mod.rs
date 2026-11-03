@@ -148,6 +148,10 @@ pub struct Painted {
 
 /// One pass of the inspector at `width` with `input_events`: the painted
 /// text and the app events.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn pass(
     ctx: &egui::Context,
     state: &mut AppState,

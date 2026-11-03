@@ -1215,7 +1215,10 @@ fn burn_floor(status: &CriterionStatus<'_>) -> Option<f64> {
         BoundSource::VendorChipBand {
             floor_mm_per_tooth, ..
         } => *floor_mm_per_tooth,
-        _ => None,
+        BoundSource::MachinePowerCurve { .. }
+        | BoundSource::DeflectionBudget
+        | BoundSource::RigidityRuleOfThumb { .. }
+        | BoundSource::DrillEnvelope => None,
     }
 }
 
@@ -2082,7 +2085,9 @@ fn measurability_rows(
                 cell_mm: Some(cell),
                 ..
             } => format!("{word} at {cell:.2} mm cell"),
-            _ => word.to_owned(),
+            MeasurabilityReason::BelowFreshMaterialFloor { .. }
+            | MeasurabilityReason::CellTooCoarseForTipContact { .. }
+            | MeasurabilityReason::KinematicsNotModelled => word.to_owned(),
         };
         let fix = match reason {
             MeasurabilityReason::CellTooCoarseForTipContact { .. } => {
@@ -2099,7 +2104,9 @@ fn measurability_rows(
         // degraded metric was measured, so its word is the value.
         Some(match role {
             Role::Caution => DataRow::value(name, word).tone(role.text()).hover(hover),
-            _ => DataRow::not_measured(name).status(role, word).hover(hover),
+            Role::Ok | Role::Danger | Role::Info | Role::Unknown => {
+                DataRow::not_measured(name).status(role, word).hover(hover)
+            }
         })
     })
     .collect()
@@ -2799,6 +2806,10 @@ mod tests {
     /// the row reads as before. The row fits the 304-point Simulation
     /// inspector (288 points inside) with the label, and does not elide.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn the_air_row_names_the_skin_w3() {
         let share = 279.3 / 335.9;
         let value = air_cut_value(84.8, share);

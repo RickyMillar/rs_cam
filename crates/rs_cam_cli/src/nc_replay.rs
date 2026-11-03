@@ -371,6 +371,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn parse_modal_feed_persists() {
         let path = write_tmp("G1 X10 F1500\nG1 X20\nG1 X30\n");
         let (tp, _) = parse_nc(&path).unwrap();

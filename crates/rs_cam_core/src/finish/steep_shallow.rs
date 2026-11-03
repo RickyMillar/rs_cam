@@ -1267,7 +1267,9 @@ mod tests {
                     contour_z_values.push(m.target.z);
                     in_contour = true;
                 }
-                _ => {}
+                crate::toolpath::MoveType::Linear { .. }
+                | crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => {}
             }
         }
     }
@@ -1573,7 +1575,9 @@ mod tests {
                 {
                     current.push(m.target);
                 }
-                _ => {}
+                crate::toolpath::MoveType::Linear { .. }
+                | crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => {}
             }
         }
         if current.len() >= 2 {

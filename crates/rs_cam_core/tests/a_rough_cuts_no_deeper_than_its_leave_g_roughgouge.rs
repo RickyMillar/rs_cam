@@ -103,6 +103,10 @@ fn rough_config() -> OperationConfig {
 }
 
 /// The axial leave and the op tolerance of `cfg`.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn leave_and_tolerance(cfg: &OperationConfig) -> (f64, f64) {
     match cfg {
         OperationConfig::Adaptive3d(c) => (c.stock_to_leave_axial, c.tolerance),

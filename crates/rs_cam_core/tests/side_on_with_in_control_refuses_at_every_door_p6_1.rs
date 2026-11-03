@@ -99,6 +99,10 @@ fn assert_side_on_in_control(result: Result<(), SessionError>) {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn stored(s: &ProjectSession, index: usize) -> (ProfileSide, CompensationType) {
     match &s.toolpath_configs()[index].operation {
         OperationConfig::Profile(c) => (c.side, c.compensation),

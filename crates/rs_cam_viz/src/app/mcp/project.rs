@@ -140,7 +140,7 @@ impl RsCamApp {
                                 serde_json::json!(t.shaft_diameter),
                             );
                         }
-                        _ => {}
+                        ToolType::EndMill | ToolType::BallNose | ToolType::BullNose => {}
                     }
                     if !t.vendor.is_empty() {
                         obj.insert("vendor".to_owned(), serde_json::json!(t.vendor));
@@ -725,7 +725,8 @@ impl RsCamApp {
                         map.insert("minor_radius".into(), serde_json::json!(minor_radius));
                         map.insert("axis".into(), serde_json::json!([axis.x, axis.y, axis.z]));
                     }
-                    _ => {}
+                    rs_cam_core::geometry::enriched_mesh::SurfaceParams::BSpline
+                    | rs_cam_core::geometry::enriched_mesh::SurfaceParams::Unknown => {}
                 }
 
                 serde_json::Value::Object(map)

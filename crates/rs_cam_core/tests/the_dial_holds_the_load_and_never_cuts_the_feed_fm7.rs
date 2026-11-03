@@ -144,14 +144,62 @@ fn dial(warnings: &[SuggestWarning]) -> Option<Dial> {
             power: (*power_kw_before, *power_kw_after),
             target_met: *target_met,
         }),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     })
 }
 
 fn not_applied(warnings: &[SuggestWarning]) -> Option<AggressivenessSkip> {
     warnings.iter().find_map(|w| match w {
         SuggestWarning::AggressivenessNotApplied { reason, .. } => Some(*reason),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::EngagementReducedForAggressiveness { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     })
 }
 

@@ -27,7 +27,7 @@ code by the symbol when the line has moved.
 | Phase | Card | State | Commit | Next action |
 |---|---|---|---|---|
 | 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
-| 1 Wildcard lint | `phases/P1.md` | NOT STARTED (perf session committed 98344a12f; re-run the hit probe at the new HEAD) | | |
+| 1 Wildcard lint | `phases/P1.md` | DONE 2026-11-03 (563 hits: 256 exhaustive, 307 `#[expect]`; no value moved) | see `git log` | |
 | 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED | | |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
 | 4 K1 `CutSpec` | `phases/P4.md` | NOT STARTED | | |
@@ -46,7 +46,16 @@ code by the symbol when the line has moved.
 - Known red at HEAD 218ba2858, not caused by a phase:
   `rs_cam_viz --test an_unbacked_cell_still_adds_its_operation_fm5` (3 tests:
   `commands.rs` has no `FeedsError::Unbacked` arm; the add stops at "import
-  geometry first"). `cargo fmt --check` fails in `rs_cam_mcp/src/server.rs`,
+  geometry first"). Also red at 218ba2858 and 890850a67 (checked in a
+  worktree, 2026-11-03), 14 tests in 12 viz targets: `apply_contract_a3`,
+  `effects_are_stamped_wp19` (2), `folder_maps_name_real_files_f140`,
+  `generate_all_skips_disabled_g_genalldisabled`,
+  `loose_executor_is_not_named_in_viz_wp12`, `mcp_authoring_surface`,
+  `mcp_wire_surface_pin`, `new_3d_op_boundary_is_silhouette_plus_tool_r2`,
+  `panel_drafts_leave_egui_memory_ui09` (2), `the_gui_can_set_a_feed_g_fscontrol`,
+  `the_inspector_text_is_bounded_ic1`, `the_selection_section_writes_edits_only_p4_3`.
+  `render_pipelines_headless_g_pipesmoke` can fail under load (flaky).
+  Run viz with `--no-fail-fast`: without it, cargo stops at the first red target. `cargo fmt --check` fails in `rs_cam_mcp/src/server.rs`,
   viz `ui/components/mod.rs` and `ui/properties/tests.rs` (files no phase
   touched).
 - The op 2 rest planner (14.5 mm entry, 13 mm links) needs a simulation; it

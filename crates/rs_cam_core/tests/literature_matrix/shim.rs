@@ -230,7 +230,9 @@ fn build_tool(cell: &LiteratureCell, tool_type: ToolType) -> ToolConfig {
             .tip_diameter_mm
             .or(i.tip_radius_mm.map(|r| 2.0 * r))
             .unwrap_or(i.diameter_mm),
-        _ => i.diameter_mm,
+        ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
+            i.diameter_mm
+        }
     };
     t.diameter = tip_d;
     t.flute_count = i.flute_count;
@@ -330,7 +332,9 @@ fn build_operation(
         }
         // Contour / Parallel / Face are reachable via other op strings
         // but no Phase 1 cell needs them yet.
-        _ => Err(ShimError::UnsupportedOperation(format!("{family:?}"))),
+        OperationFamily::Contour | OperationFamily::Parallel | OperationFamily::Face => {
+            Err(ShimError::UnsupportedOperation(format!("{family:?}")))
+        }
     }
 }
 
@@ -601,7 +605,28 @@ fn snapshot_from_clamped(
         OperationConfig::Scallop(cfg) => {
             bindings.insert("scallop_height".into(), cfg.scallop_height);
         }
-        _ => {}
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => {}
     }
     // Geometry-specific tool inputs cells may invariant against.
     if let Some(a) = cell.inputs.included_angle_deg {

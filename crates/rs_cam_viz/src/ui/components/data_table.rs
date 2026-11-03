@@ -497,7 +497,9 @@ fn show_row(
         // text, then the detail.
         let hover = match row.cell {
             Cell::Record { .. } => format!("{}\n{hover}", row.name),
-            _ => hover,
+            Cell::Value { .. } | Cell::NotMeasured | Cell::Change { .. } | Cell::Bar { .. } => {
+                hover
+            }
         };
         response.on_hover_text(hover);
     }

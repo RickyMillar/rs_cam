@@ -30,6 +30,10 @@ pub fn active_display_setup(
     session: &ProjectSession,
     selection: &Selection,
 ) -> Option<(SetupFrame, SetupId)> {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle, Selection::Toolpath)"
+    )]
     let setup_id = match selection {
         Selection::Setup(id) => Some(*id),
         Selection::Obstacle(id, _) => Some(*id),

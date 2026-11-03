@@ -177,6 +177,10 @@ impl RsCamApp {
     ///
     /// Runs before the mutation, as every per-row arm did. A refused
     /// request therefore leaves the same view it left before WP4.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "dispatch: the rest go to one handler or message (named: CoreRequest::SetStockConfig, CoreRequest::AddStockChange, CoreRequest::EditStockChange, CoreRequest::MoveStockChange and 10 more)"
+    )]
     pub(crate) fn mcp_before_core(&mut self, request: &CoreRequest) {
         // SHL-02: the workspace an MCP mutation moves the view to is a
         // column of the `declare_core_requests!` table, not an arm here.
@@ -1576,6 +1580,10 @@ impl RsCamApp {
 
 /// A JSON value as a toast quotes it: a string bare, anything else as
 /// JSON.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "foreign enum: the reader takes only the named shapes (named: Value::String)"
+)]
 fn display_value(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(s) => s.clone(),
@@ -1777,6 +1785,10 @@ impl RsCamApp {
     /// Every row answers with `mutation_error_json` and its own field
     /// name; three rows say more. The match is exhaustive so a new row
     /// states its refusal shape rather than inheriting one.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "dispatch: the rest go to one handler or message (named: SessionError::ToolNotFound)"
+    )]
     fn core_error_reply(
         &self,
         id: CommandId,

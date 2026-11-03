@@ -2201,7 +2201,9 @@ pub(super) fn segments_to_toolpath_checked(
                         stay_down.as_ref(),
                     ),
                     Adaptive3dSegment::Rapid(entry) => (entry, None, None, None),
-                    _ => continue,
+                    Adaptive3dSegment::Cut(_)
+                    | Adaptive3dSegment::Link(_)
+                    | Adaptive3dSegment::Marker(_) => continue,
                 };
                 // Gouge guard: lift the entry destination to hold the leave, so
                 // a peck-plunge / helix / ramp whose footprint laps higher

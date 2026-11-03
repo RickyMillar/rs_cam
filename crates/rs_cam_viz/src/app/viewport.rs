@@ -119,6 +119,10 @@ impl RsCamApp {
             &pick.kinds,
             &pick.cut_kinds,
         )?;
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: PickHit::ModelFace)"
+        )]
         let face = match found.hit {
             crate::interaction::PickHit::ModelFace { model_id, face_id } => {
                 Some((model_id, face_id))
@@ -1162,6 +1166,10 @@ impl RsCamApp {
         // P5 — is a reach map held for the toolpath that is selected RIGHT
         // NOW? A map held for a previous selection must never be drawn under
         // the new one, so the identity is compared rather than assumed.
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+        )]
         let reach_map_ready = match *state.focus() {
             Selection::Toolpath(id) => {
                 state.gui.reach_overlay.toolpath == Some(id)
@@ -1611,6 +1619,10 @@ impl RsCamApp {
         let Some(map) = crate::ui::overlays::registry::selected_area_regions(state) else {
             return;
         };
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+        )]
         let shift = match *state.focus() {
             Selection::Toolpath(id) => state
                 .session()

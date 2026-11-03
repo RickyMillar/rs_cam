@@ -430,7 +430,12 @@ fn parent_revision_exporter_walk(a: &AnnotatedToolpath, move_idx: usize) -> [f32
             SpanKind::LeadOut => return LEADOUT,
             SpanKind::LinkBridge => return LINK_BRIDGE,
             SpanKind::DressupArtifact => return DRESSUP,
-            _ => continue,
+            SpanKind::Operation
+            | SpanKind::DepthPass
+            | SpanKind::Region
+            | SpanKind::GeometryRefit
+            | SpanKind::RapidOrderBarrier
+            | SpanKind::WaterlineCleanup => continue,
         }
     }
     CUT

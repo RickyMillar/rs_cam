@@ -152,7 +152,28 @@ pub fn diagnostics_from_preconditions(
                 out.extend(selection_refused(&scope, ctx));
             }
         }
-        _ => {
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_) => {
             out.extend(selection_refused(&scope, ctx));
         }
     }

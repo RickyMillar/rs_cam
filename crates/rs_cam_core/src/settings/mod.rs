@@ -549,6 +549,10 @@ impl<'a> SectionReader<'a> {
     }
 
     /// A table of booleans.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "foreign enum: the reader takes only the named shapes (named: Value::Boolean)"
+    )]
     fn bool_table(&mut self, key: &str) -> BTreeMap<String, bool> {
         let mut out = BTreeMap::new();
         match self.value(key) {

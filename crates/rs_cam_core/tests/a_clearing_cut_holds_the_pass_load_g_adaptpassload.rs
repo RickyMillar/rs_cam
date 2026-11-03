@@ -101,7 +101,27 @@ fn producers(session: &ProjectSession) -> Vec<String> {
             Kind::Cleanup if item.label.starts_with("Residue mop") => "Residue mop",
             Kind::Cleanup => "Boundary cleanup",
             Kind::Contour if item.label.starts_with("Residue contour") => "Residue contour",
-            _ => continue,
+            Kind::Operation
+            | Kind::DepthLevel
+            | Kind::Region
+            | Kind::Contour
+            | Kind::Raster
+            | Kind::Row
+            | Kind::Slice
+            | Kind::Hole
+            | Kind::Cycle
+            | Kind::Chain
+            | Kind::Band
+            | Kind::Ramp
+            | Kind::Ring
+            | Kind::Ray
+            | Kind::Curve
+            | Kind::Dressup
+            | Kind::FinishPass
+            | Kind::OffsetPass
+            | Kind::Centerline
+            | Kind::BoundaryClip
+            | Kind::Optimization => continue,
         };
         for slot in best.iter_mut().take(b.saturating_add(1)).skip(a) {
             if a >= slot.0 {
@@ -171,7 +191,17 @@ fn plunge_origin(tp: &rs_cam_core::toolpath::Toolpath) -> Vec<Option<(f64, f64)>
                 origin = Some((m.target.x, m.target.y));
             }
             MoveIntent::EntryHelix => origin = None,
-            _ => {}
+            MoveIntent::Drilling
+            | MoveIntent::EntryPlunge
+            | MoveIntent::ClearingCut
+            | MoveIntent::FinishingCut
+            | MoveIntent::EntryRamp
+            | MoveIntent::Linking
+            | MoveIntent::Retract
+            | MoveIntent::LeadIn
+            | MoveIntent::LeadOut
+            | MoveIntent::ObstacleClearance
+            | MoveIntent::Unknown => {}
         }
         out.push(origin);
         prev = Some(m.target);
@@ -443,7 +473,7 @@ fn wall_cuts(session: &ProjectSession) -> BTreeMap<String, (usize, f64)> {
         let arc = match m.move_type {
             MoveType::ArcCW { i, j, .. } => Some((i, j, true)),
             MoveType::ArcCCW { i, j, .. } => Some((i, j, false)),
-            _ => None,
+            MoveType::Rapid | MoveType::Linear { .. } => None,
         };
         let point_at = |t: f64| -> (f64, f64) {
             match arc {
@@ -738,7 +768,7 @@ fn move_points(
     let arc = match mv.move_type {
         MoveType::ArcCW { i, j, .. } => Some((i, j, true)),
         MoveType::ArcCCW { i, j, .. } => Some((i, j, false)),
-        _ => None,
+        MoveType::Rapid | MoveType::Linear { .. } => None,
     };
     let len = (mv.target.x - from.x).hypot(mv.target.y - from.y) * 2.0;
     let k = ((len / pitch).ceil() as usize).max(1);
@@ -912,7 +942,7 @@ fn print_entry_stats() {
                     radii.push(i.hypot(j));
                     cur_r = cur_r.max(i.hypot(j));
                 }
-                _ => lines += 1,
+                MoveType::Rapid | MoveType::Linear { .. } => lines += 1,
             }
         } else if let Some(t) = current.take() {
             times.push(t);

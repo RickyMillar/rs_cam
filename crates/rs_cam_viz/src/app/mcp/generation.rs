@@ -107,6 +107,10 @@ pub(super) fn force_line_json(
 /// - B6: `force_line` is the material's one force line (plan §6), evaluated
 ///   at the mean chip of the cut Suggest ships; on a refusal every number is
 ///   null and `refused` names the variant.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: SuggestWarning::RampFeed); projection: only the named variant(s) carry this (named: SuggestWarning::PlungeReDerived)"
+)]
 pub fn suggest_basis_json(
     profile: &rs_cam_core::feeds::profile::CutterOpProfile<'_>,
 ) -> serde_json::Value {

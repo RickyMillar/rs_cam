@@ -208,6 +208,10 @@ fn an_idle_row_draws_a_circle_g_ring() {
 
 /// A simulating row draws the ring: a stroked path in the INFO accent.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn a_simulating_row_draws_the_ring_g_ring() {
     let shapes = glyph_shapes(Some(InFlight::Simulating));
     assert!(

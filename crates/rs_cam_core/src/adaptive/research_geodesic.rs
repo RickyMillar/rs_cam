@@ -2001,7 +2001,9 @@ mod tests {
             .iter()
             .filter_map(|m| match m.move_type {
                 crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate),
-                _ => None,
+                crate::toolpath::MoveType::Rapid
+                | crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => None,
             })
             .collect();
         // The moves: to the origin, to the turn's start, the turn, on.

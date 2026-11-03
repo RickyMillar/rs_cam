@@ -425,6 +425,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn flat_tip_diameter_defaults_zero_and_is_settable() {
         use crate::tool::MillingCutter;
         let mut tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();

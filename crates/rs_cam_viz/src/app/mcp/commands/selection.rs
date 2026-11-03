@@ -1912,7 +1912,9 @@ mod tests {
                 .find(|item| item.key().names_same_geometry(key))
                 .and_then(|item| match item.shape() {
                     Shape::Face(face) => Some(face.plane_z),
-                    _ => None,
+                    Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => {
+                        None
+                    }
                 })
                 .expect("a face of the part")
         };
@@ -1921,7 +1923,7 @@ mod tests {
             .iter()
             .filter(|item| match item.shape() {
                 Shape::Face(face) => face.plane_z > -6.0,
-                _ => false,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => false,
             })
             .map(|item| MatchKey {
                 source: SourceRef::ToolpathModel,
@@ -2124,6 +2126,10 @@ mod tests {
     /// Red proof: `extended_areas` with no grown area. The rings are then
     /// empty, and the non-vacuity check fails.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn mcp_and_gui_give_one_open_sides_pocket_opensides() {
         use rs_cam_core::session::SetToolpathParamArgs;
 
@@ -2255,6 +2261,10 @@ mod tests {
     /// Red proof: `selection_report_json` with an empty `extended`. The MCP
     /// rings then differ from the GUI ring, and the test fails.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn mcp_and_gui_give_one_extended_pocket_p6_4() {
         use rs_cam_core::compute::operation_configs::OpenPaths;
         use rs_cam_core::geo::P2;

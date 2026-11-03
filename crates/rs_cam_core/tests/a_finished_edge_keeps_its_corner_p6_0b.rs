@@ -518,6 +518,10 @@ fn per_dressup_intrusion() {
 /// and the registry tool), for the before and after record.
 #[test]
 #[ignore = "instrument: the corner intrusion of the G-OPGOLDEN flat cases"]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn golden_flat_case_intrusion() {
     let outline = Polygon2::rectangle(
         -OUTLINE_HALF_X,
@@ -550,7 +554,29 @@ fn golden_flat_case_intrusion() {
             OperationType::Profile => {
                 arms.push(("inside", profile_side(ProfileSide::Inside), false));
             }
-            _ => {}
+            OperationType::Face
+            | OperationType::Adaptive
+            | OperationType::VCarve
+            | OperationType::Inlay
+            | OperationType::InlayPlug
+            | OperationType::Zigzag
+            | OperationType::Trace
+            | OperationType::Drill
+            | OperationType::Bore
+            | OperationType::Chamfer
+            | OperationType::DropCutter
+            | OperationType::Adaptive3d
+            | OperationType::Waterline
+            | OperationType::Pencil
+            | OperationType::Scallop
+            | OperationType::UnifiedFinish
+            | OperationType::SteepShallow
+            | OperationType::RampFinish
+            | OperationType::SpiralFinish
+            | OperationType::RadialFinish
+            | OperationType::HorizontalFinish
+            | OperationType::ProjectCurve
+            | OperationType::AlignmentPinDrill => {}
         }
         for (arm, op, rest) in arms {
             let (mut session, index) = case_session(CaseSpec {

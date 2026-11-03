@@ -508,6 +508,10 @@ fn door_session() -> ProjectSession {
     builder.build()
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn stored(s: &ProjectSession) -> (ProfileSide, Floor) {
     match &s.toolpath_configs()[0].operation {
         OperationConfig::Profile(c) => (c.side, c.floor.clone()),

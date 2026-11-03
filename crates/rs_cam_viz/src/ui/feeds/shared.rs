@@ -216,6 +216,10 @@ impl AppliedRecipe {
     /// Build the record from the funnel's dry run and the Suggest pass's
     /// warnings. `previews` is `None` when the pairing is refused: Apply then
     /// writes nothing, and the card shows the calculator values.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this"
+    )]
     pub(crate) fn new(
         previews: Option<rs_cam_core::feeds::suggest::FieldApplyPreviews>,
         warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
@@ -342,6 +346,10 @@ impl AppliedRecipe {
     pub(crate) fn dial_load_pct(&self, field: rs_cam_core::feeds::FeedsField) -> Option<f64> {
         use rs_cam_core::feeds::FeedsField;
         let dial = self.dial?;
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: FeedsField::DepthPerPass, FeedsField::Stepover)"
+        )]
         let moved = match field {
             FeedsField::DepthPerPass => dial.moved_depth,
             FeedsField::Stepover => dial.moved_stepover,
@@ -358,7 +366,9 @@ pub(crate) fn ball_tip_radius(explain: &FeedsExplain) -> Option<f64> {
     match explain.tool_geometry {
         ToolGeometryHint::Ball => Some(explain.tool_diameter_mm / 2.0),
         ToolGeometryHint::TaperedBall { tip_radius, .. } => Some(tip_radius),
-        _ => None,
+        ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
+            None
+        }
     }
 }
 
@@ -401,7 +411,9 @@ pub(crate) fn engaged_diameter_context(
     let (tip_dia, kind) = match explain.tool_geometry {
         ToolGeometryHint::TaperedBall { tip_radius, .. } => (tip_radius * 2.0, "tip"),
         ToolGeometryHint::VBit { tip_diameter, .. } => (tip_diameter, "tip"),
-        _ => return None,
+        ToolGeometryHint::Flat | ToolGeometryHint::Ball | ToolGeometryHint::Bull { .. } => {
+            return None;
+        }
     };
     // Use the operator's per-pass DOC when set, else the DOC the
     // recommendation itself was built on.

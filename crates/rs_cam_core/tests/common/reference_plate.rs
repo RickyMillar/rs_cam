@@ -959,7 +959,12 @@ impl ReferencePlate {
                     .clamp(0.0, *levels as f64 - 1.0);
                 -drop_mm * k
             }
-            _ => spec.params.jet(u, v).map_or(0.0, |j| j.z),
+            ZoneParams::Datum
+            | ZoneParams::SphereCap { .. }
+            | ZoneParams::Saddle { .. }
+            | ZoneParams::ConeAnnulus { .. }
+            | ZoneParams::UGrooveComb { .. }
+            | ZoneParams::MicroRipple { .. } => spec.params.jet(u, v).map_or(0.0, |j| j.z),
         }
     }
 
@@ -1324,7 +1329,13 @@ impl ZoneParams {
                 lambda_mm,
                 amp_ratio,
             } => Some(lambda_mm * lambda_mm / (4.0 * PI * PI * (lambda_mm * amp_ratio))),
-            _ => None,
+            Self::Datum
+            | Self::SphereCap { .. }
+            | Self::Saddle { .. }
+            | Self::ConeAnnulus { .. }
+            | Self::UGrooveComb { .. }
+            | Self::VGrooveComb { .. }
+            | Self::StepTerrace { .. } => None,
         }
     }
 
@@ -1359,7 +1370,13 @@ impl ZoneParams {
     pub fn iso_slope_radius_mm(&self, deg: f64) -> Option<f64> {
         match self {
             Self::SphereCap { radius_mm, .. } => Some(radius_mm * deg.to_radians().sin()),
-            _ => None,
+            Self::Datum
+            | Self::Saddle { .. }
+            | Self::ConeAnnulus { .. }
+            | Self::UGrooveComb { .. }
+            | Self::VGrooveComb { .. }
+            | Self::StepTerrace { .. }
+            | Self::MicroRipple { .. } => None,
         }
     }
 
@@ -1404,7 +1421,11 @@ impl ZoneParams {
             Self::ConeAnnulus {
                 theta_deg, r0_mm, ..
             } => theta_deg.to_radians().sin() / r0_mm.max(1e-9),
-            _ => self.kappa_height_field(),
+            Self::Datum
+            | Self::Saddle { .. }
+            | Self::VGrooveComb { .. }
+            | Self::StepTerrace { .. }
+            | Self::MicroRipple { .. } => self.kappa_height_field(),
         }
     }
 
@@ -1420,7 +1441,12 @@ impl ZoneParams {
                     .fold(f64::INFINITY, |m: f64, r| m.min(2.0 * r))
                     / 8.0
             }
-            _ => f64::INFINITY,
+            Self::Datum
+            | Self::SphereCap { .. }
+            | Self::Saddle { .. }
+            | Self::ConeAnnulus { .. }
+            | Self::VGrooveComb { .. }
+            | Self::StepTerrace { .. } => f64::INFINITY,
         }
     }
 }
@@ -1570,7 +1596,10 @@ fn measure_tess_error(params: &ZoneParams, epsilon_mm: f64, probes: usize) -> Te
             (-half, half, ks)
         }
         // Exactly representable at their breakpoints.
-        _ => {
+        ZoneParams::Datum
+        | ZoneParams::ConeAnnulus { .. }
+        | ZoneParams::VGrooveComb { .. }
+        | ZoneParams::StepTerrace { .. } => {
             return TessError {
                 p50_um: 0.0,
                 p99_um: 0.0,
@@ -1651,7 +1680,12 @@ impl ReferencePlate {
             ZoneParams::SphereCap { .. } | ZoneParams::ConeAnnulus { .. } => {
                 self.emit_radial(spec, verts, tris);
             }
-            _ => self.emit_anisotropic_grid(spec, verts, tris),
+            ZoneParams::Datum
+            | ZoneParams::Saddle { .. }
+            | ZoneParams::UGrooveComb { .. }
+            | ZoneParams::VGrooveComb { .. }
+            | ZoneParams::StepTerrace { .. }
+            | ZoneParams::MicroRipple { .. } => self.emit_anisotropic_grid(spec, verts, tris),
         }
     }
 
@@ -1683,7 +1717,12 @@ impl ReferencePlate {
                     .map(|i| r0_mm + (r1_mm - r0_mm) * i as f64 / 3.0)
                     .collect()
             }
-            _ => return,
+            ZoneParams::Datum
+            | ZoneParams::Saddle { .. }
+            | ZoneParams::UGrooveComb { .. }
+            | ZoneParams::VGrooveComb { .. }
+            | ZoneParams::StepTerrace { .. }
+            | ZoneParams::MicroRipple { .. } => return,
         };
         let r_outer = radii.last().copied().unwrap_or(0.0);
         // Azimuthal count: chord ≤ s at the outer radius, and never absurd.
@@ -1875,6 +1914,10 @@ fn breakpoints(params: &ZoneParams) -> Vec<f64> {
             }
             out
         }
-        _ => Vec::new(),
+        ZoneParams::Datum
+        | ZoneParams::SphereCap { .. }
+        | ZoneParams::Saddle { .. }
+        | ZoneParams::ConeAnnulus { .. }
+        | ZoneParams::MicroRipple { .. } => Vec::new(),
     }
 }

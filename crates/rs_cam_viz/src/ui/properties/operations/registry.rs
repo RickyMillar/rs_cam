@@ -219,6 +219,10 @@ pub(in crate::ui::properties) fn draw_editor_and_diagram(
 /// The centres and diameters of the holes the op drills, for
 /// [`OpDiagram::Holes`]. A Drill hole has the size of its item (a point has
 /// none); a Pin Drill drills each hole at its pin diameter.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: OperationConfig::AlignmentPinDrill)"
+)]
 fn drilled_holes(op: &OperationConfig, cx: &OpDrawCtx<'_>) -> Vec<([f64; 2], Option<f64>)> {
     match op {
         OperationConfig::AlignmentPinDrill(cfg) => cx

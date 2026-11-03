@@ -138,6 +138,10 @@ impl<'a> Finding<'a> {
     }
 
     /// The tab of the row of a field finding, for the op `config`.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Anchor::Field)"
+    )]
     pub(super) fn field_tab(self, config: &OperationConfig) -> Option<ToolpathTab> {
         match self.0.anchor {
             Anchor::Field { key } => field_tab(key, config),
@@ -243,6 +247,10 @@ pub(crate) fn field_tab(key: FieldKey, config: &OperationConfig) -> Option<Toolp
             ToolpathTab::Linking
         }
         "peck_depth" => {
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "projection: only the named variant(s) carry this (named: OperationConfig::Drill, OperationConfig::AlignmentPinDrill)"
+            )]
             let cycle = match config {
                 OperationConfig::Drill(c) => c.cycle,
                 OperationConfig::AlignmentPinDrill(c) => c.cycle,

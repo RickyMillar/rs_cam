@@ -230,6 +230,10 @@ impl ProjectSession {
     /// The pin-drill operations: for each, its toolpath index and the pin
     /// diameter it drills, in toolpath order (R1).
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::AlignmentPinDrill)"
+    )]
     pub fn pin_drill_ops(&self) -> Vec<(usize, f64)> {
         self.toolpath_configs
             .iter()
@@ -500,6 +504,10 @@ impl ProjectSession {
     /// drill or pocket operation in the setup with a hole within
     /// [`PIN_MATCH_TOL_MM`] of the pin (a drawing of the dowel holes, as
     /// in the mini test piece).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::AlignmentPinDrill)"
+    )]
     fn setup_drills_dowel_holes(&self, setup: &super::SetupData) -> bool {
         let in_setup = |id: crate::ids::ToolpathId| {
             setup.toolpath_indices.iter().any(|&i| {
@@ -581,6 +589,10 @@ impl ProjectSession {
     ///
     /// The id is a placeholder; the `AddTool` row assigns it.
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::AlignmentPinDrill)"
+    )]
     pub fn pin_drill_tool_template(
         &self,
         diameter: f64,

@@ -1382,6 +1382,10 @@ mod tests {
     }
 
     /// The texts the hole diagram paints, and whether it drew.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn paint(holes: &[([f64; 2], Option<f64>)]) -> (bool, Vec<String>, usize) {
         let ctx = egui::Context::default();
         crate::ui::tokens::apply(&ctx);

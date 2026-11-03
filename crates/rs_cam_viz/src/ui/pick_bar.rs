@@ -97,6 +97,10 @@ pub struct PickMenu {
 impl PickMenu {
     /// The menu of the item `key` in `mode`. The offers come from the core
     /// query row `list_rule_offers` (the MCP tool reads the same row).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: QueryAnswer::RuleOffers)"
+    )]
     pub fn new(
         session: &rs_cam_core::session::ProjectSession,
         mode: &crate::state::pick::PickMode,

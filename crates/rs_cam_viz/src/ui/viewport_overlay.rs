@@ -170,6 +170,10 @@ pub fn section_suffix(state: &AppState, section: DockSection) -> Option<SectionS
 }
 
 /// The target line above the dock bar (MOCKUPS §2).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+)]
 pub fn target_text(state: &AppState) -> String {
     let numbered = |id: crate::state::toolpath::ToolpathId| {
         state

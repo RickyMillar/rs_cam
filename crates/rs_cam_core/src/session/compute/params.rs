@@ -305,6 +305,10 @@ impl ProjectSession {
                 // others stringify when the schema's `value` is permissive.
                 // The router is the right place to absorb the friction; we
                 // reject only on actual loss of precision or out-of-range.
+                #[expect(
+                    clippy::wildcard_enum_match_arm,
+                    reason = "foreign enum: the reader takes only the named shapes (named: Value::Null)"
+                )]
                 let rpm = match &value {
                     serde_json::Value::Null => None,
                     other => {
@@ -344,6 +348,10 @@ impl ProjectSession {
             // state, so no `ParamDef` table holds it. The published
             // schema lists it under `toolpath_params` (CMP-08).
             "debug_enabled" => {
+                #[expect(
+                    clippy::wildcard_enum_match_arm,
+                    reason = "foreign enum: the reader takes only the named shapes (named: Value::Bool, Value::Number)"
+                )]
                 let v = match &value {
                     serde_json::Value::Bool(b) => *b,
                     serde_json::Value::Number(n) => n.as_i64().is_some_and(|i| i != 0),

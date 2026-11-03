@@ -117,7 +117,8 @@ pub(super) fn inputs<'a>(
         .iter()
         .filter_map(|o| match o.geometry {
             rs_cam_core::session::ObstacleGeometry::Model { model_id } => Some(model_id),
-            _ => None,
+            rs_cam_core::session::ObstacleGeometry::Box { .. }
+            | rs_cam_core::session::ObstacleGeometry::OutlineExtrude { .. } => None,
         })
         .collect();
     let model_visibility = &state.overlays.model_visibility;

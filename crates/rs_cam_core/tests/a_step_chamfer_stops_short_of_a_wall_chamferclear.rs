@@ -556,7 +556,7 @@ fn an_edge_with_no_wall_is_not_trimmed_chamferclear() {
             let left = V2::new(-d.y, d.x);
             let air = match material {
                 EdgeMaterial::Left => -left,
-                _ => left,
+                EdgeMaterial::Right | EdgeMaterial::Inside | EdgeMaterial::Outside => left,
             };
             for end in [a, b] {
                 let want = end + air * t;

@@ -1735,7 +1735,7 @@ impl ChiploadVerdict {
     pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
         match self {
             ChiploadVerdict::Unmodeled { reason } => Some(reason),
-            _ => None,
+            ChiploadVerdict::Within { .. } | ChiploadVerdict::Exceeds { .. } => None,
         }
     }
 
@@ -1868,7 +1868,7 @@ impl PowerVerdict {
     pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
         match self {
             PowerVerdict::Unmodeled { reason } => Some(reason),
-            _ => None,
+            PowerVerdict::Within { .. } | PowerVerdict::Exceeds { .. } => None,
         }
     }
 
@@ -1992,7 +1992,7 @@ impl DeflectionVerdict {
     pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
         match self {
             DeflectionVerdict::Unmodeled { reason } => Some(reason),
-            _ => None,
+            DeflectionVerdict::Within { .. } | DeflectionVerdict::Exceeds { .. } => None,
         }
     }
 
@@ -2130,7 +2130,9 @@ impl DepthVerdict {
     pub fn unmodeled_reason(&self) -> Option<&UnmodeledReason> {
         match self {
             DepthVerdict::Unmodeled { reason } => Some(reason),
-            _ => None,
+            DepthVerdict::Within { .. }
+            | DepthVerdict::Exceeds { .. }
+            | DepthVerdict::Reported { .. } => None,
         }
     }
 
@@ -2947,6 +2949,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn power_verdict_within_carries_available_kw() {
         let v = PowerVerdict::Within {
             peak_kw: 0.4,
@@ -2971,6 +2977,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn power_exceeds_carries_available_kw_and_round_trips() {
         let v = PowerVerdict::Exceeds {
             peak_kw: 1.5,
@@ -2991,6 +3001,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn deflection_bounds_round_trip_keeps_both_thresholds() {
         let v = DeflectionVerdict::Within {
             peak_mm: 0.080,

@@ -350,7 +350,7 @@ pub(crate) fn draw_tool_fields(
                 // identical names for different geometry. It now lives in its
                 // own "Cutter geometry" group below, distinct from Holder/Shank.
             }
-            _ => {}
+            ToolType::EndMill | ToolType::BallNose => {}
         }
     });
 

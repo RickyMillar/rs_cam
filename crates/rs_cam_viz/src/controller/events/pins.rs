@@ -258,7 +258,10 @@ impl<B: ComputeBackend> AppController<B> {
             .iter()
             .filter_map(|size| match &size.outcome {
                 PinDrillSync::Refused(reason) => Some(reason.clone()),
-                _ => None,
+                PinDrillSync::Unchanged
+                | PinDrillSync::Created { .. }
+                | PinDrillSync::Updated { .. }
+                | PinDrillSync::Removed { .. } => None,
             })
             .collect();
         for reason in &refusals {
@@ -519,6 +522,10 @@ impl<B: ComputeBackend> AppController<B> {
     /// (the spoilboard penetration, the cycle, the peck and the retract),
     /// so every dowel hole goes to the same depth. The feeds come from the
     /// suggest funnel of the new tool.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::AlignmentPinDrill)"
+    )]
     fn create_pin_drill(
         &mut self,
         diameter: f64,

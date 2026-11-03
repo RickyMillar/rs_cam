@@ -923,6 +923,10 @@ impl OperationConfig {
     /// model. The op kind states it ([`OperationType::outline_use`]); a
     /// Profile takes it by default with side Outside only. Inside cuts the
     /// part away, and On cuts half of the tool into the part.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "delegate: the rest read the exhaustive `OperationType::outline_use` (named: OperationConfig::Profile)"
+    )]
     pub fn outline_use(&self) -> OutlineUse {
         match self {
             OperationConfig::Profile(c) => match c.side {
@@ -941,6 +945,10 @@ impl OperationConfig {
     /// correction that the item use cannot give: a Profile cuts along the
     /// outline of its region on every side (Inside and Outside read
     /// `Regions`, On reads `Curves`), so it lights the ring.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "delegate: the rest read the exhaustive `ItemUse` match (named: OperationConfig::Profile)"
+    )]
     pub fn face_feedback(&self) -> FaceFeedback {
         match self {
             OperationConfig::Profile(_) => FaceFeedback::Ring,
@@ -995,7 +1003,30 @@ impl OperationConfig {
                         crate::compute::floor::Floor::ModelBottom { depth } if depth >= 0.0
                     )
             }
-            _ => false,
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::ProjectCurve(_)
+            | OperationConfig::AlignmentPinDrill(_) => false,
         }
     }
 

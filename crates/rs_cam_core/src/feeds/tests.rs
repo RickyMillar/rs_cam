@@ -686,7 +686,18 @@ fn test_drill_feed_clamp_emits_warning_when_binding() {
         FeedsWarning::DrillFeedClampedToEnvelope {
             requested, actual, ..
         } => Some((*requested, *actual)),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+        | FeedsWarning::LongToolDerate { .. }
+        | FeedsWarning::VendorRowPublishesNoChipload { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. } => None,
     });
     let Some((requested, actual)) = clamped else {
         panic!("non-vacuity: the fixture must bind the envelope ceiling");

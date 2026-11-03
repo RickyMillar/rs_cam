@@ -1082,7 +1082,10 @@ fn a_model_change_in_the_panel_drops_the_lost_picks_r7b() {
         .unwrap()
     {
         JobHandle::BuildModelFaces(handle) => Some(handle),
-        _ => None,
+        JobHandle::GenerateToolpath(_)
+        | JobHandle::RecommendClearingStrategy(_)
+        | JobHandle::PreviewTierMap(_)
+        | JobHandle::BuildModelPickIndex(_) => None,
     }
     .expect("the build_model_faces row answers its own handle");
     let _ = execute_build_model_faces(&handle, &AtomicBool::new(false)).unwrap();

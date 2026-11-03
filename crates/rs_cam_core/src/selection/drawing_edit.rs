@@ -409,7 +409,7 @@ fn join_within(
 fn path_points(item: &Item) -> Vec<P2> {
     match item.shape() {
         Shape::Path(p) => p.exterior.clone(),
-        _ => Vec::new(),
+        Shape::Loop(_) | Shape::Point(_) | Shape::Circle { .. } | Shape::Face(_) => Vec::new(),
     }
 }
 
@@ -570,7 +570,7 @@ pub fn open_shapes(items: &ItemSet) -> Vec<OpenShape> {
                     can_move_ends_together: n >= 4,
                 })
             }
-            _ => None,
+            Shape::Loop(_) | Shape::Point(_) | Shape::Circle { .. } | Shape::Face(_) => None,
         })
         .collect()
 }

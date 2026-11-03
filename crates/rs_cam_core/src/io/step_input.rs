@@ -554,6 +554,10 @@ fn build_brep_edge(
     clippy::indexing_slicing,
     reason = "vertex indices bounded by face tessellation"
 )]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: SurfaceParams::Plane)"
+)]
 fn face_avg_normal(tess: &FaceTessellation) -> V3 {
     match &tess.surface_params {
         SurfaceParams::Plane { normal, .. } => *normal,

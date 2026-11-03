@@ -66,6 +66,10 @@ fn profile(side: ProfileSide, compensation: CompensationType) -> AppState {
     state
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn stored_profile(state: &AppState) -> ProfileConfig {
     match h::stored(state) {
         OperationConfig::Profile(cfg) => cfg,

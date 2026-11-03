@@ -91,6 +91,10 @@ fn hardwood() -> Material {
 
 /// (a) and (b): two CLUELESS cells refuse, with the judgement's reason.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn clueless_cells_refuse_with_the_judgement_reason_fm5() {
     let mut drill_tool = tool_of(ToolType::EndMill);
     drill_tool.diameter = 15.875;

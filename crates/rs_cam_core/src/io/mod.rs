@@ -153,7 +153,7 @@ pub(crate) fn load_geometry(
 pub fn default_import_units(kind: ModelKind) -> ModelUnits {
     match kind {
         ModelKind::Svg => svg_input::SVG_DEFAULT_UNITS,
-        _ => ModelUnits::Millimeters,
+        ModelKind::Stl | ModelKind::Dxf | ModelKind::Step => ModelUnits::Millimeters,
     }
 }
 

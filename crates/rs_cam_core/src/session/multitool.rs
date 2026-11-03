@@ -1365,6 +1365,10 @@ impl ProjectSession {
 /// lookup alone. Everything below it reads the ladder, the geometry and the
 /// recipe, so it is a free function and the `preview_tier_map` job's step
 /// (ii) calls it holding no session.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value (named: TierMapError::Cancelled)"
+)]
 fn resolve_tier_plan_with_tools(
     op_name: &str,
     geometry: TierPlanGeometry<'_>,
@@ -1622,6 +1626,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn tier_zero_carries_no_boundary_and_fine_tiers_do() {
         let spec = MultitoolPlanSpec {
             tool_ids: vec![
@@ -1673,6 +1681,10 @@ mod tests {
     /// (sweep everything) to the same variant with `tier: 0`, which the
     /// resolver reads as the complement of the fine tiers' owned islands.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn the_skip_dial_gives_tier_zero_an_inverted_boundary() {
         let spec = MultitoolPlanSpec {
             tool_ids: vec![

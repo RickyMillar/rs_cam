@@ -82,6 +82,10 @@ fn canonical_object(map: &serde_json::Map<String, serde_json::Value>) -> serde_j
 /// Rebuild one value with every object key in sorted order.
 ///
 /// An array keeps its order, because the order of an array is data.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum serde_json Value; the arm skips every value that this test does not read"
+)]
 fn canonical(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Object(map) => canonical_object(map),

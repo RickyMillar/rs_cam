@@ -1413,6 +1413,10 @@ impl Effects {
     /// for "Each hole floor", else [`Self::FLOOR_SET_NOTE`]. `None` when no
     /// floor was set. Every surface reads this one text.
     #[must_use]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Floor::EachHole, Floor::ModelBottom)"
+    )]
     pub fn floor_set_note(&self) -> Option<&'static str> {
         self.floor_set.as_ref().map(|floor| match floor {
             crate::compute::floor::Floor::EachHole { .. } => Self::EACH_HOLE_FLOOR_NOTE,

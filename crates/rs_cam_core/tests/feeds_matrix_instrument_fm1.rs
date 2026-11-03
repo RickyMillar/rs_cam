@@ -271,7 +271,29 @@ fn add_time_op(op: OperationType, stock: &StockContext) -> OperationConfig {
     match &mut operation {
         OperationConfig::Pocket(c) => c.floor = Floor::top((z * 0.5).min(5.0)),
         OperationConfig::Adaptive(c) => c.floor = Floor::top(z * 0.5),
-        _ => {}
+        OperationConfig::Face(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Drill(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => {}
     }
     rs_cam_core::compute::fixture_values::fill_unset(&mut operation);
     operation.set_spindle_rpm(None);
@@ -326,7 +348,31 @@ fn entry_columns(s: &SuggestedParams) -> [String; 6] {
     .map_or_else(String::new, |(_, b)| format!("{b:?}"));
     let record = s.warnings.iter().find_map(|w| match w {
         SuggestWarning::RampFeed { record, notes, .. } => Some((record, notes)),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::EngagementReducedForAggressiveness { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let arm = record.map_or_else(String::new, |(record, _)| record.arm_name().to_owned());
     let notes = record.map_or_else(String::new, |(_, notes)| {

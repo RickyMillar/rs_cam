@@ -330,6 +330,10 @@ fn write_points(s: &mut ProjectSession, points: &[[f64; 2]]) {
         .unwrap();
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn tab_points(s: &ProjectSession) -> Vec<[f64; 2]> {
     match &s.toolpath_configs()[0].operation {
         OperationConfig::Profile(cfg) => cfg.tab_points.clone(),

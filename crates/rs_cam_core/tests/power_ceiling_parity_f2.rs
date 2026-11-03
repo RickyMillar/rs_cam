@@ -478,7 +478,18 @@ fn the_power_limited_warning_compares_like_with_like() {
                 required_kw,
                 available_kw,
             } => Some((*required_kw, *available_kw)),
-            _ => None,
+            rs_cam_core::feeds::FeedsWarning::FeedRateClamped { .. }
+            | rs_cam_core::feeds::FeedsWarning::RpmLoweredForFeedCeiling { .. }
+            | rs_cam_core::feeds::FeedsWarning::PowerLadderReducedCut { .. }
+            | rs_cam_core::feeds::FeedsWarning::ShankTooLarge { .. }
+            | rs_cam_core::feeds::FeedsWarning::DocExceedsFlute { .. }
+            | rs_cam_core::feeds::FeedsWarning::SlottingDetected { .. }
+            | rs_cam_core::feeds::FeedsWarning::ScallopInvalid { .. }
+            | rs_cam_core::feeds::FeedsWarning::ChiploadBelowRubbingFloor { .. }
+            | rs_cam_core::feeds::FeedsWarning::LongToolDerate { .. }
+            | rs_cam_core::feeds::FeedsWarning::VendorRowPublishesNoChipload { .. }
+            | rs_cam_core::feeds::FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+            | rs_cam_core::feeds::FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
         })
         .expect("the synthetic profile must emit a PowerLimited warning");
     let gate_ceiling = gate_power_ceiling_kw(&machine, result.rpm);

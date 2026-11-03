@@ -1813,6 +1813,10 @@ impl ProjectSession {
                 y: xy.y - oy,
                 diameter,
             };
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "projection: only the named variant(s) carry this (named: OperationConfig::Drill, OperationConfig::Pocket)"
+            )]
             let (kind, holes): (HoleOpKind, Vec<DrilledHole>) = match &tc.operation {
                 OperationConfig::Drill(_) => {
                     let Some(selection) = self.hole_selection(tc) else {

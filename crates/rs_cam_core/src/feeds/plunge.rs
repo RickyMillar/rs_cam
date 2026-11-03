@@ -348,7 +348,10 @@ mod tests {
                 tip_radius: tip.unwrap_or(1.0) / 2.0,
                 taper_angle_deg: 10.0,
             },
-            _ => ToolGeometryHint::Flat,
+            ToolFamily::FlatEnd
+            | ToolFamily::BullNose
+            | ToolFamily::ChamferVbit
+            | ToolFamily::FacingBit => ToolGeometryHint::Flat,
         };
         PlungeBasis::Claimed {
             claim: Box::new(claim),

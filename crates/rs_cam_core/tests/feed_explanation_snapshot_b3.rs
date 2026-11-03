@@ -1426,6 +1426,10 @@ fn the_two_doc_ratio_diameters_only_diverge_for_v_bit_geometry() {
 /// pocket row (Ø6.35), and the gate abstains. The recorded row (Ø3.175) is
 /// 3.175x the tip, so it is still outside the micro window.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_old_scallop_premise_ships_the_printed_tip_row() {
     use rs_cam_core::feeds::extrapolation::{Gap, SizeBasis};
     use rs_cam_core::feeds::support::micro_extrapolation_refusal;

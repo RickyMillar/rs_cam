@@ -129,7 +129,7 @@ fn face_key() -> MatchKey {
         .iter()
         .find(|item| match item.shape() {
             Shape::Face(face) => (face.plane_z - FACE_Z).abs() < 1e-9,
-            _ => false,
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => false,
         })
         .expect("the part holds the face to pick")
         .clone();

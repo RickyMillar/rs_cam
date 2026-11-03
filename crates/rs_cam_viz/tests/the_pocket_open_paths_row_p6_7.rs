@@ -85,6 +85,10 @@ fn pocket(open_paths: OpenPaths) -> OperationConfig {
     })
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn open_paths(op: &OperationConfig) -> OpenPaths {
     match op {
         OperationConfig::Pocket(cfg) => cfg.open_paths,

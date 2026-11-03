@@ -190,7 +190,7 @@ fn a_step_shell_faces_out_at_import() {
             .iter()
             .filter_map(|i| match i.shape() {
                 Shape::Face(f) => Some((f.plane_z, f.normal.z)),
-                _ => None,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
             })
             .collect();
         let regions: Vec<(f64, f64)> = flat_region_items(mesh)
@@ -198,7 +198,7 @@ fn a_step_shell_faces_out_at_import() {
             .iter()
             .filter_map(|i| match i.shape() {
                 Shape::Face(f) => Some((f.plane_z, f.normal.z)),
-                _ => None,
+                Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
             })
             .collect();
         assert_eq!(items.len(), flat.len(), "{name}: one item per flat face");

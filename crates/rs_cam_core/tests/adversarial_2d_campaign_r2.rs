@@ -276,7 +276,32 @@ fn build_session(fixture: &Fixture, op: OperationConfig, kind: ToolKind) -> Proj
             &fixture_centroids(&fixture.polys),
             fixture.name,
         ),
-        _ => polygon_model(fixture.polys.clone(), fixture.name),
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_)
+        | OperationConfig::AlignmentPinDrill(_) => {
+            polygon_model(fixture.polys.clone(), fixture.name)
+        }
     };
     let mut builder = ProjectSessionBuilder::new();
     builder = builder.stock(stock_for(&fixture.polys));
@@ -846,7 +871,7 @@ fn no_2d_family_ignores_a_pre_set_cancel_flag() {
             Outcome::Err(msg) if msg.to_ascii_lowercase().contains("cancel") => {
                 honoured.push(name);
             }
-            _ => ignored.push(name),
+            Outcome::Ok | Outcome::Err(_) | Outcome::Panic(_) => ignored.push(name),
         }
     }
 

@@ -1229,6 +1229,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn test_geometry_hint_bullnose() {
         let tool = BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap();
         let hint = tool.geometry_hint();
@@ -1241,6 +1245,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn test_geometry_hint_vbit() {
         let tool = VBitEndmill::new(10.0, 90.0, 25.0).unwrap();
         let hint = tool.geometry_hint();
@@ -1257,6 +1265,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn test_geometry_hint_tapered_ball() {
         let tool = TaperedBallEndmill::new(3.175, 15.0, 6.35, 25.0).unwrap();
         let hint = tool.geometry_hint();
@@ -1317,6 +1329,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn test_tool_definition_geometry_hint() {
         let cutter = Box::new(BullNoseEndmill::new(10.0, 2.0, 25.0).unwrap());
         let td = ToolDefinition::new(cutter, 6.35, 50.0, 2, ToolMaterial::Carbide);

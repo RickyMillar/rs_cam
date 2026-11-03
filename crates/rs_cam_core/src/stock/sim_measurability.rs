@@ -371,7 +371,7 @@ impl MeasurabilityReport {
             }
             match e.measurability {
                 Measurability::NotMeasurable(r) => Some((e.toolpath_id, r)),
-                _ => None,
+                Measurability::Measurable | Measurability::Degraded(_) => None,
             }
         })
     }

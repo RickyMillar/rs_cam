@@ -685,6 +685,10 @@ fn the_ball_finish_row_is_not_transferred_b3_pin_g3() {
 /// 2026-09-25); on a facing bit — the only cutter class the LUT truly has
 /// no `ProjectCurve` rows for — the routing still refuses.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_plywood_bull_finish_refuses_and_a_vbit_curve_routes_to_trace_g3() {
     let machine = MachineProfile::default();
     let plywood = Material::Plywood {

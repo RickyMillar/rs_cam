@@ -124,6 +124,10 @@ fn softwood() -> Material {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn size_reason(err: &FeedsError) -> String {
     match err {
         FeedsError::Unbacked { reason, .. } => reason.to_string(),

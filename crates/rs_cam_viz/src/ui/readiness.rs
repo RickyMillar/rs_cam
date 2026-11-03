@@ -176,7 +176,11 @@ pub fn simulation_check(state: &AppState) -> CheckStatus {
     // generated" are each a reason the row cannot report evidence.
     match state.simulation_freshness() {
         crate::state::freshness::SimFreshness::Current => CheckStatus::Pass,
-        _ => CheckStatus::Warning,
+        crate::state::freshness::SimFreshness::NoRun
+        | crate::state::freshness::SimFreshness::Running
+        | crate::state::freshness::SimFreshness::Released { .. }
+        | crate::state::freshness::SimFreshness::EditedSince(_)
+        | crate::state::freshness::SimFreshness::Ungenerated(_) => CheckStatus::Warning,
     }
 }
 

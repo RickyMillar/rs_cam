@@ -68,6 +68,10 @@ pub enum DxfError {
 /// Return a scale factor to convert from `$INSUNITS` to millimeters.
 ///
 /// Falls back to 1.0 (assume mm) for unrecognized or unitless drawings.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "foreign enum (dxf Units): a unit that the reader does not name imports at scale 1.0 (mm)"
+)]
 fn insunits_to_mm_scale(units: dxf::enums::Units) -> f64 {
     use dxf::enums::Units;
     match units {
@@ -217,6 +221,10 @@ pub fn extract_dxf(
 /// at the lowest index of its pieces. A closed polyline of fewer than 3
 /// points is an open path of its points (DESIGN 2.2; before P2.1 the import
 /// dropped it in silence).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "foreign enum: the reader takes only the named shapes (named: EntityType::LwPolyline, EntityType::Polyline, EntityType::Circle, EntityType::ModelPoint and 4 more)"
+)]
 fn extract_flat(
     drawing: &dxf::Drawing,
     arc_tolerance_deg: f64,
@@ -820,6 +828,10 @@ mod tests {
     // ----- Circles and points (P2.1: one item each) -----
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_circle_is_one_item() {
         let drawing = make_circle_drawing(50.0, 60.0, 4.0);
         let items = items_of(&drawing);
@@ -840,6 +852,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_point_entity_is_a_point_item() {
         let mut drawing = dxf::Drawing::new();
         let mut ent = dxf::entities::Entity::new(dxf::entities::EntityType::ModelPoint(
@@ -861,6 +877,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn item_layers_are_collected_and_items_scaled() {
         let mut drawing = dxf::Drawing::new();
         drawing.header.default_drawing_units = dxf::enums::Units::Inches;
@@ -982,6 +1002,10 @@ mod tests {
     /// DESIGN 2.2: a closed polyline of 2 points is the line between them,
     /// kept as a 2-point path. Before P2.1 the import dropped it in silence.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_closed_two_point_polyline_is_a_path_p2_1() {
         let drawing = make_lwpolyline_drawing(vec![(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)], true);
         let items = items_of(&drawing);

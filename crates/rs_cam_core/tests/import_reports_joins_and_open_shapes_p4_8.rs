@@ -556,7 +556,7 @@ fn circles(svg: &str) -> Vec<(P2, f64)> {
             Shape::Circle {
                 centre, diameter, ..
             } => Some((*centre, *diameter)),
-            _ => None,
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
         })
         .collect()
 }

@@ -271,7 +271,28 @@ fn production_spans(
         // Everything else in this suite ships Region spans only — no
         // barriers — so a span-less fixture is already faithful. Build them
         // anyway so the comparison is like-for-like.
-        _ => spans_from_cutting_runs(tp, "run"),
+        OperationType::Adaptive
+        | OperationType::VCarve
+        | OperationType::Inlay
+        | OperationType::InlayPlug
+        | OperationType::Zigzag
+        | OperationType::Trace
+        | OperationType::Drill
+        | OperationType::Bore
+        | OperationType::Chamfer
+        | OperationType::DropCutter
+        | OperationType::Adaptive3d
+        | OperationType::Waterline
+        | OperationType::Pencil
+        | OperationType::Scallop
+        | OperationType::UnifiedFinish
+        | OperationType::SteepShallow
+        | OperationType::RampFinish
+        | OperationType::SpiralFinish
+        | OperationType::RadialFinish
+        | OperationType::HorizontalFinish
+        | OperationType::ProjectCurve
+        | OperationType::AlignmentPinDrill => spans_from_cutting_runs(tp, "run"),
     }
 }
 

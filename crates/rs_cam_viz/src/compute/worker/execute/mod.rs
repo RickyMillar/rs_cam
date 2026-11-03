@@ -254,6 +254,10 @@ pub(super) fn run_compute_with_phase_tracker(
 /// the message. The flag stays a second piece of evidence: a stop that
 /// comes after the generator's last flag read can return another error,
 /// and G-REGEN-RACE needs `Cancelled` for that job too, not `Error`.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "dispatch: the rest go to one handler or message"
+)]
 fn map_session_error(
     error: &rs_cam_core::session::SessionError,
     cancel: &AtomicBool,

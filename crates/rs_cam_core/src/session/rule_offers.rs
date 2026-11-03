@@ -70,6 +70,10 @@ impl ProjectSession {
         let current = current.clone().for_toolpath_model(model);
         let setup = self.find_setup_for_toolpath_id(tc.id);
         let ctx = SetupEvalContext::build_for_setup(self, setup);
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "pass-through: every other variant keeps its own value"
+        )]
         let source = match key.source {
             SourceRef::Model(id) if id == model => SourceRef::ToolpathModel,
             other => other,

@@ -370,9 +370,14 @@ impl DrillGateOutcome {
                     CriterionKind::DrillPeckAdequacy => {
                         ExceededCriterion::drill_peck_adequacy(cycle)
                     }
-                    // The plunge-feed arm — and the fallback for any
-                    // milling kind passed in error.
-                    _ => ExceededCriterion::drill_plunge_feed(),
+                    // The plunge-feed arm.
+                    CriterionKind::DrillPlungeFeed => ExceededCriterion::drill_plunge_feed(),
+                    // The fallback for any milling kind passed in error.
+                    CriterionKind::Chipload
+                    | CriterionKind::Power
+                    | CriterionKind::Deflection
+                    | CriterionKind::DepthOfCut
+                    | CriterionKind::GantryPush => ExceededCriterion::drill_plunge_feed(),
                 }),
             ),
         };

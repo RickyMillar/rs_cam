@@ -141,6 +141,10 @@ impl FixedInputs {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum toml Value; the arm skips every value that this test does not read"
+)]
 fn toml_number(v: &toml::Value) -> Option<f64> {
     match v {
         toml::Value::Integer(i) => Some(*i as f64),

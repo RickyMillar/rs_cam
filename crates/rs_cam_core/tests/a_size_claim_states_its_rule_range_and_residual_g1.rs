@@ -95,6 +95,10 @@ fn claim_of(basis: &SizeBasis) -> &Claim {
         .unwrap_or_else(|| panic!("expected a claim, got {basis:?}"))
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn refusal_of(basis: &SizeBasis) -> &str {
     match basis {
         SizeBasis::Refused { gap, reason } => {

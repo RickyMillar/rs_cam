@@ -187,6 +187,10 @@ fn a_rest_consumer_starts_at_the_left_stock_top() {
     // skin of the wide floor), before the floor's pass. An entry or a link
     // is not a cut of a level. A level that cuts nothing (a Detect Flat
     // shelf at the top) is allowed.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let tol = match &session.toolpath_configs()[1].operation {
         OperationConfig::Adaptive3d(c) => c.tolerance,
         _ => panic!("op 1 is not a 3D Rough"),

@@ -325,7 +325,9 @@ fn draw_catalog_panel(
 fn row_summary(tool: &ToolConfig) -> String {
     let taper = match tool.tool_type {
         ToolType::TaperedBallNose => format!(" · {:.1}° taper", tool.taper_half_angle),
-        _ => String::new(),
+        ToolType::EndMill | ToolType::BallNose | ToolType::BullNose | ToolType::VBit => {
+            String::new()
+        }
     };
     format!(
         "{} · {} · {}F{taper}",
@@ -489,7 +491,7 @@ fn draw_readonly_grid(ui: &mut egui::Ui, tool: &ToolConfig) {
             ToolType::BullNose => {
                 row(ui, "Corner radius", format!("{:.2} mm", tool.corner_radius));
             }
-            _ => {}
+            ToolType::EndMill | ToolType::BallNose => {}
         }
         row(
             ui,

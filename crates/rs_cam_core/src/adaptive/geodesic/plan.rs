@@ -188,7 +188,10 @@ pub(super) fn plan_piece(
         AdaptiveSegment::Marker(AdaptiveRuntimeEvent::StarterPocket { center_x, center_y }) => {
             Some(P2::new(*center_x, *center_y))
         }
-        _ => None,
+        AdaptiveSegment::Cut(_)
+        | AdaptiveSegment::Rapid(_)
+        | AdaptiveSegment::Link(_)
+        | AdaptiveSegment::Marker(_) => None,
     }) else {
         return Ok(None);
     };

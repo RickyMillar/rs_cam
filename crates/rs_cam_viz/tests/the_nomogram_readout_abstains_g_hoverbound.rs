@@ -325,6 +325,10 @@ fn the_hover_guard_uses_the_axis_bound_g_hoverbound() {
 // ── arm 4 — no navigation moves the axes (W3k) ───────────────────────────
 
 /// One frame with these input events.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn frame_with(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> Vec<String> {
     let input = egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),

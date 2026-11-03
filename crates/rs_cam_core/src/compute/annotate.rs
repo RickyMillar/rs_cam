@@ -243,6 +243,10 @@ fn adaptive3d_structure_span<'a>(
             E::RegionZLevel { .. } | E::GlobalZLevel { .. } | E::WaterlineCleanup
         )
     };
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: E::RegionZLevel, E::GlobalZLevel, E::WaterlineCleanup, E::RegionStart)"
+    )]
     let (kind, same_family): (SpanKind, fn(&E) -> bool) = match &ann.event {
         E::RegionZLevel { .. } | E::GlobalZLevel { .. } => (SpanKind::DepthPass, level_family),
         E::WaterlineCleanup => (SpanKind::WaterlineCleanup, level_family),

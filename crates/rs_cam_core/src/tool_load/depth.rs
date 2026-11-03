@@ -390,6 +390,10 @@ mod tests {
     /// `doc_roughing_factor` 0.25 × Ø6 = 1.5 mm. A 1.2 mm peak is under
     /// it, and the peak is the MAXIMUM of the three depths.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn the_peak_is_the_maximum_engaged_depth() {
         let t = trace(vec![
             sample(0, 0.4, true),
@@ -412,6 +416,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_depth_past_the_cap_exceeds() {
         let t = trace(vec![sample(0, 0.5, true), sample(1, 2.4, true)]);
         match run(OperationType::Pocket, Some(&t)) {
@@ -434,6 +442,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_trace_with_no_cutting_samples_is_vacuous() {
         let t = trace(vec![sample(0, 0.0, false)]);
         match run(OperationType::Pocket, Some(&t)) {
@@ -450,6 +462,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_transit_sample_never_sets_the_peak() {
         // With no spans, `is_phantom_transit` falls back to the
         // conservative `in_transit_span` flag, and the inflated dexel
@@ -484,6 +500,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_drill_cycle_does_not_apply() {
         let t = trace(vec![sample(0, 1.0, true)]);
         match run(OperationType::Drill, Some(&t)) {
@@ -529,6 +549,10 @@ mod tests {
     /// `doc_finishing_factor` (0.10 × Ø6 = 0.6 mm). Now the gate reports
     /// the peak with no bound, and the state is `Within`.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn a_finishing_pass_reports_its_depth_with_no_bound() {
         let t = trace(vec![sample(0, 0.4, true), sample(1, 1.2, true)]);
         let v = run(OperationType::Trace, Some(&t));

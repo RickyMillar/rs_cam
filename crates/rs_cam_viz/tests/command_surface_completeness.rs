@@ -292,6 +292,10 @@ fn constructs(text: &str, kind: CommandKind, id: CommandId) -> bool {
 /// view read declares a GUI reach today, so that arm is a forward
 /// statement and not a measured one.
 fn view_constructs(text: &str, id: UiCommandId) -> bool {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let needle = match id.kind() {
         CommandKind::UiCommand => format!("Ui(UiCommand::{id:?}("),
         CommandKind::UiQuery => format!("UiQuery::{id:?}("),
@@ -505,6 +509,10 @@ fn every_view_row_is_reached_by_some_surface() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_view_registry_declares_only_view_kinds() {
     let mut commands = 0_usize;
     let mut queries = 0_usize;

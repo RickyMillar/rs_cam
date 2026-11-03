@@ -110,7 +110,18 @@ fn lowered(r: &FeedsResult) -> Option<(f64, f64, f64, f64, RpmFloorSource, bool)
             *floor_source,
             *held,
         )),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+        | FeedsWarning::LongToolDerate { .. }
+        | FeedsWarning::VendorRowPublishesNoChipload { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     })
 }
 
@@ -288,7 +299,31 @@ fn suggest_ships_the_lowered_rpm_with_a_rationale_row_fm8() {
             SuggestWarning::RpmLoweredForFeedCeiling {
                 rpm_from, rpm_to, ..
             } => Some((*rpm_from, *rpm_to)),
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::StepoverRaisedForRuntime { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .unwrap_or_else(|| panic!("{:?}", s.warnings));
     assert_eq!(from, 18_000.0);

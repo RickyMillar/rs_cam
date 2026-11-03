@@ -443,14 +443,27 @@ fn click_at(
 fn face_id(hit: &PickHit) -> Option<u16> {
     match hit {
         PickHit::ModelFace { face_id, .. } => Some(face_id.0),
-        _ => None,
+        PickHit::CollisionMarker { .. }
+        | PickHit::AlignmentPin { .. }
+        | PickHit::Obstacle { .. }
+        | PickHit::StockFace { .. }
+        | PickHit::Toolpath { .. }
+        | PickHit::MeshFace { .. }
+        | PickHit::Item { .. } => None,
     }
 }
 
 fn loop_z(hit: &PickHit) -> Option<f64> {
     match hit {
         PickHit::Item { key, .. } if key.kind == ItemKind::Loop => key.z,
-        _ => None,
+        PickHit::CollisionMarker { .. }
+        | PickHit::AlignmentPin { .. }
+        | PickHit::Obstacle { .. }
+        | PickHit::StockFace { .. }
+        | PickHit::Toolpath { .. }
+        | PickHit::ModelFace { .. }
+        | PickHit::MeshFace { .. }
+        | PickHit::Item { .. } => None,
     }
 }
 

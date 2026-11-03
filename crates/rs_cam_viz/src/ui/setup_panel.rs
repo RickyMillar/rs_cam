@@ -552,6 +552,10 @@ fn state_dot(ui: &mut egui::Ui, role: Role) {
 /// Determine the active setup from the current selection.
 fn active_setup(state: &AppState) -> Option<&SetupData> {
     let setups = state.session().list_setups();
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle, Selection::Toolpath)"
+    )]
     let setup_id = match state.focus() {
         Selection::Setup(id) => Some(*id),
         Selection::Obstacle(id, _) => Some(*id),

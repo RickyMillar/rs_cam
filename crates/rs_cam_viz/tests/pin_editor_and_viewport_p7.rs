@@ -251,6 +251,10 @@ fn the_chips_say_the_mini_pins_do_not_key() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: the arm filters events; a new AppEvent is not the subject of this test"
+)]
 fn auto_place_keys_the_set_in_one_edit() {
     let ctx = ctx();
     let mut state = wizard_state(WizardStep::Place);

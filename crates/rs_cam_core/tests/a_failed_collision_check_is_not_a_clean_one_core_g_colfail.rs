@@ -183,6 +183,10 @@ fn one_2d_toolpath(fixture: Option<Obstacle>) -> ProjectSession {
 /// sweep read `NotApplicable` and the clamp was never tested. The obstacle
 /// half never needed a mesh.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_mesh_less_toolpath_still_meets_its_fixtures_g_colfail() {
     let session = one_2d_toolpath(Some(clamp_over_the_cut()));
     let no_cancel = AtomicBool::new(false);

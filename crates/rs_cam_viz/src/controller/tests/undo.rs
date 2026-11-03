@@ -767,7 +767,30 @@ mod pin_edit_one_door_p5 {
                     .position(|s| s.toolpath_indices().contains(&index));
                 let diameter = match &tc.operation {
                     OperationConfig::AlignmentPinDrill(c) => Some(c.diameter),
-                    _ => None,
+                    OperationConfig::Face(_)
+                    | OperationConfig::Pocket(_)
+                    | OperationConfig::Profile(_)
+                    | OperationConfig::Adaptive(_)
+                    | OperationConfig::VCarve(_)
+                    | OperationConfig::Inlay(_)
+                    | OperationConfig::InlayPlug(_)
+                    | OperationConfig::Zigzag(_)
+                    | OperationConfig::Trace(_)
+                    | OperationConfig::Drill(_)
+                    | OperationConfig::Bore(_)
+                    | OperationConfig::Chamfer(_)
+                    | OperationConfig::DropCutter(_)
+                    | OperationConfig::Adaptive3d(_)
+                    | OperationConfig::Waterline(_)
+                    | OperationConfig::Pencil(_)
+                    | OperationConfig::Scallop(_)
+                    | OperationConfig::UnifiedFinish(_)
+                    | OperationConfig::SteepShallow(_)
+                    | OperationConfig::RampFinish(_)
+                    | OperationConfig::SpiralFinish(_)
+                    | OperationConfig::RadialFinish(_)
+                    | OperationConfig::HorizontalFinish(_)
+                    | OperationConfig::ProjectCurve(_) => None,
                 };
                 (format!("{:?}", tc.operation.op_type()), setup, diameter)
             })
@@ -1043,7 +1066,30 @@ mod pin_edit_one_door_p5 {
                         .map_or(0.0, |t| t.diameter);
                     Some((c.diameter, tool))
                 }
-                _ => None,
+                OperationConfig::Face(_)
+                | OperationConfig::Pocket(_)
+                | OperationConfig::Profile(_)
+                | OperationConfig::Adaptive(_)
+                | OperationConfig::VCarve(_)
+                | OperationConfig::Inlay(_)
+                | OperationConfig::InlayPlug(_)
+                | OperationConfig::Zigzag(_)
+                | OperationConfig::Trace(_)
+                | OperationConfig::Drill(_)
+                | OperationConfig::Bore(_)
+                | OperationConfig::Chamfer(_)
+                | OperationConfig::DropCutter(_)
+                | OperationConfig::Adaptive3d(_)
+                | OperationConfig::Waterline(_)
+                | OperationConfig::Pencil(_)
+                | OperationConfig::Scallop(_)
+                | OperationConfig::UnifiedFinish(_)
+                | OperationConfig::SteepShallow(_)
+                | OperationConfig::RampFinish(_)
+                | OperationConfig::SpiralFinish(_)
+                | OperationConfig::RadialFinish(_)
+                | OperationConfig::HorizontalFinish(_)
+                | OperationConfig::ProjectCurve(_) => None,
             })
             .collect()
     }

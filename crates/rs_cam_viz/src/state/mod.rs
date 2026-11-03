@@ -615,6 +615,10 @@ impl AppState {
     /// irrelevant but wrongly shifted — the operator-observed defect was
     /// the front setup's tier map floating offset beside the flipped
     /// back-setup stock.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle, Selection::Toolpath)"
+    )]
     pub fn active_setup_index(&self) -> Option<usize> {
         let setups = self.session.list_setups();
         let by_id = |id: job::SetupId| -> Option<usize> { setups.iter().position(|s| s.id == id) };
@@ -653,6 +657,10 @@ impl AppState {
 
     /// The setup of a focus: the setup of a `Setup` or an `Obstacle`, the
     /// setup that holds a `Toolpath`. Any other focus has no setup (`None`).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle, Selection::Toolpath)"
+    )]
     fn setup_of_focus(&self, focus: &Selection) -> Option<job::SetupId> {
         match focus {
             Selection::Setup(id) | Selection::Obstacle(id, _) => Some(*id),

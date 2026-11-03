@@ -92,6 +92,10 @@ fn add(
     ))
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn strategy(op: &OperationConfig) -> ClearingStrategy {
     match op {
         OperationConfig::Adaptive3d(cfg) => cfg.clearing_strategy,
@@ -100,6 +104,10 @@ fn strategy(op: &OperationConfig) -> ClearingStrategy {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn the_template_adds_the_channel_pair_s7_8() {
     // 1. The pair, its values, and a generation.
     let mut s = session(&[SOURCE_DIAMETER]);

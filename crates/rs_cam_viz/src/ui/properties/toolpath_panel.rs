@@ -32,6 +32,10 @@ use crate::ui::components::{Notice, PropRow};
     clippy::too_many_arguments,
     reason = "the snapshot, the inputs and the GUI state slots the panel edits in place (`state.panels`, `state.gui`), each threaded in alone"
 )]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: FreshnessState::WaitingOnUpstream)"
+)]
 pub(super) fn draw_toolpath_panel(
     ui: &mut egui::Ui,
     // The panel's whole read side: the owned entry, both static
@@ -250,6 +254,10 @@ pub(super) fn draw_toolpath_panel(
 /// G-D (§3): the clearing strategy that the Suggest run recommends and did
 /// not apply, from its records. The token is the serde spelling of
 /// `ClearingStrategy`, so serde reads it; there is no second token table.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this"
+)]
 pub(super) fn strategy_suggestion(
     warnings: Option<&[rs_cam_core::feeds::suggest::SuggestWarning]>,
 ) -> Option<crate::state::toolpath::ClearingStrategy> {

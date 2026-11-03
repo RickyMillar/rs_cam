@@ -16,6 +16,10 @@ use rs_cam_core::session::ProjectSession;
 /// the displayed stock top plus [`HOLE_MARK_LIFT_MM`]. A Project Curve
 /// draws its lines on the surface; the pick tests them on this plane.
 #[must_use]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: OperationConfig::Trace)"
+)]
 pub fn drawing_plane_z(
     session: &ProjectSession,
     tc: &rs_cam_core::session::ToolpathConfig,

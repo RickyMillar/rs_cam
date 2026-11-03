@@ -1049,6 +1049,10 @@ impl<B: ComputeBackend> AppController<B> {
     ///
     /// `Err` carries the refusal text, so batch callers can report which rows
     /// they skipped instead of sweeping them up silently (A-3 §3.5).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: SessionError::FeedsRefused)"
+    )]
     fn apply_feeds_through_funnel(
         &mut self,
         toolpath_id: crate::state::toolpath::ToolpathId,

@@ -213,7 +213,9 @@ impl BandEdge {
                     self.lower_along(&shipped);
                 }
                 Adaptive3dSegment::Link(p) => self.lower_along(&[*p]),
-                _ => {}
+                Adaptive3dSegment::Rapid(_)
+                | Adaptive3dSegment::RapidWithFloor { .. }
+                | Adaptive3dSegment::Marker(_) => {}
             }
         }
         self.scanned = segments.len();

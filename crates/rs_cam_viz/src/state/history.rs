@@ -297,6 +297,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn extract_stock_old_x(action: &UndoAction) -> f64 {
         match action {
             UndoAction::StockChange { old, .. } => old.x,
@@ -304,6 +308,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn extract_stock_new_x(action: &UndoAction) -> f64 {
         match action {
             UndoAction::StockChange { new, .. } => new.x,

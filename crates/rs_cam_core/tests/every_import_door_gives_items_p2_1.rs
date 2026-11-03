@@ -130,7 +130,7 @@ fn a_circle_is_one_item() {
             Shape::Circle {
                 centre, diameter, ..
             } => Some((centre.x, centre.y, *diameter)),
-            _ => None,
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Face(_) => None,
         })
         .collect();
     // CIRCLE (20, 20) r 5, full ARC (80, 20) r 4, CIRCLE (60, 45) r 3; the
@@ -243,6 +243,10 @@ fn square_face(z: f64, up: bool) -> FaceTessellation {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_face_item_carries_the_sign_of_its_face() {
     let mesh = build_enriched_mesh(
         vec![square_face(5.0, true), square_face(0.0, false)],
@@ -288,7 +292,7 @@ fn a_step_block_has_an_up_top_and_a_down_bottom() {
         .iter()
         .filter_map(|i| match i.shape() {
             Shape::Face(face) => Some(face.clone()),
-            _ => None,
+            Shape::Loop(_) | Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } => None,
         })
         .collect();
     assert_eq!(faces.len(), 2, "the top and the bottom are the flat faces");

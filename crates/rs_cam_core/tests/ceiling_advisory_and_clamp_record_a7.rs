@@ -190,6 +190,10 @@ fn rendered_diagnostics(feed: f64) -> Vec<String> {
 
 /// Read the gate's own band by probing it, so nothing here mirrors the
 /// query construction.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn gate_band_max() -> f64 {
     match verdict_and_explanation(100.0).0 {
         ChiploadVerdict::Within {

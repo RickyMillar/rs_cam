@@ -781,6 +781,10 @@ fn hemisphere_spirals_at_the_curved_scallop_stepover() {
 /// measured minimum distance must be at least `K_c`, and the distribution
 /// must widen from there toward the disk centre.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_forced_ring_limit_publishes_a_measurable_stall_block() {
     let radius = 10.0_f64;
     let ball = 2.0_f64;

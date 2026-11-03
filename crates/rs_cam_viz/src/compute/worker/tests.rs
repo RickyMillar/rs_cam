@@ -1370,7 +1370,10 @@ fn analysis_cancel_completes_quickly() {
         result.as_ref().map(|message| match message {
             ComputeMessage::Simulation(Ok(_)) => "Simulation(Ok)",
             ComputeMessage::Simulation(Err(_)) => "Simulation(Err)",
-            _ => "another message",
+            ComputeMessage::Toolpath(_)
+            | ComputeMessage::Collision(_)
+            | ComputeMessage::Reach(_)
+            | ComputeMessage::Job(_) => "another message",
         }),
     );
     assert!(
@@ -1513,7 +1516,11 @@ fn resubmitting_active_toolpath_cancels_and_replaces_it() {
                 {
                     saw_replacement = true;
                 }
-                _ => {}
+                ComputeMessage::Toolpath(_)
+                | ComputeMessage::Simulation(_)
+                | ComputeMessage::Collision(_)
+                | ComputeMessage::Reach(_)
+                | ComputeMessage::Job(_) => {}
             }
         }
         if !(saw_cancelled && saw_replacement) {
@@ -1563,7 +1570,11 @@ fn analysis_requests_replace_stale_work() {
                 ComputeMessage::Collision(Ok(_)) => {
                     saw_collision = true;
                 }
-                _ => {}
+                ComputeMessage::Toolpath(_)
+                | ComputeMessage::Simulation(_)
+                | ComputeMessage::Collision(_)
+                | ComputeMessage::Reach(_)
+                | ComputeMessage::Job(_) => {}
             }
         }
         if !(saw_cancelled && saw_collision) {

@@ -614,6 +614,10 @@ impl std::fmt::Display for SessionError {
 /// `selection_status` query give the same value); every other error is
 /// [`SessionError::Operation`].
 impl From<crate::compute::execute::OperationError> for SessionError {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: OperationError::Selection)"
+    )]
     fn from(e: crate::compute::execute::OperationError) -> Self {
         match e {
             crate::compute::execute::OperationError::Selection(refusal) => Self::Selection(refusal),

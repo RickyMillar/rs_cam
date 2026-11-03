@@ -188,6 +188,10 @@ fn the_shipped_default_is_unset() {
     assert_eq!(PencilConfig::default().link_hop_distance_mm, None);
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn read_hop_cap(session: &ProjectSession) -> Option<f64> {
     match &session.toolpath_configs()[0].operation {
         OperationConfig::Pencil(cfg) => cfg.link_hop_distance_mm,

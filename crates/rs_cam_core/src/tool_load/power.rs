@@ -835,6 +835,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn light_cut_is_within_with_available_kw() {
         // 6.35mm flat in hard maple, half-engagement (arc=π/2), 1mm DOC,
         // 1000 mm/min feed, 18 000 RPM, 2 flutes, HardMaple (Curti 2021
@@ -888,6 +892,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn heavy_cut_exceeds_machine_with_available_kw() {
         // Slot at 20mm DOC, 6000 mm/min in white oak (Curti 2021 line at
         // ρ 761.6 kg/m³: Ks 58.52, F_edge 4.595) → P ≈ 1.29 kW vs the
@@ -989,6 +997,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn slot_annotates_approximate() {
         let trace = trace_with(vec![cutting_sample(0, 1.0, std::f64::consts::PI, 1000.0)]);
         let v = evaluate_args(
@@ -1075,6 +1087,10 @@ mod tests {
     /// `heavy_cut_exceeds_machine_with_available_kw`), the power gate
     /// must refuse with the "doesn't apply" reason, not Exceeds.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn drill_op_routes_to_not_applicable_regardless_of_trace() {
         let trace = trace_with(vec![cutting_sample(0, 20.0, std::f64::consts::PI, 6000.0)]);
         let v = evaluate_args(

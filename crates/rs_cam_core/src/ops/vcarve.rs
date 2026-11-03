@@ -467,7 +467,8 @@ mod tests {
                     in_cut = true;
                     z_values.push(m.target.z);
                 }
-                _ => {}
+                crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => {}
             }
         }
 
@@ -571,7 +572,8 @@ mod tests {
                         saw_deep_cut = true;
                     }
                 }
-                _ => {}
+                crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => {}
             }
         }
         assert!(

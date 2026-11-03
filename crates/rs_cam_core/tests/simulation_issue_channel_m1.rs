@@ -556,7 +556,30 @@ fn rivers_b4_probe_project_curve_on_remaining_stock() {
         .find(|t| t.id == ToolpathId::from_raw(PC_ID))
         .and_then(|t| match &t.operation {
             OperationConfig::ProjectCurve(p) => p.depth.map(f64::abs),
-            _ => None,
+            OperationConfig::Face(_)
+            | OperationConfig::Pocket(_)
+            | OperationConfig::Profile(_)
+            | OperationConfig::Adaptive(_)
+            | OperationConfig::VCarve(_)
+            | OperationConfig::Inlay(_)
+            | OperationConfig::InlayPlug(_)
+            | OperationConfig::Zigzag(_)
+            | OperationConfig::Trace(_)
+            | OperationConfig::Drill(_)
+            | OperationConfig::Bore(_)
+            | OperationConfig::Chamfer(_)
+            | OperationConfig::DropCutter(_)
+            | OperationConfig::Adaptive3d(_)
+            | OperationConfig::Waterline(_)
+            | OperationConfig::Pencil(_)
+            | OperationConfig::Scallop(_)
+            | OperationConfig::UnifiedFinish(_)
+            | OperationConfig::SteepShallow(_)
+            | OperationConfig::RampFinish(_)
+            | OperationConfig::SpiralFinish(_)
+            | OperationConfig::RadialFinish(_)
+            | OperationConfig::HorizontalFinish(_)
+            | OperationConfig::AlignmentPinDrill(_) => None,
         })
         .expect("Project Curve 6 is a project_curve op");
 

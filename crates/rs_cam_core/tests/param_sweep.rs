@@ -187,6 +187,10 @@ where
         let diff = diff_fingerprints(&base_fp, &variant_fp);
         let arts = SweepArtifacts::generate(&variant_tp);
 
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "test: foreign enum serde_json Value; the arm skips every value that this test does not read"
+        )]
         let val_str = match val {
             serde_json::Value::Number(n) => n.to_string(),
             serde_json::Value::Bool(b) => b.to_string(),
@@ -269,6 +273,10 @@ where
         variant_stock.simulate_toolpath(&variant_tp, cutter, direction);
         let variant_sfp = StockFingerprint::from_stock(&variant_stock);
 
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "test: foreign enum serde_json Value; the arm skips every value that this test does not read"
+        )]
         let val_str = match val {
             serde_json::Value::Number(n) => n.to_string(),
             serde_json::Value::Bool(b) => b.to_string(),

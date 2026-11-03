@@ -119,6 +119,10 @@ impl SlotInputs for ObstacleInputs<'_> {
 /// The obstacle inputs of the active setup, or `None` when no setup is
 /// active. The model geometry is held by identity: a re-import is a new
 /// `Arc`, and a missing model is `None`.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Selection::Setup, Selection::Obstacle)"
+)]
 fn obstacle_inputs<'a>(state: &'a AppState, frame: &'a PassFrame) -> Option<ObstacleInputs<'a>> {
     let (setup_id, setup_frame) = frame.setup?;
     let setup = state
@@ -231,7 +235,7 @@ pub(super) fn upload_fixture_lines(
                 Some(P3::new(x, y, eff_h))
             }
             XYDatum::CenterOfStock => Some(P3::new(eff_w / 2.0, eff_d / 2.0, eff_h)),
-            _ => None,
+            XYDatum::AlignmentPins | XYDatum::Manual => None,
         };
 
         if let Some(local) = local_datum {

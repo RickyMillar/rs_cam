@@ -193,6 +193,10 @@ fn every_operation_declares_its_formula_source() {
 /// (b) The resolver runs on every cell, agrees with the arm `calculate`
 /// records, and a cell whose lookup found a row is `VendorBacked`.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_cell_with_a_vendor_row_is_vendor_backed() {
     let cells = every_cell();
     // F194: the grid size comes from the lists the grid walks, not a typed count.

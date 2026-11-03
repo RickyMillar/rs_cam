@@ -103,6 +103,10 @@ fn the_pre_fix_shape_keeps_the_un_offset_boundary() {
 /// way "nothing" goes — dropped, matching `RegionSet::processed` on the
 /// multi-region path, rather than falling through to the un-offset polygon.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_collapsed_user_offset_now_drops_the_containment() {
     let p = Polygon2::rectangle(0.0, 0.0, TINY, TINY);
     match apply_user_boundary_offset(&p, SHRINK) {
@@ -135,6 +139,10 @@ fn a_collapsed_user_offset_now_drops_the_containment() {
 /// mean clipping to the un-offset boundary on the strength of a dependency
 /// assertion, which is the F-8 over-cut with an extra step.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_failed_user_offset_refuses() {
     if !cfg!(debug_assertions) {
         println!(

@@ -301,6 +301,10 @@ fn the_diagram_draws_inside_its_own_rect_f2() {
 }
 
 /// A short name for a shape, for the failure message.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn describe(shape: &egui::Shape) -> String {
     match shape {
         egui::Shape::Text(text) => format!("text {:?}", text.galley.text()),

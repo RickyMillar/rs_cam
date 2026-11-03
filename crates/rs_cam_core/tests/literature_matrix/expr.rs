@@ -195,7 +195,7 @@ fn precedence(tok: &Tok) -> Option<u8> {
         Tok::Lt | Tok::Le | Tok::Gt | Tok::Ge => Some(4),
         Tok::Plus | Tok::Minus => Some(5),
         Tok::Star | Tok::Slash => Some(6),
-        _ => None,
+        Tok::Num(_) | Tok::Ident(_) | Tok::LParen | Tok::RParen => None,
     }
 }
 
@@ -237,7 +237,7 @@ fn bin_op_of(tok: &Tok) -> Option<BinOp> {
         Tok::Ne => BinOp::Ne,
         Tok::AndAnd => BinOp::And,
         Tok::OrOr => BinOp::Or,
-        _ => return None,
+        Tok::Num(_) | Tok::Ident(_) | Tok::LParen | Tok::RParen => return None,
     })
 }
 
@@ -300,7 +300,18 @@ impl<'a> Parser<'a> {
                     ))),
                 }
             }
-            other => Err(EvalError::ParseError(format!(
+            other @ Tok::Plus
+            | other @ Tok::Star
+            | other @ Tok::Slash
+            | other @ Tok::Lt
+            | other @ Tok::Le
+            | other @ Tok::Gt
+            | other @ Tok::Ge
+            | other @ Tok::EqEq
+            | other @ Tok::Ne
+            | other @ Tok::AndAnd
+            | other @ Tok::OrOr
+            | other @ Tok::RParen => Err(EvalError::ParseError(format!(
                 "unexpected token {other:?} in expression"
             ))),
         }

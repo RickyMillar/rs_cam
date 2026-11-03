@@ -292,6 +292,10 @@ impl std::error::Error for ObstacleRefusal {}
 ///
 /// # Errors
 /// The [`ObstacleRefusal`] that names the first rule the obstacle breaks.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value (named: ObstacleGeometry::Box)"
+)]
 pub fn validate_obstacle<'a>(
     obstacle: &Obstacle,
     facts: impl Fn(ModelId) -> Option<ModelGeometryFacts<'a>>,

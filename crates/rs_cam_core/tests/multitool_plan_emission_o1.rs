@@ -142,6 +142,10 @@ fn the_plan_emits_a_coarse_to_fine_chain_with_provenance() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn only_fine_tiers_carry_a_tier_region_boundary() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
     plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("plan");
@@ -254,6 +258,10 @@ fn a_re_plan_leaves_hand_built_ops_alone() {
 /// cusp height — that is what makes the seam blend two patterns of equal
 /// amplitude instead of printing a step.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn every_tier_is_dialled_to_the_same_cusp() {
     let (mut session, coarse_id, fine_id, model_id) = session_with_ladder();
     plan_multitool(&mut session, &spec(vec![coarse_id, fine_id], model_id)).expect("plan");

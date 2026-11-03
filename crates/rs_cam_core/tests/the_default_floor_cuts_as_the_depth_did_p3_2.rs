@@ -54,6 +54,10 @@ const PINNED_TOP: f64 = -2.5;
 const HALF: f64 = 20.0;
 
 /// The op with `floor: Floor::Top { depth: DEPTH }`, and its spring passes.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn op(op_type: OperationType) -> (OperationConfig, usize) {
     let floor = Floor::top(DEPTH);
     match op_type {

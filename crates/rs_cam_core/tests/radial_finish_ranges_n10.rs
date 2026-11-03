@@ -84,6 +84,10 @@ fn radial_session(cfg: RadialFinishConfig) -> ProjectSession {
 }
 
 /// The two stored dials, read back off the session.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn dials(session: &ProjectSession) -> (f64, f64) {
     match &session.toolpath_configs()[0].operation {
         OperationConfig::RadialFinish(cfg) => (cfg.angular_step, cfg.point_spacing),

@@ -245,6 +245,10 @@ fn exposed_chip_thickness_at_half_engagement_uses_arc_average_convention() {
 /// division is exactly the invalid conversion the literature verdict
 /// removed; the envelope in feed terms is simply 0.032 – 0.055.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn lut_nominal_engagement_sample_within_published_envelope_passes() {
     let verdict = gate_verdict_at(0.045, (1.0_f64 - 2.0 * 1.6 / 6.0).acos(), 0.27);
     match verdict {
@@ -335,6 +339,10 @@ fn the_pre_conversion_safe_feed_was_three_times_the_vendor_maximum() {
 /// it is the honest one: the gate is no longer engagement-aware, and a
 /// reader should be able to see that from a test rather than infer it.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn slot_engagement_no_longer_needs_normalisation_because_the_arc_is_gone() {
     use std::f64::consts::PI;
 

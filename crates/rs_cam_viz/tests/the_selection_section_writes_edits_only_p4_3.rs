@@ -196,6 +196,10 @@ fn stored(state: &AppState) -> Vec<String> {
 /// pass 4 releases: egui resolves a click from the widget rects of the
 /// pass before, so a press and a release in one pass is not the shape of a
 /// real pointer.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn click(ctx: &egui::Context, state: &mut AppState, label: &str, nth: usize) -> Vec<AppEvent> {
     let mut target: Option<egui::Pos2> = None;
     let mut painted: Vec<String> = Vec::new();
@@ -273,6 +277,10 @@ fn click(ctx: &egui::Context, state: &mut AppState, label: &str, nth: usize) -> 
 }
 
 /// The selection edits among `events`, with their targets.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: the arm filters events; a new AppEvent is not the subject of this test"
+)]
 fn edits(events: &[AppEvent]) -> Vec<(SelectionTarget, SelectionEdit)> {
     events
         .iter()

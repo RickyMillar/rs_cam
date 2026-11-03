@@ -189,6 +189,10 @@ fn a_pinned_bottom_z_on_a_pocket_refuses_at_every_door() {
 }
 
 /// The four `OpFloor` ops, each with its default config and `floor`.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn floor_op(op_type: OperationType, floor: Floor) -> OperationConfig {
     match op_type {
         OperationType::Pocket => OperationConfig::Pocket(PocketConfig {

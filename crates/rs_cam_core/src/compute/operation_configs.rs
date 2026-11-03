@@ -463,7 +463,32 @@ impl super::catalog::OperationConfig {
                 diameter: tool_diameter,
                 tolerance: cfg.size_tolerance,
             },
-            _ => DrillSize::strict(tool_diameter),
+            super::catalog::OperationConfig::Face(_)
+            | super::catalog::OperationConfig::Pocket(_)
+            | super::catalog::OperationConfig::Profile(_)
+            | super::catalog::OperationConfig::Adaptive(_)
+            | super::catalog::OperationConfig::VCarve(_)
+            | super::catalog::OperationConfig::Inlay(_)
+            | super::catalog::OperationConfig::InlayPlug(_)
+            | super::catalog::OperationConfig::Zigzag(_)
+            | super::catalog::OperationConfig::Trace(_)
+            | super::catalog::OperationConfig::Bore(_)
+            | super::catalog::OperationConfig::Chamfer(_)
+            | super::catalog::OperationConfig::DropCutter(_)
+            | super::catalog::OperationConfig::Adaptive3d(_)
+            | super::catalog::OperationConfig::Waterline(_)
+            | super::catalog::OperationConfig::Pencil(_)
+            | super::catalog::OperationConfig::Scallop(_)
+            | super::catalog::OperationConfig::UnifiedFinish(_)
+            | super::catalog::OperationConfig::SteepShallow(_)
+            | super::catalog::OperationConfig::RampFinish(_)
+            | super::catalog::OperationConfig::SpiralFinish(_)
+            | super::catalog::OperationConfig::RadialFinish(_)
+            | super::catalog::OperationConfig::HorizontalFinish(_)
+            | super::catalog::OperationConfig::ProjectCurve(_)
+            | super::catalog::OperationConfig::AlignmentPinDrill(_) => {
+                DrillSize::strict(tool_diameter)
+            }
         }
     }
 
@@ -472,6 +497,10 @@ impl super::catalog::OperationConfig {
     /// `t` into the air, and the cone radius at the top is `w + t`). The
     /// buried check of a model edge reads material within it. `None` for
     /// every op that bevels no edge.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::Chamfer)"
+    )]
     pub fn bevel_reach_mm(&self) -> Option<f64> {
         match self {
             super::catalog::OperationConfig::Chamfer(cfg) => {
@@ -486,6 +515,10 @@ impl super::catalog::OperationConfig {
     /// below the corner of a sharp edge. The model gouge guard of a
     /// Chamfer allows a cut this deep below the model (`ModelGougeRule::
     /// Bevel`). `None` for every op that bevels no edge.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::Chamfer)"
+    )]
     pub fn bevel_depth_mm(&self, half_angle_rad: f64) -> Option<f64> {
         match self {
             super::catalog::OperationConfig::Chamfer(cfg) => {
@@ -498,6 +531,10 @@ impl super::catalog::OperationConfig {
     /// Chamfer Clearance: the chamfer width `w` and the tip offset `t`
     /// (mm) that the wall trim of the model edges reads
     /// (`compute::edge_clear`). `None` for every op that bevels no edge.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: OperationConfig::Chamfer)"
+    )]
     pub fn bevel_width_and_tip_mm(&self) -> Option<(f64, f64)> {
         match self {
             super::catalog::OperationConfig::Chamfer(cfg) => {
@@ -513,7 +550,30 @@ impl super::catalog::OperationConfig {
     pub fn cuts_past_open_sides(&self) -> bool {
         match self {
             super::catalog::OperationConfig::Pocket(cfg) => cfg.cut_past_open_sides,
-            _ => false,
+            super::catalog::OperationConfig::Face(_)
+            | super::catalog::OperationConfig::Profile(_)
+            | super::catalog::OperationConfig::Adaptive(_)
+            | super::catalog::OperationConfig::VCarve(_)
+            | super::catalog::OperationConfig::Inlay(_)
+            | super::catalog::OperationConfig::InlayPlug(_)
+            | super::catalog::OperationConfig::Zigzag(_)
+            | super::catalog::OperationConfig::Trace(_)
+            | super::catalog::OperationConfig::Drill(_)
+            | super::catalog::OperationConfig::Bore(_)
+            | super::catalog::OperationConfig::Chamfer(_)
+            | super::catalog::OperationConfig::DropCutter(_)
+            | super::catalog::OperationConfig::Adaptive3d(_)
+            | super::catalog::OperationConfig::Waterline(_)
+            | super::catalog::OperationConfig::Pencil(_)
+            | super::catalog::OperationConfig::Scallop(_)
+            | super::catalog::OperationConfig::UnifiedFinish(_)
+            | super::catalog::OperationConfig::SteepShallow(_)
+            | super::catalog::OperationConfig::RampFinish(_)
+            | super::catalog::OperationConfig::SpiralFinish(_)
+            | super::catalog::OperationConfig::RadialFinish(_)
+            | super::catalog::OperationConfig::HorizontalFinish(_)
+            | super::catalog::OperationConfig::ProjectCurve(_)
+            | super::catalog::OperationConfig::AlignmentPinDrill(_) => false,
         }
     }
 }

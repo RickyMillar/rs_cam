@@ -358,6 +358,10 @@ fn summary_exposes_the_per_peck_ratio_the_gate_decides_on() {
 /// finding. The honest evidence for a closed-form ratio is the
 /// comparison itself.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn drill_exceedance_evidence_must_not_point_at_sample_zero() {
     let d = op(DrillCycle::Simple, 4.0, 40.0, 300.0);
     let (_, message, evidence) = diagnostic_for(&d, ids::DRILL_CHIP_WELDING);

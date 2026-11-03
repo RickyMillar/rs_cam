@@ -244,7 +244,17 @@ fn family_default_janka(family: MaterialFamily) -> Option<f64> {
         // The composite boards have no sourced Janka (see
         // `hardness_basis`). Plastics, aluminium and fibreglass have no
         // family Janka. The ratio is 1.0 for these families.
-        _ => None,
+        MaterialFamily::PlywoodSoftwood
+        | MaterialFamily::PlywoodHardwood
+        | MaterialFamily::Mdf
+        | MaterialFamily::Hdf
+        | MaterialFamily::Particleboard
+        | MaterialFamily::Acrylic
+        | MaterialFamily::Hdpe
+        | MaterialFamily::Polycarbonate
+        | MaterialFamily::Delrin
+        | MaterialFamily::Aluminum
+        | MaterialFamily::Fiberglass => None,
     }
 }
 

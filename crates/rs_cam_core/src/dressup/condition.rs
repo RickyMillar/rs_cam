@@ -118,7 +118,10 @@ pub fn merge_linear_runs(annotated: AnnotatedToolpath, tolerance: f64) -> Transf
                 {
                     end += 1;
                 }
-                _ => break,
+                MoveType::Rapid
+                | MoveType::Linear { .. }
+                | MoveType::ArcCW { .. }
+                | MoveType::ArcCCW { .. } => break,
             }
         }
 
@@ -295,7 +298,7 @@ mod tests {
             .iter()
             .filter_map(|m| match m.move_type {
                 MoveType::Linear { feed_rate } => Some(feed_rate),
-                _ => None,
+                MoveType::Rapid | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => None,
             })
             .collect();
         assert!(

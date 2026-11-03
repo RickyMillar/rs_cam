@@ -165,6 +165,10 @@ impl EnrichedMesh {
     /// Uniformly scale all geometry (mesh vertices, face bboxes/loops, edge vertices).
     ///
     /// Rebuilds the inner `TriangleMesh` with scaled vertices and recomputes bounding boxes.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: SurfaceParams::Plane, SurfaceParams::Cylinder, SurfaceParams::Cone, SurfaceParams::Sphere and 1 more)"
+    )]
     pub fn apply_uniform_scale(&mut self, scale: f64) {
         // Scale the inner mesh
         let scaled_verts: Vec<P3> = self

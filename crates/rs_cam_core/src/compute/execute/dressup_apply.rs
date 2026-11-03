@@ -716,8 +716,11 @@ impl PipelineRun<'_> {
             .moves
             .iter()
             .find_map(|m| match m.move_type {
+                // K4 owns the 0.5 x first feed and the 500 fallback.
                 crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate * 0.5),
-                _ => None,
+                crate::toolpath::MoveType::Rapid
+                | crate::toolpath::MoveType::ArcCW { .. }
+                | crate::toolpath::MoveType::ArcCCW { .. } => None,
             })
             .unwrap_or(500.0)
     }

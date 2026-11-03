@@ -104,6 +104,10 @@ fn via_project_file(path: &Path, kind: ModelKind, units: ModelUnits) -> Vec<Poly
 
 /// The model the PROJECT-FILE door loads, with an optional
 /// `[models.import]` join tolerance (P4.8).
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn via_project_file_model(
     path: &Path,
     kind: ModelKind,

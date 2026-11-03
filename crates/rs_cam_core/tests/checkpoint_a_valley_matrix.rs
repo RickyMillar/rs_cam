@@ -1144,7 +1144,10 @@ impl TaperAngle for TaperedBallEndmill {
             rs_cam_core::feeds::ToolGeometryHint::TaperedBall {
                 taper_angle_deg, ..
             } => taper_angle_deg,
-            _ => f64::NAN,
+            rs_cam_core::feeds::ToolGeometryHint::Flat
+            | rs_cam_core::feeds::ToolGeometryHint::Ball
+            | rs_cam_core::feeds::ToolGeometryHint::Bull { .. }
+            | rs_cam_core::feeds::ToolGeometryHint::VBit { .. } => f64::NAN,
         }
     }
 }

@@ -635,6 +635,10 @@ pub(super) fn draw_heights_params(
 /// core `Floor::reference_label`, with a short form for the two "each"
 /// references, so the text fits the combo beside the value at 340 points.
 /// The open list and the hover keep the full label.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Floor::EachFace, Floor::EachHole)"
+)]
 fn floor_display_label(floor: &Floor) -> &'static str {
     match floor {
         Floor::EachFace { .. } => "Each face",

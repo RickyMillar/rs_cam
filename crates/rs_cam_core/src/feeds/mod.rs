@@ -2085,7 +2085,7 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
             ToolGeometryHint::Ball => d / 2.0,
             ToolGeometryHint::TaperedBall { tip_radius, .. } => tip_radius,
             ToolGeometryHint::Bull { corner_radius } => corner_radius,
-            _ => 0.0,
+            ToolGeometryHint::Flat | ToolGeometryHint::VBit { .. } => 0.0,
         };
         if ball_r > 0.0 {
             if let Some(stepover) = geometry::scallop_stepover(ball_r, target_scallop) {
@@ -2207,7 +2207,9 @@ pub fn calculate(input: &FeedsInput) -> FeedsResult {
         ToolGeometryHint::Ball | ToolGeometryHint::TaperedBall { .. } => {
             geometry::axial_chip_thinning_factor_for_ball(d, effective_d)
         }
-        _ => 1.0,
+        ToolGeometryHint::Flat | ToolGeometryHint::Bull { .. } | ToolGeometryHint::VBit { .. } => {
+            1.0
+        }
     };
     let chip_thinning = (rctf * axial_thinning).clamp(1.0, 4.0);
 

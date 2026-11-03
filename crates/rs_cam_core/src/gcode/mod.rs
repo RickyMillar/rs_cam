@@ -515,7 +515,10 @@ impl PhaseDrill {
     pub fn dwell_s(&self) -> Option<f64> {
         match self.cycle {
             crate::ops::drill::DrillCycle::Dwell(s) if s.is_finite() && s > 0.0 => Some(s),
-            _ => None,
+            crate::ops::drill::DrillCycle::Simple
+            | crate::ops::drill::DrillCycle::Dwell(_)
+            | crate::ops::drill::DrillCycle::Peck(_)
+            | crate::ops::drill::DrillCycle::ChipBreak(..) => None,
         }
     }
 }
@@ -535,7 +538,29 @@ pub fn phase_drill_for(tc: &crate::session::ToolpathConfig) -> Option<PhaseDrill
         OperationConfig::AlignmentPinDrill(ref cfg) => Some(PhaseDrill {
             cycle: cfg.drill_cycle(f64::INFINITY),
         }),
-        _ => None,
+        OperationConfig::Face(_)
+        | OperationConfig::Pocket(_)
+        | OperationConfig::Profile(_)
+        | OperationConfig::Adaptive(_)
+        | OperationConfig::VCarve(_)
+        | OperationConfig::Inlay(_)
+        | OperationConfig::InlayPlug(_)
+        | OperationConfig::Zigzag(_)
+        | OperationConfig::Trace(_)
+        | OperationConfig::Bore(_)
+        | OperationConfig::Chamfer(_)
+        | OperationConfig::DropCutter(_)
+        | OperationConfig::Adaptive3d(_)
+        | OperationConfig::Waterline(_)
+        | OperationConfig::Pencil(_)
+        | OperationConfig::Scallop(_)
+        | OperationConfig::UnifiedFinish(_)
+        | OperationConfig::SteepShallow(_)
+        | OperationConfig::RampFinish(_)
+        | OperationConfig::SpiralFinish(_)
+        | OperationConfig::RadialFinish(_)
+        | OperationConfig::HorizontalFinish(_)
+        | OperationConfig::ProjectCurve(_) => None,
     }
 }
 

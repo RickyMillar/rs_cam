@@ -442,6 +442,10 @@ fn verdict_bounds(v: &ChiploadVerdict) -> (Option<f64>, f64) {
 /// show that a verdict flips on the reconstruction of a number the
 /// operator set to be *inside* the band.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn rider2_the_gate_flips_to_exceeds_on_a_feed_parked_on_its_own_ceiling() {
     let (rpm_probe, flutes, axial_doc) = (18_500u32, 2u32, 0.35);
     // Pass 1: read the gate's OWN band. No mirror of the query

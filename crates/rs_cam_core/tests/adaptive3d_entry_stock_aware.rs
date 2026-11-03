@@ -315,7 +315,7 @@ fn replay_on(
                     below_wide,
                 });
             }
-            _ => {}
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {}
         }
         stock.stamp_linear_segment(&lut, r, a, b, StockCutDirection::FromTop);
     }

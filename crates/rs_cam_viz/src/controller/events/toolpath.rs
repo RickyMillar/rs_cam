@@ -202,11 +202,19 @@ impl<B: ComputeBackend> AppController<B> {
     /// the selected model (`model_override` wins). Shared by the op add and
     /// the template (step 7.8). The tree focus holds no faces. An op gets
     /// its faces from its own selection (`Command::EditSelection`).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath, Selection::Setup, Selection::Obstacle, Selection::Model)"
+    )]
     fn add_target(
         &self,
         model_override: Option<rs_cam_core::ids::ModelId>,
     ) -> (usize, Option<rs_cam_core::ids::ModelId>) {
         // Q7: the model selected in the Setup rail or the viewport.
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this (named: Selection::Model)"
+        )]
         let selected_model = match *self.state.focus() {
             Selection::Model(model_id) => Some(model_id),
             _ => None,

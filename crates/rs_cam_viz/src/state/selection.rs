@@ -80,6 +80,10 @@ pub fn focus_summary(state: &super::AppState) -> FocusSummary {
         Selection::Obstacle(setup, obstacle) => Some(format!("{setup}/{obstacle}")),
         Selection::Toolpath(id) => Some(id.to_string()),
     };
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+    )]
     let toolpath_index = match focus {
         Selection::Toolpath(id) => index_of(*id),
         _ => None,

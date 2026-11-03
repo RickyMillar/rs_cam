@@ -126,7 +126,11 @@ fn face_at(s: &ProjectSession, z: f64) -> u16 {
             Shape::Face(face) if face.normal.z > 0.5 && (face.plane_z - z).abs() < 1e-6 => {
                 face.brep.map(|id| id.0)
             }
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .collect();
     assert_eq!(ids.len(), 1, "one up face at Z {z}: {ids:?}");

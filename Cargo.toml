@@ -70,6 +70,9 @@ allow_attributes_without_reason = "deny"
 
 # F172 (W16): a `_` arm that stands for exactly one variant names it.
 match_wildcard_for_single_variants = "deny"
+# Feeds contract P1: a `_` arm over two or more variants hides a decision.
+# Name the variants, or state why in `#[expect(.., reason = "..")]` (W16).
+wildcard_enum_match_arm = "deny"
 
 # F027 (W16): a run of bare bool flags is a hidden enum.
 fn_params_excessive_bools = "deny"

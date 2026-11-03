@@ -117,6 +117,10 @@ struct Painted {
 }
 
 /// Run one frame of the toolpath panel and return every text it painted.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn frame(ctx: &egui::Context, state: &mut AppState, input: egui::RawInput) -> Vec<Painted> {
     let mut out = ctx.run_ui(input, |ui| {
         egui::Panel::left("emptyadd_toolpath_tree")

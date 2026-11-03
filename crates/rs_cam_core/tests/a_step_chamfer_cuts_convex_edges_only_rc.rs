@@ -379,7 +379,7 @@ fn the_default_chamfer_cuts_each_convex_edge_at_its_own_z_rc() {
         let left = V2::new(-d.y, d.x);
         let air = match material {
             EdgeMaterial::Left => -left,
-            _ => left,
+            EdgeMaterial::Right | EdgeMaterial::Inside | EdgeMaterial::Outside => left,
         };
         let mid = P2::new(0.5 * (a.x + b.x), 0.5 * (a.y + b.y)) + air * t;
         let want = P3::new(mid.x, mid.y, z - depth);

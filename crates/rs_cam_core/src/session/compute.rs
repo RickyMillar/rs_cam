@@ -1455,6 +1455,10 @@ const ADVISOR_CANDIDATE_STRATEGIES: [ClearingStrategy; 2] = [
 /// honest until a power-gate signal is threaded in.
 ///
 /// [`LoadRegime`]: crate::machine::strategy_advisor::LoadRegime
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: SuggestWarning::DppCappedByDeflection, SuggestWarning::AxialDocClampedByEnvelope)"
+)]
 fn regime_from_suggest_warnings(
     warnings: &[crate::feeds::suggest::SuggestWarning],
 ) -> crate::machine::strategy_advisor::LoadRegime {

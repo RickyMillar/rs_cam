@@ -338,7 +338,11 @@ fn stepped_pocket(floor_face: bool) -> ProjectSession {
         .iter()
         .filter_map(|item| match item.shape() {
             Shape::Face(face) if face.normal.z > 0.99 => Some((face.plane_z, item.key().clone())),
-            _ => None,
+            Shape::Loop(_)
+            | Shape::Path(_)
+            | Shape::Point(_)
+            | Shape::Circle { .. }
+            | Shape::Face(_) => None,
         })
         .collect();
     faces.sort_by(|a, b| a.0.total_cmp(&b.0));

@@ -236,7 +236,18 @@ fn a_ceiling_that_pushes_the_advance_under_the_band_minimum_warns_and_does_not_l
             band_min,
             band_max,
         } => Some((*commanded, *floor, *source, *band_min, *band_max)),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::LongToolDerate { .. }
+        | FeedsWarning::VendorRowPublishesNoChipload { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     });
 
     println!(

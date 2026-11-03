@@ -2154,7 +2154,9 @@ pub(crate) fn apply_contour_parallel_residue_cleanup_turns(
     ) {
         if let Some(last_cut) = contour_segments.iter().rev().find_map(|s| match s {
             AdaptiveSegment::Cut(p) => p.last().copied(),
-            _ => None,
+            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) | AdaptiveSegment::Marker(_) => {
+                None
+            }
         }) {
             last_pos = Some(last_cut);
         }
@@ -3711,7 +3713,9 @@ mod link_load_tests {
     fn cuts_to(segments: &[AdaptiveSegment], p: P2) -> bool {
         segments.iter().any(|s| match s {
             AdaptiveSegment::Cut(path) => path.iter().any(|q| (q.x - p.x).hypot(q.y - p.y) < 1e-6),
-            _ => false,
+            AdaptiveSegment::Rapid(_) | AdaptiveSegment::Link(_) | AdaptiveSegment::Marker(_) => {
+                false
+            }
         })
     }
 

@@ -364,6 +364,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn warmup_inserts_dwell_after_preamble() {
         let o = WizardOverlay {
             spindle_warmup_secs: 5,
@@ -390,6 +394,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn dry_run_clamps_cutting_z_and_rapid_floor() {
         let o = WizardOverlay {
             dry_run_safe_z: Some(7.5),
@@ -453,6 +461,10 @@ mod tests {
         }
         // Cutting moves all pinned to 7.5.
         for idx in [2, 3, 4, 5] {
+            #[expect(
+                clippy::wildcard_enum_match_arm,
+                reason = "test: an unexpected variant panics"
+            )]
             let z = match stmts[idx] {
                 Statement::Linear { z, .. }
                 | Statement::LinearModal { z, .. }
@@ -519,7 +531,20 @@ mod tests {
             let rapid_z = match *s {
                 Statement::Rapid { z, .. } => Some(z),
                 Statement::SafeZRetract { z } => Some(z.get()),
-                _ => None,
+                Statement::Preamble { .. }
+                | Statement::SpindleSet { .. }
+                | Statement::Postamble
+                | Statement::ProgramPause { .. }
+                | Statement::Comment(_)
+                | Statement::ToolChange { .. }
+                | Statement::Raw(_)
+                | Statement::Linear { .. }
+                | Statement::LinearModal { .. }
+                | Statement::ArcCw { .. }
+                | Statement::ArcCcw { .. }
+                | Statement::Dwell { .. }
+                | Statement::CannedDrill { .. }
+                | Statement::CannedCancel => None,
             };
             if let Some(z) = rapid_z {
                 assert!(
@@ -644,6 +669,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn dry_run_and_warmup_compose() {
         // Both transforms active: warmup dwell after preamble + Z clamp.
         let o = WizardOverlay {
@@ -747,7 +776,21 @@ mod tests {
         );
         let pause = cow.statements.iter().find_map(|s| match s {
             Statement::ProgramPause { message } => Some(message.as_str()),
-            _ => None,
+            Statement::Preamble { .. }
+            | Statement::SpindleSet { .. }
+            | Statement::Postamble
+            | Statement::Comment(_)
+            | Statement::ToolChange { .. }
+            | Statement::Raw(_)
+            | Statement::Rapid { .. }
+            | Statement::Linear { .. }
+            | Statement::LinearModal { .. }
+            | Statement::ArcCw { .. }
+            | Statement::ArcCcw { .. }
+            | Statement::SafeZRetract { .. }
+            | Statement::Dwell { .. }
+            | Statement::CannedDrill { .. }
+            | Statement::CannedCancel => None,
         });
         let pause = pause.expect("suppressed change must leave an M0 pause");
         assert!(

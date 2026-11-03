@@ -195,7 +195,7 @@ impl PrintedChipload {
     pub fn point_mm(self) -> Option<f64> {
         match self {
             Self::Point { value_mm } => Some(value_mm),
-            _ => None,
+            Self::Band { .. } | Self::Unpublished => None,
         }
     }
 
@@ -203,7 +203,7 @@ impl PrintedChipload {
     pub fn band_mm(self) -> Option<(f64, f64)> {
         match self {
             Self::Band { min_mm, max_mm } => Some((min_mm, max_mm)),
-            _ => None,
+            Self::Point { .. } | Self::Unpublished => None,
         }
     }
 }

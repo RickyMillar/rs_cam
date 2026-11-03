@@ -1203,7 +1203,7 @@ pub fn summarise(tp: &Toolpath) -> (usize, usize, usize, f64, usize, f64) {
                 rapid += 1;
                 in_run = false;
             }
-            _ => {
+            MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
                 cutting += 1;
                 if !in_run {
                     runs += 1;
@@ -1546,7 +1546,9 @@ pub fn write_toolpath_svg(
         {
             let (stroke, width, dash) = match m.move_type {
                 MoveType::Rapid => ("#a33", 0.6, " stroke-dasharray=\"3 3\""),
-                _ => ("#fb0", 1.0, ""),
+                MoveType::Linear { .. } | MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => {
+                    ("#fb0", 1.0, "")
+                }
             };
             svg.push_str(&format!(
                 "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" \

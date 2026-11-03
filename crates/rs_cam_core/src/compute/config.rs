@@ -815,6 +815,10 @@ impl BoundaryConfig {
     #[must_use]
     pub fn with_source(&self, source: BoundarySource, tool_diameter_mm: Option<f64>) -> Self {
         let was_selection = matches!(self.source, BoundarySource::Selection { .. });
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "projection: only the named variant(s) carry this"
+        )]
         let offset = match &source {
             BoundarySource::Selection { .. } if !was_selection => 0.0,
             BoundarySource::ModelSilhouette if was_selection => {
@@ -987,7 +991,10 @@ pub const HELIX_RADIUS_OVER_D: f64 = 0.3;
 pub fn helix_entry_diameter_mm(cutter: &dyn crate::tool::MillingCutter) -> f64 {
     match cutter.geometry_hint() {
         crate::feeds::ToolGeometryHint::TaperedBall { tip_radius, .. } => 2.0 * tip_radius,
-        _ => cutter.diameter(),
+        crate::feeds::ToolGeometryHint::Flat
+        | crate::feeds::ToolGeometryHint::Ball
+        | crate::feeds::ToolGeometryHint::Bull { .. }
+        | crate::feeds::ToolGeometryHint::VBit { .. } => cutter.diameter(),
     }
 }
 
@@ -2158,7 +2165,19 @@ mod tests {
                     assert_eq!(policy.entry, EntryStylePolicy::DefaultHelix);
                     assert!(policy.entry_style_applies());
                 }
-                _ => {
+                OperationType::Face
+                | OperationType::Pocket
+                | OperationType::Profile
+                | OperationType::Zigzag
+                | OperationType::Chamfer
+                | OperationType::Waterline
+                | OperationType::Pencil
+                | OperationType::Scallop
+                | OperationType::SteepShallow
+                | OperationType::RampFinish
+                | OperationType::SpiralFinish
+                | OperationType::RadialFinish
+                | OperationType::HorizontalFinish => {
                     // Pre-registry these fell through the predicate
                     // matches untouched.
                     assert!(

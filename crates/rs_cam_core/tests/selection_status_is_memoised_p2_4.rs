@@ -90,6 +90,10 @@ fn session() -> ProjectSession {
 }
 
 /// The report of toolpath 0 through the query door.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn status(s: &ProjectSession) -> SelectionReport {
     match s
         .query(Query::SelectionStatus(SelectionStatusArgs {

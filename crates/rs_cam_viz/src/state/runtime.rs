@@ -619,7 +619,7 @@ impl ReachOverlayState {
     pub fn ready_map(&self) -> Option<&Arc<ReachMap>> {
         match &self.status {
             ReachStatus::Ready(map) => Some(map),
-            _ => None,
+            ReachStatus::Idle | ReachStatus::Computing | ReachStatus::Failed(_) => None,
         }
     }
 

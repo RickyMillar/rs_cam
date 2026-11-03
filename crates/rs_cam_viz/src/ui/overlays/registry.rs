@@ -456,6 +456,10 @@ fn has_model_mesh(state: &AppState) -> bool {
     state.session().models().iter().any(|m| m.mesh.is_some())
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+)]
 fn selected_toolpath(state: &AppState) -> Option<crate::state::toolpath::ToolpathId> {
     match *state.focus() {
         crate::state::selection::Selection::Toolpath(id) => Some(id),
@@ -550,6 +554,10 @@ pub fn area_regions_drawn(state: &AppState) -> bool {
 }
 
 /// Can the By Area regions overlay draw, and if not, why not?
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: OperationConfig::Adaptive3d)"
+)]
 fn area_regions_precondition(state: &AppState) -> Precondition {
     use rs_cam_core::compute::catalog::OperationConfig;
     use rs_cam_core::compute::operation_configs::RegionOrdering;
@@ -600,7 +608,7 @@ fn reach_map_failure(state: &AppState) -> Option<&str> {
     }
     match &state.gui.reach_overlay.status {
         ReachStatus::Failed(message) => Some(message.as_str()),
-        _ => None,
+        ReachStatus::Idle | ReachStatus::Computing | ReachStatus::Ready(_) => None,
     }
 }
 
@@ -843,7 +851,9 @@ pub const ROWS: &[OverlayRow] = &[
                 None => Precondition::no("no setup in this project"),
                 Some(sd) => match sd.datum.xy_method {
                     XYDatum::CornerProbe(_) | XYDatum::CenterOfStock => Precondition::Ready,
-                    _ => Precondition::no("no datum set on this setup"),
+                    XYDatum::AlignmentPins | XYDatum::Manual => {
+                        Precondition::no("no datum set on this setup")
+                    }
                 },
             }
         },

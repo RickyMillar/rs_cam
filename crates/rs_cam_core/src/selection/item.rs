@@ -999,7 +999,9 @@ impl ItemSet {
                     ),
                     None => Ok(i.clone()),
                 },
-                _ => Ok(i.clone()),
+                Shape::Path(_) | Shape::Point(_) | Shape::Circle { .. } | Shape::Face(_) => {
+                    Ok(i.clone())
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self::with_outlines(items, outlines))

@@ -266,6 +266,10 @@ struct Frame {
 /// egui does not paint a widget outside the clip rectangle, so a row that is
 /// too wide hides its tail instead of painting it. `excess_width` catches
 /// that case: the content's own width against the width it was given.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn render(ctx: &egui::Context, state: &mut AppState, width: f32) -> Frame {
     let mut excess_width = 0.0_f32;
     let input = egui::RawInput {
@@ -604,6 +608,10 @@ fn no_painted_text_is_over_the_face_limit_w6() {
 /// column must count as a multi-row galley and as more than one visible
 /// line, and the one-line component must keep the same sentence on one row.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn the_measures_see_a_paragraph_ic1() {
     const SENTENCE: &str = "This sentence is much wider than the narrow column it is drawn \
                             in, so a wrapping label breaks it over several rows.";

@@ -341,7 +341,7 @@ fn cut_points(tp: &Toolpath, z: f64, step: f64) -> Vec<P2> {
                     out.push(P2::new(c.x + radius * a.cos(), c.y + radius * a.sin()));
                 }
             }
-            _ => {
+            MoveType::Rapid | MoveType::Linear { .. } => {
                 let len = (q.x - p.x).hypot(q.y - p.y);
                 let n = (len / step).ceil().max(1.0) as usize;
                 for k in 0..=n {

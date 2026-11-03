@@ -778,6 +778,10 @@ mod tests {
     /// truncates inside the row, the Fix button stays on the line, and the
     /// hover has the full face and the detail.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn an_issue_row_is_one_truncated_line_w1() {
         const FACE: &str = "Depth per pass 1.5 mm is over the rigid limit of 0.83 mm for this tool";
         let ctx = egui::Context::default();

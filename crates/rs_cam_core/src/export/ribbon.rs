@@ -218,7 +218,7 @@ pub fn toolpath_to_tube_mesh_with_spans(
                 }
                 push_tube_segment(&mut mesh, seg_from, mv.target, r, color);
             }
-            _ => {
+            MoveType::Rapid | MoveType::Linear { .. } => {
                 push_tube_segment(&mut mesh, from, mv.target, r, color);
             }
         }
@@ -279,7 +279,7 @@ pub fn toolpath_to_tube_mesh(
                 }
                 push_tube_segment(&mut mesh, seg_from, mv.target, r, color);
             }
-            _ => {
+            MoveType::Rapid | MoveType::Linear { .. } => {
                 push_tube_segment(&mut mesh, from, mv.target, r, color);
             }
         }

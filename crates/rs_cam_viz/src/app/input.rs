@@ -10,6 +10,10 @@ use super::{RsCamApp, eased_camera_write};
 use crate::state::camera::CameraWrite;
 
 impl RsCamApp {
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: UiCommand::SetViewPreset, UiCommand::ToggleProjection, UiCommand::PreviewOrientation, UiCommand::ResetView and 13 more); pass-through: every other variant keeps its own value (named: AppEvent::FileDialog, AppEvent::ImportStl, AppEvent::ImportDialogConfirm, AppEvent::ImportStep and 25 more)"
+    )]
     pub(super) fn handle_events(&mut self, ctx: &egui::Context) {
         // F218: a file dialog that closed since the last frame posts its
         // pick here, so this frame runs it with the other events.
@@ -447,6 +451,10 @@ impl RsCamApp {
     }
 
     /// Handle keyboard shortcuts for the viewport and application.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath, Selection::Tool)"
+    )]
     pub(super) fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
         self.escape_closes_a_viewport_surface(ctx);
         // Only process shortcuts when no text edit is focused

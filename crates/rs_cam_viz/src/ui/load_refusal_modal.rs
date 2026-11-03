@@ -43,6 +43,10 @@ impl RefusalView {
             .path
             .file_name()
             .map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned());
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "pass-through: every other variant keeps its own value (named: SessionError::RetiredKeys)"
+        )]
         let (notices, fix) = match refusal.error.as_ref() {
             SessionError::RetiredKeys(found) => {
                 let notices = found
@@ -219,6 +223,10 @@ mod tests {
     /// The modal paints the title, the file, both hits and the fix, and
     /// no toast: the refusal is not a notification.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+    )]
     fn the_modal_paints_the_refusal_g_d() {
         let refusal = refusal(SessionError::RetiredKeys(vec![RetiredKeyFound {
             path: "setups[0].toolpaths[2].operation.params.clearing_strategy = \"agent_search\""

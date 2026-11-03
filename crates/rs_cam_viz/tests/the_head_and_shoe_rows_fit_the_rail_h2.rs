@@ -119,6 +119,10 @@ fn fixture() -> AppState {
 
 /// Two frames of `draw` in the real helper at `width`. Returns the inner
 /// width, the widest content and the painted text of the last frame.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
 fn measure(
     width: f32,
     state: &mut AppState,

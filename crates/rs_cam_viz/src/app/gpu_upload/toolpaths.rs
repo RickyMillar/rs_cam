@@ -173,6 +173,10 @@ fn inputs<'a>(
     let session = state.session();
     let gui = &state.gui;
     let display_shift = frame.display_shift();
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Selection::Toolpath)"
+    )]
     let selected_tp_id = match *state.focus() {
         Selection::Toolpath(id) => Some(id),
         _ => None,

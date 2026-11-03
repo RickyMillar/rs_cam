@@ -457,6 +457,10 @@ fn push_retract_to_program_max_z(program: &mut Program) {
 }
 
 /// The Z a motion statement commands, or `None` for a non-motion statement.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: Statement::Rapid, Statement::Linear, Statement::LinearModal, Statement::ArcCw and 2 more)"
+)]
 fn commanded_z(statement: &Statement) -> Option<f64> {
     match *statement {
         Statement::Rapid { z, .. }
@@ -732,7 +736,10 @@ fn read_drill_holes(phase: &GcodePhase<'_>) -> Option<(Option<f64>, Vec<DrillHol
                     bottom = bottom.min(m.target.z);
                 }
                 MoveType::Rapid if m.target.z <= r + EPS => {}
-                _ => return None,
+                MoveType::Rapid
+                | MoveType::Linear { .. }
+                | MoveType::ArcCW { .. }
+                | MoveType::ArcCCW { .. } => return None,
             }
             j += 1;
         }
@@ -1020,7 +1027,21 @@ mod tests {
         let prog_default = build_multi_setup(&setups_default, 15.0);
         let pause_default = prog_default.statements.iter().find_map(|s| match s {
             Statement::ProgramPause { message } => Some(message.as_str()),
-            _ => None,
+            Statement::Preamble { .. }
+            | Statement::SpindleSet { .. }
+            | Statement::Postamble
+            | Statement::Comment(_)
+            | Statement::ToolChange { .. }
+            | Statement::Raw(_)
+            | Statement::Rapid { .. }
+            | Statement::Linear { .. }
+            | Statement::LinearModal { .. }
+            | Statement::ArcCw { .. }
+            | Statement::ArcCcw { .. }
+            | Statement::SafeZRetract { .. }
+            | Statement::Dwell { .. }
+            | Statement::CannedDrill { .. }
+            | Statement::CannedCancel => None,
         });
         assert_eq!(pause_default, Some("Setup change: Bottom"));
 
@@ -1040,7 +1061,21 @@ mod tests {
         let prog_override = build_multi_setup(&setups_override, 15.0);
         let pause_override = prog_override.statements.iter().find_map(|s| match s {
             Statement::ProgramPause { message } => Some(message.as_str()),
-            _ => None,
+            Statement::Preamble { .. }
+            | Statement::SpindleSet { .. }
+            | Statement::Postamble
+            | Statement::Comment(_)
+            | Statement::ToolChange { .. }
+            | Statement::Raw(_)
+            | Statement::Rapid { .. }
+            | Statement::Linear { .. }
+            | Statement::LinearModal { .. }
+            | Statement::ArcCw { .. }
+            | Statement::ArcCcw { .. }
+            | Statement::SafeZRetract { .. }
+            | Statement::Dwell { .. }
+            | Statement::CannedDrill { .. }
+            | Statement::CannedCancel => None,
         });
         assert_eq!(pause_override, Some("Run Z Probe macro then Resume"));
     }
@@ -1473,7 +1508,20 @@ mod tests {
             Statement::LinearModal { .. } => {
                 panic!("feed move after a raw splice must re-emit F (modal state unknown)")
             }
-            _ => None,
+            Statement::Preamble { .. }
+            | Statement::SpindleSet { .. }
+            | Statement::Postamble
+            | Statement::ProgramPause { .. }
+            | Statement::Comment(_)
+            | Statement::ToolChange { .. }
+            | Statement::Raw(_)
+            | Statement::Rapid { .. }
+            | Statement::ArcCw { .. }
+            | Statement::ArcCcw { .. }
+            | Statement::SafeZRetract { .. }
+            | Statement::Dwell { .. }
+            | Statement::CannedDrill { .. }
+            | Statement::CannedCancel => None,
         });
         assert_eq!(next_feed, Some(Feedrate::from_toolpath(600.0)));
     }
@@ -1491,7 +1539,22 @@ mod tests {
 
         let warn = prog.statements.iter().find_map(|s| match s {
             Statement::Comment(t) if t.starts_with("WARNING") => Some(t.as_str()),
-            _ => None,
+            Statement::Preamble { .. }
+            | Statement::SpindleSet { .. }
+            | Statement::Postamble
+            | Statement::ProgramPause { .. }
+            | Statement::Comment(_)
+            | Statement::ToolChange { .. }
+            | Statement::Raw(_)
+            | Statement::Rapid { .. }
+            | Statement::Linear { .. }
+            | Statement::LinearModal { .. }
+            | Statement::ArcCw { .. }
+            | Statement::ArcCcw { .. }
+            | Statement::SafeZRetract { .. }
+            | Statement::Dwell { .. }
+            | Statement::CannedDrill { .. }
+            | Statement::CannedCancel => None,
         });
         let warn = warn.expect("dangerous snippet must produce a warning comment");
         assert!(warn.contains("G91"), "warning names the word: {warn}");
@@ -1739,7 +1802,21 @@ mod tests {
             .rev()
             .find_map(|s| match *s {
                 Statement::SafeZRetract { z } => Some(z.get()),
-                _ => None,
+                Statement::Preamble { .. }
+                | Statement::SpindleSet { .. }
+                | Statement::Postamble
+                | Statement::ProgramPause { .. }
+                | Statement::Comment(_)
+                | Statement::ToolChange { .. }
+                | Statement::Raw(_)
+                | Statement::Rapid { .. }
+                | Statement::Linear { .. }
+                | Statement::LinearModal { .. }
+                | Statement::ArcCw { .. }
+                | Statement::ArcCcw { .. }
+                | Statement::Dwell { .. }
+                | Statement::CannedDrill { .. }
+                | Statement::CannedCancel => None,
             });
         assert_eq!(retract_z, Some(36.5), "{:?}", prog.statements);
     }

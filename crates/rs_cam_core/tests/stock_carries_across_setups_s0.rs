@@ -218,6 +218,10 @@ fn spot(x: f64, y: f64, floor_z: f64, top_z: f64) -> Toolpath {
 // ── 1. Top/Bottom ───────────────────────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_pocket_from_the_top_is_in_the_bottom_setup_stock_at_the_mirrored_cells() {
     let tool = tool();
     let top_tp = Arc::new(AnnotatedToolpath::new(pocket(
@@ -339,6 +343,10 @@ fn an_identity_setup_with_a_stock_origin_carries_into_a_zero_rooted_setup() {
 // ── 3. Z rotation ───────────────────────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_z_rotation_of_90_degrees_transposes_the_carried_stock() {
     let tool = tool();
     let top_tp = Arc::new(AnnotatedToolpath::new(pocket(
@@ -393,6 +401,10 @@ fn a_z_rotation_of_90_degrees_transposes_the_carried_stock() {
 // ── 4. A stock extent that is not a whole number of cells ───────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_stock_depth_off_the_cell_grid_takes_the_nearest_node_and_records_the_offset() {
     let tool = tool();
     let d = 30.3; // 60.6 cells: the mirrored nodes miss the grid by 0.2 mm
@@ -436,6 +448,10 @@ fn a_stock_depth_off_the_cell_grid_takes_the_nearest_node_and_records_the_offset
 // ── 5. A lateral setup stays fresh ──────────────────────────────────────
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_lateral_setup_starts_fresh_and_the_next_z_setup_carries_past_it() {
     let tool = tool();
     let top_tp = Arc::new(AnnotatedToolpath::new(pocket(

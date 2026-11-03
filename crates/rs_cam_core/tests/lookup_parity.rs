@@ -330,6 +330,10 @@ fn diameter_match_score_surfaces_for_consumers() {
 
 // --- helpers ---
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn material_to_lut_for_test(material: &Material) -> (MaterialFamily, HardnessKind, f64) {
     // Mirrors `vendor_normalize::material_to_lut` (pub(crate)) for test access.
     match material {

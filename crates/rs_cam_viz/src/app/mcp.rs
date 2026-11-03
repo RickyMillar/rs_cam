@@ -219,6 +219,10 @@ impl super::RsCamApp {
         });
     }
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "pass-through: every other variant keeps its own value (named: UiCommand::SimJumpToMove, UiCommand::SimJumpToStart, UiCommand::SimJumpToEnd, UiCommand::SimScrubToolpath and 6 more)"
+    )]
     fn handle_mcp_request(&mut self, ctx: &egui::Context, request: McpRequest) {
         let McpRequest {
             kind,

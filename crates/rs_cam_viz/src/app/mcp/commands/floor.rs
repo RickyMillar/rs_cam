@@ -158,6 +158,10 @@ mod tests {
     /// request names, and the MCP write stales the toolpath. A refused
     /// wire floor writes nothing.
     #[test]
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     fn mcp_and_gui_give_one_floor_p3_3() {
         let floor = Floor::Z { z: FLOOR_Z };
         let file_json = serde_json::to_value(&floor).unwrap();
@@ -266,7 +270,11 @@ mod tests {
                 Shape::Face(face) if face.normal.z > 0.99 => {
                     Some((face.plane_z, item.key().clone()))
                 }
-                _ => None,
+                Shape::Loop(_)
+                | Shape::Path(_)
+                | Shape::Point(_)
+                | Shape::Circle { .. }
+                | Shape::Face(_) => None,
             })
             .collect();
         faces.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -442,7 +450,29 @@ mod tests {
             let want = match op {
                 OperationType::Drill => Floor::EACH_REFERENCE.len() - 2,
                 OperationType::Bore => Floor::EACH_REFERENCE.len(),
-                _ => Floor::EACH_REFERENCE.len() - 1,
+                OperationType::Face
+                | OperationType::Pocket
+                | OperationType::Profile
+                | OperationType::Adaptive
+                | OperationType::VCarve
+                | OperationType::Inlay
+                | OperationType::InlayPlug
+                | OperationType::Zigzag
+                | OperationType::Trace
+                | OperationType::Chamfer
+                | OperationType::DropCutter
+                | OperationType::Adaptive3d
+                | OperationType::Waterline
+                | OperationType::Pencil
+                | OperationType::Scallop
+                | OperationType::UnifiedFinish
+                | OperationType::SteepShallow
+                | OperationType::RampFinish
+                | OperationType::SpiralFinish
+                | OperationType::RadialFinish
+                | OperationType::HorizontalFinish
+                | OperationType::ProjectCurve
+                | OperationType::AlignmentPinDrill => Floor::EACH_REFERENCE.len() - 1,
             };
             assert_eq!(admitted, want, "{}", op.label());
             assert_eq!(

@@ -80,7 +80,18 @@ fn long_tool_warning(result: &FeedsResult) -> Option<(f64, f64, f64, f64)> {
             ratio,
             factor,
         } => Some((*stickout_mm, *diameter_mm, *ratio, *factor)),
-        _ => None,
+        FeedsWarning::FeedRateClamped { .. }
+        | FeedsWarning::RpmLoweredForFeedCeiling { .. }
+        | FeedsWarning::PowerLimited { .. }
+        | FeedsWarning::PowerLadderReducedCut { .. }
+        | FeedsWarning::ShankTooLarge { .. }
+        | FeedsWarning::DocExceedsFlute { .. }
+        | FeedsWarning::SlottingDetected { .. }
+        | FeedsWarning::ScallopInvalid { .. }
+        | FeedsWarning::ChiploadBelowRubbingFloor { .. }
+        | FeedsWarning::VendorRowPublishesNoChipload { .. }
+        | FeedsWarning::NoVendorRowsForRoutedOperation { .. }
+        | FeedsWarning::DrillFeedClampedToEnvelope { .. } => None,
     })
 }
 

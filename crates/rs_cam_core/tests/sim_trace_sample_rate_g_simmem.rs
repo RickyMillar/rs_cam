@@ -74,6 +74,10 @@ fn length_bound_and_time(tp: &Toolpath) -> (usize, f64) {
             continue;
         }
         bound += ((len / STEP).ceil() as usize).max(1);
+        #[expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "test: an unexpected variant panics"
+        )]
         let feed = match pair[1].move_type {
             MoveType::Rapid => RAPID,
             MoveType::Linear { feed_rate } => feed_rate,

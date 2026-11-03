@@ -4,6 +4,10 @@
 use crate::state::AppState;
 use crate::ui::AppEvent;
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "pass-through: every other variant keeps its own value (named: SurfaceType::Plane, SurfaceType::Cylinder)"
+)]
 pub(super) fn draw_model_properties(
     ui: &mut egui::Ui,
     id: crate::state::job::ModelId,

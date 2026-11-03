@@ -294,6 +294,10 @@ pub struct StockPanelOut {
 ///
 /// S4: the stock panel and the setup panel's stock-change editor share it,
 /// so both pick from the one library.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "projection: only the named variant(s) carry this (named: MaterialCategory::Softwood)"
+)]
 pub(super) fn draw_hierarchical_material_picker(
     ui: &mut egui::Ui,
     material: &mut rs_cam_core::material::Material,
@@ -309,6 +313,10 @@ pub(super) fn draw_hierarchical_material_picker(
     // `Material::SolidWoodByJanka` variants (the parametric variant
     // gets the lbf annotation uniformly with curated species rather
     // than only showing it in the menu-item line).
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "projection: only the named variant(s) carry this (named: Material::SolidWood, Material::SolidWoodByJanka)"
+    )]
     let janka_suffix = match &*material {
         Material::SolidWood { species } => Some(species.janka_lbf() as i64),
         Material::SolidWoodByJanka { janka_lbf, .. } => Some(*janka_lbf as i64),

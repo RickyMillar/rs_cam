@@ -352,6 +352,10 @@ enum CurveModel {
 
 /// P3.5: the floor "each picked face", depth 0: each face is its own
 /// floor.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn each_face(op: &mut OperationConfig) {
     let floor = Floor::EachFace { depth: 0.0 };
     match op {

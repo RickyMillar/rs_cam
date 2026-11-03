@@ -802,6 +802,10 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
 
     apply_drill_defaults(&mut op_3mm, &tool_3mm, &material, None);
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let peck_3mm = match &op_3mm {
         OperationConfig::Drill(cfg) => cfg.peck_depth,
         _ => panic!("expected Drill"),
@@ -826,6 +830,10 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
 
     apply_drill_defaults(&mut op_12mm, &tool_12mm, &material, None);
 
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "test: an unexpected variant panics"
+    )]
     let peck_12mm = match &op_12mm {
         OperationConfig::Drill(cfg) => cfg.peck_depth,
         _ => panic!("expected Drill"),
@@ -868,6 +876,10 @@ fn drill_peck_depth_scales_with_diameter_and_material() {
 /// happen to match a literal — so a future change to
 /// `peck_for_hole`'s 0.75 factor moves both or fails here.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn alignment_pin_drill_peck_is_clamped_like_drill() {
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};
     use crate::material::{Material, WoodSpecies};
@@ -964,6 +976,10 @@ fn alignment_pin_drill_peck_is_clamped_like_drill() {
 /// Hardwood ceiling of 5×D is the matrix invariant for white oak
 /// in `flat_3mm_drill_oak`.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn drill_peck_depth_softwood_exceeds_hardwood() {
     use crate::compute::operation_configs::{DrillConfig, DrillCycleType};
     use crate::material::{Material, WoodSpecies};
@@ -1450,7 +1466,31 @@ fn deflection_machinery_caps_dpp_for_long_reach_tool() {
             binding,
             ..
         } => Some((*clamped_mm, *binding)),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::EngagementReducedForAggressiveness { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let (clamped_mm, binding) =
         clamp.expect("AxialDocClampedByEnvelope must fire on the wanaka case");
@@ -1776,7 +1816,31 @@ fn stepover_raised_for_wanaka_3d_finish_case() {
             *predicted_moves_at_raised,
             *iterations,
         )),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::EngagementReducedForAggressiveness { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let (
         requested_mm,
@@ -1922,7 +1986,31 @@ fn stepover_floor_caps_back_off() {
                 iterations,
                 ..
             } => Some((*raised_mm, *predicted_moves_at_raised, *iterations)),
-            _ => None,
+            SuggestWarning::PlungeClampedToFeed { .. }
+            | SuggestWarning::StepoverClampedToToolDiameter { .. }
+            | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+            | SuggestWarning::DepthClampedToCuttingLength { .. }
+            | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+            | SuggestWarning::DppCappedByDeflection { .. }
+            | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+            | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+            | SuggestWarning::FeedRaisedForChipload { .. }
+            | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+            | SuggestWarning::StrategyRecommendedNotApplied { .. }
+            | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+            | SuggestWarning::AxialDocClampedByEnvelope { .. }
+            | SuggestWarning::AxialDocBelowBurnFloor { .. }
+            | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+            | SuggestWarning::FinishEnvelopeAdvisory { .. }
+            | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+            | SuggestWarning::FeedClampedToChiploadFloor { .. }
+            | SuggestWarning::PowerRecheckedAfterRescale { .. }
+            | SuggestWarning::CutGeometryFieldNotHeld { .. }
+            | SuggestWarning::EngagementReducedForAggressiveness { .. }
+            | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+            | SuggestWarning::AggressivenessNotApplied { .. }
+            | SuggestWarning::RampFeed { .. }
+            | SuggestWarning::PlungeReDerived { .. } => None,
         })
         .expect("warning must still fire when bailing on the diameter-fraction ceiling");
     let (raised_mm, predicted_moves_at_raised, iterations) = warning;
@@ -2424,7 +2512,32 @@ fn clearing_strategy_recommendation_is_warn_only() {
             recommended,
             reason,
         } => Some((current.clone(), recommended.clone(), *reason)),
-        _ => None,
+        SuggestWarning::PlungeClampedToFeed { .. }
+        | SuggestWarning::StepoverClampedToToolDiameter { .. }
+        | SuggestWarning::RoughingDepthClampedToRigidity { .. }
+        | SuggestWarning::DepthClampedToCuttingLength { .. }
+        | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
+        | SuggestWarning::DppCappedByDeflection { .. }
+        | SuggestWarning::DeflectionBackoffUnmodeled { .. }
+        | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
+        | SuggestWarning::StepoverRaisedForRuntime { .. }
+        | SuggestWarning::FeedRaisedForChipload { .. }
+        | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
+        | SuggestWarning::StrategyRecommendedNotApplied { .. }
+        | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
+        | SuggestWarning::AxialDocClampedByEnvelope { .. }
+        | SuggestWarning::AxialDocBelowBurnFloor { .. }
+        | SuggestWarning::ProjectCurveDepthInfeasible { .. }
+        | SuggestWarning::FinishEnvelopeAdvisory { .. }
+        | SuggestWarning::FeedRescaledToFinalGeometry { .. }
+        | SuggestWarning::FeedClampedToChiploadFloor { .. }
+        | SuggestWarning::PowerRecheckedAfterRescale { .. }
+        | SuggestWarning::CutGeometryFieldNotHeld { .. }
+        | SuggestWarning::EngagementReducedForAggressiveness { .. }
+        | SuggestWarning::RpmLoweredForFeedCeiling { .. }
+        | SuggestWarning::AggressivenessNotApplied { .. }
+        | SuggestWarning::RampFeed { .. }
+        | SuggestWarning::PlungeReDerived { .. } => None,
     });
     let (current, recommended, reason) = recommended
         .expect("clearing-strategy recommendation must fire on unpinned MixedTerrain op");
@@ -2598,6 +2711,10 @@ fn operation_feeds_hints_is_an_explicit_per_op_decision() {
 /// under the floor on a shallow hole (0.45 mm on a 0.6 mm hole). A hole
 /// shallower than the floor takes the peck equal to its depth: one peck.
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn a_suggested_peck_respects_the_schema_floor_b14() {
     use crate::compute::catalog::OperationType;
     use crate::compute::operation_configs::{AlignmentPinDrillConfig, DrillConfig, DrillCycleType};

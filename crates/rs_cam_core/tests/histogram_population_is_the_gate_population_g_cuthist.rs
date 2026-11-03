@@ -206,6 +206,10 @@ fn fixture() -> SimulationCutTrace {
     }
 }
 
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn status_for(kind: CriterionKind, v: &ToolpathLoadVerdict) -> CriterionStatus<'_> {
     match kind {
         CriterionKind::Chipload => v.chipload.as_criterion_status(),
@@ -284,7 +288,12 @@ fn histogram_population_is_the_gate_population() {
         let decoys: &[usize] = match kind {
             CriterionKind::Chipload => &[13, 14, 15, 16, 17],
             CriterionKind::DepthOfCut => &[13, 17],
-            _ => &[13, 14, 17],
+            CriterionKind::Power
+            | CriterionKind::Deflection
+            | CriterionKind::GantryPush
+            | CriterionKind::DrillChipWelding
+            | CriterionKind::DrillPeckAdequacy
+            | CriterionKind::DrillPlungeFeed => &[13, 14, 17],
         };
         assert!(
             population.iter().all(|p| !decoys.contains(&p.sample_index)),

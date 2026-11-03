@@ -89,6 +89,10 @@ fn padded_grids_always_have_uncovered_cells_so_the_two_minima_diverge() {
 }
 
 #[test]
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: an unexpected variant panics"
+)]
 fn grid_z_names_the_three_cases_the_old_f64_hid() {
     let mesh = plateau(20.0, 5.0);
     let tool = ball_cutter(6.0);

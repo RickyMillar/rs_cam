@@ -1466,7 +1466,7 @@ mod tests {
             .rev()
             .find_map(|m| match m.move_type {
                 MoveType::ArcCW { .. } | MoveType::ArcCCW { .. } => Some(m.target.z),
-                _ => None,
+                MoveType::Rapid | MoveType::Linear { .. } => None,
             })
             .unwrap();
         assert!(
