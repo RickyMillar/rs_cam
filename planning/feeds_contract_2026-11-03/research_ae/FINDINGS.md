@@ -54,3 +54,8 @@ envelope shows the ap-ae trade. The vendor depth tiers then become a check,
 not the control. Heat and chip evacuation need new printed wood sources.
 Correction by the lead: the agent wrote "pass 6b already holds the chip"; P5
 deleted pass 6b (only its dead `SuggestWarning` variant remains).
+
+The full report (203 lines) is `REPORT.md` in this folder. Its references to
+pass 6b (`feeds/suggest.rs:672-700`) read a dead warning variant: P5 deleted
+the pass. Section 6(d) needs an operator ruling on chip thinning against
+N-8 (`CHIPLOAD_LITERATURE_VERDICT.md`) before step 2.
