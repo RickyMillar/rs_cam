@@ -17,7 +17,7 @@
 //!    diameter, the depth axis never goes past the cutting length or the
 //!    flute guard. No line is drawn for these limits (items 3, 4).
 //! 4. On the rivmap100 3D Rough envelope (the operator's review job), the
-//!    plot draws at most 2 lines and no text label at rest; the move budget
+//!    plot draws at most 2 lines (1 at the review point) and no text label at rest; the move budget
 //!    is drawn only when it binds; no line is DANGER red (items 5 to 7).
 //!    P5b drew 4 lines and 4 labels in view on this job.
 //!
@@ -148,7 +148,7 @@ fn pocket_at_depth(ap_mm: f64) -> (OperationConfig, SafeEnvelope) {
 
 /// The rivmap100 3D Rough envelope (the operator's review job), at the
 /// stated point of the fixture, or at `(ap, ae)` when given (the live GUI
-/// point of the review was ap 2.303, ae 4.217).
+/// point of the review was ap 4.217, ae 2.303).
 fn rivmap_rough(point: Option<(f64, f64)>) -> (OperationConfig, SafeEnvelope) {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -434,7 +434,7 @@ fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
     // The fixture's point, and the live point of the operator's review.
     for (tag, point) in [
         ("fixture", None),
-        ("review 2.303 x 4.217", Some((2.303, 4.217))),
+        ("review ap 4.217 x ae 2.303", Some((4.217, 2.303))),
     ] {
         let (config, env) = rivmap_rough(point);
         let scene = EnvelopeScene::of(&env, None);
@@ -480,23 +480,33 @@ fn the_rivmap_rough_plot_draws_only_the_limits_near_the_cut_p5c() {
             "{tag}: no DANGER line: {colours:?}"
         );
     }
-    // The review point: the slot step is near the cut and drawn.
-    let (_, env) = rivmap_rough(Some((2.303, 4.217)));
-    let kinds: Vec<LimitKind> = EnvelopeScene::of(&env, None)
-        .edges
-        .iter()
-        .map(|e| e.kind)
-        .collect();
+    // The review point draws one line: the vendor max DOC. The slot step
+    // (ae 5.1) is 0.47 of the view away from ae 2.303: not near.
+    let kinds_at = |ap: f64, ae: f64| -> Vec<LimitKind> {
+        let (_, env) = rivmap_rough(Some((ap, ae)));
+        EnvelopeScene::of(&env, None)
+            .edges
+            .iter()
+            .map(|e| e.kind)
+            .collect()
+    };
     assert_eq!(
-        kinds,
+        kinds_at(4.217, 2.303),
+        vec![LimitKind::VendorAxial],
+        "the review point draws the vendor max DOC only"
+    );
+    // A cut near the slot step (ae 4.217, 0.15 of the view from ae 5.1)
+    // draws the step too.
+    assert_eq!(
+        kinds_at(2.303, 4.217),
         vec![LimitKind::VendorAxial, LimitKind::Slot],
-        "the review point draws the vendor max DOC and the slot step"
+        "a cut near the slot step draws it"
     );
 }
 
 #[test]
 fn a_crossed_limit_and_the_candidate_turn_amber_p5c() {
-    let (_, env) = rivmap_rough(Some((2.303, 4.217)));
+    let (_, env) = rivmap_rough(Some((4.217, 2.303)));
     let vendor = ceiling(&env, LimitKind::VendorAxial).expect("a vendor max DOC");
     let scene = EnvelopeScene::of(&env, None);
     let over = CutPoint {
