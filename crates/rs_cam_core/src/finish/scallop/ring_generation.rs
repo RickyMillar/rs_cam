@@ -12,6 +12,8 @@ use crate::polygon::{Polygon2, offset_polygon};
 use crate::surface::chord_refine::{CHORD_REFINE_MAX_DEPTH, refine_chord};
 use crate::surface::dropcutter::point_drop_cutter;
 use crate::tool::MillingCutter;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// The scallop's name for the shared chord-refinement context: the rings,
 /// the ring connectors and their probe step (`ChordRefineCtx::from_cell`).
@@ -124,22 +126,65 @@ fn decimate_closed_ring(ring: &[P2], min_spacing: f64) -> Option<Vec<P2>> {
     (out.len() >= 3).then_some(out)
 }
 
+/// Lift a 2D ring to 3D, then refine its chords ([`refine_ring_chords`]).
+///
+/// P3 (perf sweep 2026-11-03): each point is a separate exact probe, so the
+/// `parallel` build lifts the points on rayon. The collect keeps the ring
+/// order, and the result is the same as the serial map, bit for bit.
 pub(super) fn ring_to_3d(ring: &[P2], ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
-    let lifted: Vec<(P3, bool)> = ring
-        .iter()
-        .map(|p| {
-            let cl = point_drop_cutter(p.x, p.y, ctx.mesh, ctx.index, ctx.cutter);
-            let finite = cl.z.is_finite();
-            let kept = finite && point_is_covered(ctx, p.x, p.y);
-            let z = if finite {
-                cl.z + ctx.stock_to_leave
-            } else {
-                ctx.min_z + ctx.stock_to_leave
-            };
-            (P3::new(p.x, p.y, z), kept)
-        })
-        .collect();
+    let lift = |p: &P2| {
+        let cl = point_drop_cutter(p.x, p.y, ctx.mesh, ctx.index, ctx.cutter);
+        let finite = cl.z.is_finite();
+        let kept = finite && point_is_covered(ctx, p.x, p.y);
+        let z = if finite {
+            cl.z + ctx.stock_to_leave
+        } else {
+            ctx.min_z + ctx.stock_to_leave
+        };
+        (P3::new(p.x, p.y, z), kept)
+    };
+    #[cfg(feature = "parallel")]
+    let lifted: Vec<(P3, bool)> = ring.par_iter().map(lift).collect();
+    #[cfg(not(feature = "parallel"))]
+    let lifted: Vec<(P3, bool)> = ring.iter().map(lift).collect();
     refine_ring_chords(lifted, ctx)
+}
+
+/// Rings per thread in one chunk of [`lift_rings`]. The caller checks
+/// cancel once per chunk, so a chunk is the cancel latency. Four rings per
+/// thread let rayon balance a long ring against short ones, and keep the
+/// latency at about four ring lifts on each thread.
+#[cfg(feature = "parallel")]
+const RINGS_PER_THREAD_PER_CHUNK: usize = 4;
+
+/// Lift independent 2D rings to 3D with [`ring_to_3d`], in the input order.
+///
+/// `&dyn CancelCheck` is not `Sync`, so it stays on the calling thread: the
+/// `parallel` build lifts the rings in chunks of
+/// [`RINGS_PER_THREAD_PER_CHUNK`] `x` the pool size and checks cancel
+/// before each chunk. The serial build checks cancel before each ring.
+fn lift_rings(
+    rings: &[Vec<P2>],
+    ctx: &RingLiftCtx<'_>,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Vec<(P3, bool)>>, Cancelled> {
+    let mut out: Vec<Vec<(P3, bool)>> = Vec::with_capacity(rings.len());
+    #[cfg(feature = "parallel")]
+    {
+        let chunk = RINGS_PER_THREAD_PER_CHUNK * rayon::current_num_threads().max(1);
+        for group in rings.chunks(chunk) {
+            check_cancel(cancel)?;
+            let lifted: Vec<Vec<(P3, bool)>> =
+                group.par_iter().map(|ring| ring_to_3d(ring, ctx)).collect();
+            out.extend(lifted);
+        }
+    }
+    #[cfg(not(feature = "parallel"))]
+    for ring in rings {
+        check_cancel(cancel)?;
+        out.push(ring_to_3d(ring, ctx));
+    }
+    Ok(out)
 }
 
 /// P2.f band-fidelity fix (2026-07-08): ring vertices are EXACT drop-cutter
@@ -154,13 +199,20 @@ pub(super) fn ring_to_3d(ring: &[P2], ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> 
 /// kept→kept chord at `probe_step` and recursively splitting at the
 /// worst-error probe until the chord tracks the surface within
 /// `chord_tolerance`. Smooth/flat stretches insert nothing.
+///
+/// P3 (perf sweep 2026-11-03): the chords are independent, so the
+/// `parallel` build refines them on rayon. `refine_chord` reads only its
+/// two endpoints (from the input ring, never from the output) and the
+/// shared `ctx`, which it does not change. It only appends to its `out`, and
+/// this function ignores its return value. So chord `i` gives the same
+/// points alone as in the serial loop, and the ordered collect joins
+/// `[a_i, interior_i]` in the serial order.
 fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, bool)> {
     let n = ring.len();
     if n < 2 {
         return ring;
     }
-    let mut out: Vec<(P3, bool)> = Vec::with_capacity(n * 2);
-    for i in 0..n {
+    let chord = |i: usize, out: &mut Vec<(P3, bool)>| {
         #[expect(
             clippy::indexing_slicing,
             reason = "i and (i + 1) % n are both in 0..n."
@@ -172,10 +224,28 @@ fn refine_ring_chords(ring: Vec<(P3, bool)>, ctx: &RingLiftCtx<'_>) -> Vec<(P3, 
         // wrap chord (last → first) is included: discrete mode closes
         // fully-kept loops with a straight feed back to the start.
         if a.1 && b.1 {
-            refine_chord(a.0, b.0, ctx, CHORD_REFINE_MAX_DEPTH, &mut out);
+            refine_chord(a.0, b.0, ctx, CHORD_REFINE_MAX_DEPTH, out);
         }
+    };
+    #[cfg(feature = "parallel")]
+    {
+        (0..n)
+            .into_par_iter()
+            .flat_map_iter(|i| {
+                let mut piece = Vec::new();
+                chord(i, &mut piece);
+                piece
+            })
+            .collect()
     }
-    out
+    #[cfg(not(feature = "parallel"))]
+    {
+        let mut out: Vec<(P3, bool)> = Vec::with_capacity(n * 2);
+        for i in 0..n {
+            chord(i, &mut out);
+        }
+        out
+    }
 }
 
 /// Sum, over one lifted ring, of the XY perimeter length "owned" by points
@@ -277,8 +347,9 @@ pub fn generate_scallop_rings(
 }
 
 /// Cancellable variant of [`generate_scallop_rings`]. Polls `cancel` once per
-/// ring (the expensive step: `ring_to_3d` runs a `point_drop_cutter` query per
-/// ring point).
+/// cascade ring (the expensive step: `ring_to_3d` runs a `point_drop_cutter`
+/// query per ring point). The iso-field branch polls once per chunk of
+/// rings ([`lift_rings`]).
 #[expect(
     clippy::too_many_arguments,
     reason = "each parameter is a separate input that the callers supply"
@@ -399,16 +470,17 @@ pub(super) fn generate_scallop_rings_with_cancel(
         // PLACEMENT — the whole subject of the iso-field comparison — is
         // untouched; chord refinement puts detail back exactly where the
         // surface demands it.
+        //
+        // P3 (perf sweep 2026-11-03): the field rings are independent, so
+        // extraction and decimation stay serial and `lift_rings` lifts the
+        // decimated rings in parallel, in the extraction order.
         let ring_min_spacing = heightmap.cell_size * 0.75;
-        for ring in crate::finish::scallop_isofield::extract_rings(&field) {
-            check_cancel(cancel)?;
-            if ring.len() < 3 {
-                continue;
-            }
-            let Some(ring) = decimate_closed_ring(&ring, ring_min_spacing) else {
-                continue;
-            };
-            let ring_3d = ring_to_3d(&ring, &lift_ctx);
+        let rings_2d: Vec<Vec<P2>> = crate::finish::scallop_isofield::extract_rings(&field)
+            .into_iter()
+            .filter(|ring| ring.len() >= 3)
+            .filter_map(|ring| decimate_closed_ring(&ring, ring_min_spacing))
+            .collect();
+        for ring_3d in lift_rings(&rings_2d, &lift_ctx, cancel)? {
             if ring_3d.len() >= 3 {
                 rings_3d.push(ring_3d);
             }

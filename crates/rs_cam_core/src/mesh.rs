@@ -1,8 +1,10 @@
 //! Triangle mesh loading and spatial indexing.
 
 use crate::geo::{BoundingBox3, P3, Triangle, V3};
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::thread::LocalKey;
 use thiserror::Error;
 use tracing::warn;
 
@@ -565,43 +567,39 @@ impl SpatialIndex {
         }
     }
 
-    #[expect(
-        clippy::indexing_slicing,
-        reason = "bounded indexing in algorithmic code"
-    )]
     /// Find all triangle indices whose bounding boxes potentially overlap with
     /// a cutter centered at (cx, cy) with given radius.
+    ///
+    /// The result is the same set in the same order as [`Self::query_into`].
+    /// This function delegates to that primitive with a thread-local
+    /// [`QueryScratch`]. It allocates only the returned `Vec`, and no
+    /// whole-mesh bitset (P1, `planning/perf_sweep_2026-11-03/PLAN.md`).
+    /// The pin is `tests/a_spatial_query_reuses_its_scratch_perf1.rs`.
     pub fn query(&self, cx: f64, cy: f64, radius: f64) -> Vec<usize> {
-        let x0 = ((cx - radius - self.origin_x) / self.cell_size).floor() as isize;
-        let x1 = ((cx + radius - self.origin_x) / self.cell_size).floor() as isize;
-        let y0 = ((cy - radius - self.origin_y) / self.cell_size).floor() as isize;
-        let y1 = ((cy + radius - self.origin_y) / self.cell_size).floor() as isize;
+        let mut out = Vec::new();
+        let mut scratch = take_local(&QUERY_SCRATCH);
+        self.query_into(cx, cy, radius, &mut scratch, &mut out);
+        put_local(&QUERY_SCRATCH, scratch);
+        out
+    }
 
-        let x0 = x0.max(0) as usize;
-        let x1 = (x1 as usize).min(self.cell_count_x.saturating_sub(1));
-        let y0 = y0.max(0) as usize;
-        let y1 = (y1 as usize).min(self.cell_count_y.saturating_sub(1));
-
-        let mut result = Vec::new();
-        // Use a bitset for dedup: 8x less memory than Vec<bool>.
-        // For 100k triangles: 12.5 KB vs 100 KB per query.
-        let n_words = self.total_triangles.div_ceil(64);
-        let mut seen = vec![0u64; n_words];
-
-        for cy_idx in y0..=y1 {
-            for cx_idx in x0..=x1 {
-                let cell_idx = cy_idx * self.cell_count_x + cx_idx;
-                for &tri_idx in self.cell_slice(cell_idx) {
-                    let word = tri_idx / 64;
-                    let bit = 1u64 << (tri_idx % 64);
-                    if seen[word] & bit == 0 {
-                        seen[word] |= bit;
-                        result.push(tri_idx);
-                    }
-                }
-            }
-        }
-
+    /// Call `f` with the result of [`Self::query`], without an allocation in
+    /// steady state.
+    ///
+    /// The dedup scratch and the result buffer are thread-local. This
+    /// function takes each buffer out of its slot and puts it back after
+    /// use; it holds no borrow while `f` runs. A nested `with_query` (or
+    /// `query`) inside `f` thus gets an empty result buffer of its own and
+    /// cannot panic. Only that nested call allocates.
+    pub fn with_query<R>(&self, cx: f64, cy: f64, radius: f64, f: impl FnOnce(&[usize]) -> R) -> R {
+        let mut out = take_local(&QUERY_OUT);
+        let mut scratch = take_local(&QUERY_SCRATCH);
+        self.query_into(cx, cy, radius, &mut scratch, &mut out);
+        // The scratch goes back before `f` runs, so a nested call reuses it.
+        // `query_rect_into` clears every bit it set, so it is all zero here.
+        put_local(&QUERY_SCRATCH, scratch);
+        let result = f(&out);
+        put_local(&QUERY_OUT, out);
         result
     }
 
@@ -657,10 +655,12 @@ impl SpatialIndex {
     /// Allocation-free twin of [`Self::query`]: same triangle indices, same
     /// order, written into `out` using a caller-owned dedup `scratch`.
     ///
-    /// [`Self::query`] allocates **two** buffers per call: the result `Vec`
-    /// and a `vec![0u64; total_triangles / 64]` dedup bitset sized by the
-    /// whole mesh. On a 661 k-triangle terrain that second one is a 82 KB
-    /// zeroed allocation *per query* — and the classification grid issues two
+    /// Before P1 (perf sweep 2026-11-03), [`Self::query`] allocated **two**
+    /// buffers per call: the result `Vec` and a
+    /// `vec![0u64; total_triangles / 64]` dedup bitset sized by the whole
+    /// mesh. Now it reuses a thread-local scratch and allocates only the
+    /// result. On a 661 k-triangle terrain the bitset was a 82 KB zeroed
+    /// allocation *per query* — and the classification grid issues two
     /// queries per cell, 1.44 M of them on the 849² production row (M3,
     /// `planning/review_2026-07-29/CLASSIFICATION_PERF_STUDY.md`). Hoisting
     /// both buffers out of the loop is a pure-plumbing change: the returned
@@ -814,6 +814,29 @@ impl QueryScratch {
             self.seen.resize(n_words, 0);
         }
     }
+}
+
+thread_local! {
+    /// The dedup scratch of [`SpatialIndex::query`] and
+    /// [`SpatialIndex::with_query`]. It is all zero between calls. It grows to
+    /// the largest mesh that the thread queried and does not shrink.
+    static QUERY_SCRATCH: Cell<QueryScratch> = const { Cell::new(QueryScratch::new()) };
+    /// The result buffer of [`SpatialIndex::with_query`].
+    static QUERY_OUT: Cell<Vec<usize>> = const { Cell::new(Vec::new()) };
+}
+
+/// Take the buffer out of a thread-local slot and leave the default in it.
+/// During thread teardown the slot is gone; then a fresh buffer is used.
+fn take_local<T: Default + 'static>(slot: &'static LocalKey<Cell<T>>) -> T {
+    slot.try_with(Cell::take).unwrap_or_default()
+}
+
+/// Put a buffer back into its thread-local slot. During thread teardown the
+/// buffer is dropped.
+fn put_local<T: 'static>(slot: &'static LocalKey<Cell<T>>, value: T) {
+    // When the slot is gone, `try_with` does not call the closure. The
+    // closure then drops `value`, and nothing panics.
+    let _ = slot.try_with(|cell| cell.set(value));
 }
 
 /// Generate a test hemisphere mesh for testing drop-cutter.

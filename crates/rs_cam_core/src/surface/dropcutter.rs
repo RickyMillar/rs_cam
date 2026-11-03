@@ -27,19 +27,21 @@ pub fn point_drop_cutter<C: MillingCutter + ?Sized>(
     // `drop_cutter` also skips the per-triangle virtual dispatch entirely
     // for the triangles that cannot contribute — PERF_REVIEW G3.
     let envelope_radius = cutter.radius();
-    let tri_indices = index.query(x, y, envelope_radius);
-
-    for &idx in &tri_indices {
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "idx comes from SpatialIndex which only stores valid face indices"
-        )]
-        let tri = &mesh.faces[idx];
-        if !drop_cutter_can_contact(&cl, tri, envelope_radius) {
-            continue;
+    // `with_query` lends the candidate list from a thread-local buffer, so a
+    // CL point allocates nothing in steady state (P1).
+    index.with_query(x, y, envelope_radius, |tri_indices| {
+        for &idx in tri_indices {
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "idx comes from SpatialIndex which only stores valid face indices"
+            )]
+            let tri = &mesh.faces[idx];
+            if !drop_cutter_can_contact(&cl, tri, envelope_radius) {
+                continue;
+            }
+            cutter.drop_cutter(&mut cl, tri);
         }
-        cutter.drop_cutter(&mut cl, tri);
-    }
+    });
 
     cl
 }
@@ -494,15 +496,22 @@ pub(crate) fn batch_drop_cutter_windowed_with_cancel<C: MillingCutter + ?Sized>(
 /// `FINISHING_OPEN_DEFECTS_EVIDENCE.md` §2.2): scallop's ring lift read a
 /// 0.75 mm generation heightmap and cut 0.375 mm past the part edge.
 ///
-/// Cost is one extra `index.query` at radius 0 — the single-cell fast path,
-/// and cheap next to the `point_drop_cutter` call it accompanies.
+/// Cost is one extra `index.with_query` at radius 0. For a point inside the
+/// index grid, both ends of the query rectangle fall in the same cell, so
+/// `query_rect_into` takes its single-cell fast path: it copies that cell's
+/// list and touches no dedup bitset. A point off the grid at negative X or
+/// Y spans a whole row or column (the `x1 as usize` wrap), and a point past
+/// the max edge returns nothing. The result buffer is thread-local, so the
+/// call allocates nothing in steady state.
 pub fn point_is_over_mesh_xy(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
-    index.query(x, y, 0.0).iter().any(|&idx| {
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "idx comes from SpatialIndex which only stores valid face indices"
-        )]
-        mesh.faces[idx].contains_point_xy(x, y)
+    index.with_query(x, y, 0.0, |tri_indices| {
+        tri_indices.iter().any(|&idx| {
+            #[expect(
+                clippy::indexing_slicing,
+                reason = "idx comes from SpatialIndex which only stores valid face indices"
+            )]
+            mesh.faces[idx].contains_point_xy(x, y)
+        })
     })
 }
 

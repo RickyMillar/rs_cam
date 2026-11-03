@@ -2623,6 +2623,7 @@ fn collect_column_deviations(
     let grid = &stock.z_grid;
     let model_thickness = model.bbox.max.z - model.bbox.min.z;
     let relevance_threshold = (model_thickness * 0.5).max(2.0); // mm
+    let model_z = ModelZQuery::new(index, model);
 
     let column_deviation = |row: usize, col: usize| -> Option<ColumnDeviation> {
         let top = grid.top_z_at(row, col)?;
@@ -2641,7 +2642,7 @@ fn collect_column_deviations(
                 P3::new(p.x - stock_min.x, p.y - stock_min.y, p.z - stock_min.z),
             ),
         };
-        let (model_min_z, model_max_z) = query_model_z_range(index, model, q.x, q.y)?;
+        let (model_min_z, model_max_z) = model_z.z_range(q.x, q.y)?;
         let dist_to_top = (q.z - model_max_z).abs();
         let dist_to_bottom = (q.z - model_min_z).abs();
         if dist_to_top.min(dist_to_bottom) > relevance_threshold {
@@ -2709,6 +2710,7 @@ fn collect_column_deviations(
 fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<f32> {
     let num_verts = stock_vertices.len() / 3;
     let index = SpatialIndex::build_auto(model_mesh);
+    let model_z = ModelZQuery::new(&index, model_mesh);
 
     // Model thickness sets a relevance threshold. Vertices further than this
     // from any model surface have no meaningful deviation (e.g. the flat
@@ -2720,7 +2722,7 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
         let x = stock_vertices[i * 3] as f64;
         let y = stock_vertices[i * 3 + 1] as f64;
         let sim_z = stock_vertices[i * 3 + 2] as f64;
-        let Some((model_min_z, model_max_z)) = query_model_z_range(&index, model_mesh, x, y) else {
+        let Some((model_min_z, model_max_z)) = model_z.z_range(x, y) else {
             return 0.0; // outside model footprint
         };
 
@@ -2754,21 +2756,63 @@ fn compute_deviations(stock_vertices: &[f32], model_mesh: &TriangleMesh) -> Vec<
     (0..num_verts).map(compute_vertex_deviation).collect()
 }
 
-/// Find the model Z range (min, max) at a given XY by querying nearby triangles.
+/// The model Z range `(bottom_z, top_z)` under one XY point, for the two
+/// deviation passes.
 ///
-/// Returns `(bottom_z, top_z)` -- the lowest and highest model surface at this point.
-/// Only considers triangles whose 2D footprint contains (x, y).
+/// The result is the min and max of `Triangle::z_at_xy` over the triangles
+/// whose `Triangle::contains_point_xy` accepts the point. Before P4 the pass
+/// read the candidates from `SpatialIndex::query(x, y, 0.0)`. That query
+/// returns a whole row or column band of the index grid for a point left of
+/// or below the grid, and the whole mesh for a point off both low sides
+/// (the `x1 as usize` wrap in `mesh.rs`). A stock that is larger than the
+/// model puts many columns there: on nz-wanaka-21 6.5 % of the queries read
+/// 97 % of the candidates (`planning/perf_sweep_2026-11-03/D_REPORT.md`).
+///
+/// The result is the same as that query gives, bit for bit, for every
+/// point. Three paths give it:
+///
+/// 1. The point is in an index cell that holds triangles. The candidates
+///    are `SpatialIndex::cell_triangles_at`, the same list in the same
+///    order as the radius-0 query gives for that cell.
+/// 2. The point is outside `ModelReach` (no triangle with a safe
+///    condition can accept it) and no ill-conditioned triangle accepts it.
+///    Then no candidate of the query can accept it, and the result is
+///    `None`.
+/// 3. Any other point reads the radius-0 query, as before P4.
+struct ModelZQuery<'a> {
+    index: &'a SpatialIndex,
+    mesh: &'a TriangleMesh,
+    reach: ModelReach,
+}
+
+impl<'a> ModelZQuery<'a> {
+    fn new(index: &'a SpatialIndex, mesh: &'a TriangleMesh) -> Self {
+        Self {
+            index,
+            mesh,
+            reach: ModelReach::of(mesh),
+        }
+    }
+
+    fn z_range(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+        let cell = self.index.cell_triangles_at(x, y);
+        if !cell.is_empty() {
+            return fold_model_z_range(self.mesh, cell, x, y);
+        }
+        if self.reach.excludes(self.mesh, x, y) {
+            return None;
+        }
+        fold_model_z_range(self.mesh, &self.index.query(x, y, 0.0), x, y)
+    }
+}
+
+/// The min and max model Z over the candidates `tris` that contain
+/// `(x, y)`, in the order of `tris`.
 #[expect(clippy::indexing_slicing, reason = "triangle indices bounded by mesh")]
-fn query_model_z_range(
-    index: &SpatialIndex,
-    mesh: &TriangleMesh,
-    x: f64,
-    y: f64,
-) -> Option<(f64, f64)> {
-    let candidates = index.query(x, y, 0.0);
+fn fold_model_z_range(mesh: &TriangleMesh, tris: &[usize], x: f64, y: f64) -> Option<(f64, f64)> {
     let mut min_z: Option<f64> = None;
     let mut max_z: Option<f64> = None;
-    for tri_idx in candidates {
+    for &tri_idx in tris {
         let face = &mesh.faces[tri_idx];
         if face.contains_point_xy(x, y)
             && let Some(z) = face.z_at_xy(x, y)
@@ -2778,6 +2822,90 @@ fn query_model_z_range(
         }
     }
     min_z.zip(max_z)
+}
+
+/// The XY box outside which `Triangle::contains_point_xy` accepts a point
+/// for no triangle of the mesh with a safe condition, and the list of the
+/// other triangles.
+///
+/// `contains_point_xy` accepts barycentric coordinates down to `-1e-8`, and
+/// it computes them in floating point. So it can accept a point a small
+/// distance outside the triangle. The bound below holds for the computed
+/// predicate, with its rounding.
+///
+/// Notation: `A = y1-y2`, `B = x2-x1`, `C = y2-y0`, `E = x0-x2`, the
+/// computed `D = A*E + B*(y0-y2)`, `W = |A|+|B|+|C|+|E|`, `u = 2^-53`.
+/// A triangle has a safe condition when `1e-9 * W^2 <= |D|`. Then:
+///
+/// - `|D - det| <= 2u * W^2`, so `q = 2u * W^2 / |det| <= 2.3e-7`;
+/// - an accepted point has computed `a, b >= -1e-8` and `a + b <= 1 + 2e-8`
+///   (from `c >= -1e-8`), so `alpha = N_a/det` and `beta = N_b/det` are in
+///   the triangle `alpha, beta >= -L`, `alpha + beta <= 1 + L`, with
+///   `L = 1e-6`;
+/// - `dx = alpha*E + beta*(x1-x2) - err` with `|err| <= q * 1.01 * W`;
+/// - so the point x is in `[min x - 3.4e-6 W, max x + 3.4e-6 W]`, and y is
+///   in the same band of the y values.
+///
+/// The margin is `1e-5 * W` plus `1e-12` of the vertex magnitudes, which
+/// covers the rounding of the margin itself. A point with an infinite
+/// coordinate gives an infinite or NaN `a` or `b`, so the predicate refuses
+/// it. A triangle with `|D| < 1e-15` never accepts a point and is left out.
+/// A triangle with NaN or very large values fails the safe test and goes
+/// to `ill`, which `excludes` tests point by point.
+struct ModelReach {
+    lo_x: f64,
+    lo_y: f64,
+    hi_x: f64,
+    hi_y: f64,
+    ill: Vec<usize>,
+}
+
+impl ModelReach {
+    fn of(mesh: &TriangleMesh) -> Self {
+        let mut reach = Self {
+            lo_x: f64::INFINITY,
+            lo_y: f64::INFINITY,
+            hi_x: f64::NEG_INFINITY,
+            hi_y: f64::NEG_INFINITY,
+            ill: Vec::new(),
+        };
+        for (i, face) in mesh.faces.iter().enumerate() {
+            let [p0, p1, p2] = face.v;
+            let (x0, y0, x1, y1, x2, y2) = (p0.x, p0.y, p1.x, p1.y, p2.x, p2.y);
+            // The same expression as `Triangle::contains_point_xy`, so the
+            // same value.
+            let denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+            if denom.abs() < 1e-15 {
+                continue;
+            }
+            let w = (y1 - y2).abs() + (x2 - x1).abs() + (y2 - y0).abs() + (x0 - x2).abs();
+            // A NaN fails this test, so a NaN triangle goes to `ill`.
+            let safe = 1e-9 * w * w <= denom.abs();
+            if !safe {
+                reach.ill.push(i);
+                continue;
+            }
+            let size = x0.abs() + x1.abs() + x2.abs() + y0.abs() + y1.abs() + y2.abs();
+            let margin = 1e-5 * w + 1e-12 * size;
+            reach.lo_x = reach.lo_x.min(x0.min(x1).min(x2) - margin);
+            reach.lo_y = reach.lo_y.min(y0.min(y1).min(y2) - margin);
+            reach.hi_x = reach.hi_x.max(x0.max(x1).max(x2) + margin);
+            reach.hi_y = reach.hi_y.max(y0.max(y1).max(y2) + margin);
+        }
+        reach
+    }
+
+    /// True when no triangle of `mesh` accepts `(x, y)`. False says only
+    /// that the box cannot prove it. A NaN coordinate gives false.
+    #[expect(clippy::indexing_slicing, reason = "triangle indices bounded by mesh")]
+    fn excludes(&self, mesh: &TriangleMesh, x: f64, y: f64) -> bool {
+        let outside = x < self.lo_x || x > self.hi_x || y < self.lo_y || y > self.hi_y;
+        outside
+            && !self
+                .ill
+                .iter()
+                .any(|&i| mesh.faces[i].contains_point_xy(x, y))
+    }
 }
 
 #[cfg(test)]
@@ -3439,5 +3567,208 @@ mod tests {
             pre_a_ray, post_a_ray,
             "phantom snapshot should reflect A's carve; A's own snapshot must not"
         );
+    }
+}
+
+/// P4: `ModelZQuery::z_range` gives the result of the radius-0
+/// `SpatialIndex::query` path, bit for bit, for every class of point.
+#[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    reason = "test code: a panic is how a test reports a failure"
+)]
+mod model_z_query_tests {
+    use super::*;
+
+    /// The pre-P4 `query_model_z_range`, verbatim in effect.
+    fn reference(index: &SpatialIndex, mesh: &TriangleMesh, x: f64, y: f64) -> Option<(f64, f64)> {
+        fold_model_z_range(mesh, &index.query(x, y, 0.0), x, y)
+    }
+
+    fn bits(r: Option<(f64, f64)>) -> Option<(u64, u64)> {
+        r.map(|(a, b)| (a.to_bits(), b.to_bits()))
+    }
+
+    /// A height field over `[x0, x1] x [y0, y1]`.
+    fn field(x0: f64, x1: f64, y0: f64, y1: f64, nx: usize, ny: usize) -> TriangleMesh {
+        let mut v = Vec::new();
+        for j in 0..=ny {
+            for i in 0..=nx {
+                let x = x0 + (x1 - x0) * i as f64 / nx as f64;
+                let y = y0 + (y1 - y0) * j as f64 / ny as f64;
+                v.push(P3::new(x, y, 3.0 + (x * 0.7).sin() * (y * 0.3).cos()));
+            }
+        }
+        let at = |i: usize, j: usize| u32::try_from(j * (nx + 1) + i).unwrap();
+        let mut t = Vec::new();
+        for j in 0..ny {
+            for i in 0..nx {
+                t.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+                t.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+            }
+        }
+        TriangleMesh::from_raw(v, t)
+    }
+
+    /// The points of every class: a lattice past each side of the grid,
+    /// the exact cell edges, the exact max edge of the grid, the mesh box
+    /// edges and their float neighbours, points in the tolerance band
+    /// just outside the low edges, and the non-finite values.
+    fn probe_points(index: &SpatialIndex, mesh: &TriangleMesh) -> Vec<(f64, f64)> {
+        let (ox, oy) = (mesh.bbox.min.x, mesh.bbox.min.y);
+        let cs = index.cell_size();
+        let max_x = ox + cs * index.cell_count_x() as f64;
+        let max_y = oy + cs * index.cell_count_y() as f64;
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        let n = 60;
+        for k in 0..=n {
+            let f = -0.3 + 1.6 * k as f64 / n as f64;
+            xs.push(ox - 3.0 * cs + f * (max_x - ox + 6.0 * cs));
+            ys.push(oy - 3.0 * cs + f * (max_y - oy + 6.0 * cs));
+        }
+        for k in 0..=index.cell_count_x() {
+            xs.push(ox + cs * k as f64);
+        }
+        for k in 0..=index.cell_count_y() {
+            ys.push(oy + cs * k as f64);
+        }
+        for v in [mesh.bbox.min.x, mesh.bbox.max.x, max_x] {
+            xs.extend([v, v.next_down(), v.next_up(), v - 1e-12, v - 1e-9, v - 1e-6]);
+        }
+        for v in [mesh.bbox.min.y, mesh.bbox.max.y, max_y] {
+            ys.extend([v, v.next_down(), v.next_up(), v - 1e-12, v - 1e-9, v - 1e-6]);
+        }
+        for v in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            0.0,
+            -0.0,
+            -1e300,
+            1e300,
+        ] {
+            xs.push(v);
+            ys.push(v);
+        }
+        let mut pts = Vec::new();
+        for &x in &xs {
+            for &y in &ys {
+                pts.push((x, y));
+            }
+        }
+        pts
+    }
+
+    fn assert_identical(mesh: &TriangleMesh) -> (usize, usize) {
+        let index = SpatialIndex::build_auto(mesh);
+        let query = ModelZQuery::new(&index, mesh);
+        let mut hits = 0;
+        let pts = probe_points(&index, mesh);
+        for &(x, y) in &pts {
+            let want = reference(&index, mesh, x, y);
+            let got = query.z_range(x, y);
+            assert_eq!(bits(got), bits(want), "differs at ({x:e}, {y:e})");
+            hits += usize::from(want.is_some());
+        }
+        (pts.len(), hits)
+    }
+
+    #[test]
+    fn an_offset_height_field_reads_the_same_everywhere_p4() {
+        let mesh = field(6.0, 32.0, 5.0, 22.0, 27, 18);
+        let (n, hits) = assert_identical(&mesh);
+        assert!(hits > n / 10, "too few hits: {hits} of {n}");
+    }
+
+    #[test]
+    fn a_mesh_at_negative_coordinates_reads_the_same_everywhere_p4() {
+        let mesh = field(-40.0, -3.0, -17.5, 9.25, 13, 31);
+        let (n, hits) = assert_identical(&mesh);
+        assert!(hits > n / 10, "too few hits: {hits} of {n}");
+    }
+
+    /// A point left of the grid inside the tolerance band is accepted by
+    /// the predicate. The reference reads it through the row band, and the
+    /// new path must read it too: this is the class that `ModelReach`
+    /// must not exclude.
+    #[test]
+    fn a_point_in_the_tolerance_band_left_of_the_grid_still_hits_p4() {
+        let mesh = field(0.0, 10.0, 0.0, 10.0, 10, 10);
+        let index = SpatialIndex::build_auto(&mesh);
+        let query = ModelZQuery::new(&index, &mesh);
+        let (x, y) = (-1e-12, 4.3);
+        assert!(
+            index.cell_triangles_at(x, y).is_empty(),
+            "the point is on the grid"
+        );
+        let want = reference(&index, &mesh, x, y);
+        assert!(
+            want.is_some(),
+            "the tolerance band does not accept the point"
+        );
+        assert_eq!(bits(query.z_range(x, y)), bits(want));
+        // Below the grid and in the corner, too.
+        for (x, y) in [(4.3, -1e-12), (-1e-12, -1e-12)] {
+            let want = reference(&index, &mesh, x, y);
+            assert!(
+                want.is_some(),
+                "the tolerance band does not accept ({x}, {y})"
+            );
+            assert_eq!(bits(query.z_range(x, y)), bits(want));
+        }
+    }
+
+    /// Slivers, a degenerate triangle and a NaN triangle at the low edges.
+    /// They go to `ill` or are left out, and the result stays the same.
+    #[test]
+    fn slivers_and_bad_triangles_read_the_same_everywhere_p4() {
+        let mut mesh = field(2.0, 12.0, 1.0, 9.0, 5, 4);
+        let mut v = mesh.vertices.clone();
+        let mut t = mesh.triangles.clone();
+        let base = u32::try_from(v.len()).unwrap();
+        // A needle along the left edge, a near-collinear sliver along the
+        // bottom edge, an exactly collinear triangle, and a NaN vertex.
+        v.extend([
+            P3::new(2.0, 1.0, 4.0),
+            P3::new(2.0 + 1e-9, 9.0, 4.0),
+            P3::new(2.0, 9.0, 4.5),
+            P3::new(2.0, 1.0, 1.0),
+            P3::new(12.0, 1.0 + 1e-13, 1.0),
+            P3::new(7.0, 1.0, 1.5),
+            P3::new(3.0, 3.0, 2.0),
+            P3::new(4.0, 4.0, 2.0),
+            P3::new(5.0, 5.0, 2.0),
+            P3::new(f64::NAN, 2.0, 2.0),
+        ]);
+        t.extend([
+            [base, base + 1, base + 2],
+            [base + 3, base + 4, base + 5],
+            [base + 6, base + 7, base + 8],
+            [base, base + 9, base + 2],
+        ]);
+        mesh = TriangleMesh::from_raw(v, t);
+        let reach = ModelReach::of(&mesh);
+        assert!(!reach.ill.is_empty(), "no triangle went to `ill`");
+        assert_identical(&mesh);
+    }
+
+    /// The point of P4: a point far off the low sides is excluded without
+    /// the band query.
+    #[test]
+    fn a_point_far_off_the_low_sides_is_excluded_p4() {
+        let mesh = field(6.0, 32.0, 5.0, 22.0, 27, 18);
+        let reach = ModelReach::of(&mesh);
+        assert!(reach.ill.is_empty());
+        for (x, y) in [
+            (0.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 0.0),
+            (40.0, 30.0),
+            (5.99, 10.0),
+        ] {
+            assert!(reach.excludes(&mesh, x, y), "({x}, {y}) is not excluded");
+        }
+        assert!(!reach.excludes(&mesh, 6.0 - 1e-12, 10.0));
     }
 }

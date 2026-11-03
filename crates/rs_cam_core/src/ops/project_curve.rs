@@ -16,14 +16,30 @@ use crate::interrupt::{CancelCheck, Cancelled, check_cancel};
 use crate::maps::reach_map::surface_z_at;
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::polygon::{Polygon2, offset_polygon};
-use crate::surface::dropcutter::point_drop_cutter;
+use crate::surface::dropcutter::{point_drop_cutter, point_is_over_mesh_xy};
 use crate::tool::MillingCutter;
 use crate::toolpath::Toolpath;
 
-/// How many resampled points to process between cancel polls in
-/// `project_polygon_rings_with_cancel` — frequent enough to stay
-/// responsive, coarse enough to avoid an atomic load per point.
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+/// How many resampled points the serial path projects between cancel polls
+/// in `project_tip_zs`. This is frequent enough to stay responsive and
+/// coarse enough to avoid an atomic load per point.
+#[cfg(not(feature = "parallel"))]
 const CANCEL_POLL_STRIDE: usize = 64;
+
+/// How many resampled points the parallel path projects in one rayon
+/// batch. The calling thread polls cancel between batches, because a
+/// `&dyn CancelCheck` is not `Sync` and cannot enter a rayon closure.
+///
+/// 1024 = 16 x the serial stride of 64. On 16 or more threads, one batch
+/// takes about the wall time of 64 serial points, so the cancel latency is
+/// the same as the serial path. On one thread it is 16 x longer. A batch of
+/// 1024 also gives each of 24 threads about 40 points, so the fork-join
+/// cost per batch is small against the drop-cutter work.
+#[cfg(feature = "parallel")]
+const PARALLEL_CHUNK: usize = 1024;
 
 /// Direction from which the curve is projected onto the mesh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,25 +138,6 @@ pub struct ProjectCurveParams {
     pub setup_z_flipped: bool,
 }
 
-/// Return true if the vertical ray from (x, y) passes through the 2D
-/// footprint of at least one triangle in the mesh. Used by project_curve to
-/// reject points that fall inside mesh holes — `point_drop_cutter` would
-/// otherwise happily report a contact on the hole's rim, producing a
-/// phantom cutting bridge across the hole.
-#[expect(
-    clippy::indexing_slicing,
-    reason = "idx comes from the spatial index built over mesh.faces, so it is in bounds"
-)]
-fn point_over_triangle(x: f64, y: f64, mesh: &TriangleMesh, index: &SpatialIndex) -> bool {
-    for &idx in &index.query(x, y, 0.0) {
-        let tri = &mesh.faces[idx];
-        if tri.contains_point_xy(x, y) {
-            return true;
-        }
-    }
-    false
-}
-
 /// Close a ring by appending the first point if not already duplicated.
 fn close_ring(ring: &[P2]) -> Vec<P2> {
     if ring.len() < 2 {
@@ -198,10 +195,11 @@ fn sample_vertices_and_steps(points: &[P2], spacing: f64) -> Vec<P2> {
 }
 
 /// Project a curve onto the mesh: the kernel the Curve runner calls
-/// (`compute::execute::generate_project_curve`). Polls `cancel` every
-/// [`CANCEL_POLL_STRIDE`] resampled points inside the per-ring drop-cutter
-/// loop (planning/finishing_stack_review_2026-07.md S.5: "project_curve
-/// (drop-cutter per point)" — the worst per-op loop of the flat-2D family).
+/// (`compute::execute::generate_project_curve`). Polls `cancel` between
+/// batches of resampled points inside the per-ring projection
+/// (`project_tip_zs`, P2 of planning/perf_sweep_2026-11-03/PLAN.md).
+/// planning/finishing_stack_review_2026-07.md S.5 named "project_curve
+/// (drop-cutter per point)" the worst per-op loop of the flat-2D family.
 pub fn project_curve_toolpath_with_cancel(
     polygon: &Polygon2,
     mesh: &TriangleMesh,
@@ -334,35 +332,12 @@ fn project_polygon_rings_with_cancel(
             }
         };
 
-        // Project each 2D point onto the mesh
+        // Project each 2D point onto the mesh (in parallel when the
+        // `parallel` feature is on), then build the chains serially.
+        let tip_zs = project_tip_zs(&resampled, mesh, index, cutter, params.projection, cancel)?;
         let mut current_chain: Vec<P3> = Vec::new();
 
-        for (i, pt) in resampled.iter().enumerate() {
-            if i % CANCEL_POLL_STRIDE == 0 {
-                check_cancel(cancel)?;
-            }
-            // The tip Z in the projection frame, or `None` where no surface
-            // is directly under the point.
-            let surface_tip_z = match params.projection {
-                ProjectProjection::Cutter => {
-                    let cl = point_drop_cutter(pt.x, pt.y, mesh, index, cutter);
-                    // `point_drop_cutter` marks `contacted=true` whenever the cutter
-                    // (which has radius) touches ANY nearby triangle — including the
-                    // edge of a hole in the mesh. For project_curve we want to trace
-                    // the surface *directly below* the 2D path, so reject any point
-                    // whose vertical ray doesn't actually pass through a triangle.
-                    // Otherwise the tool rides on the hole's rim and produces
-                    // phantom bridges across the gap, visible as straight cuts
-                    // crossing the stock.
-                    let has_surface_below =
-                        cl.contacted && point_over_triangle(pt.x, pt.y, mesh, index);
-                    has_surface_below.then_some(cl.z)
-                }
-                // The zero-radius drop: the highest surface under the point
-                // in the projection frame. It uses the same containment test
-                // as `point_over_triangle`, so a mesh hole is a gap here too.
-                ProjectProjection::Point => surface_z_at(pt.x, pt.y, mesh, index),
-            };
+        for (pt, surface_tip_z) in resampled.iter().zip(tip_zs) {
             if let Some(tip_z) = surface_tip_z {
                 let z = if z_flip {
                     // Flip Z back to world space and go depth INTO the bottom surface (upward).
@@ -401,6 +376,71 @@ fn project_polygon_rings_with_cancel(
     }
 
     Ok(())
+}
+
+/// The tip Z of one point in the projection frame, or `None` where no
+/// surface is directly under the point.
+fn surface_tip_z(
+    pt: &P2,
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    projection: ProjectProjection,
+) -> Option<f64> {
+    match projection {
+        ProjectProjection::Cutter => {
+            let cl = point_drop_cutter(pt.x, pt.y, mesh, index, cutter);
+            // `point_drop_cutter` marks `contacted=true` whenever the cutter
+            // (which has radius) touches ANY nearby triangle — including the
+            // edge of a hole in the mesh. For project_curve we want to trace
+            // the surface *directly below* the 2D path, so reject any point
+            // whose vertical ray doesn't actually pass through a triangle.
+            // Otherwise the tool rides on the hole's rim and produces
+            // phantom bridges across the gap, visible as straight cuts
+            // crossing the stock.
+            let has_surface_below = cl.contacted && point_is_over_mesh_xy(pt.x, pt.y, mesh, index);
+            has_surface_below.then_some(cl.z)
+        }
+        // The zero-radius drop: the highest surface under the point
+        // in the projection frame. It uses the same containment test
+        // as `point_is_over_mesh_xy`, so a mesh hole is a gap here too.
+        ProjectProjection::Point => surface_z_at(pt.x, pt.y, mesh, index),
+    }
+}
+
+/// The tip Z of each point of `points`, in order. Each point is
+/// independent, so the parallel path gives the same values in the same
+/// order as the serial path. Both paths poll `cancel` before the first
+/// point and then once per batch (parallel) or stride (serial).
+fn project_tip_zs(
+    points: &[P2],
+    mesh: &TriangleMesh,
+    index: &SpatialIndex,
+    cutter: &dyn MillingCutter,
+    projection: ProjectProjection,
+    cancel: &dyn CancelCheck,
+) -> Result<Vec<Option<f64>>, Cancelled> {
+    let mut out = Vec::with_capacity(points.len());
+
+    #[cfg(feature = "parallel")]
+    for chunk in points.chunks(PARALLEL_CHUNK) {
+        check_cancel(cancel)?;
+        out.par_extend(
+            chunk
+                .par_iter()
+                .map(|pt| surface_tip_z(pt, mesh, index, cutter, projection)),
+        );
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    for (i, pt) in points.iter().enumerate() {
+        if i % CANCEL_POLL_STRIDE == 0 {
+            check_cancel(cancel)?;
+        }
+        out.push(surface_tip_z(pt, mesh, index, cutter, projection));
+    }
+
+    Ok(out)
 }
 
 #[cfg(test)]
