@@ -59,6 +59,7 @@
 #![expect(
     clippy::expect_used,
     clippy::indexing_slicing,
+    clippy::panic,
     reason = "test code: a panic is how a test reports a failure"
 )]
 
@@ -484,4 +485,114 @@ fn no_gesture_moves_the_axes_w3k() {
         ticks,
         "a gesture moved the RPM axis"
     );
+}
+
+/// P5c (operator review 2026-11-04, item 8: "feed chart has no y axis
+/// numbers"): on the rivmap100 3D Rough the feed axis names its ticks, at
+/// the 340-point inspector and at the 240-point rail. A feed tick is a painted number of at least 100
+/// left of the centre of the RPM axis title, above the RPM tick row and in
+/// the 220 points above the title (the chart).
+#[test]
+fn the_feed_axis_names_its_ticks_p5c() {
+    for width in [PANEL_WIDTH, 240.0] {
+        let ctx = ctx();
+        let mut state = rivmap_rough();
+        let mut texts = Vec::new();
+        for _ in 0..4 {
+            texts = placed_texts(&ctx, &mut state, width);
+        }
+        // The RPM axis title is under the chart (the topmost "RPM"; the
+        // card under the chart has an RPM row). The feed ticks are left of
+        // its centre, above the RPM tick row, in the chart band.
+        let title = texts
+            .iter()
+            .filter(|(t, _)| t == "RPM")
+            .map(|(_, r)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("{width}: the RPM axis title paints: {texts:?}"));
+        let feed: Vec<&String> = texts
+            .iter()
+            .filter(|(t, r)| {
+                t.parse::<f64>().is_ok_and(|v| v >= 100.0)
+                    && r.right() < title.center().x
+                    && r.center().y < title.top() - 20.0
+                    && r.center().y > title.top() - 220.0
+            })
+            .map(|(t, _)| t)
+            .collect();
+        assert!(
+            feed.len() >= 2,
+            "{width}: the feed axis names at least two ticks: {feed:?}"
+        );
+    }
+}
+
+/// The rivmap100 3D Rough on its Passes tab (the operator's review job).
+/// Its machine feed cap puts the feed axis near 10000 mm/min: the default
+/// log-10 grid then named only 0 (a 1000 step is about 17 points apart).
+fn rivmap_rough() -> AppState {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../rs_cam_core/tests/fixtures/rivmap100_rough_2026-11-04_7effc804/rivmap100.toml"
+    );
+    let session = rs_cam_core::session::ProjectSession::load(std::path::Path::new(path))
+        .expect("the rivmap100 fixture loads");
+    let mut state = AppState::new();
+    state.replace_session(session);
+    let id = state
+        .session()
+        .toolpath_configs()
+        .iter()
+        .find(|t| t.name == "3D Rough")
+        .expect("rivmap100 has the 3D Rough")
+        .id;
+    state
+        .gui
+        .toolpath_rt
+        .insert(id, rs_cam_viz::state::runtime::ToolpathRuntime::new(true));
+    let _ = state.set_focus(rs_cam_viz::state::selection::Selection::Toolpath(id));
+    state.gui.pending_toolpath_tab = Some((id, rs_cam_viz::ui::properties::ToolpathTab::Passes));
+    state
+}
+
+/// One frame of the inspector `width` points wide: each painted text with
+/// its screen rect.
+#[expect(
+    clippy::wildcard_enum_match_arm,
+    reason = "test: foreign enum egui Shape; the arm skips every shape that this test does not read"
+)]
+fn placed_texts(
+    ctx: &egui::Context,
+    state: &mut AppState,
+    width: f32,
+) -> Vec<(String, egui::Rect)> {
+    let input = egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN)),
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| {
+        egui::Panel::right("hoverbound_properties")
+            .default_size(width)
+            .min_size(width)
+            .max_size(width)
+            .resizable(false)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let mut events = Vec::new();
+                    properties::draw(ui, state, &mut events);
+                });
+            });
+    });
+    let texts = out
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::epaint::Shape::Text(t) => {
+                Some((t.galley.job.text.clone(), t.visual_bounding_rect()))
+            }
+            _ => None,
+        })
+        .collect();
+    out.textures_delta.clear();
+    texts
 }

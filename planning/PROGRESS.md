@@ -72,7 +72,16 @@ and the nomogram follows it; a click writes nothing until Apply. The Feeds tab
 is merged into Passes (4 tabs). Every toolpath result carries a `Lineage`
 (cut, pick, speed stamps, tool facts, entry, findings); a result without it
 does not compile. MCP: `get_toolpath_lineage`. No FM1 cell or G-OPGOLDEN row
-moved. Next: P5c (operator plot review fixes), then P6 (`ToolFact`).
+moved. Next: P6 (`ToolFact`).
+
+Phase 5c landed 2026-11-04 (operator review of the plot): the envelope frame
+is the hard stops (width 0..D, depth up to the cutting length); a line only
+for a limit that binds, is crossed or is near a mark (rivmap100 3D Rough: 4
+lines and 4 labels before, 1-2 lines and 0 labels after); the hover names a
+line; the candidate ring exists only after a drag, the proposal diamond only
+when it is not at Now; grey lines, amber on a crossing, no red; the feed axis
+names its ticks. Research `feeds_contract_2026-11-03/research_ae/`: stepover
+load and the chip-first flow (needs an operator ruling on chip thinning).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

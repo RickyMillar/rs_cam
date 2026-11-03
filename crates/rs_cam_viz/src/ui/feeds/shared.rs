@@ -35,12 +35,10 @@ use rs_cam_core::feeds::{
 use crate::state::AppState;
 use crate::ui::tokens;
 
-/// The chart label kit of the nomogram, shared with the envelope plot (P5b):
-/// the label layout (along each line, never across a drawn line, at most
-/// `MAX_LABELS`), the paint, and the axis title indent.
-pub(crate) use super::explore::{
-    ChartLabel, DrawnLine, LabelAnchor, axis_title_overhang, paint_labels, place_labels,
-};
+/// The axis title indent of the nomogram, shared with the envelope plot
+/// (P5b). P5c: the envelope plot paints no label at rest, so the label
+/// kit (`place_labels`, `paint_labels`) is the nomogram's alone.
+pub(crate) use super::explore::axis_title_overhang;
 
 /// The chart palette, named by what each series IS.
 ///
@@ -71,6 +69,27 @@ pub(crate) mod chart {
 /// filled region (ruling G-CHARTLINES, 2026-09-23).
 pub(crate) fn wash(base: egui::Color32, alpha: u8) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha)
+}
+
+/// The grid steps of a chart axis: a 1-2-5 step near a third of the range
+/// for the named lines, half and a tenth of it for the fainter ones. The
+/// default egui_plot spacer is a log-10 grid; on a short axis (a few mm, or
+/// a feed axis 180 points high) it names only 0. The envelope plot and the
+/// nomogram both read this one rule (P5c).
+pub(crate) fn nice_steps(input: &egui_plot::GridInput) -> [f64; 3] {
+    let range = (input.bounds.1 - input.bounds.0).abs();
+    let raw = if range.is_finite() && range > 0.0 {
+        range / 3.0
+    } else {
+        1.0
+    };
+    let power = 10_f64.powf(raw.log10().floor());
+    let large = [1.0, 2.0, 5.0, 10.0]
+        .iter()
+        .map(|m| m * power)
+        .find(|s| *s >= raw)
+        .unwrap_or(10.0 * power);
+    [large / 10.0, large / 2.0, large]
 }
 
 pub(crate) fn toolpath_name(

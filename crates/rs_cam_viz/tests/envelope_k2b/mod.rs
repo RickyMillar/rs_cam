@@ -24,7 +24,12 @@ pub const ID: ToolpathId = ToolpathId::from_raw(7);
 /// the calculator backs (a 6 mm end mill, a 6 mm ball, a 90 degree V-bit),
 /// or `None` when none is backed.
 pub fn envelope_for(op: OperationType) -> Option<(OperationConfig, SafeEnvelope)> {
-    let config = rs_cam_core::compute::fixture_values::fixture_op(op);
+    envelope_of(rs_cam_core::compute::fixture_values::fixture_op(op))
+}
+
+/// The envelope of `config` with the first backed tool type, as
+/// [`envelope_for`] (P5c: a fixture op with an edited stated point).
+pub fn envelope_of(config: OperationConfig) -> Option<(OperationConfig, SafeEnvelope)> {
     for kind in [ToolType::EndMill, ToolType::BallNose, ToolType::VBit] {
         let mut tool = ToolConfig::new_default(ToolId::from_raw(1), kind);
         tool.diameter = 6.0;
@@ -134,4 +139,14 @@ pub fn click_at(pos: egui::Pos2) -> Vec<Vec<egui::Event>> {
         vec![button(false)],
         vec![egui::Event::PointerMoved(pos)],
     ]
+}
+
+/// The colour of a solid path stroke; a callback colour reads as
+/// transparent.
+pub fn solid(color: &egui::epaint::ColorMode) -> egui::Color32 {
+    if let egui::epaint::ColorMode::Solid(c) = color {
+        *c
+    } else {
+        egui::Color32::TRANSPARENT
+    }
 }

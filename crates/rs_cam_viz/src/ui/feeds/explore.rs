@@ -61,7 +61,7 @@ use rs_cam_core::feeds::FeedsExplain;
 use rs_cam_core::feeds::efficiency::CutEfficiency;
 use rs_cam_core::feeds::suggest::FeedsPreview;
 
-use super::shared::{CurrentValues, OpFeeds, chart, vendor_band, wash};
+use super::shared::{CurrentValues, OpFeeds, chart, nice_steps, vendor_band, wash};
 use crate::ui::{AppEvent, tokens};
 
 /// Ranges that belong to an axis are drawn ON that axis, at this weight.
@@ -355,6 +355,13 @@ pub(crate) fn draw_chart_c(
                 // The four-digit feed ticks need this room at the 240-point rail;
                 // the default width clipped them.
                 .y_axis_min_width(Y_AXIS_MIN_WIDTH)
+                // P5c: the default log-10 grid named only 0 on the feed
+                // axis (a step of 1000 mm/min is closer than its label
+                // spacing on a 180-point chart). A 1-2-5 step near a third
+                // of the range gives three or four names, as on the
+                // envelope plot. The axis grows past `Y_AXIS_MIN_WIDTH`
+                // when a name needs more room.
+                .y_grid_spacer(egui_plot::uniform_grid_spacer(|i| nice_steps(&i)))
                 // W3k: no navigation. W3i turned off drag, zoom and scroll,
                 // but egui_plot has three more doors, each on by default: a
                 // drag on the axis ticks zooms that axis, a right drag zooms

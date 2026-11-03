@@ -1,6 +1,6 @@
 # P5c: the envelope plot and the nomogram, operator review fixes
 
-Status: NOT STARTED (card by the lead, 2026-11-04, from the operator's live review of P5b on
+Status: DONE 2026-11-04 (card by the lead, 2026-11-04, from the operator's live review of P5b on
 rivmap100 3D Rough) | Contracts: K2b (view) | Numbers move: no (view only, unless item 4
 changes the plot range that the envelope reports)
 

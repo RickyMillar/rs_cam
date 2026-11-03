@@ -34,8 +34,8 @@ code by the symbol when the line has moved.
 | 3 K4 entry contract | `phases/P3.md` | DONE 2026-11-03 (25 rows state `entry`; `EntryApproach`; `EntryRecord`; G-OPGOLDEN has `gcode_hash`, no byte moved) | see `git log` | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | DONE 2026-11-04 (Suggest writes geometry only on a pick; `SafeEnvelope`; Q3; FM1 re-blessed). Heavy FM1 subset and `wanaka_suggest_integration`: approved, run after the commit | see `git log` | |
-| 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | Next: P5c, then P6, in a fresh session |
-| 5c Plot review fixes | `phases/P5c.md` | NOT STARTED (operator review of P5b, 2026-11-04; do before P6) | | |
+| 5b GUI envelope + K8 lineage | `phases/P5b.md` | DONE 2026-11-04 (envelope plot on the Passes tab, drag + live nomogram; Feeds tab merged into Passes (4 tabs); `Lineage` is a required field of every toolpath result; MCP `get_toolpath_lineage`; FM1 and G-OPGOLDEN unchanged) | see `git log` | |
+| 5c Plot review fixes | `phases/P5c.md` | DONE 2026-11-04 (lines 4+4 labels -> 1-2 lines, 0 labels on rivmap100 3D Rough; frame = hard stops; candidate ring only on drag, proposal diamond only off Now; no DANGER; feed axis ticks) | see `git log` | Next: P6 |
 | 6 K3 `ToolFact` | `phases/P6.md` | NOT STARTED | | |
 | 7 K5 feasibility rules | `phases/P7.md` | NOT STARTED (needs P6) | | |
 | 8 Q1 / Q6 / Q8 | `phases/P8.md` | NOT STARTED (Q1 needs P9 changes 1-2 first) | | |
@@ -68,6 +68,9 @@ code by the symbol when the line has moved.
   - Idea (operator, 2026-11-04): show each envelope limit as a fill fraction
     at the pick (sorted bars beside the plot, live on drag). The operator
     has not ruled; a radar chart was considered and does not show the trade.
+- P5c follow-ups (2026-11-04): the "6" tick at the frame edge D does not
+  paint (egui_plot); at the 240 pt rail the nomogram RPM axis names only "0"
+  and its "Now" / "Max RPM" labels touch (both predate P5c).
 - Research (operator, 2026-11-04): stepover does not move the feeds and
   speeds, and a raised stepover does not lower the proposed depth. The operator
   expects a higher depth and a lower stepover to trade ("kind of cancel").
