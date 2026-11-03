@@ -87,66 +87,62 @@ The support arm is one axis: `Refused` (Suggest returned an error), `VendorBacke
 | id | cells |
 |---|---|
 | `compat.ball_nose_on_flat_clearing` | 42 |
-| `efficiency.very_fine_stepover` | 102 |
-| `feeds.aggressiveness_engagement` | 230 |
-| `feeds.feed_clamped` | 30 |
+| `efficiency.very_fine_stepover` | 4 |
+| `feeds.dpp_vs_lut` | 14 |
+| `feeds.feed_clamped` | 22 |
 | `feeds.long_tool_derate` | 496 |
-| `feeds.rpm_lowered_for_ceiling` | 187 |
+| `feeds.rpm_lowered_for_ceiling` | 194 |
 | `feeds.shank_too_large` | 100 |
+| `feeds.slotting_detected` | 74 |
+| `feeds.stepover_vs_lut` | 14 |
+| `geom.stepover_exceeds_diameter` | 15 |
+| `quality.stepover_over_80_pct_diameter` | 15 |
 
 ## FeedsWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `FeedRateClamped` | 30 |
+| `FeedRateClamped` | 22 |
 | `LongToolDerate` | 496 |
-| `RpmLoweredForFeedCeiling` | 187 |
+| `RpmLoweredForFeedCeiling` | 194 |
 | `ShankTooLarge` | 100 |
+| `SlottingDetected` | 74 |
 
 ## SuggestWarning variants (cells that carry each)
 
 | id | cells |
 |---|---|
-| `AggressivenessNotApplied` | 294 |
-| `AxialDocClampedByEnvelope` | 22 |
-| `CutGeometryFieldNotHeld` | 362 |
-| `DeflectionBackoffFigureIsAFloor` | 8 |
-| `DeflectionBackoffUnmodeled` | 32 |
-| `EngagementReducedForAggressiveness` | 230 |
-| `FeedRescaledToFinalGeometry` | 60 |
-| `FinishEnvelopeAdvisory` | 164 |
-| `PlungeEntryUnstableAtDpp` | 30 |
-| `PlungeReDerived` | 16 |
-| `ProjectCurveDepthInfeasible` | 6 |
+| `PlungeEntryUnstableAtDpp` | 15 |
 | `RampFeed` | 508 |
-| `RoughingDepthClampedToRigidity` | 125 |
-| `RpmLoweredForFeedCeiling` | 187 |
+| `RpmLoweredForFeedCeiling` | 194 |
+| `UnsourcedRowsAccepted` | 417 |
 
 ## Simulation subset (`matrix_2026-09-23_sim.csv`)
 
 - 2D: Pocket, Profile, Adaptive on a 40 mm square polygon, stock 44 × 44 × 18 below z = 0; end_mill and bull_nose at 6 mm; the four materials.
 - 3D: a dome height field (top z = 0, flat base z = -8, 46 mm footprint) in the same stock; heights pinned to top 0 and bottom -8 on all 3D cells (`bottom_z: Auto` collapses a waterline band). Waterline, DropCutter, Adaptive3d with end_mill; Scallop and DropCutter with ball_nose and tapered_ball_nose; 6 mm; softwood and hardwood.
 - Simulation: resolution 1.0, metrics on, auto resolution off, other fields from `SimulationOptions::default()`. That default has `adaptive_feed_modulation: true`, so the post-simulation verdicts read the modulated feed, as the GUI default does.
-- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 48.4 s.
+- Cells run: 35; errors: 0; left out (a fixed list, `sim_left_out`): 3; wall-clock of the subset: 19.6 s.
 
 ## Post-simulation diagnostic ids (cells that fire each id)
 
 | id | cells |
 |---|---|
-| `efficiency.very_fine_stepover` | 3 |
-| `feeds.aggressiveness_engagement` | 28 |
-| `feeds.feed_clamped` | 5 |
+| `feeds.feed_clamped` | 2 |
 | `feeds.long_tool_derate` | 35 |
-| `feeds.rpm_lowered_for_ceiling` | 27 |
+| `feeds.rpm_lowered_for_ceiling` | 24 |
 | `feeds.shank_too_large` | 2 |
-| `load.chipload.unmodeled` | 25 |
-| `load.chipload.within` | 10 |
-| `load.deflection.unmodeled` | 8 |
-| `load.deflection.within` | 27 |
+| `feeds.slotting_detected` | 8 |
+| `load.chipload.unmodeled` | 22 |
+| `load.chipload.within` | 13 |
+| `load.deflection.unmodeled` | 6 |
+| `load.deflection.within` | 29 |
+| `load.depth.exceeds` | 16 |
 | `load.depth.reported` | 9 |
-| `load.depth.within` | 26 |
-| `load.power.unmodeled` | 8 |
-| `load.power.within` | 27 |
+| `load.depth.within` | 10 |
+| `load.power.unmodeled` | 6 |
+| `load.power.within` | 29 |
+| `project.outside_envelope` | 16 |
 
 ## Doors that could not answer
 

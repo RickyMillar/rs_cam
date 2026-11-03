@@ -19,9 +19,11 @@
 //!   deflection back-off fire only for long/thin tools; this 6 mm
 //!   carbide stub is chipload/power-bound, not deflection-bound, so
 //!   `DppCappedByDeflection` must NOT fire. Instead the axial-DOC
-//!   envelope (`binding: "vendor_ap"`) clamps the calculator's 9 mm
+//!   envelope (`binding: "vendor_ap"`) clamped the calculator's 9 mm
 //!   DPP straight to the matched row's ap ceiling via
-//!   `AxialDocClampedByEnvelope`, and the deflection solve never runs.
+//!   `AxialDocClampedByEnvelope`. Feeds contract P5 deleted that pass:
+//!   the stated 9 mm DPP stays, and the safe envelope's proposal binds on
+//!   `VendorAxial` at the row's ap ceiling (re-pinned 2026-11-04).
 //!   **Re-baselined 2026-08-16 (G-WANAKA-DPP):** that ceiling is 4.2 mm,
 //!   not 5.4 — Checkpoint K-(a4) (`6604303c`) moved the matched row from
 //!   the adaptive to the pocket family. Full record at the assertion.
@@ -104,6 +106,7 @@
     reason = "test code: a panic is how a test reports a failure; the test prints its measurements for the reader"
 )]
 
+use rs_cam_core::feeds::envelope::{LimitKind, Placement};
 use rs_cam_core::ids::ToolpathId;
 use std::path::PathBuf;
 
@@ -324,119 +327,94 @@ fn wanaka_suggest_baseline() {
         let (_id, name, suggested) = find_case(&cases, ToolpathId::from_raw(4));
         let ctx = format!("Back Rough (tp {_id} / {name})");
 
-        // Unified-load-model re-baseline (2026-07-06): the axial-DOC
-        // envelope pass runs FIRST in enforce_invariants. On Wanaka's
-        // Back Rough the vendor `ap_max` row binds and clamps the
-        // calculator's 9 mm initial DPP straight to the row's ap ceiling
-        // via `AxialDocClampedByEnvelope { binding: "vendor_ap" }`. Since
-        // the 2026-06-20 unified-load-model recalibration (Ks=49.95/
-        // F_edge=5.30 anchored to GenericHardwood), the closed-form
-        // deflection back-off only fires for long/thin tools — this 6 mm
-        // carbide stub is chipload/power-bound, so the back-off never runs
-        // and `DppCappedByDeflection` must NOT fire.
-        let envelope_clamp = suggested
-            .warnings
-            .iter()
-            .find_map(|w| match w {
-                SuggestWarning::AxialDocClampedByEnvelope {
-                    op_kind: "adaptive3d",
-                    commanded_mm,
-                    clamped_mm,
-                    binding,
-                    ..
-                } => Some((*commanded_mm, *clamped_mm, *binding)),
-                SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
-                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-                | SuggestWarning::StepoverRaisedForRuntime { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::StrategyRecommendedNotApplied { .. }
-                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
-                | SuggestWarning::AxialDocBelowBurnFloor { .. }
-                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. }
-                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::FeedClampedToChiploadFloor { .. }
-                | SuggestWarning::PowerRecheckedAfterRescale { .. }
-                | SuggestWarning::CutGeometryFieldNotHeld { .. }
-                | SuggestWarning::EngagementReducedForAggressiveness { .. }
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
-                | SuggestWarning::RampFeed { .. }
-                | SuggestWarning::UnsourcedRowsAccepted { .. }
-                | SuggestWarning::OutsideEnvelope { .. }
-                | SuggestWarning::PlungeReDerived { .. } => None,
-            })
-            .unwrap_or_else(|| {
-                panic!(
-                    "{ctx}: AxialDocClampedByEnvelope must fire — calculator's 9 mm DPP \
-                     should hit the vendor ap bound, got warnings {:?}",
-                    suggested.warnings
-                )
-            });
-        let (envelope_commanded, envelope_clamped, envelope_binding) = envelope_clamp;
-        assert!(
-            (envelope_commanded - 9.0).abs() < 1e-6,
-            "{ctx}: calculator pre-envelope DPP must be 9.0 mm, got {envelope_commanded}"
+        // ── RE-PINNED 2026-11-04 (feeds contract P5, lead ruling) ──────
+        //
+        // This block read `AxialDocClampedByEnvelope { binding: "vendor_ap" }`,
+        // the record of Suggest pass 0 clamping the calculator's 9 mm DPP to
+        // the matched row's ap ceiling. P5 (K2, K2b) deleted pass 0: Suggest
+        // writes no geometry by itself, and the safe envelope holds the
+        // vendor ap bound. The 9 mm was the calculator's own family default
+        // before P5; the project STATES 3.0 mm (measured, the fixture), and
+        // the calculator now reads the stated cut. The claim moves to the
+        // production door in two arms:
+        //
+        // 1. The project as stated: the speeds write keeps 3.0 mm (K2), the
+        //    stated point is inside the envelope, and the envelope carries
+        //    the vendor ap bound at the matched row's ceiling.
+        // 2. The 9 mm the calculator chose before P5, stated on a copy of the
+        //    op: the envelope's proposal is lowered to the vendor ap bound
+        //    and names `VendorAxial` as its binding limit, and the stated
+        //    point sits outside the envelope, past `VendorAxial`.
+        //
+        // The history of the 9 mm -> 5.4 -> 4.2 -> 6.0 mm ceiling follows;
+        // the row-identity and row-ceiling checks below hold on arm 2.
+        const PROJECT_DPP_MM: f64 = 3.0;
+        const PRE_P5_CALCULATOR_DPP_MM: f64 = 9.0;
+        let (_, tc) = session
+            .find_toolpath_config_by_id(ToolpathId::from_raw(4))
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath is in the project"));
+        assert_eq!(
+            tc.operation.depth_per_pass(),
+            Some(PROJECT_DPP_MM),
+            "{ctx}: the project states a {PROJECT_DPP_MM} mm DPP"
         );
         assert_eq!(
-            envelope_binding, "vendor_ap",
-            "{ctx}: the vendor ap_max row must bind (not deflection/scallop), got {envelope_binding}"
+            suggested.operation.depth_per_pass(),
+            Some(PROJECT_DPP_MM),
+            "{ctx}: the speeds write must keep the stated DPP (K2)"
         );
+        let as_stated = session
+            .safe_envelope(tc)
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
+            .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
         assert!(
-            envelope_clamped > 0.0 && envelope_clamped < envelope_commanded,
-            "{ctx}: envelope-clamped DPP must drop below the calculator's initial 9.0 mm, got {envelope_clamped}"
+            matches!(as_stated.operator, Some(Placement::Inside { .. })),
+            "{ctx}: the stated {PROJECT_DPP_MM} mm sits inside the envelope, got {:?}",
+            as_stated.operator
         );
-        // ── RE-BASELINED 2026-08-16 (G-WANAKA-DPP): 5.4 mm → 4.2 mm ────
-        //
-        // OLD: `(envelope_clamped - 5.4).abs() < 0.5`. Provenance as this
-        // file stated it: "the vendor_ap envelope's output on this exact
-        // geometry/tool/LUT row"; re-baseline only on the unified-load-
-        // model recalibration or a deliberate LUT ap_max change. 5.4 is
-        // `min(ap_max_factor 0.9 × Ø6, ap_max_mm 5.5)` on the LUT row
-        // `amana-flat-hardwood-adaptive-6000-2f`.
-        //
-        // NEW: 4.2 mm, observed as 4.199999999999999 — which is exactly
-        // `min(0.7 × 6.0, 4.2)` in IEEE-754 double (0.7 × 6.0 rounds to
-        // 4.199999999999999 and wins the min against 4.2). That is the ap
-        // ceiling of the LUT row `amana-flat-hardwood-pocket-6000-2f`
-        // (`ap_max_factor 0.7`, `ap_max_mm 4.2`, `ap_rule "0.25xD to
-        // 0.7xD"`, Amana Spektra Spiral Plunge v24). Both the old and the
-        // new value are bit-exact reproductions of their row's ceiling, so
-        // the attribution is arithmetic, not inference.
-        //
-        // MECHANISM: `6604303c` — "feat(a7)!: K-(a4) — route the LUT query
-        // ONCE; both consumers call `lut_query_for`" (A-7, Checkpoint
-        // K-(a4), ruled binding and declared NUMBER-MOVING for Adaptive3d).
-        // Before a4, Suggest queried the *declared* family, so an
-        // `Adaptive3d` op matched the `adaptive` row; the gate/optimizer
-        // side already rerouted Adaptive3d → Pocket. a4 hoisted that
-        // routing into `feeds::vendor_normalize::lut_query_for` and made
-        // both sides call it, so Suggest's matched row moved adaptive →
-        // pocket. The matched row reaches this envelope through
-        // `FeedsResult::matched_lut_row` → `SuggestContext::matched_lut_row`
-        // → `pick_axial_envelope` → `cutter_axial_constraints` →
-        // `max_doc_vendor` = `min(ap_max_factor × D, ap_max_mm)`.
-        //
-        // The same commit's companion `c9c82398` re-pinned the two
-        // Adaptive3d feeds in `arc_fit_disposition_a5.rs` on this exact
-        // row pair (band 0.038–0.070 → 0.032–0.055) and named the row ids.
-        // This file was NOT re-pinned then because it was already red on
-        // the play-file drift and its verification never reached here.
-        //
-        // R4 convention: this stays a DETERMINISM SENTRY (rule 3), but the
-        // number is no longer a bare literal — the assertion below derives
-        // the expectation from the matched row and the row-identity check
-        // above states which row that must be. Re-baseline on a deliberate
-        // LUT ap change or a deliberate re-route; if it moves for any other
-        // reason, one of those two guards will say which.
+        assert_eq!(as_stated.proposal_binding, None, "{ctx}: nothing lowers it");
+
+        // Arm 2: the pre-P5 calculator depth, stated.
+        let mut deep = tc.clone();
+        deep.operation.set_depth_per_pass(PRE_P5_CALCULATOR_DPP_MM);
+        let envelope = session
+            .safe_envelope(&deep)
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
+            .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
+        assert_eq!(
+            envelope.proposal_binding,
+            Some(LimitKind::VendorAxial),
+            "{ctx}: the vendor ap bound must bind the proposal (not deflection or rigidity)"
+        );
+        let envelope_clamped = envelope.proposal.get().ap_mm;
+        let stated_ae = envelope
+            .stated
+            .unwrap_or_else(|| panic!("{ctx}: the op states its cut"))
+            .ae_mm;
+        let vendor_bound = envelope
+            .limit(LimitKind::VendorAxial)
+            .and_then(|l| l.ap_ceiling_at(stated_ae))
+            .unwrap_or_else(|| panic!("{ctx}: the envelope carries the vendor ap bound"));
+        assert!(
+            envelope_clamped <= vendor_bound + 1e-9 && envelope_clamped < PRE_P5_CALCULATOR_DPP_MM,
+            "{ctx}: the proposal {envelope_clamped} must sit at or under the vendor ap \
+             bound {vendor_bound}, below the stated {PRE_P5_CALCULATOR_DPP_MM}"
+        );
+        match envelope.operator {
+            Some(Placement::Outside { binding, .. }) => assert_eq!(
+                binding,
+                LimitKind::VendorAxial,
+                "{ctx}: the stated point must sit outside the vendor ap bound"
+            ),
+            other => panic!("{ctx}: a stated 9 mm must be outside the envelope, got {other:?}"),
+        }
+        assert_eq!(
+            as_stated
+                .limit(LimitKind::VendorAxial)
+                .and_then(|l| l.ap_ceiling_at(stated_ae)),
+            Some(vendor_bound),
+            "{ctx}: one vendor ap bound on both arms"
+        );
         let matched = suggested
             .feeds_result
             .matched_lut_row
@@ -456,7 +434,7 @@ fn wanaka_suggest_baseline() {
         };
         assert!(
             (envelope_clamped - row_ap_ceiling).abs() < 1e-9,
-            "{ctx}: the clamp must be the matched row's own ap ceiling \
+            "{ctx}: the proposal must be the matched row's own ap ceiling \
              (min(ap_max_factor × Ø6, ap_max_mm) = {row_ap_ceiling}), got {envelope_clamped}"
         );
         // Re-baselined 2026-09-23 (feeds matrix R5): the printed Spektra
@@ -554,85 +532,35 @@ fn wanaka_suggest_baseline() {
             "{ctx}: Suggest must keep the operator's Plunge entry (ruling Q11), got {:?}",
             suggested.operation
         );
+        // RE-PINNED 2026-11-04 (feeds contract P5): the warning fired on
+        // the 6.0 mm the deleted chain wrote. The project states 3.0 mm,
+        // DPP / D = 0.5, which is not above 0.5, so it does not fire there;
+        // on the pre-P5 calculator depth (9 mm, arm 2 above) it fires
+        // through the production add door.
         assert!(
-            suggested
+            !suggested
                 .warnings
                 .iter()
                 .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
-            "{ctx}: PlungeEntryUnstableAtDpp must fire on the deep plunge entry, got {:?}",
+            "{ctx}: at DPP / D = 0.5 the plunge entry is not deep, got {:?}",
             suggested.warnings
         );
+        let deep_warnings = session
+            .cutter_op_profile(&deep)
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
+            .warnings;
+        assert!(
+            deep_warnings
+                .iter()
+                .any(|w| matches!(w, SuggestWarning::PlungeEntryUnstableAtDpp { .. })),
+            "{ctx}: PlungeEntryUnstableAtDpp must fire on a 9 mm plunge entry, got \
+             {deep_warnings:?}"
+        );
 
-        // G-SUGGEST-NOCLAMP (2026-08-19), pinned POSITIVELY rather than
-        // merely tolerated: this case is the reason the pass exists. The
-        // axial envelope clamps DPP 9.0 → 4.2 mm, which crosses the 1×D
-        // depth-tier boundary downward and so REMOVES a derate the
-        // calculator had already folded into the feed. The direction is the
-        // assertion — a rescale that came out ≤ 1 would mean the tier
-        // crossing was read backwards.
-        let (factor_c, factor_f, from, to) = suggested
-            .warnings
-            .iter()
-            .find_map(|w| match w {
-                SuggestWarning::FeedRescaledToFinalGeometry {
-                    factor_at_calculator,
-                    factor_at_final,
-                    requested_mm_per_min,
-                    rescaled_mm_per_min,
-                    ..
-                } => Some((
-                    *factor_at_calculator,
-                    *factor_at_final,
-                    *requested_mm_per_min,
-                    *rescaled_mm_per_min,
-                )),
-                SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
-                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-                | SuggestWarning::StepoverRaisedForRuntime { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::StrategyRecommendedNotApplied { .. }
-                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
-                | SuggestWarning::AxialDocBelowBurnFloor { .. }
-                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. }
-                | SuggestWarning::FeedClampedToChiploadFloor { .. }
-                | SuggestWarning::PowerRecheckedAfterRescale { .. }
-                | SuggestWarning::CutGeometryFieldNotHeld { .. }
-                | SuggestWarning::EngagementReducedForAggressiveness { .. }
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
-                | SuggestWarning::RampFeed { .. }
-                | SuggestWarning::UnsourcedRowsAccepted { .. }
-                | SuggestWarning::OutsideEnvelope { .. }
-                | SuggestWarning::PlungeReDerived { .. } => None,
-            })
-            .unwrap_or_else(|| {
-                panic!(
-                    "{ctx}: the DPP clamp fired, so the feed must have been re-derived at the \
-                     clamped depth — see tests/suggest_feed_matches_final_geometry.rs. \
-                     Warnings: {:?}",
-                    suggested.warnings
-                )
-            });
-        assert!(
-            factor_f > factor_c,
-            "{ctx}: clamping DPP 9.0 → 4.2 on a Ø6 tool crosses the 1×D depth tier downward, \
-             which removes a derate — the final geometry factor must exceed the calculator's, \
-             got {factor_c} → {factor_f}"
-        );
-        assert!(
-            to > from,
-            "{ctx}: the removed derate must make the shipped feed FASTER than the one the \
-             calculator froze at 9.0 mm, got {from} → {to}"
-        );
+        // RETIRED 2026-11-04 (feeds contract P5, chain-door ruling): the
+        // G-SUGGEST-NOCLAMP arm read pass 9 re-deriving the feed after the
+        // deleted pass 0 clamped 9.0 -> 4.2 mm. Production sizes the speeds
+        // at the kept depth, so pass 9 moves no feed here.
 
         // No surprising variants on this case.
         for w in &suggested.warnings {
@@ -669,99 +597,9 @@ fn wanaka_suggest_baseline() {
             }
         }
 
-        // The dial's Wanaka baseline (ruling R4 WP3, measured 2026-09-24;
-        // re-measured 2026-09-25 for B6's force line, 4bee59a, which moved
-        // the base force 58.44 -> 52.15 N and power 0.1541 -> 0.0658 kW).
-        // Default dial 0.85 x long-tool share 0.75 (45 mm stickout on Ø6,
-        // 7.5 x D) = load target 0.6375. One common scale 0.68818 on the
-        // base the clamps left: depth 6.0 -> 4.129 mm, stepover 1.2 ->
-        // 0.825 mm. Force 52.15 -> 33.24 N (0.637 x) and power 0.0658 ->
-        // 0.0348 kW (0.529 x), both at or under 0.6375 x, so the target is
-        // met. The chipload does not change.
-        let dial = suggested
-            .warnings
-            .iter()
-            .find_map(|w| match w {
-                SuggestWarning::EngagementReducedForAggressiveness {
-                    aggressiveness,
-                    ld_factor,
-                    target_share,
-                    scale,
-                    dpp_from,
-                    dpp_to,
-                    stepover_from,
-                    stepover_to,
-                    force_n_before,
-                    force_n_after,
-                    power_kw_before,
-                    power_kw_after,
-                    target_met,
-                    ..
-                } => Some((
-                    *aggressiveness,
-                    *ld_factor,
-                    *target_share,
-                    *scale,
-                    (*dpp_from, *dpp_to),
-                    (*stepover_from, *stepover_to),
-                    (*force_n_before, *force_n_after),
-                    (*power_kw_before, *power_kw_after),
-                    *target_met,
-                )),
-                SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
-                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-                | SuggestWarning::StepoverRaisedForRuntime { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::StrategyRecommendedNotApplied { .. }
-                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
-                | SuggestWarning::AxialDocBelowBurnFloor { .. }
-                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. }
-                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::FeedClampedToChiploadFloor { .. }
-                | SuggestWarning::PowerRecheckedAfterRescale { .. }
-                | SuggestWarning::CutGeometryFieldNotHeld { .. }
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
-                | SuggestWarning::RampFeed { .. }
-                | SuggestWarning::UnsourcedRowsAccepted { .. }
-                | SuggestWarning::OutsideEnvelope { .. }
-                | SuggestWarning::PlungeReDerived { .. } => None,
-            })
-            .unwrap_or_else(|| panic!("{ctx}: the dial record must fire on Back Rough"));
-        let (k, ld, share, scale, dpp, so, force, power, met) = dial;
-        let near = |a: Option<f64>, b: f64, tol: f64| a.is_some_and(|a| (a - b).abs() <= tol);
-        assert!(
-            (k - 0.85).abs() < 1e-12 && (ld - 0.75).abs() < 1e-12,
-            "{ctx}: {dial:?}"
-        );
-        assert!((share - 0.6375).abs() < 1e-12, "{ctx}: {dial:?}");
-        assert!((scale - 0.68818).abs() < 1e-4, "{ctx}: {dial:?}");
-        assert!(
-            near(dpp.0, 6.0, 1e-9) && near(dpp.1, 4.129, 1e-6),
-            "{ctx}: {dial:?}"
-        );
-        assert!(
-            near(so.0, 1.2, 1e-9) && near(so.1, 0.825, 1e-6),
-            "{ctx}: {dial:?}"
-        );
-        assert!(
-            near(force.0, 52.15, 0.05) && near(force.1, 33.24, 0.05),
-            "{ctx}: {dial:?}"
-        );
-        assert!(
-            near(power.0, 0.0658, 5e-4) && near(power.1, 0.0348, 5e-4),
-            "{ctx}: {dial:?}"
-        );
-        assert!(met, "{ctx}: the Back Rough target must be met: {dial:?}");
+        // RETIRED 2026-11-04 (feeds contract P5, chain-door ruling): the
+        // dial's Wanaka baseline (ruling R4 WP3) read pass 6b, which is
+        // deleted; the dial changes no number since P5.
     }
 
     // ── Toolpath 10: 3D Rough 6 — same op family + tool as Back Rough.
@@ -778,58 +616,33 @@ fn wanaka_suggest_baseline() {
         // deliberately pins direction only (pin convention rule 2); the
         // magnitude sentry lives on Back Rough alone so one re-baseline
         // ratifies one number.
-        let (envelope_commanded, envelope_clamped) = suggested
-            .warnings
-            .iter()
-            .find_map(|w| match w {
-                SuggestWarning::AxialDocClampedByEnvelope {
-                    op_kind: "adaptive3d",
-                    commanded_mm,
-                    clamped_mm,
-                    ..
-                } => Some((*commanded_mm, *clamped_mm)),
-                SuggestWarning::PlungeClampedToFeed { .. }
-                | SuggestWarning::StepoverClampedToToolDiameter { .. }
-                | SuggestWarning::RoughingDepthClampedToRigidity { .. }
-                | SuggestWarning::DepthClampedToCuttingLength { .. }
-                | SuggestWarning::PlungeEntryUnstableAtDpp { .. }
-                | SuggestWarning::DppCappedByDeflection { .. }
-                | SuggestWarning::DeflectionBackoffUnmodeled { .. }
-                | SuggestWarning::DeflectionBackoffFigureIsAFloor { .. }
-                | SuggestWarning::StepoverRaisedForRuntime { .. }
-                | SuggestWarning::FeedRaisedForChipload { .. }
-                | SuggestWarning::ChiploadStillLowAfterRecalibration { .. }
-                | SuggestWarning::StrategyRecommendedNotApplied { .. }
-                | SuggestWarning::AxialEnvelopeSafeBandEmpty { .. }
-                | SuggestWarning::AxialDocClampedByEnvelope { .. }
-                | SuggestWarning::AxialDocBelowBurnFloor { .. }
-                | SuggestWarning::ProjectCurveDepthInfeasible { .. }
-                | SuggestWarning::FinishEnvelopeAdvisory { .. }
-                | SuggestWarning::FeedRescaledToFinalGeometry { .. }
-                | SuggestWarning::FeedClampedToChiploadFloor { .. }
-                | SuggestWarning::PowerRecheckedAfterRescale { .. }
-                | SuggestWarning::CutGeometryFieldNotHeld { .. }
-                | SuggestWarning::EngagementReducedForAggressiveness { .. }
-                | SuggestWarning::RpmLoweredForFeedCeiling { .. }
-                | SuggestWarning::AggressivenessNotApplied { .. }
-                | SuggestWarning::RampFeed { .. }
-                | SuggestWarning::UnsourcedRowsAccepted { .. }
-                | SuggestWarning::OutsideEnvelope { .. }
-                | SuggestWarning::PlungeReDerived { .. } => None,
-            })
-            .unwrap_or_else(|| {
-                panic!(
-                    "{ctx}: AxialDocClampedByEnvelope must fire on Adaptive3d, got {:?}",
-                    suggested.warnings
-                )
-            });
-        assert!(
-            (envelope_commanded - 9.0).abs() < 1e-6,
-            "{ctx}: calculator pre-envelope DPP must be 9.0 mm, got {envelope_commanded}"
+        // RE-PINNED 2026-11-04 (feeds contract P5): pass 0 is deleted. The
+        // stated depth stays after the speeds write, and a stated 9 mm (the
+        // pre-P5 calculator depth) is lowered by the envelope's vendor ap
+        // bound, which binds the proposal.
+        let (_, tc) = session
+            .find_toolpath_config_by_id(ToolpathId::from_raw(10))
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath is in the project"));
+        assert_eq!(
+            suggested.operation.depth_per_pass(),
+            tc.operation.depth_per_pass(),
+            "{ctx}: the speeds write must keep the stated DPP (K2)"
         );
+        let mut deep = tc.clone();
+        deep.operation.set_depth_per_pass(9.0);
+        let envelope = session
+            .safe_envelope(&deep)
+            .unwrap_or_else(|| panic!("{ctx}: the toolpath has a tool"))
+            .unwrap_or_else(|e| panic!("{ctx}: the envelope builds: {e}"));
+        assert_eq!(
+            envelope.proposal_binding,
+            Some(LimitKind::VendorAxial),
+            "{ctx}: the vendor ap bound must bind a stated 9 mm"
+        );
+        let envelope_clamped = envelope.proposal.get().ap_mm;
         assert!(
-            envelope_clamped > 0.0 && envelope_clamped < envelope_commanded,
-            "{ctx}: envelope-clamped DPP must drop below the calculator's initial 9.0 mm, got {envelope_clamped}"
+            envelope_clamped > 0.0 && envelope_clamped < 9.0,
+            "{ctx}: the proposal must drop below the stated 9.0 mm, got {envelope_clamped}"
         );
         assert!(
             !suggested
@@ -868,13 +681,15 @@ fn wanaka_suggest_baseline() {
     // score 1825 at that key: `amana-tapered-hardwood-parallel-1000-2f-zrn-v8`
     // (Amana ZrN v8 "Wood" column, derived b for hardwood, ruling A4) and
     // `spetool-tapered-hardwood-parallel-1000-2f`. The tie goes to the
-    // smaller id (`vendor_lookup::beats`), so the Amana row answers.
+    // smaller id (`vendor_lookup::beats`), so the Amana row answered until
+    // operator ruling Q3 (feeds contract P5): the lower printed chip wins
+    // now, so the SpeTool point (0.0254 mm/tooth) answers (see the arm).
     //
     // Score: 1000 base + 220 family + 70 derived + 30 grade b + 80 flutes
     // + 200 diameter (ratio 1.0) + 80 hardness (Janka 1450 on 1450) + 45
     // pass role + 100 material = 1825.
     //
-    // The band is the row's printed 0.00075-0.002 in/tooth, 0.01905-0.0508
+    // Before Q3: the band was the Amana row's printed 0.00075-0.002 in/tooth, 0.01905-0.0508
     // mm/tooth. The diameter ratio is 1.0 and the hardness ratio is 1450 /
     // 1450, so both scales are 1.0 and `matched_lut_row` carries the printed
     // band unchanged. That is the band before the depth de-rate, which
@@ -897,10 +712,19 @@ fn wanaka_suggest_baseline() {
             .matched_lut_row
             .as_ref()
             .unwrap_or_else(|| panic!("{ctx}: Suggest matched no vendor LUT row"));
+        // RE-PINNED 2026-11-04: G1 orchestrator decision 5 reversed by
+        // operator ruling Q3 (feeds contract P5): on the 1825 tie the lower
+        // printed chip wins, the SpeTool point (0.0254) under the Amana v8
+        // band, and the winner names the Amana row.
         assert_eq!(
-            matched.observation_id, "amana-tapered-hardwood-parallel-1000-2f-zrn-v8",
-            "{ctx}: ruling A1 reads the row at the 1.0 mm tip; the Amana v8 row wins the \
-             1825 tie with SpeTool on the id"
+            matched.observation_id, "spetool-tapered-hardwood-parallel-1000-2f",
+            "{ctx}: ruling A1 reads the row at the 1.0 mm tip; the SpeTool row wins the \
+             1825 tie with Amana v8 on the lower printed chip (Q3)"
+        );
+        assert_eq!(
+            matched.tied_with.as_ref().map(|r| r.id()),
+            Some("amana-tapered-hardwood-parallel-1000-2f-zrn-v8"),
+            "{ctx}: the Q3 winner names the other row"
         );
         assert!(
             (matched.row_diameter_mm - 1.0).abs() < 1e-12,
@@ -917,14 +741,13 @@ fn wanaka_suggest_baseline() {
             matched.chipload_diameter_scale,
             matched.chipload_hardness_scale
         );
+        // Q3: one printed value (0.001 in = 0.0254 mm), held as a point (A2).
         assert!(
-            matched
-                .chip_load_min_mm
-                .is_some_and(|v| (v - 0.01905).abs() < 1e-12)
+            matched.chip_load_min_mm.is_none()
                 && matched
                     .chip_load_max_mm
-                    .is_some_and(|v| (v - 0.0508).abs() < 1e-12),
-            "{ctx}: the band before any de-rate must be the printed 0.01905-0.0508 \
+                    .is_some_and(|v| (v - 0.0254).abs() < 1e-12),
+            "{ctx}: the value before any de-rate must be the printed point 0.0254 \
              mm/tooth, got {:?}-{:?}",
             matched.chip_load_min_mm,
             matched.chip_load_max_mm
