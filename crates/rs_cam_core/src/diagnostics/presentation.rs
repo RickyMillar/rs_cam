@@ -666,6 +666,16 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
     (ids::PRECOND_NOT_SET, OP, "Value not set"),
     (ids::PRECOND_NO_TOOL, TOOL, "No tool chosen"),
     (ids::SAFETY_CUTS_INTO_MODEL, OP, "Cuts into the model"),
+    (
+        ids::SAFETY_NON_CENTRE_CUTTING_PLUNGE,
+        TOOL,
+        "Plunges a tool that does not cut at its centre",
+    ),
+    (
+        ids::SAFETY_NON_CENTRE_CUTTING_DESCENT,
+        TOOL,
+        "Tool goes down too steeply for its centre",
+    ),
     (ids::PRECOND_PROJECT_CURVE_NO_CURVE, OP, "No source curve"),
     (
         ids::PRECOND_PROJECT_CURVE_NO_SURFACE,
@@ -676,6 +686,11 @@ pub const TABLE: &[(&str, Anchor, &str)] = &[
         ids::REF_MODEL_MISSING,
         OP,
         "Model missing: pick a loaded model",
+    ),
+    (
+        ids::EXPORT_OP_LEFT_OUT,
+        OP,
+        "Left out of the export: no current result",
     ),
 ];
 

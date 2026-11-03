@@ -28,7 +28,7 @@ code by the symbol when the line has moved.
 |---|---|---|---|---|
 | 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
 | 1 Wildcard lint | `phases/P1.md` | DONE 2026-11-03 (563 hits: 256 exhaustive, 307 `#[expect]`; no value moved) | see `git log` | |
-| 2 K6 consequence column, no refusals | `phases/P2.md` | NOT STARTED (GUI mock agreed 2026-11-03; runs after P4: both edit core feeds and export paths) | | |
+| 2 K6 consequence column, no refusals | `phases/P2.md` | IN PROGRESS (agent p2-impl, 2026-11-03; GUI mock agreed) | | two commits: A (column, no test change), then B |
 | 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | NOT STARTED (needs P4) | | |
@@ -56,7 +56,16 @@ code by the symbol when the line has moved.
   `panel_drafts_leave_egui_memory_ui09` (2), `the_gui_can_set_a_feed_g_fscontrol`,
   `the_inspector_text_is_bounded_ic1`, `the_selection_section_writes_edits_only_p4_3`.
   `render_pipelines_headless_g_pipesmoke` can fail under load (flaky).
-  Run viz with `--no-fail-fast`: without it, cargo stops at the first red target. `cargo fmt --check` fails in `rs_cam_mcp/src/server.rs`,
+  `rs_cam_core --test every_op_conforms_w4` check6 is red since e8072f172
+  (`contour_each_level` has `skip_serializing_if`, so a default config does
+  not hold the field). Viz lib `duplicate_queued_toolpaths_are_coalesced`
+  can fail under load (a 20 ms sleep).
+  Run viz with `--no-fail-fast`: without it, cargo stops at the first red target.
+  Confirmed at 218ba2858 in a worktree with its own lane script (2026-11-03).
+- Trap: `scripts/cargo_lane.sh` changes into the top of ITS OWN checkout. In a
+  worktree, run the worktree's copy (`<wt>/scripts/cargo_lane.sh`) with
+  `CARGO_TARGET_DIR=/home/ricky/personal_repos/rs_cam/target`; the main
+  tree's copy builds the main tree. `cargo fmt --check` fails in `rs_cam_mcp/src/server.rs`,
   viz `ui/components/mod.rs` and `ui/properties/tests.rs` (files no phase
   touched).
 - The op 2 rest planner (14.5 mm entry, 13 mm links) needs a simulation; it

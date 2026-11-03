@@ -160,16 +160,16 @@ impl ExportRefusal {
     /// does (fix the project instead).
     #[must_use]
     pub fn override_needed(&self) -> Option<LoadOverride> {
+        use crate::diagnostics::Gate;
+        // K6: a finding refusal reads its override from the column.
         match self {
-            Self::InchUnits
-            | Self::BadFeed { .. }
-            | Self::ControllerCompensation { .. }
-            | Self::HeightOrder { .. }
-            | Self::CutsIntoModel { .. }
-            | Self::NonCentreCuttingDescent { .. } => None,
-            Self::LoadExceeded { .. } => Some(LoadOverride::AcceptExceeded),
+            Self::InchUnits | Self::BadFeed { .. } | Self::ControllerCompensation { .. } => None,
+            Self::HeightOrder { .. } => Gate::HeightRefuses.override_(),
+            Self::CutsIntoModel { .. } => Gate::GougeBlocks.override_(),
+            Self::NonCentreCuttingDescent { .. } => Gate::CentreCutDescent.override_(),
+            Self::LoadExceeded { .. } => Gate::LoadRowRefuses.override_(),
             Self::LoadUnmodeled { .. } | Self::StaleSimulation { .. } => {
-                Some(LoadOverride::AcceptUnmodeled)
+                Gate::LoadUnmodeled.override_()
             }
         }
     }
@@ -890,7 +890,10 @@ pub fn enforce_exceedance_policy(
         }
     }
 
-    if refusing.is_empty() {
+    // K6: the rows refuse while the column says so.
+    if refusing.is_empty()
+        || !crate::diagnostics::Gate::LoadRowRefuses.refuses_at(crate::diagnostics::Stage::Export)
+    {
         return Ok(LoadPolicyOutcome {
             advisories,
             overridden: Vec::new(),
@@ -1042,7 +1045,10 @@ pub fn enforce_unmodeled_policy(
             ));
         }
     }
-    if rows.is_empty() {
+    // K6: the rows refuse while the column says so.
+    if rows.is_empty()
+        || !crate::diagnostics::Gate::LoadUnmodeled.refuses_at(crate::diagnostics::Stage::Export)
+    {
         return Ok(LoadPolicyOutcome::default());
     }
     let any_stale = per_toolpath

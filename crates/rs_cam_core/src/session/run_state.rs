@@ -141,10 +141,40 @@ pub fn skips_automatic_generate(state: &RunState) -> bool {
 /// True when the finding refuses generation while it is current: a
 /// `Blocking` finding, or the tool-kind refusal (`Critical`, but the
 /// generator's own prologue refuses on the same `tool_refusal`, W2.2).
+///
+/// K6: a finding refuses only while its column row refuses at
+/// [`crate::diagnostics::Stage::Generate`]; a missing input
+/// ([`crate::diagnostics::RowKind::NotReady`]) refuses
+/// when `Blocking`.
 #[must_use]
 pub fn refuses_generation(d: &Diagnostic) -> bool {
-    d.state == DiagnosticState::Current
-        && (d.severity == Severity::Blocking || d.id.as_str() == ids::COMPAT_TOOL_KIND_REFUSED)
+    use crate::diagnostics::{Consequence, Gate, RowKind, Stage};
+    if d.state != DiagnosticState::Current {
+        return false;
+    }
+    let blocking = d.severity == Severity::Blocking;
+    match ids::row_kind(d.id.as_str()) {
+        Some(RowKind::NotReady) | None => blocking,
+        Some(RowKind::Finding(Consequence::Refuse { stages, gate, .. }))
+            if stages.contains(&Stage::Generate) =>
+        {
+            match gate {
+                Gate::ToolKind => true,
+                Gate::HeightRefuses
+                | Gate::GougeBlocks
+                | Gate::CentreCutPlunge
+                | Gate::CentreCutDescent
+                | Gate::LoadRowRefuses
+                | Gate::LoadUnmodeled
+                | Gate::NoCurrentResult
+                | Gate::GuiConfirm
+                | Gate::BuriedFace => blocking,
+            }
+        }
+        Some(RowKind::Finding(
+            Consequence::Refuse { .. } | Consequence::Warn(_) | Consequence::Info,
+        )) => false,
+    }
 }
 
 /// The run record of the session: what [`toolpath_run_state`] needs that

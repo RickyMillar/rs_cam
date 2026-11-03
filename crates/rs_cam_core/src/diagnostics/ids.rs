@@ -10,11 +10,35 @@
 //! repurpose an existing ID for a different rule even if the message
 //! is similar — IDs are wire-stable across MCP and snapshot tests.
 
+use super::consequence::{Danger, Gate, INFO, NOT_READY, RowKind, Stage, refuse, warn};
+use crate::gcode::LoadOverride;
+
 /// Declares every diagnostic id once. Each row emits its `const` and an
 /// entry in [`ALL`], so an id cannot exist outside `ALL` (F162). Write a new
 /// id as a row inside the `diag_ids!` block below.
+///
+/// CONTRACT K6: each row ends with `=> <column>` ([`RowKind`]): a finding
+/// with its [`super::Consequence`], or a missing input. The macro writes
+/// [`CONSEQUENCES`] from the rows. A row with no column does not compile:
+///
+/// ```compile_fail
+/// rs_cam_core::crate::diag_ids! {
+///     pub const X: &str = "x.y";
+/// }
+/// ```
+///
+/// ```
+/// use rs_cam_core::diagnostics::consequence::{Danger, warn};
+/// rs_cam_core::diag_ids! {
+///     pub const X: &str = "x.y" => warn(Danger::Tool);
+/// }
+/// assert_eq!(ALL, &["x.y"]);
+/// assert_eq!(CONSEQUENCES.len(), 1);
+/// ```
+#[doc(hidden)]
+#[macro_export]
 macro_rules! diag_ids {
-    ($($(#[$meta:meta])* $vis:vis const $name:ident: &str = $value:literal;)*) => {
+    ($($(#[$meta:meta])* $vis:vis const $name:ident: &str = $value:literal => $column:expr;)*) => {
         $($(#[$meta])* $vis const $name: &str = $value;)*
 
         /// All canonical diagnostic IDs, in declaration order. The
@@ -23,23 +47,38 @@ macro_rules! diag_ids {
         /// downstream consumer can iterate the supported rule set.
         pub const ALL: &[&str] = &[$($name),*];
 
+        /// CONTRACT K6: each id with its column, in declaration order. The
+        /// macro writes it from the rows, so it has one entry per id of
+        /// [`ALL`].
+        pub const CONSEQUENCES: &[(&str, $crate::diagnostics::consequence::RowKind)] =
+            &[$(($name, $column)),*];
+
         /// Each id with the name of its constant, for the source-scan test.
         #[cfg(test)]
         pub(crate) const NAMED: &[(&str, &str)] = &[$((stringify!($name), $name)),*];
     };
 }
 
+/// CONTRACT K6: the column of `id`, or `None` for an id that is not a row.
+#[must_use]
+pub fn row_kind(id: &str) -> Option<RowKind> {
+    CONSEQUENCES
+        .iter()
+        .find(|(row, _)| *row == id)
+        .map(|(_, kind)| *kind)
+}
+
 diag_ids! {
     // ── Load gates ───────────────────────────────────────────────────────
-    pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high";
-    pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low";
-    pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within";
+    pub const LOAD_CHIPLOAD_HIGH: &str = "load.chipload.high" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_CHIPLOAD_LOW: &str = "load.chipload.low" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_CHIPLOAD_WITHIN: &str = "load.chipload.within" => INFO;
     /// The chipload gate did not measure (`ChiploadVerdict::Unmodeled`: no
     /// simulation, stale simulation, no vendor band, or a row that the G1 size
     /// claim refused). Its own id, so a reader of ids alone never reads
     /// "within" for a gate that measured nothing (extrapolation P1 decision 6,
     /// as [`LOAD_DEPTH_UNMODELED`] for the depth gate).
-    pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled";
+    pub const LOAD_CHIPLOAD_UNMODELED: &str = "load.chipload.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
     /// T1.5 (census P-10) — the commanded feed-per-tooth sits above the
     /// matched vendor row's published maximum. This is the ONLY same-unit,
     /// same-stage comparison the chipload pipeline can make (both sides are
@@ -47,90 +86,90 @@ diag_ids! {
     /// discarded. Info-tier per the standing B6 advisory ruling — it reports
     /// a commanded value against an authored band, and does not observe the
     /// cut.
-    pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band";
-    pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds";
-    pub const LOAD_POWER_WITHIN: &str = "load.power.within";
+    pub const LOAD_CHIPLOAD_COMMANDED_ABOVE_BAND: &str = "load.chipload.commanded_above_band" => INFO;
+    pub const LOAD_POWER_EXCEEDS: &str = "load.power.exceeds" => refuse(Danger::Machine, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_POWER_WITHIN: &str = "load.power.within" => INFO;
     /// The power gate did not measure (`PowerVerdict::Unmodeled`: no
     /// simulation, no machine power, or a material with no force line, ruling
     /// B6). Its own id, so a reader of ids alone never reads "within" for a
     /// gate that measured nothing (as [`LOAD_DEPTH_UNMODELED`]).
-    pub const LOAD_POWER_UNMODELED: &str = "load.power.unmodeled";
-    pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds";
-    pub const LOAD_DEFLECTION_WITHIN: &str = "load.deflection.within";
+    pub const LOAD_POWER_UNMODELED: &str = "load.power.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
+    pub const LOAD_DEFLECTION_EXCEEDS: &str = "load.deflection.exceeds" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const LOAD_DEFLECTION_WITHIN: &str = "load.deflection.within" => INFO;
     /// The deflection gate did not measure (`DeflectionVerdict::Unmodeled`:
     /// for example a material with no force line, ruling B6). Its own id, so a
     /// reader of ids alone never reads "within" for a gate that measured
     /// nothing (as [`LOAD_DEPTH_UNMODELED`]).
-    pub const LOAD_DEFLECTION_UNMODELED: &str = "load.deflection.unmodeled";
+    pub const LOAD_DEFLECTION_UNMODELED: &str = "load.deflection.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
     /// The measured depth of cut is inside the machine rigidity cap
     /// (`tool_load::depth`, a roughing pass). Feeds matrix R2 (2026-09-23).
-    pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within";
+    pub const LOAD_DEPTH_WITHIN: &str = "load.depth.within" => INFO;
     /// The measured depth of cut is past the machine rigidity cap. The cap
     /// is a rule of thumb, so this finding never refuses an export
     /// (EVIDENCE 5.1-15: before R2 no depth finding reached this list).
-    pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds";
+    pub const LOAD_DEPTH_EXCEEDS: &str = "load.depth.exceeds" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
     /// The measured depth of a finishing or semi-finishing pass, reported
     /// with no bound. Feeds matrix R2: no axial cap applies to that pass.
-    pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported";
+    pub const LOAD_DEPTH_REPORTED: &str = "load.depth.reported" => INFO;
     /// The depth gate did not measure (no simulation, stale simulation, no
     /// machine profile). Its own id, so a reader of ids alone never reads
     /// "within" for a gate that measured nothing (EVIDENCE 5.1-14).
-    pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled";
+    pub const LOAD_DEPTH_UNMODELED: &str = "load.depth.unmodeled" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadUnmodeled, Some(LoadOverride::AcceptUnmodeled));
     /// S6 (stock changes, "cut as"): samples of an added material with
     /// `CutAs::OwnMaterial` and no force data. The gates do not judge them;
     /// the finding counts and names them per material.
-    pub const LOAD_MATERIAL_NOT_JUDGED: &str = "load.material.not_judged";
+    pub const LOAD_MATERIAL_NOT_JUDGED: &str = "load.material.not_judged" => INFO;
 
     // ── Drill gates ──────────────────────────────────────────────────────
-    pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding";
-    pub const DRILL_PECK_ADEQUACY: &str = "drill.peck_adequacy";
-    pub const DRILL_PLUNGE_FEED: &str = "drill.plunge_feed";
+    pub const DRILL_CHIP_WELDING: &str = "drill.chip_welding" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const DRILL_PECK_ADEQUACY: &str = "drill.peck_adequacy" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
+    pub const DRILL_PLUNGE_FEED: &str = "drill.plunge_feed" => refuse(Danger::Tool, &[Stage::Export], Gate::LoadRowRefuses, Some(LoadOverride::AcceptExceeded));
 
     // ── Project verdicts ─────────────────────────────────────────────────
-    pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision";
+    pub const PROJECT_HOLDER_COLLISION: &str = "project.holder_collision" => refuse(Danger::Machine, &[Stage::Export], Gate::GuiConfirm, None);
     /// The holder/shank collision check could not answer for a toolpath.
     ///
     /// Deliberately NOT [`PROJECT_HOLDER_COLLISION`] (CMP-14): one rule says
     /// the toolpath collides, this one says nobody knows whether it does.
     /// Collapsing them into one id is the measured-zero-against-not-measured
     /// defect the `diagnostics/` contract names.
-    pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed";
-    pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision";
+    pub const PROJECT_HOLDER_CHECK_FAILED: &str = "project.holder_check_failed" => warn(Danger::Machine);
+    pub const PROJECT_RAPID_COLLISION: &str = "project.rapid_collision" => refuse(Danger::Machine, &[Stage::Export], Gate::GuiConfirm, None);
     /// K1: a move puts the tool (cutter, shank or holder) inside an obstacle
     /// of its setup: a fixture or a keep-out zone.
-    pub const PROJECT_OBSTACLE_COLLISION: &str = "project.obstacle_collision";
-    pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress";
-    pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high";
-    pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty";
+    pub const PROJECT_OBSTACLE_COLLISION: &str = "project.obstacle_collision" => warn(Danger::Machine);
+    pub const PROJECT_PLUNGE_STRESS: &str = "project.plunge_stress" => warn(Danger::Tool);
+    pub const PROJECT_AIR_CUT_HIGH: &str = "project.air_cut_high" => warn(Danger::Part);
+    pub const PROJECT_GENERATED_EMPTY: &str = "project.generated_empty" => warn(Danger::Part);
     /// The stock's alignment pins do not key the flip a setup is programmed
     /// for (CMP-27). The judgement lives in
     /// [`crate::compute::alignment_pins::validate_pins_for_flip`]; this is the
     /// id it reaches every surface under.
-    pub const PROJECT_ALIGNMENT_PINS_UNKEYED: &str = "project.alignment_pins_unkeyed";
+    pub const PROJECT_ALIGNMENT_PINS_UNKEYED: &str = "project.alignment_pins_unkeyed" => warn(Danger::Part);
     /// A pin-drill operation drills the dowel holes, and another operation
     /// drills a hole at a stock pin too (P8). The judgement lives in
     /// [`crate::compute::alignment_pins::hole_source_findings`].
-    pub const PROJECT_PIN_HOLES_DRILLED_TWICE: &str = "project.pin_holes_drilled_twice";
+    pub const PROJECT_PIN_HOLES_DRILLED_TWICE: &str = "project.pin_holes_drilled_twice" => warn(Danger::Part);
     /// A drill operation drills holes of a pin diameter that are not at a
     /// stock pin (P8). Same judgement as [`PROJECT_PIN_HOLES_DRILLED_TWICE`].
-    pub const PROJECT_DOWEL_HOLES_DISAGREE: &str = "project.dowel_holes_disagree";
+    pub const PROJECT_DOWEL_HOLES_DISAGREE: &str = "project.dowel_holes_disagree" => warn(Danger::Part);
     /// A stock pin leaves less than `PIN_WALL_MM` of material to the stock
     /// edge, the part, a keep-out zone or a fixture, or cuts into it (P6). The
     /// judgement lives in [`crate::compute::alignment_pins::pin_wall_findings`].
-    pub const PROJECT_PIN_WALL_THIN: &str = "project.pin_wall_thin";
+    pub const PROJECT_PIN_WALL_THIN: &str = "project.pin_wall_thin" => warn(Danger::Part);
     /// A stock pin differs in diameter from the tool that drills the pin holes
     /// (P6). The judgement lives in
     /// [`crate::compute::alignment_pins::pin_tool_findings`].
-    pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch";
+    pub const PROJECT_PIN_TOOL_MISMATCH: &str = "project.pin_tool_mismatch" => warn(Danger::Part);
     /// H1: a toolpath states a dust shoe gap below the gap the shoe solver
     /// needs (`compute::shoe`). Caution: the check reads the stated gap, so the
     /// simulation reports the strike.
-    pub const PROJECT_SHOE_GAP_TOO_LOW: &str = "project.shoe_gap_too_low";
+    pub const PROJECT_SHOE_GAP_TOO_LOW: &str = "project.shoe_gap_too_low" => warn(Danger::Machine);
     /// A gate declined to produce a verdict because the metric it reads is not
     /// measurable on this trace (Checkpoint D Q2 — [`crate::stock::sim_measurability`]).
     /// Carries `DiagnosticState::NotApplicable`: it is not a warning about the
     /// toolpath, it is a statement about the simulation.
-    pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained";
+    pub const PROJECT_MEASURABILITY_ABSTAINED: &str = "project.measurability_abstained" => INFO;
     /// R-12 (census §6.4). A pass is cutting through material an upstream
     /// operation left standing. The actionable half of the "Rivers B4"
     /// investigation: the simulator's reading was correct all along, and what
@@ -138,7 +177,7 @@ diag_ids! {
     /// stepped op is read against its commanded step plus one cell, and a
     /// surface-following op against its own median bite
     /// (`stock::sim_triage::standing_material_finding`).
-    pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material";
+    pub const PROJECT_CROSSES_STANDING_MATERIAL: &str = "project.crosses_standing_material" => warn(Danger::Part);
     /// G-ENTRYLOAD (2026-08-23). A pass's ENTRY motion removes multiples of what
     /// the pass itself takes in steady cutting. The three load gates
     /// (chipload/deflection/power) filter their populations to steady-state
@@ -146,21 +185,21 @@ diag_ids! {
     /// motion with no grader at all, and a pure-vertical entry's removal lands on
     /// `plunge_descent_mm`, which the crosses-standing rule above does not read.
     /// See [`crate::stock::sim_triage::entry_load_observation`].
-    pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load";
+    pub const PROJECT_ENTRY_LOAD: &str = "project.entry_load" => warn(Danger::Tool);
     /// G-LINKPLOUGH (W1.1b, 2026-10-14). A fed LINK (`MoveIntent::Linking`)
     /// removes stock the planner meant it to cross in air or on cut ground, more
     /// than the pass itself takes. Before this rule nothing read a fed link
     /// against the stock: the rapid check reads rapids only and the holder check
     /// reads the model only. See
     /// [`crate::stock::sim_triage::link_cut_observation`].
-    pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock";
+    pub const PROJECT_LINK_CUTS_STOCK: &str = "project.link_cuts_stock" => warn(Danger::Tool);
     /// G-ROUGHCOV / G-THINSTAND (2026-10-23). A 3D Rough leaves islands of
     /// material that stand more than its stock to leave plus one cell above
     /// its own target (the floor its plan can reach with its tool, stock to
     /// leave included), read on the op's checkpoint stock. Each island
     /// carries its area, height, width and whether it touches a wall. See
     /// [`crate::stock::standing_islands::measure_rough_coverage`].
-    pub const PROJECT_ROUGH_LEAVES_ISLANDS: &str = "project.rough_leaves_islands";
+    pub const PROJECT_ROUGH_LEAVES_ISLANDS: &str = "project.rough_leaves_islands" => warn(Danger::Part);
     /// Phase 4 (2026-09-07). The plunge-class BACKSTOP: a vertical-dominant fed
     /// descent in the EMITTED motion runs faster in Z than the operation's own
     /// `plunge_rate`. Measured by [`crate::machine::kinematic_utilization`] on the stored
@@ -177,7 +216,7 @@ diag_ids! {
     /// the `actions` list beside [`PROJECT_ENTRY_LOAD`], and after the Phase 3
     /// generator fix it should be silent on the shipped fixtures — a monitor that
     /// speaks the day a generator regresses.
-    pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load";
+    pub const PROJECT_PLUNGE_CLASS_LOAD: &str = "project.plunge_class_load" => warn(Danger::Tool);
     /// Operator ruling 2026-10-15. After a simulation, a rest operation takes
     /// longer than the same operation on fresh stock (its fresh twin, generated
     /// on request by `ProjectSession::compare_rest_with_fresh`: one cycle-time
@@ -185,7 +224,7 @@ diag_ids! {
     /// Rest can take longer for a real reason (small islands need their own
     /// entries and rapids), so this is INFORMATIONAL: it names both times, and
     /// the operator decides.
-    pub const PROJECT_REST_SLOWER_THAN_FRESH: &str = "project.rest_slower_than_fresh";
+    pub const PROJECT_REST_SLOWER_THAN_FRESH: &str = "project.rest_slower_than_fresh" => INFO;
     /// Phase 4 (2026-09-07). The two-sided kinematic reading for one toolpath:
     /// what fraction of the commanded feed the machine actually achieves, which
     /// constraint binds each move (feed / accel / per-axis rate / junction), and
@@ -194,62 +233,62 @@ diag_ids! {
     /// INFORMATIONAL. It carries no threshold and no verdict — it answers "how
     /// hard is the machine working, and where is the headroom" for an operator
     /// who otherwise has to hand-analyse an exported `.nc`.
-    pub(crate) const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization";
+    pub(crate) const PROJECT_KINEMATIC_UTILIZATION: &str = "project.kinematic_utilization" => INFO;
 
     // ── Feeds calculator warnings ───────────────────────────────────────
-    pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped";
-    pub const FEEDS_POWER_LIMITED: &str = "feeds.power_limited";
+    pub const FEEDS_FEED_CLAMPED: &str = "feeds.feed_clamped" => INFO;
+    pub const FEEDS_POWER_LIMITED: &str = "feeds.power_limited" => warn(Danger::Part);
     /// The power ladder made the cut smaller so it would fit the spindle.
     /// Distinct from [`FEEDS_POWER_LIMITED`]: this one says the engine CHANGED
     /// the cut, and both fire together when the change was not enough.
-    pub const FEEDS_POWER_LADDER_REDUCED_CUT: &str = "feeds.power_ladder_reduced_cut";
-    pub const FEEDS_SHANK_TOO_LARGE: &str = "feeds.shank_too_large";
-    pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute";
-    pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected";
-    pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid";
+    pub const FEEDS_POWER_LADDER_REDUCED_CUT: &str = "feeds.power_ladder_reduced_cut" => warn(Danger::Part);
+    pub const FEEDS_SHANK_TOO_LARGE: &str = "feeds.shank_too_large" => warn(Danger::Tool);
+    pub const FEEDS_DOC_EXCEEDS_FLUTE: &str = "feeds.doc_exceeds_flute" => warn(Danger::Tool);
+    pub const FEEDS_SLOTTING_DETECTED: &str = "feeds.slotting_detected" => warn(Danger::Part);
+    pub const FEEDS_SCALLOP_INVALID: &str = "feeds.scallop_invalid" => warn(Danger::Part);
     /// The commanded advance per tooth is below the rubbing floor. The engine
     /// does not raise the feed (ruling R4 WP2a, 2026-09-23). Until then the id
     /// was `feeds.chipload_clamped_to_floor`.
-    pub const FEEDS_CHIPLOAD_BELOW_FLOOR: &str = "feeds.chipload_below_floor";
+    pub const FEEDS_CHIPLOAD_BELOW_FLOOR: &str = "feeds.chipload_below_floor" => warn(Danger::Part);
     /// The long-tool (L/D) share lowered the load target, a repo rule with no
     /// source (ruling R4 WP1, 2026-09-23; a load share since Q7, 2026-09-24).
     /// Info: the record of a share the dial applies; the feed does not take it.
-    pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate";
+    pub const FEEDS_LONG_TOOL_DERATE: &str = "feeds.long_tool_derate" => INFO;
     /// Suggest pass 6b, the machine aggressiveness dial, changed the depth per
     /// pass and the stepover to hold the load at the dial's fraction (ruling R4,
     /// 2026-09-24). Info; Caution when the target was not met or the dial is
     /// above 1.0.
-    pub const FEEDS_AGGRESSIVENESS_ENGAGEMENT: &str = "feeds.aggressiveness_engagement";
+    pub const FEEDS_AGGRESSIVENESS_ENGAGEMENT: &str = "feeds.aggressiveness_engagement" => warn(Danger::Part);
     /// The machine cutting-feed ceiling bound, and the RPM came down to hold
     /// the chipload (ruling R4 Q10, 2026-09-24). Info.
-    pub const FEEDS_RPM_LOWERED_FOR_CEILING: &str = "feeds.rpm_lowered_for_ceiling";
-    pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope";
+    pub const FEEDS_RPM_LOWERED_FOR_CEILING: &str = "feeds.rpm_lowered_for_ceiling" => INFO;
+    pub const FEEDS_DRILL_FEED_CLAMPED_TO_ENVELOPE: &str = "feeds.drill_feed_clamped_to_envelope" => warn(Danger::Part);
     pub const FEEDS_VENDOR_ROW_PUBLISHES_NO_CHIPLOAD: &str =
-        "feeds.vendor_row_publishes_no_chipload";
+        "feeds.vendor_row_publishes_no_chipload" => INFO;
     pub const FEEDS_NO_VENDOR_ROWS_FOR_ROUTED_OPERATION: &str =
-        "feeds.no_vendor_rows_for_routed_operation";
+        "feeds.no_vendor_rows_for_routed_operation" => warn(Danger::Part);
     /// The depth per pass is above 3 x D, past the published de-rate table.
     /// The de-rate holds the last printed point, 0.50 (feeds matrix R3).
-    pub const FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE: &str = "feeds.depth_beyond_published_table";
+    pub const FEEDS_DEPTH_BEYOND_PUBLISHED_TABLE: &str = "feeds.depth_beyond_published_table" => warn(Danger::Part);
 
     // ── Pre-sim heuristic hints (superseded by load gates) ───────────────
-    pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high";
-    pub const FEEDS_FEED_VS_LUT_LOW: &str = "feeds.feed_vs_lut.low";
-    pub const FEEDS_STEPOVER_VS_LUT: &str = "feeds.stepover_vs_lut";
-    pub const FEEDS_DPP_VS_LUT: &str = "feeds.dpp_vs_lut";
+    pub const FEEDS_FEED_VS_LUT_HIGH: &str = "feeds.feed_vs_lut.high" => INFO;
+    pub const FEEDS_FEED_VS_LUT_LOW: &str = "feeds.feed_vs_lut.low" => INFO;
+    pub const FEEDS_STEPOVER_VS_LUT: &str = "feeds.stepover_vs_lut" => INFO;
+    pub const FEEDS_DPP_VS_LUT: &str = "feeds.dpp_vs_lut" => INFO;
 
     // ── Static geometric / tool-op checks ────────────────────────────────
-    pub const GEOM_STEPOVER_EXCEEDS_DIAMETER: &str = "geom.stepover_exceeds_diameter";
-    pub const GEOM_DPP_EXCEEDS_CUTTING_LENGTH: &str = "geom.dpp_exceeds_cutting_length";
-    pub const GEOM_BOTTOM_ABOVE_TOP_Z: &str = "geom.bottom_above_top_z";
-    pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z";
-    pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z";
-    pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z";
+    pub const GEOM_STEPOVER_EXCEEDS_DIAMETER: &str = "geom.stepover_exceeds_diameter" => warn(Danger::Tool);
+    pub const GEOM_DPP_EXCEEDS_CUTTING_LENGTH: &str = "geom.dpp_exceeds_cutting_length" => warn(Danger::Tool);
+    pub const GEOM_BOTTOM_ABOVE_TOP_Z: &str = "geom.bottom_above_top_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
+    pub const GEOM_FEED_Z_BELOW_TOP_Z: &str = "geom.feed_z_below_top_z" => warn(Danger::Machine);
+    pub const GEOM_RETRACT_Z_BELOW_FEED_Z: &str = "geom.retract_z_below_feed_z" => warn(Danger::Machine);
+    pub const GEOM_CLEARANCE_Z_BELOW_RETRACT_Z: &str = "geom.clearance_z_below_retract_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
     /// F033: the retract plane is below the anchored Top Z, so the rapids
     /// within the operation go through the material. Refuses the edit,
     /// generation and export.
-    pub const GEOM_RETRACT_Z_BELOW_TOP_Z: &str = "geom.retract_z_below_top_z";
-    pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed";
+    pub const GEOM_RETRACT_Z_BELOW_TOP_Z: &str = "geom.retract_z_below_top_z" => refuse(Danger::Machine, &[Stage::Edit, Stage::Generate, Stage::Export], Gate::HeightRefuses, None);
+    pub const GEOM_PLUNGE_EXCEEDS_FEED: &str = "geom.plunge_exceeds_feed" => warn(Danger::Part);
 
     /// A 2.5D operation's own depth dial puts its cut floor below the bottom of
     /// the stock: the tool goes through the board and into whatever holds it.
@@ -263,27 +302,27 @@ diag_ids! {
     /// The string matches the GUI-side rule F1.6 shipped
     /// (`ui/properties/operations/mod.rs`), so the switchover is a deletion there
     /// rather than a rename for the operator.
-    pub const GEOM_DEPTH_BEYOND_STOCK: &str = "geom.depth_beyond_stock";
+    pub const GEOM_DEPTH_BEYOND_STOCK: &str = "geom.depth_beyond_stock" => warn(Danger::Part);
     /// A ring cascade hit its cap and left the middle of a region uncut.
     /// Sim-independent: measured during generation, not from a dexel run.
-    pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material";
+    pub const GEOM_STANDING_MATERIAL: &str = "geom.standing_material" => warn(Danger::Part);
     /// A planned finish band emitted no cutting because height resolution
     /// clipped its Z range away — an unmachined feature. Sim-independent:
     /// measured at generation, and invisible to a dexel run because the
     /// toolpath never attempted the cut.
-    pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band";
+    pub const GEOM_UNMACHINED_BAND: &str = "geom.unmachined_band" => warn(Danger::Part);
     /// A planned finish band's Z ladder was SHORTENED by height resolution but
     /// it still cut — the feature is PARTLY machined (C8). The quiet sibling of
     /// [`GEOM_UNMACHINED_BAND`]; the two are disjoint by construction, so a
     /// region reports as at most one of them. Sim-independent for the same
     /// reason: the levels that were never laddered leave no trace in a cut
     /// record.
-    pub const GEOM_CLIPPED_BAND: &str = "geom.clipped_band";
+    pub const GEOM_CLIPPED_BAND: &str = "geom.clipped_band" => INFO;
     /// A valley centreline runs over material the cutter cannot physically
     /// reach: it wedges on the walls and floats above the floor. Also
     /// sim-independent — the emitted path is exactly what a simulation would
     /// execute; the residual is what nothing ever asked for.
-    pub const GEOM_TIP_FLOAT: &str = "geom.tip_float";
+    pub const GEOM_TIP_FLOAT: &str = "geom.tip_float" => warn(Danger::Part);
     /// A loaded project still sets a RETIRED dial at a non-default value: the
     /// field is deserialized so the project loads unchanged, but nothing reads
     /// it any more, so the number the operator tuned is not steering anything.
@@ -292,7 +331,7 @@ diag_ids! {
     /// Sim-independent: the emitted path is exactly what a simulation would
     /// execute, so a dexel run sees a clean pass and nothing else records that
     /// the descent was truncated.
-    pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp";
+    pub const GEOM_RAMP_REACH_CLAMP: &str = "geom.ramp_reach_clamp" => warn(Danger::Part);
     /// A4 (Checkpoint E): a rest pass whose emitted cutting geometry never gets
     /// under the reference stock it was planned against — it will remove nothing,
     /// at full price in motion. Sim-independent: measured at generation against
@@ -301,17 +340,17 @@ diag_ids! {
     ///
     /// A REPORT, not a refusal. An operator may legitimately want a pass that
     /// finds nothing; what is not acceptable is nothing saying so.
-    pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal";
+    pub const GEOM_ZERO_REMOVAL: &str = "geom.zero_removal" => warn(Danger::Part);
     /// W6.5: a projected curve cuts deeper than its commanded depth.
-    pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve";
+    pub const GEOM_BURIED_CURVE: &str = "geom.buried_curve" => INFO;
     /// P1 (geometry selection): a closed-region op left open paths of the
     /// drawing out. It cut the closed loops; the open paths are not cut.
     /// P3.7: also a face at the top under "each picked face" (no material
     /// to cut); the op cut the other faces.
-    pub const GEOM_SELECTION_NOTE: &str = "geom.selection_note";
+    pub const GEOM_SELECTION_NOTE: &str = "geom.selection_note" => warn(Danger::Part);
     /// P5 (S12): a Profile loop took its tabs by the even-spacing fallback, or
     /// its sides hold fewer tabs than asked.
-    pub const GEOM_TAB_PLACEMENT: &str = "geom.tab_placement";
+    pub const GEOM_TAB_PLACEMENT: &str = "geom.tab_placement" => warn(Danger::Part);
     /// Checkpoint C (Q1 / D-2): a 2D offset call inside this generation FAILED —
     /// `cavalier_contours` panicked and was contained, or one of the offset
     /// module's own input guards refused the ring — rather than collapsing.
@@ -323,7 +362,7 @@ diag_ids! {
     /// A REPORT, not a refusal, everywhere except the boundary-containment layer
     /// (`GEOM_BOUNDARY_CLIP_DROPPED`'s neighbour case), where the same failure
     /// stops the generate instead.
-    pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure";
+    pub const GEOM_OFFSET_LIBRARY_FAILURE: &str = "geom.offset_library_failure" => warn(Danger::Part);
     /// Checkpoint C (Q2 / D-3a option b): a machining-boundary containment was
     /// requested, its offset collapsed to nothing, and the toolpath was therefore
     /// emitted with NO boundary clip at all — not with a smaller one. Usually
@@ -331,25 +370,25 @@ diag_ids! {
     /// deliberately still a pass-through rather than a refusal, because deleting
     /// the path instead would break the case the contract was written for. What
     /// it is not is silent any more.
-    pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped";
+    pub const GEOM_BOUNDARY_CLIP_DROPPED: &str = "geom.boundary_clip_dropped" => warn(Danger::Part);
     /// R4 (Corne case, 2026-09-18): the waterline's Z ladder asked for at least
     /// one level at or below the stock bottom, and the ladder builder DROPPED
     /// it. A level at the stock bottom cuts the bed by definition; the as-found
     /// Corne waterline had one level at `-1.37`, below the whole part, and the
     /// simulation read an 18.5 mm bite through Z 0. The dropped levels are not
     /// cut; the finding says so, and names the stock bottom the ladder floored at.
-    pub const GEOM_WATERLINE_LEVELS_BELOW_STOCK: &str = "geom.waterline_levels_below_stock";
+    pub const GEOM_WATERLINE_LEVELS_BELOW_STOCK: &str = "geom.waterline_levels_below_stock" => warn(Danger::Part);
     /// R3 (Corne case, 2026-09-18): fewer than two waterline levels reached the
     /// cutter, so the operation cut nothing between its top and bottom. The
     /// empty gate cannot raise this: `Waterline` is a feature-selective
     /// exemption there ("a model with no steep walls legitimately yields
     /// nothing"), so a one-level or empty ladder passed as a legitimate empty.
-    pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty";
+    pub const GEOM_WATERLINE_LADDER_EMPTY: &str = "geom.waterline_ladder_empty" => warn(Danger::Part);
     /// W4 (D69 §4, operator ruling 2026-10-28): the Waterline cuts a through
     /// part (its model bottom is at the stock bottom), and no tabbed Profile
     /// follows it in the setup, so the job does not hold the part at the
     /// end. The fix is a tabbed Profile on the outline after the Waterline.
-    pub const GEOM_WATERLINE_PART_UNHELD: &str = "geom.waterline_part_unheld";
+    pub const GEOM_WATERLINE_PART_UNHELD: &str = "geom.waterline_part_unheld" => warn(Danger::Part);
     /// F3 (2026-08-23): a rest-region extraction produced more islands than
     /// `region_mask::MAX_REST_REGIONS` and the list was TRUNCATED to the largest
     /// 64 by area. Every dropped island is territory a `DerivedRestRegions`
@@ -359,22 +398,22 @@ diag_ids! {
     ///
     /// A REPORT, not a refusal: the cap is a deliberate anti-sliver-storm guard
     /// and the kept regions are real. What it is not, any more, is silent.
-    pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated";
+    pub const GEOM_REGION_CAP_TRUNCATED: &str = "geom.region_cap_truncated" => warn(Danger::Part);
     /// G-RESTLEVELS: a 2.5D rest operation could not clip its levels to the
     /// machined stock, so it cut the whole outline at every level. A REPORT:
     /// the fallback cuts more, never less.
-    pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback";
+    pub const GEOM_REST_LEVELS_FALLBACK: &str = "geom.rest_levels_fallback" => warn(Danger::Part);
     /// An operation sized an offset stepover from the canonical reach policy
     /// rather than from any dial, and the value differs from the envelope-scaled
     /// number that used to be used there. Report-only: it says which number is
     /// steering a fan the operator cannot otherwise see.
-    pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover";
+    pub const CONFIG_DERIVED_STEPOVER: &str = "config.derived_stepover" => INFO;
     /// A/M6: which rest reference a claims/rest pipeline resolved to, and
     /// whether that was pinned or derived from what was in scope. The dial is
     /// three-valued (`auto` derives), so the resolved answer appears in no
     /// config field; and picking the analytic reference over a real machined
     /// prior makes a rest pass re-cut the whole part while looking plausible.
-    pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference";
+    pub const CONFIG_CLAIMS_REFERENCE: &str = "config.claims_reference" => warn(Danger::Part);
     /// F4 (2026-08-23): a rest-CLAIMS dial (`min_rest_depth_mm`,
     /// `claims_reference`) is set away from its default on a `UnifiedFinish`
     /// whose own configuration never applies it — `territory_clip` is off, so the
@@ -386,17 +425,17 @@ diag_ids! {
     /// A REPORT, not a fix and not a refusal: applying the dial would silently
     /// re-cut every shipped project that carries one, and refusing would black
     /// them out. The geometry is untouched; what changes is that somebody says so.
-    pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial";
+    pub const CONFIG_INERT_CLAIMS_DIAL: &str = "config.inert_claims_dial" => warn(Danger::Part);
 
     // ── Tool / operation compatibility ───────────────────────────────────
     /// W2.2: the operation's registry row refuses the tool kind
     /// (`tool_constraints`). The message is the generator's refusal text.
-    pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused";
-    pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing";
+    pub const COMPAT_TOOL_KIND_REFUSED: &str = "compat.tool_kind_refused" => refuse(Danger::Part, &[Stage::Generate], Gate::ToolKind, None);
+    pub const COMPAT_BALL_NOSE_FLAT_CLEARING: &str = "compat.ball_nose_on_flat_clearing" => INFO;
     /// A Project Curve set to Point projection. The tool tip follows the
     /// surface Z under the curve and the tool body is not tested against the
     /// surface. A deliberate operator choice, so the finding is a caution.
-    pub const COMPAT_PROJECT_CURVE_POINT_PROJECTION: &str = "compat.project_curve_point_projection";
+    pub const COMPAT_PROJECT_CURVE_POINT_PROJECTION: &str = "compat.project_curve_point_projection" => warn(Danger::Part);
 
     // ── Tool definition ──────────────────────────────────────────────────
     /// A size token in the tool NAME that clearly names the tip ("R1.0mm",
@@ -404,18 +443,18 @@ diag_ids! {
     /// motivating case: "Tapered Ball 2mm tip / 7° / 6mm shank" with
     /// `diameter = 1.0`. Info tier and advisory: names are free text, so no
     /// surface refuses on it. One finding per tool, `Scope::Tool`.
-    pub const TOOL_NAME_SIZE_MISMATCH: &str = "tool.name_size_mismatch";
+    pub const TOOL_NAME_SIZE_MISMATCH: &str = "tool.name_size_mismatch" => INFO;
     /// FC0 item 7 (decision D4 = warn, ruling Q6): the stick-out is shorter
     /// than the flute (`ToolConfig::stickout_shorter_than_flute`). A real
     /// set-up, so no door refuses it. Caution tier, one finding per tool,
     /// `Scope::Tool`.
-    pub const TOOL_STICKOUT_SHORTER_THAN_FLUTE: &str = "tool.stickout_shorter_than_flute";
+    pub const TOOL_STICKOUT_SHORTER_THAN_FLUTE: &str = "tool.stickout_shorter_than_flute" => warn(Danger::Tool);
 
     // ── Surface quality / cycle-time hints ───────────────────────────────
-    pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter";
-    pub const QUALITY_FINISH_STEPOVER_OVER_50_PCT: &str = "quality.finish_stepover_over_50_pct";
-    pub const QUALITY_BALL_SCALLOP_HEIGHT: &str = "quality.ball_scallop_height";
-    pub const EFFICIENCY_VERY_FINE_STEPOVER: &str = "efficiency.very_fine_stepover";
+    pub const QUALITY_STEPOVER_OVER_80_PCT: &str = "quality.stepover_over_80_pct_diameter" => INFO;
+    pub const QUALITY_FINISH_STEPOVER_OVER_50_PCT: &str = "quality.finish_stepover_over_50_pct" => INFO;
+    pub const QUALITY_BALL_SCALLOP_HEIGHT: &str = "quality.ball_scallop_height" => INFO;
+    pub const EFFICIENCY_VERY_FINE_STEPOVER: &str = "efficiency.very_fine_stepover" => INFO;
 
     // ── Workflow / state ─────────────────────────────────────────────────
     // (Workflow-only diagnostic — emitted by the GUI consumer for the
@@ -429,10 +468,10 @@ diag_ids! {
     // declare it here.
 
     // ── Stale-default validator rules (one ID per rule_id) ──────────────
-    pub const STALE_DROP_CUTTER_MIN_Z: &str = "stale.drop_cutter_min_z";
-    pub const STALE_TAPERED_BALL_PLUNGE: &str = "stale.tapered_ball_plunge";
-    pub const STALE_WOOD_ADAPTIVE_STEPOVER: &str = "stale.wood_adaptive_stepover";
-    pub const STALE_PROJECT_CURVE_NEGATIVE_DEPTH: &str = "stale.project_curve_negative_depth";
+    pub const STALE_DROP_CUTTER_MIN_Z: &str = "stale.drop_cutter_min_z" => warn(Danger::Part);
+    pub const STALE_TAPERED_BALL_PLUNGE: &str = "stale.tapered_ball_plunge" => warn(Danger::Tool);
+    pub const STALE_WOOD_ADAPTIVE_STEPOVER: &str = "stale.wood_adaptive_stepover" => warn(Danger::Part);
+    pub const STALE_PROJECT_CURVE_NEGATIVE_DEPTH: &str = "stale.project_curve_negative_depth" => warn(Danger::Part);
 
     // ── Op-precondition rules (F-015) ────────────────────────────────────
     //
@@ -440,41 +479,49 @@ diag_ids! {
     // the problem on the Params tab before clicking Generate. Each rule
     // mirrors a runtime check that previously bubbled up as a generation
     // error.
-    pub const PRECOND_DRILL_NO_HOLES: &str = "precondition.drill_no_holes";
+    pub const PRECOND_DRILL_NO_HOLES: &str = "precondition.drill_no_holes" => NOT_READY;
     pub const PRECOND_ALIGNMENT_PIN_DRILL_NO_HOLES: &str =
-        "precondition.alignment_pin_drill_no_holes";
+        "precondition.alignment_pin_drill_no_holes" => NOT_READY;
     /// Geometry selection P2.4: the selection of an op that is not a drill
     /// refuses (`SelectionRefusal`: the item, the cause and the fix), so
     /// generation will refuse. A drill op states the same refusal under its
     /// own no-holes id.
-    pub const PRECOND_SELECTION_REFUSED: &str = "precondition.selection_refused";
+    pub const PRECOND_SELECTION_REFUSED: &str = "precondition.selection_refused" => NOT_READY;
     /// W3h (operator ruling 2026-10-30): a new op starts with nothing
     /// selected. The selection of an op that is not a Pin Drill holds no
     /// rule and no pick, so generation will refuse until the operator
     /// picks. The face asks for the pick; it anchors to `selection`.
-    pub const PRECOND_SELECTION_EMPTY: &str = "precondition.selection_empty";
+    pub const PRECOND_SELECTION_EMPTY: &str = "precondition.selection_empty" => NOT_READY;
     /// UX-1c (operator ruling 2026-10-22, SAFETY): a Chamfer, V-Carve,
     /// Inlay or Inlay Plug on fresh stock takes a face pick below the stock
     /// top, so generation will refuse (`OperationError::BuriedFace`).
-    pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face";
+    pub const PRECOND_BURIED_FACE: &str = "precondition.buried_face" => refuse(Danger::Part, &[Stage::Generate], Gate::BuriedFace, None);
     /// S11 (operator ruling 2026-10-23): a value with no derivation is not
     /// set (the floor, a depth of a drawing op, or the feeds of a tool with
     /// no feeds data), so generation will refuse. The message names each
     /// field and the fix.
-    pub const PRECOND_NOT_SET: &str = "precondition.not_set";
+    pub const PRECOND_NOT_SET: &str = "precondition.not_set" => NOT_READY;
     /// R2 (Fusion): the op has no tool (`ToolpathConfig::tool_id` is
     /// `None`), so generation will refuse (`SessionError::NoTool`). The
     /// message is the no-tool state ("No tool fits: needs a flat end mill")
     /// and the fix.
-    pub const PRECOND_NO_TOOL: &str = "precondition.no_tool";
+    pub const PRECOND_NO_TOOL: &str = "precondition.no_tool" => NOT_READY;
     /// UX-7b (operator rulings 2026-10-22, SAFETY): the emitted moves of a
     /// 2.5D op cut into the mesh of its own model
     /// (`compute::model_gouge`). Blocking: export refuses while it stands
     /// (`ExportRefusal::CutsIntoModel`). B2: Caution when a 3D Rough cuts
     /// into its stock to leave only (`ModelGougeFinding::severity`).
-    pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model";
-    pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve";
-    pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface";
+    pub const SAFETY_CUTS_INTO_MODEL: &str = "safety.cuts_into_model" => refuse(Danger::Part, &[Stage::Generate, Stage::Export], Gate::GougeBlocks, None);
+    /// G-CENTRECUT (SAFETY): an entry had to plunge a tool that does not
+    /// cut at its centre straight into stock deeper than its blade
+    /// protrusion (`Produced::non_centre_cutting_refusal`).
+    pub const SAFETY_NON_CENTRE_CUTTING_PLUNGE: &str = "safety.non_centre_cutting_plunge" => refuse(Danger::Tool, &[Stage::Generate], Gate::CentreCutPlunge, None);
+    /// G-CENTRECUT (SAFETY): the simulation shows a tool that does not cut
+    /// at its centre going down into wood steeper than its limit angle
+    /// (`compute::simulate::non_centre_cutting_refusal_rows`).
+    pub const SAFETY_NON_CENTRE_CUTTING_DESCENT: &str = "safety.non_centre_cutting_descent" => refuse(Danger::Tool, &[Stage::Export], Gate::CentreCutDescent, None);
+    pub const PRECOND_PROJECT_CURVE_NO_CURVE: &str = "precondition.project_curve_no_curve" => NOT_READY;
+    pub const PRECOND_PROJECT_CURVE_NO_SURFACE: &str = "precondition.project_curve_no_surface" => NOT_READY;
 
     // ── Cross-reference rules (F-023) ────────────────────────────────────
     //
@@ -482,5 +529,10 @@ diag_ids! {
     // tool / setup) resolve against the current project. Fires before
     // generation time so the GUI banner *and* the MCP `diagnostic_delta`
     // envelope carry the same signal.
-    pub const REF_MODEL_MISSING: &str = "ref.model_missing";
+    pub const REF_MODEL_MISSING: &str = "ref.model_missing" => NOT_READY;
+
+    // ── Export ───────────────────────────────────────────────────────────
+    /// An enabled op has no current result, so the export leaves it out
+    /// (G-EXPORTSKIP, G-STALEXPORT).
+    pub const EXPORT_OP_LEFT_OUT: &str = "export.op_left_out" => refuse(Danger::Part, &[Stage::Export], Gate::NoCurrentResult, None);
 }

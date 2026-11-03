@@ -735,7 +735,10 @@ impl JobPhases<'_, '_> {
         // G-CENTRECUT (SAFETY): the ONE refusal check of the shared entry
         // builders. An entry that had to plunge a non-centre-cutting tool
         // straight into stock deeper than its protrusion stops the job.
-        if let Some(refusal) = annotated.produced.non_centre_cutting_refusal {
+        if let Some(refusal) = annotated.produced.non_centre_cutting_refusal
+            && crate::diagnostics::Gate::CentreCutPlunge
+                .refuses_at(crate::diagnostics::Stage::Generate)
+        {
             return Err(SessionError::Operation(
                 crate::compute::execute::OperationError::NonCentreCutting(refusal),
             ));

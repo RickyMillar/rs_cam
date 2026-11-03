@@ -66,6 +66,7 @@ impl ProjectSession {
         &self,
         request: crate::gcode::ExportRequest<'_>,
     ) -> Result<crate::gcode::ExportedGcode, crate::gcode::ExportRefusal> {
+        use crate::diagnostics::{Gate, Stage};
         use crate::export::gcode_validator::{
             MachineSafety, Severity, emission_frame_clearance_z, validate_machine_safety,
         };
@@ -87,7 +88,7 @@ impl ProjectSession {
             .filter_map(|tc| self.height_order_refusal(tc))
             .map(|refusal| refusal.to_string())
             .collect();
-        if !height_rows.is_empty() {
+        if !height_rows.is_empty() && Gate::HeightRefuses.refuses_at(Stage::Export) {
             return Err(crate::gcode::ExportRefusal::HeightOrder { rows: height_rows });
         }
         // UX-7b (SAFETY): an emitted toolpath whose stored result cuts into
@@ -97,7 +98,7 @@ impl ProjectSession {
             .iter()
             .filter_map(|idx| self.model_gouge_refusal(*idx))
             .collect();
-        if !gouge_rows.is_empty() {
+        if !gouge_rows.is_empty() && Gate::GougeBlocks.refuses_at(Stage::Export) {
             return Err(crate::gcode::ExportRefusal::CutsIntoModel { rows: gouge_rows });
         }
         // G-CENTRECUT (SAFETY): an emitted toolpath whose simulation shows a
@@ -116,7 +117,7 @@ impl ProjectSession {
                         .find(|tc| tc.id == id)
                         .map(|tc| tc.name.as_str())
                 });
-            if !rows.is_empty() {
+            if !rows.is_empty() && Gate::CentreCutDescent.refuses_at(Stage::Export) {
                 return Err(crate::gcode::ExportRefusal::NonCentreCuttingDescent { rows });
             }
         }

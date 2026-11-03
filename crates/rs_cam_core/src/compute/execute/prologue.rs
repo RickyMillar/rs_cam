@@ -326,7 +326,9 @@ pub(super) fn check_inputs<'a>(
             notes,
         });
     }
-    if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind()) {
+    if let Some(text) = op_type.tool_refusal(ctx.tool_cfg.tool_type.cutter_kind())
+        && crate::diagnostics::Gate::ToolKind.refuses_at(crate::diagnostics::Stage::Generate)
+    {
         return Err(OperationError::InvalidTool(text));
     }
     let prepared = Prepared {
@@ -336,7 +338,9 @@ pub(super) fn check_inputs<'a>(
         region_ladders,
         hole_spans,
     };
-    refuse_buried_face(ctx, op, &prepared)?;
+    if crate::diagnostics::Gate::BuriedFace.refuses_at(crate::diagnostics::Stage::Generate) {
+        refuse_buried_face(ctx, op, &prepared)?;
+    }
     Ok(prepared)
 }
 

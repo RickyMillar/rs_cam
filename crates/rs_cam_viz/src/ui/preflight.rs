@@ -238,8 +238,11 @@ pub fn draw(ctx: &egui::Context, state: &AppState, events: &mut Vec<AppEvent>) -
                 ui.add_space(4.0);
             }
 
-            let has_failures =
-                sim.checks.holder_collision_count > 0 || !sim.checks.rapid_collisions.is_empty();
+            // K6: the collisions ask for a confirm while the column says so.
+            let has_failures = (sim.checks.holder_collision_count > 0
+                || !sim.checks.rapid_collisions.is_empty())
+                && rs_cam_core::diagnostics::Gate::GuiConfirm
+                    .refuses_at(rs_cam_core::diagnostics::Stage::Export);
 
             if has_failures {
                 ui.add_space(4.0);

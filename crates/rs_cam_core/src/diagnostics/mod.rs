@@ -51,6 +51,7 @@
 //! between "we couldn't measure it" and "it's dangerous".
 
 pub mod adapters;
+pub mod consequence;
 pub mod diagnose;
 pub mod evidence;
 pub mod fix;
@@ -61,6 +62,7 @@ pub mod supersession;
 #[cfg(test)]
 mod tests;
 
+pub use consequence::{Consequence, Danger, Gate, RowKind, Stage};
 pub use diagnose::{
     ToolpathDiagnoseInputs, diagnose_project_diagnostics, diagnose_toolpath_inputs,
     diagnose_toolpath_with_no_tool,

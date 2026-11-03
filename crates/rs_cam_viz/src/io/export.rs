@@ -253,7 +253,11 @@ fn emitted_toolpaths<'a>(
             .into_iter()
             .filter(|b| !b.waived_by_operator)
             .collect();
-    if !blockers.is_empty() {
+    // K6: the export refuses while the column says so.
+    if !blockers.is_empty()
+        && rs_cam_core::diagnostics::Gate::NoCurrentResult
+            .refuses_at(rs_cam_core::diagnostics::Stage::Export)
+    {
         return Err(crate::error::VizError::Export(blocking_refusal_text(
             &blockers,
         )));

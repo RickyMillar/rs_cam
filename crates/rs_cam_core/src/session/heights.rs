@@ -908,7 +908,10 @@ impl ProjectSession {
             })
             .unwrap_or_default();
         let added = door_refusals(op, &before, &after);
-        if added.is_empty() {
+        // K6: the door refuses while the column says so.
+        if added.is_empty()
+            || !crate::diagnostics::Gate::HeightRefuses.refuses_at(crate::diagnostics::Stage::Edit)
+        {
             Ok(())
         } else {
             Err(SessionError::HeightOrder(HeightOrderRefusal {
@@ -986,6 +989,7 @@ impl ProjectSession {
         // on "After previous ops".
         if let Some(refusal) =
             answer.buried_face_refusal(&tc.operation, &tc.heights, tc.stock_source)
+            && crate::diagnostics::Gate::BuriedFace.refuses_at(crate::diagnostics::Stage::Generate)
         {
             return Err(SessionError::Operation(OperationError::BuriedFace(refusal)));
         }
@@ -1001,7 +1005,10 @@ impl ProjectSession {
                         && matches!(v, HeightOrderViolation::BottomNotBelowTop { .. }))
             })
             .collect();
-        if !violations.is_empty() {
+        if !violations.is_empty()
+            && crate::diagnostics::Gate::HeightRefuses
+                .refuses_at(crate::diagnostics::Stage::Generate)
+        {
             return Err(SessionError::HeightOrder(HeightOrderRefusal {
                 toolpath: tc.name.clone(),
                 violations,

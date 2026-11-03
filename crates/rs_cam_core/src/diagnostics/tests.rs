@@ -53,6 +53,36 @@ fn all_diagnostic_ids_are_unique() {
     }
 }
 
+/// CONTRACT K6: the macro writes one column entry per id, in the order
+/// of `ALL`.
+#[test]
+fn every_id_states_its_consequence_k6() {
+    assert_eq!(ids::CONSEQUENCES.len(), ids::ALL.len());
+    for ((id, _), all) in ids::CONSEQUENCES.iter().zip(ids::ALL) {
+        assert_eq!(id, all);
+    }
+    assert!(ids::row_kind(ids::LOAD_POWER_EXCEEDS).is_some());
+    assert!(ids::row_kind("no.such.id").is_none());
+}
+
+/// CONTRACT K6: each gate raises at least one row, so no gate is dead.
+#[test]
+fn each_gate_raises_a_row_k6() {
+    use crate::diagnostics::{Consequence, Gate, RowKind};
+    for gate in Gate::ALL {
+        let rows = ids::CONSEQUENCES
+            .iter()
+            .filter(|(_, row)| match row {
+                RowKind::Finding(Consequence::Refuse { gate: g, .. }) => *g == gate,
+                RowKind::Finding(Consequence::Warn(_) | Consequence::Info) | RowKind::NotReady => {
+                    false
+                }
+            })
+            .count();
+        assert!(rows > 0, "no row is raised by {gate:?}");
+    }
+}
+
 /// F162: every id is a row of the `diag_ids!` macro, so `ALL` holds it.
 /// A `const NAME: &str` written outside the macro block would miss `ALL`;
 /// this scan counts every such const in `ids.rs` and compares.
@@ -136,7 +166,16 @@ fn all_diagnostic_ids_reachable_in_adapter_source() {
     // started to read the whole id list). The list holds it so the scan
     // stays green; the check below fails the day an emitter lands, and
     // then this entry goes.
-    const KNOWN_ORPHANS: &[&str] = &["PROJECT_KINEMATIC_UTILIZATION"];
+    //
+    // K6 (feeds contract P2, commit A): the column names the three ids of
+    // today's refusals that had none. Commit B raises them and removes
+    // them here.
+    const KNOWN_ORPHANS: &[&str] = &[
+        "PROJECT_KINEMATIC_UTILIZATION",
+        "SAFETY_NON_CENTRE_CUTTING_PLUNGE",
+        "SAFETY_NON_CENTRE_CUTTING_DESCENT",
+        "EXPORT_OP_LEFT_OUT",
+    ];
     let mut missing = Vec::new();
     for (symbol, literal) in ids::NAMED {
         let reached = merged.contains(symbol) || merged.contains(&format!("\"{literal}\""));
