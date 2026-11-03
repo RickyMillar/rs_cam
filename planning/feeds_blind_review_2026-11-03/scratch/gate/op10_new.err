@@ -1,0 +1,20 @@
+[2m   0.549510339s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mback_target_s1.stl [3mtris[0m[2m=[0m630957
+[2m   1.683311393s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mhollow_s1.stl [3mtris[0m[2m=[0m622617
+[2m   2.322571629s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mlakes_s1.stl [3mtris[0m[2m=[0m558
+[2m   2.325468104s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlakes_closed.dxf [3mitems[0m[2m=[0m15
+[2m   2.896106635s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mrelief_sheet_s1.stl [3mtris[0m[2m=[0m649738
+[2m   3.549527901s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mblock_outline.dxf [3mitems[0m[2m=[0m1
+[2m   3.549589737s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0medge_outer.dxf [3mitems[0m[2m=[0m1
+[2m   3.549638198s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mcavity_d9.00.dxf [3mitems[0m[2m=[0m1
+[2m   3.565852671s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mvgroove_v20.dxf [3mitems[0m[2m=[0m168
+[2m   3.566123600s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlight_holes.dxf [3mitems[0m[2m=[0m42
+[2m   3.566175497s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mantenna_d5.00.dxf [3mitems[0m[2m=[0m1
+[2m   3.566203119s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mslit_slot_f6_d20.67.dxf [3mitems[0m[2m=[0m1
+[2m   3.566224659s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mslit_v60.dxf [3mitems[0m[2m=[0m1
+[2m   3.566514493s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mengrave.dxf [3mitems[0m[2m=[0m31
+[2m   3.566550871s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mclamp_pads.dxf [3mitems[0m[2m=[0m4
+[2m   3.568367911s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlake_pocket_0.dxf [3mitems[0m[2m=[0m8
+[2m   3.568450616s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlake_pocket_1.dxf [3mitems[0m[2m=[0m1
+[2m   3.569063486s[0m [32m INFO[0m [2mrs_cam_cli::project[0m[2m:[0m generation plan finished [3msteps[0m[2m=[0m1 [3msimulations[0m[2m=[0m0 [3mblocked[0m[2m=[0m0
+[2m   3.569071781s[0m [32m INFO[0m [2mrs_cam_cli::project[0m[2m:[0m S5 prefix memo over the generation plan [3mlookups[0m[2m=[0m0 [3mhits[0m[2m=[0m0 [3mentries_reused[0m[2m=[0m0
+3.63 s 462064 KB

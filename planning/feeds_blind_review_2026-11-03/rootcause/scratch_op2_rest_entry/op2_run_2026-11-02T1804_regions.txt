@@ -1,0 +1,168 @@
+C31 region opening z=11.100000000000009 region=2 area=1024.9
+C31 region opening z=11.100000000000009 region=3 area=3502.1
+C31 region opening z=12.300000000000008 region=1 area=2610.6
+C31 region opening z=12.300000000000008 region=2 area=3489.8
+C31 region opening z=13.500000000000007 region=1 area=2610.6
+C31 region opening z=13.500000000000007 region=2 area=3486.3
+C31 region opening z=14.700000000000006 region=1 area=2610.6
+C31 region opening z=14.700000000000006 region=2 area=3483.1
+C31 region opening z=15.900000000000006 region=1 area=2610.6
+C31 region opening z=15.900000000000006 region=2 area=5850.4
+C31 region opening z=15.900000000000006 region=5 area=3478.9
+C31 region opening z=16.55 region=1 area=647.5
+C31 region opening z=16.55 region=7 area=1507.7
+C31 region opening z=16.55 region=8 area=5835.4
+C31 region opening z=17.100000000000005 region=1 area=646.9
+C31 region opening z=17.100000000000005 region=7 area=1507.3
+C31 region opening z=17.100000000000005 region=8 area=5832.0
+C31 region opening z=18.300000000000004 region=1 area=646.6
+C31 region opening z=18.300000000000004 region=7 area=1507.0
+C31 region opening z=18.300000000000004 region=8 area=5816.9
+C31 region opening z=19.500000000000004 region=1 area=646.8
+C31 region opening z=19.500000000000004 region=7 area=1506.4
+C31 region opening z=19.500000000000004 region=8 area=7580.4
+C31 region opening z=20.700000000000003 region=1 area=646.6
+C31 region opening z=20.700000000000003 region=7 area=1506.1
+C31 region opening z=20.700000000000003 region=8 area=7558.0
+C31 region opening z=21.900000000000002 region=1 area=645.9
+C31 region opening z=21.900000000000002 region=7 area=1505.7
+C31 region opening z=21.900000000000002 region=8 area=7530.4
+C31 region opening z=23.1 region=1 area=645.6
+C31 region opening z=23.1 region=7 area=1505.4
+C31 region opening z=23.1 region=8 area=7526.1
+C31 region opening z=24.3 region=1 area=645.1
+C31 region opening z=24.3 region=7 area=1505.1
+C31 region opening z=24.3 region=8 area=7519.6
+C31 region opening z=2.700000000000009 region=1 area=268.3
+C31 region opening z=3.9000000000000092 region=3 area=268.3
+C31 region opening z=3.9000000000000092 region=5 area=294.0
+C31 region opening z=5.100000000000009 region=3 area=268.3
+C31 region opening z=5.100000000000009 region=5 area=294.0
+C31 region opening z=6.30000000000001 region=4 area=268.3
+C31 region opening z=6.30000000000001 region=6 area=294.0
+C31 region opening z=7.50000000000001 region=3 area=6866.1
+C31 region opening z=8.55 region=3 area=6866.1
+C31 region opening z=8.70000000000001 region=3 area=6866.1
+C31 region opening z=9.90000000000001 region=3 area=9033.3
+C38 piece left to the rest pass z=0.5 region=1 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=2 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=3 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=4 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=5 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=6 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=7 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=0.5 region=8 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=11.100000000000009 region=1 area_mm2=242.1 why="F-038 forecast"
+C38 piece left to the rest pass z=11.100000000000009 region=4 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=11.100000000000009 region=5 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=12.300000000000008 region=3 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=12.300000000000008 region=4 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=13.500000000000007 region=3 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=13.500000000000007 region=4 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=14.700000000000006 region=3 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=14.700000000000006 region=4 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=1 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=2 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=3 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=4 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=5 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=6 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=7 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=1.500000000000009 region=8 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=15.900000000000006 region=3 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=15.900000000000006 region=4 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=16.55 region=2 area_mm2=116.1 why="F-038 forecast"
+C38 piece left to the rest pass z=16.55 region=3 area_mm2=102.4 why="F-038 forecast"
+C38 piece left to the rest pass z=16.55 region=4 area_mm2=254.7 why="F-038 forecast"
+C38 piece left to the rest pass z=16.55 region=5 area_mm2=106.6 why="F-038 forecast"
+C38 piece left to the rest pass z=16.55 region=6 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=17.100000000000005 region=2 area_mm2=115.9 why="F-038 forecast"
+C38 piece left to the rest pass z=17.100000000000005 region=3 area_mm2=102.3 why="F-038 forecast"
+C38 piece left to the rest pass z=17.100000000000005 region=4 area_mm2=254.4 why="F-038 forecast"
+C38 piece left to the rest pass z=17.100000000000005 region=5 area_mm2=106.2 why="F-038 forecast"
+C38 piece left to the rest pass z=17.100000000000005 region=6 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=18.300000000000004 region=2 area_mm2=115.5 why="F-038 forecast"
+C38 piece left to the rest pass z=18.300000000000004 region=3 area_mm2=101.9 why="F-038 forecast"
+C38 piece left to the rest pass z=18.300000000000004 region=4 area_mm2=248.4 why="F-038 forecast"
+C38 piece left to the rest pass z=18.300000000000004 region=5 area_mm2=106.0 why="F-038 forecast"
+C38 piece left to the rest pass z=18.300000000000004 region=6 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=19.500000000000004 region=2 area_mm2=115.4 why="F-038 forecast"
+C38 piece left to the rest pass z=19.500000000000004 region=3 area_mm2=101.7 why="F-038 forecast"
+C38 piece left to the rest pass z=19.500000000000004 region=4 area_mm2=247.7 why="F-038 forecast"
+C38 piece left to the rest pass z=19.500000000000004 region=5 area_mm2=105.2 why="F-038 forecast"
+C38 piece left to the rest pass z=19.500000000000004 region=6 area_mm2=118.3 why="F-038 forecast"
+C38 piece left to the rest pass z=20.700000000000003 region=2 area_mm2=115.1 why="F-038 forecast"
+C38 piece left to the rest pass z=20.700000000000003 region=3 area_mm2=101.4 why="F-038 forecast"
+C38 piece left to the rest pass z=20.700000000000003 region=4 area_mm2=247.3 why="F-038 forecast"
+C38 piece left to the rest pass z=20.700000000000003 region=5 area_mm2=72.2 why="F-038 forecast"
+C38 piece left to the rest pass z=20.700000000000003 region=6 area_mm2=118.3 why="F-038 forecast"
+C38 piece left to the rest pass z=21.900000000000002 region=2 area_mm2=111.3 why="F-038 forecast"
+C38 piece left to the rest pass z=21.900000000000002 region=3 area_mm2=101.1 why="F-038 forecast"
+C38 piece left to the rest pass z=21.900000000000002 region=4 area_mm2=246.8 why="F-038 forecast"
+C38 piece left to the rest pass z=21.900000000000002 region=5 area_mm2=71.7 why="F-038 forecast"
+C38 piece left to the rest pass z=21.900000000000002 region=6 area_mm2=118.3 why="F-038 forecast"
+C38 piece left to the rest pass z=23.1 region=2 area_mm2=110.9 why="F-038 forecast"
+C38 piece left to the rest pass z=23.1 region=3 area_mm2=100.9 why="F-038 forecast"
+C38 piece left to the rest pass z=23.1 region=4 area_mm2=246.3 why="F-038 forecast"
+C38 piece left to the rest pass z=23.1 region=5 area_mm2=71.4 why="F-038 forecast"
+C38 piece left to the rest pass z=23.1 region=6 area_mm2=118.3 why="F-038 forecast"
+C38 piece left to the rest pass z=24.3 region=2 area_mm2=110.5 why="F-038 forecast"
+C38 piece left to the rest pass z=24.3 region=3 area_mm2=100.8 why="F-038 forecast"
+C38 piece left to the rest pass z=24.3 region=4 area_mm2=245.9 why="F-038 forecast"
+C38 piece left to the rest pass z=24.3 region=5 area_mm2=71.0 why="F-038 forecast"
+C38 piece left to the rest pass z=24.3 region=6 area_mm2=118.3 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=2 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=3 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=4 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=5 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=6 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=7 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=8 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=2.700000000000009 region=9 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=10 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=1 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=2 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=4 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=6 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=7 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=8 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=3.9000000000000092 region=9 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=10 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=1 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=2 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=4 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=6 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=7 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=8 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=5.100000000000009 region=9 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=10 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=1 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=2 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=3 area_mm2=291.6 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=5 area_mm2=77.3 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=7 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=8 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=6.30000000000001 region=9 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=1 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=2 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=4 area_mm2=405.9 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=5 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=6 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=7.50000000000001 region=7 area_mm2=167.1 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=1 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=2 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=4 area_mm2=406.1 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=5 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=6 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=8.55 region=7 area_mm2=167.2 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=1 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=2 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=4 area_mm2=407.2 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=5 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=6 area_mm2=62.3 why="F-038 forecast"
+C38 piece left to the rest pass z=8.70000000000001 region=7 area_mm2=167.3 why="F-038 forecast"
+C38 piece left to the rest pass z=9.90000000000001 region=1 area_mm2=248.6 why="F-038 forecast"
+C38 piece left to the rest pass z=9.90000000000001 region=2 area_mm2=241.1 why="F-038 forecast"
+C38 piece left to the rest pass z=9.90000000000001 region=3 area_mm2=138.0 why="no field"
+C38 piece left to the rest pass z=9.90000000000001 region=4 area_mm2=117.6 why="F-038 forecast"
+C38 piece left to the rest pass z=9.90000000000001 region=5 area_mm2=62.3 why="F-038 forecast"

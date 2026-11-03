@@ -14,6 +14,17 @@
 > with `git show planning-pre-purge-2026-09-17:<path>`, and read
 > `planning/DELETED_INDEX.md` for what each package decided and why it went.
 
+## Update 2026-11-03 — feeds contracts: plan ruled, phase cards
+
+`planning/feeds_blind_review_2026-11-03/` is a blind review of Suggest on
+nz-wanaka-21. It found 24 dangerous field values on 7 of 19 toolpaths, and
+`rootcause/INDEX.md` traces them to four missing-fact paths.
+`planning/feeds_contract_2026-11-03/PLAN.md` holds the answer: contracts K1-K8,
+which the compiler holds. It also records the operator rulings Q1-Q9.
+`STATUS.md` holds the phase state and the open decisions. Each phase has a
+hand-off card in `phases/`. Next: Phase 0 (local fixes) and Phase 1 (the
+wildcard lint). Phase 3 waits for the perf session to commit `ops/project_curve.rs`.
+
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 
 `planning/viewport_parity_2026-10-28/` (research REPORT.md, design A-F,

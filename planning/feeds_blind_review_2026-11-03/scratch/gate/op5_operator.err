@@ -1,0 +1,42 @@
+[2m   0.699521685s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mback_target_s1.stl [3mtris[0m[2m=[0m630957
+[2m   1.960458941s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mhollow_s1.stl [3mtris[0m[2m=[0m622617
+[2m   2.581694194s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mlakes_s1.stl [3mtris[0m[2m=[0m558
+[2m   2.584081133s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlakes_closed.dxf [3mitems[0m[2m=[0m15
+[2m   3.183256124s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded mesh model [3mname[0m[2m=[0mrelief_sheet_s1.stl [3mtris[0m[2m=[0m649738
+[2m   3.891573171s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mblock_outline.dxf [3mitems[0m[2m=[0m1
+[2m   3.891628374s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0medge_outer.dxf [3mitems[0m[2m=[0m1
+[2m   3.891675282s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mcavity_d9.00.dxf [3mitems[0m[2m=[0m1
+[2m   3.907398865s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mvgroove_v20.dxf [3mitems[0m[2m=[0m168
+[2m   3.907660696s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlight_holes.dxf [3mitems[0m[2m=[0m42
+[2m   3.907705029s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mantenna_d5.00.dxf [3mitems[0m[2m=[0m1
+[2m   3.907726029s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mslit_slot_f6_d20.67.dxf [3mitems[0m[2m=[0m1
+[2m   3.907744584s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mslit_v60.dxf [3mitems[0m[2m=[0m1
+[2m   3.908035329s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mengrave.dxf [3mitems[0m[2m=[0m31
+[2m   3.908075134s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mclamp_pads.dxf [3mitems[0m[2m=[0m4
+[2m   3.909789661s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlake_pocket_0.dxf [3mitems[0m[2m=[0m8
+[2m   3.909879329s[0m [32m INFO[0m [2mrs_cam_core::session::project_file[0m[2m:[0m Loaded 2D model [3mname[0m[2m=[0mlake_pocket_1.dxf [3mitems[0m[2m=[0m1
+[2m   4.039677022s[0m [32m INFO[0m [2mrs_cam_cli::project[0m[2m:[0m generation plan finished [3msteps[0m[2m=[0m1 [3msimulations[0m[2m=[0m0 [3mblocked[0m[2m=[0m0
+[2m   4.039735713s[0m [32m INFO[0m [2mrs_cam_cli::project[0m[2m:[0m S5 prefix memo over the generation plan [3mlookups[0m[2m=[0m0 [3mhits[0m[2m=[0m0 [3mentries_reused[0m[2m=[0m0
+	Command being timed: "systemd-run --user --scope -q -p MemoryMax=12G -p MemorySwapMax=0 timeout 900 target/release/rs_cam_cli rough-score planning/feeds_blind_review_2026-11-03/scratch/wanaka21_scratch.toml --toolpath 11 --no-sim --memory-limit 11GiB"
+	User time (seconds): 3.77
+	System time (seconds): 0.31
+	Percent of CPU this job got: 100%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:04.08
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 462196
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 262434
+	Voluntary context switches: 20
+	Involuntary context switches: 192
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -1,0 +1,2361 @@
+format_version = 3
+
+[job]
+name = "rivmap nz-wanaka-21 block (two-sided)"
+
+[job.stock]
+x = 395.0
+y = 460.0
+z = 25.5
+origin_x = -18.5
+origin_y = -8.5
+origin_z = 0.0
+padding = 0.0
+auto_from_model = false
+
+[job.stock.material.SolidWood]
+species = "WhiteOak"
+
+[[job.stock.alignment_pins]]
+x = 6.25
+y = 230.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 6.25
+y = 190.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 6.25
+y = 270.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 388.75
+y = 110.0
+diameter = 6.0
+
+[[job.stock.alignment_pins]]
+x = 388.75
+y = 350.0
+diameter = 6.0
+
+[job.post]
+format = "grblhal"
+spindle_speed = 10610
+safe_z = 30.5
+high_feedrate_mode = false
+high_feedrate = 5000.0
+spindle_strategy = "match_chart"
+controller_waits_for_spindle = true
+
+[job.machine]
+name = "Shapeoko Pro XXL (Scylla grblHAL, H100 1.5 kW VFD, $$ 2026-10-15)"
+max_feed_mm_min = 15000.0
+max_shank_mm = 7.0
+aggressiveness = 0.85
+
+[job.machine.spindle.Variable]
+min_rpm = 6000.0
+max_rpm = 24000.0
+
+[job.machine.power.VfdConstantTorque]
+rated_power_kw = 1.5
+rated_rpm = 24000.0
+
+[job.machine.chip_load]
+k0 = 0.024
+p = 0.61
+q = 1.26
+
+[job.machine.rigidity]
+doc_roughing_factor = 0.25
+doc_finishing_factor = 0.1
+woc_roughing_factor = 0.4
+woc_roughing_max_mm = 6.35
+woc_finishing_mm = 0.635
+adaptive_doc_factor = 2.0
+adaptive_woc_factor = 0.2
+
+[job.machine.kinematics]
+acceleration_mm_s2 = 983.3333333333334
+acceleration_xyz_mm_s2 = [
+    1200.0,
+    1200.0,
+    550.0,
+]
+max_rate_xyz_mm_min = [
+    15000.0,
+    15000.0,
+    2500.0,
+]
+junction_deviation_mm = 0.1
+
+[job.machine.controller]
+firmware = "grbl_hal"
+rpm_max = 1000.0
+rpm_min = 0.0
+mode = 0
+spindle_at_speed_tolerance_pct = 5.0
+tool_change_mode = 3
+tool_change_probing_distance_mm = 40.0
+spindle_on_delay_s = 0.0
+
+[job.machine.controller.spindle_drive]
+plugin = "H-100 VFD"
+
+[job.simulation]
+resolution_mm = 0.2
+
+[[tools]]
+id = 0
+name = "6 mm flat end mill (the cavity, the mech pockets), 30 mm stick-out"
+type = "end_mill"
+diameter = 6.0
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 30.0
+flute_count = 2
+tool_number = 1
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 1
+name = "3.175-20deg-0.3 V-bit (0.3 mm flat tip; rs_cam models a sharp tip), 25 mm stick-out (measure)"
+type = "v_bit"
+diameter = 3.175
+cutting_length = 8.152467616
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 20.0
+taper_half_angle = 10.0
+shaft_diameter = 3.175
+shank_diameter = 3.175
+stickout = 25.0
+flute_count = 1
+tool_number = 2
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 2
+name = "1/4 in 60 deg V-bit (the day strip slit), 30 mm stick-out (set and measure)"
+type = "v_bit"
+diameter = 6.35
+cutting_length = 5.499261314
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 60.0
+taper_half_angle = 30.0
+shaft_diameter = 6.35
+shank_diameter = 6.35
+stickout = 30.0
+flute_count = 2
+tool_number = 3
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 3
+name = "1/4 in flat end mill, 2 flute (the front rough)"
+type = "end_mill"
+diameter = 6.35
+cutting_length = 25.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 6.35
+shank_diameter = 6.35
+stickout = 25.0
+flute_count = 2
+tool_number = 4
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 4
+name = "R1 x 6 x 20 mm 2F tapered ball (taper from the size: measure)"
+type = "tapered_ball_nose"
+diameter = 2.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 5.7106
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 30.0
+flute_count = 2
+tool_number = 5
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 5
+name = "DMM DSP1f-D2.0-L08, 2 mm 1F, 8 mm flute (shank 3.175 assumed: measure)"
+type = "end_mill"
+diameter = 2.0
+cutting_length = 8.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 3.175
+shank_diameter = 3.175
+stickout = 20.0
+flute_count = 1
+tool_number = 6
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[tools]]
+id = 6
+name = "18 mm 2F, 20 mm flute, 6 mm shank (measure stick-out)"
+type = "end_mill"
+diameter = 18.0
+cutting_length = 20.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 25.0
+flute_count = 2
+tool_number = 42
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[tools.non_centre_cutting]
+centre_core_diameter_mm = 8.0
+blade_protrusion_mm = 1.0
+
+[[tools]]
+id = 7
+name = "6 mm ball (R3), 6 mm shank (measure flute and stick-out)"
+type = "ball_nose"
+diameter = 6.0
+cutting_length = 15.0
+helix_deg = 30.0
+corner_radius_mm = 0.0
+corner_radius = 0.0
+included_angle = 0.0
+taper_half_angle = 0.0
+shaft_diameter = 6.0
+shank_diameter = 6.0
+stickout = 30.0
+flute_count = 2
+tool_number = 43
+tool_material = "carbide"
+cut_direction = "up_cut"
+vendor = ""
+product_id = ""
+
+[[models]]
+id = 0
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/back_target_s1.stl"
+name = "back_target_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 1
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/hollow_s1.stl"
+name = "hollow_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 2
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lakes_s1.stl"
+name = "lakes_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 3
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lakes_closed.dxf"
+name = "lakes_closed.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 4
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/relief_sheet_s1.stl"
+name = "relief_sheet_s1.stl"
+kind = "stl"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 5
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/block_outline.dxf"
+name = "block_outline.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 6
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/edge_outer.dxf"
+name = "edge_outer.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 7
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/cavity_d9.00.dxf"
+name = "cavity_d9.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 8
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/vgroove_v20.dxf"
+name = "vgroove_v20.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 9
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/light_holes.dxf"
+name = "light_holes.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 10
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/antenna_d5.00.dxf"
+name = "antenna_d5.00.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 11
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_slot_f6_d20.67.dxf"
+name = "slit_slot_f6_d20.67.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 12
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/slit_v60.dxf"
+name = "slit_v60.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 13
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/engrave.dxf"
+name = "engrave.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 14
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/clamp_pads.dxf"
+name = "clamp_pads.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 15
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lake_pocket_0.dxf"
+name = "lake_pocket_0.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[models]]
+id = 16
+path = "/home/ricky/cnc_jobs/rivmap_block/nz_wanaka_21/lake_pocket_1.dxf"
+name = "lake_pocket_1.dxf"
+kind = "dxf"
+
+[models.units]
+kind = "millimeters"
+
+[[setups]]
+id = 0
+name = "1 Back"
+face_up = "top"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "Back up. Z0 = spoilboard. XY0 = stock corner (pin 1 is at (6.25, 230.0)). Top clamps at y 153 and 307 on both long sides."
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min 1"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -38.5,
+    124.8333,
+    0.0,
+]
+max = [
+    -8.5,
+    164.8333,
+    30.0,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max 1"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    366.5,
+    124.8333,
+    0.0,
+]
+max = [
+    396.5,
+    164.8333,
+    30.0,
+]
+
+[[setups.obstacles]]
+id = 2
+name = "Clamp X min 2"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -38.5,
+    278.1667,
+    0.0,
+]
+max = [
+    -8.5,
+    318.1667,
+    30.0,
+]
+
+[[setups.obstacles]]
+id = 3
+name = "Clamp X max 2"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    366.5,
+    278.1667,
+    0.0,
+]
+max = [
+    396.5,
+    318.1667,
+    30.0,
+]
+
+[[setups.toolpaths]]
+id = 0
+name = "Face back to T1"
+enabled = true
+tool_id = 6
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 14.4
+depth = 0.5
+depth_per_pass = 0.5
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+stock_offset = 18.0
+direction = "zigzag"
+spindle_rpm = 16219
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 26.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[[setups.toolpaths]]
+id = 1
+name = "Back bulk rough 18 mm"
+enabled = true
+tool_id = 6
+model_id = 0
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 3.6
+depth_per_pass = 9.0
+stock_to_leave_axial = 0.0
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "geodesic_adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 16219
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "manual"
+value = 11.0
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 5
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[[setups.toolpaths]]
+id = 2
+name = "Back rest 6 mm (cavity, hollow, lakes, pockets)"
+enabled = true
+tool_id = 0
+model_id = 0
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.2
+depth_per_pass = 1.2
+stock_to_leave_axial = 0.0
+feed_rate = 4720.856166118225
+plunge_rate = 2360.0
+ramp_feed_rate = 4720.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = true
+region_ordering = "global"
+clearing_strategy = "geodesic_adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 18000
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 5
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 3
+name = "Pin drill, flip pins"
+enabled = true
+tool_id = 0
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "alignment_pin_drill"
+
+[setups.toolpaths.operation.params]
+diameter = 6.0
+spoilboard_penetration = 4.5
+cycle = "peck"
+peck_depth = 6.0
+feed_rate = 736.0
+retract_z = 2.0
+spindle_rpm = 10610
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 4
+name = "Drill light holes 6 mm end mill"
+enabled = true
+tool_id = 0
+model_id = 9
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "drill"
+
+[setups.toolpaths.operation.params]
+cycle = "peck"
+peck_depth = 6.0
+dwell_time = 0.5
+retract_amount = 0.5
+feed_rate = 1835.0
+retract_z = 2.0
+spindle_rpm = 14000
+size_tolerance = 0.2
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 8.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[[setups.toolpaths]]
+id = 11
+name = "River channel 6 mm, pass 7 of 7"
+enabled = true
+tool_id = 0
+model_id = 8
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = -4.0
+point_spacing = 0.25
+feed_rate = 826.0
+plunge_rate = 736.0
+surface_model_id = 4
+direction = "from_above"
+side = "center"
+projection = "cutter"
+spindle_rpm = 10610
+chain_distance_mm = 0.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "manual"
+
+[[setups.toolpaths]]
+id = 12
+name = "Lake pocket 2 mm, 8 lakes to Z 5.91"
+enabled = true
+tool_id = 5
+model_id = 15
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.0
+depth_per_pass = 0.5
+feed_rate = 1258.0
+plunge_rate = 240.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 1
+spindle_rpm = 18000
+region_ordering = "global"
+open_paths = "skip"
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 5.9106
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 14.46
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[[setups.toolpaths]]
+id = 13
+name = "Lake pocket 2 mm, 1 lake to Z 3.99"
+enabled = true
+tool_id = 5
+model_id = 16
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.0
+depth_per_pass = 0.5
+feed_rate = 1258.0
+plunge_rate = 240.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 1
+spindle_rpm = 18000
+region_ordering = "global"
+open_paths = "skip"
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 3.9942
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 11.38
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[[setups.toolpaths]]
+id = 14
+name = "ANTENNA_D5.00 pocket 2 mm"
+enabled = true
+tool_id = 5
+model_id = 10
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 1.0
+depth_per_pass = 0.5
+feed_rate = 1258.0
+plunge_rate = 240.0
+ramp_feed_rate = 1258.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 18000
+region_ordering = "by_area"
+open_paths = "skip"
+
+[setups.toolpaths.operation.params.floor]
+from = "top"
+depth = 5.0
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-1500-2f-spektra"
+
+[[setups.toolpaths]]
+id = 15
+name = "V rivers and lakes"
+enabled = true
+tool_id = 1
+model_id = 8
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "project_curve"
+
+[setups.toolpaths.operation.params]
+depth = -2.417820455
+point_spacing = 0.25
+feed_rate = 2286.0
+plunge_rate = 381.0
+surface_model_id = 4
+direction = "from_below"
+side = "center"
+projection = "point"
+spindle_rpm = 18000
+chain_distance_mm = 0.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 16.5
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-vgroove-hardwood-trace-18deg-1f"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-vgroove-hardwood-trace-18deg-1f"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[[setups.toolpaths]]
+id = 16
+name = "Day strip slit V60"
+enabled = true
+tool_id = 2
+model_id = 12
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "trace"
+
+[setups.toolpaths.operation.params]
+depth = 5.196
+depth_per_pass = 2.598
+feed_rate = 808.0
+plunge_rate = 736.0
+compensation = "none"
+spindle_rpm = 10026
+region_ordering = "by_area"
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 4.83
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups]]
+id = 3
+name = "1b Clamp pads"
+face_up = "top"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "Pins in, top clamps OFF (the side pushers hold). Face the pads the back face left under the clamps, so the flipped back sits flat. Same zero."
+
+[[setups.toolpaths]]
+id = 17
+name = "Face clamp pads 6 mm"
+enabled = true
+tool_id = 0
+model_id = 14
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "pocket"
+
+[setups.toolpaths.operation.params]
+stepover = 2.4
+depth_per_pass = 0.5
+feed_rate = 4720.0
+plunge_rate = 2360.0
+climb = true
+pattern = "contour"
+angle = 0.0
+finishing_passes = 0
+spindle_rpm = 18000
+region_ordering = "by_area"
+open_paths = "skip"
+
+[setups.toolpaths.operation.params.floor]
+from = "z"
+z = 25.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "manual"
+value = 31.0
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 26.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-6000-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "published_rule"
+reference = "g10_plunge_flat"
+
+[[setups]]
+id = 1
+name = "2 Epoxy pour"
+face_up = "top"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "The pour and the cure (no cut: the operator removed the skim, 2026-11-01)."
+toolpaths = []
+
+[[setups.stock_changes]]
+id = 0
+name = "epoxy"
+enabled = true
+op = "add"
+cut_as = "stock_material"
+
+[setups.stock_changes.geometry]
+kind = "outline_fill"
+model_ids = [7]
+level_z = 17.5
+
+[setups.stock_changes.material.Custom]
+name = "Epoxy"
+feed_scale_factor = 1.0
+
+[[setups.stock_changes]]
+id = 1
+name = "epoxy slit"
+enabled = true
+op = "add"
+cut_as = "stock_material"
+
+[setups.stock_changes.geometry]
+kind = "outline_fill"
+model_ids = [11]
+level_z = 4.83
+
+[setups.stock_changes.material.Custom]
+name = "Epoxy"
+feed_scale_factor = 1.0
+
+[[setups]]
+id = 2
+name = "3 Front"
+face_up = "bottom"
+z_rotation = "0"
+xy_datum = "pins"
+z_datum = "table"
+datum_notes = "Front up, flipped on the pins. Z0 = spoilboard = the back face. CAUTION: the pins must stay below 25.0 (the face pass crosses them). Top clamps as in setup 1."
+
+[[setups.obstacles]]
+id = 0
+name = "Clamp X min 1"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -38.5,
+    124.8333,
+    0.0,
+]
+max = [
+    -8.5,
+    164.8333,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 1
+name = "Clamp X max 1"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    366.5,
+    124.8333,
+    0.0,
+]
+max = [
+    396.5,
+    164.8333,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 2
+name = "Clamp X min 2"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    -38.5,
+    278.1667,
+    0.0,
+]
+max = [
+    -8.5,
+    318.1667,
+    29.5,
+]
+
+[[setups.obstacles]]
+id = 3
+name = "Clamp X max 2"
+enabled = true
+clearance = 1.0
+
+[setups.obstacles.geometry]
+kind = "box"
+min = [
+    366.5,
+    278.1667,
+    0.0,
+]
+max = [
+    396.5,
+    318.1667,
+    29.5,
+]
+
+[[setups.toolpaths]]
+id = 18
+name = "Face front to T"
+enabled = true
+tool_id = 6
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "face"
+
+[setups.toolpaths.operation.params]
+stepover = 14.4
+depth = 0.5
+depth_per_pass = 0.5
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+stock_offset = 18.0
+direction = "zigzag"
+spindle_rpm = 16219
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[[setups.toolpaths]]
+id = 19
+name = "Engrave day labels V60"
+enabled = true
+tool_id = 2
+model_id = 13
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "trace"
+
+[setups.toolpaths.operation.params]
+depth = 0.6
+depth_per_pass = 0.6
+feed_rate = 808.0
+plunge_rate = 736.0
+compensation = "none"
+spindle_rpm = 10026
+region_ordering = "by_area"
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = false
+segment_merge_tolerance = 0.3
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 25.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 20
+name = "Front bulk rough 18 mm"
+enabled = true
+tool_id = 6
+model_id = 4
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 3.6
+depth_per_pass = 4.1667
+stock_to_leave_axial = 0.5
+feed_rate = 5999.0
+plunge_rate = 2162.0
+ramp_feed_rate = 5999.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = false
+region_ordering = "global"
+clearing_strategy = "geodesic_adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 16219
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 6
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-flat-hardwood-pocket-12700-2f-spektra"
+
+[[setups.toolpaths]]
+id = 21
+name = "Front 3D rough"
+enabled = true
+tool_id = 0
+model_id = 4
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 1.382
+depth_per_pass = 5.532
+stock_to_leave_axial = 0.5
+feed_rate = 3900.0
+plunge_rate = 2360.0
+ramp_feed_rate = 1300.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = true
+region_ordering = "global"
+clearing_strategy = "geodesic_adaptive"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 20102
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 6
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 22
+name = "Front rest R1 (valleys)"
+enabled = true
+tool_id = 4
+model_id = 4
+boundary_inherit = true
+stock_source = "from_remaining_stock"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "adaptive3d"
+
+[setups.toolpaths.operation.params]
+stepover = 0.66
+depth_per_pass = 2.0
+stock_to_leave_axial = 0.5
+feed_rate = 3016.048671497612
+plunge_rate = 240.0
+ramp_feed_rate = 3016.0
+tolerance = 0.1
+min_cutting_radius = 0.0
+entry_style = "ramp"
+ramp_angle_deg = 3.0
+helix_radius_factor = 0.3
+helix_pitch = 2.0
+entry_clearance_mm = 0.5
+detect_flat_areas = false
+region_ordering = "by_area"
+clearing_strategy = "contour_parallel"
+trochoid_cap_mult = 1.6
+engagement_measure = "DiskArea"
+spindle_rpm = 18000
+min_region_cut_length_mm = 15.0
+stay_down_clearance_mm = 0.5
+rest_max_region_width_mm = 20.0
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 6
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[setups.toolpaths.feeds_provenance.feed_rate]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-pocket-1588-2f-v7"
+
+[setups.toolpaths.feeds_provenance.plunge_rate]
+source = "repo_rule"
+reference = "material_plunge_base"
+
+[setups.toolpaths.feeds_provenance.spindle_rpm]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-pocket-1588-2f-v7"
+
+[setups.toolpaths.feeds_provenance.stepover]
+source = "formula"
+
+[setups.toolpaths.feeds_provenance.depth_per_pass]
+source = "manual"
+
+[setups.toolpaths.feeds_provenance.ramp_feed_rate]
+source = "vendor_lut"
+reference = "amana-ball-hardwood-pocket-1588-2f-v7"
+
+[[setups.toolpaths]]
+id = 23
+name = "Front scallop finish"
+enabled = true
+tool_id = 4
+model_id = 4
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "scallop"
+
+[setups.toolpaths.operation.params]
+scallop_height = 0.1
+tolerance = 0.05
+direction = "outside_in"
+continuous = false
+slope_from = 0.0
+slope_to = 90.0
+feed_rate = 4700.0
+plunge_rate = 240.0
+stock_to_leave = 0.0
+spindle_rpm = 20611
+intra_pass_hookup_mm = 3.0
+iso_field = true
+
+[setups.toolpaths.dressups]
+entry_style = "none"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = true
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.02
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "auto"
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = true
+containment = "inside"
+offset = 0.0
+
+[setups.toolpaths.boundary.source.selection]
+holes = false
+
+[[setups.toolpaths.boundary.source.selection.selection.rules]]
+
+[setups.toolpaths.boundary.source.selection.selection.rules.source]
+model = 6
+
+[setups.toolpaths.boundary.source.selection.selection.rules.filter.kinds]
+only = [
+    "loop",
+    "circle",
+]
+
+[setups.toolpaths.debug_options]
+enabled = false
+
+[[setups.toolpaths]]
+id = 24
+name = "Outline profile with tabs"
+enabled = true
+tool_id = 0
+model_id = 5
+boundary_inherit = true
+stock_source = "fresh"
+coolant = "off"
+
+[setups.toolpaths.operation]
+kind = "profile"
+
+[setups.toolpaths.operation.params]
+side = "outside"
+depth_per_pass = 1.5
+feed_rate = 826.0
+plunge_rate = 736.0
+ramp_feed_rate = 275.333
+climb = true
+tab_count = 8
+tab_width = 6.0
+tab_height = 2.0
+finishing_passes = 0
+compensation = "in_computer"
+spindle_rpm = 10610
+region_ordering = "by_area"
+
+[setups.toolpaths.operation.params.floor]
+from = "top"
+depth = 25.0
+
+[setups.toolpaths.dressups]
+entry_style = "ramp"
+ramp_angle = 3.0
+helix_pitch = 1.0
+entry_clearance_mm = 0.5
+dogbone = false
+dogbone_angle = 90.0
+lead_in_out = false
+lead_radius = 2.0
+link_moves = false
+link_feed_rate = 500.0
+arc_fitting = false
+arc_tolerance = 0.05
+segment_merge = true
+segment_merge_tolerance = 0.05
+feed_optimization = false
+feed_max_rate = 3000.0
+feed_ramp_rate = 200.0
+optimize_rapid_order = true
+
+[setups.toolpaths.heights.clearance_z]
+mode = "auto"
+
+[setups.toolpaths.heights.retract_z]
+mode = "auto"
+
+[setups.toolpaths.heights.feed_z]
+mode = "auto"
+
+[setups.toolpaths.heights.top_z]
+mode = "manual"
+value = 25.0
+
+[setups.toolpaths.heights.bottom_z]
+mode = "auto"
+
+[setups.toolpaths.boundary]
+enabled = false
+source = "stock"
+containment = "center"
+offset = 0.0
+
+[setups.toolpaths.debug_options]
+enabled = false

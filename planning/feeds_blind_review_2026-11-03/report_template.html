@@ -1,0 +1,254 @@
+<title>Wanaka-21 Feeds Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a shop sheet. Act-first cards on top, then one row per toolpath that opens to a field table with range bars. */
+:root {
+  --bg: #f5f6f3;
+  --panel: #ffffff;
+  --ink: #1d2422;
+  --muted: #5d6764;
+  --line: #d9ddd8;
+  --accent: #0f5c6e;
+  --band: #cfe3e6;
+  --danger: #b3261e;
+  --danger-bg: #fbe9e7;
+  --risky: #8a5a00;
+  --risky-bg: #fdf1d8;
+  --safe: #2e6b3a;
+  --safe-bg: #e5f2e6;
+  --na: #7b8380;
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif;
+  --f-body: "Barlow", "Segoe UI", Arial, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131817; --panel: #1b2120; --ink: #e3e8e6; --muted: #9aa5a1; --line: #2f3836;
+    --accent: #6cc3d3; --band: #23474e; --danger: #ff8a80; --danger-bg: #3a1d1b;
+    --risky: #f2c26b; --risky-bg: #3a2e14; --safe: #8fd19b; --safe-bg: #1c3221; --na: #7f8a87;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131817; --panel: #1b2120; --ink: #e3e8e6; --muted: #9aa5a1; --line: #2f3836;
+  --accent: #6cc3d3; --band: #23474e; --danger: #ff8a80; --danger-bg: #3a1d1b;
+  --risky: #f2c26b; --risky-bg: #3a2e14; --safe: #8fd19b; --safe-bg: #1c3221; --na: #7f8a87;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--f-body); }
+.wrap { max-width: 1100px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: 0.01em; }
+h2 { font-size: 1.35rem; font-weight: 600; margin-bottom: 10px; }
+h3 { font-size: 1.08rem; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+.num, td.num, .mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 0.86em; }
+.eyebrow { font-family: var(--f-display); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+header { display: grid; gap: 8px; margin-bottom: 26px; border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
+header .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.9rem; }
+section { margin-top: 34px; display: grid; gap: 12px; }
+.top { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--danger); padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.card .ops { font-family: var(--f-mono); font-size: 0.8rem; color: var(--danger); font-weight: 600; }
+.card .who { font-size: 0.82rem; color: var(--muted); }
+.card .act { border-top: 1px dashed var(--line); padding-top: 6px; font-weight: 500; }
+.chip { display: inline-block; font-family: var(--f-display); font-weight: 600; font-size: 0.74rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 7px; border-radius: 3px; white-space: nowrap; }
+.chip.dangerous { color: var(--danger); background: var(--danger-bg); }
+.chip.risky { color: var(--risky); background: var(--risky-bg); }
+.chip.safe { color: var(--safe); background: var(--safe-bg); }
+.chip.na { color: var(--na); border: 1px solid var(--line); }
+.chip.grp { color: var(--accent); border: 1px solid var(--accent); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filters button { font: 600 0.85rem var(--f-display); letter-spacing: 0.04em; padding: 5px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; border-radius: 3px; }
+.filters button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.filters button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.op { background: var(--panel); border: 1px solid var(--line); }
+details.op + details.op { margin-top: -1px; }
+details.op > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 14px; }
+details.op > summary::-webkit-details-marker { display: none; }
+details.op[open] > summary { border-bottom: 1px solid var(--line); }
+.idx { font-family: var(--f-mono); font-weight: 600; color: var(--muted); }
+.opname { min-width: 0; }
+.opname .tool { display: block; color: var(--muted); font-size: 0.84rem; overflow-wrap: anywhere; }
+.verdicts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; font-size: 0.8rem; color: var(--muted); }
+.body { padding: 12px 14px 16px; display: grid; gap: 12px; min-width: 0; }
+.brief { color: var(--muted); font-size: 0.92rem; display: grid; gap: 4px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th { font: 600 0.74rem var(--f-display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.num { text-align: right; white-space: nowrap; }
+td.why { color: var(--muted); font-size: 0.82rem; min-width: 16rem; }
+td.bar { width: 190px; min-width: 150px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.82rem; color: var(--muted); align-items: center; }
+svg.rb { display: block; width: 100%; height: 22px; }
+.rb .band { fill: var(--band); }
+.rb .axis { stroke: var(--line); stroke-width: 1; }
+.rb .o { fill: var(--ink); }
+.rb .s { fill: none; stroke: var(--danger); stroke-width: 1.8; }
+.rb .r { fill: var(--accent); }
+.energy { background: var(--panel); border: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 10px; }
+.list { display: grid; gap: 6px; padding-left: 1.1rem; margin: 0; }
+.list li { max-width: 80ch; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.foot { color: var(--muted); font-size: 0.86rem; border-top: 1px solid var(--line); padding-top: 14px; }
+code { font-family: var(--f-mono); font-size: 0.85em; }
+@media (max-width: 560px) {
+  details.op > summary { grid-template-columns: 2rem minmax(0, 1fr); }
+  .verdicts { grid-column: 2; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">nz-wanaka-21 · white oak · Shapeoko Pro XXL, 1.5 kW VFD</span>
+    <h1>Wanaka-21 Feeds Review</h1>
+    <p>Three blind reviewers found feeds, speeds, plunge, stepover and depth for each of the 19 toolpaths from chip load and published data. This page compares their ranges with rs_cam Suggest and with the values in the operator project.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section>
+    <h2>Act first: dangerous items</h2>
+    <div class="top" id="top"></div>
+  </section>
+
+  <section>
+    <h2>Energy check: is op 1 over the power curve?</h2>
+    <div class="energy" id="energy"></div>
+  </section>
+
+  <section>
+    <h2>Toolpaths</h2>
+    <div class="legend">
+      <span><svg width="26" height="12" aria-hidden="true"><rect x="0" y="2" width="26" height="8" class="band" style="fill:var(--band)"></rect></svg> reviewer range</span>
+      <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4.5" style="fill:var(--ink)"></circle></svg> operator</span>
+      <span><svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" style="fill:none;stroke:var(--danger);stroke-width:1.8"></rect></svg> Suggest</span>
+      <span><svg width="12" height="12" aria-hidden="true"><path d="M6 0 L12 6 L6 12 L0 6 Z" style="fill:var(--accent)"></path></svg> recommended</span>
+    </div>
+    <div class="filters" role="group" aria-label="Filter toolpaths" id="filters"></div>
+    <div id="ops"></div>
+  </section>
+
+  <section class="cols">
+    <div><h2>Gate checks (no simulation)</h2><ul class="list" id="gates"></ul></div>
+    <div><h2>Needs your go-ahead (simulation)</h2><ul class="list" id="goahead"></ul></div>
+  </section>
+  <section class="cols">
+    <div><h2>Not resolved: measure or find</h2><ul class="list" id="unresolved"></ul></div>
+    <div><h2>Review errata</h2><ul class="list" id="errata"></ul></div>
+  </section>
+
+  <section class="foot" id="foot"></section>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const RANK = { dangerous: 3, risky: 2, safe: 1, "n/a": 0 };
+const LABEL = { rpm: "Spindle", feed: "Feed", fz: "Chip / tooth (fz)", hex: "Real chip (h)", plunge: "Plunge", plunge_fz: "Plunge chip", stepover: "Stepover", depth_per_pass: "Depth / pass", ramp_angle: "Ramp angle", ramp_feed: "Ramp feed", dwell: "Dwell" };
+
+function fmt(v, unit) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "–";
+  if (unit === "mm/tooth" || unit === "mm" && Math.abs(v) < 1 || unit === "mm/tooth axial") return v.toFixed(3);
+  if (Math.abs(v) >= 100) return Math.round(v).toString();
+  return (Math.round(v * 100) / 100).toString();
+}
+function chip(risk) { const r = risk || "n/a"; return `<span class="chip ${r === "n/a" ? "na" : r}">${esc(r)}</span>`; }
+function worst(op, who) {
+  let w = "n/a";
+  for (const f of Object.values(op.fields)) { const r = f["risk_" + who]; if (RANK[r] > RANK[w]) w = r; }
+  return w;
+}
+function rangeBar(f) {
+  const pts = [f.reviewer_min, f.reviewer_max, f.operator, f.suggest, f.recommended].filter((v) => typeof v === "number");
+  if (pts.length < 2) return "";
+  let lo = Math.min(...pts), hi = Math.max(...pts);
+  if (hi === lo) { lo -= Math.abs(lo) * 0.1 || 1; hi += Math.abs(hi) * 0.1 || 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const W = 180, x = (v) => 6 + (v - lo) / (hi - lo) * (W - 12);
+  let s = `<svg class="rb" viewBox="0 0 ${W} 22" preserveAspectRatio="none" role="img" aria-label="range bar"><line class="axis" x1="0" y1="11" x2="${W}" y2="11"></line>`;
+  if (typeof f.reviewer_min === "number" && typeof f.reviewer_max === "number") {
+    const a = x(f.reviewer_min), b = x(f.reviewer_max);
+    s += `<rect class="band" x="${a - 1}" y="5" width="${Math.max(2, b - a + 2)}" height="12"></rect>`;
+  }
+  if (typeof f.recommended === "number") { const c = x(f.recommended); s += `<path class="r" d="M${c} 3 L${c + 5} 11 L${c} 19 L${c - 5} 11 Z"></path>`; }
+  if (typeof f.suggest === "number") { const c = x(f.suggest); s += `<rect class="s" x="${c - 4.5}" y="6.5" width="9" height="9"></rect>`; }
+  if (typeof f.operator === "number") { const c = x(f.operator); s += `<circle class="o" cx="${c}" cy="11" r="3.6"></circle>`; }
+  return s + "</svg>";
+}
+
+function renderMeta() {
+  const m = DATA.machine;
+  $("meta").innerHTML = [
+    `Date ${esc(DATA.date)}`,
+    `Spindle ${m.rpm_min}–${m.rpm_max} rpm, ${m.p_rated_kw} kW at ${m.n_rated_rpm} rpm (constant torque below)`,
+    `Feed cap ${m.feed_cap_mm_min} mm/min (rs_cam software)`,
+    `Rubbing floor ${m.rubbing_floor_mm} mm chip`,
+  ].map((t) => `<span>${t}</span>`).join("");
+}
+function renderTop() {
+  $("top").innerHTML = DATA.top.map((t) => `<article class="card">
+    <span class="ops">op ${t.ops.join(", ")}</span>
+    <h3>${esc(t.title)}</h3>
+    <span class="who">${esc(t.who)}</span>
+    <p>${esc(t.text)}</p>
+    <p class="act">${esc(t.action)}</p></article>`).join("");
+}
+function renderEnergy() {
+  const p = DATA.energy.power;
+  const rows = [["op1_operator_9x3.6", "Op 1 now: 9 × 3.6 mm, 5999 mm/min, 16219 rpm"], ["op1_suggest_14.047x3.16", "Op 1 Suggest: 14.05 × 3.16 mm"], ["op1_recommended_9x2.7_24000", "Op 1 recommended: 9 × 2.7 mm, 6000 mm/min, 24000 rpm"]].filter(([k]) => p[k]);
+  const pct = (v) => `<td class="num" style="color:${v > 100 ? "var(--danger)" : v > 80 ? "var(--risky)" : "var(--safe)"}">${Math.round(v)} %</td>`;
+  $("energy").innerHTML = `<p>Power depends on the specific cutting energy <i>u</i> of oak. Reviewer A used 0.50 J/mm³ from a router test at a 0.019 mm chip. Specific energy falls as the chip grows. rs_cam's oak force line (Curti 2021) gives 0.31 J/mm³ at that small chip, inside the test range, and 0.12 J/mm³ at op 1's 0.080 mm chip. The flat 0.50 value overstates op 1. But the 2026-11-02 simulation on rs_cam's own line measured a 1.18 kW <b>peak</b> against 1.01 kW available, so op 1 stays dangerous at 16219 rpm. The peak sets the limit, not the mean.</p>
+  <div class="scroll"><table><thead><tr><th>Cut</th><th>MRR mm³/s</th><th>Available kW</th><th>u 0.50 flat</th><th>Chip-corrected m 0.3</th><th>Chip-corrected m 0.5</th><th>rs_cam line</th></tr></thead><tbody>
+  ${rows.map(([k, n]) => { const r = p[k]; return `<tr><td>${esc(n)}</td><td class="num">${Math.round(r.mrr_mm3_s)}</td><td class="num">${r.available_kw.toFixed(2)}</td>${pct(r.A_flat_u050_pct)}${pct(r["guedes_chip_m0.3_pct"])}${pct(r["guedes_chip_m0.5_pct"])}${pct(r.rs_cam_curti_pct)}</tr>`; }).join("")}
+  </tbody></table></div>
+  <p class="eyebrow">Percent of the power available at the rpm. Nominal (mean) power; the exponent m is judgement.</p>`;
+}
+
+let filter = "all";
+function renderFilters() {
+  const opts = [["all", "All 19"], ["danger", "Dangerous"], ["A", "A · roughing"], ["B", "B · V-bits"], ["C", "C · finishing"]];
+  $("filters").innerHTML = opts.map(([k, l]) => `<button type="button" id="f-${k}" data-k="${k}" aria-pressed="${k === filter}">${l}</button>`).join("");
+  $("filters").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { filter = b.dataset.k; try { localStorage.setItem("w21-filter", filter); } catch (e) {} renderFilters(); renderOps(); }));
+}
+function renderOps() {
+  const ops = DATA.ops.filter((o) => filter === "all" || (filter === "danger" ? (worst(o, "operator") === "dangerous" || worst(o, "suggest") === "dangerous") : o.group === filter));
+  $("ops").innerHTML = ops.map((o) => {
+    const rows = Object.entries(o.fields).map(([k, f]) => `<tr>
+      <td>${esc(LABEL[k] || k)}<br><span class="eyebrow">${esc(f.unit)}</span></td>
+      <td class="num">${f.reviewer_min === null ? "–" : fmt(f.reviewer_min, f.unit) + (f.reviewer_max !== f.reviewer_min ? "–" + fmt(f.reviewer_max, f.unit) : "")}</td>
+      <td class="bar">${rangeBar(f)}</td>
+      <td class="num">${fmt(f.operator, f.unit)}<br>${chip(f.risk_operator)}</td>
+      <td class="num">${fmt(f.suggest, f.unit)}<br>${chip(f.risk_suggest)}</td>
+      <td class="num"><b>${fmt(f.recommended, f.unit)}</b></td>
+      <td class="why">${esc([f.risk_operator !== "safe" && f.risk_operator !== "n/a" ? "Operator: " + f.risk_operator_why : "", f.risk_suggest !== "safe" && f.risk_suggest !== "n/a" && f.risk_suggest_why !== f.risk_operator_why ? "Suggest: " + f.risk_suggest_why : "", f.recommended_why ? "Recommended: " + f.recommended_why : "", f.basis ? "Basis: " + f.basis : ""].filter(Boolean).join(" · "))}<br><span class="mono">${esc(f.source)}</span></td></tr>`).join("");
+    return `<details class="op" id="op-${o.index}"><summary>
+      <span class="idx">${String(o.index).padStart(2, "0")}</span>
+      <span class="opname"><b>${esc(o.name)}</b><span class="tool">${esc(o.tool_note || o.tool)}</span></span>
+      <span class="verdicts"><span class="chip grp">${o.group}</span> operator ${chip(worst(o, "operator"))} Suggest ${chip(worst(o, "suggest"))}</span></summary>
+      <div class="body">
+        <div class="brief">${o.brief_summary.map((t) => `<p>${esc(t)}</p>`).join("")}${o.note ? `<p><b>Note:</b> ${esc(o.note)}</p>` : ""}<p class="mono">brief ${esc(o.brief)} · Suggest basis: ${esc(o.suggest_support)} (${esc(o.suggest_vendor_row)})</p></div>
+        <div class="scroll"><table><thead><tr><th>Field</th><th>Reviewer</th><th>Range</th><th>Operator</th><th>Suggest</th><th>Use</th><th>Why and source</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </div></details>`;
+  }).join("");
+}
+function li(id, items, f) { $(id).innerHTML = items.map((x) => `<li>${f(x)}</li>`).join(""); }
+
+renderMeta(); renderTop(); renderEnergy();
+try { filter = localStorage.getItem("w21-filter") || "all"; } catch (e) {}
+renderFilters(); renderOps();
+li("gates", DATA.gate_checks, (g) => `<b>Op ${g.op}</b>${g.sets.length ? ` <span class="mono">${esc(g.sets.join(" "))}</span>` : " (as planned)"}: ${esc(g.result)}. ${esc(g.meaning)}.`);
+li("goahead", DATA.needs_go_ahead, esc);
+li("unresolved", DATA.unresolved, esc);
+li("errata", DATA.errata, (e) => `<b>Review ${esc(e.review)}, ${esc(e.item)}</b> <span class="chip na">${esc(e.verdict)}</span> ${esc(e.detail)}`);
+$("foot").innerHTML = `<p><b>Rules.</b> ${esc(DATA.classification_rule)}</p>
+<p><b>Chip formulas.</b> ${Object.entries(DATA.chip_formulas).map(([k, v]) => `${esc(k)}: ${esc(v)}`).join("; ")}.</p>
+<p><b>Check this page.</b> <code>python3 -I assert_report.py</code> reads the data in this page and recomputes every chip load, every power percent and every machine-limit check. Files: <code>planning/feeds_blind_review_2026-11-03/</code> (briefs, review_A/B/C.md, compare.md, suggest/suggest_operator.jsonl from <code>rs_cam_cli suggest</code>).</p>`;
+</script>
