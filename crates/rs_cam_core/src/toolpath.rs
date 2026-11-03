@@ -58,6 +58,12 @@ pub enum MoveIntent {
     Drilling,
     /// Milling op entering material with a near-pure plunge.
     EntryPlunge,
+    /// K4 (feeds contract P3): a feed through air above an entry; it
+    /// removes no material. The air lead of a dressup ramp or helix
+    /// (`rapid_to_entry_top`), of a lap ladder and of the Pencil crease
+    /// ramp. Every reader that names `EntryPlunge` names this intent in the
+    /// same arm, except the span label (`compute::spans`).
+    EntryApproach,
     /// Roughing material-removal feed.
     ClearingCut,
     /// Finishing-pass feed.

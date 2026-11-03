@@ -233,8 +233,8 @@ pub enum CentreCutting { Yes, No(NonCentreCuttingGeometry) }
 /// CONTRACT K4. A required registry field; no Default.
 pub enum EntryContract {
     Dressup { allowed: EntrySet, default: RoleDefault },
-    Planner { kinds: EntrySet },                     // 3D Rough, Bore, Pencil crease
-    DescentIsCut,                                    // Drill, Pin Drill
+    Planner { kinds: EntrySet },                     // 3D Rough, Unified Finish
+    DescentIsCut,                                    // Drill, Pin Drill, Bore (P3 D3: the helix is the cut)
     StraightPlunge { reason: &'static str, feed: PlungeFeedRule },
 }
 pub enum PlungeFeedRule { OpPlungeRate, AxialChip(ClaimRef), InAirThenAxialChip }

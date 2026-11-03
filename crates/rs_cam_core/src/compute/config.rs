@@ -1669,17 +1669,29 @@ impl DressupConfig {
     /// Smart defaults based on the operation type: the role-level base,
     /// then the registry's own per-op policy. No op is named here.
     pub fn for_op(op: super::catalog::OperationType) -> Self {
-        use super::catalog::EntryStylePolicy;
+        use super::catalog::{EntryContract, RoleDefault};
         let mut cfg = Self::for_role(op.spec().ui_process_role);
-        // G10 D3 (operator decision 2026-09-25): a `DefaultHelix` op starts
-        // a NEW toolpath with Helix. This is the only reader of the policy;
-        // `normalize_for_op` never rewrites the operator's style afterwards.
-        if op.registry_entry().dressup_policy.entry == EntryStylePolicy::DefaultHelix {
-            cfg.entry_style = DressupEntryStyle::Helix;
+        // K4 (feeds contract P3): the row's entry contract is the one entry
+        // source. G10 D3 (operator decision 2026-09-25): a `Dressup` op
+        // with `RoleDefault::Helix` starts a NEW toolpath with Helix. This
+        // is the only reader of `RoleDefault`; `normalize_for_op` never
+        // rewrites the operator's style afterwards.
+        match op.registry_entry().entry {
+            EntryContract::Dressup {
+                default: RoleDefault::Helix,
+                ..
+            } => cfg.entry_style = DressupEntryStyle::Helix,
+            EntryContract::Dressup {
+                default: RoleDefault::FromRole,
+                ..
+            }
+            | EntryContract::Planner { .. }
+            | EntryContract::DescentIsCut
+            | EntryContract::StraightPlunge { .. } => {}
         }
         // CMP-26: the hand-written ProjectCurve strip that stood here was
-        // a no-op. `normalize_for_op` below reads
-        // `op.registry_entry().dressup_policy`, and ProjectCurve's row is
+        // a no-op. `normalize_for_op` below reads the row's
+        // `dressup_policy` and `entry`, and ProjectCurve's policy is
         // `DressupPolicy::strip_all("Incompatible with Project Curve: each
         // ring would get a phantom diagonal cut.")`, which sets exactly
         // those three fields — with the user-facing reason the GUI greys
@@ -1702,20 +1714,17 @@ impl DressupConfig {
     /// Returns `true` if anything changed, `false` if the config was already
     /// consistent.
     pub fn normalize_for_op(&mut self, op: super::catalog::OperationType) -> bool {
-        use super::catalog::EntryStylePolicy;
+        use super::catalog::EntryContract;
         // Phase 1 (architectural refactor T5): the per-op decisions live
-        // in the registry's `dressup_policy` field — ONE source shared
-        // with the viz dressup panel. The op-specific rationale (phantom
+        // in the registry: `dressup_policy` (leads and links, ONE source
+        // shared with the viz dressup panel) and, K4 (feeds contract P3),
+        // `entry` (the entry style). The op-specific rationale (phantom
         // diagonals on ProjectCurve/DropCutter, Roadmap B.5 entry
         // overrides, F-031 Adaptive3d planner↔simulator stamp parity)
         // is documented on the registry entries in compute/catalog.rs.
-        let policy = op.registry_entry().dressup_policy;
+        let row = op.registry_entry();
         let mut changed = false;
-        if policy.strip_all_reason.is_some() {
-            if self.entry_style != DressupEntryStyle::None {
-                self.entry_style = DressupEntryStyle::None;
-                changed = true;
-            }
+        if row.dressup_policy.strip_all_reason.is_some() {
             if self.lead_in_out.is_some() {
                 self.lead_in_out = None;
                 changed = true;
@@ -1725,16 +1734,19 @@ impl DressupConfig {
                 changed = true;
             }
         }
-        match policy.entry {
-            EntryStylePolicy::ForceNone => {
+        // K4: only a `Dressup` contract reads the dressup entry style. G10
+        // D3: `RoleDefault::Helix` is a construction default, read by
+        // `for_op` only. An operator Ramp stays Ramp.
+        match row.entry {
+            EntryContract::Dressup { .. } => {}
+            EntryContract::Planner { .. }
+            | EntryContract::DescentIsCut
+            | EntryContract::StraightPlunge { .. } => {
                 if self.entry_style != DressupEntryStyle::None {
                     self.entry_style = DressupEntryStyle::None;
                     changed = true;
                 }
             }
-            // G10 D3: `DefaultHelix` is a construction default, read by
-            // `for_op` only. An operator Ramp stays Ramp.
-            EntryStylePolicy::DefaultHelix | EntryStylePolicy::AnyEntry => {}
         }
         changed
     }
@@ -2127,82 +2139,132 @@ mod tests {
         );
     }
 
-    /// Phase 1 T5: the per-op dressup policy table, pinned. The registry
-    /// field forces every NEW op to decide its policy at compile time;
-    /// this pin makes changing an EXISTING op's policy loud. Mirrors the
-    /// pre-registry predicates exactly (no behavior change).
+    /// K4 (feeds contract P3): the per-op entry contract and the strip
+    /// policy, pinned. The registry fields force every NEW op to decide at
+    /// compile time; this pin makes a change of an EXISTING op loud. One
+    /// arm per op and no wildcard, so a new op does not compile here until
+    /// it states its row. The contracts are today's behaviour (P3
+    /// Appendix A; D1-D3 of the lead, 2026-11-03).
     #[test]
-    fn dressup_policy_table_is_pinned() {
-        use super::super::catalog::{EntryStylePolicy, OperationType};
+    fn entry_contract_table_is_pinned() {
+        use super::super::catalog::{
+            EntryContract, EntryKind, EntrySet, NoneEntry, OperationType, PlungeFeedRule,
+            RoleDefault,
+        };
+        let from_role = EntryContract::Dressup {
+            allowed: EntrySet::of(&[EntryKind::Plunge, EntryKind::Ramp, EntryKind::Helix]),
+            default: RoleDefault::FromRole,
+            none_is: NoneEntry::GeneratorPlunge,
+            own: None,
+        };
+        let reason_of = |entry: EntryContract| match entry {
+            EntryContract::StraightPlunge { reason, .. } => reason,
+            EntryContract::Dressup { .. }
+            | EntryContract::Planner { .. }
+            | EntryContract::DescentIsCut => "",
+        };
         for &op in OperationType::ALL {
-            let policy = op.registry_entry().dressup_policy;
-            match op {
-                // UnifiedFinish joined the strip-all set 2026-07-09 (P2.f
-                // Task 2): role-default Ramp entries carved diagonal
-                // trenches across the wanaka terrain on a fresh MCP-added
-                // op — same failure mode as DropCutter's documented one.
-                // Inlay and InlayPlug joined 2026-10-14 (W1.4,
-                // G-INLAYSPLIT) and VCarve the same day (W1.4b,
-                // G-VCARVELEAD): each run starts on the design outline at
-                // zero depth, and a lead there cuts outside the design.
-                // Bore joined 2026-10-22 (P6.6): it cuts its own helix
-                // entry, and a lead or a link has no room in the hole.
-                OperationType::ProjectCurve
-                | OperationType::DropCutter
-                | OperationType::UnifiedFinish
-                | OperationType::Inlay
-                | OperationType::InlayPlug
-                | OperationType::VCarve
-                | OperationType::Bore => {
-                    assert!(policy.strip_all_reason.is_some(), "{op:?}: strip-all");
-                    assert_eq!(policy.entry, EntryStylePolicy::AnyEntry);
-                    assert!(!policy.entry_style_applies(), "{op:?}");
-                }
-                // AlignmentPinDrill joined the force-no-entry set 2026-08-21
-                // (G-WANAKA-DRILL-RAMP): it had been ANY_DRESSUP while its
-                // sibling Drill was ForceNone, so `DressupConfig::for_op`
-                // shipped a role-default Ramp on the one op whose entire
-                // purpose is flip registration. A ramped pin hole is an oval
-                // slot — the emitted motion on a real job was a 19 mm lateral
-                // move while descending. The generator hard-strips it, so the
-                // policy row was the last place config and behaviour still
-                // disagreed.
-                OperationType::Drill
-                | OperationType::AlignmentPinDrill
-                | OperationType::Trace
-                | OperationType::Adaptive3d => {
-                    assert!(policy.strip_all_reason.is_none(), "{op:?}");
-                    assert_eq!(policy.entry, EntryStylePolicy::ForceNone, "{op:?}");
-                    assert!(!policy.entry_style_applies(), "{op:?}");
-                }
-                OperationType::Adaptive => {
-                    assert!(policy.strip_all_reason.is_none());
-                    assert_eq!(policy.entry, EntryStylePolicy::DefaultHelix);
-                    assert!(policy.entry_style_applies());
-                }
+            let row = op.registry_entry();
+            let strips = row.dressup_policy.strip_all_reason.is_some();
+            assert!(
+                matches!(row.entry, EntryContract::StraightPlunge { .. })
+                    == !reason_of(row.entry).is_empty(),
+                "{op:?}: a straight plunge states a reason"
+            );
+            // A row that strips every dressup takes no dressup entry, so
+            // `normalize_for_op` sets its style to None.
+            assert!(
+                !strips || !row.entry_style_applies(),
+                "{op:?}: a strip-all row has a Dressup entry contract"
+            );
+            let (want, want_strip) = match op {
                 OperationType::Face
                 | OperationType::Pocket
                 | OperationType::Profile
                 | OperationType::Zigzag
                 | OperationType::Chamfer
                 | OperationType::Waterline
-                | OperationType::Pencil
                 | OperationType::Scallop
                 | OperationType::SteepShallow
                 | OperationType::RampFinish
                 | OperationType::SpiralFinish
                 | OperationType::RadialFinish
-                | OperationType::HorizontalFinish => {
-                    // Pre-registry these fell through the predicate
-                    // matches untouched.
-                    assert!(
-                        policy.strip_all_reason.is_none(),
-                        "{op:?}: expected ANY_DRESSUP"
-                    );
-                    assert_eq!(policy.entry, EntryStylePolicy::AnyEntry, "{op:?}");
-                    assert!(policy.entry_style_applies(), "{op:?}");
+                | OperationType::HorizontalFinish => (from_role, false),
+                // G10 D3: a new toolpath is Helix; under None the dressup
+                // plunges stock-aware (G-ADAPTPASSLOAD).
+                OperationType::Adaptive => (
+                    EntryContract::Dressup {
+                        allowed: EntrySet::ALL_DRESSUP,
+                        default: RoleDefault::Helix,
+                        none_is: NoneEntry::StockAwarePlunge,
+                        own: None,
+                    },
+                    false,
+                ),
+                // D2: Pencil also builds its own crease ramp on rest stock.
+                OperationType::Pencil => (
+                    EntryContract::Dressup {
+                        allowed: EntrySet::ALL_DRESSUP,
+                        default: RoleDefault::FromRole,
+                        none_is: NoneEntry::GeneratorPlunge,
+                        own: Some(EntrySet::of(&[EntryKind::Ramp])),
+                    },
+                    false,
+                ),
+                // Each run starts on the line; the reason is the strip text.
+                OperationType::VCarve
+                | OperationType::Inlay
+                | OperationType::InlayPlug
+                | OperationType::DropCutter
+                | OperationType::ProjectCurve => (
+                    EntryContract::StraightPlunge {
+                        reason: row.dressup_policy.strip_all_reason.unwrap_or_default(),
+                        feed: PlungeFeedRule::OpPlungeRate,
+                    },
+                    true,
+                ),
+                // Trace keeps its leads and links; only the entry is a
+                // straight plunge, with its own reason text.
+                OperationType::Trace => (
+                    EntryContract::StraightPlunge {
+                        reason: reason_of(row.entry),
+                        feed: PlungeFeedRule::OpPlungeRate,
+                    },
+                    false,
+                ),
+                // G-WANAKA-DRILL-RAMP: the descent of a drill cycle is the
+                // cut. AlignmentPinDrill joined 2026-08-21: a ramped pin
+                // hole is an oval slot.
+                OperationType::Drill | OperationType::AlignmentPinDrill => {
+                    (EntryContract::DescentIsCut, false)
                 }
-            }
+                // D3: the Bore helix is the cut (`ops/bore.rs`: a Linking
+                // feed in air, then `ClearingCut` turns; no entry intent).
+                // Bore strips leads and links: they have no room in the hole.
+                OperationType::Bore => (EntryContract::DescentIsCut, true),
+                // F-031: the planner builds its entries (its own entry
+                // style); a dressup entry breaks the stamp parity.
+                OperationType::Adaptive3d => (
+                    EntryContract::Planner {
+                        kinds: EntrySet::of(&[
+                            EntryKind::Plunge,
+                            EntryKind::PeckLadder,
+                            EntryKind::Ramp,
+                            EntryKind::Helix,
+                        ]),
+                    },
+                    false,
+                ),
+                // D2: the surface-link landings are the planner's plunges.
+                OperationType::UnifiedFinish => (
+                    EntryContract::Planner {
+                        kinds: EntrySet::of(&[EntryKind::Plunge]),
+                    },
+                    true,
+                ),
+            };
+            assert_eq!(row.entry, want, "{op:?}: entry contract");
+            assert_eq!(strips, want_strip, "{op:?}: strip-all");
         }
     }
 

@@ -606,70 +606,31 @@ impl OpPolicy {
     };
 }
 
-/// Entry-style policy for one operation: the coercion
-/// `DressupConfig::normalize_for_op` applies (mirrored by the viz dressup
-/// panel), and the style `DressupConfig::for_op` starts a new toolpath with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntryStylePolicy {
-    /// Any configured entry style is accepted as-is.
-    AnyEntry,
-    /// Entry styles are meaningless or harmful for this op (stock-based /
-    /// single-pass / planner-emitted entries) — always coerce to `None`.
-    ForceNone,
-    /// A new toolpath starts with `Helix` (the op's pocketing geometry has
-    /// natural circular boundaries). Only `DressupConfig::for_op` reads it;
-    /// `normalize_for_op` never rewrites an operator's style (G10 D3,
-    /// operator decision 2026-09-25).
-    DefaultHelix,
-}
-
 /// Per-op dressup policy (Phase 1 registry field). ONE source for both
 /// `DressupConfig::normalize_for_op` in compute and the viz dressup
 /// panel's grey-out/tooltip — pre-registry these were two hand-synced
 /// tables (compute/config.rs predicates + ui/properties/mod.rs match).
+///
+/// K4 (feeds contract P3): the entry style is not here. The row's
+/// [`OpRegistryEntry::entry`] states it.
 #[derive(Debug, Clone, Copy)]
 pub struct DressupPolicy {
     /// `Some(reason)` ⇒ entry ramps, lead-in/out, AND link moves are
     /// geometrically incompatible with this op: compute strips them all
     /// and the UI greys the controls, showing this user-facing reason.
     pub strip_all_reason: Option<&'static str>,
-    /// Entry-style coercion applied after (and independent of) stripping.
-    pub entry: EntryStylePolicy,
 }
 
 impl DressupPolicy {
-    /// Named "no restriction" policy: all dressups available as configured.
+    /// Named "no restriction" policy: leads and links as configured.
     pub const ANY_DRESSUP: Self = Self {
         strip_all_reason: None,
-        entry: EntryStylePolicy::AnyEntry,
-    };
-    /// Entry style forced to `None`; lead-in/out and link moves untouched.
-    pub const FORCE_NO_ENTRY: Self = Self {
-        strip_all_reason: None,
-        entry: EntryStylePolicy::ForceNone,
-    };
-    /// A new toolpath starts with `Helix`; everything else untouched.
-    pub(crate) const DEFAULT_HELIX: Self = Self {
-        strip_all_reason: None,
-        entry: EntryStylePolicy::DefaultHelix,
     };
     /// All topology-altering dressups stripped, with the user-facing reason.
     pub const fn strip_all(reason: &'static str) -> Self {
         Self {
             strip_all_reason: Some(reason),
-            entry: EntryStylePolicy::AnyEntry,
         }
-    }
-
-    /// True when generation reads the dressup entry style of this op.
-    ///
-    /// False when `DressupConfig::normalize_for_op` sets the style to
-    /// `None`: the op strips every dressup (`strip_all_reason`), or the op
-    /// plans its own entries (`EntryStylePolicy::ForceNone`). A panel then
-    /// draws no dressup Entry style control (W3e, F5).
-    #[must_use]
-    pub const fn entry_style_applies(self) -> bool {
-        self.strip_all_reason.is_none() && !matches!(self.entry, EntryStylePolicy::ForceNone)
     }
 }
 
@@ -683,6 +644,10 @@ pub struct OpRegistryEntry {
     pub params: ParamTable,
     pub tool_constraints: ToolConstraintsDef,
     pub dressup_policy: DressupPolicy,
+    /// CONTRACT K4 (feeds contract P3): how the op enters material. The
+    /// one entry source: `DressupConfig::for_op`, `normalize_for_op` and
+    /// the dressup pipeline read it.
+    pub entry: super::EntryContract,
     /// The three per-op policies CMP-07 moved off `matches!` lists.
     pub policy: OpPolicy,
     /// W2.4: what the op can do and how each consumer must treat it. Read
@@ -701,6 +666,16 @@ pub struct OpRegistryEntry {
     /// exhaustive match, so a new variant fails to compile until it
     /// names a row, and a row cannot be written without an adapter.
     pub generate: crate::compute::execute::GenerateFn,
+}
+
+impl OpRegistryEntry {
+    /// True when generation reads the dressup entry style of this op: the
+    /// row's [`OpRegistryEntry::entry`] is `EntryContract::Dressup`. A
+    /// panel then draws the dressup Entry style control (W3e, F5).
+    #[must_use]
+    pub const fn entry_style_applies(&self) -> bool {
+        self.entry.entry_style_applies()
+    }
 }
 
 /// F206: the refusals of `#[derive(OpParams)]` and `#[derive(ParamEnum)]`.

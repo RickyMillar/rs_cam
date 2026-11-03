@@ -612,7 +612,7 @@ pub struct RestEntryRamp {
 /// down to just above the INPUT STOCK's material ceiling first.
 ///
 /// Scans for the pattern `[Rapid to (x,y, safe-ish z)]` -> `[Linear feed
-/// tagged EntryPlunge, same XY (within eps), descending]`. For each, the
+/// tagged EntryPlunge or EntryApproach (K4), same XY (within eps), descending]`. For each, the
 /// split is DECIDED on the flat-disc material ceiling
 /// `stock.max_conservative_top_z_in_disc(x, y, tool_radius)` (falling back to
 /// `fresh_stock_top_z` when the disc has no intersecting column, or when
@@ -621,7 +621,7 @@ pub struct RestEntryRamp {
 /// is split: a new `Rapid(Linking)` down to the descent TARGET, then the
 /// original `EntryPlunge` feed for the remainder. Never touches plunges
 /// whose XY differs from the preceding rapid (not a vertical entry) or
-/// whose intent is not `EntryPlunge`.
+/// whose intent is not `EntryPlunge` or `EntryApproach`.
 ///
 /// # Only an approach is split, never a retract inside an entry (G-PECKSPLIT)
 ///
@@ -858,8 +858,12 @@ pub fn optimize_entry_descents_with_provenance(
             .then(|| iter.peek())
             .flatten()
             .filter(|plunge| {
-                plunge.intent == MoveIntent::EntryPlunge
-                    && matches!(plunge.move_type, MoveType::Linear { .. })
+                // K4: an air lead (`EntryApproach`) splits as it did when
+                // it was an `EntryPlunge`.
+                matches!(
+                    plunge.intent,
+                    MoveIntent::EntryPlunge | MoveIntent::EntryApproach
+                ) && matches!(plunge.move_type, MoveType::Linear { .. })
                     && (plunge.target.x - rapid_xy.0).abs() < XY_EPS_MM
                     && (plunge.target.y - rapid_xy.1).abs() < XY_EPS_MM
                     && plunge.target.z < rapid_z - 1e-6
@@ -943,8 +947,10 @@ pub fn optimize_entry_descents_with_provenance(
         // caller emits move for move what it always did.
         let ramp_plan = ramp.zip(stock).and_then(|(cfg, snapshot)| {
             let plunge = is_rapid.then(|| iter.peek()).flatten()?;
-            if plunge.intent != MoveIntent::EntryPlunge
-                || !matches!(plunge.move_type, MoveType::Linear { .. })
+            if !matches!(
+                plunge.intent,
+                MoveIntent::EntryPlunge | MoveIntent::EntryApproach
+            ) || !matches!(plunge.move_type, MoveType::Linear { .. })
                 || (plunge.target.x - rapid_xy.0).abs() >= XY_EPS_MM
                 || (plunge.target.y - rapid_xy.1).abs() >= XY_EPS_MM
                 || plunge.target.z >= rapid_z - 1e-6
@@ -1001,7 +1007,8 @@ pub fn optimize_entry_descents_with_provenance(
                                 move_type: MoveType::Linear {
                                     feed_rate: cfg.plunge_rate,
                                 },
-                                intent: MoveIntent::EntryPlunge,
+                                // K4: the air lead above the lap ladder.
+                                intent: MoveIntent::EntryApproach,
                                 feed_cap: None,
                             });
                         }

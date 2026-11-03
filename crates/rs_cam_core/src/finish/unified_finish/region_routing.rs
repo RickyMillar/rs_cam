@@ -300,16 +300,21 @@ pub(super) fn strippable_preamble(tp: &Toolpath) -> Option<(usize, P3)> {
     if k == 0 {
         return None;
     }
-    let head_ok = tp
-        .moves
-        .iter()
-        .take(k)
-        .all(|m| matches!(m.intent, MoveIntent::Linking | MoveIntent::EntryPlunge));
+    let head_ok = tp.moves.iter().take(k).all(|m| {
+        matches!(
+            m.intent,
+            MoveIntent::Linking | MoveIntent::EntryPlunge | MoveIntent::EntryApproach
+        )
+    });
     if !head_ok {
         return None;
     }
     let plunge = tp.moves.get(k - 1)?;
-    (plunge.intent == MoveIntent::EntryPlunge).then_some((k, plunge.target))
+    matches!(
+        plunge.intent,
+        MoveIntent::EntryPlunge | MoveIntent::EntryApproach
+    )
+    .then_some((k, plunge.target))
 }
 
 /// Trailing retract count + the surface exit point right before them.

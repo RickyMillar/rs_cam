@@ -3115,6 +3115,12 @@ pub fn formula_constants() -> Vec<FormulaConstant> {
         rows.push(ceiling);
     }
     rows.push(MILLING_CEILING_LARGE_RPM);
+    // K4 (feeds contract P3, lead decision D5): the plunge feed rule of the
+    // dressup entry (`PlungeFeedRule::FirstLinearFeedFraction`).
+    rows.extend([
+        crate::compute::catalog::ENTRY_PLUNGE_FIRST_FEED_FRACTION,
+        crate::compute::catalog::ENTRY_PLUNGE_FALLBACK_MM_MIN,
+    ]);
     rows.extend([
         FormulaConstant::unsourced(
             "feeds.MAX_SPINDLE_SPEEDUP",

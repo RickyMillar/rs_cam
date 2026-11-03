@@ -588,6 +588,7 @@ fn write_path_svg(path: &Toolpath, label: &str, colour: &str, file: &PathBuf) {
                     MoveIntent::Linking => &mut link,
                     MoveIntent::Drilling
                     | MoveIntent::EntryPlunge
+                    | MoveIntent::EntryApproach
                     | MoveIntent::EntryHelix
                     | MoveIntent::EntryRamp
                     | MoveIntent::Retract

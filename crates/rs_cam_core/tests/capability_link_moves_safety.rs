@@ -314,6 +314,7 @@ fn dressup(tp: Toolpath, cfg: &DressupConfig, op: OperationType, tool_diameter: 
             cutter: /* cutter */ None,
             entry_surface: None,
             transform_capabilities: op.capabilities().transform,
+            entry: op.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -352,6 +353,8 @@ fn dressup_with_caps(
             cutter: /* cutter */ None,
             entry_surface: None,
             transform_capabilities: caps,
+            // K4: a synthetic context; every dressup entry step may run.
+            entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -1828,6 +1831,8 @@ fn unified_finish_node_barriers_allow_intra_region_reorder_and_pin_depth() {
                 cutter: None,
                 entry_surface: None,
                 transform_capabilities: caps,
+                // K4: a synthetic context; every dressup entry step may run.
+                entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
                 debug_ctx: None,
                 semantic_ctx: None,
                 entry_containment: None,

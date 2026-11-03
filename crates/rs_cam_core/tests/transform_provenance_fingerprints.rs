@@ -88,11 +88,28 @@ use common::meshes::FlatFloor;
 
 /// Byte-level fingerprint of an emitted toolpath: move count plus a hash of
 /// the `Debug` rendering (which round-trips every f64 exactly).
+///
+/// K4 (feeds contract P3): the hash reads `MoveIntent::EntryApproach` as
+/// `EntryPlunge`, the intent of the air lead before P3. The retag moves no
+/// coordinate, feed or other intent, so the pins below stay the pre-P3
+/// values and still hold every other byte. The sentry
+/// `an_air_lead_is_an_approach_not_a_plunge_k4` holds the new intent.
 fn fingerprint(tp: &Toolpath) -> (usize, u64) {
+    let moves: Vec<rs_cam_core::toolpath::Move> = tp
+        .moves
+        .iter()
+        .map(|m| {
+            let mut m = m.clone();
+            if m.intent == rs_cam_core::toolpath::MoveIntent::EntryApproach {
+                m.intent = rs_cam_core::toolpath::MoveIntent::EntryPlunge;
+            }
+            m
+        })
+        .collect();
     // FNV-1a, not `DefaultHasher`: the pinned constants must survive a
     // toolchain bump, and `DefaultHasher`'s algorithm is explicitly unstable.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in format!("{:?}", tp.moves).bytes() {
+    for byte in format!("{moves:?}").bytes() {
         h ^= u64::from(byte);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -287,6 +304,8 @@ fn three_pass_full_dressups_fingerprint() {
             cutter: None,
             entry_surface: Some(floor.probe()),
             transform_capabilities: full_chain_capabilities(),
+            // K4: a synthetic context; every dressup entry step may run.
+            entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -366,6 +385,8 @@ fn arc_raster_full_dressups_fingerprint() {
             cutter: None,
             entry_surface: Some(floor.probe()),
             transform_capabilities: full_chain_capabilities(),
+            // K4: a synthetic context; every dressup entry step may run.
+            entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -504,6 +525,7 @@ fn face_full_chain_fingerprint() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::Face.capabilities().transform,
+            entry: OperationType::Face.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

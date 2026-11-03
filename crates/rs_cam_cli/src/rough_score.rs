@@ -94,12 +94,14 @@ pub(crate) struct MoveCounts {
     /// without one starts a run.
     pub entry_runs: usize,
     /// `entry_runs` split by the strongest intent in the run. The rank is
-    /// `entry_helix` > `entry_ramp` > `lead_in` > `entry_plunge`. The ramp
-    /// dressup starts each ramp with a short fed `EntryPlunge`, so a run
-    /// that holds a ramp move counts as a ramp, not as a plunge.
+    /// `entry_helix` > `entry_ramp` > `lead_in` > `entry_plunge` >
+    /// `entry_approach`. The ramp dressup starts each ramp with a short fed
+    /// air lead (`EntryApproach` since feeds contract P3; `EntryPlunge`
+    /// before), so a run that holds a ramp move counts as a ramp, not as a
+    /// plunge.
     pub entry_runs_by_kind: BTreeMap<String, usize>,
-    /// Runs whose first move is an `EntryPlunge` and that hold a ramp or a
-    /// helix move. `entry_runs_by_kind` counts these runs as ramp or helix.
+    /// Runs whose first move is an `EntryPlunge` or an `EntryApproach` and
+    /// that hold a ramp or a helix move. `entry_runs_by_kind` counts these runs as ramp or helix.
     pub entry_runs_led_by_plunge: usize,
     /// Runs of `MoveIntent::Retract` moves, at feed or rapid. The
     /// integrator puts a rapid retract in `runtime_by_intent.rapid_s`, so
@@ -421,6 +423,7 @@ fn is_entry(intent: MoveIntent) -> bool {
     matches!(
         intent,
         MoveIntent::EntryPlunge
+            | MoveIntent::EntryApproach
             | MoveIntent::EntryHelix
             | MoveIntent::EntryRamp
             | MoveIntent::LeadIn
@@ -496,15 +499,19 @@ fn count_moves(toolpath: &Toolpath) -> MoveCounts {
 }
 
 /// The rank of an entry intent for the run label: `EntryHelix` >
-/// `EntryRamp` > `LeadIn` > `EntryPlunge`. Other intents rank 0.
+/// `EntryRamp` > `LeadIn` > `EntryPlunge` > `EntryApproach`. Other intents
+/// rank 0. K4: the air lead (`EntryApproach`) ranks below the plunge, so a
+/// run that holds a plunge keeps the label `entry_plunge`.
 fn entry_rank(intent: MoveIntent) -> u8 {
     if intent == MoveIntent::EntryHelix {
-        4
+        5
     } else if intent == MoveIntent::EntryRamp {
-        3
+        4
     } else if intent == MoveIntent::LeadIn {
-        2
+        3
     } else if intent == MoveIntent::EntryPlunge {
+        2
+    } else if intent == MoveIntent::EntryApproach {
         1
     } else {
         0
@@ -517,7 +524,7 @@ fn close_entry_run(counts: &mut MoveCounts, first: MoveIntent, strongest: MoveIn
         .entry_runs_by_kind
         .entry(intent_token(strongest))
         .or_insert(0) += 1;
-    if first == MoveIntent::EntryPlunge
+    if (first == MoveIntent::EntryPlunge || first == MoveIntent::EntryApproach)
         && (strongest == MoveIntent::EntryRamp || strongest == MoveIntent::EntryHelix)
     {
         counts.entry_runs_led_by_plunge += 1;

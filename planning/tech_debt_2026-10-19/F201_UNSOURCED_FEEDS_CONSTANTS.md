@@ -2,7 +2,7 @@
 
 Status: OPEN. Operator ruling 6 (2026-10-22), option B. The values stay.
 The sentry `every_feeds_formula_constant_states_its_source_f201` lists them
-and pins the count (144 unsourced, 3 cited). Option A (the formula path
+and pins the count (146 unsourced, 3 cited; 144 before feeds contract P3). Option A (the formula path
 refuses an unsourced value) applies only if one of these values causes an
 issue.
 
@@ -37,7 +37,7 @@ re-bless the FM1 golden in the same commit (`feeds/CLAUDE.md`).
 | `material.DRILL_PLUNGE_CEILING_PLYWOOD_PER_MM` | 580 | same | same |
 | `material.DRILL_PLUNGE_CEILING_SHEET_PER_MM` | 720 | same | MDF/Laminate ramp down 90 in/min: 90 × 25.4 / 3.175 |
 
-## Unsourced rows (144)
+## Unsourced rows (146)
 
 `material/mod.rs` lines are the `const` definition. The function reads the
 value from that constant.
@@ -147,6 +147,18 @@ Source kind: vendor DOC/WOC rules per operation; the claimed origin is
 - `default_engagement` finish overrides (`:3310-3345`, 8 rows): ball finish
   (0.06, 0.025), ball semi (0.10, 0.04), tapered finish (0.10, 0.03),
   tapered semi (0.14, 0.05).
+
+### Dressup entry plunge feed (feeds contract P3, K4, lead decision D5)
+
+`PlungeFeedRule::FirstLinearFeedFraction` (`compute/catalog/entry_contract.rs`):
+the plunge feed of the dressup entry for the air lead and the plunge
+fallback. The rule moved here from `dressup_apply.rs` `entry_plunge_rate`;
+the values did not change. Phase 8 replaces the rule.
+
+| Row | Value | Site |
+|---|---|---|
+| `dressup.entry_plunge_rate.first_linear_feed_fraction` | 0.5 | `ENTRY_PLUNGE_FIRST_FEED_FRACTION` |
+| `dressup.entry_plunge_rate.fallback_mm_min` | 500 | `ENTRY_PLUNGE_FALLBACK_MM_MIN` |
 
 ### Machine default (outside the F201 edit boundary)
 

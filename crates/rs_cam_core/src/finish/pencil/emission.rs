@@ -353,7 +353,7 @@ fn emit_entry_descent(
                 tp.feed_to_with_intent(
                     P3::new(first.x, first.y, plan.air_descent_z),
                     params.plunge_rate,
-                    MoveIntent::EntryPlunge,
+                    MoveIntent::EntryApproach,
                 );
             }
             for p in &plan.points {

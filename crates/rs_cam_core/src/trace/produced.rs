@@ -84,9 +84,16 @@ pub struct Produced {
     /// G-CENTRECUT: the first entry where a shared entry builder could not
     /// keep a non-centre-cutting tool inside its limits (a straight plunge
     /// into stock deeper than the blade protrusion). The session stage
-    /// after generation (`JobPhases::run_stages`) refuses on it. `None` for
-    /// every other toolpath.
+    /// after generation (`JobPhases::run_stages`) records it as a warning
+    /// (K6). `None` for every other toolpath.
     pub non_centre_cutting_refusal: Option<crate::compute::tool_config::NonCentreCuttingRefusal>,
+    /// CONTRACT K4 (feeds contract P3): one record per entry of the final
+    /// moves, under the entry contract of the op's row. `JobPhases::run_stages`
+    /// builds them once, after the boundary clip and the entry split
+    /// (`compute::catalog::entry_records`). No stage that writes moves
+    /// reads them. Empty before that stage and for a toolpath with no
+    /// entry.
+    pub entries: Vec<crate::compute::catalog::EntryRecord>,
 }
 
 impl Produced {
@@ -109,6 +116,8 @@ impl Produced {
     /// - `closed_passes`: each plunge target shifts; the stated side does
     ///   not (a shift keeps the travel direction).
     /// - `non_centre_cutting_refusal`: the plunge target shifts.
+    /// - `entries`: each point of each record shifts; the kind and the
+    ///   feed do not.
     #[must_use]
     pub fn translated(&self, shift: P3) -> Self {
         let Self {
@@ -119,6 +128,7 @@ impl Produced {
             area_regions,
             closed_passes,
             non_centre_cutting_refusal,
+            entries,
         } = self;
 
         let planner_engagement = planner_engagement
@@ -184,6 +194,12 @@ impl Produced {
             refusal
         });
 
+        // K4: the points of each entry record shift.
+        let entries = entries
+            .iter()
+            .map(|record| record.translated(shift))
+            .collect();
+
         Self {
             planner_engagement,
             rest_grid,
@@ -192,6 +208,7 @@ impl Produced {
             area_regions,
             closed_passes,
             non_centre_cutting_refusal,
+            entries,
         }
     }
 }

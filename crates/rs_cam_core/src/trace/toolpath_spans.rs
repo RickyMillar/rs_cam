@@ -670,6 +670,7 @@ impl AnnotatedToolpath {
                     mv.intent,
                     I::Linking
                         | I::EntryPlunge
+                        | I::EntryApproach
                         | I::EntryHelix
                         | I::EntryRamp
                         | I::LeadIn

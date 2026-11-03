@@ -24,15 +24,16 @@
 //! 2. Every operation whose registry role is `Finish` or `SemiFinish`
 //!    creates with `entry_style == None` through `for_op`. The population
 //!    comes from `OperationType::ALL` and the registry, never from a
-//!    literal list, and it must hold at least ten operations with an
-//!    unrestricted (`AnyEntry`, no strip) dressup policy — the ones whose
-//!    `None` can only come from the role default.
+//!    literal list, and it must hold at least nine operations with an
+//!    unrestricted entry: no strip and, K4 (feeds contract P3), an
+//!    `EntryContract::Dressup` with `RoleDefault::FromRole` — the ones
+//!    whose `None` can only come from the role default.
 //! 3. No per-op policy promotes an entry: `normalize_for_op` leaves `None`
 //!    as `None` on every operation.
 //! 4. The roughing family is unmoved: `Pocket` creates with `Ramp`,
 //!    `Adaptive` with `Helix`.
 
-use rs_cam_core::compute::catalog::{EntryStylePolicy, OperationType, UiProcessRole};
+use rs_cam_core::compute::catalog::{EntryContract, OperationType, RoleDefault, UiProcessRole};
 use rs_cam_core::compute::config::{DressupConfig, DressupEntryStyle};
 
 fn is_finishing(role: UiProcessRole) -> bool {
@@ -74,8 +75,16 @@ fn every_finishing_operation_creates_with_no_entry() {
             DressupEntryStyle::None,
             "R10: {op:?} ({role:?}) must create with no entry ramp"
         );
-        let policy = op.registry_entry().dressup_policy;
-        if policy.strip_all_reason.is_none() && policy.entry == EntryStylePolicy::AnyEntry {
+        let row = op.registry_entry();
+        if row.dressup_policy.strip_all_reason.is_none()
+            && matches!(
+                row.entry,
+                EntryContract::Dressup {
+                    default: RoleDefault::FromRole,
+                    ..
+                }
+            )
+        {
             unrestricted.push(op);
         }
     }
@@ -132,7 +141,7 @@ fn the_roughing_family_is_unmoved() {
     assert_eq!(
         DressupConfig::for_op(OperationType::Adaptive).entry_style,
         DressupEntryStyle::Helix,
-        "Adaptive is Roughing with DefaultHelix: a new toolpath is Helix (G10 D3)"
+        "Adaptive is Roughing with RoleDefault::Helix: a new toolpath is Helix (G10 D3)"
     );
     // G10 D3 (operator decision 2026-09-25): the policy is a construction
     // default. An operator Ramp on an Adaptive stays Ramp.

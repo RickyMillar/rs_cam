@@ -246,6 +246,9 @@ pub struct GenContext {
     ramp_feed_rate: Option<f64>,
     /// The RAW operation's transform capabilities.
     transform_capabilities: crate::compute::catalog::OperationTransformCapabilities,
+    /// K4 (feeds contract P3): the entry contract of the operation's
+    /// registry row. The dressup pipeline and the entry records read it.
+    entry_contract: crate::compute::catalog::EntryContract,
     /// The RAW operation's XY territory rule. D2: the boundary clip of
     /// `clip_and_split_entries` reads `session_clip_applies`.
     territory_xy: crate::compute::catalog::TerritoryXy,
@@ -736,7 +739,13 @@ impl JobPhases<'_, '_> {
         let mut channels =
             crate::trace::transform_provenance::ReconcileSet::new(Some(semantic_recorder), None);
         let annotated = self.apply_dressups(annotated, &mut channels);
-        let annotated = self.clip_and_split_entries(annotated, &mut channels)?;
+        let mut annotated = self.clip_and_split_entries(annotated, &mut channels)?;
+        // K4 (feeds contract P3): one record per entry, built once, after
+        // the entries are final. No later stage that writes moves reads it.
+        annotated.produced.entries = crate::compute::catalog::entry_records(
+            &annotated.toolpath,
+            self.context.entry_contract,
+        );
         // G-CENTRECUT (SAFETY): the ONE check of the shared entry builders.
         // An entry that had to plunge a non-centre-cutting tool straight
         // into stock deeper than its protrusion is recorded. K6 (ruling
@@ -1014,6 +1023,7 @@ impl JobPhases<'_, '_> {
                 cutter: Some(&self.inputs.tool_def as &dyn crate::tool::MillingCutter),
                 entry_surface,
                 transform_capabilities: self.context.transform_capabilities,
+                entry: self.context.entry_contract,
                 debug_ctx: dressup_debug_ctx.as_ref(),
                 semantic_ctx: self
                     .observer
@@ -2671,6 +2681,7 @@ impl ProjectSession {
             // G-RAMPCLAMP: the entry never runs faster than the cut feed.
             ramp_feed_rate: tc.operation.entry_feed_rate(),
             transform_capabilities: tc.operation.capabilities().transform,
+            entry_contract: tc.operation.op_type().registry_entry().entry,
             territory_xy: tc.operation.capabilities().territory_xy,
             prior_stock,
             source_stock,

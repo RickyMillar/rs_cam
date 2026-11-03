@@ -17,6 +17,18 @@ touches names it in its invariants.
   a `Stated` value. Suggest reads `CutSpec::todays_hints` through
   `operation_feeds_hints` (P4; Phase 5 deletes it). Sentries:
   `--test every_op_states_its_cut_k1`, `--doc cut_spec_refusals`.
+- K4: every op states how it enters material. Each `REG_*` row states its
+  `entry: EntryContract` (`Dressup`, `Planner`, `DescentIsCut`,
+  `StraightPlunge { reason, feed }`; no `Default`; `EntrySet` is not empty),
+  in `compute/catalog/entry_contract.rs`. It is the one entry source:
+  `DressupConfig::for_op`, `normalize_for_op` and the dressup pipeline
+  (`PipelineRun::effective_entry_style`) read it. The air lead above an
+  entry is `MoveIntent::EntryApproach`. `JobPhases::run_stages` builds
+  `Produced::entries` (`EntryRecord`, private fields). The dressup entry
+  plunge feed is `PlungeFeedRule::FirstLinearFeedFraction` (F201 rows,
+  Unsourced). Sentries: `--test every_op_states_its_entry_contract_k4`,
+  `--test an_air_lead_is_an_approach_not_a_plunge_k4`,
+  `--doc entry_contract_refusals`, `--lib entry_contract_table_is_pinned`.
 - K6: every finding states its consequence, and no finding refuses a job
   (ruling Q6). Each `diag_ids!` row (`diagnostics/ids.rs`) ends
   `=> warn(Danger::X)`, `=> INFO` or `=> NOT_READY` (a missing input, Q10);

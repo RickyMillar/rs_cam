@@ -24,7 +24,7 @@
 //! in the pipeline (`PipelineRun::effective_entry_style`), at the one place
 //! it is applied, rather than corrected in the
 //! config: `DressupConfig::normalize_for_op` already promises this for
-//! `Drill` (`FORCE_NO_ENTRY`) and the ramp reached the machine anyway,
+//! `Drill` (K4: `EntryContract::DescentIsCut`) and the ramp reached the machine anyway,
 //! because `ProjectSession::add_toolpath` takes a fully-built
 //! `ToolpathConfig` and normalizes nothing. A guarantee that only holds
 //! when someone remembers to route through the right setter is not a
@@ -46,7 +46,7 @@
 //! toolpath would lose entry styling for the whole op — none does, and
 //! `narrate.rs` already names that hypothetical as the thing to watch.
 
-use crate::compute::catalog::OperationTransformCapabilities;
+use crate::compute::catalog::{EntryContract, OperationTransformCapabilities, PlungeFeedRule};
 use crate::compute::config::{DressupConfig, DressupEntryStyle};
 use crate::mesh::{SpatialIndex, TriangleMesh};
 use crate::tool::{MillingCutter, ToolDefinition};
@@ -533,6 +533,10 @@ pub struct DressupContext<'a> {
     /// moves. `None` only for operations with no mesh surface.
     pub entry_surface: Option<crate::dressup::EntrySurfaceProbe<'a>>,
     pub transform_capabilities: OperationTransformCapabilities,
+    /// CONTRACT K4 (feeds contract P3): the entry contract of the op's
+    /// registry row (`OpRegistryEntry::entry`). The pipeline gives a
+    /// dressup entry only under `EntryContract::Dressup`.
+    pub entry: EntryContract,
     pub debug_ctx: Option<&'a ToolpathDebugContext>,
     pub semantic_ctx: Option<&'a ToolpathSemanticContext>,
     /// The region every helix entry circle must stay inside (the part
@@ -642,13 +646,24 @@ impl PipelineRun<'_> {
         )
     }
 
-    /// The entry style after the G-WANAKA-DRILL-RAMP strip (module doc).
-    /// The first entry step reads it from `current` and logs the strip once.
+    /// The entry style after the K4 contract and the G-WANAKA-DRILL-RAMP
+    /// strip (module doc). The first entry step reads it from `current`
+    /// and logs the strip once.
+    ///
+    /// K4 (feeds contract P3): a contract that is not
+    /// [`EntryContract::Dressup`] gives None before the two overrides. The
+    /// G-CENTRECUT fallback ramp below still fires on it (lead decision D1).
     fn effective_entry_style(&mut self, current: &AnnotatedToolpath) -> DressupEntryStyle {
         if let Some(style) = self.entry_style {
             return style;
         }
         let cfg = self.ctx.cfg;
+        let contract_style = match self.ctx.entry {
+            EntryContract::Dressup { .. } => cfg.entry_style,
+            EntryContract::Planner { .. }
+            | EntryContract::DescentIsCut
+            | EntryContract::StraightPlunge { .. } => DressupEntryStyle::None,
+        };
         let is_drill_cycle = toolpath_is_drill_cycle(current);
         if is_drill_cycle && cfg.entry_style != DressupEntryStyle::None {
             tracing::warn!(
@@ -675,10 +690,10 @@ impl PipelineRun<'_> {
                 .is_some_and(|cutter| cutter.non_centre_cutting().is_some());
         let style = if is_drill_cycle {
             DressupEntryStyle::None
-        } else if non_centre_cutting && cfg.entry_style == DressupEntryStyle::None {
+        } else if non_centre_cutting && contract_style == DressupEntryStyle::None {
             DressupEntryStyle::Ramp
         } else {
-            cfg.entry_style
+            contract_style
         };
         self.entry_style = Some(style);
         style
@@ -708,21 +723,11 @@ impl PipelineRun<'_> {
         }
     }
 
-    /// The entry dressup's plunge feed: half the first linear feed of the
-    /// toolpath as the entry step sees it, else 500 mm/min.
+    /// The entry dressup's plunge feed: the K4 rule
+    /// [`PlungeFeedRule::FirstLinearFeedFraction`] on the toolpath as the
+    /// entry step sees it.
     fn entry_plunge_rate(current: &AnnotatedToolpath) -> f64 {
-        current
-            .toolpath
-            .moves
-            .iter()
-            .find_map(|m| match m.move_type {
-                // K4 owns the 0.5 x first feed and the 500 fallback.
-                crate::toolpath::MoveType::Linear { feed_rate } => Some(feed_rate * 0.5),
-                crate::toolpath::MoveType::Rapid
-                | crate::toolpath::MoveType::ArcCW { .. }
-                | crate::toolpath::MoveType::ArcCCW { .. } => None,
-            })
-            .unwrap_or(500.0)
+        PlungeFeedRule::first_linear_feed_fraction(&current.toolpath)
     }
 
     /// The barriered rapid-order pass: the input has barriers and the op

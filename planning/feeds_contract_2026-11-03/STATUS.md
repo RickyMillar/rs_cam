@@ -29,7 +29,7 @@ code by the symbol when the line has moved.
 | 0 Local fixes | `phases/P0.md` | DONE 2026-11-03 (FM1 re-blessed: 13 cells, TaperedBallNose 6.0 mdf; rough-score op 8 = 10 ramps, 9 led by a plunge; op 1 = 42 ramps, 2 real plunges) | see `git log` | |
 | 1 Wildcard lint | `phases/P1.md` | DONE 2026-11-03 (563 hits: 256 exhaustive, 307 `#[expect]`; no value moved) | see `git log` | |
 | 2 K6 consequence column, no refusals | `phases/P2.md` | DONE 2026-11-03 (A 4d69c2e3a: the column; B: no finding refuses; overrides deleted; G-code header warnings; GUI chips) | see `git log` | |
-| 3 K4 entry contract | `phases/P3.md` | NOT STARTED (needs P2: the `gcode_hash` baseline is blessed at the P2 commit; the perf session committed 98344a12f) | | |
+| 3 K4 entry contract | `phases/P3.md` | DONE 2026-11-03 (25 rows state `entry`; `EntryApproach`; `EntryRecord`; G-OPGOLDEN has `gcode_hash`, no byte moved) | see `git log` | |
 | 4 K1 `CutSpec` | `phases/P4.md` | DONE 2026-11-03 (25 rows state `cut_rule`; FM1 unchanged) | see `git log` | |
 | 5 K2 / K2b envelope | `phases/P5.md` | NOT STARTED (needs P4) | | |
 | 5b GUI envelope + K8 lineage | `phases/P5b.md` | NOT STARTED (sketch agreed; live link; Feeds tab merges into Passes; needs P5, P2, P3) | | |
@@ -60,6 +60,13 @@ code by the symbol when the line has moved.
   (`contour_each_level` has `skip_serializing_if`, so a default config does
   not hold the field). Viz lib `duplicate_queued_toolpaths_are_coalesced`
   can fail under load (a 20 ms sleep).
+  `rs_cam_core --test a_clearing_cut_holds_the_pass_load_g_adaptpassload`
+  `a_straight_plunge_entry_is_exempt_only_leaving_its_hole` is red at
+  c6826ad05 (checked in a worktree, 2026-11-03).
+- G-OPGOLDEN has a `gcode_hash` per arm (P3). A field-only bless:
+  `RS_CAM_BLESS_OPGOLDEN_FIELDS=<f,..>` (optional `RS_CAM_BLESS_OPGOLDEN_ARMS`).
+  Never bless the fields of the 46 known rows; regenerate
+  `opgolden_known_46_rows.txt` and show its diff in the commit.
   Run viz with `--no-fail-fast`: without it, cargo stops at the first red target.
   Confirmed at 218ba2858 in a worktree with its own lane script (2026-11-03).
 - Trap: `scripts/cargo_lane.sh` changes into the top of ITS OWN checkout. In a

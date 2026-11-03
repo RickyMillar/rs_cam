@@ -183,7 +183,7 @@ fn plunge_origin(tp: &rs_cam_core::toolpath::Toolpath) -> Vec<Option<(f64, f64)>
     let mut prev = None::<rs_cam_core::geo::P3>;
     for m in &tp.moves {
         match m.intent {
-            MoveIntent::EntryPlunge
+            MoveIntent::EntryPlunge | MoveIntent::EntryApproach
                 if prev.is_some_and(|p| {
                     (p.x - m.target.x).hypot(p.y - m.target.y) < 1e-6 && m.target.z < p.z
                 }) =>
@@ -193,6 +193,7 @@ fn plunge_origin(tp: &rs_cam_core::toolpath::Toolpath) -> Vec<Option<(f64, f64)>
             MoveIntent::EntryHelix => origin = None,
             MoveIntent::Drilling
             | MoveIntent::EntryPlunge
+            | MoveIntent::EntryApproach
             | MoveIntent::ClearingCut
             | MoveIntent::FinishingCut
             | MoveIntent::EntryRamp

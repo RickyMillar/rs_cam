@@ -36,7 +36,7 @@ use rs_cam_core::material::{
 
 /// The pinned count of unsourced rows. Raise it only on purpose, in the same
 /// change that adds the row to the planning note.
-const PINNED_UNSOURCED_COUNT: usize = 144;
+const PINNED_UNSOURCED_COUNT: usize = 146;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -82,6 +82,9 @@ fn every_feeds_formula_constant_states_its_source_f201() {
         "feeds.default_engagement.adaptive.flat_bull_ap",
         "feeds.drill_rpm_envelope_for_diameter.small_ceiling_rpm",
         "machine.ChipLoadFormula.default.k0",
+        // K4 (feeds contract P3, D5): the dressup entry plunge feed rule.
+        "dressup.entry_plunge_rate.first_linear_feed_fraction",
+        "dressup.entry_plunge_rate.fallback_mm_min",
     ] {
         assert!(
             named.contains_key(anchor),

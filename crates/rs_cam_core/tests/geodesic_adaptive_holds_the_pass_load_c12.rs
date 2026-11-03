@@ -389,7 +389,7 @@ fn departing_moves(tp: &Toolpath) -> Vec<bool> {
         let travel = prev.is_some_and(|p| (p.x - m.target.x).hypot(p.y - m.target.y) >= 1e-9);
         let mut departing = false;
         match m.intent {
-            MoveIntent::EntryPlunge
+            MoveIntent::EntryPlunge | MoveIntent::EntryApproach
                 if prev.is_some_and(|p| {
                     (p.x - m.target.x).hypot(p.y - m.target.y) < 1e-6 && m.target.z < p.z
                 }) =>
@@ -404,6 +404,7 @@ fn departing_moves(tp: &Toolpath) -> Vec<bool> {
             }
             MoveIntent::Drilling
             | MoveIntent::EntryPlunge
+            | MoveIntent::EntryApproach
             | MoveIntent::ClearingCut
             | MoveIntent::FinishingCut
             | MoveIntent::Linking

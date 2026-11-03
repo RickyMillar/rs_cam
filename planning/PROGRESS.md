@@ -50,7 +50,13 @@ The G-code header prints one `WARNING <danger> <id> <toolpath>` line per
 warning; an op with no current result is left out with `export.op_left_out`.
 The GUI pre-flight shows one chip per danger; Export takes the Danger style
 for a Machine warning. Emit errors (`emit.*`) and missing inputs still stop.
-Next: Phase 3 (K4 entry contract).
+
+Phase 3 landed 2026-11-03 (K4): each registry row states its `EntryContract`
+(today's behaviour; Bore is `DescentIsCut`). The air lead above an entry is
+`MoveIntent::EntryApproach`; `Produced` carries one `EntryRecord` per entry.
+The 0.5 x first feed and the 500 mm/min fallback are Unsourced
+`FormulaConstant` rows (F201: 146). G-OPGOLDEN now hashes the G-code of each
+arm: no byte moved. Next: Phase 5 (K2/K2b envelope).
 
 ## Update 2026-10-29 — viewport parity: phase 0 landed
 

@@ -1015,7 +1015,9 @@ fn all_operation_families_emit_expected_structural_span_kinds() {
             use crate::toolpath::MoveIntent as I;
             let expected_kind = match mv.intent {
                 I::Linking => Some(SpanKind::LinkBridge),
-                I::EntryPlunge | I::EntryHelix | I::EntryRamp | I::LeadIn => Some(SpanKind::Entry),
+                I::EntryPlunge | I::EntryApproach | I::EntryHelix | I::EntryRamp | I::LeadIn => {
+                    Some(SpanKind::Entry)
+                }
                 I::LeadOut => Some(SpanKind::LeadOut),
                 I::Drilling
                 | I::ClearingCut
@@ -1591,6 +1593,7 @@ fn feed_optimization_uses_configured_nominal_feed_not_entry_plunge() {
             cutter: Some(&cutter),
             entry_surface: None,
             transform_capabilities: OperationType::Pocket.capabilities().transform,
+            entry: OperationType::Pocket.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: Some(&semantic_root),
             entry_containment: None,
@@ -1638,6 +1641,7 @@ fn apply_dressups_preserves_moves() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::DropCutter.capabilities().transform,
+            entry: OperationType::DropCutter.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

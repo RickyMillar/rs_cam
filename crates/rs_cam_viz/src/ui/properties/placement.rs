@@ -200,7 +200,7 @@ pub(crate) fn warning_hover(d: &Diagnostic) -> String {
 /// - Geometry: the selection, on an op with a selection (the Cuts row).
 /// - Feeds: `feed_rate` and `spindle_rpm`; `plunge_rate` on an op that is
 ///   not Z-only; `ramp_feed_rate` on an op that has it.
-/// - Linking: `entry_style` where core `DressupPolicy::entry_style_applies`;
+/// - Linking: `entry_style` where core `OpRegistryEntry::entry_style_applies`;
 ///   the 3D Rough draws its own Entry style row on Passes.
 /// - Passes: every other parameter of the op, with the exceptions of its
 ///   editor: `peck_depth` only for a Peck or Chip-break cycle;
@@ -237,7 +237,7 @@ pub(crate) fn field_tab(key: FieldKey, config: &OperationConfig) -> Option<Toolp
         "ramp_feed_rate" => ToolpathTab::FeedsSpeeds,
         "entry_style" if op == OperationType::Adaptive3d => ToolpathTab::Passes,
         "entry_style" => {
-            if !op.registry_entry().dressup_policy.entry_style_applies() {
+            if !op.registry_entry().entry_style_applies() {
                 return None;
             }
             ToolpathTab::Linking

@@ -1334,7 +1334,10 @@ fn a_rest_adaptive_skips_the_cleared_levels_and_cuts_only_where_material_stands(
                 m.move_type != MoveType::Rapid
                     && matches!(
                         m.intent,
-                        MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp
+                        MoveIntent::EntryPlunge
+                            | MoveIntent::EntryApproach
+                            | MoveIntent::EntryHelix
+                            | MoveIntent::EntryRamp
                     )
             };
             let mut runs: Vec<Vec<&Move>> = Vec::new();

@@ -767,13 +767,14 @@ pub(super) fn draw_linking_params(
     // produces diagonal trenches carving through the stock). Grey those
     // controls out so the UI reflects what compute actually does. Read from
     // the SAME registry policy `DressupConfig::normalize_for_op` applies.
-    let dressup_policy = entry.operation.op_type().registry_entry().dressup_policy;
-    let op_incompatible_msg: Option<&str> = dressup_policy.strip_all_reason;
-    // F5 (W3e): ONE predicate. An op that strips the dressups, or that plans
-    // its own entries (3D Rough, Drill, Trace, Pin Drill), ignores the
-    // dressup entry style. The row, its diagram and its dependent rows then
-    // do not draw, so the tab never shows a second Entry style control.
-    let entry_applies = dressup_policy.entry_style_applies();
+    let row = entry.operation.op_type().registry_entry();
+    let op_incompatible_msg: Option<&str> = row.dressup_policy.strip_all_reason;
+    // F5 (W3e): ONE predicate. K4: an op whose entry contract is not
+    // `Dressup` (the strip-all ops, 3D Rough, Drill, Trace, Pin Drill)
+    // ignores the dressup entry style. The row, its diagram and its
+    // dependent rows then do not draw, so the tab never shows a second
+    // Entry style control.
+    let entry_applies = row.entry_style_applies();
     // The rapid-order pass reads the op's own capability (Face, 2D Adaptive
     // and 3D Rough refuse it: the planner stock depends on the cut order).
     let reorder_ok = entry

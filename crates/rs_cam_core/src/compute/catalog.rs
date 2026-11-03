@@ -13,6 +13,7 @@ use super::operation_configs::{
 
 mod capabilities;
 mod cut_spec;
+mod entry_contract;
 mod registry;
 mod schema;
 
@@ -28,11 +29,17 @@ pub use cut_spec::{
     TotalDepth,
 };
 
+pub(crate) use entry_contract::entry_records;
+pub use entry_contract::{
+    ENTRY_PLUNGE_FALLBACK_MM_MIN, ENTRY_PLUNGE_FIRST_FEED_FRACTION, EntryContract, EntryKind,
+    EntryRecord, EntrySet, NoneEntry, PlungeFeedRule, RoleDefault, entry_contract_refusals,
+};
+
 pub use schema::{
-    DressupPolicy, DriverSetField, EntryStylePolicy, Kinematics, OpParams, OpPolicy,
-    OpRegistryEntry, OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamKind,
-    ParamRange, ParamTable, ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints,
-    ToolConstraintsDef, driver_set_field,
+    DressupPolicy, DriverSetField, Kinematics, OpParams, OpPolicy, OpRegistryEntry,
+    OperationParamSchema, OperationSchema, ParamDef, ParamHint, ParamKind, ParamRange, ParamTable,
+    ParamType, SkippedField, TOOLPATH_PARAM_DEFS, ToolConstraints, ToolConstraintsDef,
+    driver_set_field,
 };
 
 use registry::{

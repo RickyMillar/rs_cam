@@ -857,7 +857,10 @@ fn classify_move(mv: &Move) -> MoveClass {
         | MoveIntent::LeadIn
         | MoveIntent::LeadOut => MoveClass::Cut,
         MoveIntent::Linking => MoveClass::Link,
-        MoveIntent::EntryPlunge | MoveIntent::EntryHelix | MoveIntent::EntryRamp => MoveClass::Air,
+        MoveIntent::EntryPlunge
+        | MoveIntent::EntryApproach
+        | MoveIntent::EntryHelix
+        | MoveIntent::EntryRamp => MoveClass::Air,
         MoveIntent::Drilling
         | MoveIntent::Retract
         | MoveIntent::ObstacleClearance

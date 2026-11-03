@@ -351,6 +351,7 @@ fn c_no_rapid_crosses_the_rest_stock() {
             cutter: Some(&cutter),
             entry_surface: Some(floor.probe()),
             transform_capabilities: OperationType::Scallop.capabilities().transform,
+            entry: OperationType::Scallop.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

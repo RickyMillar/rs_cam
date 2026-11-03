@@ -472,7 +472,9 @@ fn rapid_to_entry_top(
         } else {
             P3::new(start.x, start.y, contact)
         };
-        tp.feed_to_with_intent(target, feed_rate, MoveIntent::EntryPlunge);
+        // K4: the air lead above the entry (`EntryApproach`); with `air`
+        // it goes to the target through air only.
+        tp.feed_to_with_intent(target, feed_rate, MoveIntent::EntryApproach);
         z = contact;
     }
     if air { None } else { Some(z) }
@@ -589,7 +591,7 @@ pub(crate) fn emit_ramp(
                     tp.feed_to_with_intent(
                         P3::new(start.x, start.y, plan.air_descent_z),
                         feed_rate,
-                        MoveIntent::EntryPlunge,
+                        MoveIntent::EntryApproach,
                     );
                 }
                 for p in &plan.points {

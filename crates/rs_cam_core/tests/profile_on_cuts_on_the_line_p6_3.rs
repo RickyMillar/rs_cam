@@ -221,9 +221,12 @@ fn assert_on_open_line(what: &str, tp: &Toolpath, line: &[P2], tol: f64) {
         );
         if matches!(
             intent,
-            MoveIntent::EntryPlunge | MoveIntent::EntryRamp | MoveIntent::EntryHelix
+            MoveIntent::EntryPlunge
+                | MoveIntent::EntryApproach
+                | MoveIntent::EntryRamp
+                | MoveIntent::EntryHelix
         ) {
-            // An entry starts a level. A ramp walks on the line (checked
+            // An entry starts a level (K4: its air lead too). A ramp walks on the line (checked
             // above) and ends where the cut starts.
             if !in_entry {
                 levels += 1;

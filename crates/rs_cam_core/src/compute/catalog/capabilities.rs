@@ -592,7 +592,7 @@ pub enum EntryProbe {
     /// It keeps the audited 2D blind-leg behaviour (A0 finding 4).
     ///
     /// Adaptive3d is a prism op here on purpose: its dressup entries are
-    /// stripped (`FORCE_NO_ENTRY`), and its planner builds its own probe
+    /// off (K4 `EntryContract::Planner`), and its planner builds its own probe
     /// with `params.stock_to_leave`.
     Prism,
     /// A SURFACE-RIDING op: its own cuts never go below the drop-cutter CL

@@ -434,6 +434,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
+            entry: OperationType::ProjectCurve.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -460,6 +461,7 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
+            entry: OperationType::ProjectCurve.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -496,6 +498,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
+            // K4: the Ramp arm is an opt-in model of a dressup entry, so
+            // the context states a Dressup contract, not the row's.
+            entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,
@@ -525,6 +530,9 @@ fn project_curve_cutting_moves_follow_rivers_dxf() {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::ProjectCurve.capabilities().transform,
+            // K4: the Ramp arm is an opt-in model of a dressup entry, so
+            // the context states a Dressup contract, not the row's.
+            entry: rs_cam_core::compute::catalog::EntryContract::ANY_DRESSUP_FROM_ROLE,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

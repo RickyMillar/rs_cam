@@ -244,6 +244,7 @@ pub fn is_drill_cycle_for_narration(
             // Plunges, links, retracts, obstacle clearances and unlabelled
             // moves say nothing either way.
             MoveIntent::EntryPlunge
+            | MoveIntent::EntryApproach
             | MoveIntent::Linking
             | MoveIntent::Retract
             | MoveIntent::ObstacleClearance

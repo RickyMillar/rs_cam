@@ -161,6 +161,7 @@ fn ship(planned: &Toolpath, cfg: &DressupConfig) -> Toolpath {
             cutter: None,
             entry_surface: None,
             transform_capabilities: OperationType::Adaptive3d.capabilities().transform,
+            entry: OperationType::Adaptive3d.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

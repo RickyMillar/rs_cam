@@ -444,6 +444,9 @@ fn should_skip_modulation(move_type: MoveType, intent: MoveIntent) -> bool {
         MoveIntent::Retract
             | MoveIntent::Drilling
             | MoveIntent::EntryPlunge
+            // K4: the air lead above an entry keeps its feed, as it did
+            // when it was an `EntryPlunge`.
+            | MoveIntent::EntryApproach
             // F-040: lead-in / lead-out feeds are operator-tuned (cleaner
             // entry mark / faster chip-clear on exit). Treat them as
             // user-tuned and skip modulation — the dressup's

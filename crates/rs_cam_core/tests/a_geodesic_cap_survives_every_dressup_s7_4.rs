@@ -177,6 +177,7 @@ fn dress(planned: &Toolpath, cutter: &FlatEndmill) -> Toolpath {
             cutter: Some(cutter),
             entry_surface: None,
             transform_capabilities: OperationType::Adaptive3d.capabilities().transform,
+            entry: OperationType::Adaptive3d.registry_entry().entry,
             debug_ctx: None,
             semantic_ctx: None,
             entry_containment: None,

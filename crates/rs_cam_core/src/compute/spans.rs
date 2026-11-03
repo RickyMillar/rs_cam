@@ -316,8 +316,9 @@ pub fn spans_from_drill_holes(toolpath: &Toolpath) -> Vec<Span> {
 /// span; the run's first intent names it):
 ///
 /// - [`MoveIntent::Linking`] → [`SpanKind::LinkBridge`]
-/// - [`MoveIntent::EntryPlunge`] / [`MoveIntent::EntryHelix`] /
-///   [`MoveIntent::EntryRamp`] / [`MoveIntent::LeadIn`] → [`SpanKind::Entry`]
+/// - [`MoveIntent::EntryPlunge`] / [`MoveIntent::EntryApproach`] /
+///   [`MoveIntent::EntryHelix`] / [`MoveIntent::EntryRamp`] /
+///   [`MoveIntent::LeadIn`] → [`SpanKind::Entry`]
 /// - [`MoveIntent::LeadOut`] → [`SpanKind::LeadOut`]
 ///
 /// All other intents (cuts, drilling, retracts, `Unknown`) produce no
@@ -329,6 +330,9 @@ pub fn spans_from_move_intents(toolpath: &Toolpath) -> Vec<Span> {
         match intent {
             MoveIntent::Linking => Some((SpanKind::LinkBridge, "link")),
             MoveIntent::EntryPlunge => Some((SpanKind::Entry, "plunge entry")),
+            // K4 (feeds contract P3): the air lead above an entry has its
+            // own label; the kind stays `Entry`.
+            MoveIntent::EntryApproach => Some((SpanKind::Entry, "entry approach")),
             MoveIntent::EntryHelix => Some((SpanKind::Entry, "helix entry")),
             MoveIntent::EntryRamp => Some((SpanKind::Entry, "ramp entry")),
             MoveIntent::LeadIn => Some((SpanKind::Entry, "lead-in")),

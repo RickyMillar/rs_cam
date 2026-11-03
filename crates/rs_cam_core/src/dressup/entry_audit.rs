@@ -39,6 +39,7 @@ pub fn is_entry_intent(intent: MoveIntent) -> bool {
         MoveIntent::EntryRamp
             | MoveIntent::EntryHelix
             | MoveIntent::EntryPlunge
+            | MoveIntent::EntryApproach
             | MoveIntent::LeadIn
             | MoveIntent::LeadOut
     )

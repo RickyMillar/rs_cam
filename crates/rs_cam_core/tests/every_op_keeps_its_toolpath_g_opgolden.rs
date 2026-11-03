@@ -61,9 +61,19 @@
 //! Re-bless only the ops that a change names on purpose, and say so in the
 //! commit body.
 //!
+//! `RS_CAM_BLESS_OPGOLDEN_FIELDS=<f1,f2>` is a field-only bless: it writes
+//! only the named fields into the stored record of each arm and keeps every
+//! other stored value. `RS_CAM_BLESS_OPGOLDEN_ARMS=<op/arm,..>` limits it to
+//! the named arms. Use it when the file holds rows that no change owns.
+//!
+//! The record also holds `gcode_hash` (feeds contract P3, D4): a hash of the
+//! program that the session export door writes. A change of a move intent
+//! or a span label moves `moves_hash` or `spans_hash`, not `gcode_hash`.
+//!
 //! ```text
 //! cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
 //! RS_CAM_BLESS_OPGOLDEN=1 cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
+//! RS_CAM_BLESS_OPGOLDEN_FIELDS=gcode_hash cargo test -p rs_cam_core -q --test every_op_keeps_its_toolpath_g_opgolden
 //! ```
 
 #![expect(
@@ -110,6 +120,16 @@ use rs_cam_core::session::{
 
 /// The environment switch that rewrites the golden file.
 const BLESS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN";
+
+/// The environment switch of a field-only bless: a comma list of field
+/// names. It writes only those fields from the generated record into the
+/// stored record of each arm and keeps every other stored value. With
+/// [`BLESS_ARMS_ENV`] it writes only the named arms.
+const BLESS_FIELDS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN_FIELDS";
+
+/// A comma list of `op/arm` keys for [`BLESS_FIELDS_ENV`]. Without it the
+/// field-only bless writes every arm.
+const BLESS_ARMS_ENV: &str = "RS_CAM_BLESS_OPGOLDEN_ARMS";
 
 // ── Cases ───────────────────────────────────────────────────────────────
 
@@ -996,16 +1016,34 @@ fn run(case: &Case) -> Generated {
         run_prior(&mut session);
     }
     let cancel = AtomicBool::new(false);
-    match session.generate_toolpath(index, &cancel) {
+    let generated = match session.generate_toolpath(index, &cancel) {
         Ok(result) => Generated {
             golden: Golden::of(result.annotated()),
             unknown_intents: unknown_intents(result.toolpath()),
         },
-        Err(e) => Generated {
-            golden: Golden::refused(&e.to_string()),
-            unknown_intents: 0,
-        },
-    }
+        Err(e) => {
+            return Generated {
+                golden: Golden::refused(&e.to_string()),
+                unknown_intents: 0,
+            };
+        }
+    };
+    with_gcode_hash(generated, &session)
+}
+
+/// Feeds contract P3 (D4): add the hash of the program that the session
+/// export door writes. The door is `export_gcode_checked` with no
+/// simulation trace: the K6 warning header, the post of the session and
+/// the rapid rewrite are in the bytes. A rest arm also exports its prior
+/// op. A change of a move intent or a span label keeps this hash; a change
+/// of a G-code byte moves it.
+fn with_gcode_hash(mut generated: Generated, session: &ProjectSession) -> Generated {
+    let hash = match session.export_gcode_checked(None) {
+        Ok(exported) => format!("{:016x}", common::fingerprint::fnv1a_debug(&exported.gcode)),
+        Err(e) => format!("err: {e}"),
+    };
+    generated.golden.gcode_hash = Some(hash);
+    generated
 }
 
 /// The non-default arms W6.3.0 added (the `regions*` arms are found by
@@ -1046,6 +1084,59 @@ const GOLDEN_HEADER: &str = "\
 fn write_golden(actual: &BTreeMap<String, Golden>) {
     let body = toml::to_string(actual).expect("the goldens serialize");
     std::fs::write(golden_path(), format!("{GOLDEN_HEADER}{body}")).expect("write the goldens");
+}
+
+/// A field-only bless: write the named fields of `actual` into the stored
+/// records and keep every other stored value. Returns one line per written
+/// `op/arm  field`. An arm that is not stored is not written.
+fn bless_fields(
+    actual: &BTreeMap<String, Golden>,
+    fields: &BTreeSet<String>,
+    arms: Option<&BTreeSet<String>>,
+) -> Vec<String> {
+    let mut stored = read_golden();
+    let mut written = Vec::new();
+    for (key, new) in actual {
+        if arms.is_some_and(|arms| !arms.contains(key)) {
+            continue;
+        }
+        let Some(old) = stored.get_mut(key) else {
+            continue;
+        };
+        let new_v = toml::Value::try_from(new).expect("a table");
+        let mut old_v = toml::Value::try_from(&*old).expect("a table");
+        let (Some(new_t), Some(old_t)) = (new_v.as_table(), old_v.as_table_mut()) else {
+            unreachable!("a struct serializes to a table")
+        };
+        for field in fields {
+            let before = old_t.get(field).cloned();
+            match new_t.get(field) {
+                Some(v) => {
+                    old_t.insert(field.clone(), v.clone());
+                }
+                None => {
+                    old_t.remove(field);
+                }
+            }
+            if old_t.get(field) != before.as_ref() {
+                written.push(format!("{key}  {field}"));
+            }
+        }
+        *old = old_v.try_into().expect("the record parses back");
+    }
+    write_golden(&stored);
+    written
+}
+
+/// A comma list from the environment, or `None` when the switch is unset.
+fn env_list(name: &str) -> Option<BTreeSet<String>> {
+    std::env::var(name).ok().map(|v| {
+        v.split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect()
+    })
 }
 
 fn read_golden() -> BTreeMap<String, Golden> {
@@ -1330,6 +1421,17 @@ fn every_op_keeps_its_toolpath() {
         );
     }
 
+    if let Some(fields) = env_list(BLESS_FIELDS_ENV) {
+        let arms = env_list(BLESS_ARMS_ENV);
+        let written = bless_fields(&actual, &fields, arms.as_ref());
+        eprintln!(
+            "field-only bless: {} fields written into {}:\n{}",
+            written.len(),
+            golden_path().display(),
+            written.join("\n")
+        );
+        return;
+    }
     if std::env::var_os(BLESS_ENV).is_some() {
         write_golden(&actual);
         eprintln!(

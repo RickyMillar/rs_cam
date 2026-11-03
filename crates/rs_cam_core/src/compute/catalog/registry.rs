@@ -32,9 +32,27 @@ use super::schema::{
     DressupPolicy, Kinematics, OpParams as _, OpPolicy, OpRegistryEntry, ToolConstraintsDef,
 };
 use super::{
-    AxialRule, CutRule, GeometryRequirement, OperationFamily, OperationSpec, OperationType,
-    PresentBasis, RadialRule, UiOperationFamily, UiProcessRole,
+    AxialRule, CutRule, EntryContract, EntryKind, EntrySet, GeometryRequirement, NoneEntry,
+    OperationFamily, OperationSpec, OperationType, PlungeFeedRule, PresentBasis, RadialRule,
+    RoleDefault, UiOperationFamily, UiProcessRole,
 };
+
+/// K4 (feeds contract P3): the reason text of each `StraightPlunge` row.
+/// The `strip_all` policy and the entry contract of the row read the same
+/// `const`, so the text is not typed twice.
+const VCARVE_NO_ENTRY: &str = "Incompatible with V-carve: each run starts on the design outline at \
+         zero depth, so a lead or an entry there cuts outside the design.";
+const INLAY_NO_ENTRY: &str = "Incompatible with inlay V walls: a lead or an entry at the design \
+         outline cuts outside the design.";
+const INLAY_PLUG_NO_ENTRY: &str = "Incompatible with inlay V walls: a lead or an entry at the design \
+         outline cuts outside the design.";
+const DROP_CUTTER_NO_ENTRY: &str = "Incompatible with Parallel finish: each raster segment's ramp entry would carve a diagonal trench across the stock.";
+const PROJECT_CURVE_NO_ENTRY: &str =
+    "Incompatible with Project Curve: each ring would get a phantom diagonal cut.";
+/// Trace strips no lead and no link. Its entry is the straight plunge of
+/// the generator onto the line (`Toolpath::emit_path_segment_with_intent`).
+const TRACE_NO_ENTRY: &str =
+    "No entry dressup on Trace: the op plunges straight onto the traced line.";
 
 /// UX-7b: the fix sentence of the model gouge guard on a floor op that
 /// clears areas (Pocket, Zigzag, Adaptive 2D).
@@ -76,6 +94,7 @@ pub(super) static REG_FACE: OpRegistryEntry = OpRegistryEntry {
     params: FaceConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_FACE,
@@ -129,6 +148,7 @@ pub(super) static REG_POCKET: OpRegistryEntry = OpRegistryEntry {
     params: PocketConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -184,6 +204,7 @@ pub(super) static REG_PROFILE: OpRegistryEntry = OpRegistryEntry {
     params: ProfileConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_PROFILE,
@@ -241,7 +262,13 @@ pub(super) static REG_ADAPTIVE: OpRegistryEntry = OpRegistryEntry {
     // Roadmap B.5 — 2D adaptive pocketing has natural circular
     // boundaries, so a new toolpath starts with Helix. G10 D3: an
     // operator Ramp is never upgraded afterwards.
-    dressup_policy: DressupPolicy::DEFAULT_HELIX,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::Dressup {
+        allowed: EntrySet::ALL_DRESSUP,
+        default: RoleDefault::Helix,
+        none_is: NoneEntry::StockAwarePlunge,
+        own: None,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_2D,
@@ -305,10 +332,11 @@ pub(super) static REG_VCARVE: OpRegistryEntry = OpRegistryEntry {
     // at the surface. A lead arc there takes the V-bit outside the design
     // (measured: 238 cells, up to 0.75 mm outside, 0.060 mm deep with the
     // Finish-role lead-in). Same rule as Inlay.
-    dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with V-carve: each run starts on the design outline at \
-         zero depth, so a lead or an entry there cuts outside the design.",
-    ),
+    dressup_policy: DressupPolicy::strip_all(VCARVE_NO_ENTRY),
+    entry: EntryContract::StraightPlunge {
+        reason: VCARVE_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -368,10 +396,11 @@ pub(super) static REG_INLAY: OpRegistryEntry = OpRegistryEntry {
     // depth. A lead arc or an entry there takes the V-bit outside the
     // design (measured: 2 089 cells, 0.2-0.8 mm outside, 0.067 mm deep
     // with the Finish-role lead-in).
-    dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with inlay V walls: a lead or an entry at the design \
-         outline cuts outside the design.",
-    ),
+    dressup_policy: DressupPolicy::strip_all(INLAY_NO_ENTRY),
+    entry: EntryContract::StraightPlunge {
+        reason: INLAY_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -431,10 +460,11 @@ pub(super) static REG_INLAY_PLUG: OpRegistryEntry = OpRegistryEntry {
     // depth. A lead arc or an entry there takes the V-bit outside the
     // design (measured: 2 089 cells, 0.2-0.8 mm outside, 0.067 mm deep
     // with the Finish-role lead-in).
-    dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with inlay V walls: a lead or an entry at the design \
-         outline cuts outside the design.",
-    ),
+    dressup_policy: DressupPolicy::strip_all(INLAY_PLUG_NO_ENTRY),
+    entry: EntryContract::StraightPlunge {
+        reason: INLAY_PLUG_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_V_WIDTH,
@@ -488,6 +518,7 @@ pub(super) static REG_ZIGZAG: OpRegistryEntry = OpRegistryEntry {
     params: ZigzagConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -543,7 +574,11 @@ pub(super) static REG_TRACE: OpRegistryEntry = OpRegistryEntry {
     params: TraceConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — single-pass engraving: no entry style applies.
-    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::StraightPlunge {
+        reason: TRACE_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_TRACE,
@@ -600,7 +635,8 @@ pub(super) static REG_DRILL: OpRegistryEntry = OpRegistryEntry {
     params: DrillConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Roadmap B.5 — stock-based peck cycle: no entry style applies.
-    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::DescentIsCut,
     policy: OpPolicy::DRILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -683,6 +719,7 @@ pub(super) static REG_BORE: OpRegistryEntry = OpRegistryEntry {
         "Bore cuts its own helix entry. A lead, a link or a second entry has no room \
          between the tool and the wall of the hole.",
     ),
+    entry: EntryContract::DescentIsCut,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -748,6 +785,7 @@ pub(super) static REG_CHAMFER: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: true,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -804,9 +842,11 @@ pub(super) static REG_DROP_CUTTER: OpRegistryEntry = OpRegistryEntry {
     // diagonal line from safe_z down to the mesh surface — hundreds per
     // 3D finish, covering the stock in angled trenches. Lead-in/out add
     // arc transitions that produce more diagonals on a zigzag raster.
-    dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with Parallel finish: each raster segment's ramp entry would carve a diagonal trench across the stock.",
-    ),
+    dressup_policy: DressupPolicy::strip_all(DROP_CUTTER_NO_ENTRY),
+    entry: EntryContract::StraightPlunge {
+        reason: DROP_CUTTER_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -865,7 +905,15 @@ pub(super) static REG_ADAPTIVE3D: OpRegistryEntry = OpRegistryEntry {
     // breaks planner↔simulator stamp parity (observed: ~44 mm axial
     // engagement on a 3 mm-commanded DPP, deflection gate Exceeds).
     // Users who want a Helix entry set it at the planner level.
-    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::Planner {
+        kinds: EntrySet::of(&[
+            EntryKind::Plunge,
+            EntryKind::PeckLadder,
+            EntryKind::Ramp,
+            EntryKind::Helix,
+        ]),
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ADAPTIVE_3D,
@@ -919,6 +967,7 @@ pub(super) static REG_WATERLINE: OpRegistryEntry = OpRegistryEntry {
     params: WaterlineConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::FEATURE_SELECTIVE,
     capabilities: Capabilities {
         transform: TRANSFORM_DEPTH_ORDER,
@@ -977,6 +1026,12 @@ pub(super) static REG_PENCIL: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::Dressup {
+        allowed: EntrySet::ALL_DRESSUP,
+        default: RoleDefault::FromRole,
+        none_is: NoneEntry::GeneratorPlunge,
+        own: Some(EntrySet::of(&[EntryKind::Ramp])),
+    },
     policy: OpPolicy::FEATURE_SELECTIVE,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -1033,6 +1088,7 @@ pub(super) static REG_SCALLOP: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1104,6 +1160,9 @@ pub(super) static REG_UNIFIED_FINISH: OpRegistryEntry = OpRegistryEntry {
     dressup_policy: DressupPolicy::strip_all(
         "Incompatible with Unified Finish: ramp/lead/link dressups would carve diagonal trenches across the mesh surface; the op emits its own surface-safe entries and links.",
     ),
+    entry: EntryContract::Planner {
+        kinds: EntrySet::of(&[EntryKind::Plunge]),
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
@@ -1160,6 +1219,7 @@ pub(super) static REG_STEEP_SHALLOW: OpRegistryEntry = OpRegistryEntry {
     params: SteepShallowConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_BARRIERED_NODES,
@@ -1216,6 +1276,7 @@ pub(super) static REG_RAMP_FINISH: OpRegistryEntry = OpRegistryEntry {
     params: RampFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1276,6 +1337,7 @@ pub(super) static REG_SPIRAL_FINISH: OpRegistryEntry = OpRegistryEntry {
         supports_v_bit: false,
     },
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::LATERAL_RASTER,
     capabilities: Capabilities {
         transform: TRANSFORM_CONTINUOUS,
@@ -1329,6 +1391,7 @@ pub(super) static REG_RADIAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     params: RadialFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_ORDERED_LINKABLE,
@@ -1382,6 +1445,7 @@ pub(super) static REG_HORIZONTAL_FINISH: OpRegistryEntry = OpRegistryEntry {
     params: HorizontalFinishConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::ANY_DRESSUP_FROM_ROLE,
     policy: OpPolicy {
         // The only op that is both: a lateral raster pitch AND a
         // feature-selective empty. It cuts near-flat areas only, so a
@@ -1443,9 +1507,11 @@ pub(super) static REG_PROJECT_CURVE: OpRegistryEntry = OpRegistryEntry {
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
     // Entry ramps, lead-in/out, and link moves produce phantom
     // lateral cuts on multi-ring DXFs.
-    dressup_policy: DressupPolicy::strip_all(
-        "Incompatible with Project Curve: each ring would get a phantom diagonal cut.",
-    ),
+    dressup_policy: DressupPolicy::strip_all(PROJECT_CURVE_NO_ENTRY),
+    entry: EntryContract::StraightPlunge {
+        reason: PROJECT_CURVE_NO_ENTRY,
+        feed: PlungeFeedRule::OpPlungeRate,
+    },
     policy: OpPolicy::MILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,
@@ -1502,14 +1568,15 @@ pub(super) static REG_ALIGNMENT_PIN_DRILL: OpRegistryEntry = OpRegistryEntry {
     },
     params: AlignmentPinDrillConfig::PARAMS,
     tool_constraints: ToolConstraintsDef::ANY_TOOL,
-    // FORCE_NO_ENTRY, matching REG_DRILL. A ramp or helix entry on a
+    // K4 `EntryContract::DescentIsCut` (was FORCE_NO_ENTRY), matching REG_DRILL. A ramp or helix entry on a
     // registration-pin hole cuts an oval slot, which destroys the flip
     // registration the op exists to provide (G-WANAKA-DRILL-RAMP). The
     // generator hard-strips it either way, but leaving the policy at
     // ANY_DRESSUP meant `DressupConfig::for_op` SHIPPED a Ramp here, so
     // the UI offered a control that silently did nothing and the strip
     // warned on the product's own default.
-    dressup_policy: DressupPolicy::FORCE_NO_ENTRY,
+    dressup_policy: DressupPolicy::ANY_DRESSUP,
+    entry: EntryContract::DescentIsCut,
     policy: OpPolicy::DRILLING,
     capabilities: Capabilities {
         transform: TRANSFORM_XY_INDEPENDENT,

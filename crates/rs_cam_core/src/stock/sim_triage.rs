@@ -1360,6 +1360,7 @@ fn is_entry_intent(s: &crate::stock::simulation_cut::SimulationCutSample) -> boo
         s.source_intent,
         Some(
             crate::toolpath::MoveIntent::EntryPlunge
+                | crate::toolpath::MoveIntent::EntryApproach
                 | crate::toolpath::MoveIntent::EntryRamp
                 | crate::toolpath::MoveIntent::EntryHelix
         )

@@ -104,7 +104,7 @@ pub(in crate::ui::properties) fn draw_adaptive3d_params(
     );
     // F5 (W3b): the ONE Entry style control of a 3D Rough. The planner
     // plans its own entries from these rows (`rough_3d.rs`), and the
-    // registry row strips the dressup entry (`FORCE_NO_ENTRY`), so the
+    // registry row takes no dressup entry (K4 `EntryContract::Planner`), so the
     // Linking tab draws no Entry style row for this op.
     combo_in_row(
         ui,

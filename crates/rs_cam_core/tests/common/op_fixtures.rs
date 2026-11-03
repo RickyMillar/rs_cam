@@ -800,6 +800,12 @@ pub struct Golden {
     /// FNV-1a over `spans_valid` and `(kind, label, start, end)` of each
     /// span, in order, as hex. The payload is not in the hash (W6.3.0).
     pub spans_hash: String,
+    /// Feeds contract P3 (D4): FNV-1a over the bytes of the program that
+    /// the session export door writes for the case session, as hex, or
+    /// `err: <text>` when the door refuses. G-OPGOLDEN sets it; `of` and
+    /// `refused` leave it `None`, and then the record has no such field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gcode_hash: Option<String>,
     /// W6.4.0: the digest of the rest output of a rest detector
     /// (`Produced::rest_grid`, `Produced::rest_regions`). `None` when no
     /// detector attached one, and then the record has no such field.
@@ -936,6 +942,7 @@ impl Golden {
                 "{:016x}",
                 fnv1a_debug(&(annotated.spans_valid, span_digest(annotated)))
             ),
+            gcode_hash: None,
             produced: ProducedDigest::of(&annotated.produced),
         }
     }
@@ -954,6 +961,7 @@ impl Golden {
             moves_hash: String::new(),
             span_count: 0,
             spans_hash: String::new(),
+            gcode_hash: None,
             produced: None,
         }
     }

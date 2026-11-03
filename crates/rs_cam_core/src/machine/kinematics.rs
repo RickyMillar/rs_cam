@@ -1009,7 +1009,7 @@ pub struct CycleTimeBreakdown {
     pub rapid_s: f64,
     /// ClearingCut | FinishingCut | Drilling feed moves.
     pub cutting_s: f64,
-    /// EntryPlunge | EntryHelix | EntryRamp | LeadIn feed moves.
+    /// EntryPlunge | EntryApproach | EntryHelix | EntryRamp | LeadIn feed moves.
     pub entry_s: f64,
     /// Linking | LeadOut feed moves (position-to-position at feed).
     pub linking_s: f64,
@@ -1231,7 +1231,11 @@ pub fn compute_cycle_time_breakdown(
             use crate::toolpath::MoveIntent as MI;
             match digest.intent {
                 MI::ClearingCut | MI::FinishingCut | MI::Drilling => breakdown.cutting_s += dt,
-                MI::EntryPlunge | MI::EntryHelix | MI::EntryRamp | MI::LeadIn => {
+                MI::EntryPlunge
+                | MI::EntryApproach
+                | MI::EntryHelix
+                | MI::EntryRamp
+                | MI::LeadIn => {
                     breakdown.entry_s += dt;
                 }
                 MI::Linking | MI::LeadOut => breakdown.linking_s += dt,

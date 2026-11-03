@@ -49,8 +49,8 @@ pub(crate) struct PlannerOwns {
     pub stock: bool,
     /// It anchors its levels on its own stock (G-LADDERANCHOR).
     pub level_anchor: bool,
-    /// It plans its entries; the dressup entry is forced off
-    /// (`DressupPolicy::FORCE_NO_ENTRY`).
+    /// It plans its entries; the dressup entry is off (K4: the row's
+    /// `EntryContract::Planner`).
     pub entries: bool,
     /// It plans its stay-down links; no shared link stage and no rapid
     /// reorder (`LinkCeilingNeed::NoLink`).
@@ -199,7 +199,7 @@ pub(crate) fn run_volumetric<O: VolumetricOp>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compute::catalog::{EntryStylePolicy, OperationType, RestUse};
+    use crate::compute::catalog::{EntryContract, OperationType, RestUse};
     use crate::compute::execute::rough_3d::Adaptive3dRough;
     use crate::compute::execute::shared::LinkCeilingNeed;
 
@@ -219,7 +219,7 @@ mod tests {
         check(
             "entries",
             owns.entries,
-            row.dressup_policy.entry == EntryStylePolicy::ForceNone,
+            matches!(row.entry, EntryContract::Planner { .. }),
         );
         check(
             "segment_merge",
